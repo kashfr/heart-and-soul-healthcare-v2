@@ -230,12 +230,12 @@ export default function ContactPage() {
                         required
                       >
                         <option value="">Select a subject</option>
-                        <option value="general">General Inquiry</option>
-                        <option value="services">Services Information</option>
-                        <option value="programs">Program Questions</option>
-                        <option value="careers">Career Opportunities</option>
-                        <option value="partnership">Partnership Inquiry</option>
-                        <option value="other">Other</option>
+                        <option value="General Inquiry">General Inquiry</option>
+                        <option value="Services Information">Services Information</option>
+                        <option value="Program Questions">Program Questions</option>
+                        <option value="Career Opportunities">Career Opportunities</option>
+                        <option value="Partnership Inquiry">Partnership Inquiry</option>
+                        <option value="Other">Other</option>
                       </select>
                     </div>
                   </div>
