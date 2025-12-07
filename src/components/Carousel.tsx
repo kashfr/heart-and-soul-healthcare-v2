@@ -55,7 +55,7 @@ const slides: CarouselSlide[] = [
   },
 ];
 
-const SLIDE_DURATION = 5000; // 5 seconds
+const SLIDE_DURATION = 10000; // 10 seconds
 
 export default function Carousel() {
   const [currentSlide, setCurrentSlide] = useState(0);
