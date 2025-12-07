@@ -1,0 +1,301 @@
+.carousel {
+  position: relative;
+  width: 100%;
+  height: 85vh;
+  min-height: 600px;
+  max-height: 800px;
+  overflow: hidden;
+  background-color: var(--color-gray-50);
+  padding-top: 120px;
+}
+
+.slidesContainer {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-areas: "slide";
+}
+
+.slide {
+  grid-area: slide;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.6s ease-in-out, visibility 0.6s ease-in-out;
+  z-index: 1;
+}
+
+.slide.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Split Layout */
+.splitLayout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 100%;
+  gap: var(--space-8);
+  align-items: center;
+  transition: grid-template-columns 0.3s ease;
+}
+
+/* Left: Text Content */
+.textContent {
+  padding: var(--space-10) 0;
+  z-index: 2;
+}
+
+.contentWrapper {
+  max-width: 600px;
+}
+
+.slideLabel {
+  display: inline-block;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  color: var(--color-accent-dark);
+  margin-bottom: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  background: rgba(45, 140, 140, 0.1);
+  border-radius: var(--radius-full);
+}
+
+.slideTitle {
+  font-size: var(--text-5xl);
+  font-weight: 800;
+  color: var(--color-primary);
+  margin-bottom: var(--space-6);
+  line-height: 1.1;
+  animation: slideUp 0.8s ease-out;
+}
+
+.slideDescription {
+  font-size: var(--text-lg);
+  color: var(--color-gray-600);
+  line-height: 1.7;
+  margin-bottom: var(--space-8);
+  animation: slideUp 0.8s ease-out 0.1s backwards;
+}
+
+.slideBtn {
+  animation: slideUp 0.8s ease-out 0.2s backwards;
+}
+
+/* Right: Image */
+.imageWrapper {
+  position: relative;
+  height: 90%;
+  width: 100%;
+  border-radius: var(--radius-2xl);
+  overflow: hidden;
+  box-shadow: var(--shadow-xl);
+  transform: translateX(20px);
+  opacity: 0;
+  transition: all 0.5s ease-out, order 0s;
+  order: 0;
+}
+
+.slide.active .imageWrapper {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.slideImage {
+  object-fit: cover;
+  object-position: center;
+  transition: transform 10s ease;
+}
+
+
+
+/* Image Section Wrapper (contains image + mobile dots) */
+.imageSection {
+  position: relative;
+  height: 90%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Mobile dots - hidden on desktop */
+.mobileDots {
+  display: none;
+}
+
+/* Navigation Buttons - Adjusted colors for light bg */
+.navBtn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-white);
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-full);
+  color: var(--color-primary);
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.navBtn:hover {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-white);
+  transform: translateY(-50%) scale(1.1);
+}
+
+.prevBtn {
+  left: var(--space-6);
+}
+
+.nextBtn {
+  right: var(--space-6);
+}
+
+/* Dots Navigation */
+.dots {
+  position: absolute;
+  bottom: var(--space-10);
+  left: 50%; /* Centered relative to screen, or could be aligned with text */
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  gap: var(--space-3);
+}
+
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-full);
+  background: var(--color-gray-300);
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.dot:hover {
+  background: var(--color-gray-400);
+}
+
+.dot.active {
+  width: 36px;
+  background: var(--color-accent);
+}
+
+/* Progress Bar */
+.progressContainer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 4px;
+  background: var(--color-gray-200);
+  z-index: 10;
+}
+
+.progressBar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-accent), var(--color-gold));
+  width: 0%;
+  will-change: width;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Zoom Animation Helper */
+.zooming .slideImage {
+  transform: scale(1.05);
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .carousel {
+    height: auto;
+    min-height: auto;
+    max-height: none;
+    padding-bottom: var(--space-8);
+    padding-top: 140px;
+  }
+
+  .splitLayout {
+    grid-template-columns: 1fr;
+    gap: var(--space-6);
+  }
+
+  .imageSection {
+    order: -1; /* Image section on top on mobile */
+    height: auto;
+  }
+
+  .imageWrapper {
+    height: auto;
+    aspect-ratio: 4/3;
+    width: 100%;
+    border-radius: var(--radius-xl);
+    transform: none;
+    margin-top: var(--space-4);
+  }
+
+  .slide.active .imageWrapper {
+    transform: none;
+  }
+
+  /* Show mobile dots below image */
+  .mobileDots {
+    display: flex;
+    justify-content: center;
+    gap: var(--space-3);
+    padding: var(--space-4) 0;
+  }
+
+  /* Hide main dots on mobile */
+  .dots {
+    display: none;
+  }
+
+  .textContent {
+    padding: 0;
+    text-align: center;
+  }
+
+  .contentWrapper {
+    margin: 0 auto;
+  }
+
+  .navBtn {
+    display: none;
+  }
+  
+  .slideTitle {
+    font-size: var(--text-4xl);
+  }
+}
+
+@media (max-width: 768px) {
+  .imageWrapper {
+    height: auto;
+    aspect-ratio: 4/3;
+  }
+  
+  .slideTitle {
+    font-size: var(--text-3xl);
+  }
+}

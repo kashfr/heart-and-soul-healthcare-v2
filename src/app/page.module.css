@@ -1,141 +1,362 @@
-.page {
-  --background: #fafafa;
-  --foreground: #fff;
-
-  --text-primary: #000;
-  --text-secondary: #666;
-
-  --button-primary-hover: #383838;
-  --button-secondary-hover: #f2f2f2;
-  --button-secondary-border: #ebebeb;
-
-  display: flex;
-  min-height: 100vh;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-geist-sans);
-  background-color: var(--background);
-}
-
-.main {
-  display: flex;
-  min-height: 100vh;
-  width: 100%;
-  max-width: 800px;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: space-between;
-  background-color: var(--foreground);
-  padding: 120px 60px;
-}
-
-.intro {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  text-align: left;
-  gap: 24px;
-}
-
-.intro h1 {
-  max-width: 320px;
-  font-size: 40px;
+/* Section Label */
+.sectionLabel {
+  display: inline-block;
+  font-size: var(--text-sm);
   font-weight: 600;
-  line-height: 48px;
-  letter-spacing: -2.4px;
-  text-wrap: balance;
-  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--color-accent);
+  margin-bottom: var(--space-4);
 }
 
-.intro p {
-  max-width: 440px;
-  font-size: 18px;
-  line-height: 32px;
-  text-wrap: balance;
-  color: var(--text-secondary);
+/* Trust Section */
+.trustSection {
+  background: var(--color-primary);
+  padding: var(--space-10) 0;
+  margin-top: -4px;
 }
 
-.intro a {
-  font-weight: 500;
-  color: var(--text-primary);
+.trustGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-8);
 }
 
-.ctas {
+.trustItem {
+  text-align: center;
   display: flex;
-  flex-direction: row;
-  width: 100%;
-  max-width: 440px;
-  gap: 16px;
-  font-size: 14px;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
-.ctas a {
+.trustNumber {
+  font-family: var(--font-heading);
+  font-size: var(--text-4xl);
+  font-weight: 700;
+  color: var(--color-gold);
+}
+
+.trustLabel {
+  font-size: var(--text-sm);
+  color: var(--color-gray-300);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* Intro Section */
+.introSection {
+  overflow: hidden;
+}
+
+.introGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-16);
+  align-items: center;
+}
+
+.introContent h2 {
+  margin-bottom: var(--space-6);
+}
+
+.introContent p {
+  color: var(--color-gray-600);
+  line-height: 1.8;
+}
+
+.introActions {
+  display: flex;
+  gap: var(--space-4);
+  margin-top: var(--space-8);
+}
+
+.introImage {
+  position: relative;
+}
+
+.imageWrapper {
+  position: relative;
+  aspect-ratio: 4/3;
+  background-color: var(--color-gray-100);
+  border-radius: var(--radius-2xl);
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+}
+
+.placeholderContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--color-gray-400);
+  text-align: center;
+}
+
+.placeholderContent span {
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.experienceBadge {
+  position: absolute;
+  bottom: var(--space-6);
+  left: calc(var(--space-6) * -1);
+  background: var(--color-white);
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.experienceBadge svg {
+  color: var(--color-accent);
+}
+
+.badgeNumber {
+  display: block;
+  font-family: var(--font-heading);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  color: var(--color-primary);
+  line-height: 1;
+}
+
+.badgeText {
+  font-size: var(--text-sm);
+  color: var(--color-gray-500);
+}
+
+/* Programs Section */
+.programsGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-6);
+}
+
+.programsCta {
+  text-align: center;
+  margin-top: var(--space-10);
+}
+
+/* Values Section */
+.valuesGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-16);
+  align-items: center;
+}
+
+.valuesContent h2 {
+  margin-bottom: var(--space-5);
+}
+
+.valuesContent > p {
+  color: var(--color-gray-600);
+  margin-bottom: var(--space-8);
+}
+
+.valuesList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.valueItem {
+  display: flex;
+  gap: var(--space-4);
+}
+
+.valueIcon {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(45, 140, 140, 0.1), rgba(45, 140, 140, 0.2));
+  border-radius: var(--radius-lg);
+  color: var(--color-accent);
+}
+
+.valueItem h4 {
+  font-size: var(--text-lg);
+  margin-bottom: var(--space-2);
+  color: var(--color-primary);
+}
+
+.valueItem p {
+  font-size: var(--text-sm);
+  color: var(--color-gray-600);
+  margin: 0;
+  line-height: 1.6;
+}
+
+.valuesImage {
+  position: relative;
+}
+
+/* Testimonial Section */
+.testimonialSection {
+  text-align: center;
+}
+
+.testimonialContent {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.stars {
   display: flex;
   justify-content: center;
+  gap: var(--space-2);
+  color: var(--color-gold);
+  margin-bottom: var(--space-6);
+}
+
+.quote {
+  font-size: var(--text-2xl);
+  font-style: italic;
+  line-height: 1.6;
+  color: var(--color-white);
+  margin-bottom: var(--space-8);
+}
+
+.testimonialAuthor {
+  display: flex;
   align-items: center;
-  height: 40px;
-  padding: 0 16px;
-  border-radius: 128px;
-  border: 1px solid transparent;
-  transition: 0.2s;
-  cursor: pointer;
-  width: fit-content;
-  font-weight: 500;
+  justify-content: center;
+  gap: var(--space-4);
 }
 
-a.primary {
-  background: var(--text-primary);
-  color: var(--background);
-  gap: 8px;
+.authorAvatar {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: var(--text-lg);
+  color: var(--color-white);
 }
 
-a.secondary {
-  border-color: var(--button-secondary-border);
+.authorName {
+  display: block;
+  font-weight: 600;
+  color: var(--color-white);
 }
 
-/* Enable hover only on non-touch devices */
-@media (hover: hover) and (pointer: fine) {
-  a.primary:hover {
-    background: var(--button-primary-hover);
-    border-color: transparent;
+.authorRole {
+  display: block;
+  font-size: var(--text-sm);
+  color: var(--color-gray-300);
+}
+
+/* CTA Section */
+.ctaSection {
+  background: var(--color-gray-50);
+}
+
+.ctaContent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-10);
+}
+
+.ctaText h2 {
+  margin-bottom: var(--space-3);
+}
+
+.ctaText p {
+  color: var(--color-gray-600);
+  margin: 0;
+  max-width: 500px;
+}
+
+.ctaActions {
+  display: flex;
+  gap: var(--space-4);
+  flex-shrink: 0;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .trustGrid {
+    grid-template-columns: repeat(2, 1fr);
   }
 
-  a.secondary:hover {
-    background: var(--button-secondary-hover);
-    border-color: transparent;
+  .introGrid,
+  .valuesGrid {
+    grid-template-columns: 1fr;
+    gap: var(--space-10);
+  }
+
+  .introImage {
+    order: -1;
+  }
+
+  .programsGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .ctaContent {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .ctaText p {
+    max-width: none;
   }
 }
 
-@media (max-width: 600px) {
-  .main {
-    padding: 48px 24px;
+@media (max-width: 768px) {
+  .introActions {
+    flex-direction: column;
   }
 
-  .intro {
-    gap: 16px;
+  .introActions .btn {
+    width: 100%;
+    justify-content: center;
   }
 
-  .intro h1 {
-    font-size: 32px;
-    line-height: 40px;
-    letter-spacing: -1.92px;
+  .experienceBadge {
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(var(--space-6) * -1);
+  }
+
+  .programsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .quote {
+    font-size: var(--text-xl);
+  }
+
+  .ctaActions {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .ctaActions .btn {
+    width: 100%;
+    justify-content: center;
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  .logo {
-    filter: invert();
+@media (max-width: 480px) {
+  .trustGrid {
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-4);
   }
 
-  .page {
-    --background: #000;
-    --foreground: #000;
-
-    --text-primary: #ededed;
-    --text-secondary: #999;
-
-    --button-primary-hover: #ccc;
-    --button-secondary-hover: #1a1a1a;
-    --button-secondary-border: #1a1a1a;
+  .trustNumber {
+    font-size: var(--text-3xl);
   }
 }

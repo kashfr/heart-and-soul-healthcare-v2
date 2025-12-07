@@ -1,0 +1,213 @@
+.mapContainer {
+  position: relative;
+  width: 100%;
+  height: 500px;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  box-shadow: var(--shadow-xl);
+}
+
+.map {
+  width: 100%;
+  height: 100%;
+}
+
+/* Placeholder when no API key */
+.mapPlaceholder {
+  width: 100%;
+  height: 500px;
+  background: linear-gradient(135deg, var(--color-gray-100), var(--color-gray-200));
+  border-radius: var(--radius-xl);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.placeholderContent {
+  padding: var(--space-8);
+}
+
+.placeholderTitle {
+  display: block;
+  font-family: var(--font-heading);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  color: var(--color-primary);
+  margin-bottom: var(--space-4);
+}
+
+.placeholderContent p {
+  color: var(--color-gray-600);
+  margin-bottom: var(--space-2);
+}
+
+.placeholderNote {
+  font-size: var(--text-sm);
+  color: var(--color-gray-500);
+  font-family: monospace;
+}
+
+/* Office Marker */
+.officeMarker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  color: var(--color-accent);
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+  cursor: pointer;
+  transition: transform var(--transition-fast);
+}
+
+.officeMarker:hover {
+  transform: scale(1.1);
+}
+
+/* County Markers */
+.countyMarker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  white-space: nowrap;
+}
+
+.countyMarker:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.countyMarker.primary {
+  background: var(--color-accent);
+  color: var(--color-white);
+}
+
+.countyMarker.secondary {
+  background: var(--color-gold);
+  color: var(--color-primary-dark);
+}
+
+/* Info Windows */
+.infoWindow {
+  padding: var(--space-2);
+  min-width: 180px;
+}
+
+.infoWindow h4 {
+  font-family: var(--font-heading);
+  font-size: var(--text-base);
+  font-weight: 700;
+  color: var(--color-primary);
+  margin-bottom: var(--space-2);
+}
+
+.infoWindow p {
+  font-size: var(--text-sm);
+  color: var(--color-gray-600);
+  margin: 0;
+  margin-bottom: var(--space-1);
+}
+
+.infoPhone {
+  font-weight: 600;
+  color: var(--color-accent) !important;
+}
+
+.infoNote {
+  font-size: var(--text-xs) !important;
+  color: var(--color-gray-500) !important;
+}
+
+/* Legend */
+.legend {
+  position: absolute;
+  bottom: var(--space-4);
+  left: var(--space-4);
+  background: var(--color-white);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: 10;
+}
+
+.legend h4 {
+  font-family: var(--font-heading);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-primary);
+  margin-bottom: var(--space-3);
+}
+
+.legendItems {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-gray-700);
+}
+
+.legendDot {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.legendDot.office {
+  background: var(--color-accent);
+}
+
+.legendDot.primary {
+  background: var(--color-accent);
+}
+
+.legendDot.secondary {
+  background: var(--color-gold);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .mapContainer {
+    height: 400px;
+    border-radius: 0;
+  }
+
+  .legend {
+    bottom: var(--space-2);
+    left: var(--space-2);
+    padding: var(--space-3);
+  }
+
+  .countyMarker {
+    font-size: 10px;
+    padding: var(--space-1) var(--space-2);
+  }
+}
+
+@media (max-width: 480px) {
+  .mapContainer {
+    height: 350px;
+  }
+
+  .legend {
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: var(--space-2);
+  }
+}
