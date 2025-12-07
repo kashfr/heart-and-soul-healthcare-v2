@@ -140,12 +140,66 @@
   z-index: 10;
 }
 
-.legend h4 {
+.legendHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-3);
+}
+
+.legendHeader h4 {
   font-family: var(--font-heading);
   font-size: var(--text-sm);
   font-weight: 600;
   color: var(--color-primary);
-  margin-bottom: var(--space-3);
+  margin: 0;
+}
+
+.legendClose {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: var(--color-gray-100);
+  border-radius: var(--radius-full);
+  color: var(--color-gray-600);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.legendClose:hover {
+  background: var(--color-gray-200);
+  color: var(--color-gray-800);
+}
+
+/* Legend Toggle Button - shows when legend is closed */
+.legendToggle {
+  position: absolute;
+  bottom: var(--space-4);
+  left: var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-white);
+  border: none;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  color: var(--color-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  z-index: 10;
+  transition: all var(--transition-fast);
+}
+
+.legendToggle:hover {
+  background: var(--color-gray-50);
+  box-shadow: var(--shadow-xl);
 }
 
 .legendItems {

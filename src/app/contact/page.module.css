@@ -250,6 +250,23 @@
   margin-bottom: var(--space-6);
 }
 
+/* Error Message */
+.errorMessage {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-lg);
+  color: #dc2626;
+  margin-bottom: var(--space-4);
+}
+
+.errorMessage svg {
+  flex-shrink: 0;
+}
+
 /* Map Section */
 .mapSection {
   padding: var(--space-16) 0;

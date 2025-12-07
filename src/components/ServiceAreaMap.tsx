@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { APIProvider, Map, AdvancedMarker, InfoWindow } from '@vis.gl/react-google-maps';
+import { X, MapPin } from 'lucide-react';
 import styles from './ServiceAreaMap.module.css';
 
 // Approximate center coordinates for each service county in Georgia
@@ -45,6 +46,7 @@ interface ServiceAreaMapProps {
 export default function ServiceAreaMap({ apiKey }: ServiceAreaMapProps) {
   const [selectedCounty, setSelectedCounty] = useState<typeof serviceCounties[0] | null>(null);
   const [showOfficeInfo, setShowOfficeInfo] = useState(false);
+  const [showLegend, setShowLegend] = useState(true);
 
   const handleCountyClick = useCallback((county: typeof serviceCounties[0]) => {
     setSelectedCounty(county);
@@ -144,24 +146,47 @@ export default function ServiceAreaMap({ apiKey }: ServiceAreaMapProps) {
         </Map>
       </APIProvider>
 
+      {/* Legend Toggle Button - shows when legend is hidden */}
+      {!showLegend && (
+        <button 
+          className={styles.legendToggle}
+          onClick={() => setShowLegend(true)}
+          aria-label="Show service areas legend"
+        >
+          <MapPin size={18} />
+          <span>Areas</span>
+        </button>
+      )}
+
       {/* Legend */}
-      <div className={styles.legend}>
-        <h4>Service Areas</h4>
-        <div className={styles.legendItems}>
-          <div className={styles.legendItem}>
-            <span className={`${styles.legendDot} ${styles.office}`}></span>
-            <span>Our Office</span>
+      {showLegend && (
+        <div className={styles.legend}>
+          <div className={styles.legendHeader}>
+            <h4>Service Areas</h4>
+            <button 
+              className={styles.legendClose}
+              onClick={() => setShowLegend(false)}
+              aria-label="Close legend"
+            >
+              <X size={18} />
+            </button>
           </div>
-          <div className={styles.legendItem}>
-            <span className={`${styles.legendDot} ${styles.primary}`}></span>
-            <span>Primary Service (10 counties)</span>
-          </div>
-          <div className={styles.legendItem}>
-            <span className={`${styles.legendDot} ${styles.secondary}`}></span>
-            <span>Extended Service (10 counties)</span>
+          <div className={styles.legendItems}>
+            <div className={styles.legendItem}>
+              <span className={`${styles.legendDot} ${styles.office}`}></span>
+              <span>Our Office</span>
+            </div>
+            <div className={styles.legendItem}>
+              <span className={`${styles.legendDot} ${styles.primary}`}></span>
+              <span>Primary Service (10 counties)</span>
+            </div>
+            <div className={styles.legendItem}>
+              <span className={`${styles.legendDot} ${styles.secondary}`}></span>
+              <span>Extended Service (10 counties)</span>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

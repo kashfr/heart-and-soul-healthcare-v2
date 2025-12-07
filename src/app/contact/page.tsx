@@ -10,8 +10,11 @@ import {
   Send,
   MessageSquare,
   ArrowRight,
-  CheckCircle
+  CheckCircle,
+  AlertCircle
 } from 'lucide-react';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import ServiceAreaMap from '@/components/ServiceAreaMap';
 import styles from './page.module.css';
 
@@ -51,6 +54,8 @@ export default function ContactPage() {
     message: '',
   });
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setFormData({
@@ -59,11 +64,24 @@ export default function ContactPage() {
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // In production, this would submit to a backend
-    console.log('Form submitted:', formData);
-    setIsSubmitted(true);
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      await addDoc(collection(db, 'contactSubmissions'), {
+        ...formData,
+        submittedAt: serverTimestamp(),
+        status: 'new',
+      });
+      setIsSubmitted(true);
+    } catch (err) {
+      console.error('Error submitting form:', err);
+      setError('There was an error submitting your message. Please try again or call us directly.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -234,8 +252,18 @@ export default function ContactPage() {
                       required
                     />
                   </div>
-                  <button type="submit" className="btn btn-primary btn-lg">
-                    <Send size={20} /> Send Message
+                  {error && (
+                    <div className={styles.errorMessage}>
+                      <AlertCircle size={20} />
+                      <span>{error}</span>
+                    </div>
+                  )}
+                  <button 
+                    type="submit" 
+                    className="btn btn-primary btn-lg"
+                    disabled={isSubmitting}
+                  >
+                    <Send size={20} /> {isSubmitting ? 'Sending...' : 'Send Message'}
                   </button>
                 </form>
               )}

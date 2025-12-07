@@ -14,8 +14,11 @@ import {
   CheckCircle,
   ArrowRight,
   Shield,
-  Clock
+  Clock,
+  AlertCircle
 } from 'lucide-react';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import styles from './page.module.css';
 
 const programs = [
@@ -39,6 +42,8 @@ const referralSources = [
 export default function ReferralPage() {
   const [step, setStep] = useState(1);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     // Client Information
     clientFirstName: '',
@@ -77,11 +82,52 @@ export default function ReferralPage() {
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // In production, this would submit to a backend
-    console.log('Referral submitted:', formData);
-    setIsSubmitted(true);
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      await addDoc(collection(db, 'referralSubmissions'), {
+        client: {
+          firstName: formData.clientFirstName,
+          lastName: formData.clientLastName,
+          dob: formData.clientDOB,
+          phone: formData.clientPhone,
+          email: formData.clientEmail,
+          address: formData.clientAddress,
+          city: formData.clientCity,
+          state: formData.clientState,
+          zip: formData.clientZip,
+        },
+        program: {
+          interest: formData.programInterest,
+          medicaidNumber: formData.medicaidNumber,
+          insuranceProvider: formData.insuranceProvider,
+          insuranceNumber: formData.insuranceNumber,
+        },
+        referrer: {
+          source: formData.referralSource,
+          name: formData.referrerName,
+          phone: formData.referrerPhone,
+          email: formData.referrerEmail,
+          organization: formData.referrerOrganization,
+        },
+        details: {
+          serviceNeeds: formData.serviceNeeds,
+          urgency: formData.urgency,
+          additionalNotes: formData.additionalNotes,
+        },
+        submittedAt: serverTimestamp(),
+        status: 'new',
+      });
+      setIsSubmitted(true);
+    } catch (err) {
+      console.error('Error submitting referral:', err);
+      setError('There was an error submitting your referral. Please try again or call us directly.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const nextStep = () => setStep(step + 1);
@@ -559,13 +605,21 @@ export default function ReferralPage() {
                   Next Step <ArrowRight size={18} />
                 </button>
               ) : (
-                <button 
-                  type="submit" 
-                  className="btn btn-gold btn-lg"
-                  disabled={!isStepValid()}
-                >
-                  <Send size={20} /> Submit Referral
-                </button>
+                <div className={styles.submitSection}>
+                  {error && (
+                    <div className={styles.errorMessage}>
+                      <AlertCircle size={20} />
+                      <span>{error}</span>
+                    </div>
+                  )}
+                  <button 
+                    type="submit" 
+                    className="btn btn-gold btn-lg"
+                    disabled={!isStepValid() || isSubmitting}
+                  >
+                    <Send size={20} /> {isSubmitting ? 'Submitting...' : 'Submit Referral'}
+                  </button>
+                </div>
               )}
             </div>
           </form>
