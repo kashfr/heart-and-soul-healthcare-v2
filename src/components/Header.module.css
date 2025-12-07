@@ -30,6 +30,8 @@
   background: var(--color-white);
   box-shadow: var(--shadow-sm);
   transition: all var(--transition-base);
+  position: relative;
+  z-index: 1001;
 }
 
 .header.scrolled .nav {
@@ -212,11 +214,12 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: var(--color-white);
-  padding: calc(120px + var(--space-6)) var(--space-6) var(--space-6);
+  background: linear-gradient(180deg, var(--color-white) 0%, var(--color-gray-50) 100%);
+  padding: calc(120px + var(--space-8)) var(--space-6) var(--space-8);
   transform: translateX(100%);
   transition: transform var(--transition-base);
   overflow-y: auto;
+  z-index: 999;
 }
 
 .mobileMenu.open {
@@ -227,32 +230,63 @@
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-2);
 }
 
-.mobileNavLinks > li > a,
-.mobileDropdownTrigger {
-  display: block;
+.mobileNavLinks > li > a {
+  display: flex;
+  align-items: center;
   font-size: var(--text-lg);
   font-weight: 500;
   color: var(--color-gray-700);
-  padding: var(--space-3) 0;
-  border: none;
-  background: none;
-  width: 100%;
-  text-align: left;
-  font-family: var(--font-body);
-  cursor: pointer;
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--color-white);
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-fast);
+  text-decoration: none;
+}
+
+.mobileNavLinks > li > a:hover,
+.mobileNavLinks > li > a:active {
+  background: var(--color-primary);
+  color: var(--color-white);
+  transform: translateX(4px);
+  box-shadow: var(--shadow-md);
+}
+
+.mobileDropdown {
+  display: flex;
+  flex-direction: column;
 }
 
 .mobileDropdownTrigger {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  font-size: var(--text-lg);
+  font-weight: 500;
+  color: var(--color-gray-700);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--color-white);
+  box-shadow: var(--shadow-sm);
+  border: none;
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.mobileDropdownTrigger:hover,
+.mobileDropdownTrigger:active {
+  background: var(--color-gray-100);
 }
 
 .mobileDropdownTrigger svg {
   transition: transform var(--transition-fast);
+  color: var(--color-accent);
 }
 
 .mobileDropdownTrigger svg.rotated {
@@ -261,21 +295,67 @@
 
 .mobileDropdownMenu {
   list-style: none;
+  margin-top: var(--space-2);
+  margin-left: var(--space-4);
   padding-left: var(--space-4);
+  border-left: 3px solid var(--color-accent);
   max-height: 0;
   overflow: hidden;
-  transition: max-height var(--transition-base);
+  transition: max-height var(--transition-base), opacity var(--transition-fast);
+  opacity: 0;
 }
 
 .mobileDropdownMenu.open {
   max-height: 500px;
+  opacity: 1;
 }
 
 .mobileDropdownMenu li a {
   display: block;
-  padding: var(--space-2) 0;
+  padding: var(--space-3) var(--space-4);
   color: var(--color-gray-600);
   font-size: var(--text-base);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+  text-decoration: none;
+}
+
+.mobileDropdownMenu li a:hover,
+.mobileDropdownMenu li a:active {
+  color: var(--color-accent);
+  background: rgba(45, 140, 140, 0.08);
+  transform: translateX(4px);
+}
+
+/* Mobile Referral Button - Full width, styled properly */
+.mobileNavLinks > li:last-child {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-gray-200);
+}
+
+.mobileNavLinks > li:last-child > a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--color-gold), var(--color-gold-dark));
+  color: var(--color-primary-dark);
+  font-weight: 700;
+  font-size: var(--text-lg);
+  padding: var(--space-4) var(--space-6);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 4px 15px rgba(212, 168, 75, 0.4);
+  text-decoration: none;
+  border: none;
+  outline: none;
+}
+
+.mobileNavLinks > li:last-child > a:hover,
+.mobileNavLinks > li:last-child > a:active {
+  background: linear-gradient(135deg, var(--color-gold-light), var(--color-gold));
+  transform: translateY(-2px) translateX(0);
+  box-shadow: 0 6px 20px rgba(212, 168, 75, 0.5);
+  color: var(--color-primary-dark);
 }
 
 @media (max-width: 1024px) {

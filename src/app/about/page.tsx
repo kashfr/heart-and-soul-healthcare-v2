@@ -1,5 +1,6 @@
 import { Metadata } from 'next';
 import Link from 'next/link';
+import Image from 'next/image';
 import { 
   Heart, 
   Target, 
@@ -113,10 +114,13 @@ export default function AboutPage() {
         <div className="container">
           <div className={styles.storyGrid}>
             <div className={styles.storyImage}>
-              <div className={styles.imagePlaceholder}>
-                <Heart size={64} />
-                <span>Company Story Image</span>
-              </div>
+              <Image
+                src="/images/company-story.png"
+                alt="Compassionate caregiver holding hands with a client in their home"
+                fill
+                style={{ objectFit: 'cover' }}
+                className={styles.storyImg}
+              />
             </div>
             <div className={styles.storyContent}>
               <span className={styles.sectionLabel}>Our Journey</span>

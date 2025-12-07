@@ -119,7 +119,6 @@ export default function Header() {
           <li>
             <Link 
               href="/referral" 
-              className="btn btn-primary"
               onClick={() => setIsMobileMenuOpen(false)}
             >
               Make a Referral
