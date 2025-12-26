@@ -53,7 +53,7 @@ export default function ICWPPage() {
       programGoal="The goal of the Independent Care Waiver Program is to assist functionally impaired adults in achieving dignified and reasonably independent lives within their communities. Through comprehensive support services, we help individuals maintain their independence, prevent institutionalization, and improve their overall quality of life."
       services={services}
       accentColor="sage"
-      populationImage="/images/icwp-population.png"
+      populationImage="/images/icwp-population-v2.png"
       goalImage="/images/icwp-goal-v2.png"
       imageAspectRatio="1/1"
     />

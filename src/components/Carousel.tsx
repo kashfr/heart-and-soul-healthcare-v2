@@ -42,7 +42,7 @@ const slides: CarouselSlide[] = [
     description: 'Empowering adults with physical impairments or traumatic brain injuries to achieve independent, dignified lives.',
     href: '/programs/icwp',
     buttonText: 'Discover ICWP',
-    image: '/images/icwp-slide-v2.png',
+    image: '/images/icwp-slide-v3.png',
   },
   {
     id: 'edwp',
