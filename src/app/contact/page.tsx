@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { processContactSubmission } from '@/app/actions';
 import ServiceAreaMap from '@/components/ServiceAreaMap';
 import styles from './page.module.css';
 
@@ -70,11 +71,16 @@ export default function ContactPage() {
     setError(null);
 
     try {
+      // 1. Save to Firestore
       await addDoc(collection(db, 'contactSubmissions'), {
         ...formData,
         submittedAt: serverTimestamp(),
         status: 'new',
       });
+
+      // 2. Send Email Notification & Add to CRM
+      await processContactSubmission(formData);
+
       setIsSubmitted(true);
     } catch (err) {
       console.error('Error submitting form:', err);

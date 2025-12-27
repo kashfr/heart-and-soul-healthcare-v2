@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { processReferralSubmission } from '@/app/actions';
 import styles from './page.module.css';
 
 const programs = [
@@ -88,7 +89,7 @@ export default function ReferralPage() {
     setError(null);
 
     try {
-      await addDoc(collection(db, 'referralSubmissions'), {
+      const submissionData = {
         client: {
           firstName: formData.clientFirstName,
           lastName: formData.clientLastName,
@@ -118,9 +119,18 @@ export default function ReferralPage() {
           urgency: formData.urgency,
           additionalNotes: formData.additionalNotes,
         },
+      };
+
+      // 1. Save to Firestore
+      await addDoc(collection(db, 'referralSubmissions'), {
+        ...submissionData,
         submittedAt: serverTimestamp(),
         status: 'new',
       });
+
+      // 2. Send Email Notification & Add to CRM
+      await processReferralSubmission(submissionData);
+
       setIsSubmitted(true);
     } catch (err) {
       console.error('Error submitting referral:', err);
