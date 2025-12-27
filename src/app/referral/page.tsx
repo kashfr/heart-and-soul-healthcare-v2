@@ -77,11 +77,28 @@ export default function ReferralPage() {
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
+    const { name, value } = e.target;
+    
+    // If selecting self-referral, auto-fill referrer info with client info
+    if (name === 'referralSource' && value === 'self') {
+      setFormData({
+        ...formData,
+        referralSource: value,
+        referrerName: `${formData.clientFirstName} ${formData.clientLastName}`.trim(),
+        referrerPhone: formData.clientPhone,
+        referrerEmail: formData.clientEmail,
+        referrerOrganization: '',
+      });
+    } else {
+      setFormData({
+        ...formData,
+        [name]: value,
+      });
+    }
   };
+
+  // Check if self-referral is selected (skip Step 3)
+  const isSelfReferral = formData.referralSource === 'self';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -140,23 +157,36 @@ export default function ReferralPage() {
     }
   };
 
-  const nextStep = () => setStep(step + 1);
-  const prevStep = () => setStep(step - 1);
-
   const isStepValid = () => {
     switch (step) {
       case 1:
         return formData.clientFirstName && formData.clientLastName && formData.clientDOB && formData.clientPhone;
       case 2:
-        return formData.programInterest;
+        return formData.programInterest && formData.referralSource;
       case 3:
-        return formData.referralSource && formData.referrerName;
+        // For self-referral, Step 3 is skipped so always valid
+        if (isSelfReferral) return true;
+        return formData.referrerName;
       case 4:
         return formData.serviceNeeds;
       default:
         return true;
     }
   };
+
+  // Dynamic step navigation
+  const getNextStep = () => {
+    if (step === 2 && isSelfReferral) return 4; // Skip Step 3 for self-referrals
+    return step + 1;
+  };
+
+  const getPrevStep = () => {
+    if (step === 4 && isSelfReferral) return 2; // Skip Step 3 when going back
+    return step - 1;
+  };
+
+  const nextStep = () => setStep(getNextStep());
+  const prevStep = () => setStep(getPrevStep());
 
   if (isSubmitted) {
     return (
@@ -428,6 +458,22 @@ export default function ReferralPage() {
                     </select>
                   </div>
                   <div className="form-group">
+                    <label htmlFor="referralSource" className="form-label">Who is making this referral? *</label>
+                    <select
+                      id="referralSource"
+                      name="referralSource"
+                      className="form-select"
+                      value={formData.referralSource}
+                      onChange={handleChange}
+                      required
+                    >
+                      <option value="">Select referral source</option>
+                      {referralSources.map((source) => (
+                        <option key={source.value} value={source.value}>{source.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
                     <label htmlFor="medicaidNumber" className="form-label">Medicaid Number (if applicable)</label>
                     <input
                       type="text"
@@ -467,31 +513,15 @@ export default function ReferralPage() {
               </div>
             )}
 
-            {/* Step 3: Referral Source */}
-            {step === 3 && (
+            {/* Step 3: Referrer Contact Info (skipped for self-referrals) */}
+            {step === 3 && !isSelfReferral && (
               <div className={styles.formStep}>
-                <h2><FileText size={28} /> Referral Source Information</h2>
+                <h2><FileText size={28} /> Referrer Contact Information</h2>
                 <p className={styles.stepDescription}>
-                  Please provide information about who is making this referral.
+                  Please provide your contact information so we can follow up on this referral.
                 </p>
                 
                 <div className={styles.formGridSingle}>
-                  <div className="form-group">
-                    <label htmlFor="referralSource" className="form-label">Referral Source *</label>
-                    <select
-                      id="referralSource"
-                      name="referralSource"
-                      className="form-select"
-                      value={formData.referralSource}
-                      onChange={handleChange}
-                      required
-                    >
-                      <option value="">Select source type</option>
-                      {referralSources.map((source) => (
-                        <option key={source.value} value={source.value}>{source.label}</option>
-                      ))}
-                    </select>
-                  </div>
                   <div className="form-group">
                     <label htmlFor="referrerName" className="form-label">Your Name *</label>
                     <input
