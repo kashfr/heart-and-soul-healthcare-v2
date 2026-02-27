@@ -69,12 +69,12 @@
 
 .hero.gold .heroIcon {
   background: linear-gradient(135deg, var(--color-gold), var(--color-gold-dark));
-  color: var(--color-primary);
+  color: var(--color-gray-900);
 }
 
 .hero.sage .heroIcon {
   background: linear-gradient(135deg, var(--color-sage), var(--color-sage-dark));
-  color: var(--color-primary);
+  color: var(--color-gray-900);
 }
 
 .hero.primary .heroIcon {
@@ -116,7 +116,7 @@
 
 .heroActions .btn-secondary:hover {
   background: var(--color-white);
-  color: var(--color-primary);
+  color: var(--color-gray-900);
 }
 
 /* Content Sections */
@@ -206,12 +206,12 @@
 .serviceCard.teal .serviceIcon { color: var(--color-accent); }
 .serviceCard.gold .serviceIcon { color: var(--color-gold-dark); }
 .serviceCard.sage .serviceIcon { color: var(--color-sage-dark); }
-.serviceCard.primary .serviceIcon { color: var(--color-primary); }
+.serviceCard.primary .serviceIcon { color: var(--color-gray-900); }
 
 .serviceContent h4 {
   font-size: var(--text-base);
   margin-bottom: var(--space-2);
-  color: var(--color-primary);
+  color: var(--color-gray-900);
 }
 
 .serviceContent p {
@@ -232,13 +232,13 @@
 }
 
 .ctaContent h2 {
-  color: var(--color-white);
+  color: var(--color-gray-900);
   margin-bottom: var(--space-4);
 }
 
 .ctaContent p {
   font-size: var(--text-lg);
-  color: var(--color-gray-200);
+  color: var(--color-gray-600);
   margin-bottom: var(--space-8);
 }
 

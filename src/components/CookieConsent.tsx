@@ -38,9 +38,7 @@ export default function CookieConsent() {
           <div className={styles.text}>
             <h3 className={styles.title}>We Value Your Privacy</h3>
             <p className={styles.description}>
-              We use cookies to enhance your browsing experience, serve personalized content, 
-              and analyze our traffic. By clicking &quot;Accept All&quot;, you consent to our use of cookies.
-              You can manage your preferences at any time.
+              We use cookies to enhance your experience and analyze site traffic.
             </p>
           </div>
         </div>

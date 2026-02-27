@@ -92,7 +92,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 2px;
-  color: var(--color-gold);
+  color: var(--color-accent);
   margin-bottom: var(--space-4);
 }
 
@@ -125,7 +125,7 @@
 
 .missionCard h3 {
   margin-bottom: var(--space-4);
-  color: var(--color-primary);
+  color: var(--color-gray-900);
 }
 
 .missionCard p {
@@ -217,7 +217,7 @@
 .valueCard h4 {
   font-size: var(--text-lg);
   margin-bottom: var(--space-3);
-  color: var(--color-primary);
+  color: var(--color-gray-900);
 }
 
 .valueCard p {
@@ -229,7 +229,7 @@
 
 /* Credentials Section */
 .credentialsSection {
-  color: var(--color-white);
+  color: var(--color-gray-900);
 }
 
 .credentialsGrid {
@@ -240,12 +240,12 @@
 }
 
 .credentialsContent h2 {
-  color: var(--color-white);
+  color: var(--color-gray-900);
   margin-bottom: var(--space-5);
 }
 
 .credentialsContent p {
-  color: var(--color-gray-300);
+  color: var(--color-gray-600);
   line-height: 1.8;
 }
 
@@ -260,9 +260,9 @@
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-4) var(--space-5);
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--color-white);
   border-radius: var(--radius-lg);
-  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-sm);
 }
 
 .credentialItem svg {
@@ -306,7 +306,7 @@
 .teamCard h4 {
   font-size: var(--text-base);
   margin-bottom: var(--space-1);
-  color: var(--color-primary);
+  color: var(--color-gray-900);
 }
 
 .teamRole {

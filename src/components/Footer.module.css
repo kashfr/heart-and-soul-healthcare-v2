@@ -1,6 +1,6 @@
 .footer {
-  background: var(--color-primary);
-  color: var(--color-white);
+  background: #E8E3D9;
+  color: var(--color-gray-800);
 }
 
 .footerMain {
@@ -55,7 +55,7 @@
 }
 
 .companyDesc {
-  color: var(--color-gray-300);
+  color: var(--color-gray-700);
   font-size: var(--text-sm);
   line-height: 1.7;
   margin-bottom: var(--space-6);
@@ -72,9 +72,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-primary-light);
+  background: var(--color-primary-dark);
   border-radius: var(--radius-full);
-  color: var(--color-white);
+  color: var(--color-gray-800);
   transition: all var(--transition-fast);
 }
 
@@ -87,7 +87,7 @@
   font-family: var(--font-heading);
   font-size: var(--text-lg);
   font-weight: 600;
-  color: var(--color-white);
+  color: var(--color-gray-900);
   margin-bottom: var(--space-5);
   position: relative;
   padding-bottom: var(--space-3);
@@ -112,7 +112,7 @@
 }
 
 .footerLinks li a {
-  color: var(--color-gray-300);
+  color: var(--color-gray-700);
   font-size: var(--text-sm);
   transition: all var(--transition-fast);
   display: inline-block;
@@ -134,7 +134,7 @@
   display: flex;
   align-items: flex-start;
   gap: var(--space-3);
-  color: var(--color-gray-300);
+  color: var(--color-gray-700);
   font-size: var(--text-sm);
 }
 
@@ -147,7 +147,7 @@
 .footerBottom {
   background: var(--color-primary-dark);
   padding: var(--space-5) 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
 }
 
 .footerBottomContent {
@@ -155,7 +155,7 @@
   justify-content: space-between;
   align-items: center;
   font-size: var(--text-sm);
-  color: var(--color-gray-400);
+  color: var(--color-gray-600);
 }
 
 @media (max-width: 1024px) {

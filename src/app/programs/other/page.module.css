@@ -63,7 +63,7 @@
   background: linear-gradient(135deg, var(--color-gold), var(--color-gold-dark));
   border-radius: var(--radius-xl);
   margin: 0 auto var(--space-6);
-  color: var(--color-primary);
+  color: var(--color-gray-900);
 }
 
 .heroLabel {
@@ -131,7 +131,7 @@
 .programHeader h2 {
   font-size: var(--text-xl);
   margin: 0;
-  color: var(--color-primary);
+  color: var(--color-gray-900);
 }
 
 .programDescription {
@@ -183,7 +183,7 @@
   justify-content: center;
   background: linear-gradient(135deg, var(--color-gold-light), var(--color-gold));
   border-radius: var(--radius-full);
-  color: var(--color-primary);
+  color: var(--color-gray-900);
   margin: 0 auto var(--space-6);
 }
 
@@ -212,13 +212,13 @@
 }
 
 .ctaContent h2 {
-  color: var(--color-white);
+  color: var(--color-gray-900);
   margin-bottom: var(--space-4);
 }
 
 .ctaContent p {
   font-size: var(--text-lg);
-  color: var(--color-gray-200);
+  color: var(--color-gray-600);
   margin-bottom: var(--space-8);
 }
 

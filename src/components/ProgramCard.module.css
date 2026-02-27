@@ -71,7 +71,7 @@
 
 .card.primary .iconWrapper {
   background: linear-gradient(135deg, rgba(26, 43, 74, 0.1), rgba(26, 43, 74, 0.2));
-  color: var(--color-primary);
+  color: var(--color-gray-900);
 }
 
 .card:hover .iconWrapper {
@@ -111,7 +111,7 @@
 .title {
   font-size: var(--text-xl);
   font-weight: 700;
-  color: var(--color-primary);
+  color: var(--color-gray-900);
   margin-bottom: var(--space-3);
   line-height: 1.3;
 }
@@ -145,7 +145,7 @@
 }
 
 .card.primary .link {
-  color: var(--color-primary);
+  color: var(--color-gray-900);
 }
 
 .link:hover {

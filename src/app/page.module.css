@@ -120,7 +120,7 @@
   font-family: var(--font-heading);
   font-size: var(--text-2xl);
   font-weight: 700;
-  color: var(--color-primary);
+  color: var(--color-gray-900);
   line-height: 1;
 }
 
@@ -184,7 +184,7 @@
 .valueItem h4 {
   font-size: var(--text-lg);
   margin-bottom: var(--space-2);
-  color: var(--color-primary);
+  color: var(--color-gray-900);
 }
 
 .valueItem p {
@@ -220,7 +220,7 @@
   font-size: var(--text-2xl);
   font-style: italic;
   line-height: 1.6;
-  color: var(--color-white);
+  color: var(--color-gray-900);
   margin-bottom: var(--space-8);
 }
 
@@ -248,13 +248,13 @@
 .authorName {
   display: block;
   font-weight: 600;
-  color: var(--color-white);
+  color: var(--color-gray-900);
 }
 
 .authorRole {
   display: block;
   font-size: var(--text-sm);
-  color: var(--color-gray-300);
+  color: var(--color-gray-600);
 }
 
 /* CTA Section */

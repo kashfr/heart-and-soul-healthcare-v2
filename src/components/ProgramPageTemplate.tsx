@@ -163,7 +163,7 @@ export default function ProgramPageTemplate({
               <Link href="/referral" className="btn btn-gold btn-lg">
                 Make a Referral <ArrowRight size={20} />
               </Link>
-              <Link href="/contact" className="btn btn-secondary-light btn-lg">
+              <Link href="/contact" className="btn btn-secondary btn-lg">
                 <Phone size={20} /> Contact Us
               </Link>
             </div>

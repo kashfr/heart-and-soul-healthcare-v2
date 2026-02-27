@@ -118,7 +118,7 @@
 .infoCard h4 {
   font-size: var(--text-base);
   margin-bottom: var(--space-2);
-  color: var(--color-primary);
+  color: var(--color-gray-900);
 }
 
 .infoPrimary {
@@ -189,7 +189,7 @@
 
 .referralCta p {
   font-weight: 600;
-  color: var(--color-primary);
+  color: var(--color-gray-900);
   margin-bottom: var(--space-4);
 }
 
@@ -242,7 +242,7 @@
 
 .successMessage h3 {
   margin-bottom: var(--space-4);
-  color: var(--color-primary);
+  color: var(--color-gray-900);
 }
 
 .successMessage p {
@@ -280,7 +280,7 @@
 
 .mapHeader h2 {
   margin-bottom: var(--space-3);
-  color: var(--color-primary);
+  color: var(--color-gray-900);
 }
 
 .mapHeader p {
