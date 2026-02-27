@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Menu, X, ChevronDown, Heart, Phone } from 'lucide-react';
+import Image from 'next/image';
+import { Menu, X, ChevronDown, Phone } from 'lucide-react';
 import styles from './Header.module.css';
 
 const programLinks = [
@@ -46,13 +47,15 @@ export default function Header() {
         <div className="container">
           <div className={styles.navContent}>
             <Link href="/" className={styles.logo}>
-              <div className={styles.logoIcon}>
-                <Heart size={28} fill="currentColor" />
-              </div>
-              <div className={styles.logoText}>
-                <span className={styles.logoMain}>Heart & Soul</span>
-                <span className={styles.logoSub}>Healthcare</span>
-              </div>
+              <Image 
+                src="/images/logo.webp" 
+                alt="Heart & Soul Healthcare Logo" 
+                width={130} 
+                height={40} 
+                style={{ objectFit: 'contain' }} 
+                priority 
+                unoptimized 
+              />
             </Link>
 
             <ul className={styles.navLinks}>

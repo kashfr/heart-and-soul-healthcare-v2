@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import { Heart, Phone, Mail, MapPin, Clock, Facebook, Linkedin } from 'lucide-react';
+import Image from 'next/image';
+import { Phone, Mail, MapPin, Clock, Facebook, Linkedin } from 'lucide-react';
 import styles from './Footer.module.css';
 
 const programLinks = [
@@ -26,13 +27,14 @@ export default function Footer() {
             {/* Company Info */}
             <div className={styles.footerSection}>
               <div className={styles.footerLogo}>
-                <div className={styles.logoIcon}>
-                  <Heart size={24} fill="currentColor" />
-                </div>
-                <div className={styles.logoText}>
-                  <span className={styles.logoMain}>Heart & Soul</span>
-                  <span className={styles.logoSub}>Healthcare</span>
-                </div>
+                <Image 
+                  src="/images/logo.webp" 
+                  alt="Heart & Soul Healthcare Logo" 
+                  width={130} 
+                  height={40} 
+                  style={{ objectFit: 'contain' }} 
+                  unoptimized 
+                />
               </div>
               <p className={styles.companyDesc}>
                 Providing compassionate, professional home health care services 
