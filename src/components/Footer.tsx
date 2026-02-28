@@ -42,9 +42,11 @@ export default function Footer() {
                 life for individuals and families in their homes and communities.
               </p>
               <div className={styles.socialLinks}>
+                {/* TODO: Replace "#" with actual Facebook URL */}
                 <a href="#" aria-label="Facebook" className={styles.socialLink}>
                   <Facebook size={20} />
                 </a>
+                {/* TODO: Replace "#" with actual LinkedIn URL */}
                 <a href="#" aria-label="LinkedIn" className={styles.socialLink}>
                   <Linkedin size={20} />
                 </a>

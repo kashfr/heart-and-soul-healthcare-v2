@@ -40,6 +40,11 @@ const referralSources = [
   { value: 'other', label: 'Other' },
 ];
 
+const today = new Date().toISOString().split('T')[0];
+const minDOBDate = new Date();
+minDOBDate.setFullYear(minDOBDate.getFullYear() - 120);
+const minDOB = minDOBDate.toISOString().split('T')[0];
+
 export default function ReferralPage() {
   const [step, setStep] = useState(1);
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -352,6 +357,8 @@ export default function ReferralPage() {
                       className="form-input"
                       value={formData.clientDOB}
                       onChange={handleChange}
+                      max={today}
+                      min={minDOB}
                       required
                     />
                   </div>
