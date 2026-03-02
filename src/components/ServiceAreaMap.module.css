@@ -16,7 +16,11 @@
 .mapPlaceholder {
   width: 100%;
   height: 500px;
-  background: linear-gradient(135deg, var(--color-gray-100), var(--color-gray-200));
+  background: linear-gradient(
+    135deg,
+    var(--color-gray-100),
+    var(--color-gray-200)
+  );
   border-radius: var(--radius-xl);
   display: flex;
   align-items: center;
@@ -233,6 +237,35 @@
 
 .legendDot.secondary {
   background: var(--color-gold);
+}
+
+.mapControls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-4);
+}
+
+.controlBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: var(--color-white);
+  border: none;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  color: var(--color-gray-700);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.controlBtn:hover {
+  background: var(--color-gray-50);
+  color: var(--color-accent);
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
 }
 
 /* Responsive */

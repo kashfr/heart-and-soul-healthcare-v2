@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { APIProvider, Map, AdvancedMarker, InfoWindow } from '@vis.gl/react-google-maps';
-import { X, MapPin } from 'lucide-react';
+import { APIProvider, Map, AdvancedMarker, InfoWindow, useMap, MapControl, ControlPosition } from '@vis.gl/react-google-maps';
+import { X, MapPin, Maximize2 } from 'lucide-react';
 import styles from './ServiceAreaMap.module.css';
 
 // Approximate center coordinates for each service county in Georgia
@@ -32,6 +32,8 @@ const serviceCounties = [
   { name: 'Pickens', lat: 34.4644, lng: -84.4652, tier: 'secondary' },
 ];
 
+import mapStyles from './mapStyles.json';
+
 // Office location
 const officeLocation = {
   lat: 33.7872,
@@ -39,52 +41,84 @@ const officeLocation = {
   address: '1372 Peachtree St NE, Atlanta, GA 30309',
 };
 
+const DEFAULT_CENTER = { lat: 33.85, lng: -84.35 };
+const DEFAULT_ZOOM = 9;
+
 interface ServiceAreaMapProps {
   apiKey: string;
 }
 
-export default function ServiceAreaMap({ apiKey }: ServiceAreaMapProps) {
-  const [selectedCounty, setSelectedCounty] = useState<typeof serviceCounties[0] | null>(null);
-  const [showOfficeInfo, setShowOfficeInfo] = useState(false);
-  const [showLegend, setShowLegend] = useState(true);
+function MapContents({
+  selectedCounty,
+  setSelectedCounty,
+  showOfficeInfo,
+  setShowOfficeInfo,
+  showLegend,
+  setShowLegend
+}: {
+  selectedCounty: typeof serviceCounties[0] | null,
+  setSelectedCounty: (c: typeof serviceCounties[0] | null) => void,
+  showOfficeInfo: boolean,
+  setShowOfficeInfo: (b: boolean) => void,
+  showLegend: boolean,
+  setShowLegend: (b: boolean) => void
+}) {
+  const map = useMap('service-area-map');
 
   const handleCountyClick = useCallback((county: typeof serviceCounties[0]) => {
     setSelectedCounty(county);
     setShowOfficeInfo(false);
-  }, []);
+    if (map) {
+      map.panTo({ lat: county.lat, lng: county.lng });
+      map.setZoom(11);
+    }
+  }, [map, setSelectedCounty, setShowOfficeInfo]);
 
   const handleOfficeClick = useCallback(() => {
     setShowOfficeInfo(true);
     setSelectedCounty(null);
-  }, []);
+    if (map) {
+      map.panTo(officeLocation);
+      map.setZoom(13);
+    }
+  }, [map, setSelectedCounty, setShowOfficeInfo]);
 
-  if (!apiKey) {
-    return (
-      <div className={styles.mapPlaceholder}>
-        <div className={styles.placeholderContent}>
-          <span className={styles.placeholderTitle}>Service Area Map</span>
-          <p>Google Maps API key required</p>
-          <p className={styles.placeholderNote}>Add NEXT_PUBLIC_GOOGLE_MAPS_API_KEY to .env.local</p>
-        </div>
-      </div>
-    );
-  }
+  const handleResetMap = useCallback(() => {
+    if (map) {
+      map.panTo(DEFAULT_CENTER);
+      map.setZoom(DEFAULT_ZOOM);
+      setSelectedCounty(null);
+      setShowOfficeInfo(false);
+    }
+  }, [map, setSelectedCounty, setShowOfficeInfo]);
 
   return (
-    <div className={styles.mapContainer}>
-      <APIProvider apiKey={apiKey}>
-        <Map
-          defaultCenter={{ lat: 33.85, lng: -84.35 }}
-          defaultZoom={9}
-          mapId="service-area-map"
-          className={styles.map}
-          gestureHandling="cooperative"
-          disableDefaultUI={false}
-          zoomControl={true}
-          mapTypeControl={false}
-          streetViewControl={false}
-          fullscreenControl={true}
-        >
+    <>
+      <Map
+        defaultCenter={DEFAULT_CENTER}
+        defaultZoom={DEFAULT_ZOOM}
+        mapId="service-area-map"
+        className={styles.map}
+        gestureHandling="cooperative"
+        disableDefaultUI={false}
+        zoomControl={true}
+        mapTypeControl={false}
+        streetViewControl={false}
+        fullscreenControl={true}
+        styles={mapStyles}
+      >
+        <MapControl position={ControlPosition.TOP_RIGHT}>
+          <div className={styles.mapControls}>
+            <button 
+              className={styles.controlBtn}
+              onClick={handleResetMap}
+              aria-label="Reset map view"
+              title="Reset Map View"
+            >
+              <Maximize2 size={18} />
+            </button>
+          </div>
+        </MapControl>
           {/* Office Marker */}
           <AdvancedMarker
             position={officeLocation}
@@ -144,7 +178,6 @@ export default function ServiceAreaMap({ apiKey }: ServiceAreaMapProps) {
             </InfoWindow>
           )}
         </Map>
-      </APIProvider>
 
       {/* Legend Toggle Button - shows when legend is hidden */}
       {!showLegend && (
@@ -187,6 +220,39 @@ export default function ServiceAreaMap({ apiKey }: ServiceAreaMapProps) {
           </div>
         </div>
       )}
+    </>
+  );
+}
+
+export default function ServiceAreaMap({ apiKey }: ServiceAreaMapProps) {
+  const [selectedCounty, setSelectedCounty] = useState<typeof serviceCounties[0] | null>(null);
+  const [showOfficeInfo, setShowOfficeInfo] = useState(false);
+  const [showLegend, setShowLegend] = useState(true);
+
+  if (!apiKey) {
+    return (
+      <div className={styles.mapPlaceholder}>
+        <div className={styles.placeholderContent}>
+          <span className={styles.placeholderTitle}>Service Area Map</span>
+          <p>Google Maps API key required</p>
+          <p className={styles.placeholderNote}>Add NEXT_PUBLIC_GOOGLE_MAPS_API_KEY to .env.local</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.mapContainer}>
+      <APIProvider apiKey={apiKey}>
+        <MapContents
+          selectedCounty={selectedCounty}
+          setSelectedCounty={setSelectedCounty}
+          showOfficeInfo={showOfficeInfo}
+          setShowOfficeInfo={setShowOfficeInfo}
+          showLegend={showLegend}
+          setShowLegend={setShowLegend}
+        />
+      </APIProvider>
     </div>
   );
 }
