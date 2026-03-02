@@ -24,12 +24,14 @@ const contactInfo = [
     icon: Phone,
     title: 'Phone',
     primary: '(678) 644-0337',
+    link: 'tel:678-644-0337',
     secondary: 'Mon - Fri: 9:00 AM - 5:00 PM',
   },
   {
     icon: Mail,
     title: 'Email',
     primary: 'info@heartandsoulhc.org',
+    link: 'mailto:info@heartandsoulhc.org',
     secondary: 'We respond within 24 hours',
   },
   {
@@ -122,7 +124,15 @@ export default function ContactPage() {
                   <info.icon size={24} />
                 </div>
                 <h4>{info.title}</h4>
-                <p className={styles.infoPrimary}>{info.primary}</p>
+                {info.link ? (
+                  <p className={styles.infoPrimary}>
+                    <a href={info.link} style={{ color: 'inherit', textDecoration: 'none' }}>
+                      {info.primary}
+                    </a>
+                  </p>
+                ) : (
+                  <p className={styles.infoPrimary}>{info.primary}</p>
+                )}
                 <p className={styles.infoSecondary}>{info.secondary}</p>
               </div>
             ))}

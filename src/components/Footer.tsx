@@ -83,11 +83,11 @@ export default function Footer() {
               <ul className={styles.contactList}>
                 <li>
                   <Phone size={18} />
-                  <span>(678) 644-0337</span>
+                  <span><a href="tel:678-644-0337" style={{ color: 'inherit', textDecoration: 'none' }}>(678) 644-0337</a></span>
                 </li>
                 <li>
                   <Mail size={18} />
-                  <span>info@heartandsoulhc.org</span>
+                  <span><a href="mailto:info@heartandsoulhc.org" style={{ color: 'inherit', textDecoration: 'none' }}>info@heartandsoulhc.org</a></span>
                 </li>
                 <li>
                   <MapPin size={18} />

@@ -34,7 +34,7 @@ export default function Header() {
           <div className={styles.topBarContent}>
             <div className={styles.topBarItem}>
               <Phone size={14} />
-              <span>Call us: (678) 644-0337</span>
+              <span>Call us: <a href="tel:678-644-0337" style={{ color: 'inherit', textDecoration: 'none' }}>(678) 644-0337</a></span>
             </div>
             <div className={styles.topBarItem}>
               <span>Providing compassionate care across Georgia</span>
