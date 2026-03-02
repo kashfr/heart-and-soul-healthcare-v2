@@ -10,6 +10,16 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const NOTIFICATION_EMAIL = 'info@heartandsoulhc.org';
 const FROM_EMAIL = 'notifications@heartandsoulhc.org';
 
+// Escape user-supplied strings before embedding in HTML email bodies
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // Format phone number for ClickUp (requires +1 XXX-XXX-XXXX format for US numbers)
 function formatPhoneForClickUp(phone: string): string {
   // Strip all non-digit characters
@@ -76,12 +86,12 @@ export async function processContactSubmission(data: any) {
       subject: `New Contact Form Submission: ${subject}`,
       html: `
         <h2>New Contact Form Submission</h2>
-        <p><strong>Name:</strong> ${name}</p>
-        <p><strong>Email:</strong> ${email}</p>
-        <p><strong>Phone:</strong> ${phone}</p>
-        <p><strong>Subject:</strong> ${subject}</p>
+        <p><strong>Name:</strong> ${escapeHtml(name)}</p>
+        <p><strong>Email:</strong> ${escapeHtml(email)}</p>
+        <p><strong>Phone:</strong> ${escapeHtml(phone)}</p>
+        <p><strong>Subject:</strong> ${escapeHtml(subject)}</p>
         <h3>Message:</h3>
-        <p>${message}</p>
+        <p>${escapeHtml(message)}</p>
       `,
     });
 
@@ -143,23 +153,23 @@ export async function processReferralSubmission(data: any) {
       subject: `New Client Referral: ${client.firstName} ${client.lastName}`,
       html: `
         <h2>New Client Referral</h2>
-        
+
         <h3>Client Information</h3>
-        <p><strong>Name:</strong> ${client.firstName} ${client.lastName}</p>
-        <p><strong>DOB:</strong> ${client.dob}</p>
-        <p><strong>phone:</strong> ${client.phone}</p>
-        <p><strong>Email:</strong> ${client.email}</p>
-        
+        <p><strong>Name:</strong> ${escapeHtml(client.firstName)} ${escapeHtml(client.lastName)}</p>
+        <p><strong>DOB:</strong> ${escapeHtml(client.dob)}</p>
+        <p><strong>Phone:</strong> ${escapeHtml(client.phone)}</p>
+        <p><strong>Email:</strong> ${escapeHtml(client.email)}</p>
+
         <h3>Program & Insurance</h3>
-        <p><strong>Program Interest:</strong> ${program.interest}</p>
-        
+        <p><strong>Program Interest:</strong> ${escapeHtml(program.interest)}</p>
+
         <h3>Referrer Information</h3>
-        <p><strong>Name:</strong> ${referrer.name}</p>
-        <p><strong>Organization:</strong> ${referrer.organization || 'N/A'}</p>
-        
+        <p><strong>Name:</strong> ${escapeHtml(referrer.name)}</p>
+        <p><strong>Organization:</strong> ${escapeHtml(referrer.organization || 'N/A')}</p>
+
         <h3>Details</h3>
-        <p><strong>Urgency:</strong> ${details.urgency}</p>
-        <p><strong>Service Needs:</strong> ${details.serviceNeeds}</p>
+        <p><strong>Urgency:</strong> ${escapeHtml(details.urgency)}</p>
+        <p><strong>Service Needs:</strong> ${escapeHtml(details.serviceNeeds)}</p>
       `,
     });
 
@@ -190,7 +200,7 @@ export async function processReferralSubmission(data: any) {
       await createClickUpTask(referralListId, {
         name: `Referral: ${client.firstName} ${client.lastName}`,
         // Description removed as data is mapped to custom fields
-        priority: details.urgency === 'Immediate' ? 1 : 3, // 1 is Urgent, 3 is Normal
+        priority: details.urgency === 'immediate' ? 1 : 3, // 1 is Urgent, 3 is Normal
         notify_all: true,
         custom_fields: [
           { id: '9bf2cd0d-5ef4-4ebb-8522-f77e01985eb0', value: `${client.firstName} ${client.lastName}` }, // Referred Client Name
