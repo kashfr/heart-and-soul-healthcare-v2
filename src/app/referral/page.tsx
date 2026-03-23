@@ -481,7 +481,7 @@ export default function ReferralPage() {
                     </select>
                   </div>
                   <div className="form-group">
-                    <label htmlFor="medicaidNumber" className="form-label">Medicaid Number (if applicable)</label>
+                    <label htmlFor="medicaidNumber" className="form-label">Medicaid Number</label>
                     <input
                       type="text"
                       id="medicaidNumber"
@@ -491,6 +491,7 @@ export default function ReferralPage() {
                       value={formData.medicaidNumber}
                       onChange={handleChange}
                     />
+                    <span className="form-helper">Optional — provide if available</span>
                   </div>
                   <div className="form-group">
                     <label htmlFor="insuranceProvider" className="form-label">Insurance Provider</label>
@@ -503,6 +504,7 @@ export default function ReferralPage() {
                       value={formData.insuranceProvider}
                       onChange={handleChange}
                     />
+                    <span className="form-helper">Optional — provide if available</span>
                   </div>
                   <div className="form-group">
                     <label htmlFor="insuranceNumber" className="form-label">Insurance Policy Number</label>
@@ -515,6 +517,7 @@ export default function ReferralPage() {
                       value={formData.insuranceNumber}
                       onChange={handleChange}
                     />
+                    <span className="form-helper">Optional — provide if available</span>
                   </div>
                 </div>
               </div>
