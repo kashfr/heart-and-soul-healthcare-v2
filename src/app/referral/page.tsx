@@ -23,12 +23,12 @@ import { processReferralSubmission } from '@/app/actions';
 import styles from './page.module.css';
 
 const programs = [
-  { value: 'gapp', label: 'GAPP - Georgia Pediatric Program' },
-  { value: 'now-comp', label: 'NOW/COMP Waiver' },
-  { value: 'icwp', label: 'ICWP - Independent Care Waiver' },
-  { value: 'edwp', label: 'EDWP (CCSP & SOURCE)' },
-  { value: 'private-pay', label: 'Private Pay' },
-  { value: 'other', label: 'Other / Not Sure' },
+  { value: 'gapp', label: 'GAPP - Georgia Pediatric Program', description: 'Provides home and community-based services for children (under 21) with significant developmental disabilities or complex medical needs as an alternative to institutional care.' },
+  { value: 'now-comp', label: 'NOW/COMP Waiver', description: 'New Options Waiver (NOW) and Comprehensive Supports Waiver (COMP) serve individuals with intellectual and developmental disabilities, offering residential, employment, and community support services.' },
+  { value: 'icwp', label: 'ICWP - Independent Care Waiver', description: 'Serves individuals aged 21–64 with physical disabilities who need nursing-facility-level care but prefer to receive services in their home or community.' },
+  { value: 'edwp', label: 'EDWP (CCSP & SOURCE)', description: 'The Elderly and Disabled Waiver Program provides home and community-based services through CCSP (Community Care Services Program) and SOURCE (Service Options Using Resources in a Community Environment) for elderly or disabled individuals who would otherwise require nursing home care.' },
+  { value: 'private-pay', label: 'Private Pay', description: 'For individuals who plan to pay out-of-pocket for home healthcare services without using Medicaid waiver programs.' },
+  { value: 'other', label: 'Other / Not Sure', description: 'Not sure which program fits? No worries — select this option and our team will help determine the best program based on the individual\'s needs and eligibility.' },
 ];
 
 const referralSources = [
@@ -463,6 +463,21 @@ export default function ReferralPage() {
                         <option key={prog.value} value={prog.value}>{prog.label}</option>
                       ))}
                     </select>
+                  </div>
+                  <div className={styles.programDescription}>
+                    {formData.programInterest ? (
+                      <>
+                        <div className={styles.programDescriptionHeader}>
+                          <AlertCircle size={16} />
+                          <span>About this program</span>
+                        </div>
+                        <p>{programs.find(p => p.value === formData.programInterest)?.description}</p>
+                      </>
+                    ) : (
+                      <p className={styles.programDescriptionPlaceholder}>
+                        Select a program to see a brief description
+                      </p>
+                    )}
                   </div>
                   <div className="form-group">
                     <label htmlFor="referralSource" className="form-label">Who is making this referral? *</label>

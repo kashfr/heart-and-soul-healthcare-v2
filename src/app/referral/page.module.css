@@ -233,8 +233,43 @@
   gap: var(--space-5);
 }
 
-.formGridSingle .form-group:first-child {
-  grid-column: 1 / -1;
+.formGridSingle > .form-group:first-child {
+  grid-column: 1;
+}
+
+/* Program Description Box */
+.programDescription {
+  background: var(--color-gray-50);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 240px;
+  transition: all var(--transition-base);
+}
+
+.programDescriptionHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-accent);
+  margin-bottom: var(--space-2);
+}
+
+.programDescription p {
+  font-size: var(--text-sm);
+  color: var(--color-gray-600);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.programDescriptionPlaceholder {
+  color: var(--color-gray-400) !important;
+  font-style: italic;
 }
 
 .formGridSingle .form-textarea {
@@ -331,6 +366,10 @@
   .formGrid,
   .formGridSingle {
     grid-template-columns: 1fr;
+  }
+
+  .programDescription {
+    min-height: auto;
   }
 
   .formStep h2 {
