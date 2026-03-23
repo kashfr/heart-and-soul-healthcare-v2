@@ -26,7 +26,7 @@ const programs = [
   { value: 'gapp', label: 'GAPP - Georgia Pediatric Program' },
   { value: 'now-comp', label: 'NOW/COMP Waiver' },
   { value: 'icwp', label: 'ICWP - Independent Care Waiver' },
-  { value: 'edwp', label: 'EDWP/CCSP/SOURCE' },
+  { value: 'edwp', label: 'EDWP (CCSP & SOURCE)' },
   { value: 'private-pay', label: 'Private Pay' },
   { value: 'other', label: 'Other / Not Sure' },
 ];
