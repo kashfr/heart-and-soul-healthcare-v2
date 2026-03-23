@@ -46,7 +46,7 @@ const values = [
 const credentials = [
   'State of Georgia Licensed Home Health Agency',
   'Medicaid Certified Provider',
-  'GAPP, NOW/COMP, ICWP, and EDWP Approved',
+  'GAPP, NOW/COMP, ICWP, and EDWP (CCSP & SOURCE) Approved',
   'Experienced and Trained Healthcare Professionals',
   'Background-Checked and Certified Caregivers',
   'Continuous Quality Improvement Programs',

@@ -3,7 +3,7 @@ import { UserCheck } from 'lucide-react';
 import ProgramPageTemplate from '@/components/ProgramPageTemplate';
 
 export const metadata: Metadata = {
-  title: 'EDWP/CCSP/SOURCE - Elderly and Disabled Waiver Programs | Heart and Soul Healthcare',
+  title: 'EDWP (CCSP & SOURCE) - Elderly & Disabled Waiver Program | Heart and Soul Healthcare',
   description: 'Comprehensive support services for elderly and disabled individuals to maintain independence, safety, and quality of life in their own homes.',
 };
 
@@ -36,17 +36,25 @@ const services = [
     title: 'Structured Family Caregiver (SFC)',
     description: 'Support and training for family members serving as primary caregivers for their loved ones.',
   },
+  {
+    title: 'Home-delivered Meals',
+    description: 'Nutritionally balanced meals delivered to the home for individuals unable to prepare their own meals.',
+  },
+  {
+    title: 'Emergency Response Services',
+    description: 'In-home, 24-hour electronic two-way communication system that calls for help in an emergency.',
+  },
 ];
 
 export default function EDWPPage() {
   return (
     <ProgramPageTemplate
       icon={UserCheck}
-      programName="EDWP/CCSP/SOURCE"
-      fullTitle="Elderly and Disabled Waiver Programs"
+      programName="EDWP (CCSP & SOURCE)"
+      fullTitle="Elderly & Disabled Waiver Program"
       subtitle="Supporting elderly and disabled individuals in maintaining independence, safety, and quality of life in their own homes and communities."
-      targetPopulation="This program serves individuals aged 21 and over who are functionally impaired and meet the Intermediate Nursing Home Level of Care (LOC) criteria. These individuals require support to remain safely in their homes and communities rather than being placed in a nursing facility."
-      programGoal="The services provided through EDWP, CCSP, and SOURCE aim to maintain or increase the functioning capacity of members at risk for nursing facility placement. Our focus is on promoting independence, ensuring safety, and enhancing quality of life while enabling individuals to remain in their preferred community settings."
+      targetPopulation="This program serves individuals aged 65 and older (or aged 21 and over with qualifying physical disabilities) who are functionally impaired and meet the Intermediate Nursing Home Level of Care (LOC) criteria. These individuals require support to remain safely in their homes and communities rather than being placed in a nursing facility."
+      programGoal="The services provided through EDWP — delivered via the Community Care Services Program (CCSP) and Service Options Using Resources in a Community Environment (SOURCE) — aim to maintain or increase the functioning capacity of members at risk for nursing facility placement. Our focus is on promoting independence, ensuring safety, and enhancing quality of life while enabling individuals to remain in their preferred community settings."
       services={services}
       accentColor="primary"
       populationImage="/images/edwp-population.png"

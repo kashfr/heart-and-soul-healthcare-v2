@@ -45,7 +45,7 @@ const programs = [
   },
   {
     icon: UserCheck,
-    title: 'EDWP/CCSP/SOURCE',
+    title: 'EDWP (CCSP & SOURCE)',
     subtitle: 'ELDERLY & DISABLED',
     description: 'Supporting elderly and disabled individuals in maintaining independence, safety, and quality of life in their own homes.',
     href: '/programs/edwp',

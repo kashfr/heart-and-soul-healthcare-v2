@@ -46,8 +46,8 @@ const slides: CarouselSlide[] = [
   },
   {
     id: 'edwp',
-    title: 'EDWP/CCSP/SOURCE',
-    subtitle: 'Elderly and Disabled Waiver Programs',
+    title: 'EDWP (CCSP & SOURCE)',
+    subtitle: 'Elderly & Disabled Waiver Program',
     description: 'Comprehensive support services helping elderly and disabled individuals maintain independence and safety at home.',
     href: '/programs/edwp',
     buttonText: 'View EDWP Services',

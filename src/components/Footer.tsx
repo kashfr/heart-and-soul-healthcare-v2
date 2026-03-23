@@ -7,7 +7,7 @@ const programLinks = [
   { href: '/programs/gapp', label: 'GAPP - Georgia Pediatric' },
   { href: '/programs/now-comp', label: 'NOW/COMP Waiver' },
   { href: '/programs/icwp', label: 'ICWP - Independent Care' },
-  { href: '/programs/edwp', label: 'EDWP/CCSP/SOURCE' },
+  { href: '/programs/edwp', label: 'EDWP (CCSP & SOURCE)' },
   { href: '/programs/other', label: 'Other Programs' },
 ];
 
