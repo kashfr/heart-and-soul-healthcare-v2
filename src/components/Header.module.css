@@ -58,6 +58,9 @@
   gap: var(--space-3);
   text-decoration: none;
   color: var(--color-gray-900);
+  flex-shrink: 0;
+  max-width: 130px;
+  transition: max-width var(--transition-fast);
 }
 
 .logoIcon {
@@ -370,6 +373,10 @@
   .mobileMenu {
     display: block;
   }
+
+  .logo {
+    max-width: 110px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -386,5 +393,9 @@
   .logoIcon {
     width: 40px;
     height: 40px;
+  }
+
+  .logo {
+    max-width: 90px;
   }
 }

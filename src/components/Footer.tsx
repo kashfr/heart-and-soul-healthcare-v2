@@ -31,8 +31,8 @@ export default function Footer() {
                   src="/images/logo.webp" 
                   alt="Heart & Soul Healthcare Logo" 
                   width={130} 
-                  height={40} 
-                  style={{ objectFit: 'contain' }} 
+                  height={67} 
+                  style={{ width: '100%', height: 'auto', objectFit: 'contain' }} 
                   unoptimized 
                 />
               </div>

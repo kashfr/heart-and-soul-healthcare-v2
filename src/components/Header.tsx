@@ -51,8 +51,8 @@ export default function Header() {
                 src="/images/logo.webp" 
                 alt="Heart & Soul Healthcare Logo" 
                 width={130} 
-                height={40} 
-                style={{ objectFit: 'contain' }} 
+                height={67} 
+                style={{ width: '100%', height: 'auto', objectFit: 'contain' }} 
                 priority 
                 unoptimized 
               />
