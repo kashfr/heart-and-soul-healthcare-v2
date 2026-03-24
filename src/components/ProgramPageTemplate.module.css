@@ -78,7 +78,7 @@
 }
 
 .hero.primary .heroIcon {
-  background: linear-gradient(135deg, var(--color-primary-light), var(--color-primary));
+  background: linear-gradient(135deg, #2d4a7a, #1a2b4a);
   color: var(--color-white);
 }
 
@@ -144,7 +144,7 @@
 .sectionLabel.teal { color: var(--color-accent); }
 .sectionLabel.gold { color: var(--color-gold-dark); }
 .sectionLabel.sage { color: var(--color-sage-dark); }
-.sectionLabel.primary { color: var(--color-primary-light); }
+.sectionLabel.primary { color: #2d4a7a; }
 
 .contentInfo h2 {
   margin-bottom: var(--space-6);
