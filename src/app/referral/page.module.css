@@ -272,12 +272,98 @@
   font-style: italic;
 }
 
+/* County Section */
+.countySection {
+  margin-top: var(--space-6);
+}
+
+.countySection .form-group {
+  max-width: 400px;
+}
+
+.countyNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  background: #fefce8;
+  border: 1px solid #fde68a;
+  border-radius: var(--radius-lg);
+  color: #92400e;
+}
+
+.countyNotice svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.countyNotice p {
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Self-Referral Notice */
+.selfReferralNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: var(--radius-lg);
+  color: #166534;
+  grid-column: 1 / -1;
+}
+
+.selfReferralNotice svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #16a34a;
+}
+
+.selfReferralNotice p {
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Section Divider */
+.sectionDivider {
+  height: 1px;
+  background: var(--color-gray-200);
+  margin: var(--space-8) 0;
+}
+
+/* Sub-section titles */
+.subSectionTitle {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--color-gray-800);
+  margin-bottom: var(--space-1);
+}
+
+.subSectionDescription {
+  font-size: var(--text-sm);
+  color: var(--color-gray-500);
+  margin-bottom: var(--space-5);
+}
+
+/* Full-width form grid */
+.formGridFull {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-5);
+}
+
 .formGridSingle .form-textarea {
   grid-column: 1 / -1;
 }
 
 .formGrid .form-group,
-.formGridSingle .form-group {
+.formGridSingle .form-group,
+.formGridFull .form-group {
   margin-bottom: 0;
 }
 
@@ -305,6 +391,83 @@
   flex-direction: column;
   align-items: flex-end;
   gap: var(--space-4);
+}
+
+/* Validation Banner */
+.validationBanner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-lg);
+  color: #dc2626;
+  margin-top: var(--space-6);
+  animation: shakeOnce 0.4s ease-in-out;
+}
+
+.validationBanner svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.validationBanner strong {
+  display: block;
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-2);
+}
+
+.validationBanner ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.validationBanner li {
+  padding: 2px 0;
+}
+
+.validationBanner li::before {
+  content: '• ';
+  color: #dc2626;
+}
+
+/* Field Error State */
+.fieldError {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1) !important;
+}
+
+/* Button starts faded, becomes vibrant when form is valid */
+.btnFaded {
+  opacity: 0.4;
+  filter: grayscale(30%);
+  cursor: pointer !important;
+  transition: opacity 0.3s ease, filter 0.3s ease, transform 0.15s ease;
+}
+
+.btnFaded:hover {
+  opacity: 0.55;
+}
+
+.btnReady {
+  opacity: 1;
+  filter: none;
+  transition: opacity 0.3s ease, filter 0.3s ease, transform 0.15s ease;
+}
+
+.btnReady:hover {
+  transform: translateY(-1px);
+}
+
+@keyframes shakeOnce {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
 }
 
 /* Error Message */
@@ -364,12 +527,17 @@
   }
 
   .formGrid,
-  .formGridSingle {
+  .formGridSingle,
+  .formGridFull {
     grid-template-columns: 1fr;
   }
 
   .programDescription {
     min-height: auto;
+  }
+
+  .countySection .form-group {
+    max-width: 100%;
   }
 
   .formStep h2 {

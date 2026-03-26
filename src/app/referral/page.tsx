@@ -2,12 +2,12 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { 
-  FileText, 
-  User, 
-  Phone, 
-  Mail, 
-  Calendar, 
+import {
+  FileText,
+  User,
+  Phone,
+  Mail,
+  Calendar,
   MapPin,
   ClipboardList,
   Send,
@@ -15,12 +15,42 @@ import {
   ArrowRight,
   Shield,
   Clock,
-  AlertCircle
+  AlertCircle,
+  Info
 } from 'lucide-react';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { processReferralSubmission } from '@/app/actions';
 import styles from './page.module.css';
+
+// County data organized by tier
+const primaryCounties = [
+  'Fulton', 'DeKalb', 'Cobb', 'Clayton', 'Henry',
+  'Gwinnett', 'Fayette', 'Douglas', 'Forsyth', 'Rockdale',
+];
+
+const extendedCounties = [
+  'Cherokee', 'Paulding', 'Bartow', 'Newton', 'Spalding',
+  'Coweta', 'Carroll', 'Barrow', 'Gilmer', 'Pickens',
+];
+
+// Program-to-county mapping
+// Currently all waiver programs serve the same counties.
+// When per-program county lists differ, update these arrays.
+const programCounties: Record<string, { primary: string[]; extended: string[] }> = {
+  'gapp':        { primary: primaryCounties, extended: extendedCounties },
+  'now-comp':    { primary: primaryCounties, extended: extendedCounties },
+  'icwp':        { primary: primaryCounties, extended: extendedCounties },
+  'edwp':        { primary: primaryCounties, extended: extendedCounties },
+  'private-pay': { primary: primaryCounties, extended: extendedCounties },
+  'other':       { primary: primaryCounties, extended: extendedCounties },
+};
+
+function getCountiesForProgram(programValue: string) {
+  const mapping = programCounties[programValue];
+  if (!mapping) return { primary: primaryCounties, extended: extendedCounties };
+  return mapping;
+}
 
 const programs = [
   { value: 'gapp', label: 'GAPP - Georgia Pediatric Program', description: 'Provides home and community-based services for children (under 21) with significant developmental disabilities or complex medical needs as an alternative to institutional care.' },
@@ -50,8 +80,11 @@ export default function ReferralPage() {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showValidation, setShowValidation] = useState(false);
   const [formData, setFormData] = useState({
     // Client Information
+    programInterest: '',
+    clientCounty: '',
     clientFirstName: '',
     clientLastName: '',
     clientDOB: '',
@@ -61,29 +94,66 @@ export default function ReferralPage() {
     clientCity: '',
     clientState: 'GA',
     clientZip: '',
-    
-    // Program & Insurance
-    programInterest: '',
-    medicaidNumber: '',
-    insuranceProvider: '',
-    insuranceNumber: '',
-    
-    // Referral Source
+
+    // Referral & Insurance
     referralSource: '',
     referrerName: '',
     referrerPhone: '',
     referrerEmail: '',
     referrerOrganization: '',
-    
-    // Service Needs
+    medicaidNumber: '',
+    insuranceProvider: '',
+    insuranceNumber: '',
     serviceNeeds: '',
     urgency: 'standard',
     additionalNotes: '',
   });
 
+  const isSelfReferral = formData.referralSource === 'self';
+
+  // Returns list of missing required field labels for the current step
+  const getMissingFields = (): string[] => {
+    const missing: string[] = [];
+    if (step === 1) {
+      if (!formData.programInterest) missing.push('Program of Interest');
+      if (!formData.clientCounty) missing.push('County');
+      if (!formData.clientFirstName) missing.push('First Name');
+      if (!formData.clientLastName) missing.push('Last Name');
+      if (!formData.clientDOB) missing.push('Date of Birth');
+      if (!formData.clientPhone) missing.push('Phone Number');
+    } else if (step === 2) {
+      if (!formData.referralSource) missing.push('Referral Source');
+      if (!isSelfReferral && formData.referralSource && !formData.referrerName) missing.push('Referrer Name');
+    }
+    return missing;
+  };
+
+  // Attempt to proceed — if invalid, show validation messages instead
+  const handleAttemptNext = () => {
+    if (isStepValid()) {
+      setShowValidation(false);
+      nextStep();
+    } else {
+      setShowValidation(true);
+    }
+  };
+
+  const handleAttemptSubmit = (e: React.FormEvent) => {
+    if (!isStepValid()) {
+      e.preventDefault();
+      setShowValidation(true);
+      return;
+    }
+    setShowValidation(false);
+    handleSubmit(e);
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    
+
+    // Clear validation when user starts filling fields
+    if (showValidation) setShowValidation(false);
+
     // If selecting self-referral, auto-fill referrer info with client info
     if (name === 'referralSource' && value === 'self') {
       setFormData({
@@ -94,6 +164,13 @@ export default function ReferralPage() {
         referrerEmail: formData.clientEmail,
         referrerOrganization: '',
       });
+    } else if (name === 'programInterest' && value !== formData.programInterest) {
+      // Reset county when program changes
+      setFormData({
+        ...formData,
+        programInterest: value,
+        clientCounty: '',
+      });
     } else {
       setFormData({
         ...formData,
@@ -101,9 +178,6 @@ export default function ReferralPage() {
       });
     }
   };
-
-  // Check if self-referral is selected (skip Step 3)
-  const isSelfReferral = formData.referralSource === 'self';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -122,6 +196,7 @@ export default function ReferralPage() {
           city: formData.clientCity,
           state: formData.clientState,
           zip: formData.clientZip,
+          county: formData.clientCounty,
         },
         program: {
           interest: formData.programInterest,
@@ -165,33 +240,32 @@ export default function ReferralPage() {
   const isStepValid = () => {
     switch (step) {
       case 1:
-        return formData.clientFirstName && formData.clientLastName && formData.clientDOB && formData.clientPhone;
+        return formData.programInterest && formData.clientCounty && formData.clientFirstName && formData.clientLastName && formData.clientDOB && formData.clientPhone && formData.clientEmail;
       case 2:
-        return formData.programInterest && formData.referralSource;
-      case 3:
-        // For self-referral, Step 3 is skipped so always valid
-        if (isSelfReferral) return true;
-        return formData.referrerName;
-      case 4:
-        return formData.serviceNeeds;
+        return formData.referralSource && (isSelfReferral || formData.referrerName);
       default:
         return true;
     }
   };
 
-  // Dynamic step navigation
-  const getNextStep = () => {
-    if (step === 2 && isSelfReferral) return 4; // Skip Step 3 for self-referrals
-    return step + 1;
+  const nextStep = () => { setShowValidation(false); setStep(2); };
+  const prevStep = () => { setShowValidation(false); setStep(1); };
+
+  // Check if a specific field should show a validation error
+  const isFieldInvalid = (fieldName: string): boolean => {
+    if (!showValidation) return false;
+    const value = formData[fieldName as keyof typeof formData];
+    // Only flag required fields
+    const requiredStep1 = ['programInterest', 'clientCounty', 'clientFirstName', 'clientLastName', 'clientDOB', 'clientPhone', 'clientEmail'];
+    const requiredStep2 = ['referralSource'];
+    if (step === 1 && requiredStep1.includes(fieldName)) return !value;
+    if (step === 2 && requiredStep2.includes(fieldName)) return !value;
+    if (step === 2 && fieldName === 'referrerName' && !isSelfReferral && formData.referralSource) return !value;
+    return false;
   };
 
-  const getPrevStep = () => {
-    if (step === 4 && isSelfReferral) return 2; // Skip Step 3 when going back
-    return step - 1;
-  };
-
-  const nextStep = () => setStep(getNextStep());
-  const prevStep = () => setStep(getPrevStep());
+  // Get counties for the selected program
+  const counties = formData.programInterest ? getCountiesForProgram(formData.programInterest) : null;
 
   if (isSubmitted) {
     return (
@@ -210,25 +284,26 @@ export default function ReferralPage() {
               </div>
               <h1>Referral Submitted!</h1>
               <p className={styles.heroSubtitle}>
-                Thank you for your referral. Our team will review the information and 
+                Thank you for your referral. Our team will review the information and
                 contact you within 1-2 business days.
               </p>
               <div className={styles.successActions}>
                 <Link href="/" className="btn btn-primary btn-lg">
                   Return to Home
                 </Link>
-                <button 
+                <button
                   className="btn btn-secondary btn-lg"
                   onClick={() => {
                     setIsSubmitted(false);
                     setStep(1);
                     setFormData({
-                      clientFirstName: '', clientLastName: '', clientDOB: '', clientPhone: '',
-                      clientEmail: '', clientAddress: '', clientCity: '', clientState: 'GA',
-                      clientZip: '', programInterest: '', medicaidNumber: '', insuranceProvider: '',
-                      insuranceNumber: '', referralSource: '', referrerName: '', referrerPhone: '',
-                      referrerEmail: '', referrerOrganization: '', serviceNeeds: '', urgency: 'standard',
-                      additionalNotes: '',
+                      programInterest: '', clientCounty: '', clientFirstName: '', clientLastName: '',
+                      clientDOB: '', clientPhone: '', clientEmail: '', clientAddress: '',
+                      clientCity: '', clientState: 'GA', clientZip: '',
+                      referralSource: '', referrerName: '', referrerPhone: '',
+                      referrerEmail: '', referrerOrganization: '', medicaidNumber: '',
+                      insuranceProvider: '', insuranceNumber: '', serviceNeeds: '',
+                      urgency: 'standard', additionalNotes: '',
                     });
                   }}
                 >
@@ -257,7 +332,7 @@ export default function ReferralPage() {
             <span className={styles.heroLabel}>Start the Process</span>
             <h1>Client Referral Form</h1>
             <p className={styles.heroSubtitle}>
-              Complete the form below to refer a client for our home health care services. 
+              Complete the form below to refer a client for our home health care services.
               Our team will review and respond within 1-2 business days.
             </p>
           </div>
@@ -292,12 +367,10 @@ export default function ReferralPage() {
             <div className={styles.progressSteps}>
               {[
                 { num: 1, label: 'Client Info', icon: User },
-                { num: 2, label: 'Program', icon: ClipboardList },
-                { num: 3, label: 'Referrer', icon: FileText },
-                { num: 4, label: 'Details', icon: Send },
+                { num: 2, label: 'Referral & Insurance', icon: Send },
               ].map((s) => (
-                <div 
-                  key={s.num} 
+                <div
+                  key={s.num}
                   className={`${styles.progressStep} ${step >= s.num ? styles.active : ''} ${step > s.num ? styles.completed : ''}`}
                 >
                   <div className={styles.stepCircle}>
@@ -308,7 +381,7 @@ export default function ReferralPage() {
               ))}
             </div>
             <div className={styles.progressBar}>
-              <div className={styles.progressFill} style={{ width: `${((step - 1) / 3) * 100}%` }} />
+              <div className={styles.progressFill} style={{ width: `${((step - 1) / 1) * 100}%` }} />
             </div>
           </div>
 
@@ -318,9 +391,94 @@ export default function ReferralPage() {
               <div className={styles.formStep}>
                 <h2><User size={28} /> Client Information</h2>
                 <p className={styles.stepDescription}>
-                  Please provide the basic information about the individual who will be receiving care.
+                  Select the program of interest and provide information about the individual who will be receiving care.
                 </p>
-                
+
+                {/* Program Selection — first so county can filter */}
+                <div className={styles.formGridSingle}>
+                  <div className="form-group">
+                    <label htmlFor="programInterest" className="form-label">Program of Interest *</label>
+                    <select
+                      id="programInterest"
+                      name="programInterest"
+                      className={`form-select ${isFieldInvalid('programInterest') ? styles.fieldError : ''}`}
+                      value={formData.programInterest}
+                      onChange={handleChange}
+                      required
+                    >
+                      <option value="">Select a program</option>
+                      {programs.map((prog) => (
+                        <option key={prog.value} value={prog.value}>{prog.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className={styles.programDescription}>
+                    {formData.programInterest ? (
+                      <>
+                        <div className={styles.programDescriptionHeader}>
+                          <Info size={16} />
+                          <span>About this program</span>
+                        </div>
+                        <p>{programs.find(p => p.value === formData.programInterest)?.description}</p>
+                      </>
+                    ) : (
+                      <p className={styles.programDescriptionPlaceholder}>
+                        Select a program to see a brief description
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* County Selection — dynamic based on program */}
+                <div className={styles.countySection}>
+                  <div className="form-group">
+                    <label htmlFor="clientCounty" className="form-label">County *</label>
+                    <select
+                      id="clientCounty"
+                      name="clientCounty"
+                      className={`form-select ${isFieldInvalid('clientCounty') ? styles.fieldError : ''}`}
+                      value={formData.clientCounty}
+                      onChange={handleChange}
+                      required
+                      disabled={!formData.programInterest}
+                    >
+                      <option value="">
+                        {formData.programInterest ? 'Select county' : 'Select a program first'}
+                      </option>
+                      {counties && (
+                        <>
+                          <optgroup label="Primary Service Area">
+                            {counties.primary.sort().map((county) => (
+                              <option key={county} value={county}>{county} County</option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="Extended Service Area">
+                            {counties.extended.sort().map((county) => (
+                              <option key={county} value={county}>{county} County</option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="Other">
+                            <option value="other">Other — My county is not listed</option>
+                          </optgroup>
+                        </>
+                      )}
+                    </select>
+                    {!formData.programInterest && (
+                      <span className="form-helper">Please select a program above to see available counties</span>
+                    )}
+                  </div>
+                  {formData.clientCounty === 'other' && (
+                    <div className={styles.countyNotice}>
+                      <AlertCircle size={16} />
+                      <p>Your county may be outside our current service area. No worries — submit your referral and our team will follow up to discuss options.</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Divider */}
+                <div className={styles.sectionDivider} />
+
+                {/* Client Details */}
                 <div className={styles.formGrid}>
                   <div className="form-group">
                     <label htmlFor="clientFirstName" className="form-label">First Name *</label>
@@ -328,7 +486,7 @@ export default function ReferralPage() {
                       type="text"
                       id="clientFirstName"
                       name="clientFirstName"
-                      className="form-input"
+                      className={`form-input ${isFieldInvalid('clientFirstName') ? styles.fieldError : ''}`}
                       placeholder="First name"
                       value={formData.clientFirstName}
                       onChange={handleChange}
@@ -341,7 +499,7 @@ export default function ReferralPage() {
                       type="text"
                       id="clientLastName"
                       name="clientLastName"
-                      className="form-input"
+                      className={`form-input ${isFieldInvalid('clientLastName') ? styles.fieldError : ''}`}
                       placeholder="Last name"
                       value={formData.clientLastName}
                       onChange={handleChange}
@@ -354,7 +512,7 @@ export default function ReferralPage() {
                       type="date"
                       id="clientDOB"
                       name="clientDOB"
-                      className="form-input"
+                      className={`form-input ${isFieldInvalid('clientDOB') ? styles.fieldError : ''}`}
                       value={formData.clientDOB}
                       onChange={handleChange}
                       max={today}
@@ -368,7 +526,7 @@ export default function ReferralPage() {
                       type="tel"
                       id="clientPhone"
                       name="clientPhone"
-                      className="form-input"
+                      className={`form-input ${isFieldInvalid('clientPhone') ? styles.fieldError : ''}`}
                       placeholder="(XXX) XXX-XXXX"
                       value={formData.clientPhone}
                       onChange={handleChange}
@@ -376,7 +534,7 @@ export default function ReferralPage() {
                     />
                   </div>
                   <div className="form-group">
-                    <label htmlFor="clientEmail" className="form-label">Email Address</label>
+                    <label htmlFor="clientEmail" className="form-label">Email Address *</label>
                     <input
                       type="email"
                       id="clientEmail"
@@ -439,52 +597,22 @@ export default function ReferralPage() {
               </div>
             )}
 
-            {/* Step 2: Program & Insurance */}
+            {/* Step 2: Referral & Insurance */}
             {step === 2 && (
               <div className={styles.formStep}>
-                <h2><ClipboardList size={28} /> Program & Insurance</h2>
+                <h2><Send size={28} /> Referral & Insurance</h2>
                 <p className={styles.stepDescription}>
-                  Select the program of interest and provide insurance information if available.
+                  Tell us who is making this referral and provide any available insurance information.
                 </p>
-                
+
                 <div className={styles.formGridSingle}>
-                  <div className="form-group">
-                    <label htmlFor="programInterest" className="form-label">Program of Interest *</label>
-                    <select
-                      id="programInterest"
-                      name="programInterest"
-                      className="form-select"
-                      value={formData.programInterest}
-                      onChange={handleChange}
-                      required
-                    >
-                      <option value="">Select a program</option>
-                      {programs.map((prog) => (
-                        <option key={prog.value} value={prog.value}>{prog.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className={styles.programDescription}>
-                    {formData.programInterest ? (
-                      <>
-                        <div className={styles.programDescriptionHeader}>
-                          <AlertCircle size={16} />
-                          <span>About this program</span>
-                        </div>
-                        <p>{programs.find(p => p.value === formData.programInterest)?.description}</p>
-                      </>
-                    ) : (
-                      <p className={styles.programDescriptionPlaceholder}>
-                        Select a program to see a brief description
-                      </p>
-                    )}
-                  </div>
+                  {/* Referral Source */}
                   <div className="form-group">
                     <label htmlFor="referralSource" className="form-label">Who is making this referral? *</label>
                     <select
                       id="referralSource"
                       name="referralSource"
-                      className="form-select"
+                      className={`form-select ${isFieldInvalid('referralSource') ? styles.fieldError : ''}`}
                       value={formData.referralSource}
                       onChange={handleChange}
                       required
@@ -495,6 +623,77 @@ export default function ReferralPage() {
                       ))}
                     </select>
                   </div>
+
+                  {/* Self-referral notice */}
+                  {isSelfReferral && (
+                    <div className={styles.selfReferralNotice}>
+                      <CheckCircle size={16} />
+                      <p>Since you are referring yourself, we&apos;ll use the contact information you provided on the previous step.</p>
+                    </div>
+                  )}
+
+                  {/* Referrer fields — only show if NOT self-referral */}
+                  {!isSelfReferral && formData.referralSource && (
+                    <>
+                      <div className="form-group">
+                        <label htmlFor="referrerName" className="form-label">Your Name *</label>
+                        <input
+                          type="text"
+                          id="referrerName"
+                          name="referrerName"
+                          className={`form-input ${isFieldInvalid('referrerName') ? styles.fieldError : ''}`}
+                          placeholder="Full name"
+                          value={formData.referrerName}
+                          onChange={handleChange}
+                          required
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label htmlFor="referrerPhone" className="form-label">Your Phone</label>
+                        <input
+                          type="tel"
+                          id="referrerPhone"
+                          name="referrerPhone"
+                          className="form-input"
+                          placeholder="(XXX) XXX-XXXX"
+                          value={formData.referrerPhone}
+                          onChange={handleChange}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label htmlFor="referrerEmail" className="form-label">Your Email</label>
+                        <input
+                          type="email"
+                          id="referrerEmail"
+                          name="referrerEmail"
+                          className="form-input"
+                          placeholder="email@example.com"
+                          value={formData.referrerEmail}
+                          onChange={handleChange}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label htmlFor="referrerOrganization" className="form-label">Organization</label>
+                        <input
+                          type="text"
+                          id="referrerOrganization"
+                          name="referrerOrganization"
+                          className="form-input"
+                          placeholder="Company or facility name"
+                          value={formData.referrerOrganization}
+                          onChange={handleChange}
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Insurance Section */}
+                <div className={styles.sectionDivider} />
+                <h3 className={styles.subSectionTitle}>Insurance Information</h3>
+                <p className={styles.subSectionDescription}>Optional — provide if available</p>
+
+                <div className={styles.formGrid}>
                   <div className="form-group">
                     <label htmlFor="medicaidNumber" className="form-label">Medicaid Number</label>
                     <input
@@ -506,7 +705,6 @@ export default function ReferralPage() {
                       value={formData.medicaidNumber}
                       onChange={handleChange}
                     />
-                    <span className="form-helper">Optional — provide if available</span>
                   </div>
                   <div className="form-group">
                     <label htmlFor="insuranceProvider" className="form-label">Insurance Provider</label>
@@ -519,10 +717,9 @@ export default function ReferralPage() {
                       value={formData.insuranceProvider}
                       onChange={handleChange}
                     />
-                    <span className="form-helper">Optional — provide if available</span>
                   </div>
                   <div className="form-group">
-                    <label htmlFor="insuranceNumber" className="form-label">Insurance Policy Number</label>
+                    <label htmlFor="insuranceNumber" className="form-label">Policy Number</label>
                     <input
                       type="text"
                       id="insuranceNumber"
@@ -532,109 +729,42 @@ export default function ReferralPage() {
                       value={formData.insuranceNumber}
                       onChange={handleChange}
                     />
-                    <span className="form-helper">Optional — provide if available</span>
                   </div>
                 </div>
-              </div>
-            )}
 
-            {/* Step 3: Referrer Contact Info (skipped for self-referrals) */}
-            {step === 3 && !isSelfReferral && (
-              <div className={styles.formStep}>
-                <h2><FileText size={28} /> Referrer Contact Information</h2>
-                <p className={styles.stepDescription}>
-                  Please provide your contact information so we can follow up on this referral.
-                </p>
-                
-                <div className={styles.formGridSingle}>
-                  <div className="form-group">
-                    <label htmlFor="referrerName" className="form-label">Your Name *</label>
-                    <input
-                      type="text"
-                      id="referrerName"
-                      name="referrerName"
-                      className="form-input"
-                      placeholder="Full name"
-                      value={formData.referrerName}
-                      onChange={handleChange}
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label htmlFor="referrerPhone" className="form-label">Your Phone</label>
-                    <input
-                      type="tel"
-                      id="referrerPhone"
-                      name="referrerPhone"
-                      className="form-input"
-                      placeholder="(XXX) XXX-XXXX"
-                      value={formData.referrerPhone}
-                      onChange={handleChange}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label htmlFor="referrerEmail" className="form-label">Your Email</label>
-                    <input
-                      type="email"
-                      id="referrerEmail"
-                      name="referrerEmail"
-                      className="form-input"
-                      placeholder="email@example.com"
-                      value={formData.referrerEmail}
-                      onChange={handleChange}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label htmlFor="referrerOrganization" className="form-label">Organization Name</label>
-                    <input
-                      type="text"
-                      id="referrerOrganization"
-                      name="referrerOrganization"
-                      className="form-input"
-                      placeholder="Company or facility name"
-                      value={formData.referrerOrganization}
-                      onChange={handleChange}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
+                {/* Service Needs Section */}
+                <div className={styles.sectionDivider} />
+                <h3 className={styles.subSectionTitle}>Additional Details</h3>
+                <p className={styles.subSectionDescription}>Optional — share anything that would help us serve this client better</p>
 
-            {/* Step 4: Service Needs */}
-            {step === 4 && (
-              <div className={styles.formStep}>
-                <h2><Send size={28} /> Service Needs & Details</h2>
-                <p className={styles.stepDescription}>
-                  Describe the care needs and any additional information that will help us serve the client.
-                </p>
-                
-                <div className={styles.formGridSingle}>
+                <div className={styles.formGridFull}>
                   <div className="form-group">
-                    <label htmlFor="serviceNeeds" className="form-label">Description of Service Needs *</label>
+                    <label htmlFor="serviceNeeds" className="form-label">Description of Service Needs</label>
                     <textarea
                       id="serviceNeeds"
                       name="serviceNeeds"
                       className="form-textarea"
-                      placeholder="Please describe the care needs, diagnoses, current care situation, and any specific requirements..."
-                      rows={5}
+                      placeholder="Care needs, diagnoses, current care situation, specific requirements..."
+                      rows={4}
                       value={formData.serviceNeeds}
                       onChange={handleChange}
-                      required
                     />
                   </div>
-                  <div className="form-group">
-                    <label htmlFor="urgency" className="form-label">Urgency Level</label>
-                    <select
-                      id="urgency"
-                      name="urgency"
-                      className="form-select"
-                      value={formData.urgency}
-                      onChange={handleChange}
-                    >
-                      <option value="standard">Standard (1-2 weeks)</option>
-                      <option value="urgent">Urgent (within 1 week)</option>
-                      <option value="immediate">Immediate (ASAP)</option>
-                    </select>
+                  <div className={styles.formGridSingle}>
+                    <div className="form-group">
+                      <label htmlFor="urgency" className="form-label">Urgency Level</label>
+                      <select
+                        id="urgency"
+                        name="urgency"
+                        className="form-select"
+                        value={formData.urgency}
+                        onChange={handleChange}
+                      >
+                        <option value="standard">Standard (1-2 weeks)</option>
+                        <option value="urgent">Urgent (within 1 week)</option>
+                        <option value="immediate">Immediate (ASAP)</option>
+                      </select>
+                    </div>
                   </div>
                   <div className="form-group">
                     <label htmlFor="additionalNotes" className="form-label">Additional Notes</label>
@@ -652,6 +782,21 @@ export default function ReferralPage() {
               </div>
             )}
 
+            {/* Validation Banner */}
+            {showValidation && getMissingFields().length > 0 && (
+              <div className={styles.validationBanner}>
+                <AlertCircle size={18} />
+                <div>
+                  <strong>Please complete the following required fields:</strong>
+                  <ul>
+                    {getMissingFields().map((field) => (
+                      <li key={field}>{field}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+
             {/* Form Navigation */}
             <div className={styles.formNav}>
               {step > 1 && (
@@ -660,12 +805,11 @@ export default function ReferralPage() {
                 </button>
               )}
               <div className={styles.navSpacer} />
-              {step < 4 ? (
-                <button 
-                  type="button" 
-                  className="btn btn-primary"
-                  onClick={nextStep}
-                  disabled={!isStepValid()}
+              {step < 2 ? (
+                <button
+                  type="button"
+                  className={`btn btn-primary ${isStepValid() ? styles.btnReady : styles.btnFaded}`}
+                  onClick={handleAttemptNext}
                 >
                   Next Step <ArrowRight size={18} />
                 </button>
@@ -677,10 +821,11 @@ export default function ReferralPage() {
                       <span>{error}</span>
                     </div>
                   )}
-                  <button 
-                    type="submit" 
-                    className="btn btn-gold btn-lg"
-                    disabled={!isStepValid() || isSubmitting}
+                  <button
+                    type="button"
+                    className={`btn btn-gold btn-lg ${isStepValid() ? styles.btnReady : styles.btnFaded}`}
+                    onClick={handleAttemptSubmit}
+                    disabled={isSubmitting}
                   >
                     <Send size={20} /> {isSubmitting ? 'Submitting...' : 'Submit Referral'}
                   </button>
