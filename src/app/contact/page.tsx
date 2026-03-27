@@ -237,7 +237,7 @@ export default function ContactPage() {
                   </div>
                   <div className={styles.formRow}>
                     <div className="form-group">
-                      <label htmlFor="phone" className="form-label">Phone Number</label>
+                      <label htmlFor="phone" className="form-label">Phone Number *</label>
                       <input
                         type="tel"
                         id="phone"
@@ -246,6 +246,7 @@ export default function ContactPage() {
                         placeholder="(XXX) XXX-XXXX"
                         value={formData.phone}
                         onChange={handleChange}
+                        required
                       />
                     </div>
                     <div className="form-group">
