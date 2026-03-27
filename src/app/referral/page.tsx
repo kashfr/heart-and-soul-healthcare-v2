@@ -148,11 +148,28 @@ export default function ReferralPage() {
     handleSubmit(e);
   };
 
+  // Format phone number as user types: (XXX) XXX-XXXX
+  const formatPhoneNumber = (value: string): string => {
+    const digits = value.replace(/\D/g, '').slice(0, 10);
+    if (digits.length === 0) return '';
+    if (digits.length < 3) return `(${digits}`;
+    if (digits.length === 3) return `(${digits}) `;
+    if (digits.length < 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+    if (digits.length === 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}-`;
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
 
     // Clear validation when user starts filling fields
     if (showValidation) setShowValidation(false);
+
+    // Auto-format phone number fields
+    if (name === 'clientPhone' || name === 'referrerPhone') {
+      setFormData({ ...formData, [name]: formatPhoneNumber(value) });
+      return;
+    }
 
     // If selecting self-referral, auto-fill referrer info with client info
     if (name === 'referralSource' && value === 'self') {
