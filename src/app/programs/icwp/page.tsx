@@ -4,7 +4,23 @@ import ProgramPageTemplate from '@/components/ProgramPageTemplate';
 
 export const metadata: Metadata = {
   title: 'ICWP - Independent Care Waiver Program | Heart and Soul Healthcare',
-  description: 'The Independent Care Waiver Program provides comprehensive services for adults with severe physical impairments or traumatic brain injuries to achieve independent living.',
+  description: 'The ICWP provides comprehensive home health services for adults aged 21–64 with severe physical impairments or traumatic brain injuries in Georgia, supporting independent living and preventing institutionalization.',
+  alternates: { canonical: 'https://www.heartandsoulhc.org/programs/icwp' },
+  openGraph: {
+    title: 'ICWP - Independent Care Waiver Program | Heart and Soul Healthcare',
+    description: 'Home health services for adults with severe physical impairments or traumatic brain injuries in Georgia.',
+    url: 'https://www.heartandsoulhc.org/programs/icwp',
+  },
+};
+
+const serviceJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "MedicalTherapy",
+  name: "Independent Care Waiver Program (ICWP)",
+  description: "The ICWP provides comprehensive services for adults aged 21–64 with severe physical impairments or traumatic brain injuries to achieve independent living and prevent institutionalization in Georgia.",
+  provider: { "@type": "Organization", name: "Heart and Soul Healthcare", url: "https://www.heartandsoulhc.org" },
+  areaServed: { "@type": "State", name: "Georgia" },
+  audience: { "@type": "PeopleAudience", audienceType: "Adults aged 21–64 with severe physical impairments or traumatic brain injuries" },
 };
 
 const services = [
@@ -44,7 +60,9 @@ const services = [
 
 export default function ICWPPage() {
   return (
-    <ProgramPageTemplate
+    <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(serviceJsonLd) }} />
+      <ProgramPageTemplate
       icon={Accessibility}
       programName="ICWP"
       fullTitle="Independent Care Waiver Program"
@@ -57,5 +75,6 @@ export default function ICWPPage() {
       goalImage="/images/icwp-goal-v2.png"
       imageAspectRatio="1/1"
     />
+    </>
   );
 }

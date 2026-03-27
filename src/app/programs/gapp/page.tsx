@@ -4,7 +4,23 @@ import ProgramPageTemplate from '@/components/ProgramPageTemplate';
 
 export const metadata: Metadata = {
   title: 'GAPP - Georgia Pediatric Program | Heart and Soul Healthcare',
-  description: 'The Georgia Pediatric Program (GAPP) provides skilled nursing and support services for medically fragile children, enabling them to thrive in their homes and communities.',
+  description: 'The Georgia Pediatric Program (GAPP) provides skilled nursing and support services for medically fragile children under 21, enabling them to thrive at home as an alternative to nursing facility placement.',
+  alternates: { canonical: 'https://www.heartandsoulhc.org/programs/gapp' },
+  openGraph: {
+    title: 'GAPP - Georgia Pediatric Program | Heart and Soul Healthcare',
+    description: 'Skilled nursing and support services for medically fragile children under 21 throughout Georgia.',
+    url: 'https://www.heartandsoulhc.org/programs/gapp',
+  },
+};
+
+const serviceJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "MedicalTherapy",
+  name: "Georgia Pediatric Program (GAPP)",
+  description: "The Georgia Pediatric Program provides skilled nursing and support services for medically fragile children under 21, enabling them to thrive in their homes and communities as an alternative to nursing facility placement.",
+  provider: { "@type": "Organization", name: "Heart and Soul Healthcare", url: "https://www.heartandsoulhc.org" },
+  areaServed: { "@type": "State", name: "Georgia" },
+  audience: { "@type": "PeopleAudience", audienceType: "Medically fragile children under 21 years of age" },
 };
 
 const services = [
@@ -24,7 +40,9 @@ const services = [
 
 export default function GAPPPage() {
   return (
-    <ProgramPageTemplate
+    <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(serviceJsonLd) }} />
+      <ProgramPageTemplate
       icon={Baby}
       programName="GAPP"
       fullTitle="Georgia Pediatric Program"
@@ -37,5 +55,6 @@ export default function GAPPPage() {
       imageAspectRatio="1/1"
       goalImage="/images/gapp-goal.png"
     />
+    </>
   );
 }

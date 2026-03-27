@@ -17,7 +17,13 @@ import styles from './page.module.css';
 
 export const metadata: Metadata = {
   title: 'About Us | Heart and Soul Healthcare',
-  description: 'Learn about Heart and Soul Healthcare - our mission, values, and commitment to providing exceptional home health care services throughout Georgia.',
+  description: 'Learn about Heart and Soul Healthcare — our mission, values, and commitment to providing exceptional home health care services throughout Georgia.',
+  alternates: { canonical: 'https://www.heartandsoulhc.org/about' },
+  openGraph: {
+    title: 'About Us | Heart and Soul Healthcare',
+    description: 'Our mission, values, and commitment to exceptional home health care throughout Georgia.',
+    url: 'https://www.heartandsoulhc.org/about',
+  },
 };
 
 const values = [

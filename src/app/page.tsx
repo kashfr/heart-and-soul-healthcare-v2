@@ -1,5 +1,17 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import Image from 'next/image';
+
+export const metadata: Metadata = {
+  title: 'Heart and Soul Healthcare | Home Health Services in Georgia',
+  description: 'Heart and Soul Healthcare delivers compassionate home health care across Georgia through Medicaid waiver programs — GAPP, NOW/COMP, ICWP, and EDWP. Make a referral today.',
+  alternates: { canonical: 'https://www.heartandsoulhc.org' },
+  openGraph: {
+    title: 'Heart and Soul Healthcare | Home Health Services in Georgia',
+    description: 'Compassionate home health care across Georgia. GAPP, NOW/COMP, ICWP, and EDWP waiver programs. Make a referral today.',
+    url: 'https://www.heartandsoulhc.org',
+  },
+};
 import { 
   Heart, 
   Shield, 

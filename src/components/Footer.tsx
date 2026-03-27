@@ -80,27 +80,29 @@ export default function Footer() {
             {/* Contact Info */}
             <div className={styles.footerSection}>
               <h4 className={styles.footerTitle}>Contact Us</h4>
-              <ul className={styles.contactList}>
-                <li>
-                  <Phone size={18} />
-                  <span><a href="tel:678-644-0337" style={{ color: 'inherit', textDecoration: 'none' }}>(678) 644-0337</a></span>
-                </li>
-                <li>
-                  <Mail size={18} />
-                  <span><a href="mailto:info@heartandsoulhc.org" style={{ color: 'inherit', textDecoration: 'none' }}>info@heartandsoulhc.org</a></span>
-                </li>
-                <li>
-                  <MapPin size={18} />
-                  <span>
-                    1372 Peachtree St NE<br />
-                    Atlanta, GA 30309
-                  </span>
-                </li>
-                <li>
-                  <Clock size={18} />
-                  <span>Mon - Fri: 10:00 AM - 3:00 PM</span>
-                </li>
-              </ul>
+              <address style={{ fontStyle: 'normal' }}>
+                <ul className={styles.contactList}>
+                  <li>
+                    <Phone size={18} />
+                    <span><a href="tel:678-644-0337" style={{ color: 'inherit', textDecoration: 'none' }}>(678) 644-0337</a></span>
+                  </li>
+                  <li>
+                    <Mail size={18} />
+                    <span><a href="mailto:info@heartandsoulhc.org" style={{ color: 'inherit', textDecoration: 'none' }}>info@heartandsoulhc.org</a></span>
+                  </li>
+                  <li>
+                    <MapPin size={18} />
+                    <span>
+                      1372 Peachtree St NE<br />
+                      Atlanta, GA 30309
+                    </span>
+                  </li>
+                  <li>
+                    <Clock size={18} />
+                    <span>Mon - Fri: 10:00 AM - 3:00 PM</span>
+                  </li>
+                </ul>
+              </address>
             </div>
           </div>
         </div>

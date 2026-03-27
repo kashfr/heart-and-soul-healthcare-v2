@@ -43,7 +43,7 @@ export default function Header() {
         </div>
       </div>
       
-      <nav className={styles.nav}>
+      <nav className={styles.nav} aria-label="Main navigation">
         <div className="container">
           <div className={styles.navContent}>
             <Link href="/" className={styles.logo}>

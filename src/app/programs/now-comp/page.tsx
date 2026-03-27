@@ -4,7 +4,23 @@ import ProgramPageTemplate from '@/components/ProgramPageTemplate';
 
 export const metadata: Metadata = {
   title: 'NOW/COMP Waiver Program | Heart and Soul Healthcare',
-  description: 'The New Options Waiver and Comprehensive Supports Waiver Program provides person-centered support for individuals with intellectual and developmental disabilities.',
+  description: 'The NOW/COMP Waiver Program provides person-centered support for individuals with intellectual and developmental disabilities in Georgia, promoting community integration and independent living.',
+  alternates: { canonical: 'https://www.heartandsoulhc.org/programs/now-comp' },
+  openGraph: {
+    title: 'NOW/COMP Waiver Program | Heart and Soul Healthcare',
+    description: 'Person-centered support for individuals with intellectual and developmental disabilities in Georgia.',
+    url: 'https://www.heartandsoulhc.org/programs/now-comp',
+  },
+};
+
+const serviceJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "MedicalTherapy",
+  name: "NOW/COMP Waiver Program (New Options Waiver / Comprehensive Supports Waiver)",
+  description: "The NOW/COMP Waiver Program provides person-centered support for individuals with intellectual and developmental disabilities, promoting community integration and independent living in Georgia.",
+  provider: { "@type": "Organization", name: "Heart and Soul Healthcare", url: "https://www.heartandsoulhc.org" },
+  areaServed: { "@type": "State", name: "Georgia" },
+  audience: { "@type": "PeopleAudience", audienceType: "Adults with intellectual and developmental disabilities (I/DD)" },
 };
 
 const services = [
@@ -52,7 +68,9 @@ const services = [
 
 export default function NOWCOMPPage() {
   return (
-    <ProgramPageTemplate
+    <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(serviceJsonLd) }} />
+      <ProgramPageTemplate
       icon={Brain}
       programName="NOW/COMP"
       fullTitle="New Options Waiver / Comprehensive Supports Waiver Program"
@@ -65,5 +83,6 @@ export default function NOWCOMPPage() {
       goalImage="/images/now-comp-goal.png"
       imageAspectRatio="1/1"
     />
+    </>
   );
 }

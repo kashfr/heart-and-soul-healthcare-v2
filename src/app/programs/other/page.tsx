@@ -15,7 +15,13 @@ import styles from './page.module.css';
 
 export const metadata: Metadata = {
   title: 'Other Programs & Partnerships | Heart and Soul Healthcare',
-  description: 'Explore additional services including private pay options, American Veterans Care Connection (AVCC), and Bobby Dodd Institute partnerships.',
+  description: 'Explore additional home health services from Heart and Soul Healthcare including private pay options, American Veterans Care Connection (AVCC), and Bobby Dodd Institute partnerships.',
+  alternates: { canonical: 'https://www.heartandsoulhc.org/programs/other' },
+  openGraph: {
+    title: 'Other Programs & Partnerships | Heart and Soul Healthcare',
+    description: 'Private pay home health care, AVCC veteran services, and Bobby Dodd Institute partnerships in Georgia.',
+    url: 'https://www.heartandsoulhc.org/programs/other',
+  },
 };
 
 const programs = [

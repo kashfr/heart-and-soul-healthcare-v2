@@ -4,7 +4,23 @@ import ProgramPageTemplate from '@/components/ProgramPageTemplate';
 
 export const metadata: Metadata = {
   title: 'EDWP (CCSP & SOURCE) - Elderly & Disabled Waiver Program | Heart and Soul Healthcare',
-  description: 'Comprehensive support services for elderly and disabled individuals to maintain independence, safety, and quality of life in their own homes.',
+  description: 'The EDWP provides comprehensive home health services for elderly individuals 65+ and disabled adults 21+ in Georgia, helping them maintain independence and avoid nursing facility placement.',
+  alternates: { canonical: 'https://www.heartandsoulhc.org/programs/edwp' },
+  openGraph: {
+    title: 'EDWP (CCSP & SOURCE) - Elderly & Disabled Waiver Program | Heart and Soul Healthcare',
+    description: 'Home health services for elderly and disabled individuals in Georgia to maintain independence at home.',
+    url: 'https://www.heartandsoulhc.org/programs/edwp',
+  },
+};
+
+const serviceJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "MedicalTherapy",
+  name: "Elderly & Disabled Waiver Program (EDWP) — CCSP & SOURCE",
+  description: "The EDWP provides comprehensive support services for elderly individuals aged 65+ and disabled adults aged 21+ in Georgia, helping them maintain independence, safety, and quality of life at home.",
+  provider: { "@type": "Organization", name: "Heart and Soul Healthcare", url: "https://www.heartandsoulhc.org" },
+  areaServed: { "@type": "State", name: "Georgia" },
+  audience: { "@type": "PeopleAudience", audienceType: "Elderly individuals 65+ and physically disabled adults 21+ at risk of nursing facility placement" },
 };
 
 const services = [
@@ -48,7 +64,9 @@ const services = [
 
 export default function EDWPPage() {
   return (
-    <ProgramPageTemplate
+    <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(serviceJsonLd) }} />
+      <ProgramPageTemplate
       icon={UserCheck}
       programName="EDWP (CCSP & SOURCE)"
       fullTitle="Elderly & Disabled Waiver Program"
@@ -61,5 +79,6 @@ export default function EDWPPage() {
       goalImage="/images/edwp-goal.png"
       imageAspectRatio="1/1"
     />
+    </>
   );
 }
