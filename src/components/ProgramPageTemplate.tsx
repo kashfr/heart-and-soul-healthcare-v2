@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { LucideIcon, ArrowRight, Phone, CheckCircle } from 'lucide-react';
+import { LucideIcon, ArrowRight, Phone, CheckCircle, ExternalLink } from 'lucide-react';
 import styles from './ProgramPageTemplate.module.css';
 
 interface ServiceItem {
@@ -13,6 +13,12 @@ interface FaqItem {
   answer: string;
 }
 
+interface OfficialResource {
+  label: string;
+  url: string;
+  description: string;
+}
+
 interface ProgramPageTemplateProps {
   icon: LucideIcon;
   programName: string;
@@ -22,6 +28,7 @@ interface ProgramPageTemplateProps {
   programGoal: string;
   services: ServiceItem[];
   faqs?: FaqItem[];
+  officialResources?: OfficialResource[];
   accentColor?: 'teal' | 'gold' | 'sage' | 'primary';
   populationImage?: string;
   populationImageAlt?: string;
@@ -39,6 +46,7 @@ export default function ProgramPageTemplate({
   programGoal,
   services,
   faqs,
+  officialResources,
   accentColor = 'teal',
   populationImage,
   populationImageAlt,
@@ -175,6 +183,36 @@ export default function ProgramPageTemplate({
                   <h3 className={styles.faqQuestion}>{faq.question}</h3>
                   <p className={styles.faqAnswer}>{faq.answer}</p>
                 </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Official Resources */}
+      {officialResources && officialResources.length > 0 && (
+        <section className={`section ${styles.resourcesSection}`}>
+          <div className="container">
+            <div className="section-header">
+              <span className={`${styles.sectionLabel} ${styles[accentColor]}`}>Official Resources</span>
+              <h2>Helpful Links</h2>
+              <p>Official Georgia and federal government resources for the {fullTitle}</p>
+            </div>
+            <div className={styles.resourcesList}>
+              {officialResources.map((resource, index) => (
+                <a
+                  key={index}
+                  href={resource.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.resourceCard}
+                >
+                  <div className={styles.resourceInfo}>
+                    <h3 className={styles.resourceLabel}>{resource.label}</h3>
+                    <p className={styles.resourceDesc}>{resource.description}</p>
+                  </div>
+                  <ExternalLink size={18} className={styles.resourceIcon} />
+                </a>
               ))}
             </div>
           </div>

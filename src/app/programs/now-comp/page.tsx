@@ -146,6 +146,29 @@ const faqs = [
   },
 ];
 
+const officialResources = [
+  {
+    label: 'Georgia DBHDD — Developmental Disabilities',
+    url: 'https://dbhdd.georgia.gov/developmental-disabilities',
+    description: 'Official DBHDD page for intellectual and developmental disability services including NOW and COMP waivers.',
+  },
+  {
+    label: 'Georgia Medicaid — Waiver Programs',
+    url: 'https://medicaid.georgia.gov/programs/all-programs/waiver-programs',
+    description: 'Complete listing of Georgia Medicaid waiver programs with eligibility and service details.',
+  },
+  {
+    label: 'Georgia Medicaid Portal',
+    url: 'https://medicaid.georgia.gov',
+    description: 'Check Medicaid eligibility, enrollment status, and program information.',
+  },
+  {
+    label: 'Medicaid.gov — Home & Community-Based Services',
+    url: 'https://www.medicaid.gov/medicaid/home-community-based-services/index.html',
+    description: 'Federal overview of Medicaid HCBS waiver programs and how they support community-based care.',
+  },
+];
+
 export default function NOWCOMPPage() {
   return (
     <>
@@ -161,6 +184,7 @@ export default function NOWCOMPPage() {
         programGoal="The NOW/COMP program emphasizes support coordination, person-centered planning, and community integration to assist individuals in living a meaningful life in the community. We focus on individual strengths and preferences to develop care plans that promote independence, self-determination, and full participation in community life throughout Georgia."
         services={services}
         faqs={faqs}
+        officialResources={officialResources}
         accentColor="gold"
         populationImage="/images/now-comp-population.png"
         populationImageAlt="Individual with intellectual and developmental disability receiving community support through the NOW/COMP Waiver Program in Georgia"

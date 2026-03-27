@@ -142,6 +142,34 @@ const faqs = [
   },
 ];
 
+const officialResources = [
+  {
+    label: 'Georgia.gov — Apply for EDWP',
+    url: 'https://georgia.gov/apply-elderly-and-disabled-waiver-program',
+    description: 'Official Georgia.gov page with EDWP eligibility requirements and how to apply through your local AAA.',
+  },
+  {
+    label: 'Georgia Division of Aging Services',
+    url: 'https://aging.georgia.gov',
+    description: 'State agency overseeing elder services, caregiver support, and the CCSP/SOURCE programs.',
+  },
+  {
+    label: 'Division of Aging Services — Programs',
+    url: 'https://aging.georgia.gov/programs-and-services',
+    description: 'Full listing of aging programs including CCSP, nutrition, caregiver support, and legal assistance.',
+  },
+  {
+    label: 'Find Your Area Agency on Aging',
+    url: 'https://aging.georgia.gov/locations',
+    description: 'Locate your regional Area Agency on Aging (AAA) — the first step in applying for EDWP services.',
+  },
+  {
+    label: 'Georgia Medicaid — Waiver Programs',
+    url: 'https://medicaid.georgia.gov/programs/all-programs/waiver-programs',
+    description: 'Complete listing of Georgia Medicaid waiver programs including CCSP and SOURCE details.',
+  },
+];
+
 export default function EDWPPage() {
   return (
     <>
@@ -157,6 +185,7 @@ export default function EDWPPage() {
         programGoal="The services provided through EDWP — delivered via the Community Care Services Program (CCSP) and Service Options Using Resources in a Community Environment (SOURCE) — aim to maintain or increase the functioning capacity of members at risk for nursing facility placement. Our focus is on promoting independence, ensuring safety, and enhancing quality of life while enabling individuals to remain in their preferred community settings."
         services={services}
         faqs={faqs}
+        officialResources={officialResources}
         accentColor="primary"
         populationImage="/images/edwp-population.png"
         populationImageAlt="Elderly individual receiving personal support services through the Elderly and Disabled Waiver Program (EDWP) in Georgia"

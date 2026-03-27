@@ -138,6 +138,29 @@ const faqs = [
   },
 ];
 
+const officialResources = [
+  {
+    label: 'Georgia.gov — Apply for ICWP',
+    url: 'https://georgia.gov/apply-independent-care-waiver-program-icwp',
+    description: 'Official Georgia.gov page with ICWP eligibility requirements and application steps.',
+  },
+  {
+    label: 'Georgia Medicaid — Waiver Programs',
+    url: 'https://medicaid.georgia.gov/programs/all-programs/waiver-programs',
+    description: 'Complete listing of Georgia Medicaid waiver programs including ICWP details.',
+  },
+  {
+    label: 'Georgia DBHDD',
+    url: 'https://dbhdd.georgia.gov',
+    description: 'Department of Behavioral Health and Developmental Disabilities — oversees ICWP services.',
+  },
+  {
+    label: 'Medicaid.gov — Home & Community-Based Services',
+    url: 'https://www.medicaid.gov/medicaid/home-community-based-services/index.html',
+    description: 'Federal overview of Medicaid HCBS waiver programs supporting independent living.',
+  },
+];
+
 export default function ICWPPage() {
   return (
     <>
@@ -153,6 +176,7 @@ export default function ICWPPage() {
         programGoal="The goal of the Independent Care Waiver Program is to assist functionally impaired adults in achieving dignified and reasonably independent lives within their communities. Through comprehensive support services, we help individuals maintain their independence, prevent institutionalization, and improve their overall quality of life."
         services={services}
         faqs={faqs}
+        officialResources={officialResources}
         accentColor="sage"
         populationImage="/images/icwp-population-v2.png"
         populationImageAlt="Adult with physical impairment receiving personal support services through the Independent Care Waiver Program (ICWP) in Georgia"

@@ -118,6 +118,29 @@ const faqs = [
   },
 ];
 
+const officialResources = [
+  {
+    label: 'Georgia Medicaid — Waiver Programs',
+    url: 'https://medicaid.georgia.gov/programs/all-programs/waiver-programs',
+    description: 'Official listing of all Georgia Medicaid waiver programs including GAPP eligibility and services.',
+  },
+  {
+    label: 'Georgia DCH — Community-Based Services',
+    url: 'https://dch.georgia.gov/programs/hcbs/community-based-services',
+    description: 'Department of Community Health page covering GAPP and other community-based waiver programs.',
+  },
+  {
+    label: 'Georgia Medicaid Portal',
+    url: 'https://medicaid.georgia.gov',
+    description: 'Check Medicaid eligibility, enrollment status, and PeachCare for Kids information.',
+  },
+  {
+    label: 'Medicaid.gov — Home & Community-Based Services',
+    url: 'https://www.medicaid.gov/medicaid/home-community-based-services/index.html',
+    description: 'Federal overview of Medicaid HCBS waiver programs and how they support home-based care.',
+  },
+];
+
 export default function GAPPPage() {
   return (
     <>
@@ -133,6 +156,7 @@ export default function GAPPPage() {
         programGoal="The primary purpose of the Georgia Pediatric Program (GAPP) is to provide approved in-home services to medically fragile children as an alternative to placement in a nursing care facility. GAPP enables families throughout Georgia to keep their children at home while ensuring they receive the specialized skilled nursing care they need."
         services={services}
         faqs={faqs}
+        officialResources={officialResources}
         accentColor="teal"
         populationImage="/images/gapp-population.png"
         populationImageAlt="Medically fragile child receiving in-home skilled nursing care through the Georgia Pediatric Program (GAPP)"
