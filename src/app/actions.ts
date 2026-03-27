@@ -20,6 +20,16 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#39;');
 }
 
+// Map form referral source values to ClickUp dropdown option UUIDs
+const REFERRAL_SOURCE_OPTIONS: Record<string, string> = {
+  'hospital': '88a91cb6-b878-4b2f-bfc7-9621ba7fa0d0',       // Hospital / Medical Facility
+  'physician': 'f230bd9c-8f13-4833-a5d4-10908790f672',       // Physician / Healthcare Provider
+  'case-manager': '3b6dee3d-4a28-4e5d-8ae2-bf1caa1b824b',    // Case Manager / Support Coordinator
+  'family': 'fc3e314c-df5b-4108-b6d6-e22fe9fcf176',          // Family Member
+  'self': '093c100e-e7c0-4378-9c59-235c72cac37a',            // Self-Referral
+  'other': '95b9966f-50f3-436d-826e-821a2bab4014',           // Other
+};
+
 // Format phone number for ClickUp (requires +1 XXX-XXX-XXXX format for US numbers)
 function formatPhoneForClickUp(phone: string): string {
   // Strip all non-digit characters
@@ -159,17 +169,26 @@ export async function processReferralSubmission(data: any) {
         <p><strong>DOB:</strong> ${escapeHtml(client.dob)}</p>
         <p><strong>Phone:</strong> ${escapeHtml(client.phone)}</p>
         <p><strong>Email:</strong> ${escapeHtml(client.email)}</p>
+        <p><strong>Address:</strong> ${escapeHtml(client.address || '')}${client.city ? ', ' + escapeHtml(client.city) : ''}${client.state ? ', ' + escapeHtml(client.state) : ''} ${escapeHtml(client.zip || '')}</p>
+        <p><strong>County:</strong> ${escapeHtml(client.county || 'N/A')}</p>
 
         <h3>Program & Insurance</h3>
         <p><strong>Program Interest:</strong> ${escapeHtml(program.interest)}</p>
+        <p><strong>Medicaid #:</strong> ${escapeHtml(program.medicaidNumber || 'N/A')}</p>
+        <p><strong>Insurance Provider:</strong> ${escapeHtml(program.insuranceProvider || 'N/A')}</p>
+        <p><strong>Insurance Policy #:</strong> ${escapeHtml(program.insuranceNumber || 'N/A')}</p>
 
         <h3>Referrer Information</h3>
+        <p><strong>Source:</strong> ${escapeHtml(referrer.source || 'N/A')}</p>
         <p><strong>Name:</strong> ${escapeHtml(referrer.name)}</p>
+        <p><strong>Phone:</strong> ${escapeHtml(referrer.phone || 'N/A')}</p>
+        <p><strong>Email:</strong> ${escapeHtml(referrer.email || 'N/A')}</p>
         <p><strong>Organization:</strong> ${escapeHtml(referrer.organization || 'N/A')}</p>
 
         <h3>Details</h3>
         <p><strong>Urgency:</strong> ${escapeHtml(details.urgency)}</p>
-        <p><strong>Service Needs:</strong> ${escapeHtml(details.serviceNeeds)}</p>
+        <p><strong>Service Needs:</strong> ${escapeHtml(details.serviceNeeds || 'N/A')}</p>
+        <p><strong>Additional Notes:</strong> ${escapeHtml(details.additionalNotes || 'N/A')}</p>
       `,
     });
 
@@ -182,14 +201,26 @@ export async function processReferralSubmission(data: any) {
     await addToGoogleSheet('Referral Submissions', {
       Date: new Date().toISOString(),
       'Client Name': `${client.firstName} ${client.lastName}`,
+      'Client DOB': client.dob,
       'Client Phone': client.phone,
       'Client Email': client.email,
+      'Client Address': client.address,
+      'Client City': client.city,
+      'Client State': client.state,
+      'Client ZIP': client.zip,
+      'Client County': client.county,
       'Program': program.interest,
+      'Medicaid Number': program.medicaidNumber,
+      'Insurance Provider': program.insuranceProvider,
+      'Insurance Policy #': program.insuranceNumber,
+      'Referral Source': referrer.source,
       'Referrer Name': referrer.name,
-      'Referrer Source': referrer.source,
+      'Referrer Phone': referrer.phone,
+      'Referrer Email': referrer.email,
       'Referrer Org': referrer.organization,
       'Urgency': details.urgency,
-      'Service Needs': details.serviceNeeds
+      'Service Needs': details.serviceNeeds,
+      'Additional Notes': details.additionalNotes,
     });
 
 
@@ -199,20 +230,35 @@ export async function processReferralSubmission(data: any) {
     if (referralListId) {
       await createClickUpTask(referralListId, {
         name: `Referral: ${client.firstName} ${client.lastName}`,
-        // Description removed as data is mapped to custom fields
         priority: details.urgency === 'immediate' ? 1 : 3, // 1 is Urgent, 3 is Normal
         notify_all: true,
         custom_fields: [
+          // Client Information
           { id: '9bf2cd0d-5ef4-4ebb-8522-f77e01985eb0', value: `${client.firstName} ${client.lastName}` }, // Referred Client Name
-          { id: 'c02afbc9-b9b2-43b8-ad05-f74fe91dbbbf', value: new Date(new Date().toDateString()).getTime() }, // Referral Date (Today at midnight local)
+          { id: 'c02afbc9-b9b2-43b8-ad05-f74fe91dbbbf', value: new Date(new Date().toDateString()).getTime() }, // Referral Date
           { id: '6668647f-6d01-4cfc-8b7b-04b56c819f8a', value: new Date(client.dob).getTime() }, // Client Date of Birth
           { id: 'bdac05ff-f0b8-4a99-ba28-6fcb46927cef', value: formatPhoneForClickUp(client.phone) }, // Client Phone
           { id: 'c8d866c9-2ea6-4f2f-9c66-9ab57d33639b', value: client.email },    // Client Email
+          { id: 'd040e616-0a22-4402-8cd1-827723ed8d2b', value: client.county || '' }, // Client County
+          { id: 'c94e37a9-54f3-408b-9527-b7ea1a72dcbc', value: client.address || '' }, // Client Street Address
+          { id: 'd7503cd8-81e7-40de-8d8c-07fedf8f4f3e', value: client.city || '' }, // Client City
+          { id: 'b59c71c2-1dd4-4cd5-82fc-8f39f5b7a883', value: client.state || '' }, // Client State
+          { id: 'd501b873-bf59-400e-9a7a-b5285b4bd873', value: client.zip || '' }, // Client ZIP Code
+          // Program & Insurance
           { id: '6749e013-8b78-4ca1-9f55-30525f4839e9', value: program.interest }, // Program Interest
+          { id: '1079f519-0313-4119-b007-d57f7169851b', value: program.medicaidNumber || '' }, // Medicaid Number
+          { id: 'b35f6d26-97f4-4f2b-87a0-7cb464b5f334', value: program.insuranceProvider || '' }, // Insurance Provider
+          { id: '2859e690-c43d-4cad-827a-40aa976c5ecf', value: program.insuranceNumber || '' }, // Insurance Policy Number
+          // Referrer Information
+          ...(REFERRAL_SOURCE_OPTIONS[referrer.source] ? [{ id: '0b7127bc-ccaa-4bba-acd0-8cbc293f5c63', value: REFERRAL_SOURCE_OPTIONS[referrer.source] }] : []), // Referral Source (dropdown)
           { id: '29489448-c512-4abc-8cc2-b7559391f8b2', value: referrer.name },   // Referrer Name
+          { id: 'e66213b7-52a9-4032-bb81-d4794b6619a0', value: referrer.phone ? formatPhoneForClickUp(referrer.phone) : '' }, // Referrer Phone
+          { id: 'b3e956cc-6bc8-4383-b0a4-89aaa336ad0b', value: referrer.email || '' }, // Referrer Email
           { id: 'fff148ee-ebb0-46fb-be07-e4e2abdc4a66', value: referrer.organization || '' }, // Referrer Organization
+          // Details
           { id: '84d9a6f5-c7a0-4c9f-820f-c4de7be2ba57', value: details.urgency }, // Urgency
-          { id: '1553a6b0-7a54-4747-9ff3-667ad669cfeb', value: details.serviceNeeds } // Service Needs
+          { id: '1553a6b0-7a54-4747-9ff3-667ad669cfeb', value: details.serviceNeeds || '' }, // Service Needs
+          { id: '60f2c2e6-7d3e-4628-89a6-76f2903bdf8d', value: details.additionalNotes || '' }, // Additional Notes
         ]
       });
     }
