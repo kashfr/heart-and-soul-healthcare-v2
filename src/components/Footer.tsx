@@ -14,6 +14,7 @@ const programLinks = [
 const quickLinks = [
   { href: '/', label: 'Home' },
   { href: '/about', label: 'About Us' },
+  { href: '/blog', label: 'Blog' },
   { href: '/contact', label: 'Contact Us' },
   { href: '/referral', label: 'Make a Referral' },
 ];

@@ -1,0 +1,78 @@
+{
+  "description": "Content calendar for Heart and Soul Healthcare blog. Topics are selected in order. When all topics are used, start generating new topics based on current healthcare trends and caregiver search queries.",
+  "cadence": "biweekly",
+  "topics": [
+    {
+      "title": "How to Apply for Medicaid in Georgia: A Step-by-Step Guide",
+      "category": "Medicaid Guide",
+      "keywords": ["apply for Medicaid Georgia", "Georgia Medicaid application", "Medicaid eligibility Georgia"],
+      "status": "pending"
+    },
+    {
+      "title": "Understanding the Difference Between NOW and COMP Waivers in Georgia",
+      "category": "NOW/COMP",
+      "keywords": ["NOW vs COMP waiver", "NOW waiver Georgia", "COMP waiver Georgia"],
+      "status": "pending"
+    },
+    {
+      "title": "What to Expect from In-Home Skilled Nursing for Your Child",
+      "category": "GAPP",
+      "keywords": ["in-home nursing child", "GAPP skilled nursing", "pediatric home nursing Georgia"],
+      "status": "pending"
+    },
+    {
+      "title": "Environmental Modifications: How ICWP Helps Make Your Home Accessible",
+      "category": "ICWP",
+      "keywords": ["home modifications disability", "ICWP environmental modifications", "accessible home Georgia"],
+      "status": "pending"
+    },
+    {
+      "title": "Respite Care in Georgia: What It Is and How to Access It",
+      "category": "Caregiver Resources",
+      "keywords": ["respite care Georgia", "caregiver respite", "temporary caregiver relief"],
+      "status": "pending"
+    },
+    {
+      "title": "EDWP Explained: How CCSP and SOURCE Keep Seniors Safely at Home",
+      "category": "EDWP",
+      "keywords": ["CCSP Georgia", "SOURCE program Georgia", "elderly home care Georgia"],
+      "status": "pending"
+    },
+    {
+      "title": "Signs Your Aging Parent May Need Home Health Support",
+      "category": "Caregiver Resources",
+      "keywords": ["aging parent needs help", "when to get home health", "signs elderly need care"],
+      "status": "pending"
+    },
+    {
+      "title": "Community Living Supports: Building Independence Through NOW/COMP",
+      "category": "NOW/COMP",
+      "keywords": ["community living supports Georgia", "CLS NOW/COMP", "independent living I/DD"],
+      "status": "pending"
+    },
+    {
+      "title": "How to Choose the Right Home Health Provider in Georgia",
+      "category": "Medicaid Guide",
+      "keywords": ["home health provider Georgia", "choosing home health agency", "best home health care Georgia"],
+      "status": "pending"
+    },
+    {
+      "title": "Traumatic Brain Injury Support: How ICWP Helps Adults in Georgia",
+      "category": "ICWP",
+      "keywords": ["TBI support Georgia", "ICWP traumatic brain injury", "brain injury home care"],
+      "status": "pending"
+    },
+    {
+      "title": "Transitioning from Hospital to Home: A Guide for Families",
+      "category": "Caregiver Resources",
+      "keywords": ["hospital to home transition", "discharge planning", "home health after hospital"],
+      "status": "pending"
+    },
+    {
+      "title": "Understanding Support Coordination in Georgia's Waiver Programs",
+      "category": "Medicaid Guide",
+      "keywords": ["support coordinator Georgia", "waiver support coordination", "care coordination Medicaid"],
+      "status": "pending"
+    }
+  ]
+}

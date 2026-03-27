@@ -77,6 +77,7 @@ export default function Header() {
                   ))}
                 </ul>
               </li>
+              <li><Link href="/blog">Blog</Link></li>
               <li><Link href="/contact">Contact</Link></li>
               <li>
                 <Link href="/referral" className={`btn btn-primary ${styles.referralBtn}`}>
@@ -118,10 +119,11 @@ export default function Header() {
               ))}
             </ul>
           </li>
+          <li><Link href="/blog" onClick={() => setIsMobileMenuOpen(false)}>Blog</Link></li>
           <li><Link href="/contact" onClick={() => setIsMobileMenuOpen(false)}>Contact</Link></li>
           <li>
-            <Link 
-              href="/referral" 
+            <Link
+              href="/referral"
               onClick={() => setIsMobileMenuOpen(false)}
             >
               Make a Referral
