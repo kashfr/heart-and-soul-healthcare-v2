@@ -8,6 +8,11 @@ interface ServiceItem {
   description?: string;
 }
 
+interface FaqItem {
+  question: string;
+  answer: string;
+}
+
 interface ProgramPageTemplateProps {
   icon: LucideIcon;
   programName: string;
@@ -16,8 +21,11 @@ interface ProgramPageTemplateProps {
   targetPopulation: string;
   programGoal: string;
   services: ServiceItem[];
+  faqs?: FaqItem[];
   accentColor?: 'teal' | 'gold' | 'sage' | 'primary';
   populationImage?: string;
+  populationImageAlt?: string;
+  goalImageAlt?: string;
   imageAspectRatio?: string;
   goalImage?: string;
 }
@@ -30,8 +38,11 @@ export default function ProgramPageTemplate({
   targetPopulation,
   programGoal,
   services,
+  faqs,
   accentColor = 'teal',
   populationImage,
+  populationImageAlt,
+  goalImageAlt,
   imageAspectRatio = '4/3',
   goalImage,
 }: ProgramPageTemplateProps) {
@@ -79,7 +90,7 @@ export default function ProgramPageTemplate({
                 <div className={styles.imageWrapper} style={{ aspectRatio: imageAspectRatio }}>
                   <Image
                     src={populationImage}
-                    alt={`${programName} target population`}
+                    alt={populationImageAlt || `${fullTitle} — who we serve`}
                     fill
                     style={{ objectFit: 'cover' }}
                     sizes="(max-width: 768px) 100vw, 50vw"
@@ -104,7 +115,7 @@ export default function ProgramPageTemplate({
                 <div className={styles.imageWrapper} style={{ aspectRatio: imageAspectRatio }}>
                   <Image
                     src={goalImage}
-                    alt={`${programName} goal`}
+                    alt={goalImageAlt || `${fullTitle} — program goal`}
                     fill
                     style={{ objectFit: 'cover' }}
                     sizes="(max-width: 768px) 100vw, 50vw"
@@ -140,7 +151,7 @@ export default function ProgramPageTemplate({
                   <CheckCircle size={24} />
                 </div>
                 <div className={styles.serviceContent}>
-                  <h4>{service.title}</h4>
+                  <h3>{service.title}</h3>
                   {service.description && <p>{service.description}</p>}
                 </div>
               </div>
@@ -148,6 +159,27 @@ export default function ProgramPageTemplate({
           </div>
         </div>
       </section>
+
+      {/* FAQ Section */}
+      {faqs && faqs.length > 0 && (
+        <section className={`section bg-light ${styles.faqSection}`}>
+          <div className="container">
+            <div className="section-header">
+              <span className={`${styles.sectionLabel} ${styles[accentColor]}`}>Common Questions</span>
+              <h2>Frequently Asked Questions</h2>
+              <p>Answers to the most common questions about the {fullTitle}</p>
+            </div>
+            <div className={styles.faqList}>
+              {faqs.map((faq, index) => (
+                <div key={index} className={styles.faqItem}>
+                  <h3 className={styles.faqQuestion}>{faq.question}</h3>
+                  <p className={styles.faqAnswer}>{faq.answer}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* CTA Section */}
       <section className={`section bg-gradient ${styles.ctaSection}`}>

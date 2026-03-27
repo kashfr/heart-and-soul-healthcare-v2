@@ -208,8 +208,9 @@
 .serviceCard.sage .serviceIcon { color: var(--color-sage-dark); }
 .serviceCard.primary .serviceIcon { color: var(--color-gray-900); }
 
-.serviceContent h4 {
+.serviceContent h3 {
   font-size: var(--text-base);
+  font-weight: 600;
   margin-bottom: var(--space-2);
   color: var(--color-gray-900);
 }
@@ -219,6 +220,41 @@
   color: var(--color-gray-600);
   margin: 0;
   line-height: 1.6;
+}
+
+/* FAQ Section */
+.faqSection {
+  background: var(--color-gray-50);
+}
+
+.faqList {
+  max-width: 860px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.faqItem {
+  background: var(--color-white);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6) var(--space-8);
+  box-shadow: var(--shadow-sm);
+  border-left: 4px solid var(--color-accent);
+}
+
+.faqQuestion {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--color-gray-900);
+  margin-bottom: var(--space-3);
+}
+
+.faqAnswer {
+  font-size: var(--text-base);
+  color: var(--color-gray-600);
+  line-height: 1.8;
+  margin: 0;
 }
 
 /* CTA Section */
