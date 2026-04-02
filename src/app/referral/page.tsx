@@ -89,6 +89,7 @@ export default function ReferralPage() {
     clientLastName: '',
     clientDOB: '',
     clientPhone: '',
+    clientSecondaryPhone: '',
     clientEmail: '',
     clientAddress: '',
     clientCity: '',
@@ -121,6 +122,7 @@ export default function ReferralPage() {
       if (!formData.clientLastName) missing.push('Last Name');
       if (!formData.clientDOB) missing.push('Date of Birth');
       if (!formData.clientPhone) missing.push('Phone Number');
+      if (!formData.clientSecondaryPhone) missing.push('Secondary Phone Number');
     } else if (step === 2) {
       if (!formData.referralSource) missing.push('Referral Source');
       if (!isSelfReferral && formData.referralSource && !formData.referrerName) missing.push('Referrer Name');
@@ -166,7 +168,7 @@ export default function ReferralPage() {
     if (showValidation) setShowValidation(false);
 
     // Auto-format phone number fields
-    if (name === 'clientPhone' || name === 'referrerPhone') {
+    if (name === 'clientPhone' || name === 'clientSecondaryPhone' || name === 'referrerPhone') {
       setFormData({ ...formData, [name]: formatPhoneNumber(value) });
       return;
     }
@@ -208,6 +210,7 @@ export default function ReferralPage() {
           lastName: formData.clientLastName,
           dob: formData.clientDOB,
           phone: formData.clientPhone,
+          secondaryPhone: formData.clientSecondaryPhone,
           email: formData.clientEmail,
           address: formData.clientAddress,
           city: formData.clientCity,
@@ -257,7 +260,7 @@ export default function ReferralPage() {
   const isStepValid = () => {
     switch (step) {
       case 1:
-        return formData.programInterest && formData.clientCounty && formData.clientFirstName && formData.clientLastName && formData.clientDOB && formData.clientPhone && formData.clientEmail;
+        return formData.programInterest && formData.clientCounty && formData.clientFirstName && formData.clientLastName && formData.clientDOB && formData.clientPhone && formData.clientSecondaryPhone && formData.clientEmail;
       case 2:
         return formData.referralSource && (isSelfReferral || formData.referrerName);
       default:
@@ -273,7 +276,7 @@ export default function ReferralPage() {
     if (!showValidation) return false;
     const value = formData[fieldName as keyof typeof formData];
     // Only flag required fields
-    const requiredStep1 = ['programInterest', 'clientCounty', 'clientFirstName', 'clientLastName', 'clientDOB', 'clientPhone', 'clientEmail'];
+    const requiredStep1 = ['programInterest', 'clientCounty', 'clientFirstName', 'clientLastName', 'clientDOB', 'clientPhone', 'clientSecondaryPhone', 'clientEmail'];
     const requiredStep2 = ['referralSource'];
     if (step === 1 && requiredStep1.includes(fieldName)) return !value;
     if (step === 2 && requiredStep2.includes(fieldName)) return !value;
@@ -315,7 +318,7 @@ export default function ReferralPage() {
                     setStep(1);
                     setFormData({
                       programInterest: '', clientCounty: '', clientFirstName: '', clientLastName: '',
-                      clientDOB: '', clientPhone: '', clientEmail: '', clientAddress: '',
+                      clientDOB: '', clientPhone: '', clientSecondaryPhone: '', clientEmail: '', clientAddress: '',
                       clientCity: '', clientState: 'GA', clientZip: '',
                       referralSource: '', referrerName: '', referrerPhone: '',
                       referrerEmail: '', referrerOrganization: '', medicaidNumber: '',
@@ -549,6 +552,20 @@ export default function ReferralPage() {
                       onChange={handleChange}
                       required
                     />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="clientSecondaryPhone" className="form-label">Secondary Phone Number *</label>
+                    <input
+                      type="tel"
+                      id="clientSecondaryPhone"
+                      name="clientSecondaryPhone"
+                      className={`form-input ${isFieldInvalid('clientSecondaryPhone') ? styles.fieldError : ''}`}
+                      placeholder="(XXX) XXX-XXXX"
+                      value={formData.clientSecondaryPhone}
+                      onChange={handleChange}
+                      required
+                    />
+                    <span className="form-helper">Alternate contact number (e.g., caregiver, family member)</span>
                   </div>
                   <div className="form-group">
                     <label htmlFor="clientEmail" className="form-label">Email Address *</label>

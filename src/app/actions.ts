@@ -168,6 +168,7 @@ export async function processReferralSubmission(data: any) {
         <p><strong>Name:</strong> ${escapeHtml(client.firstName)} ${escapeHtml(client.lastName)}</p>
         <p><strong>DOB:</strong> ${escapeHtml(client.dob)}</p>
         <p><strong>Phone:</strong> ${escapeHtml(client.phone)}</p>
+        <p><strong>Secondary Phone:</strong> ${escapeHtml(client.secondaryPhone || 'N/A')}</p>
         <p><strong>Email:</strong> ${escapeHtml(client.email)}</p>
         <p><strong>Address:</strong> ${escapeHtml(client.address || '')}${client.city ? ', ' + escapeHtml(client.city) : ''}${client.state ? ', ' + escapeHtml(client.state) : ''} ${escapeHtml(client.zip || '')}</p>
         <p><strong>County:</strong> ${escapeHtml(client.county || 'N/A')}</p>
@@ -203,6 +204,7 @@ export async function processReferralSubmission(data: any) {
       'Client Name': `${client.firstName} ${client.lastName}`,
       'Client DOB': client.dob,
       'Client Phone': client.phone,
+      'Client Secondary Phone': client.secondaryPhone,
       'Client Email': client.email,
       'Client Address': client.address,
       'Client City': client.city,
@@ -238,6 +240,7 @@ export async function processReferralSubmission(data: any) {
           { id: 'c02afbc9-b9b2-43b8-ad05-f74fe91dbbbf', value: new Date(new Date().toDateString()).getTime() }, // Referral Date
           { id: '6668647f-6d01-4cfc-8b7b-04b56c819f8a', value: new Date(client.dob).getTime() }, // Client Date of Birth
           { id: 'bdac05ff-f0b8-4a99-ba28-6fcb46927cef', value: formatPhoneForClickUp(client.phone) }, // Client Phone
+          { id: 'ed8b3cb4-ad84-4eb6-8d82-7580f48166ac', value: client.secondaryPhone ? formatPhoneForClickUp(client.secondaryPhone) : '' }, // Client Secondary Phone
           { id: 'c8d866c9-2ea6-4f2f-9c66-9ab57d33639b', value: client.email },    // Client Email
           { id: 'd040e616-0a22-4402-8cd1-827723ed8d2b', value: client.county || '' }, // Client County
           { id: 'c94e37a9-54f3-408b-9527-b7ea1a72dcbc', value: client.address || '' }, // Client Street Address
