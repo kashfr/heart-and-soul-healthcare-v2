@@ -22,7 +22,7 @@ export interface Patient {
   state: string;
   zip: string;
   mrn?: string;
-  createdAt?: Timestamp;
+  createdAt?: unknown;
 }
 
 /**
