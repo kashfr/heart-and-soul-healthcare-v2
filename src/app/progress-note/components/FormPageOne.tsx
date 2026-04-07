@@ -1,6 +1,5 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import styles from '../page.module.css';
 
 interface FormPageOneProps {
@@ -8,52 +7,6 @@ interface FormPageOneProps {
 }
 
 export default function FormPageOne({ formRef }: FormPageOneProps) {
-  const [totalHours, setTotalHours] = useState<string>('');
-
-  useEffect(() => {
-    calculateTotalHours();
-  }, []);
-
-  const calculateTotalHours = () => {
-    if (!formRef.current) return;
-
-    const startTimeInput = formRef.current.querySelector(
-      'input[name="q7_shiftStart"]'
-    ) as HTMLInputElement;
-    const endTimeInput = formRef.current.querySelector(
-      'input[name="q8_shiftEnd"]'
-    ) as HTMLInputElement;
-
-    if (startTimeInput && endTimeInput && startTimeInput.value && endTimeInput.value) {
-      const [startHour, startMin] = startTimeInput.value.split(':').map(Number);
-      const [endHour, endMin] = endTimeInput.value.split(':').map(Number);
-
-      let startTotalMin = startHour * 60 + startMin;
-      let endTotalMin = endHour * 60 + endMin;
-
-      // Handle overnight shifts (end time is next day)
-      if (endTotalMin < startTotalMin) {
-        endTotalMin += 24 * 60;
-      }
-
-      const diffMin = endTotalMin - startTotalMin;
-      const hours = (diffMin / 60).toFixed(2);
-      setTotalHours(hours);
-
-      // Update the hidden field
-      const totalHoursInput = formRef.current.querySelector(
-        'input[name="q9_totalHours"]'
-      ) as HTMLInputElement;
-      if (totalHoursInput) {
-        totalHoursInput.value = hours;
-      }
-    }
-  };
-
-  const handleTimeChange = () => {
-    calculateTotalHours();
-  };
-
   const today = new Date().toISOString().split('T')[0];
 
   return (
@@ -184,29 +137,6 @@ export default function FormPageOne({ formRef }: FormPageOneProps) {
               id="q7_shiftStart"
               name="q7_shiftStart"
               required
-              onChange={handleTimeChange}
-            />
-          </div>
-          <div className={styles.f}>
-            <label className={styles.label} htmlFor="q8_shiftEnd">Shift End Time *</label>
-            <input
-              className={styles.input}
-              type="time"
-              id="q8_shiftEnd"
-              name="q8_shiftEnd"
-              required
-              onChange={handleTimeChange}
-            />
-          </div>
-          <div className={styles.f}>
-            <label className={styles.label} htmlFor="q9_totalHours">Total Hours *</label>
-            <input
-              className={styles.input}
-              type="text"
-              id="q9_totalHours"
-              name="q9_totalHours"
-              value={totalHours}
-              readOnly
             />
           </div>
         </div>

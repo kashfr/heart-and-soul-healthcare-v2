@@ -12,6 +12,41 @@ export default function FormPageSeven({ formRef }: FormPageSevenProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [signatureImage, setSignatureImage] = useState<string>('');
+  const [totalHours, setTotalHours] = useState<string>('');
+
+  const calculateTotalHours = () => {
+    if (!formRef.current) return;
+
+    const startTimeInput = formRef.current.querySelector(
+      'input[name="q7_shiftStart"]'
+    ) as HTMLInputElement;
+    const endTimeInput = formRef.current.querySelector(
+      'input[name="q62_shiftEndTime"]'
+    ) as HTMLInputElement;
+
+    if (startTimeInput && endTimeInput && startTimeInput.value && endTimeInput.value) {
+      const [startHour, startMin] = startTimeInput.value.split(':').map(Number);
+      const [endHour, endMin] = endTimeInput.value.split(':').map(Number);
+
+      let startTotalMin = startHour * 60 + startMin;
+      let endTotalMin = endHour * 60 + endMin;
+
+      if (endTotalMin < startTotalMin) {
+        endTotalMin += 24 * 60;
+      }
+
+      const diffMin = endTotalMin - startTotalMin;
+      const hours = (diffMin / 60).toFixed(2);
+      setTotalHours(hours);
+
+      const totalHoursInput = formRef.current.querySelector(
+        'input[name="q9_totalHours"]'
+      ) as HTMLInputElement;
+      if (totalHoursInput) {
+        totalHoursInput.value = hours;
+      }
+    }
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -160,6 +195,19 @@ export default function FormPageSeven({ formRef }: FormPageSevenProps) {
               id="q62_shiftEndTime"
               name="q62_shiftEndTime"
               required
+              onChange={calculateTotalHours}
+            />
+          </div>
+          <div className={styles.f}>
+            <label className={styles.label} htmlFor="q9_totalHours">Total Hours</label>
+            <input
+              className={styles.input}
+              type="text"
+              id="q9_totalHours"
+              name="q9_totalHours"
+              value={totalHours}
+              readOnly
+              style={{ backgroundColor: '#f0f0f0' }}
             />
           </div>
         </div>
