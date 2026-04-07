@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Next.js Dev Server",
+      "runtimeExecutable": "/usr/local/bin/node",
+      "runtimeArgs": ["/Users/kfreeman/Projects/heart-and-soul-healthcare-v2/node_modules/.bin/next", "dev", "-p", "3002"],
+      "port": 3002,
+      "autoPort": false
+    }
+  ]
+}
