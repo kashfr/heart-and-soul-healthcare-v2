@@ -6,11 +6,11 @@ service cloud.firestore {
     function incomingData() {
       return request.resource.data;
     }
-    
+
     // Contact Submissions
     match /contactSubmissions/{submissionId} {
       allow read, update, delete: if false; // Only allow Admin SDK
-      allow create: if 
+      allow create: if
         // Required fields
         incomingData().name is string && incomingData().name.size() > 0 &&
         incomingData().email is string && incomingData().email.size() > 0 &&
@@ -32,18 +32,42 @@ service cloud.firestore {
         incomingData().program is map &&
         incomingData().referrer is map &&
         incomingData().details is map &&
-        
+
         // Basic Client Info validation
         incomingData().client.firstName is string && incomingData().client.firstName.size() > 0 &&
         incomingData().client.lastName is string && incomingData().client.lastName.size() > 0 &&
         incomingData().client.dob is string &&
         incomingData().client.phone is string &&
-        
+
         // Metadata
         incomingData().status == 'new' &&
         incomingData().submittedAt == request.time;
     }
-    
+
+    // Patient Roster (for nurse progress notes)
+    match /patients/{patientId} {
+      allow read: if true;
+      allow create: if
+        incomingData().name is string && incomingData().name.size() > 0 &&
+        incomingData().dob is string && incomingData().dob.size() > 0 &&
+        incomingData().diagnosis is string &&
+        incomingData().street is string &&
+        incomingData().city is string &&
+        incomingData().state is string &&
+        incomingData().zip is string &&
+        incomingData().createdAt == request.time;
+      allow delete: if true;
+    }
+
+    // Progress Notes
+    match /progressNotes/{noteId} {
+      allow read: if true;
+      allow create: if
+        incomingData().submittedAt == request.time;
+      allow delete: if false;
+      allow update: if false;
+    }
+
     // Default deny
     match /{document=**} {
       allow read, write: if false;
