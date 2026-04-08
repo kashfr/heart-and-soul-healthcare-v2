@@ -117,7 +117,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         <div style={headerStyle}>
           <h1 style={companyNameStyle}>Heart and Soul Home Health</h1>
           <p style={taglineStyle}>Compassionate Care, Professional Excellence</p>
-          <h2 style={formTitleStyle}>SKILLED NURSING PROGRESS NOTE</h2>
+          <h2 style={formTitleStyle}>HOME HEALTH PROGRESS NOTE</h2>
           <p style={formDateStyle}>Form Date: {d.shift.dateOfService}</p>
         </div>
 
