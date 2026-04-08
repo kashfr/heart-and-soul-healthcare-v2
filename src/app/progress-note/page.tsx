@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { getPatients, addPatient, removePatient, type Patient } from '@/lib/patients';
+import { getPatients, addPatient, updatePatient, removePatient, type Patient } from '@/lib/patients';
 import { saveSubmission, type ProgressNoteFormData } from '@/lib/submissions';
 import styles from './page.module.css';
 import SettingsPanel from './components/SettingsPanel';
@@ -79,6 +79,16 @@ export default function ProgressNotePage() {
     } catch (error) {
       console.error('Failed to add patient:', error);
       alert('Failed to add patient. Please try again.');
+    }
+  };
+
+  const handleUpdatePatient = async (patientId: string, data: Partial<Patient>) => {
+    try {
+      await updatePatient(patientId, data);
+      setPatients(patients.map(p => p.id === patientId ? { ...p, ...data } : p));
+    } catch (error) {
+      console.error('Failed to update patient:', error);
+      alert('Failed to update patient. Please try again.');
     }
   };
 
@@ -421,6 +431,7 @@ export default function ProgressNotePage() {
         <SettingsPanel
           patients={patients}
           onAddPatient={handleAddPatient}
+          onUpdatePatient={handleUpdatePatient}
           onRemovePatient={handleRemovePatient}
           onClose={() => setShowSettings(false)}
         />

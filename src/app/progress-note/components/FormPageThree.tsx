@@ -117,7 +117,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                 </select>
               </div>
               {/* Show pain score only for scales that use numbers */}
-              {(painScale === 'Numeric (0-10)' || painScale === '') && painScale !== 'N/A' && (
+              {(painScale === 'Numeric (0-10)' || painScale === '') && (
                 <div className={styles.f}>
                   <label className={styles.label} htmlFor="q24_painScore">Pain Score (0-10)</label>
                   <input

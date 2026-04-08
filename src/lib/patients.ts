@@ -3,6 +3,7 @@ import {
   getDocs,
   addDoc,
   deleteDoc,
+  updateDoc,
   doc,
   query,
   orderBy,
@@ -58,6 +59,20 @@ export async function addPatient(patient: Patient): Promise<string> {
     return docRef.id;
   } catch (error) {
     console.error('Error adding patient:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update an existing patient
+ */
+export async function updatePatient(id: string, data: Partial<Patient>): Promise<void> {
+  try {
+    const patientRef = doc(db, 'patients', id);
+    const { id: _id, createdAt: _ca, ...updateData } = data;
+    await updateDoc(patientRef, updateData);
+  } catch (error) {
+    console.error('Error updating patient:', error);
     throw error;
   }
 }

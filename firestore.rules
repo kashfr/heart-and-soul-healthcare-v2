@@ -56,6 +56,9 @@ service cloud.firestore {
         incomingData().state is string &&
         incomingData().zip is string &&
         incomingData().createdAt == request.time;
+      allow update: if
+        incomingData().name is string && incomingData().name.size() > 0 &&
+        incomingData().dob is string && incomingData().dob.size() > 0;
       allow delete: if true;
     }
 
