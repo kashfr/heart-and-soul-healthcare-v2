@@ -2,8 +2,10 @@
 
 import { useState, useEffect, use } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   getSubmission,
+  deleteSubmission,
   toProgressNoteData,
   type ProgressNoteFormData,
 } from '@/lib/submissions';
@@ -15,6 +17,7 @@ interface PageProps {
 
 export default function SubmissionDetailPage({ params }: PageProps) {
   const { id } = use(params);
+  const router = useRouter();
   const [formData, setFormData] = useState<ProgressNoteFormData | null>(null);
   const [noteData, setNoteData] = useState<ProgressNoteData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -42,6 +45,20 @@ export default function SubmissionDetailPage({ params }: PageProps) {
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleDelete = async () => {
+    const confirmed = window.confirm(
+      'Are you sure you want to delete this progress note? This cannot be undone.'
+    );
+    if (!confirmed) return;
+    try {
+      await deleteSubmission(id);
+      router.push('/progress-note/submissions');
+    } catch (error) {
+      console.error('Failed to delete submission:', error);
+      alert('Failed to delete submission. Please try again.');
+    }
   };
 
   if (loading) {
@@ -84,8 +101,14 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             &larr; Back to Submissions
           </Link>
           <div style={{ display: 'flex', gap: 10 }}>
+            <Link href={`/progress-note/submissions/${id}/edit`} style={editBtnStyle}>
+              Edit
+            </Link>
             <button onClick={handlePrint} style={primaryBtnStyle}>
               Print / Save as PDF
+            </button>
+            <button onClick={handleDelete} style={dangerBtnStyle}>
+              Delete
             </button>
           </div>
         </div>
@@ -381,6 +404,30 @@ const secondaryBtnStyle: React.CSSProperties = {
   background: '#34495e',
   color: 'white',
   border: 'none',
+  padding: '8px 20px',
+  borderRadius: 4,
+  cursor: 'pointer',
+  fontWeight: 600,
+  fontSize: 14,
+};
+
+const editBtnStyle: React.CSSProperties = {
+  display: 'inline-block',
+  background: '#34495e',
+  color: 'white',
+  border: 'none',
+  padding: '8px 20px',
+  borderRadius: 4,
+  cursor: 'pointer',
+  fontWeight: 600,
+  fontSize: 14,
+  textDecoration: 'none',
+};
+
+const dangerBtnStyle: React.CSSProperties = {
+  background: '#f5f5f5',
+  color: '#c44',
+  border: '1px solid #ddd',
   padding: '8px 20px',
   borderRadius: 4,
   cursor: 'pointer',
