@@ -1,14 +1,122 @@
 'use client';
 
+import { useState, useEffect, useRef } from 'react';
+import { Patient } from '@/lib/patients';
 import styles from '../page.module.css';
 
 interface FormPageOneProps {
   formRef: React.RefObject<HTMLFormElement>;
   onCredentialChange?: (credential: string) => void;
+  patients: Patient[];
 }
 
-export default function FormPageOne({ formRef, onCredentialChange }: FormPageOneProps) {
+export default function FormPageOne({ formRef, onCredentialChange, patients }: FormPageOneProps) {
   const today = new Date().toISOString().split('T')[0];
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filteredPatients, setFilteredPatients] = useState<Patient[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [justSelected, setJustSelected] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Don't show dropdown right after selecting a patient
+    if (justSelected) {
+      setShowDropdown(false);
+      return;
+    }
+
+    if (searchQuery.trim() === '') {
+      setFilteredPatients([]);
+      setShowDropdown(false);
+      return;
+    }
+
+    const query = searchQuery.toLowerCase();
+    const matches = patients.filter(p =>
+      p.name.toLowerCase().includes(query)
+    );
+
+    setFilteredPatients(matches);
+    setShowDropdown(matches.length > 0);
+  }, [searchQuery, patients, justSelected]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const calculateAge = (dob: string): number => {
+    const birthDate = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age;
+  };
+
+  const handleSelectPatient = (patient: Patient) => {
+    setSelectedPatient(patient);
+    setShowConfirmModal(true);
+    setShowDropdown(false);
+  };
+
+  const handleConfirmSelection = () => {
+    if (selectedPatient && formRef.current) {
+      const age = calculateAge(selectedPatient.dob);
+
+      const dobInput = formRef.current.querySelector('input[name="q4_dateofBirth"]') as HTMLInputElement;
+      const ageInput = formRef.current.querySelector('input[name="q5_ageYears"]') as HTMLInputElement;
+      const diagnosisInput = formRef.current.querySelector('input[name="q10_primaryDiagnosis"]') as HTMLInputElement;
+      const addrLine1 = formRef.current.querySelector('input[name="q200_addr_line1"]') as HTMLInputElement;
+      const cityInput = formRef.current.querySelector('input[name="q200_city"]') as HTMLInputElement;
+      const stateInput = formRef.current.querySelector('input[name="q200_state"]') as HTMLInputElement;
+      const postalInput = formRef.current.querySelector('input[name="q200_postal"]') as HTMLInputElement;
+
+      // Set the search query to the selected patient name (this updates the visible input)
+      setSearchQuery(selectedPatient.name);
+
+      // Fill hidden input with the actual name for form submission
+      const clientNameHidden = formRef.current.querySelector('input[name="q3_clientName"]') as HTMLInputElement;
+      if (clientNameHidden) clientNameHidden.value = selectedPatient.name;
+
+      if (dobInput) dobInput.value = selectedPatient.dob;
+      if (ageInput) ageInput.value = String(age);
+      if (diagnosisInput) diagnosisInput.value = selectedPatient.diagnosis || '';
+      if (addrLine1) addrLine1.value = selectedPatient.street || '';
+      if (cityInput) cityInput.value = selectedPatient.city || '';
+      if (stateInput) stateInput.value = selectedPatient.state || '';
+      if (postalInput) postalInput.value = selectedPatient.zip || '';
+
+      setShowConfirmModal(false);
+      setSelectedPatient(null);
+      setJustSelected(true);
+    }
+  };
+
+  const handleCloseConfirm = () => {
+    setShowConfirmModal(false);
+    setSelectedPatient(null);
+  };
+
+  // Sync the hidden input whenever the user types manually
+  const handleNameChange = (value: string) => {
+    setSearchQuery(value);
+    setJustSelected(false);
+    if (formRef.current) {
+      const clientNameHidden = formRef.current.querySelector('input[name="q3_clientName"]') as HTMLInputElement;
+      if (clientNameHidden) clientNameHidden.value = value;
+    }
+  };
 
   return (
     <div>
@@ -17,15 +125,61 @@ export default function FormPageOne({ formRef, onCredentialChange }: FormPageOne
         <span className={styles.sectionLabel}>CLIENT INFORMATION</span>
 
         <div className={styles.row}>
-          <div className={styles.f}>
-            <label className={styles.label} htmlFor="q3_clientName">Client Name *</label>
+          <div className={styles.f} style={{ position: 'relative' }} ref={dropdownRef}>
+            <label className={styles.label} htmlFor="q3_clientNameSearch">Client Name *</label>
             <input
               className={styles.input}
               type="text"
-              id="q3_clientName"
+              id="q3_clientNameSearch"
+              placeholder="Start typing to search patients..."
+              value={searchQuery}
+              onChange={(e) => handleNameChange(e.target.value)}
+              autoComplete="off"
+            />
+            {/* Hidden input for form submission */}
+            <input
+              type="hidden"
               name="q3_clientName"
+              id="q3_clientName"
               required
             />
+            {showDropdown && (
+              <div
+                style={{
+                  position: 'absolute',
+                  background: 'white',
+                  border: '1px solid #ddd',
+                  borderTop: 'none',
+                  maxHeight: '200px',
+                  overflowY: 'auto',
+                  width: '100%',
+                  zIndex: 100,
+                  top: '100%',
+                  borderRadius: '0 0 4px 4px',
+                  boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+                }}
+              >
+                {filteredPatients.map(patient => (
+                  <div
+                    key={patient.id}
+                    onClick={() => handleSelectPatient(patient)}
+                    style={{
+                      padding: '10px 12px',
+                      borderBottom: '1px solid #eee',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = '#f0f0f0')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'white')}
+                  >
+                    <strong>{patient.name}</strong>
+                    <span style={{ color: '#888', marginLeft: '8px', fontSize: '12px' }}>
+                      {patient.diagnosis}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -176,6 +330,40 @@ export default function FormPageOne({ formRef, onCredentialChange }: FormPageOne
           </div>
         </div>
       </div>
+
+      {/* Confirmation Modal */}
+      {showConfirmModal && selectedPatient && (
+        <div className={styles.confirmModal + ' ' + styles.active}>
+          <div className={styles.modalContent}>
+            <h2>Confirm Patient Selection</h2>
+            <p>
+              Are you sure you want to select{' '}
+              <strong>{selectedPatient.name}</strong> (DOB:{' '}
+              {selectedPatient.dob}, Age: {calculateAge(selectedPatient.dob)}
+              )?
+            </p>
+            <p style={{ fontSize: '13px', color: '#666' }}>
+              This will auto-fill the client information fields.
+            </p>
+            <div className={styles.modalButtons}>
+              <button
+                type="button"
+                onClick={handleCloseConfirm}
+                className={styles.cancelBtn}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSelection}
+                className={styles.confirmBtn}
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

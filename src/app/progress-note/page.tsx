@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from 'react';
 import { getPatients, addPatient, removePatient, type Patient } from '@/lib/patients';
 import { saveSubmission, type ProgressNoteFormData } from '@/lib/submissions';
 import styles from './page.module.css';
-import PatientSearch from './components/PatientSearch';
 import SettingsPanel from './components/SettingsPanel';
 import FormPageOne from './components/FormPageOne';
 import FormPageTwo from './components/FormPageTwo';
@@ -358,7 +357,7 @@ export default function ProgressNotePage() {
       </div>
 
       <div className={styles.headerControls}>
-        <PatientSearch patients={patients} formRef={ref} />
+        <div style={{ flex: 1 }} />
         <button
           className={styles.settingsBtn}
           onClick={() => setShowSettings(!showSettings)}
@@ -384,7 +383,7 @@ export default function ProgressNotePage() {
       </div>
 
       <form ref={formRef} onSubmit={handleSubmit} className={styles.form} noValidate>
-        <div style={pageStyle(1)}><FormPageOne formRef={ref} onCredentialChange={handleCredentialChange} /></div>
+        <div style={pageStyle(1)}><FormPageOne formRef={ref} onCredentialChange={handleCredentialChange} patients={patients} /></div>
         <div style={pageStyle(2)}><FormPageTwo formRef={ref} credential={credential} /></div>
         <div style={pageStyle(3)}><FormPageThree formRef={ref} credential={credential} /></div>
         <div style={pageStyle(4)}><FormPageFour formRef={ref} /></div>
