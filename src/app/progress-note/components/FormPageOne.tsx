@@ -8,9 +8,10 @@ interface FormPageOneProps {
   formRef: React.RefObject<HTMLFormElement>;
   onCredentialChange?: (credential: string) => void;
   patients: Patient[];
+  initialClientName?: string;
 }
 
-export default function FormPageOne({ formRef, onCredentialChange, patients }: FormPageOneProps) {
+export default function FormPageOne({ formRef, onCredentialChange, patients, initialClientName }: FormPageOneProps) {
   const today = new Date().toISOString().split('T')[0];
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredPatients, setFilteredPatients] = useState<Patient[]>([]);
@@ -19,6 +20,13 @@ export default function FormPageOne({ formRef, onCredentialChange, patients }: F
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [justSelected, setJustSelected] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (initialClientName) {
+      setSearchQuery(initialClientName);
+      setJustSelected(true); // Don't show dropdown
+    }
+  }, [initialClientName]);
 
   useEffect(() => {
     // Don't show dropdown right after selecting a patient

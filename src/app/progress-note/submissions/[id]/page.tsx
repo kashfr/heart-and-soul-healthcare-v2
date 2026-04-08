@@ -101,7 +101,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             &larr; Back to Submissions
           </Link>
           <div style={{ display: 'flex', gap: 10 }}>
-            <Link href={`/progress-note/submissions/${id}/edit`} style={editBtnStyle}>
+            <Link href={`/progress-note?edit=${id}`} style={editBtnStyle}>
               Edit
             </Link>
             <button onClick={handlePrint} style={primaryBtnStyle}>
