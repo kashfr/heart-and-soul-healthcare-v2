@@ -517,7 +517,7 @@ export default function ProgressNotePDF({ data }: { data: ProgressNoteData }) {
           <Text style={s.companyTagline}>
             Compassionate Care, Professional Excellence
           </Text>
-          <Text style={s.formTitle}>Skilled Nursing Progress Note</Text>
+          <Text style={s.formTitle}>Home Health Progress Note</Text>
           <Text style={s.formDate}>
             Form Date: {data.shift.dateOfService}
           </Text>

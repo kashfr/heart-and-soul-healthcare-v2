@@ -446,7 +446,7 @@ export default function ProgressNotePreview2() {
         <div style={styles.header}>
           <p style={styles.companyName}>Heart and Soul Home Health</p>
           <p style={styles.companyTagline}>Compassionate Care, Professional Excellence</p>
-          <p style={styles.formTitle}>Skilled Nursing Progress Note</p>
+          <p style={styles.formTitle}>Home Health Progress Note</p>
           <p style={styles.formDate}>Form Date: {testData.shift.dateOfService}</p>
         </div>
 
