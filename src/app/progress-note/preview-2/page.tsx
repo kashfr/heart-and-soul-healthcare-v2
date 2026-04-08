@@ -444,7 +444,7 @@ export default function ProgressNotePreview2() {
       <div style={styles.page}>
         {/* Header */}
         <div style={styles.header}>
-          <p style={styles.companyName}>Heart and Soul Home Health</p>
+          <p style={styles.companyName}>Heart and Soul Healthcare</p>
           <p style={styles.companyTagline}>Compassionate Care, Professional Excellence</p>
           <p style={styles.formTitle}>Home Health Progress Note</p>
           <p style={styles.formDate}>Form Date: {testData.shift.dateOfService}</p>
@@ -629,7 +629,7 @@ export default function ProgressNotePreview2() {
 
         {/* Footer */}
         <div style={styles.footer}>
-          Confidential - Heart and Soul Home Health &nbsp;|&nbsp; This document contains protected health information (PHI)
+          Confidential - Heart and Soul Healthcare &nbsp;|&nbsp; This document contains protected health information (PHI)
         </div>
       </div>
     </>
