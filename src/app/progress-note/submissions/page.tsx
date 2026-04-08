@@ -2,11 +2,25 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { getSubmissions, type SubmissionSummary } from '@/lib/submissions';
+import { getSubmissions, deleteSubmission, type SubmissionSummary } from '@/lib/submissions';
 
 export default function SubmissionsPage() {
   const [submissions, setSubmissions] = useState<SubmissionSummary[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const handleDelete = async (s: SubmissionSummary) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete this progress note for ${s.clientName} on ${s.dateOfService}?`
+    );
+    if (!confirmed) return;
+    try {
+      await deleteSubmission(s.id);
+      setSubmissions((prev) => prev.filter((item) => item.id !== s.id));
+    } catch (error) {
+      console.error('Failed to delete submission:', error);
+      alert('Failed to delete submission. Please try again.');
+    }
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -75,12 +89,20 @@ export default function SubmissionsPage() {
                         : '--'}
                     </td>
                     <td style={{ ...tdStyle, textAlign: 'center' }}>
-                      <Link
-                        href={`/progress-note/submissions/${s.id}`}
-                        style={viewBtnStyle}
-                      >
-                        View
-                      </Link>
+                      <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                        <Link
+                          href={`/progress-note/submissions/${s.id}`}
+                          style={viewBtnStyle}
+                        >
+                          View
+                        </Link>
+                        <button
+                          onClick={() => handleDelete(s)}
+                          style={deleteBtnStyle}
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -215,4 +237,16 @@ const viewBtnStyle: React.CSSProperties = {
   textDecoration: 'none',
   fontSize: 13,
   fontWeight: 600,
+};
+
+const deleteBtnStyle: React.CSSProperties = {
+  display: 'inline-block',
+  background: '#f5f5f5',
+  color: '#c44',
+  padding: '6px 16px',
+  borderRadius: 4,
+  border: '1px solid #ddd',
+  fontSize: 13,
+  fontWeight: 600,
+  cursor: 'pointer',
 };

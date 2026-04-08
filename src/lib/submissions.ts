@@ -3,6 +3,8 @@ import {
   getDocs,
   getDoc,
   addDoc,
+  updateDoc,
+  deleteDoc,
   doc,
   query,
   orderBy,
@@ -187,6 +189,35 @@ export async function getSubmission(id: string): Promise<ProgressNoteFormData | 
   } catch (error) {
     console.error('Error fetching submission:', error);
     return null;
+  }
+}
+
+/**
+ * Update a progress note submission.
+ */
+export async function updateSubmission(id: string, data: Partial<ProgressNoteFormData>): Promise<void> {
+  try {
+    const docRef = doc(db, 'progressNotes', id);
+    await updateDoc(docRef, {
+      ...data,
+      lastUpdatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    console.error('Error updating submission:', error);
+    throw error;
+  }
+}
+
+/**
+ * Delete a progress note submission.
+ */
+export async function deleteSubmission(id: string): Promise<void> {
+  try {
+    const docRef = doc(db, 'progressNotes', id);
+    await deleteDoc(docRef);
+  } catch (error) {
+    console.error('Error deleting submission:', error);
+    throw error;
   }
 }
 
