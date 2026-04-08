@@ -14,16 +14,47 @@ import FormPageFive from './components/FormPageFive';
 import FormPageSix from './components/FormPageSix';
 import FormPageSeven from './components/FormPageSeven';
 
-const TOTAL_PAGES = 7;
+type CredentialTier = 'HHA' | 'CNA' | 'LPN' | 'RN' | '';
+
+function getActivePages(credential: CredentialTier): number[] {
+  switch (credential) {
+    case 'HHA':
+      return [1, 2, 3, 4, 6, 7]; // Skip page 5 (skilled nursing)
+    case 'CNA':
+      return [1, 2, 3, 4, 6, 7]; // Skip page 5 (skilled nursing)
+    case 'LPN':
+    case 'RN':
+      return [1, 2, 3, 4, 5, 6, 7]; // All pages
+    default:
+      return [1, 2, 3, 4, 5, 6, 7]; // Show all by default until credential selected
+  }
+}
 
 export default function ProgressNotePage() {
   const [currentPage, setCurrentPage] = useState(1);
+  const [credential, setCredential] = useState<CredentialTier>('');
   const [showSettings, setShowSettings] = useState(false);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [firebaseLoaded, setFirebaseLoaded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
+
+  const activePages = getActivePages(credential);
+  const totalActivePages = activePages.length;
+  const activeIndex = activePages.indexOf(currentPage);
+  const isLastPage = activeIndex === totalActivePages - 1;
+  const isFirstPage = activeIndex === 0;
+
+  const handleCredentialChange = (value: string) => {
+    const newCredential = value as CredentialTier;
+    setCredential(newCredential);
+    // If current page is not in the new active pages, go to page 1
+    const newActivePages = getActivePages(newCredential);
+    if (!newActivePages.includes(currentPage)) {
+      setCurrentPage(1);
+    }
+  };
 
   // Load patients from Firebase on mount
   useEffect(() => {
@@ -66,31 +97,29 @@ export default function ProgressNotePage() {
   };
 
   const handlePreviousPage = () => {
-    if (currentPage > 1) {
-      setCurrentPage(currentPage - 1);
+    if (activeIndex > 0) {
+      setCurrentPage(activePages[activeIndex - 1]);
       window.scrollTo(0, 0);
     }
   };
 
   const handleNextPage = () => {
-    if (currentPage < TOTAL_PAGES) {
-      setCurrentPage(currentPage + 1);
+    if (activeIndex < totalActivePages - 1) {
+      setCurrentPage(activePages[activeIndex + 1]);
       window.scrollTo(0, 0);
     }
   };
 
   // Find which page a form element belongs to (1-7)
+  // Page wrapper divs are direct children of the form, pages 1-7 map to indices 0-6
   const getFieldPage = (element: HTMLElement): number => {
-    // Walk up to find the page wrapper div
     let parent = element.parentElement;
     while (parent && parent !== formRef.current) {
-      // The page wrapper divs are direct children of the form
-      if (parent.parentElement === formRef.current && parent.style.display !== undefined) {
-        // Find its index among siblings
+      if (parent.parentElement === formRef.current) {
         const siblings = Array.from(formRef.current!.children);
-        const pageIndex = siblings.indexOf(parent);
-        // Offset by 1 for the hidden iframe, and 1 for 0-based index
-        if (pageIndex >= 1 && pageIndex <= 7) return pageIndex;
+        const index = siblings.indexOf(parent);
+        // indices 0-6 correspond to pages 1-7
+        if (index >= 0 && index <= 6) return index + 1;
       }
       parent = parent.parentElement;
     }
@@ -102,6 +131,31 @@ export default function ProgressNotePage() {
 
     if (!formRef.current) return;
 
+    // Check if an element or any ancestor is hidden via display:none
+    const isElementVisible = (el: HTMLElement): boolean => {
+      let current: HTMLElement | null = el;
+      while (current && current !== formRef.current) {
+        if (current.style.display === 'none') return false;
+        current = current.parentElement;
+      }
+      return true;
+    };
+
+    // Validate signature first (hidden input, special case)
+    const signatureInput = formRef.current.querySelector('input[name="q61_signature"]') as HTMLInputElement;
+    if (signatureInput && (!signatureInput.value || signatureInput.value.trim() === '')) {
+      const lastActivePage = activePages[activePages.length - 1];
+      setCurrentPage(lastActivePage);
+      setTimeout(() => {
+        const canvas = formRef.current?.querySelector('canvas');
+        if (canvas) {
+          canvas.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
+      alert('Please sign the form before submitting.');
+      return;
+    }
+
     // Custom validation: find all required fields that are empty
     const requiredFields = formRef.current.querySelectorAll(
       'input[required], select[required], textarea[required]'
@@ -110,8 +164,11 @@ export default function ProgressNotePage() {
     for (const field of requiredFields) {
       const el = field as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
 
-      // Skip hidden inputs
+      // Skip hidden inputs (like signature, handled above)
       if (el.type === 'hidden') continue;
+
+      // Skip fields hidden by credential-conditional display:none
+      if (!isElementVisible(el)) continue;
 
       if (!el.value || el.value.trim() === '') {
         // Find the label for this field
@@ -312,14 +369,14 @@ export default function ProgressNotePage() {
       </div>
 
       <div className={styles.progressBar} id="progressBar">
-        {Array.from({ length: TOTAL_PAGES }).map((_, index) => (
+        {activePages.map((page, index) => (
           <div
-            key={index + 1}
+            key={page}
             className={`${styles.progressDot} ${
-              index + 1 === currentPage ? styles.active : ''
-            } ${index + 1 < currentPage ? styles.completed : ''}`}
+              page === currentPage ? styles.active : ''
+            } ${index < activeIndex ? styles.completed : ''}`}
             onClick={() => {
-              setCurrentPage(index + 1);
+              setCurrentPage(page);
               window.scrollTo(0, 0);
             }}
           />
@@ -327,33 +384,32 @@ export default function ProgressNotePage() {
       </div>
 
       <form ref={formRef} onSubmit={handleSubmit} className={styles.form} noValidate>
-        <div style={pageStyle(1)}><FormPageOne formRef={ref} /></div>
-        <div style={pageStyle(2)}><FormPageTwo formRef={ref} /></div>
-        <div style={pageStyle(3)}><FormPageThree formRef={ref} /></div>
+        <div style={pageStyle(1)}><FormPageOne formRef={ref} onCredentialChange={handleCredentialChange} /></div>
+        <div style={pageStyle(2)}><FormPageTwo formRef={ref} credential={credential} /></div>
+        <div style={pageStyle(3)}><FormPageThree formRef={ref} credential={credential} /></div>
         <div style={pageStyle(4)}><FormPageFour formRef={ref} /></div>
-        <div style={pageStyle(5)}><FormPageFive formRef={ref} /></div>
-        <div style={pageStyle(6)}><FormPageSix formRef={ref} /></div>
-        <div style={pageStyle(7)}><FormPageSeven formRef={ref} /></div>
+        <div style={pageStyle(5)}><FormPageFive formRef={ref} credential={credential} /></div>
+        <div style={pageStyle(6)}><FormPageSix formRef={ref} credential={credential} /></div>
+        <div style={pageStyle(7)}><FormPageSeven formRef={ref} credential={credential} /></div>
 
         <div className={styles.navigationControls}>
           <button
             type="button"
-            onClick={handlePreviousPage}
-            disabled={currentPage === 1}
+            onClick={(e) => { e.preventDefault(); handlePreviousPage(); }}
+            disabled={isFirstPage}
             className={styles.navBtn}
           >
             ← Previous
           </button>
 
-          {currentPage === TOTAL_PAGES ? (
+          {isLastPage ? (
             <button type="submit" className={styles.submitBtn} disabled={submitting}>
               {submitting ? 'Submitting...' : 'Submit'}
             </button>
           ) : (
             <button
               type="button"
-              onClick={handleNextPage}
-              disabled={currentPage === TOTAL_PAGES}
+              onClick={(e) => { e.preventDefault(); handleNextPage(); }}
               className={styles.navBtn}
             >
               Next →

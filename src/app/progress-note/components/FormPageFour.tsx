@@ -1,291 +1,242 @@
 'use client';
 
+import { useState } from 'react';
 import styles from '../page.module.css';
+import DeselectableRadio from './DeselectableRadio';
 
 interface FormPageFourProps {
   formRef: React.RefObject<HTMLFormElement>;
 }
 
 export default function FormPageFour({ formRef }: FormPageFourProps) {
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    nutrition: false,
+    housekeeping: false,
+  });
+
+  const toggleSection = (section: string) => {
+    setExpandedSections((prev) => ({
+      ...prev,
+      [section]: !prev[section],
+    }));
+  };
+
   return (
     <div>
+      {/* Personal Care / ADLs */}
       <div className={styles.section}>
-        <span className={styles.sectionLabel}>SKILLED NURSING INTERVENTIONS</span>
+        <span className={styles.sectionLabel}>PERSONAL CARE / ADLs</span>
 
-        <div className={styles.subsec}>Interventions Performed</div>
         <div className={styles.checkRow}>
           <label>
-            <input
-              type="checkbox"
-              name="q38_interventions"
-              value="Wound care and dressing changes"
-            />
-            Wound care and dressing changes
+            <input type="checkbox" name="q38_personalCare" value="Bath/Shower" />
+            Bath/Shower
           </label>
           <label>
-            <input
-              type="checkbox"
-              name="q38_interventions"
-              value="Catheter care"
-            />
-            Catheter care
+            <input type="checkbox" name="q38_personalCare" value="Oral Care" />
+            Oral Care
           </label>
           <label>
-            <input
-              type="checkbox"
-              name="q38_interventions"
-              value="IV line management"
-            />
-            IV line management
+            <input type="checkbox" name="q38_personalCare" value="Hair Care" />
+            Hair Care
           </label>
           <label>
-            <input
-              type="checkbox"
-              name="q38_interventions"
-              value="Medication administration"
-            />
-            Medication administration
+            <input type="checkbox" name="q38_personalCare" value="Dressing" />
+            Dressing
+          </label>
+          <label>
+            <input type="checkbox" name="q38_personalCare" value="Diaper Changes" />
+            Diaper Changes
+          </label>
+          <label>
+            <input type="checkbox" name="q38_personalCare" value="Repositioning" />
+            Repositioning
+          </label>
+          <label>
+            <input type="checkbox" name="q38_personalCare" value="Range of Motion (ROM)" />
+            Range of Motion (ROM)
           </label>
         </div>
-        <div className={styles.checkRow}>
-          <label>
-            <input
-              type="checkbox"
-              name="q38_interventions"
-              value="Injection administration"
-            />
-            Injection administration
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              name="q38_interventions"
-              value="Foley catheter insertion"
-            />
-            Foley catheter insertion
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              name="q38_interventions"
-              value="Ostomy care"
-            />
-            Ostomy care
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              name="q38_interventions"
-              value="Tracheostomy care"
-            />
-            Tracheostomy care
-          </label>
-        </div>
-        <div className={styles.checkRow}>
-          <label>
-            <input
-              type="checkbox"
-              name="q38_interventions"
-              value="Oxygen therapy"
-            />
-            Oxygen therapy
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              name="q38_interventions"
-              value="Nebulizer treatment"
-            />
-            Nebulizer treatment
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              name="q38_interventions"
-              value="Suctioning"
-            />
-            Suctioning
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              name="q38_interventions"
-              value="Blood glucose monitoring"
-            />
-            Blood glucose monitoring
-          </label>
-        </div>
-        <div className={styles.checkRow}>
-          <label>
-            <input
-              type="checkbox"
-              name="q38_interventions"
-              value="Assessment and evaluation"
-            />
-            Assessment and evaluation
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              name="q38_interventions"
-              value="Patient education"
-            />
-            Patient education
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              name="q38_interventions"
-              value="Fall prevention"
-            />
-            Fall prevention
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              name="q38_interventions"
-              value="Other"
-            />
-            Other
-          </label>
-        </div>
-      </div>
-
-      <div className={styles.section}>
-        <span className={styles.sectionLabel}>DETAILED DESCRIPTION OF INTERVENTIONS</span>
 
         <div className={styles.row}>
           <div className={styles.f} style={{ flex: '1 1 100%' }}>
-            <label className={styles.label} htmlFor="q39_interventionDetails">
-              Describe interventions performed, patient response, and any complications or changes in condition: *
-            </label>
+            <label className={styles.label} htmlFor="q38_personalCareNotes">Personal Care Notes</label>
             <textarea
               className={styles.textarea}
-              id="q39_interventionDetails"
-              name="q39_interventionDetails"
-              rows={6}
-              placeholder="Provide detailed notes on each intervention, how the patient responded, and any outcomes..."
-              required
+              id="q38_personalCareNotes"
+              name="q38_personalCareNotes"
+              rows={3}
+              placeholder="Additional notes on personal care provided..."
             />
           </div>
         </div>
       </div>
 
+      {/* Nutrition & Hydration */}
       <div className={styles.section}>
-        <span className={styles.sectionLabel}>SKILLED NURSING CARE JUSTIFICATION</span>
+        <span className={styles.sectionLabel}>NUTRITION &amp; HYDRATION</span>
+
+        <div
+          className={styles.collapsibleHeader}
+          onClick={() => toggleSection('nutrition')}
+        >
+          <span className={styles.toggleArrow}>
+            {expandedSections.nutrition ? '▼' : '▶'}
+          </span>
+          <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Nutrition &amp; Hydration</div>
+        </div>
+        {expandedSections.nutrition && (
+          <div>
+            <div className={styles.row}>
+              <div className={styles.f}>
+                <label className={styles.label} htmlFor="q38_breakfastPct">Breakfast % Consumed</label>
+                <input
+                  className={styles.input}
+                  type="number"
+                  id="q38_breakfastPct"
+                  name="q38_breakfastPct"
+                  min="0"
+                  max="100"
+                  placeholder="0-100"
+                />
+              </div>
+              <div className={styles.f}>
+                <label className={styles.label} htmlFor="q38_lunchPct">Lunch % Consumed</label>
+                <input
+                  className={styles.input}
+                  type="number"
+                  id="q38_lunchPct"
+                  name="q38_lunchPct"
+                  min="0"
+                  max="100"
+                  placeholder="0-100"
+                />
+              </div>
+              <div className={styles.f}>
+                <label className={styles.label} htmlFor="q38_dinnerPct">Dinner % Consumed</label>
+                <input
+                  className={styles.input}
+                  type="number"
+                  id="q38_dinnerPct"
+                  name="q38_dinnerPct"
+                  min="0"
+                  max="100"
+                  placeholder="0-100"
+                />
+              </div>
+            </div>
+
+            <div className={styles.row}>
+              <div className={styles.f}>
+                <label className={styles.label}>Fluids Encouraged?</label>
+                <div className={styles.radioRow}>
+                  <label>
+                    <DeselectableRadio name="q38_fluidsEncouraged" value="Yes" />
+                    Yes
+                  </label>
+                  <label>
+                    <DeselectableRadio name="q38_fluidsEncouraged" value="No" />
+                    No
+                  </label>
+                </div>
+              </div>
+              <div className={styles.f}>
+                <label className={styles.label}>Aspiration Concerns?</label>
+                <div className={styles.radioRow}>
+                  <label>
+                    <DeselectableRadio name="q38_aspirationConcerns" value="Yes" />
+                    Yes
+                  </label>
+                  <label>
+                    <DeselectableRadio name="q38_aspirationConcerns" value="No" />
+                    No
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div className={styles.row}>
+              <div className={styles.f} style={{ flex: '1 1 100%' }}>
+                <label className={styles.label} htmlFor="q38_nutritionNotes">Nutrition Notes</label>
+                <textarea
+                  className={styles.textarea}
+                  id="q38_nutritionNotes"
+                  name="q38_nutritionNotes"
+                  rows={3}
+                  placeholder="Additional notes on nutrition and hydration..."
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Housekeeping */}
+      <div className={styles.section}>
+        <span className={styles.sectionLabel}>HOUSEKEEPING</span>
+
+        <div
+          className={styles.collapsibleHeader}
+          onClick={() => toggleSection('housekeeping')}
+        >
+          <span className={styles.toggleArrow}>
+            {expandedSections.housekeeping ? '▼' : '▶'}
+          </span>
+          <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Housekeeping</div>
+        </div>
+        {expandedSections.housekeeping && (
+          <div>
+            <div className={styles.checkRow}>
+              <label>
+                <input type="checkbox" name="q38_housekeeping" value="Linens changed/straightened" />
+                Linens changed/straightened
+              </label>
+              <label>
+                <input type="checkbox" name="q38_housekeeping" value="Surfaces cleaned" />
+                Surfaces cleaned
+              </label>
+              <label>
+                <input type="checkbox" name="q38_housekeeping" value="Play area tidied" />
+                Play area tidied
+              </label>
+              <label>
+                <input type="checkbox" name="q38_housekeeping" value="Emergency supplies checked and restocked" />
+                Emergency supplies checked and restocked
+              </label>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Abuse / Neglect Screening */}
+      <div className={styles.section}>
+        <span className={styles.sectionLabel}>ABUSE / NEGLECT SCREENING</span>
 
         <div className={styles.row}>
-          <div className={styles.f} style={{ flex: '1 1 100%' }}>
-            <label className={styles.label} htmlFor="q40_skillJustification">
-              Describe why skilled nursing care was required today and how it relates to the patient&apos;s medical condition and treatment plan: *
-            </label>
-            <textarea
-              className={styles.textarea}
-              id="q40_skillJustification"
-              name="q40_skillJustification"
-              rows={5}
-              placeholder="Explain the clinical necessity for skilled nursing services..."
-              required
-            />
+          <div className={styles.f}>
+            <label className={styles.label}>Screening Performed?</label>
+            <div className={styles.radioRow}>
+              <label>
+                <DeselectableRadio name="q38_abuseScreening" value="Yes" />
+                Yes
+              </label>
+              <label>
+                <DeselectableRadio name="q38_abuseScreening" value="No" />
+                No
+              </label>
+            </div>
           </div>
         </div>
-      </div>
-
-      <div className={styles.section}>
-        <span className={styles.sectionLabel}>PATIENT EDUCATION PROVIDED</span>
-
-        <div className={styles.checkRow}>
-          <label>
-            <input
-              type="checkbox"
-              name="q41_patientEduc"
-              value="Disease process"
-            />
-            Disease process
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              name="q41_patientEduc"
-              value="Medication management"
-            />
-            Medication management
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              name="q41_patientEduc"
-              value="Wound care"
-            />
-            Wound care
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              name="q41_patientEduc"
-              value="Nutrition and diet"
-            />
-            Nutrition and diet
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              name="q41_patientEduc"
-              value="Activity and exercise"
-            />
-            Activity and exercise
-          </label>
-        </div>
-        <div className={styles.checkRow}>
-          <label>
-            <input
-              type="checkbox"
-              name="q41_patientEduc"
-              value="Safety precautions"
-            />
-            Safety precautions
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              name="q41_patientEduc"
-              value="Signs and symptoms to report"
-            />
-            Signs and symptoms to report
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              name="q41_patientEduc"
-              value="Community resources"
-            />
-            Community resources
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              name="q41_patientEduc"
-              value="None"
-            />
-            None
-          </label>
-        </div>
-      </div>
-
-      <div className={styles.section}>
-        <span className={styles.sectionLabel}>PATIENT RESPONSE TO INTERVENTIONS</span>
 
         <div className={styles.row}>
           <div className={styles.f} style={{ flex: '1 1 100%' }}>
-            <label className={styles.label} htmlFor="q42_patientResponse">
-              Patient tolerance and response to interventions performed:
-            </label>
+            <label className={styles.label} htmlFor="q38_abuseNotes">Notes</label>
             <textarea
               className={styles.textarea}
-              id="q42_patientResponse"
-              name="q42_patientResponse"
-              rows={4}
-              placeholder="How did the patient tolerate the interventions? Any side effects or adverse reactions?"
+              id="q38_abuseNotes"
+              name="q38_abuseNotes"
+              rows={3}
+              placeholder="Document screening findings or concerns..."
             />
           </div>
         </div>

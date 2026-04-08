@@ -6,13 +6,26 @@ import DeselectableRadio from './DeselectableRadio';
 
 interface FormPageSevenProps {
   formRef: React.RefObject<HTMLFormElement>;
+  credential?: string;
 }
 
-export default function FormPageSeven({ formRef }: FormPageSevenProps) {
+export default function FormPageSeven({ formRef, credential }: FormPageSevenProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [signatureImage, setSignatureImage] = useState<string>('');
   const [totalHours, setTotalHours] = useState<string>('');
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    handoff: false,
+  });
+
+  const isLpnRn = credential === 'LPN' || credential === 'RN';
+
+  const toggleSection = (section: string) => {
+    setExpandedSections((prev) => ({
+      ...prev,
+      [section]: !prev[section],
+    }));
+  };
 
   const calculateTotalHours = () => {
     if (!formRef.current) return;
@@ -98,9 +111,7 @@ export default function FormPageSeven({ formRef }: FormPageSevenProps) {
       if (ctx) {
         ctx.closePath();
       }
-      // Store the signature as a data URL
       setSignatureImage(canvas.toDataURL());
-      // Also save to a hidden input field for form submission
       const signatureInput = formRef.current?.querySelector(
         'input[name="q61_signature"]'
       ) as HTMLInputElement;
@@ -130,49 +141,167 @@ export default function FormPageSeven({ formRef }: FormPageSevenProps) {
 
   return (
     <div>
+      {/* END-OF-SHIFT HANDOFF */}
       <div className={styles.section}>
-        <span className={styles.sectionLabel}>SIGNATURE AND COMPLETION</span>
+        <span className={styles.sectionLabel}>END-OF-SHIFT HANDOFF</span>
 
-        <div className={styles.subsec}>Nurse / Caregiver Signature</div>
-        <p style={{ fontSize: '0.9rem', color: '#666', marginBottom: '1rem' }}>
-          Please sign in the box below to verify the accuracy and completion of this progress note.
-        </p>
-        <div style={{ marginBottom: '1rem' }}>
-          <label className={styles.label}>Signature *</label>
-          <canvas
-            ref={canvasRef}
-            width={400}
-            height={150}
-            onMouseDown={startDrawing}
-            onMouseMove={draw}
-            onMouseUp={stopDrawing}
-            onMouseLeave={stopDrawing}
-            className={styles.signaturePad}
-            style={{
-              display: 'block',
-              backgroundColor: 'white',
-              width: '100%',
-              maxWidth: '400px',
-              height: 'auto',
-            }}
-          />
-          <input
-            type="hidden"
-            name="q61_signature"
-            id="q61_signature"
-            required
-          />
+        <div
+          className={styles.collapsibleHeader}
+          onClick={() => toggleSection('handoff')}
+        >
+          <span className={styles.toggleArrow}>
+            {expandedSections.handoff ? '▼' : '▶'}
+          </span>
+          <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>End-of-Shift Handoff</div>
         </div>
-        <div className={styles.signaturePadControls}>
-          <button
-            type="button"
-            onClick={clearSignature}
-          >
-            Clear Signature
-          </button>
+        {expandedSections.handoff && (
+          <div>
+            <div className={styles.row}>
+              <div className={styles.f}>
+                <label className={styles.label} htmlFor="q60_oncomingCaregiver">Oncoming Caregiver Name</label>
+                <input
+                  className={styles.input}
+                  type="text"
+                  id="q60_oncomingCaregiver"
+                  name="q60_oncomingCaregiver"
+                />
+              </div>
+              <div className={styles.f}>
+                <label className={styles.label} htmlFor="q60_handoffTime">Handoff Time</label>
+                <input
+                  className={styles.input}
+                  type="time"
+                  id="q60_handoffTime"
+                  name="q60_handoffTime"
+                />
+              </div>
+            </div>
+
+            <div className={styles.row}>
+              <div className={styles.f} style={{ flex: '1 1 100%' }}>
+                <label className={styles.label} htmlFor="q60_verbalReport">Verbal Report Summary</label>
+                <textarea
+                  className={styles.textarea}
+                  id="q60_verbalReport"
+                  name="q60_verbalReport"
+                  rows={4}
+                  placeholder="Summarize key events and handoff information given to oncoming caregiver..."
+                />
+              </div>
+            </div>
+
+            <div className={styles.row}>
+              <div className={styles.f} style={{ flex: '1 1 100%' }}>
+                <label className={styles.label}>Client Condition at Shift End</label>
+                <div className={styles.radioRow}>
+                  <label><DeselectableRadio name="q60_conditionAtEnd" value="Stable" /> Stable</label>
+                  <label><DeselectableRadio name="q60_conditionAtEnd" value="Improved" /> Improved</label>
+                  <label><DeselectableRadio name="q60_conditionAtEnd" value="Declined" /> Declined</label>
+                  <label><DeselectableRadio name="q60_conditionAtEnd" value="Unchanged" /> Unchanged</label>
+                </div>
+              </div>
+            </div>
+
+            <div className={styles.row}>
+              <div className={styles.f} style={{ flex: '1 1 100%' }}>
+                <label className={styles.label} htmlFor="q60_endOfShiftNotes">Additional Notes</label>
+                <textarea
+                  className={styles.textarea}
+                  id="q60_endOfShiftNotes"
+                  name="q60_endOfShiftNotes"
+                  rows={3}
+                  placeholder="Any additional end-of-shift notes..."
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* FOLLOW-UP CARE OR REFERRALS NEEDED */}
+      <div className={styles.section}>
+        <span className={styles.sectionLabel}>FOLLOW-UP CARE OR REFERRALS NEEDED</span>
+
+        <div className={styles.checkRow}>
+          <label>
+            <input type="checkbox" name="q58_followup" value="Continued skilled nursing" />
+            Continued skilled nursing
+          </label>
+          <label>
+            <input type="checkbox" name="q58_followup" value="Physical therapy" />
+            Physical therapy
+          </label>
+          <label>
+            <input type="checkbox" name="q58_followup" value="Occupational therapy" />
+            Occupational therapy
+          </label>
+          <label>
+            <input type="checkbox" name="q58_followup" value="Speech therapy" />
+            Speech therapy
+          </label>
+        </div>
+        <div className={styles.checkRow}>
+          <label>
+            <input type="checkbox" name="q58_followup" value="Medical supplies needed" />
+            Medical supplies needed
+          </label>
+          <label>
+            <input type="checkbox" name="q58_followup" value="Physician follow-up appointment" />
+            Physician follow-up appointment
+          </label>
+          <label>
+            <input type="checkbox" name="q58_followup" value="Specialist referral" />
+            Specialist referral
+          </label>
+          <label>
+            <input type="checkbox" name="q58_followup" value="None" />
+            None
+          </label>
         </div>
       </div>
 
+      {/* FOLLOW-UP DETAILS */}
+      <div className={styles.section}>
+        <span className={styles.sectionLabel}>FOLLOW-UP DETAILS</span>
+
+        <div className={styles.row}>
+          <div className={styles.f} style={{ flex: '1 1 100%' }}>
+            <label className={styles.label} htmlFor="q59_followupDetails">
+              Specific follow-up instructions or referral details:
+            </label>
+            <textarea
+              className={styles.textarea}
+              id="q59_followupDetails"
+              name="q59_followupDetails"
+              rows={3}
+              placeholder="Include dates, contact information, specific instructions for patient/family"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* PLANS FOR NEXT SHIFT */}
+      <div className={styles.section}>
+        <span className={styles.sectionLabel}>PLANS FOR NEXT SHIFT / CARE CONTINUATION</span>
+
+        <div className={styles.row}>
+          <div className={styles.f} style={{ flex: '1 1 100%' }}>
+            <label className={styles.label} htmlFor="q60_nextShiftPlan">
+              Summary of care plan, items to monitor, and recommendations for next caregiver: *
+            </label>
+            <textarea
+              className={styles.textarea}
+              id="q60_nextShiftPlan"
+              name="q60_nextShiftPlan"
+              rows={4}
+              placeholder="Document continuing care needs, precautions, patient progress, and recommendations"
+              required
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* SHIFT COMPLETION DETAILS */}
       <div className={styles.section}>
         <span className={styles.sectionLabel}>SHIFT COMPLETION DETAILS</span>
 
@@ -213,6 +342,7 @@ export default function FormPageSeven({ formRef }: FormPageSevenProps) {
         </div>
       </div>
 
+      {/* CLINICAL SUMMARY */}
       <div className={styles.section}>
         <span className={styles.sectionLabel}>CLINICAL SUMMARY</span>
 
@@ -233,41 +363,31 @@ export default function FormPageSeven({ formRef }: FormPageSevenProps) {
         </div>
       </div>
 
+      {/* CARE PLAN STATUS */}
       <div className={styles.section}>
         <span className={styles.sectionLabel}>CARE PLAN STATUS</span>
 
         <div className={styles.radioRow}>
           <label>
-            <DeselectableRadio
-              name="q64_carePlanStatus"
-              value="Goals on track"
-            />
+            <DeselectableRadio name="q64_carePlanStatus" value="Goals on track" />
             Goals on track
           </label>
           <label>
-            <DeselectableRadio
-              name="q64_carePlanStatus"
-              value="Goals partially met"
-            />
+            <DeselectableRadio name="q64_carePlanStatus" value="Goals partially met" />
             Goals partially met
           </label>
           <label>
-            <DeselectableRadio
-              name="q64_carePlanStatus"
-              value="Goals not met - plan revision needed"
-            />
+            <DeselectableRadio name="q64_carePlanStatus" value="Goals not met - plan revision needed" />
             Goals not met - plan revision needed
           </label>
           <label>
-            <DeselectableRadio
-              name="q64_carePlanStatus"
-              value="Client declined - specify in notes"
-            />
+            <DeselectableRadio name="q64_carePlanStatus" value="Client declined - specify in notes" />
             Client declined - specify in notes
           </label>
         </div>
       </div>
 
+      {/* CERTIFICATION */}
       <div className={styles.section}>
         <span className={styles.sectionLabel}>CERTIFICATION</span>
 
@@ -284,6 +404,7 @@ export default function FormPageSeven({ formRef }: FormPageSevenProps) {
         </div>
       </div>
 
+      {/* ADDITIONAL NOTES */}
       <div className={styles.section}>
         <span className={styles.sectionLabel}>ADDITIONAL NOTES</span>
 
@@ -300,6 +421,50 @@ export default function FormPageSeven({ formRef }: FormPageSevenProps) {
               placeholder="Optional additional documentation"
             />
           </div>
+        </div>
+      </div>
+
+      {/* SIGNATURE AND COMPLETION (LAST) */}
+      <div className={styles.section}>
+        <span className={styles.sectionLabel}>SIGNATURE AND COMPLETION</span>
+
+        <div className={styles.subsec}>Nurse / Caregiver Signature</div>
+        <p style={{ fontSize: '0.9rem', color: '#666', marginBottom: '1rem' }}>
+          Please sign in the box below to verify the accuracy and completion of this progress note.
+        </p>
+        <div style={{ marginBottom: '1rem' }}>
+          <label className={styles.label}>Signature *</label>
+          <canvas
+            ref={canvasRef}
+            width={400}
+            height={150}
+            onMouseDown={startDrawing}
+            onMouseMove={draw}
+            onMouseUp={stopDrawing}
+            onMouseLeave={stopDrawing}
+            className={styles.signaturePad}
+            style={{
+              display: 'block',
+              backgroundColor: 'white',
+              width: '100%',
+              maxWidth: '400px',
+              height: 'auto',
+            }}
+          />
+          <input
+            type="hidden"
+            name="q61_signature"
+            id="q61_signature"
+            required
+          />
+        </div>
+        <div className={styles.signaturePadControls}>
+          <button
+            type="button"
+            onClick={clearSignature}
+          >
+            Clear Signature
+          </button>
         </div>
       </div>
     </div>
