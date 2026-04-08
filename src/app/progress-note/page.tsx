@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { getPatients, addPatient, updatePatient, removePatient, type Patient } from '@/lib/patients';
-import { saveSubmission, type ProgressNoteFormData } from '@/lib/submissions';
+import { saveSubmission, getSubmission, updateSubmission, type ProgressNoteFormData } from '@/lib/submissions';
+import { setRadio } from './components/DeselectableRadio';
 import styles from './page.module.css';
 import SettingsPanel from './components/SettingsPanel';
 import FormPageOne from './components/FormPageOne';
@@ -29,7 +31,14 @@ function getActivePages(credential: CredentialTier): number[] {
   }
 }
 
-export default function ProgressNotePage() {
+function ProgressNotePageInner() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const editId = searchParams.get('edit');
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editLoaded, setEditLoaded] = useState(false);
+  const [initialClientName, setInitialClientName] = useState('');
+
   const [currentPage, setCurrentPage] = useState(1);
   const [credential, setCredential] = useState<CredentialTier>('');
   const [showSettings, setShowSettings] = useState(false);
@@ -71,6 +80,164 @@ export default function ProgressNotePage() {
 
     loadPatients();
   }, []);
+
+  // Load submission data when editing
+  useEffect(() => {
+    if (!editId || editLoaded) return;
+
+    const loadEditData = async () => {
+      try {
+        const data = await getSubmission(editId);
+        if (!data) {
+          alert('Submission not found.');
+          return;
+        }
+
+        // Set credential first to ensure correct pages are shown
+        if (data.q12_credential) {
+          handleCredentialChange(data.q12_credential);
+        }
+
+        // Set client name via React state
+        if (data.q3_clientName) {
+          setInitialClientName(data.q3_clientName);
+        }
+
+        // Wait for DOM to render all pages, then populate fields
+        setTimeout(() => {
+          if (!formRef.current) return;
+
+          // Helper to set a text/number/date/time input value
+          const setField = (name: string, value: string) => {
+            const el = formRef.current?.querySelector(`[name="${name}"]`) as HTMLInputElement | HTMLTextAreaElement;
+            if (el && value) el.value = value;
+          };
+
+          // Helper to set checkboxes from comma-separated string
+          const setCheckboxes = (name: string, csvValues: string) => {
+            if (!csvValues) return;
+            const values = csvValues.split(', ');
+            const checkboxes = formRef.current?.querySelectorAll(`input[type="checkbox"][name="${name}"]`);
+            checkboxes?.forEach((cb) => {
+              const checkbox = cb as HTMLInputElement;
+              checkbox.checked = values.includes(checkbox.value);
+            });
+          };
+
+          // Page 1: Client Information
+          setField('q3_clientName', data.q3_clientName);
+          setField('q4_dateofBirth', data.q4_dateofBirth);
+          setField('q5_ageYears', data.q5_ageYears);
+          setField('q10_primaryDiagnosis', data.q10_primaryDiagnosis);
+          setField('q200_addr_line1', data.q200_addr_line1);
+          setField('q200_city', data.q200_city);
+          setField('q200_state', data.q200_state);
+          setField('q200_postal', data.q200_postal);
+
+          // Page 1: Shift Information
+          setField('q6_dateofService', data.q6_dateofService);
+          setField('q7_shiftStart', data.q7_shiftStart);
+          setField('q8_shiftEnd', data.q8_shiftEnd);
+          setField('q9_totalHours', data.q9_totalHours);
+
+          // Page 1: Nurse / Caregiver
+          setField('q11_nurseName', data.q11_nurseName);
+          // Set credential select
+          const credSelect = formRef.current?.querySelector('select[name="q12_credential"]') as HTMLSelectElement;
+          if (credSelect && data.q12_credential) {
+            credSelect.value = data.q12_credential;
+          }
+
+          // Page 2: Client Status (radios)
+          if (data.q13_orientationLevel) setRadio('q13_orientationLevel', data.q13_orientationLevel);
+          if (data.q14_behavior) setRadio('q14_behavior', data.q14_behavior);
+          // Page 2: Appearance (checkboxes)
+          setCheckboxes('q15_appearance', data.q15_appearance);
+
+          // Page 2: Vital Signs
+          setField('q16_temperature', data.q16_temperature);
+          setField('q17_bloodPressure', data.q17_bloodPressure);
+          setField('q18_pulse', data.q18_pulse);
+          setField('q19_respiration', data.q19_respiration);
+          setField('q20_oxygenSaturation', data.q20_oxygenSaturation);
+          setField('q21_bloodGlucose', data.q21_bloodGlucose);
+
+          // Page 2: Additional Observations
+          setField('q22_additionalObservations', data.q22_additionalObservations);
+
+          // Page 3: Observations
+          if (data.q23_activityLevel) setRadio('q23_activityLevel', data.q23_activityLevel);
+          setField('q24_painLevel', data.q24_painLevel);
+          setField('q25_painLocation', data.q25_painLocation);
+          setField('q26_painDescription', data.q26_painDescription);
+
+          // Page 3: System Assessments
+          setCheckboxes('q30_neuroAssessment', data.q30_neuroAssessment);
+          setField('q30_neuroNotes', data.q30_neuroNotes);
+          setCheckboxes('q31_cardioAssessment', data.q31_cardioAssessment);
+          setField('q31_cardioNotes', data.q31_cardioNotes);
+          setCheckboxes('q32_respAssessment', data.q32_respAssessment);
+          setField('q32_respNotes', data.q32_respNotes);
+          setCheckboxes('q33_giAssessment', data.q33_giAssessment);
+          setField('q33_giNotes', data.q33_giNotes);
+          setCheckboxes('q34_guAssessment', data.q34_guAssessment);
+          setField('q34_guNotes', data.q34_guNotes);
+          setCheckboxes('q35_reproAssessment', data.q35_reproAssessment);
+          setField('q35_reproNotes', data.q35_reproNotes);
+          setCheckboxes('q36_skinAssessment', data.q36_skinAssessment);
+          setField('q36_skinNotes', data.q36_skinNotes);
+          setCheckboxes('q37_behaveAssessment', data.q37_behaveAssessment);
+          setField('q37_behaveNotes', data.q37_behaveNotes);
+
+          // Page 4: Interventions
+          setCheckboxes('q38_interventions', data.q38_interventions);
+          setField('q39_interventionDetails', data.q39_interventionDetails);
+          setField('q40_skillJustification', data.q40_skillJustification);
+          setCheckboxes('q41_patientEduc', data.q41_patientEduc);
+          setField('q42_patientResponse', data.q42_patientResponse);
+
+          // Page 5: Medications & Treatments
+          setField('q43_medicationsGiven', data.q43_medicationsGiven);
+          if (data.q44_medicationCompliance) setRadio('q44_medicationCompliance', data.q44_medicationCompliance);
+          setField('q45_medicationSideEffects', data.q45_medicationSideEffects);
+          setCheckboxes('q46_treatments', data.q46_treatments);
+          setCheckboxes('q47_equipment', data.q47_equipment);
+          setField('q48_equipmentIssues', data.q48_equipmentIssues);
+          setCheckboxes('q49_homeEnvironment', data.q49_homeEnvironment);
+          setField('q50_caregiverObs', data.q50_caregiverObs);
+
+          // Page 6: Communication
+          setField('q51_communication', data.q51_communication);
+          if (data.q52_physicianNotify) setRadio('q52_physicianNotify', data.q52_physicianNotify);
+          setField('q53_physicianName', data.q53_physicianName);
+          setField('q54_notificationTime', data.q54_notificationTime);
+          setField('q55_physicianOrders', data.q55_physicianOrders);
+          if (data.q56_incidents) setRadio('q56_incidents', data.q56_incidents);
+          setField('q57_incidentDetails', data.q57_incidentDetails);
+          setCheckboxes('q58_followup', data.q58_followup);
+          setField('q59_followupDetails', data.q59_followupDetails);
+          setField('q60_nextShiftPlan', data.q60_nextShiftPlan);
+
+          // Page 7: Signature & Completion
+          setField('q61_signature', data.q61_signature);
+          setField('q62_shiftEndDate', data.q62_shiftEndDate);
+          setField('q62_shiftEndTime', data.q62_shiftEndTime);
+          setField('q63_clinicalSummary', data.q63_clinicalSummary);
+          if (data.q64_carePlanStatus) setRadio('q64_carePlanStatus', data.q64_carePlanStatus);
+          setCheckboxes('q65_certification', data.q65_certification);
+          setField('q66_additionalNotes', data.q66_additionalNotes);
+
+          setIsEditMode(true);
+          setEditLoaded(true);
+        }, 300);
+      } catch (error) {
+        console.error('Failed to load submission for editing:', error);
+        alert('Failed to load submission data.');
+      }
+    };
+
+    loadEditData();
+  }, [editId, editLoaded]);
 
   const handleAddPatient = async (patient: Patient) => {
     try {
@@ -330,8 +497,14 @@ export default function ProgressNotePage() {
         q66_additionalNotes: getVal('q66_additionalNotes'),
       };
 
-      const docId = await saveSubmission(submission);
+      if (isEditMode && editId) {
+        await updateSubmission(editId, submission);
+        alert('Progress note updated successfully!');
+        router.push(`/progress-note/submissions/${editId}`);
+        return;
+      }
 
+      const docId = await saveSubmission(submission);
       alert(`Progress note submitted successfully!\nSubmission ID: ${docId}`);
       formRef.current.reset();
       setCurrentPage(1);
@@ -361,6 +534,12 @@ export default function ProgressNotePage() {
 
   return (
     <div className={`${styles.container} ${styles.wrap}`}>
+      {isEditMode && (
+        <div style={{ background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px', padding: '10px 16px', marginBottom: '16px', fontSize: '14px', color: '#856404' }}>
+          You are editing an existing progress note. Make your changes and click Update.
+        </div>
+      )}
+
       <div className={styles.header}>
         <h1>Heart and Soul Home Health - Progress Note</h1>
         <p>Nurse Documentation Form</p>
@@ -393,7 +572,7 @@ export default function ProgressNotePage() {
       </div>
 
       <form ref={formRef} onSubmit={handleSubmit} className={styles.form} noValidate>
-        <div style={pageStyle(1)}><FormPageOne formRef={ref} onCredentialChange={handleCredentialChange} patients={patients} /></div>
+        <div style={pageStyle(1)}><FormPageOne formRef={ref} onCredentialChange={handleCredentialChange} patients={patients} initialClientName={initialClientName} /></div>
         <div style={pageStyle(2)}><FormPageTwo formRef={ref} credential={credential} /></div>
         <div style={pageStyle(3)}><FormPageThree formRef={ref} credential={credential} /></div>
         <div style={pageStyle(4)}><FormPageFour formRef={ref} /></div>
@@ -413,7 +592,9 @@ export default function ProgressNotePage() {
 
           {isLastPage ? (
             <button type="submit" className={styles.submitBtn} disabled={submitting}>
-              {submitting ? 'Submitting...' : 'Submit'}
+              {submitting
+                ? (isEditMode ? 'Updating...' : 'Submitting...')
+                : (isEditMode ? 'Update' : 'Submit')}
             </button>
           ) : (
             <button
@@ -437,5 +618,13 @@ export default function ProgressNotePage() {
         />
       )}
     </div>
+  );
+}
+
+export default function ProgressNotePage() {
+  return (
+    <Suspense fallback={<div style={{ textAlign: 'center', padding: '40px 20px' }}><p>Loading...</p></div>}>
+      <ProgressNotePageInner />
+    </Suspense>
   );
 }
