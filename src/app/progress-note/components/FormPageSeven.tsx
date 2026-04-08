@@ -7,9 +7,10 @@ import DeselectableRadio from './DeselectableRadio';
 interface FormPageSevenProps {
   formRef: React.RefObject<HTMLFormElement>;
   credential?: string;
+  initialSignature?: string;
 }
 
-export default function FormPageSeven({ formRef, credential }: FormPageSevenProps) {
+export default function FormPageSeven({ formRef, credential, initialSignature }: FormPageSevenProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [signatureImage, setSignatureImage] = useState<string>('');
@@ -75,6 +76,28 @@ export default function FormPageSeven({ formRef, credential }: FormPageSevenProp
       }
     }
   }, []);
+
+  // Load existing signature when editing
+  useEffect(() => {
+    if (!initialSignature || !canvasRef.current) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const img = new Image();
+    img.onload = () => {
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      setSignatureImage(initialSignature);
+      // Also set the hidden input
+      const signatureInput = formRef.current?.querySelector(
+        'input[name="q61_signature"]'
+      ) as HTMLInputElement;
+      if (signatureInput) {
+        signatureInput.value = initialSignature;
+      }
+    };
+    img.src = initialSignature;
+  }, [initialSignature, formRef]);
 
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
     setIsDrawing(true);
