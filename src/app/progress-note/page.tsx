@@ -38,6 +38,7 @@ function ProgressNotePageInner() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [editLoaded, setEditLoaded] = useState(false);
   const [initialClientName, setInitialClientName] = useState('');
+  const [initialSignature, setInitialSignature] = useState('');
 
   const [currentPage, setCurrentPage] = useState(1);
   const [credential, setCredential] = useState<CredentialTier>('');
@@ -220,6 +221,7 @@ function ProgressNotePageInner() {
 
           // Page 7: Signature & Completion
           setField('q61_signature', data.q61_signature);
+          if (data.q61_signature) setInitialSignature(data.q61_signature);
           setField('q62_shiftEndDate', data.q62_shiftEndDate);
           setField('q62_shiftEndTime', data.q62_shiftEndTime);
           setField('q63_clinicalSummary', data.q63_clinicalSummary);
@@ -534,9 +536,25 @@ function ProgressNotePageInner() {
 
   return (
     <div className={`${styles.container} ${styles.wrap}`}>
-      {isEditMode && (
-        <div style={{ background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px', padding: '10px 16px', marginBottom: '16px', fontSize: '14px', color: '#856404' }}>
-          You are editing an existing progress note. Make your changes and click Update.
+      {isEditMode && editId && (
+        <div style={{ background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px', padding: '10px 16px', marginBottom: '16px', fontSize: '14px', color: '#856404', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>✏️ You are editing an existing progress note. Make your changes and click Update.</span>
+          <button
+            type="button"
+            onClick={() => router.push(`/progress-note/submissions/${editId}`)}
+            style={{
+              background: '#856404',
+              color: 'white',
+              border: 'none',
+              padding: '6px 16px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: 600,
+            }}
+          >
+            Cancel Editing
+          </button>
         </div>
       )}
 
@@ -578,7 +596,7 @@ function ProgressNotePageInner() {
         <div style={pageStyle(4)}><FormPageFour formRef={ref} /></div>
         <div style={pageStyle(5)}><FormPageFive formRef={ref} credential={credential} /></div>
         <div style={pageStyle(6)}><FormPageSix formRef={ref} credential={credential} /></div>
-        <div style={pageStyle(7)}><FormPageSeven formRef={ref} credential={credential} /></div>
+        <div style={pageStyle(7)}><FormPageSeven formRef={ref} credential={credential} initialSignature={initialSignature} /></div>
 
         <div className={styles.navigationControls}>
           <button
