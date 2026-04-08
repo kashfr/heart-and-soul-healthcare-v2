@@ -273,7 +273,7 @@ export function toProgressNoteData(
     shift: {
       dateOfService: formatDateUS(form.q6_dateofService),
       startTime: form.q7_shiftStart || '',
-      endTime: form.q8_shiftEnd || '',
+      endTime: form.q62_shiftEndTime || form.q8_shiftEnd || '',
       totalHours: form.q9_totalHours || '',
     },
     nurse: {

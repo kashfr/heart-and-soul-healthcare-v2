@@ -18,7 +18,6 @@ export default function SubmissionDetailPage({ params }: PageProps) {
   const [formData, setFormData] = useState<ProgressNoteFormData | null>(null);
   const [noteData, setNoteData] = useState<ProgressNoteData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [downloading, setDownloading] = useState(false);
   const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
@@ -40,37 +39,6 @@ export default function SubmissionDetailPage({ params }: PageProps) {
     };
     load();
   }, [id]);
-
-  const handleDownloadPDF = async () => {
-    if (!noteData) return;
-    setDownloading(true);
-    try {
-      const res = await fetch('/api/progress-note/pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(noteData),
-      });
-
-      if (!res.ok) throw new Error('PDF generation failed');
-
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const clientName = noteData.client.name.replace(/\s+/g, '_');
-      const dateStr = noteData.shift.dateOfService.replace(/\//g, '-');
-      a.download = `Progress_Note_${clientName}_${dateStr}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('PDF download error:', error);
-      alert('Failed to download PDF. Please try again.');
-    } finally {
-      setDownloading(false);
-    }
-  };
 
   const handlePrint = () => {
     window.print();
@@ -116,15 +84,8 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             &larr; Back to Submissions
           </Link>
           <div style={{ display: 'flex', gap: 10 }}>
-            <button onClick={handlePrint} style={secondaryBtnStyle}>
-              Print
-            </button>
-            <button
-              onClick={handleDownloadPDF}
-              disabled={downloading}
-              style={primaryBtnStyle}
-            >
-              {downloading ? 'Generating...' : 'Download PDF'}
+            <button onClick={handlePrint} style={primaryBtnStyle}>
+              Print / Save as PDF
             </button>
           </div>
         </div>
@@ -320,6 +281,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         @media print {
           .no-print { display: none !important; }
           body { background: white !important; }
+          .print-section { break-inside: avoid; page-break-inside: avoid; }
         }
       `}</style>
     </div>
@@ -330,7 +292,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={sectionStyle}>
+    <div style={sectionStyle} className="print-section">
       <div style={sectionHeaderStyle}>
         <strong style={sectionTitleStyle}>{title}</strong>
       </div>
