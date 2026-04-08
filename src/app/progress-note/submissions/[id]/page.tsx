@@ -115,7 +115,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
 
         {/* Header */}
         <div style={headerStyle}>
-          <h1 style={companyNameStyle}>Heart and Soul Home Health</h1>
+          <h1 style={companyNameStyle}>Heart and Soul Healthcare</h1>
           <p style={taglineStyle}>Compassionate Care, Professional Excellence</p>
           <h2 style={formTitleStyle}>HOME HEALTH PROGRESS NOTE</h2>
           <p style={formDateStyle}>Form Date: {d.shift.dateOfService}</p>
@@ -294,7 +294,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         {/* Footer */}
         <div style={footerStyle}>
           <p style={{ margin: 0 }}>
-            Confidential - Heart and Soul Home Health | This document contains protected health information (PHI)
+            Confidential - Heart and Soul Healthcare | This document contains protected health information (PHI)
           </p>
         </div>
       </div>

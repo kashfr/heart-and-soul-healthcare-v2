@@ -559,7 +559,7 @@ function ProgressNotePageInner() {
       )}
 
       <div className={styles.header}>
-        <h1>Heart and Soul Home Health - Progress Note</h1>
+        <h1>Heart and Soul Healthcare - Progress Note</h1>
         <p>Nurse Documentation Form</p>
       </div>
 

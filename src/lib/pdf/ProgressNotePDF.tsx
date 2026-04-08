@@ -513,7 +513,7 @@ export default function ProgressNotePDF({ data }: { data: ProgressNoteData }) {
       <Page size="LETTER" style={s.page}>
         {/* Header */}
         <View style={s.header}>
-          <Text style={s.companyName}>Heart and Soul Home Health</Text>
+          <Text style={s.companyName}>Heart and Soul Healthcare</Text>
           <Text style={s.companyTagline}>
             Compassionate Care, Professional Excellence
           </Text>
@@ -787,7 +787,7 @@ export default function ProgressNotePDF({ data }: { data: ProgressNoteData }) {
         {/* Footer */}
         <View style={s.footer}>
           <Text>
-            Confidential - Heart and Soul Home Health | This document contains
+            Confidential - Heart and Soul Healthcare | This document contains
             protected health information (PHI)
           </Text>
         </View>
