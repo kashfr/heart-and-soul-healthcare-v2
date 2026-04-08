@@ -4,6 +4,7 @@ import {
   Page,
   View,
   Text,
+  Image,
   StyleSheet,
 } from '@react-pdf/renderer';
 
@@ -71,6 +72,7 @@ export interface ProgressNoteData {
     credential: string;
     dateSigned: string;
     clinicalSummary: string;
+    signatureImage?: string; // base64 data URL from signature pad
   };
 }
 
@@ -765,9 +767,19 @@ export default function ProgressNotePDF({ data }: { data: ProgressNoteData }) {
               />
             </View>
             <View style={{ flex: 1 }}>
-              <View style={s.signatureLine}>
-                <Text style={s.signatureLabel}>Signature</Text>
-              </View>
+              {data.signature.signatureImage ? (
+                <View>
+                  <Text style={s.signatureLabel}>Signature:</Text>
+                  <Image
+                    src={data.signature.signatureImage}
+                    style={{ width: 200, height: 75, marginTop: 4 }}
+                  />
+                </View>
+              ) : (
+                <View style={s.signatureLine}>
+                  <Text style={s.signatureLabel}>Signature</Text>
+                </View>
+              )}
             </View>
           </View>
         </Section>

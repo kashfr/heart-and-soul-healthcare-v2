@@ -164,7 +164,7 @@ export async function getSubmissions(): Promise<SubmissionSummary[]> {
         clientName: data.q3_clientName || '',
         nurseName: data.q11_nurseName || '',
         credential: data.q12_credential || '',
-        dateOfService: data.q6_dateofService || '',
+        dateOfService: formatDateUS(data.q6_dateofService || ''),
         submittedAt: submittedAt ? submittedAt.toDate() : null,
         status: data.status || 'submitted',
       };
@@ -188,6 +188,18 @@ export async function getSubmission(id: string): Promise<ProgressNoteFormData | 
     console.error('Error fetching submission:', error);
     return null;
   }
+}
+
+/**
+ * Convert YYYY-MM-DD to MM/DD/YYYY (US format)
+ */
+function formatDateUS(dateStr: string): string {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length === 3) {
+    return `${parts[1]}/${parts[2]}/${parts[0]}`;
+  }
+  return dateStr; // Return as-is if not in expected format
 }
 
 /**
@@ -253,13 +265,13 @@ export function toProgressNoteData(
   return {
     client: {
       name: form.q3_clientName || '',
-      dob: form.q4_dateofBirth || '',
+      dob: formatDateUS(form.q4_dateofBirth),
       age: parseInt(form.q5_ageYears || '0', 10),
       diagnosis: form.q10_primaryDiagnosis || '',
       address,
     },
     shift: {
-      dateOfService: form.q6_dateofService || '',
+      dateOfService: formatDateUS(form.q6_dateofService),
       startTime: form.q7_shiftStart || '',
       endTime: form.q8_shiftEnd || '',
       totalHours: form.q9_totalHours || '',
@@ -349,8 +361,9 @@ export function toProgressNoteData(
     signature: {
       printedName: form.q11_nurseName || '',
       credential: form.q12_credential || '',
-      dateSigned: form.q62_shiftEndDate || '',
+      dateSigned: formatDateUS(form.q62_shiftEndDate),
       clinicalSummary: form.q63_clinicalSummary || '',
+      signatureImage: form.q61_signature || '',
     },
   };
 }

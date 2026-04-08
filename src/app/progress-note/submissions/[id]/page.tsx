@@ -293,6 +293,18 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             <Field label="Credential" value={d.signature.credential} />
             <Field label="Date Signed" value={d.signature.dateSigned} />
           </FieldRow>
+          {d.signature.signatureImage && (
+            <div style={{ marginTop: '12px' }}>
+              <div style={{ fontSize: '10px', fontWeight: 700, color: '#444', textTransform: 'uppercase' as const, marginBottom: '4px' }}>
+                SIGNATURE:
+              </div>
+              <img
+                src={d.signature.signatureImage}
+                alt="Nurse signature"
+                style={{ maxWidth: '300px', height: 'auto', border: '1px solid #ddd', borderRadius: '4px' }}
+              />
+            </div>
+          )}
         </Section>
 
         {/* Footer */}

@@ -4,9 +4,10 @@ import styles from '../page.module.css';
 
 interface FormPageOneProps {
   formRef: React.RefObject<HTMLFormElement>;
+  onCredentialChange?: (credential: string) => void;
 }
 
-export default function FormPageOne({ formRef }: FormPageOneProps) {
+export default function FormPageOne({ formRef, onCredentialChange }: FormPageOneProps) {
   const today = new Date().toISOString().split('T')[0];
 
   return (
@@ -40,7 +41,7 @@ export default function FormPageOne({ formRef }: FormPageOneProps) {
             />
           </div>
           <div className={styles.f}>
-            <label className={styles.label} htmlFor="q5_ageYears">Age in Years *</label>
+            <label className={styles.label} htmlFor="q5_ageYears">Age in Years</label>
             <input
               className={styles.input}
               type="number"
@@ -164,6 +165,7 @@ export default function FormPageOne({ formRef }: FormPageOneProps) {
               id="q12_credential"
               name="q12_credential"
               required
+              onChange={(e) => onCredentialChange?.(e.target.value)}
             >
               <option value="">Select credential</option>
               <option value="RN">RN</option>
