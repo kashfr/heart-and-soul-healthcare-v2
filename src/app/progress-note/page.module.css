@@ -416,6 +416,7 @@
     padding: 16px;
     border-radius: 0;
     box-shadow: none;
+    overflow-x: hidden;
   }
 
   .header {
@@ -457,6 +458,17 @@
   .textarea {
     font-size: 16px;
     padding: 12px;
+    max-width: 100%;
+    box-sizing: border-box;
+    width: 100%;
+  }
+
+  /* Force date/time inputs to stay within bounds on iOS */
+  .input[type="date"],
+  .input[type="time"] {
+    -webkit-appearance: none;
+    appearance: none;
+    min-height: 48px;
   }
 
   .textarea {
@@ -469,8 +481,9 @@
   }
 
   .section {
-    padding: 16px;
+    padding: 12px;
     margin-bottom: 16px;
+    overflow: hidden;
   }
 
   .sectionLabel {
