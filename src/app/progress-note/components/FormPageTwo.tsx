@@ -377,8 +377,36 @@ export default function FormPageTwo({ formRef, credential }: FormPageTwoProps) {
         )}
       </div>
 
-      <div style={{ display: showVitals ? 'block' : 'none' }}>
-        <div className={styles.section}>
+      <div style={{ position: 'relative' }}>
+        {!showVitals && (
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(255,255,255,0.75)',
+            zIndex: 10,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: '4px',
+          }}>
+            <div style={{
+              background: '#f0f4f8',
+              border: '1px solid #d0d9e3',
+              borderRadius: '8px',
+              padding: '12px 24px',
+              textAlign: 'center',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+            }}>
+              <span style={{ fontSize: '14px', color: '#555', fontWeight: 600 }}>
+                Vital Signs — available for CNA, LPN, RN credentials
+              </span>
+            </div>
+          </div>
+        )}
+        <div className={styles.section} style={!showVitals ? { opacity: 0.35, pointerEvents: 'none' } : undefined}>
           <span className={styles.sectionLabel}>VITAL SIGNS</span>
 
           <div className={styles.row}>
