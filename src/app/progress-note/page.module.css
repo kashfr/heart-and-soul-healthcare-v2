@@ -552,12 +552,18 @@
   /* Modal improvements for mobile */
   .modalContent {
     padding: 20px;
-    width: 95%;
-    max-width: none;
+    width: calc(100vw - 32px);
+    max-width: 400px;
+    margin: 16px;
+    box-sizing: border-box;
   }
 
   .modalContent h2 {
     font-size: 18px;
+  }
+
+  .modalContent p {
+    font-size: 14px;
   }
 
   .modalButtons {
