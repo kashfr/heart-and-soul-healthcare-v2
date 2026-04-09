@@ -150,7 +150,7 @@ export default function Carousel() {
                       fill
                       priority={index === 0}
                       className={styles.slideImage}
-                      quality={100}
+                      quality={75}
                     />
                   </div>
                   {/* Mobile-only dots positioned below image */}
