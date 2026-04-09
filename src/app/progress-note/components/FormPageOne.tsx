@@ -12,7 +12,9 @@ interface FormPageOneProps {
 }
 
 export default function FormPageOne({ formRef, onCredentialChange, patients, initialClientName }: FormPageOneProps) {
-  const today = new Date().toISOString().split('T')[0];
+  // Use local date to avoid timezone issues (UTC can show tomorrow's date)
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredPatients, setFilteredPatients] = useState<Patient[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -200,6 +202,17 @@ export default function FormPageOne({ formRef, onCredentialChange, patients, ini
               id="q4_dateofBirth"
               name="q4_dateofBirth"
               required
+              onChange={(e) => {
+                const dob = e.target.value;
+                if (!dob || !formRef.current) return;
+                const birth = new Date(dob + 'T12:00:00');
+                const today = new Date();
+                let age = today.getFullYear() - birth.getFullYear();
+                const m = today.getMonth() - birth.getMonth();
+                if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+                const ageInput = formRef.current.querySelector('input[name="q5_ageYears"]') as HTMLInputElement;
+                if (ageInput) ageInput.value = String(age);
+              }}
             />
           </div>
           <div className={styles.f}>
