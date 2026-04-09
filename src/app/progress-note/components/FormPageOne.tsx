@@ -201,6 +201,7 @@ export default function FormPageOne({ formRef, onCredentialChange, patients, ini
               type="date"
               id="q4_dateofBirth"
               name="q4_dateofBirth"
+              max={today}
               required
               onChange={(e) => {
                 const dob = e.target.value;
@@ -299,6 +300,7 @@ export default function FormPageOne({ formRef, onCredentialChange, patients, ini
               id="q6_dateofService"
               name="q6_dateofService"
               defaultValue={today}
+              max={today}
               required
             />
           </div>

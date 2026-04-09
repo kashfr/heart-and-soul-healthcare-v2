@@ -11,6 +11,8 @@ interface FormPageSevenProps {
 }
 
 export default function FormPageSeven({ formRef, credential, initialSignature }: FormPageSevenProps) {
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [signatureImage, setSignatureImage] = useState<string>('');
@@ -348,6 +350,7 @@ export default function FormPageSeven({ formRef, credential, initialSignature }:
               type="date"
               id="q62_shiftEndDate"
               name="q62_shiftEndDate"
+              max={today}
               required
             />
           </div>
