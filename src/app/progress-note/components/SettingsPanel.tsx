@@ -45,6 +45,8 @@ export default function SettingsPanel({
   onRemovePatient,
   onClose,
 }: SettingsPanelProps) {
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const [formData, setFormData] = useState<Partial<Patient>>(emptyPatient);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -212,6 +214,7 @@ export default function SettingsPanel({
                   <input
                     className={styles.input}
                     type="date"
+                    max={today}
                     value={formData.dob || ''}
                     onChange={e => handleFieldChange('dob', e.target.value)}
                     disabled={isSubmitting}
