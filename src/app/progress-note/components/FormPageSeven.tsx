@@ -99,28 +99,40 @@ export default function FormPageSeven({ formRef, credential, initialSignature }:
     img.src = initialSignature;
   }, [initialSignature, formRef]);
 
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  // Get position from either mouse or touch event
+  const getPos = (e: React.MouseEvent | React.TouchEvent, canvas: HTMLCanvasElement) => {
+    const rect = canvas.getBoundingClientRect();
+    if ('touches' in e) {
+      const touch = e.touches[0] || e.changedTouches[0];
+      return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+    }
+    return { x: (e as React.MouseEvent).clientX - rect.left, y: (e as React.MouseEvent).clientY - rect.top };
+  };
+
+  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault(); // Prevent scrolling on touch
     setIsDrawing(true);
     const canvas = canvasRef.current;
     if (canvas) {
-      const rect = canvas.getBoundingClientRect();
+      const pos = getPos(e, canvas);
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.beginPath();
-        ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+        ctx.moveTo(pos.x, pos.y);
       }
     }
   };
 
-  const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     if (!isDrawing) return;
+    e.preventDefault(); // Prevent scrolling on touch
 
     const canvas = canvasRef.current;
     if (canvas) {
-      const rect = canvas.getBoundingClientRect();
+      const pos = getPos(e, canvas);
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+        ctx.lineTo(pos.x, pos.y);
         ctx.stroke();
       }
     }
@@ -465,6 +477,10 @@ export default function FormPageSeven({ formRef, credential, initialSignature }:
             onMouseMove={draw}
             onMouseUp={stopDrawing}
             onMouseLeave={stopDrawing}
+            onTouchStart={startDrawing}
+            onTouchMove={draw}
+            onTouchEnd={stopDrawing}
+            onTouchCancel={stopDrawing}
             className={styles.signaturePad}
             style={{
               display: 'block',
@@ -472,6 +488,7 @@ export default function FormPageSeven({ formRef, credential, initialSignature }:
               width: '100%',
               maxWidth: '400px',
               height: 'auto',
+              touchAction: 'none',
             }}
           />
           <input
