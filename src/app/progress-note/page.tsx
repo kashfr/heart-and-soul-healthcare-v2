@@ -450,7 +450,9 @@ function ProgressNotePageInner() {
               setCurrentPage(page);
               window.scrollTo(0, 0);
             }}
-          />
+          >
+            {index + 1}
+          </div>
         ))}
       </div>
 

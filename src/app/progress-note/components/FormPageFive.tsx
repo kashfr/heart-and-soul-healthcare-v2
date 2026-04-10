@@ -136,26 +136,6 @@ export default function FormPageFive({ formRef, credential }: FormPageFiveProps)
         </div>
       </div>
 
-      {/* Skilled Nursing Care Justification */}
-      <div className={styles.section}>
-        <span className={styles.sectionLabel}>SKILLED NURSING CARE JUSTIFICATION</span>
-
-        <div className={styles.row}>
-          <div className={styles.f} style={{ flex: '1 1 100%' }}>
-            <label className={styles.label} htmlFor="q40_skillJustification">
-              Describe why skilled nursing care was required today and how it relates to the patient&apos;s medical condition and treatment plan: *
-            </label>
-            <textarea
-              className={styles.textarea}
-              id="q40_skillJustification"
-              name="q40_skillJustification"
-              rows={5}
-              placeholder="Explain the clinical necessity for skilled nursing services..."
-              required
-            />
-          </div>
-        </div>
-      </div>
 
       {/* Medications */}
       <div className={styles.section}>
