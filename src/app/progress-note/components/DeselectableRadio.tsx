@@ -29,7 +29,7 @@ function setRadio(name: string, value: string | null) {
   listeners.forEach(cb => cb());
 }
 
-export { setRadio, radioState };
+export { setRadio, radioState, subscribe as radioSubscribe, getSnapshot as radioGetSnapshot };
 
 export default function DeselectableRadio({ name, value, ...props }: DeselectableRadioProps) {
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);

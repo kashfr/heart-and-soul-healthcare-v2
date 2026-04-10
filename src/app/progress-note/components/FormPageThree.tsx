@@ -485,19 +485,6 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
               </label>
             </div>
           </div>
-          <div className={styles.f}>
-            <label className={styles.label}>All Systems WNL?</label>
-            <div className={styles.radioRow}>
-              <label>
-                <DeselectableRadio name="q27_allSystemsWNL" value="Yes" />
-                Yes
-              </label>
-              <label>
-                <DeselectableRadio name="q27_allSystemsWNL" value="No" />
-                No
-              </label>
-            </div>
-          </div>
         </div>
 
         <div className={styles.row}>

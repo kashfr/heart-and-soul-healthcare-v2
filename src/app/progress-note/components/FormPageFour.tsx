@@ -1,14 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import styles from '../page.module.css';
-import DeselectableRadio from './DeselectableRadio';
+import DeselectableRadio, { radioState, radioSubscribe, radioGetSnapshot } from './DeselectableRadio';
 
 interface FormPageFourProps {
   formRef: React.RefObject<HTMLFormElement>;
 }
 
 export default function FormPageFour({ formRef }: FormPageFourProps) {
+  // Subscribe to radio state changes to reactively read aspiration concerns
+  useSyncExternalStore(radioSubscribe, radioGetSnapshot, radioGetSnapshot);
+  const hasAspirationConcerns = radioState['q38_aspirationConcerns'] === 'Yes';
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     nutrition: false,
     housekeeping: false,
@@ -152,18 +155,25 @@ export default function FormPageFour({ formRef }: FormPageFourProps) {
                     No
                   </label>
                 </div>
+                <p style={{ fontSize: '12px', color: '#888', marginTop: '4px', fontStyle: 'italic' }}>
+                  Selecting &quot;Yes&quot; will require you to document details in Nutrition Notes below.
+                </p>
               </div>
             </div>
 
             <div className={styles.row}>
               <div className={styles.f} style={{ flex: '1 1 100%' }}>
-                <label className={styles.label} htmlFor="q38_nutritionNotes">Nutrition Notes</label>
+                <label className={styles.label} htmlFor="q38_nutritionNotes">
+                  Nutrition Notes {hasAspirationConcerns && '*'}
+                </label>
                 <textarea
                   className={styles.textarea}
+                  style={hasAspirationConcerns ? { border: '2px solid #c62828', background: '#fff5f5' } : undefined}
                   id="q38_nutritionNotes"
                   name="q38_nutritionNotes"
                   rows={3}
-                  placeholder="Additional notes on nutrition and hydration..."
+                  required={hasAspirationConcerns}
+                  placeholder={hasAspirationConcerns ? 'Required — document aspiration concerns, precautions taken, and dietary modifications...' : 'Additional notes on nutrition and hydration...'}
                 />
               </div>
             </div>
