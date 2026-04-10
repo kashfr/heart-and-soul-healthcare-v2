@@ -714,6 +714,59 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                 />
               </div>
             </div>
+
+            <div className={styles.subsec}>Event Response</div>
+
+            <div className={styles.row}>
+              <div className={styles.f} style={{ flex: '1 1 100%' }}>
+                <label className={styles.label} htmlFor="q43_safetyMeasures">Immediate Safety Measures Taken</label>
+                <textarea
+                  className={styles.textarea}
+                  id="q43_safetyMeasures"
+                  name="q43_safetyMeasures"
+                  rows={3}
+                  placeholder="Describe immediate safety measures taken..."
+                />
+              </div>
+            </div>
+
+            <div className={styles.row}>
+              <div className={styles.f}>
+                <label className={styles.label} htmlFor="q43_interventionTime">Time of Intervention</label>
+                <input
+                  className={styles.input}
+                  type="time"
+                  id="q43_interventionTime"
+                  name="q43_interventionTime"
+                />
+              </div>
+            </div>
+
+            <div className={styles.row}>
+              <div className={styles.f} style={{ flex: '1 1 100%' }}>
+                <label className={styles.label} htmlFor="q43_eventInterventionDetails">Intervention Details</label>
+                <textarea
+                  className={styles.textarea}
+                  id="q43_eventInterventionDetails"
+                  name="q43_eventInterventionDetails"
+                  rows={4}
+                  placeholder="Describe the intervention performed in response to the event..."
+                />
+              </div>
+            </div>
+
+            <div className={styles.row}>
+              <div className={styles.f} style={{ flex: '1 1 100%' }}>
+                <label className={styles.label} htmlFor="q43_postEventMonitoring">Post-Event Monitoring Summary</label>
+                <textarea
+                  className={styles.textarea}
+                  id="q43_postEventMonitoring"
+                  name="q43_postEventMonitoring"
+                  rows={4}
+                  placeholder="Summarize post-event monitoring and patient status..."
+                />
+              </div>
+            </div>
           </div>
         )}
       </div>

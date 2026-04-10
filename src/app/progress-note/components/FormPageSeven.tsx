@@ -339,56 +339,7 @@ export default function FormPageSeven({ formRef, credential, initialSignature }:
         </div>
       </div>
 
-      {/* SIGNATURE AND COMPLETION */}
-      <div className={styles.section}>
-        <span className={styles.sectionLabel}>SIGNATURE AND COMPLETION</span>
-
-        <div className={styles.subsec}>Nurse / Caregiver Signature</div>
-        <p style={{ fontSize: '0.9rem', color: '#666', marginBottom: '1rem' }}>
-          Please sign in the box below to verify the accuracy and completion of this progress note.
-        </p>
-        <div style={{ marginBottom: '1rem' }}>
-          <label className={styles.label}>Signature *</label>
-          <canvas
-            ref={canvasRef}
-            width={400}
-            height={150}
-            onMouseDown={startDrawing}
-            onMouseMove={draw}
-            onMouseUp={stopDrawing}
-            onMouseLeave={stopDrawing}
-            onTouchStart={startDrawing}
-            onTouchMove={draw}
-            onTouchEnd={stopDrawing}
-            onTouchCancel={stopDrawing}
-            className={styles.signaturePad}
-            style={{
-              display: 'block',
-              backgroundColor: 'white',
-              width: '100%',
-              maxWidth: '400px',
-              height: 'auto',
-              touchAction: 'none',
-            }}
-          />
-          <input
-            type="hidden"
-            name="q61_signature"
-            id="q61_signature"
-            required
-          />
-        </div>
-        <div className={styles.signaturePadControls}>
-          <button
-            type="button"
-            onClick={clearSignature}
-          >
-            Clear Signature
-          </button>
-        </div>
-      </div>
-
-      {/* END-OF-SHIFT HANDOFF (LAST SECTION — hard stop) */}
+      {/* END-OF-SHIFT HANDOFF */}
       <div className={styles.section}>
         <span className={styles.sectionLabel}>END-OF-SHIFT HANDOFF</span>
 
@@ -452,6 +403,55 @@ export default function FormPageSeven({ formRef, credential, initialSignature }:
               placeholder="Any additional end-of-shift notes..."
             />
           </div>
+        </div>
+      </div>
+
+      {/* SIGNATURE AND COMPLETION (ABSOLUTE LAST) */}
+      <div className={styles.section}>
+        <span className={styles.sectionLabel}>SIGNATURE AND COMPLETION</span>
+
+        <div className={styles.subsec}>Nurse / Caregiver Signature</div>
+        <p style={{ fontSize: '0.9rem', color: '#666', marginBottom: '1rem' }}>
+          Please sign in the box below to verify the accuracy and completion of this progress note.
+        </p>
+        <div style={{ marginBottom: '1rem' }}>
+          <label className={styles.label}>Signature *</label>
+          <canvas
+            ref={canvasRef}
+            width={400}
+            height={150}
+            onMouseDown={startDrawing}
+            onMouseMove={draw}
+            onMouseUp={stopDrawing}
+            onMouseLeave={stopDrawing}
+            onTouchStart={startDrawing}
+            onTouchMove={draw}
+            onTouchEnd={stopDrawing}
+            onTouchCancel={stopDrawing}
+            className={styles.signaturePad}
+            style={{
+              display: 'block',
+              backgroundColor: 'white',
+              width: '100%',
+              maxWidth: '400px',
+              height: 'auto',
+              touchAction: 'none',
+            }}
+          />
+          <input
+            type="hidden"
+            name="q61_signature"
+            id="q61_signature"
+            required
+          />
+        </div>
+        <div className={styles.signaturePadControls}>
+          <button
+            type="button"
+            onClick={clearSignature}
+          >
+            Clear Signature
+          </button>
         </div>
       </div>
     </div>
