@@ -178,83 +178,6 @@ export default function FormPageSeven({ formRef, credential, initialSignature }:
 
   return (
     <div>
-      {/* END-OF-SHIFT HANDOFF */}
-      <div className={styles.section}>
-        <span className={styles.sectionLabel}>END-OF-SHIFT HANDOFF</span>
-
-        <div
-          className={styles.collapsibleHeader}
-          onClick={() => toggleSection('handoff')}
-        >
-          <span className={styles.toggleArrow}>
-            {expandedSections.handoff ? '▼' : '▶'}
-          </span>
-          <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>End-of-Shift Handoff</div>
-        </div>
-        {expandedSections.handoff && (
-          <div>
-            <div className={styles.row}>
-              <div className={styles.f}>
-                <label className={styles.label} htmlFor="q60_oncomingCaregiver">Oncoming Caregiver Name</label>
-                <input
-                  className={styles.input}
-                  type="text"
-                  id="q60_oncomingCaregiver"
-                  name="q60_oncomingCaregiver"
-                />
-              </div>
-              <div className={styles.f}>
-                <label className={styles.label} htmlFor="q60_handoffTime">Handoff Time</label>
-                <input
-                  className={styles.input}
-                  type="time"
-                  id="q60_handoffTime"
-                  name="q60_handoffTime"
-                />
-              </div>
-            </div>
-
-            <div className={styles.row}>
-              <div className={styles.f} style={{ flex: '1 1 100%' }}>
-                <label className={styles.label} htmlFor="q60_verbalReport">Verbal Report Summary</label>
-                <textarea
-                  className={styles.textarea}
-                  id="q60_verbalReport"
-                  name="q60_verbalReport"
-                  rows={4}
-                  placeholder="Summarize key events and handoff information given to oncoming caregiver..."
-                />
-              </div>
-            </div>
-
-            <div className={styles.row}>
-              <div className={styles.f} style={{ flex: '1 1 100%' }}>
-                <label className={styles.label}>Client Condition at Shift End</label>
-                <div className={styles.radioRow}>
-                  <label><DeselectableRadio name="q60_conditionAtEnd" value="Stable" /> Stable</label>
-                  <label><DeselectableRadio name="q60_conditionAtEnd" value="Improved" /> Improved</label>
-                  <label><DeselectableRadio name="q60_conditionAtEnd" value="Declined" /> Declined</label>
-                  <label><DeselectableRadio name="q60_conditionAtEnd" value="Unchanged" /> Unchanged</label>
-                </div>
-              </div>
-            </div>
-
-            <div className={styles.row}>
-              <div className={styles.f} style={{ flex: '1 1 100%' }}>
-                <label className={styles.label} htmlFor="q60_endOfShiftNotes">Additional Notes</label>
-                <textarea
-                  className={styles.textarea}
-                  id="q60_endOfShiftNotes"
-                  name="q60_endOfShiftNotes"
-                  rows={3}
-                  placeholder="Any additional end-of-shift notes..."
-                />
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
       {/* FOLLOW-UP CARE OR REFERRALS NEEDED */}
       <div className={styles.section}>
         <span className={styles.sectionLabel}>FOLLOW-UP CARE OR REFERRALS NEEDED</span>
@@ -324,7 +247,7 @@ export default function FormPageSeven({ formRef, credential, initialSignature }:
         <div className={styles.row}>
           <div className={styles.f} style={{ flex: '1 1 100%' }}>
             <label className={styles.label} htmlFor="q60_nextShiftPlan">
-              Summary of care plan, items to monitor, and recommendations for next caregiver: *
+              Summary of care plan, items to monitor, and recommendations for next caregiver:
             </label>
             <textarea
               className={styles.textarea}
@@ -332,7 +255,6 @@ export default function FormPageSeven({ formRef, credential, initialSignature }:
               name="q60_nextShiftPlan"
               rows={4}
               placeholder="Document continuing care needs, precautions, patient progress, and recommendations"
-              required
             />
           </div>
         </div>
@@ -380,51 +302,6 @@ export default function FormPageSeven({ formRef, credential, initialSignature }:
         </div>
       </div>
 
-      {/* CLINICAL SUMMARY */}
-      <div className={styles.section}>
-        <span className={styles.sectionLabel}>CLINICAL SUMMARY</span>
-
-        <div className={styles.row}>
-          <div className={styles.f} style={{ flex: '1 1 100%' }}>
-            <label className={styles.label} htmlFor="q63_clinicalSummary">
-              Overall summary of client status, progress toward goals, and clinical recommendations: *
-            </label>
-            <textarea
-              className={styles.textarea}
-              id="q63_clinicalSummary"
-              name="q63_clinicalSummary"
-              rows={5}
-              placeholder="Provide a comprehensive summary of the shift, patient progress, and any clinical concerns or recommendations"
-              required
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* CARE PLAN STATUS */}
-      <div className={styles.section}>
-        <span className={styles.sectionLabel}>CARE PLAN STATUS</span>
-
-        <div className={styles.radioRow}>
-          <label>
-            <DeselectableRadio name="q64_carePlanStatus" value="Goals on track" />
-            Goals on track
-          </label>
-          <label>
-            <DeselectableRadio name="q64_carePlanStatus" value="Goals partially met" />
-            Goals partially met
-          </label>
-          <label>
-            <DeselectableRadio name="q64_carePlanStatus" value="Goals not met - plan revision needed" />
-            Goals not met - plan revision needed
-          </label>
-          <label>
-            <DeselectableRadio name="q64_carePlanStatus" value="Client declined - specify in notes" />
-            Client declined - specify in notes
-          </label>
-        </div>
-      </div>
-
       {/* CERTIFICATION */}
       <div className={styles.section}>
         <span className={styles.sectionLabel}>CERTIFICATION</span>
@@ -462,7 +339,7 @@ export default function FormPageSeven({ formRef, credential, initialSignature }:
         </div>
       </div>
 
-      {/* SIGNATURE AND COMPLETION (LAST) */}
+      {/* SIGNATURE AND COMPLETION */}
       <div className={styles.section}>
         <span className={styles.sectionLabel}>SIGNATURE AND COMPLETION</span>
 
@@ -508,6 +385,73 @@ export default function FormPageSeven({ formRef, credential, initialSignature }:
           >
             Clear Signature
           </button>
+        </div>
+      </div>
+
+      {/* END-OF-SHIFT HANDOFF (LAST SECTION — hard stop) */}
+      <div className={styles.section}>
+        <span className={styles.sectionLabel}>END-OF-SHIFT HANDOFF</span>
+
+        <div className={styles.row}>
+          <div className={styles.f}>
+            <label className={styles.label} htmlFor="q60_oncomingCaregiver">Oncoming Caregiver Name *</label>
+            <input
+              className={styles.input}
+              type="text"
+              id="q60_oncomingCaregiver"
+              name="q60_oncomingCaregiver"
+              required
+            />
+          </div>
+          <div className={styles.f}>
+            <label className={styles.label} htmlFor="q60_handoffTime">Handoff Time *</label>
+            <input
+              className={styles.input}
+              type="time"
+              id="q60_handoffTime"
+              name="q60_handoffTime"
+              required
+            />
+          </div>
+        </div>
+
+        <div className={styles.row}>
+          <div className={styles.f} style={{ flex: '1 1 100%' }}>
+            <label className={styles.label} htmlFor="q60_verbalReport">Verbal Report Summary *</label>
+            <textarea
+              className={styles.textarea}
+              id="q60_verbalReport"
+              name="q60_verbalReport"
+              rows={4}
+              placeholder="Summarize key events and handoff information given to oncoming caregiver..."
+              required
+            />
+          </div>
+        </div>
+
+        <div className={styles.row}>
+          <div className={styles.f} style={{ flex: '1 1 100%' }}>
+            <label className={styles.label}>Client Condition at Shift End *</label>
+            <div className={styles.radioRow}>
+              <label><DeselectableRadio name="q60_conditionAtEnd" value="Stable" /> Stable</label>
+              <label><DeselectableRadio name="q60_conditionAtEnd" value="Improved" /> Improved</label>
+              <label><DeselectableRadio name="q60_conditionAtEnd" value="Declined" /> Declined</label>
+              <label><DeselectableRadio name="q60_conditionAtEnd" value="Unchanged" /> Unchanged</label>
+            </div>
+          </div>
+        </div>
+
+        <div className={styles.row}>
+          <div className={styles.f} style={{ flex: '1 1 100%' }}>
+            <label className={styles.label} htmlFor="q60_endOfShiftNotes">Additional Notes</label>
+            <textarea
+              className={styles.textarea}
+              id="q60_endOfShiftNotes"
+              name="q60_endOfShiftNotes"
+              rows={3}
+              placeholder="Any additional end-of-shift notes..."
+            />
+          </div>
         </div>
       </div>
     </div>

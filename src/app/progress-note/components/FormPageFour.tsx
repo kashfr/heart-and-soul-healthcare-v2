@@ -44,17 +44,47 @@ export default function FormPageFour({ formRef }: FormPageFourProps) {
             Hair Care
           </label>
           <label>
+            <input type="checkbox" name="q38_personalCare" value="Grooming (nail care, shaving, etc.)" />
+            Grooming (nail care, shaving, etc.)
+          </label>
+        </div>
+        <div className={styles.checkRow}>
+          <label>
             <input type="checkbox" name="q38_personalCare" value="Dressing" />
             Dressing
           </label>
           <label>
-            <input type="checkbox" name="q38_personalCare" value="Diaper Changes" />
-            Diaper Changes
+            <input type="checkbox" name="q38_personalCare" value="Toileting assistance" />
+            Toileting assistance
+          </label>
+          <label>
+            <input type="checkbox" name="q38_personalCare" value="Incontinence care / Pericare" />
+            Incontinence care / Pericare
+          </label>
+          <label>
+            <input type="checkbox" name="q38_personalCare" value="Briefs / Diaper Changes" />
+            Briefs / Diaper Changes
+          </label>
+        </div>
+        <div className={styles.checkRow}>
+          <label>
+            <input type="checkbox" name="q38_personalCare" value="Feeding / Meal assistance" />
+            Feeding / Meal assistance
+          </label>
+          <label>
+            <input type="checkbox" name="q38_personalCare" value="Transfers (bed/chair/wheelchair)" />
+            Transfers (bed/chair/wheelchair)
+          </label>
+          <label>
+            <input type="checkbox" name="q38_personalCare" value="Ambulation assistance" />
+            Ambulation assistance
           </label>
           <label>
             <input type="checkbox" name="q38_personalCare" value="Repositioning" />
             Repositioning
           </label>
+        </div>
+        <div className={styles.checkRow}>
           <label>
             <input type="checkbox" name="q38_personalCare" value="Range of Motion (ROM)" />
             Range of Motion (ROM)
