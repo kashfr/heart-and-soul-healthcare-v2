@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { useForm } from 'react-hook-form';
 import { getPatients, addPatient, updatePatient, removePatient, type Patient } from '@/lib/patients';
 import { saveSubmission, getSubmission, updateSubmission, type ProgressNoteFormData } from '@/lib/submissions';
 import { setRadio, radioState } from './components/DeselectableRadio';
+import type { FormValues } from './types';
 import styles from './page.module.css';
 import SettingsPanel from './components/SettingsPanel';
 import FormPageOne from './components/FormPageOne';
@@ -49,6 +51,24 @@ function ProgressNotePageInner() {
   const [firebaseLoaded, setFirebaseLoaded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
+
+  const STORAGE_KEY = 'progress-note-draft';
+  const savedData = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
+  const defaultValues = savedData ? JSON.parse(savedData) : {};
+
+  const { register, watch, setValue, getValues, reset, control } = useForm<FormValues>({
+    defaultValues,
+  });
+
+  // Auto-save to localStorage
+  useEffect(() => {
+    const subscription = watch((values) => {
+      if (!isEditMode) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(values));
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [watch, isEditMode]);
 
   const activePages = getActivePages(credential);
   const totalActivePages = activePages.length;
@@ -95,72 +115,44 @@ function ProgressNotePageInner() {
           return;
         }
 
+        // Cast to Record for dynamic access
+        const rawData = data as unknown as Record<string, string>;
+
         // Set credential first to ensure correct pages are shown
-        if (data.q12_credential) {
-          handleCredentialChange(data.q12_credential);
+        if (rawData.q12_credential) {
+          handleCredentialChange(rawData.q12_credential);
         }
 
-        // Set client name via React state
-        if (data.q3_clientName) {
-          setInitialClientName(data.q3_clientName);
-        }
+        // Reset the entire form with saved data (synchronous for RHF fields)
+        reset(rawData);
 
-        // Wait for DOM to render all pages, then populate fields
+        // Set React-controlled fields
+        setInitialClientName(rawData.q3_clientName || '');
+        if (rawData.q61_signature) setInitialSignature(rawData.q61_signature);
+
+        // Wait for DOM to render all pages, then populate radio/checkbox fields
         setTimeout(() => {
           if (!formRef.current) return;
 
-          // Helper to set a text/number/date/time input value
-          const setField = (name: string, value: string) => {
-            const el = formRef.current?.querySelector(`[name="${name}"]`) as HTMLInputElement | HTMLTextAreaElement;
-            if (el && value) el.value = value;
-          };
+          // Set radio buttons via global store
+          for (const [key, value] of Object.entries(rawData)) {
+            if (!value || key === 'submittedAt' || key === 'lastUpdatedAt' || key === 'status') continue;
+            const radioEl = formRef.current?.querySelector(`input[type="radio"][name="${key}"]`);
+            if (radioEl) setRadio(key, value);
+          }
 
-          // Helper to set checkboxes from comma-separated string
-          const setCheckboxes = (name: string, csvValues: string) => {
-            if (!csvValues) return;
-            const values = csvValues.split(', ');
-            const checkboxes = formRef.current?.querySelectorAll(`input[type="checkbox"][name="${name}"]`);
-            checkboxes?.forEach((cb) => {
-              const checkbox = cb as HTMLInputElement;
-              checkbox.checked = values.includes(checkbox.value);
-            });
-          };
-
-          // Cast to Record for dynamic access
-          const rawData = data as unknown as Record<string, string>;
-
-          // Set React-controlled fields
-          setInitialClientName(rawData.q3_clientName || '');
-          if (rawData.q61_signature) setInitialSignature(rawData.q61_signature);
-
-          // Collect DOM element types for smart field population
-          const radioNames = new Set<string>();
-          formRef.current?.querySelectorAll('input[type="radio"]').forEach((el) => {
-            radioNames.add((el as HTMLInputElement).name);
-          });
+          // Set checkboxes from comma-separated values
           const checkboxNames = new Set<string>();
           formRef.current?.querySelectorAll('input[type="checkbox"]').forEach((el) => {
             checkboxNames.add((el as HTMLInputElement).name);
           });
-          const selectNames = new Set<string>();
-          formRef.current?.querySelectorAll('select').forEach((el) => {
-            selectNames.add((el as HTMLSelectElement).name);
-          });
-
-          // Dynamically populate ALL fields from saved data
           for (const [key, value] of Object.entries(rawData)) {
-            if (!value || key === 'submittedAt' || key === 'lastUpdatedAt' || key === 'status') continue;
-
-            if (radioNames.has(key)) {
-              setRadio(key, value);
-            } else if (checkboxNames.has(key)) {
-              setCheckboxes(key, value);
-            } else if (selectNames.has(key)) {
-              const sel = formRef.current?.querySelector(`select[name="${key}"]`) as HTMLSelectElement;
-              if (sel) sel.value = value;
-            } else {
-              setField(key, value);
-            }
+            if (!value || !checkboxNames.has(key)) continue;
+            const values = value.split(', ');
+            const checkboxes = formRef.current?.querySelectorAll(`input[type="checkbox"][name="${key}"]`);
+            checkboxes?.forEach((cb) => {
+              (cb as HTMLInputElement).checked = values.includes((cb as HTMLInputElement).value);
+            });
           }
 
           setIsEditMode(true);
@@ -263,9 +255,9 @@ function ProgressNotePageInner() {
       return true;
     };
 
-    // Validate signature first (hidden input, special case)
-    const signatureInput = formRef.current.querySelector('input[name="q61_signature"]') as HTMLInputElement;
-    if (signatureInput && (!signatureInput.value || signatureInput.value.trim() === '')) {
+    // Validate signature first (stored via react-hook-form setValue)
+    const signatureValue = getValues('q61_signature');
+    if (!signatureValue || signatureValue.trim() === '') {
       const lastActivePage = activePages[activePages.length - 1];
       setCurrentPage(lastActivePage);
       setTimeout(() => {
@@ -320,38 +312,27 @@ function ProgressNotePageInner() {
     try {
       setSubmitting(true);
 
-      // Dynamically collect ALL form fields — captures every input, select,
-      // textarea, checkbox, and radio across all pages automatically.
-      // This prevents fields from being missed when new ones are added.
-      const formData = new FormData(formRef.current);
-      const submission: Record<string, string> = {};
+      // Collect all react-hook-form values
+      const values = getValues();
 
-      // Track which checkbox names we've seen to collect them as comma-separated
-      const checkboxNames = new Set<string>();
-      formRef.current.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-        checkboxNames.add((cb as HTMLInputElement).name);
-      });
-
-      // Collect all FormData entries (text, date, time, number, textarea, select, hidden, checkbox)
-      for (const [key, value] of formData.entries()) {
-        if (typeof value !== 'string') continue;
-        if (checkboxNames.has(key)) {
-          // Checkboxes: collect all checked values as comma-separated
-          if (submission[key]) {
-            submission[key] += ', ' + value;
-          } else {
-            submission[key] = value;
-          }
-        } else {
-          submission[key] = value;
-        }
-      }
-
-      // Collect all DeselectableRadio values from global store
-      // (they are controlled components and don't appear in FormData)
+      // Merge radio values from global store
       for (const [name, value] of Object.entries(radioState)) {
-        if (value) submission[name] = value;
+        if (value) values[name] = value;
       }
+
+      // Merge checkbox values from DOM
+      const checkboxNames = new Set<string>();
+      formRef.current.querySelectorAll('input[type="checkbox"]').forEach((el) => {
+        checkboxNames.add((el as HTMLInputElement).name);
+      });
+      for (const name of checkboxNames) {
+        const checked = formRef.current.querySelectorAll(`input[type="checkbox"][name="${name}"]:checked`);
+        const vals: string[] = [];
+        checked?.forEach((cb) => vals.push((cb as HTMLInputElement).value));
+        values[name] = vals.join(', ');
+      }
+
+      const submission = values;
 
       if (isEditMode && editId) {
         await updateSubmission(editId, submission as unknown as Partial<ProgressNoteFormData>);
@@ -362,6 +343,8 @@ function ProgressNotePageInner() {
 
       const docId = await saveSubmission(submission as unknown as ProgressNoteFormData);
       alert(`Progress note submitted successfully!\nSubmission ID: ${docId}`);
+      reset();
+      localStorage.removeItem(STORAGE_KEY);
       formRef.current.reset();
       setCurrentPage(1);
       window.scrollTo(0, 0);
@@ -468,13 +451,13 @@ function ProgressNotePageInner() {
       </div>
 
       <form ref={formRef} onSubmit={handleSubmit} className={styles.form} noValidate>
-        <div style={pageStyle(1)}><FormPageOne formRef={ref} onCredentialChange={handleCredentialChange} patients={patients} initialClientName={initialClientName} /></div>
-        <div style={pageStyle(2)}><FormPageTwo formRef={ref} credential={credential} /></div>
-        <div style={pageStyle(3)}><FormPageThree formRef={ref} credential={credential} /></div>
-        <div style={pageStyle(4)}><FormPageFour formRef={ref} /></div>
-        <div style={pageStyle(5)}><FormPageFive formRef={ref} credential={credential} /></div>
-        <div style={pageStyle(6)}><FormPageSix formRef={ref} credential={credential} /></div>
-        <div style={pageStyle(7)}><FormPageSeven formRef={ref} credential={credential} initialSignature={initialSignature} initialTotalHours={initialTotalHours} /></div>
+        <div style={pageStyle(1)}><FormPageOne formRef={ref} register={register} watch={watch} setValue={setValue} control={control} onCredentialChange={handleCredentialChange} patients={patients} initialClientName={initialClientName} /></div>
+        <div style={pageStyle(2)}><FormPageTwo formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} /></div>
+        <div style={pageStyle(3)}><FormPageThree formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} /></div>
+        <div style={pageStyle(4)}><FormPageFour formRef={ref} register={register} watch={watch} setValue={setValue} control={control} /></div>
+        <div style={pageStyle(5)}><FormPageFive formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} /></div>
+        <div style={pageStyle(6)}><FormPageSix formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} /></div>
+        <div style={pageStyle(7)}><FormPageSeven formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} initialSignature={initialSignature} initialTotalHours={initialTotalHours} /></div>
 
         <div className={styles.navigationControls}>
           <button

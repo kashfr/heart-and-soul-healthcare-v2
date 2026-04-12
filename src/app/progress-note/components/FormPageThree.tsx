@@ -1,15 +1,15 @@
 'use client';
 
 import { useState } from 'react';
+import type { FormPageProps } from '../types';
 import styles from '../page.module.css';
 import DeselectableRadio from './DeselectableRadio';
 
-interface FormPageThreeProps {
-  formRef: React.RefObject<HTMLFormElement>;
+interface FormPageThreeProps extends FormPageProps {
   credential?: string;
 }
 
-export default function FormPageThree({ formRef, credential }: FormPageThreeProps) {
+export default function FormPageThree({ formRef, register, watch, setValue, control, credential }: FormPageThreeProps) {
   const showSystemAssessments = credential === 'LPN' || credential === 'RN';
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     activity: false,
@@ -103,9 +103,10 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                 <select
                   className={styles.select}
                   id="q24_scaleUsed"
-                  name="q24_scaleUsed"
                   value={painScale}
-                  onChange={(e) => setPainScale(e.target.value)}
+                  {...register('q24_scaleUsed', {
+                    onChange: (e) => setPainScale(e.target.value),
+                  })}
                 >
                   <option value="">Select scale...</option>
                   <option value="Numeric (0-10)">Numeric (0-10)</option>
@@ -124,7 +125,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                     className={styles.input}
                     type="number"
                     id="q24_painScore"
-                    name="q24_painScore"
+                    {...register('q24_painScore')}
                     min="0"
                     max="10"
                   />
@@ -157,7 +158,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                 <div className={styles.row}>
                   <div className={styles.f}>
                     <label className={styles.label} htmlFor="q24_flaccFace">Face</label>
-                    <select className={styles.select} id="q24_flaccFace" name="q24_flaccFace">
+                    <select className={styles.select} id="q24_flaccFace" {...register('q24_flaccFace')}>
                       <option value="">Select...</option>
                       <option value="0">0 - No particular expression or smile</option>
                       <option value="1">1 - Occasional grimace/frown, withdrawn</option>
@@ -166,7 +167,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                   </div>
                   <div className={styles.f}>
                     <label className={styles.label} htmlFor="q24_flaccLegs">Legs</label>
-                    <select className={styles.select} id="q24_flaccLegs" name="q24_flaccLegs">
+                    <select className={styles.select} id="q24_flaccLegs" {...register('q24_flaccLegs')}>
                       <option value="">Select...</option>
                       <option value="0">0 - Normal position or relaxed</option>
                       <option value="1">1 - Uneasy, restless, tense</option>
@@ -177,7 +178,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                 <div className={styles.row}>
                   <div className={styles.f}>
                     <label className={styles.label} htmlFor="q24_flaccActivity">Activity</label>
-                    <select className={styles.select} id="q24_flaccActivity" name="q24_flaccActivity">
+                    <select className={styles.select} id="q24_flaccActivity" {...register('q24_flaccActivity')}>
                       <option value="">Select...</option>
                       <option value="0">0 - Lying quietly, moves easily</option>
                       <option value="1">1 - Squirming, shifting, tense</option>
@@ -186,7 +187,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                   </div>
                   <div className={styles.f}>
                     <label className={styles.label} htmlFor="q24_flaccCry">Cry</label>
-                    <select className={styles.select} id="q24_flaccCry" name="q24_flaccCry">
+                    <select className={styles.select} id="q24_flaccCry" {...register('q24_flaccCry')}>
                       <option value="">Select...</option>
                       <option value="0">0 - No cry (awake or asleep)</option>
                       <option value="1">1 - Moans or whimpers, occasional</option>
@@ -197,7 +198,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                 <div className={styles.row}>
                   <div className={styles.f}>
                     <label className={styles.label} htmlFor="q24_flaccConsolability">Consolability</label>
-                    <select className={styles.select} id="q24_flaccConsolability" name="q24_flaccConsolability">
+                    <select className={styles.select} id="q24_flaccConsolability" {...register('q24_flaccConsolability')}>
                       <option value="">Select...</option>
                       <option value="0">0 - Content, relaxed</option>
                       <option value="1">1 - Reassured by touching/hugging/talking</option>
@@ -210,7 +211,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                       className={styles.input}
                       type="number"
                       id="q24_painScoreFlacc"
-                      name="q24_painScore"
+                      {...register('q24_painScore')}
                       min="0"
                       max="10"
                       placeholder="0-10"
@@ -229,7 +230,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                 <div className={styles.row}>
                   <div className={styles.f}>
                     <label className={styles.label} htmlFor="q24_nipsFacial">Facial Expression</label>
-                    <select className={styles.select} id="q24_nipsFacial" name="q24_nipsFacial">
+                    <select className={styles.select} id="q24_nipsFacial" {...register('q24_nipsFacial')}>
                       <option value="">Select...</option>
                       <option value="0">0 - Relaxed muscles, restful face</option>
                       <option value="1">1 - Grimace, tight facial muscles, furrowed brow</option>
@@ -237,7 +238,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                   </div>
                   <div className={styles.f}>
                     <label className={styles.label} htmlFor="q24_nipsCry">Cry</label>
-                    <select className={styles.select} id="q24_nipsCry" name="q24_nipsCry">
+                    <select className={styles.select} id="q24_nipsCry" {...register('q24_nipsCry')}>
                       <option value="">Select...</option>
                       <option value="0">0 - No cry, quiet</option>
                       <option value="1">1 - Whimper, mild moaning, intermittent</option>
@@ -248,7 +249,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                 <div className={styles.row}>
                   <div className={styles.f}>
                     <label className={styles.label} htmlFor="q24_nipsBreathing">Breathing Patterns</label>
-                    <select className={styles.select} id="q24_nipsBreathing" name="q24_nipsBreathing">
+                    <select className={styles.select} id="q24_nipsBreathing" {...register('q24_nipsBreathing')}>
                       <option value="">Select...</option>
                       <option value="0">0 - Relaxed, usual pattern</option>
                       <option value="1">1 - Change in breathing, irregular, faster</option>
@@ -256,7 +257,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                   </div>
                   <div className={styles.f}>
                     <label className={styles.label} htmlFor="q24_nipsArms">Arms</label>
-                    <select className={styles.select} id="q24_nipsArms" name="q24_nipsArms">
+                    <select className={styles.select} id="q24_nipsArms" {...register('q24_nipsArms')}>
                       <option value="">Select...</option>
                       <option value="0">0 - Relaxed, no rigidity</option>
                       <option value="1">1 - Flexed / Extended</option>
@@ -266,7 +267,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                 <div className={styles.row}>
                   <div className={styles.f}>
                     <label className={styles.label} htmlFor="q24_nipsLegs">Legs</label>
-                    <select className={styles.select} id="q24_nipsLegs" name="q24_nipsLegs">
+                    <select className={styles.select} id="q24_nipsLegs" {...register('q24_nipsLegs')}>
                       <option value="">Select...</option>
                       <option value="0">0 - Relaxed</option>
                       <option value="1">1 - Flexed / Extended</option>
@@ -274,7 +275,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                   </div>
                   <div className={styles.f}>
                     <label className={styles.label} htmlFor="q24_nipsArousal">State of Arousal</label>
-                    <select className={styles.select} id="q24_nipsArousal" name="q24_nipsArousal">
+                    <select className={styles.select} id="q24_nipsArousal" {...register('q24_nipsArousal')}>
                       <option value="">Select...</option>
                       <option value="0">0 - Sleeping / Awake, quiet</option>
                       <option value="1">1 - Fussy, restless</option>
@@ -288,7 +289,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                       className={styles.input}
                       type="number"
                       id="q24_painScoreNips"
-                      name="q24_painScore"
+                      {...register('q24_painScore')}
                       min="0"
                       max="7"
                       placeholder="0-7"
@@ -354,7 +355,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                       className={styles.input}
                       type="text"
                       id="q25_painLocation"
-                      name="q25_painLocation"
+                      {...register('q25_painLocation')}
                       placeholder="e.g., lower back, knee"
                     />
                   </div>
@@ -365,7 +366,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                     <textarea
                       className={styles.textarea}
                       id="q26_painDescription"
-                      name="q26_painDescription"
+                      {...register('q26_painDescription')}
                       rows={3}
                       placeholder="Sharp, dull, throbbing, etc..."
                     />
@@ -380,7 +381,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                 <textarea
                   className={styles.textarea}
                   id="q26_painNotes"
-                  name="q26_painNotes"
+                  {...register('q26_painNotes')}
                   rows={2}
                   placeholder="Additional pain observations..."
                 />
@@ -465,7 +466,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
               className={styles.input}
               type="text"
               id="q27_safetyOther"
-              name="q27_safetyOther"
+              {...register('q27_safetyOther')}
               placeholder="Specify..."
             />
           </div>
@@ -493,7 +494,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
             <textarea
               className={styles.textarea}
               id="q27_safetyNotes"
-              name="q27_safetyNotes"
+              {...register('q27_safetyNotes')}
               rows={2}
             />
           </div>
@@ -561,7 +562,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q30_neuroBaseline">Baseline Neurological Status</label>
-                <select className={styles.select} id="q30_neuroBaseline" name="q30_neuroBaseline">
+                <select className={styles.select} id="q30_neuroBaseline" {...register('q30_neuroBaseline')}>
                   <option value="">Select...</option>
                   <option value="Alert and oriented">Alert and oriented</option>
                   <option value="Alert responsive to stimuli">Alert responsive to stimuli</option>
@@ -594,27 +595,27 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
             <div className={styles.row}>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q30_seizureOnset">Onset Time</label>
-                <input className={styles.input} type="time" id="q30_seizureOnset" name="q30_seizureOnset" />
+                <input className={styles.input} type="time" id="q30_seizureOnset" {...register('q30_seizureOnset')} />
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q30_seizureEnd">End Time</label>
-                <input className={styles.input} type="time" id="q30_seizureEnd" name="q30_seizureEnd" />
+                <input className={styles.input} type="time" id="q30_seizureEnd" {...register('q30_seizureEnd')} />
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q30_seizureDuration">Duration (min)</label>
-                <input className={styles.input} type="number" id="q30_seizureDuration" name="q30_seizureDuration" />
+                <input className={styles.input} type="number" id="q30_seizureDuration" {...register('q30_seizureDuration')} />
               </div>
             </div>
             <div className={styles.row}>
               <div className={styles.f} style={{ flex: '1 1 100%' }}>
                 <label className={styles.label} htmlFor="q30_seizureDescription">During Seizure Description</label>
-                <textarea className={styles.textarea} id="q30_seizureDescription" name="q30_seizureDescription" rows={2} />
+                <textarea className={styles.textarea} id="q30_seizureDescription" {...register('q30_seizureDescription')} rows={2} />
               </div>
             </div>
             <div className={styles.row}>
               <div className={styles.f} style={{ flex: '1 1 100%' }}>
                 <label className={styles.label} htmlFor="q30_postIctal">Post-ictal Status</label>
-                <textarea className={styles.textarea} id="q30_postIctal" name="q30_postIctal" rows={2} />
+                <textarea className={styles.textarea} id="q30_postIctal" {...register('q30_postIctal')} rows={2} />
               </div>
             </div>
             <div className={styles.row}>
@@ -623,7 +624,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                 <textarea
                   className={styles.textarea}
                   id="q30_neuroNotes"
-                  name="q30_neuroNotes"
+                  {...register('q30_neuroNotes')}
                   rows={2}
                 />
               </div>
@@ -661,7 +662,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
             <div className={styles.row}>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q31_heartRhythm">Heart Rhythm</label>
-                <select className={styles.select} id="q31_heartRhythm" name="q31_heartRhythm">
+                <select className={styles.select} id="q31_heartRhythm" {...register('q31_heartRhythm')}>
                   <option value="">Select...</option>
                   <option value="Regular">Regular</option>
                   <option value="Irregular">Irregular</option>
@@ -674,7 +675,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q31_peripheralPulses">Peripheral Pulses</label>
-                <select className={styles.select} id="q31_peripheralPulses" name="q31_peripheralPulses">
+                <select className={styles.select} id="q31_peripheralPulses" {...register('q31_peripheralPulses')}>
                   <option value="">Select...</option>
                   <option value="2+ bilaterally (WNL)">2+ bilaterally (WNL)</option>
                   <option value="1+ bilaterally (weak)">1+ bilaterally (weak)</option>
@@ -690,7 +691,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
             <div className={styles.row}>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q31_edema">Edema</label>
-                <select className={styles.select} id="q31_edema" name="q31_edema">
+                <select className={styles.select} id="q31_edema" {...register('q31_edema')}>
                   <option value="">Select...</option>
                   <option value="None">None</option>
                   <option value="1+ pitting bilateral ankles">1+ pitting bilateral ankles</option>
@@ -705,7 +706,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q31_capillaryRefill">Capillary Refill</label>
-                <select className={styles.select} id="q31_capillaryRefill" name="q31_capillaryRefill">
+                <select className={styles.select} id="q31_capillaryRefill" {...register('q31_capillaryRefill')}>
                   <option value="">Select...</option>
                   <option value="<2 seconds (WNL)">&lt;2 seconds (WNL)</option>
                   <option value="2-3 seconds (slightly delayed)">2-3 seconds (slightly delayed)</option>
@@ -721,7 +722,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                 <textarea
                   className={styles.textarea}
                   id="q31_cardioNotes"
-                  name="q31_cardioNotes"
+                  {...register('q31_cardioNotes')}
                   rows={2}
                 />
               </div>
@@ -759,7 +760,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
             <div className={styles.row}>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q32_breathSounds">Breath Sounds</label>
-                <select className={styles.select} id="q32_breathSounds" name="q32_breathSounds">
+                <select className={styles.select} id="q32_breathSounds" {...register('q32_breathSounds')}>
                   <option value="">Select...</option>
                   <option value="Clear bilaterally">Clear bilaterally</option>
                   <option value="Diminished bilateral bases">Diminished bilateral bases</option>
@@ -775,7 +776,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q32_workOfBreathing">Work of Breathing</label>
-                <select className={styles.select} id="q32_workOfBreathing" name="q32_workOfBreathing">
+                <select className={styles.select} id="q32_workOfBreathing" {...register('q32_workOfBreathing')}>
                   <option value="">Select...</option>
                   <option value="No distress / WNL">No distress / WNL</option>
                   <option value="Mild distress">Mild distress</option>
@@ -824,7 +825,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                 <textarea
                   className={styles.textarea}
                   id="q32_respNotes"
-                  name="q32_respNotes"
+                  {...register('q32_respNotes')}
                   rows={2}
                 />
               </div>
@@ -862,7 +863,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
             <div className={styles.row}>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q33_abdomen">Abdomen</label>
-                <select className={styles.select} id="q33_abdomen" name="q33_abdomen">
+                <select className={styles.select} id="q33_abdomen" {...register('q33_abdomen')}>
                   <option value="">Select...</option>
                   <option value="Soft non-tender non-distended">Soft non-tender non-distended</option>
                   <option value="Soft tender">Soft tender</option>
@@ -876,7 +877,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q33_bowelSounds">Bowel Sounds</label>
-                <select className={styles.select} id="q33_bowelSounds" name="q33_bowelSounds">
+                <select className={styles.select} id="q33_bowelSounds" {...register('q33_bowelSounds')}>
                   <option value="">Select...</option>
                   <option value="Present x4 quadrants (WNL)">Present x4 quadrants (WNL)</option>
                   <option value="Hypoactive">Hypoactive</option>
@@ -903,7 +904,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q33_stoolCharacter">Stool Character</label>
-                <select className={styles.select} id="q33_stoolCharacter" name="q33_stoolCharacter">
+                <select className={styles.select} id="q33_stoolCharacter" {...register('q33_stoolCharacter')}>
                   <option value="">Select...</option>
                   <option value="Brown formed (WNL)">Brown formed (WNL)</option>
                   <option value="Loose / soft">Loose / soft</option>
@@ -955,7 +956,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q33_gtubeSiteAppearance">Insertion Site Appearance</label>
-                <select className={styles.select} id="q33_gtubeSiteAppearance" name="q33_gtubeSiteAppearance">
+                <select className={styles.select} id="q33_gtubeSiteAppearance" {...register('q33_gtubeSiteAppearance')}>
                   <option value="">Select...</option>
                   <option value="WNL — Clean dry intact">WNL — Clean dry intact</option>
                   <option value="Redness / Irritation">Redness / Irritation</option>
@@ -970,7 +971,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
             <div className={styles.row}>
               <div className={styles.f} style={{ flex: '1 1 100%' }}>
                 <label className={styles.label} htmlFor="q33_gtubeSiteNotes">Insertion Site Notes</label>
-                <textarea className={styles.textarea} id="q33_gtubeSiteNotes" name="q33_gtubeSiteNotes" rows={2} />
+                <textarea className={styles.textarea} id="q33_gtubeSiteNotes" {...register('q33_gtubeSiteNotes')} rows={2} />
               </div>
             </div>
 
@@ -980,7 +981,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                 <textarea
                   className={styles.textarea}
                   id="q33_giNotes"
-                  name="q33_giNotes"
+                  {...register('q33_giNotes')}
                   rows={2}
                 />
               </div>
@@ -1018,7 +1019,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
             <div className={styles.row}>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q34_urinaryOutput">Urinary Output</label>
-                <select className={styles.select} id="q34_urinaryOutput" name="q34_urinaryOutput">
+                <select className={styles.select} id="q34_urinaryOutput" {...register('q34_urinaryOutput')}>
                   <option value="">Select...</option>
                   <option value="Adequate (WNL)">Adequate (WNL)</option>
                   <option value="Decreased">Decreased</option>
@@ -1030,7 +1031,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q34_urineCharacter">Urine Character</label>
-                <select className={styles.select} id="q34_urineCharacter" name="q34_urineCharacter">
+                <select className={styles.select} id="q34_urineCharacter" {...register('q34_urineCharacter')}>
                   <option value="">Select...</option>
                   <option value="Clear yellow (WNL)">Clear yellow (WNL)</option>
                   <option value="Pale / dilute">Pale / dilute</option>
@@ -1130,7 +1131,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                 <textarea
                   className={styles.textarea}
                   id="q34_guNotes"
-                  name="q34_guNotes"
+                  {...register('q34_guNotes')}
                   rows={2}
                 />
               </div>
@@ -1172,11 +1173,11 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
             <div className={styles.row}>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q35_discharge">Discharge</label>
-                <input className={styles.input} type="text" id="q35_discharge" name="q35_discharge" />
+                <input className={styles.input} type="text" id="q35_discharge" {...register('q35_discharge')} />
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q35_menstrualCycle">Menstrual Cycle</label>
-                <input className={styles.input} type="text" id="q35_menstrualCycle" name="q35_menstrualCycle" />
+                <input className={styles.input} type="text" id="q35_menstrualCycle" {...register('q35_menstrualCycle')} />
               </div>
             </div>
             <div className={styles.row}>
@@ -1185,7 +1186,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                 <textarea
                   className={styles.textarea}
                   id="q35_reproNotes"
-                  name="q35_reproNotes"
+                  {...register('q35_reproNotes')}
                   rows={2}
                 />
               </div>
@@ -1223,7 +1224,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
             <div className={styles.row}>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q36_skinColorTone">Color/Tone</label>
-                <select className={styles.select} id="q36_skinColorTone" name="q36_skinColorTone">
+                <select className={styles.select} id="q36_skinColorTone" {...register('q36_skinColorTone')}>
                   <option value="">Select...</option>
                   <option value="Normal for ethnicity">Normal for ethnicity</option>
                   <option value="Pale">Pale</option>
@@ -1237,7 +1238,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q36_turgor">Turgor</label>
-                <select className={styles.select} id="q36_turgor" name="q36_turgor">
+                <select className={styles.select} id="q36_turgor" {...register('q36_turgor')}>
                   <option value="">Select...</option>
                   <option value="Good (WNL)">Good (WNL)</option>
                   <option value="Slightly decreased">Slightly decreased</option>
@@ -1310,7 +1311,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                 <textarea
                   className={styles.textarea}
                   id="q36_skinNotes"
-                  name="q36_skinNotes"
+                  {...register('q36_skinNotes')}
                   rows={2}
                 />
               </div>
@@ -1346,7 +1347,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q37_moodAffect">Mood/Affect</label>
-                <input className={styles.input} type="text" id="q37_moodAffect" name="q37_moodAffect" />
+                <input className={styles.input} type="text" id="q37_moodAffect" {...register('q37_moodAffect')} />
               </div>
             </div>
             <div className={styles.checkRow}>
@@ -1379,7 +1380,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
             <div className={styles.row}>
               <div className={styles.f} style={{ flex: '1 1 100%' }}>
                 <label className={styles.label} htmlFor="q37_deescalation">De-escalation Interventions Used</label>
-                <textarea className={styles.textarea} id="q37_deescalation" name="q37_deescalation" rows={2} />
+                <textarea className={styles.textarea} id="q37_deescalation" {...register('q37_deescalation')} rows={2} />
               </div>
             </div>
             <div className={styles.row}>
@@ -1388,7 +1389,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                 <textarea
                   className={styles.textarea}
                   id="q37_behaveNotes"
-                  name="q37_behaveNotes"
+                  {...register('q37_behaveNotes')}
                   rows={2}
                 />
               </div>
@@ -1427,7 +1428,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                   className={styles.input}
                   type="number"
                   id="q38_preMealBG"
-                  name="q38_preMealBG"
+                  {...register('q38_preMealBG')}
                   min="0"
                   placeholder="mg/dL"
                 />
@@ -1438,7 +1439,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                   className={styles.input}
                   type="number"
                   id="q38_postMealBG"
-                  name="q38_postMealBG"
+                  {...register('q38_postMealBG')}
                   min="0"
                   placeholder="mg/dL"
                 />
@@ -1449,7 +1450,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                   className={styles.input}
                   type="time"
                   id="q38_bgTime"
-                  name="q38_bgTime"
+                  {...register('q38_bgTime')}
                 />
               </div>
             </div>
@@ -1477,7 +1478,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
             <div className={styles.row}>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q38_insulinType">Insulin Type</label>
-                <select className={styles.select} id="q38_insulinType" name="q38_insulinType">
+                <select className={styles.select} id="q38_insulinType" {...register('q38_insulinType')}>
                   <option value="">Select...</option>
                   <option value="Rapid-acting (Humalog/Novolog)">Rapid-acting (Humalog/Novolog)</option>
                   <option value="Short-acting (Regular)">Short-acting (Regular)</option>
@@ -1493,7 +1494,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                   className={styles.input}
                   type="number"
                   id="q38_insulinDose"
-                  name="q38_insulinDose"
+                  {...register('q38_insulinDose')}
                   min="0"
                   step="0.5"
                   placeholder="Units"
@@ -1503,7 +1504,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
             <div className={styles.row}>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q38_insulinRoute">Route</label>
-                <select className={styles.select} id="q38_insulinRoute" name="q38_insulinRoute">
+                <select className={styles.select} id="q38_insulinRoute" {...register('q38_insulinRoute')}>
                   <option value="">Select...</option>
                   <option value="Subcutaneous">Subcutaneous</option>
                   <option value="Insulin pump">Insulin pump</option>
@@ -1516,7 +1517,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                   className={styles.input}
                   type="time"
                   id="q38_insulinTime"
-                  name="q38_insulinTime"
+                  {...register('q38_insulinTime')}
                 />
               </div>
             </div>
@@ -1564,7 +1565,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q38_footFindings">Findings</label>
-                <select className={styles.select} id="q38_footFindings" name="q38_footFindings">
+                <select className={styles.select} id="q38_footFindings" {...register('q38_footFindings')}>
                   <option value="">Select...</option>
                   <option value="WNL">WNL</option>
                   <option value="Redness / irritation">Redness / irritation</option>
@@ -1583,7 +1584,7 @@ export default function FormPageThree({ formRef, credential }: FormPageThreeProp
                 <textarea
                   className={styles.textarea}
                   id="q38_endocrineNotes"
-                  name="q38_endocrineNotes"
+                  {...register('q38_endocrineNotes')}
                   rows={2}
                   placeholder="Additional endocrine/diabetes observations..."
                 />

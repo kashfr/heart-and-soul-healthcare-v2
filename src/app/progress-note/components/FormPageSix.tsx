@@ -1,15 +1,15 @@
 'use client';
 
 import { useState } from 'react';
+import type { FormPageProps } from '../types';
 import styles from '../page.module.css';
 import DeselectableRadio from './DeselectableRadio';
 
-interface FormPageSixProps {
-  formRef: React.RefObject<HTMLFormElement>;
+interface FormPageSixProps extends FormPageProps {
   credential?: string;
 }
 
-export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
+export default function FormPageSix({ formRef, register, watch, setValue, control, credential }: FormPageSixProps) {
   const isLpnRn = credential === 'LPN' || credential === 'RN';
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     educationDetails: false,
@@ -130,7 +130,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                 <textarea
                   className={styles.textarea}
                   id="q41_educationNotes"
-                  name="q41_educationNotes"
+                  {...register('q41_educationNotes')}
                   rows={3}
                   placeholder="Additional notes about education provided..."
                 />
@@ -179,7 +179,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                     className={styles.input}
                     type="text"
                     id="q41_goal1Description"
-                    name="q41_goal1Description"
+                    {...register('q41_goal1Description')}
                   />
                 </div>
               </div>
@@ -201,7 +201,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                     className={styles.input}
                     type="text"
                     id="q41_goal1Notes"
-                    name="q41_goal1Notes"
+                    {...register('q41_goal1Notes')}
                   />
                 </div>
               </div>
@@ -226,7 +226,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                     className={styles.input}
                     type="text"
                     id="q41_goal2Description"
-                    name="q41_goal2Description"
+                    {...register('q41_goal2Description')}
                   />
                 </div>
               </div>
@@ -248,7 +248,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                     className={styles.input}
                     type="text"
                     id="q41_goal2Notes"
-                    name="q41_goal2Notes"
+                    {...register('q41_goal2Notes')}
                   />
                 </div>
               </div>
@@ -273,7 +273,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                     className={styles.input}
                     type="text"
                     id="q41_goal3Description"
-                    name="q41_goal3Description"
+                    {...register('q41_goal3Description')}
                   />
                 </div>
               </div>
@@ -295,7 +295,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                     className={styles.input}
                     type="text"
                     id="q41_goal3Notes"
-                    name="q41_goal3Notes"
+                    {...register('q41_goal3Notes')}
                   />
                 </div>
               </div>
@@ -319,7 +319,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
               <textarea
                 className={styles.textarea}
                 id="q41_goalsNotes"
-                name="q41_goalsNotes"
+                {...register('q41_goalsNotes')}
                 rows={3}
                 placeholder="Additional notes about goals of care..."
               />
@@ -340,7 +340,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
             <textarea
               className={styles.textarea}
               id="q51_communication"
-              name="q51_communication"
+              {...register('q51_communication')}
               rows={4}
               placeholder="Document conversations, education provided, concerns discussed, etc."
               required
@@ -388,7 +388,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                     className={styles.input}
                     type="time"
                     id="q54_notificationTime"
-                    name="q54_notificationTime"
+                    {...register('q54_notificationTime')}
                   />
                 </div>
                 <div className={styles.f}>
@@ -397,7 +397,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                     className={styles.input}
                     type="text"
                     id="q53_physicianName"
-                    name="q53_physicianName"
+                    {...register('q53_physicianName')}
                   />
                 </div>
               </div>
@@ -408,7 +408,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                   <select
                     className={styles.select}
                     id="q52_notifyMethod"
-                    name="q52_notifyMethod"
+                    {...register('q52_notifyMethod')}
                   >
                     <option value="">-- Select --</option>
                     <option value="Phone">Phone</option>
@@ -425,7 +425,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                   <textarea
                     className={styles.textarea}
                     id="q52_infoReported"
-                    name="q52_infoReported"
+                    {...register('q52_infoReported')}
                     rows={3}
                     placeholder="Describe what was reported to physician..."
                   />
@@ -438,7 +438,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                   <textarea
                     className={styles.textarea}
                     id="q55_physicianOrders"
-                    name="q55_physicianOrders"
+                    {...register('q55_physicianOrders')}
                     rows={3}
                     placeholder="Document physician response and any new orders..."
                   />
@@ -487,7 +487,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                   className={styles.input}
                   type="time"
                   id="q52_familyTime"
-                  name="q52_familyTime"
+                  {...register('q52_familyTime')}
                 />
               </div>
               <div className={styles.f}>
@@ -496,7 +496,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                   className={styles.input}
                   type="text"
                   id="q52_familyContactName"
-                  name="q52_familyContactName"
+                  {...register('q52_familyContactName')}
                 />
               </div>
             </div>
@@ -508,7 +508,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                   className={styles.input}
                   type="text"
                   id="q52_familyRelationship"
-                  name="q52_familyRelationship"
+                  {...register('q52_familyRelationship')}
                 />
               </div>
               <div className={styles.f}>
@@ -516,7 +516,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                 <select
                   className={styles.select}
                   id="q52_familyMethod"
-                  name="q52_familyMethod"
+                  {...register('q52_familyMethod')}
                 >
                   <option value="">-- Select --</option>
                   <option value="Phone">Phone</option>
@@ -547,7 +547,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                   className={styles.input}
                   type="time"
                   id="q52_familyFollowupTime"
-                  name="q52_familyFollowupTime"
+                  {...register('q52_familyFollowupTime')}
                 />
               </div>
             </div>
@@ -558,7 +558,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                 <textarea
                   className={styles.textarea}
                   id="q52_familyNotes"
-                  name="q52_familyNotes"
+                  {...register('q52_familyNotes')}
                   rows={3}
                   placeholder="Document family response and any notes..."
                 />
@@ -606,7 +606,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                   className={styles.input}
                   type="time"
                   id="q52_supervisorTime"
-                  name="q52_supervisorTime"
+                  {...register('q52_supervisorTime')}
                 />
               </div>
               <div className={styles.f}>
@@ -615,7 +615,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                   className={styles.input}
                   type="text"
                   id="q52_supervisorName"
-                  name="q52_supervisorName"
+                  {...register('q52_supervisorName')}
                 />
               </div>
             </div>
@@ -626,7 +626,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                 <textarea
                   className={styles.textarea}
                   id="q52_supervisorResponse"
-                  name="q52_supervisorResponse"
+                  {...register('q52_supervisorResponse')}
                   rows={3}
                   placeholder="Document supervisor response..."
                 />
@@ -708,7 +708,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                 <textarea
                   className={styles.textarea}
                   id="q57_incidentDetails"
-                  name="q57_incidentDetails"
+                  {...register('q57_incidentDetails')}
                   rows={4}
                   placeholder="Document incident timeline, response, notifications made, and outcomes"
                 />
@@ -723,7 +723,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                 <textarea
                   className={styles.textarea}
                   id="q43_safetyMeasures"
-                  name="q43_safetyMeasures"
+                  {...register('q43_safetyMeasures')}
                   rows={3}
                   placeholder="Describe immediate safety measures taken..."
                 />
@@ -737,7 +737,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                   className={styles.input}
                   type="time"
                   id="q43_interventionTime"
-                  name="q43_interventionTime"
+                  {...register('q43_interventionTime')}
                 />
               </div>
             </div>
@@ -748,7 +748,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                 <textarea
                   className={styles.textarea}
                   id="q43_eventInterventionDetails"
-                  name="q43_eventInterventionDetails"
+                  {...register('q43_eventInterventionDetails')}
                   rows={4}
                   placeholder="Describe the intervention performed in response to the event..."
                 />
@@ -761,7 +761,7 @@ export default function FormPageSix({ formRef, credential }: FormPageSixProps) {
                 <textarea
                   className={styles.textarea}
                   id="q43_postEventMonitoring"
-                  name="q43_postEventMonitoring"
+                  {...register('q43_postEventMonitoring')}
                   rows={4}
                   placeholder="Summarize post-event monitoring and patient status..."
                 />

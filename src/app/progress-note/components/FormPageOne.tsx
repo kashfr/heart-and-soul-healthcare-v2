@@ -2,16 +2,16 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Patient } from '@/lib/patients';
+import type { FormPageProps } from '../types';
 import styles from '../page.module.css';
 
-interface FormPageOneProps {
-  formRef: React.RefObject<HTMLFormElement>;
+interface FormPageOneProps extends FormPageProps {
   onCredentialChange?: (credential: string) => void;
   patients: Patient[];
   initialClientName?: string;
 }
 
-export default function FormPageOne({ formRef, onCredentialChange, patients, initialClientName }: FormPageOneProps) {
+export default function FormPageOne({ formRef, register, watch, setValue, control, onCredentialChange, patients, initialClientName }: FormPageOneProps) {
   // Use local date to avoid timezone issues (UTC can show tomorrow's date)
   const now = new Date();
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -81,31 +81,21 @@ export default function FormPageOne({ formRef, onCredentialChange, patients, ini
   };
 
   const handleConfirmSelection = () => {
-    if (selectedPatient && formRef.current) {
+    if (selectedPatient) {
       const age = calculateAge(selectedPatient.dob);
-
-      const dobInput = formRef.current.querySelector('input[name="q4_dateofBirth"]') as HTMLInputElement;
-      const ageInput = formRef.current.querySelector('input[name="q5_ageYears"]') as HTMLInputElement;
-      const diagnosisInput = formRef.current.querySelector('input[name="q10_primaryDiagnosis"]') as HTMLInputElement;
-      const addrLine1 = formRef.current.querySelector('input[name="q200_addr_line1"]') as HTMLInputElement;
-      const cityInput = formRef.current.querySelector('input[name="q200_city"]') as HTMLInputElement;
-      const stateInput = formRef.current.querySelector('input[name="q200_state"]') as HTMLInputElement;
-      const postalInput = formRef.current.querySelector('input[name="q200_postal"]') as HTMLInputElement;
 
       // Set the search query to the selected patient name (this updates the visible input)
       setSearchQuery(selectedPatient.name);
 
-      // Fill hidden input with the actual name for form submission
-      const clientNameHidden = formRef.current.querySelector('input[name="q3_clientName"]') as HTMLInputElement;
-      if (clientNameHidden) clientNameHidden.value = selectedPatient.name;
-
-      if (dobInput) dobInput.value = selectedPatient.dob;
-      if (ageInput) ageInput.value = String(age);
-      if (diagnosisInput) diagnosisInput.value = selectedPatient.diagnosis || '';
-      if (addrLine1) addrLine1.value = selectedPatient.street || '';
-      if (cityInput) cityInput.value = selectedPatient.city || '';
-      if (stateInput) stateInput.value = selectedPatient.state || '';
-      if (postalInput) postalInput.value = selectedPatient.zip || '';
+      // Use react-hook-form setValue for all fields
+      setValue('q3_clientName', selectedPatient.name);
+      setValue('q4_dateofBirth', selectedPatient.dob);
+      setValue('q5_ageYears', String(age));
+      setValue('q10_primaryDiagnosis', selectedPatient.diagnosis || '');
+      setValue('q200_addr_line1', selectedPatient.street || '');
+      setValue('q200_city', selectedPatient.city || '');
+      setValue('q200_state', selectedPatient.state || '');
+      setValue('q200_postal', selectedPatient.zip || '');
 
       setShowConfirmModal(false);
       setSelectedPatient(null);
@@ -118,14 +108,11 @@ export default function FormPageOne({ formRef, onCredentialChange, patients, ini
     setSelectedPatient(null);
   };
 
-  // Sync the hidden input whenever the user types manually
+  // Sync the react-hook-form value whenever the user types manually
   const handleNameChange = (value: string) => {
     setSearchQuery(value);
     setJustSelected(false);
-    if (formRef.current) {
-      const clientNameHidden = formRef.current.querySelector('input[name="q3_clientName"]') as HTMLInputElement;
-      if (clientNameHidden) clientNameHidden.value = value;
-    }
+    setValue('q3_clientName', value);
   };
 
   return (
@@ -146,11 +133,11 @@ export default function FormPageOne({ formRef, onCredentialChange, patients, ini
               onChange={(e) => handleNameChange(e.target.value)}
               autoComplete="off"
             />
-            {/* Hidden input for form submission */}
+            {/* Hidden input for form submission — managed by react-hook-form */}
             <input
               type="hidden"
-              name="q3_clientName"
               id="q3_clientName"
+              {...register('q3_clientName')}
               required
             />
             {showDropdown && (
@@ -200,20 +187,20 @@ export default function FormPageOne({ formRef, onCredentialChange, patients, ini
               className={styles.input}
               type="date"
               id="q4_dateofBirth"
-              name="q4_dateofBirth"
               max={today}
               required
-              onChange={(e) => {
-                const dob = e.target.value;
-                if (!dob || !formRef.current) return;
-                const birth = new Date(dob + 'T12:00:00');
-                const today = new Date();
-                let age = today.getFullYear() - birth.getFullYear();
-                const m = today.getMonth() - birth.getMonth();
-                if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
-                const ageInput = formRef.current.querySelector('input[name="q5_ageYears"]') as HTMLInputElement;
-                if (ageInput) ageInput.value = String(age);
-              }}
+              {...register('q4_dateofBirth', {
+                onChange: (e) => {
+                  const dob = e.target.value;
+                  if (!dob) return;
+                  const birth = new Date(dob + 'T12:00:00');
+                  const today = new Date();
+                  let age = today.getFullYear() - birth.getFullYear();
+                  const m = today.getMonth() - birth.getMonth();
+                  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+                  setValue('q5_ageYears', String(age));
+                },
+              })}
             />
           </div>
           <div className={styles.f}>
@@ -222,7 +209,7 @@ export default function FormPageOne({ formRef, onCredentialChange, patients, ini
               className={styles.input}
               type="number"
               id="q5_ageYears"
-              name="q5_ageYears"
+              {...register('q5_ageYears')}
             />
           </div>
         </div>
@@ -234,7 +221,7 @@ export default function FormPageOne({ formRef, onCredentialChange, patients, ini
               className={styles.input}
               type="text"
               id="q10_primaryDiagnosis"
-              name="q10_primaryDiagnosis"
+              {...register('q10_primaryDiagnosis')}
               required
             />
           </div>
@@ -247,7 +234,7 @@ export default function FormPageOne({ formRef, onCredentialChange, patients, ini
               className={styles.input}
               type="text"
               id="q200_addr_line1"
-              name="q200_addr_line1"
+              {...register('q200_addr_line1')}
               required
             />
           </div>
@@ -260,7 +247,7 @@ export default function FormPageOne({ formRef, onCredentialChange, patients, ini
               className={styles.input}
               type="text"
               id="q200_city"
-              name="q200_city"
+              {...register('q200_city')}
               required
             />
           </div>
@@ -269,7 +256,7 @@ export default function FormPageOne({ formRef, onCredentialChange, patients, ini
             <select
               className={styles.select}
               id="q200_state"
-              name="q200_state"
+              {...register('q200_state')}
               required
             >
               <option value="">Select...</option>
@@ -294,7 +281,7 @@ export default function FormPageOne({ formRef, onCredentialChange, patients, ini
               className={styles.input}
               type="text"
               id="q200_postal"
-              name="q200_postal"
+              {...register('q200_postal')}
               required
             />
           </div>
@@ -312,10 +299,10 @@ export default function FormPageOne({ formRef, onCredentialChange, patients, ini
               className={styles.input}
               type="date"
               id="q6_dateofService"
-              name="q6_dateofService"
               defaultValue={today}
               max={today}
               required
+              {...register('q6_dateofService')}
             />
           </div>
         </div>
@@ -327,7 +314,7 @@ export default function FormPageOne({ formRef, onCredentialChange, patients, ini
               className={styles.input}
               type="time"
               id="q7_shiftStart"
-              name="q7_shiftStart"
+              {...register('q7_shiftStart')}
               required
             />
           </div>
@@ -345,7 +332,7 @@ export default function FormPageOne({ formRef, onCredentialChange, patients, ini
               className={styles.input}
               type="text"
               id="q11_nurseName"
-              name="q11_nurseName"
+              {...register('q11_nurseName')}
               required
             />
           </div>
@@ -354,9 +341,10 @@ export default function FormPageOne({ formRef, onCredentialChange, patients, ini
             <select
               className={styles.select}
               id="q12_credential"
-              name="q12_credential"
               required
-              onChange={(e) => onCredentialChange?.(e.target.value)}
+              {...register('q12_credential', {
+                onChange: (e) => onCredentialChange?.(e.target.value),
+              })}
             >
               <option value="">Select credential</option>
               <option value="RN">RN</option>
