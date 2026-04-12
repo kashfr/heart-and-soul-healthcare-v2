@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { getPatients, addPatient, updatePatient, removePatient, type Patient } from '@/lib/patients';
 import { saveSubmission, getSubmission, updateSubmission, type ProgressNoteFormData } from '@/lib/submissions';
-import { setRadio, radioState } from './components/DeselectableRadio';
+import { setRadio, radioState, clearRadioStorage } from './components/DeselectableRadio';
 import type { FormValues } from './types';
 import styles from './page.module.css';
 import SettingsPanel from './components/SettingsPanel';
@@ -39,12 +39,19 @@ function ProgressNotePageInner() {
   const editId = searchParams.get('edit');
   const [isEditMode, setIsEditMode] = useState(false);
   const [editLoaded, setEditLoaded] = useState(false);
-  const [initialClientName, setInitialClientName] = useState('');
+  const savedDraft = typeof window !== 'undefined' ? localStorage.getItem('progress-note-draft') : null;
+  const savedParsed = savedDraft ? JSON.parse(savedDraft) : {};
+  const [initialClientName, setInitialClientName] = useState(savedParsed.q3_clientName || '');
   const [initialSignature, setInitialSignature] = useState('');
   const [initialTotalHours, setInitialTotalHours] = useState('');
 
-  const [currentPage, setCurrentPage] = useState(1);
-  const [credential, setCredential] = useState<CredentialTier>('');
+  const savedPage = typeof window !== 'undefined' ? parseInt(localStorage.getItem('progress-note-page') || '1', 10) : 1;
+  const [currentPage, setCurrentPageState] = useState(savedPage);
+  const setCurrentPage = (page: number) => {
+    setCurrentPageState(page);
+    localStorage.setItem('progress-note-page', String(page));
+  };
+  const [credential, setCredential] = useState<CredentialTier>((savedParsed.q12_credential as CredentialTier) || '');
   const [showSettings, setShowSettings] = useState(false);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,7 +67,9 @@ function ProgressNotePageInner() {
     defaultValues,
   });
 
-  // Auto-save to localStorage
+  const CHECKBOX_STORAGE_KEY = 'progress-note-checkbox-draft';
+
+  // Auto-save react-hook-form values to localStorage
   useEffect(() => {
     const subscription = watch((values) => {
       if (!isEditMode) {
@@ -69,6 +78,43 @@ function ProgressNotePageInner() {
     });
     return () => subscription.unsubscribe();
   }, [watch, isEditMode]);
+
+  // Auto-save checkbox states to localStorage
+  useEffect(() => {
+    const form = formRef.current;
+    if (!form || isEditMode) return;
+
+    const saveCheckboxes = () => {
+      const checkboxData: Record<string, string[]> = {};
+      form.querySelectorAll('input[type="checkbox"]').forEach((el) => {
+        const cb = el as HTMLInputElement;
+        if (!checkboxData[cb.name]) checkboxData[cb.name] = [];
+        if (cb.checked) checkboxData[cb.name].push(cb.value);
+      });
+      localStorage.setItem(CHECKBOX_STORAGE_KEY, JSON.stringify(checkboxData));
+    };
+
+    form.addEventListener('change', saveCheckboxes);
+    return () => form.removeEventListener('change', saveCheckboxes);
+  }, [isEditMode, firebaseLoaded]);
+
+  // Restore checkbox states from localStorage on mount
+  useEffect(() => {
+    const savedCheckboxes = localStorage.getItem(CHECKBOX_STORAGE_KEY);
+    if (!savedCheckboxes || !formRef.current || isEditMode) return;
+
+    const checkboxData = JSON.parse(savedCheckboxes) as Record<string, string[]>;
+    // Delay to ensure DOM is rendered
+    setTimeout(() => {
+      for (const [name, values] of Object.entries(checkboxData)) {
+        const checkboxes = formRef.current?.querySelectorAll(`input[type="checkbox"][name="${name}"]`);
+        checkboxes?.forEach((el) => {
+          const cb = el as HTMLInputElement;
+          cb.checked = values.includes(cb.value);
+        });
+      }
+    }, 400);
+  }, [firebaseLoaded, isEditMode]);
 
   const activePages = getActivePages(credential);
   const totalActivePages = activePages.length;
@@ -345,6 +391,9 @@ function ProgressNotePageInner() {
       alert(`Progress note submitted successfully!\nSubmission ID: ${docId}`);
       reset();
       localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(CHECKBOX_STORAGE_KEY);
+      localStorage.removeItem('progress-note-page');
+      clearRadioStorage();
       formRef.current.reset();
       setCurrentPage(1);
       window.scrollTo(0, 0);

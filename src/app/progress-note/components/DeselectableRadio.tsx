@@ -7,8 +7,10 @@ interface DeselectableRadioProps extends Omit<React.InputHTMLAttributes<HTMLInpu
   value: string;
 }
 
-// Simple global store for radio group state
-const radioState: Record<string, string> = {};
+// Restore radio state from localStorage on init
+const RADIO_STORAGE_KEY = 'progress-note-radio-draft';
+const savedRadioState = typeof window !== 'undefined' ? localStorage.getItem(RADIO_STORAGE_KEY) : null;
+const radioState: Record<string, string> = savedRadioState ? JSON.parse(savedRadioState) : {};
 const listeners = new Set<() => void>();
 
 function subscribe(callback: () => void) {
@@ -26,10 +28,22 @@ function setRadio(name: string, value: string | null) {
   } else {
     radioState[name] = value;
   }
+  // Persist to localStorage
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(RADIO_STORAGE_KEY, JSON.stringify(radioState));
+  }
   listeners.forEach(cb => cb());
 }
 
-export { setRadio, radioState, subscribe as radioSubscribe, getSnapshot as radioGetSnapshot };
+function clearRadioStorage() {
+  Object.keys(radioState).forEach(key => delete radioState[key]);
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem(RADIO_STORAGE_KEY);
+  }
+  listeners.forEach(cb => cb());
+}
+
+export { setRadio, radioState, clearRadioStorage, subscribe as radioSubscribe, getSnapshot as radioGetSnapshot };
 
 export default function DeselectableRadio({ name, value, ...props }: DeselectableRadioProps) {
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
