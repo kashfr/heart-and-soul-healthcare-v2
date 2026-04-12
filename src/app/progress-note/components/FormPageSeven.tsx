@@ -8,9 +8,10 @@ interface FormPageSevenProps {
   formRef: React.RefObject<HTMLFormElement>;
   credential?: string;
   initialSignature?: string;
+  initialTotalHours?: string;
 }
 
-export default function FormPageSeven({ formRef, credential, initialSignature }: FormPageSevenProps) {
+export default function FormPageSeven({ formRef, credential, initialSignature, initialTotalHours }: FormPageSevenProps) {
   const now = new Date();
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -22,6 +23,11 @@ export default function FormPageSeven({ formRef, credential, initialSignature }:
   });
 
   const isLpnRn = credential === 'LPN' || credential === 'RN';
+
+  // Set total hours from prop when editing
+  useEffect(() => {
+    if (initialTotalHours) setTotalHours(initialTotalHours);
+  }, [initialTotalHours]);
 
   const toggleSection = (section: string) => {
     setExpandedSections((prev) => ({

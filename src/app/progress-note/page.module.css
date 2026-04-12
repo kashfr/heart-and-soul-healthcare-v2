@@ -231,6 +231,27 @@
   box-sizing: border-box;
 }
 
+/* Required field indicators — subtle until satisfied */
+.input:required,
+.select:required,
+.textarea:required {
+  border-left: 3px solid #e67e22;
+  background: #fffdf5;
+}
+
+.input:required:valid:not(:placeholder-shown),
+.select:required:valid:not([value=""]),
+.textarea:required:valid:not(:placeholder-shown) {
+  border-left: 3px solid #27ae60;
+  background: #ffffff;
+}
+
+/* Select elements need different detection since they don't have placeholder-shown */
+.select:required:valid {
+  border-left: 3px solid #27ae60;
+  background: #ffffff;
+}
+
 .input:focus,
 .select:focus,
 .textarea:focus {

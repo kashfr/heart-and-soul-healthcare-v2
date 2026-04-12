@@ -39,6 +39,7 @@ function ProgressNotePageInner() {
   const [editLoaded, setEditLoaded] = useState(false);
   const [initialClientName, setInitialClientName] = useState('');
   const [initialSignature, setInitialSignature] = useState('');
+  const [initialTotalHours, setInitialTotalHours] = useState('');
 
   const [currentPage, setCurrentPage] = useState(1);
   const [credential, setCredential] = useState<CredentialTier>('');
@@ -164,6 +165,16 @@ function ProgressNotePageInner() {
 
           setIsEditMode(true);
           setEditLoaded(true);
+
+          // Calculate total hours from saved start/end times via React state
+          if (rawData.q7_shiftStart && rawData.q62_shiftEndTime) {
+            const [sH, sM] = rawData.q7_shiftStart.split(':').map(Number);
+            const [eH, eM] = rawData.q62_shiftEndTime.split(':').map(Number);
+            let startMin = sH * 60 + sM;
+            let endMin = eH * 60 + eM;
+            if (endMin < startMin) endMin += 24 * 60;
+            setInitialTotalHours(((endMin - startMin) / 60).toFixed(2));
+          }
         }, 300);
       } catch (error) {
         console.error('Failed to load submission for editing:', error);
@@ -463,7 +474,7 @@ function ProgressNotePageInner() {
         <div style={pageStyle(4)}><FormPageFour formRef={ref} /></div>
         <div style={pageStyle(5)}><FormPageFive formRef={ref} credential={credential} /></div>
         <div style={pageStyle(6)}><FormPageSix formRef={ref} credential={credential} /></div>
-        <div style={pageStyle(7)}><FormPageSeven formRef={ref} credential={credential} initialSignature={initialSignature} /></div>
+        <div style={pageStyle(7)}><FormPageSeven formRef={ref} credential={credential} initialSignature={initialSignature} initialTotalHours={initialTotalHours} /></div>
 
         <div className={styles.navigationControls}>
           <button

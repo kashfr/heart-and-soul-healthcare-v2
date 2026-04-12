@@ -107,6 +107,56 @@ export default function SubmissionDetailPage({ params }: PageProps) {
   const credential = data.q12_credential || '';
   const isLpnRn = /^(LPN|RN)$/i.test(credential);
 
+  // Vital signs range checking
+  const VITAL_RANGES: Record<string, { low: number; high: number; label: string }> = {
+    temp: { low: 97.0, high: 99.5, label: 'Temperature' },
+    systolic: { low: 90, high: 140, label: 'Systolic BP' },
+    diastolic: { low: 60, high: 90, label: 'Diastolic BP' },
+    pulse: { low: 60, high: 100, label: 'Pulse' },
+    resp: { low: 12, high: 20, label: 'Respirations' },
+    spo2: { low: 95, high: 100, label: 'SpO2' },
+    bloodGlucose: { low: 70, high: 180, label: 'Blood Glucose' },
+  };
+
+  const abnormalVitals: string[] = [];
+  const parseNum = (v: string) => parseFloat((v || '').replace(/[^0-9.]/g, ''));
+
+  if (data.q16_temperature) {
+    const v = parseNum(data.q16_temperature);
+    if (!isNaN(v) && (v < VITAL_RANGES.temp.low || v > VITAL_RANGES.temp.high))
+      abnormalVitals.push(`Temperature: ${data.q16_temperature}°F (${v < VITAL_RANGES.temp.low ? 'LOW' : 'HIGH'})`);
+  }
+  if (data.q17_bloodPressure) {
+    const parts = data.q17_bloodPressure.split('/');
+    if (parts.length === 2) {
+      const sys = parseFloat(parts[0]), dia = parseFloat(parts[1]);
+      if (!isNaN(sys) && (sys < VITAL_RANGES.systolic.low || sys > VITAL_RANGES.systolic.high))
+        abnormalVitals.push(`Systolic BP: ${sys} mmHg (${sys < VITAL_RANGES.systolic.low ? 'LOW' : 'HIGH'})`);
+      if (!isNaN(dia) && (dia < VITAL_RANGES.diastolic.low || dia > VITAL_RANGES.diastolic.high))
+        abnormalVitals.push(`Diastolic BP: ${dia} mmHg (${dia < VITAL_RANGES.diastolic.low ? 'LOW' : 'HIGH'})`);
+    }
+  }
+  if (data.q18_pulse) {
+    const v = parseNum(data.q18_pulse);
+    if (!isNaN(v) && (v < VITAL_RANGES.pulse.low || v > VITAL_RANGES.pulse.high))
+      abnormalVitals.push(`Pulse: ${data.q18_pulse} bpm (${v < VITAL_RANGES.pulse.low ? 'LOW' : 'HIGH'})`);
+  }
+  if (data.q19_respiration) {
+    const v = parseNum(data.q19_respiration);
+    if (!isNaN(v) && (v < VITAL_RANGES.resp.low || v > VITAL_RANGES.resp.high))
+      abnormalVitals.push(`Respirations: ${data.q19_respiration}/min (${v < VITAL_RANGES.resp.low ? 'LOW' : 'HIGH'})`);
+  }
+  if (data.q20_oxygenSaturation) {
+    const v = parseNum(data.q20_oxygenSaturation);
+    if (!isNaN(v) && (v < VITAL_RANGES.spo2.low || v > VITAL_RANGES.spo2.high))
+      abnormalVitals.push(`SpO2: ${data.q20_oxygenSaturation}% (LOW)`);
+  }
+  if (data.q21_bloodGlucose) {
+    const v = parseNum(data.q21_bloodGlucose);
+    if (!isNaN(v) && (v < VITAL_RANGES.bloodGlucose.low || v > VITAL_RANGES.bloodGlucose.high))
+      abnormalVitals.push(`Blood Glucose: ${data.q21_bloodGlucose} mg/dL (${v < VITAL_RANGES.bloodGlucose.low ? 'LOW' : 'HIGH'})`);
+  }
+
   // Build address string
   const addressParts = [
     data.q200_addr_line1,
@@ -265,6 +315,27 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           <h2 style={formTitleStyle}>HOME HEALTH PROGRESS NOTE</h2>
           <p style={formDateStyle}>Form Date: {fmtDate(data.q6_dateofService) || data.q6_dateofService}</p>
         </div>
+
+        {/* Abnormal Vital Signs Alert Banner */}
+        {abnormalVitals.length > 0 && (
+          <div className="print-section" style={{
+            background: '#fff3f0',
+            border: '1px solid #ef9a9a',
+            borderLeft: '4px solid #c62828',
+            borderRadius: '4px',
+            padding: '12px 16px',
+            marginBottom: '16px',
+          }}>
+            <div style={{ fontWeight: 700, fontSize: '14px', color: '#b71c1c', marginBottom: '6px' }}>
+              ⚠ ABNORMAL VITAL SIGNS DETECTED
+            </div>
+            {abnormalVitals.map((alert, i) => (
+              <div key={i} style={{ fontSize: '13px', color: '#c62828', padding: '2px 0' }}>
+                • {alert}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* 1. CLIENT INFORMATION */}
         <ConditionalSection
