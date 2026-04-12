@@ -1,14 +1,13 @@
 'use client';
 
 import { useState, useSyncExternalStore } from 'react';
+import type { FormPageProps } from '../types';
 import styles from '../page.module.css';
 import DeselectableRadio, { radioState, radioSubscribe, radioGetSnapshot } from './DeselectableRadio';
 
-interface FormPageFourProps {
-  formRef: React.RefObject<HTMLFormElement>;
-}
+interface FormPageFourProps extends FormPageProps {}
 
-export default function FormPageFour({ formRef }: FormPageFourProps) {
+export default function FormPageFour({ formRef, register, watch, setValue, control }: FormPageFourProps) {
   // Subscribe to radio state changes to reactively read aspiration concerns
   useSyncExternalStore(radioSubscribe, radioGetSnapshot, radioGetSnapshot);
   const hasAspirationConcerns = radioState['q38_aspirationConcerns'] === 'Yes';
@@ -97,7 +96,7 @@ export default function FormPageFour({ formRef }: FormPageFourProps) {
             <textarea
               className={styles.textarea}
               id="q38_personalCareNotes"
-              name="q38_personalCareNotes"
+              {...register('q38_personalCareNotes')}
               rows={3}
               placeholder="Additional notes on personal care provided..."
             />
@@ -127,7 +126,7 @@ export default function FormPageFour({ formRef }: FormPageFourProps) {
                   className={styles.input}
                   type="number"
                   id="q38_breakfastPct"
-                  name="q38_breakfastPct"
+                  {...register('q38_breakfastPct')}
                   min="0"
                   max="100"
                   placeholder="0-100"
@@ -139,7 +138,7 @@ export default function FormPageFour({ formRef }: FormPageFourProps) {
                   className={styles.input}
                   type="number"
                   id="q38_lunchPct"
-                  name="q38_lunchPct"
+                  {...register('q38_lunchPct')}
                   min="0"
                   max="100"
                   placeholder="0-100"
@@ -151,7 +150,7 @@ export default function FormPageFour({ formRef }: FormPageFourProps) {
                   className={styles.input}
                   type="number"
                   id="q38_dinnerPct"
-                  name="q38_dinnerPct"
+                  {...register('q38_dinnerPct')}
                   min="0"
                   max="100"
                   placeholder="0-100"
@@ -200,7 +199,7 @@ export default function FormPageFour({ formRef }: FormPageFourProps) {
                   className={styles.textarea}
                   style={hasAspirationConcerns ? { border: '2px solid #c62828', background: '#fff5f5' } : undefined}
                   id="q38_nutritionNotes"
-                  name="q38_nutritionNotes"
+                  {...register('q38_nutritionNotes')}
                   rows={3}
                   required={hasAspirationConcerns}
                   placeholder={hasAspirationConcerns ? 'Required — document aspiration concerns, precautions taken, and dietary modifications...' : 'Additional notes on nutrition and hydration...'}
@@ -274,7 +273,7 @@ export default function FormPageFour({ formRef }: FormPageFourProps) {
             <textarea
               className={styles.textarea}
               id="q38_abuseNotes"
-              name="q38_abuseNotes"
+              {...register('q38_abuseNotes')}
               rows={3}
               placeholder="Document screening findings or concerns..."
             />

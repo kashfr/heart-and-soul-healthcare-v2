@@ -1,17 +1,17 @@
 'use client';
 
 import { useRef, useEffect, useState } from 'react';
+import type { FormPageProps } from '../types';
 import styles from '../page.module.css';
 import DeselectableRadio from './DeselectableRadio';
 
-interface FormPageSevenProps {
-  formRef: React.RefObject<HTMLFormElement>;
+interface FormPageSevenProps extends FormPageProps {
   credential?: string;
   initialSignature?: string;
   initialTotalHours?: string;
 }
 
-export default function FormPageSeven({ formRef, credential, initialSignature, initialTotalHours }: FormPageSevenProps) {
+export default function FormPageSeven({ formRef, register, watch, setValue, control, credential, initialSignature, initialTotalHours }: FormPageSevenProps) {
   const now = new Date();
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -37,18 +37,12 @@ export default function FormPageSeven({ formRef, credential, initialSignature, i
   };
 
   const calculateTotalHours = () => {
-    if (!formRef.current) return;
+    const startTime = watch('q7_shiftStart');
+    const endTime = watch('q62_shiftEndTime');
 
-    const startTimeInput = formRef.current.querySelector(
-      'input[name="q7_shiftStart"]'
-    ) as HTMLInputElement;
-    const endTimeInput = formRef.current.querySelector(
-      'input[name="q62_shiftEndTime"]'
-    ) as HTMLInputElement;
-
-    if (startTimeInput && endTimeInput && startTimeInput.value && endTimeInput.value) {
-      const [startHour, startMin] = startTimeInput.value.split(':').map(Number);
-      const [endHour, endMin] = endTimeInput.value.split(':').map(Number);
+    if (startTime && endTime) {
+      const [startHour, startMin] = startTime.split(':').map(Number);
+      const [endHour, endMin] = endTime.split(':').map(Number);
 
       let startTotalMin = startHour * 60 + startMin;
       let endTotalMin = endHour * 60 + endMin;
@@ -60,13 +54,7 @@ export default function FormPageSeven({ formRef, credential, initialSignature, i
       const diffMin = endTotalMin - startTotalMin;
       const hours = (diffMin / 60).toFixed(2);
       setTotalHours(hours);
-
-      const totalHoursInput = formRef.current.querySelector(
-        'input[name="q9_totalHours"]'
-      ) as HTMLInputElement;
-      if (totalHoursInput) {
-        totalHoursInput.value = hours;
-      }
+      setValue('q9_totalHours', hours);
     }
   };
 
@@ -96,16 +84,10 @@ export default function FormPageSeven({ formRef, credential, initialSignature, i
     img.onload = () => {
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       setSignatureImage(initialSignature);
-      // Also set the hidden input
-      const signatureInput = formRef.current?.querySelector(
-        'input[name="q61_signature"]'
-      ) as HTMLInputElement;
-      if (signatureInput) {
-        signatureInput.value = initialSignature;
-      }
+      setValue('q61_signature', initialSignature);
     };
     img.src = initialSignature;
-  }, [initialSignature, formRef]);
+  }, [initialSignature, setValue]);
 
   // Get position from either mouse or touch event
   const getPos = (e: React.MouseEvent | React.TouchEvent, canvas: HTMLCanvasElement) => {
@@ -154,13 +136,9 @@ export default function FormPageSeven({ formRef, credential, initialSignature, i
       if (ctx) {
         ctx.closePath();
       }
-      setSignatureImage(canvas.toDataURL());
-      const signatureInput = formRef.current?.querySelector(
-        'input[name="q61_signature"]'
-      ) as HTMLInputElement;
-      if (signatureInput) {
-        signatureInput.value = canvas.toDataURL();
-      }
+      const dataUrl = canvas.toDataURL();
+      setSignatureImage(dataUrl);
+      setValue('q61_signature', dataUrl);
     }
   };
 
@@ -173,12 +151,7 @@ export default function FormPageSeven({ formRef, credential, initialSignature, i
         ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
       setSignatureImage('');
-      const signatureInput = formRef.current?.querySelector(
-        'input[name="q61_signature"]'
-      ) as HTMLInputElement;
-      if (signatureInput) {
-        signatureInput.value = '';
-      }
+      setValue('q61_signature', '');
     }
   };
 
@@ -238,7 +211,7 @@ export default function FormPageSeven({ formRef, credential, initialSignature, i
             <textarea
               className={styles.textarea}
               id="q59_followupDetails"
-              name="q59_followupDetails"
+              {...register('q59_followupDetails')}
               rows={3}
               placeholder="Include dates, contact information, specific instructions for patient/family"
             />
@@ -258,7 +231,7 @@ export default function FormPageSeven({ formRef, credential, initialSignature, i
             <textarea
               className={styles.textarea}
               id="q60_nextShiftPlan"
-              name="q60_nextShiftPlan"
+              {...register('q60_nextShiftPlan')}
               rows={4}
               placeholder="Document continuing care needs, precautions, patient progress, and recommendations"
             />
@@ -277,9 +250,9 @@ export default function FormPageSeven({ formRef, credential, initialSignature, i
               className={styles.input}
               type="date"
               id="q62_shiftEndDate"
-              name="q62_shiftEndDate"
               max={today}
               required
+              {...register('q62_shiftEndDate')}
             />
           </div>
           <div className={styles.f}>
@@ -288,9 +261,10 @@ export default function FormPageSeven({ formRef, credential, initialSignature, i
               className={styles.input}
               type="time"
               id="q62_shiftEndTime"
-              name="q62_shiftEndTime"
               required
-              onChange={calculateTotalHours}
+              {...register('q62_shiftEndTime', {
+                onChange: calculateTotalHours,
+              })}
             />
           </div>
           <div className={styles.f}>
@@ -299,7 +273,7 @@ export default function FormPageSeven({ formRef, credential, initialSignature, i
               className={styles.input}
               type="text"
               id="q9_totalHours"
-              name="q9_totalHours"
+              {...register('q9_totalHours')}
               value={totalHours}
               readOnly
               style={{ backgroundColor: '#f0f0f0' }}
@@ -337,7 +311,7 @@ export default function FormPageSeven({ formRef, credential, initialSignature, i
             <textarea
               className={styles.textarea}
               id="q66_additionalNotes"
-              name="q66_additionalNotes"
+              {...register('q66_additionalNotes')}
               rows={3}
               placeholder="Optional additional documentation"
             />
@@ -356,7 +330,7 @@ export default function FormPageSeven({ formRef, credential, initialSignature, i
               className={styles.input}
               type="text"
               id="q60_oncomingCaregiver"
-              name="q60_oncomingCaregiver"
+              {...register('q60_oncomingCaregiver')}
               required
             />
           </div>
@@ -366,7 +340,7 @@ export default function FormPageSeven({ formRef, credential, initialSignature, i
               className={styles.input}
               type="time"
               id="q60_handoffTime"
-              name="q60_handoffTime"
+              {...register('q60_handoffTime')}
               required
             />
           </div>
@@ -378,7 +352,7 @@ export default function FormPageSeven({ formRef, credential, initialSignature, i
             <textarea
               className={styles.textarea}
               id="q60_verbalReport"
-              name="q60_verbalReport"
+              {...register('q60_verbalReport')}
               rows={4}
               placeholder="Summarize key events and handoff information given to oncoming caregiver..."
               required
@@ -404,7 +378,7 @@ export default function FormPageSeven({ formRef, credential, initialSignature, i
             <textarea
               className={styles.textarea}
               id="q60_endOfShiftNotes"
-              name="q60_endOfShiftNotes"
+              {...register('q60_endOfShiftNotes')}
               rows={3}
               placeholder="Any additional end-of-shift notes..."
             />
@@ -446,8 +420,8 @@ export default function FormPageSeven({ formRef, credential, initialSignature, i
           />
           <input
             type="hidden"
-            name="q61_signature"
             id="q61_signature"
+            {...register('q61_signature')}
             required
           />
         </div>

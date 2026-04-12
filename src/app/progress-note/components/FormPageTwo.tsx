@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import type { FormPageProps } from '../types';
 import styles from '../page.module.css';
 import DeselectableRadio from './DeselectableRadio';
 
-interface FormPageTwoProps {
-  formRef: React.RefObject<HTMLFormElement>;
+interface FormPageTwoProps extends FormPageProps {
   credential?: string;
 }
 
@@ -62,7 +62,7 @@ const warningItemStyle: React.CSSProperties = {
   padding: '2px 0',
 };
 
-export default function FormPageTwo({ formRef, credential }: FormPageTwoProps) {
+export default function FormPageTwo({ formRef, register, watch, setValue, control, credential }: FormPageTwoProps) {
   const showVitals = credential !== 'HHA';
   const [alerts, setAlerts] = useState<Record<string, VitalAlert>>({});
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -268,7 +268,7 @@ export default function FormPageTwo({ formRef, credential }: FormPageTwoProps) {
             <textarea
               className={styles.textarea}
               id="q14_orientationBehaviorNotes"
-              name="q14_orientationBehaviorNotes"
+              {...register('q14_orientationBehaviorNotes')}
               rows={3}
               placeholder="Describe orientation and behavior at start of shift..."
             />
@@ -333,7 +333,7 @@ export default function FormPageTwo({ formRef, credential }: FormPageTwoProps) {
                 <select
                   className={styles.select}
                   id="q15_skinColor"
-                  name="q15_skinColor"
+                  {...register('q15_skinColor')}
                 >
                   <option value="">Select...</option>
                   <option value="Normal / Appropriate for ethnicity">Normal / Appropriate for ethnicity</option>
@@ -367,7 +367,7 @@ export default function FormPageTwo({ formRef, credential }: FormPageTwoProps) {
                 <textarea
                   className={styles.textarea}
                   id="q15_appearanceNotes"
-                  name="q15_appearanceNotes"
+                  {...register('q15_appearanceNotes')}
                   rows={3}
                   placeholder="Describe appearance findings..."
                 />
@@ -423,10 +423,11 @@ export default function FormPageTwo({ formRef, credential }: FormPageTwoProps) {
                 style={isAbnormal('temperature') ? alertInputStyle : undefined}
                 type="number"
                 id="q16_temperature"
-                name="q16_temperature"
                 step="0.1"
                 required
-                onBlur={(e) => handleVitalChange('temperature', e.target.value)}
+                {...register('q16_temperature', {
+                  onBlur: (e) => handleVitalChange('temperature', e.target.value),
+                })}
               />
             </div>
             <div className={styles.f}>
@@ -442,10 +443,11 @@ export default function FormPageTwo({ formRef, credential }: FormPageTwoProps) {
                 style={isBPAbnormal ? alertInputStyle : undefined}
                 type="text"
                 id="q17_bloodPressure"
-                name="q17_bloodPressure"
                 placeholder="120/80"
                 required
-                onBlur={(e) => handleBPChange(e.target.value)}
+                {...register('q17_bloodPressure', {
+                  onBlur: (e) => handleBPChange(e.target.value),
+                })}
               />
             </div>
             <div className={styles.f}>
@@ -461,9 +463,10 @@ export default function FormPageTwo({ formRef, credential }: FormPageTwoProps) {
                 style={isAbnormal('pulse') ? alertInputStyle : undefined}
                 type="number"
                 id="q18_pulse"
-                name="q18_pulse"
                 required
-                onBlur={(e) => handleVitalChange('pulse', e.target.value)}
+                {...register('q18_pulse', {
+                  onBlur: (e) => handleVitalChange('pulse', e.target.value),
+                })}
               />
             </div>
           </div>
@@ -482,9 +485,10 @@ export default function FormPageTwo({ formRef, credential }: FormPageTwoProps) {
                 style={isAbnormal('respiration') ? alertInputStyle : undefined}
                 type="number"
                 id="q19_respiration"
-                name="q19_respiration"
                 required
-                onBlur={(e) => handleVitalChange('respiration', e.target.value)}
+                {...register('q19_respiration', {
+                  onBlur: (e) => handleVitalChange('respiration', e.target.value),
+                })}
               />
             </div>
             <div className={styles.f}>
@@ -500,9 +504,10 @@ export default function FormPageTwo({ formRef, credential }: FormPageTwoProps) {
                 style={isAbnormal('oxygenSaturation') ? alertInputStyle : undefined}
                 type="number"
                 id="q20_oxygenSaturation"
-                name="q20_oxygenSaturation"
                 required
-                onBlur={(e) => handleVitalChange('oxygenSaturation', e.target.value)}
+                {...register('q20_oxygenSaturation', {
+                  onBlur: (e) => handleVitalChange('oxygenSaturation', e.target.value),
+                })}
               />
             </div>
             <div className={styles.f}>
@@ -518,8 +523,9 @@ export default function FormPageTwo({ formRef, credential }: FormPageTwoProps) {
                 style={isAbnormal('bloodGlucose') ? alertInputStyle : undefined}
                 type="number"
                 id="q21_bloodGlucose"
-                name="q21_bloodGlucose"
-                onBlur={(e) => handleVitalChange('bloodGlucose', e.target.value)}
+                {...register('q21_bloodGlucose', {
+                  onBlur: (e) => handleVitalChange('bloodGlucose', e.target.value),
+                })}
               />
             </div>
           </div>
@@ -541,7 +547,7 @@ export default function FormPageTwo({ formRef, credential }: FormPageTwoProps) {
                   <select
                     className={styles.select}
                     id="q21_oxygenSource"
-                    name="q21_oxygenSource"
+                    {...register('q21_oxygenSource')}
                   >
                     <option value="">Select...</option>
                     <option value="Room Air">Room Air</option>
@@ -559,7 +565,7 @@ export default function FormPageTwo({ formRef, credential }: FormPageTwoProps) {
                   <textarea
                     className={styles.textarea}
                     id="q22_additionalObservations"
-                    name="q22_additionalObservations"
+                    {...register('q22_additionalObservations')}
                     rows={4}
                     placeholder="Any additional observations about client status..."
                   />

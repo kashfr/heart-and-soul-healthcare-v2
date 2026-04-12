@@ -1,15 +1,15 @@
 'use client';
 
 import { useState } from 'react';
+import type { FormPageProps } from '../types';
 import styles from '../page.module.css';
 import DeselectableRadio from './DeselectableRadio';
 
-interface FormPageFiveProps {
-  formRef: React.RefObject<HTMLFormElement>;
+interface FormPageFiveProps extends FormPageProps {
   credential?: string;
 }
 
-export default function FormPageFive({ formRef, credential }: FormPageFiveProps) {
+export default function FormPageFive({ formRef, register, watch, setValue, control, credential }: FormPageFiveProps) {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     adverseReaction: false,
     eventResponse: false,
@@ -127,7 +127,7 @@ export default function FormPageFive({ formRef, credential }: FormPageFiveProps)
             <textarea
               className={styles.textarea}
               id="q39_interventionDetails"
-              name="q39_interventionDetails"
+              {...register('q39_interventionDetails')}
               rows={6}
               placeholder="Provide detailed notes on each intervention, how the patient responded, and any outcomes..."
               required
@@ -147,7 +147,7 @@ export default function FormPageFive({ formRef, credential }: FormPageFiveProps)
             <textarea
               className={styles.textarea}
               id="q43_scheduledMeds"
-              name="q43_scheduledMeds"
+              {...register('q43_scheduledMeds')}
               rows={4}
               placeholder="List medications, doses, routes, and times administered..."
             />
@@ -160,7 +160,7 @@ export default function FormPageFive({ formRef, credential }: FormPageFiveProps)
             <textarea
               className={styles.textarea}
               id="q43_prnMeds"
-              name="q43_prnMeds"
+              {...register('q43_prnMeds')}
               rows={4}
               placeholder="List PRN medications, doses, routes, times, and reason..."
             />
@@ -210,7 +210,7 @@ export default function FormPageFive({ formRef, credential }: FormPageFiveProps)
                   className={styles.input}
                   type="text"
                   id="q43_reactionMed"
-                  name="q43_reactionMed"
+                  {...register('q43_reactionMed')}
                 />
               </div>
               <div className={styles.f}>
@@ -219,7 +219,7 @@ export default function FormPageFive({ formRef, credential }: FormPageFiveProps)
                   className={styles.input}
                   type="time"
                   id="q43_reactionTime"
-                  name="q43_reactionTime"
+                  {...register('q43_reactionTime')}
                 />
               </div>
             </div>
@@ -266,7 +266,7 @@ export default function FormPageFive({ formRef, credential }: FormPageFiveProps)
                 <textarea
                   className={styles.textarea}
                   id="q43_reactionDescription"
-                  name="q43_reactionDescription"
+                  {...register('q43_reactionDescription')}
                   rows={3}
                   placeholder="Describe the adverse reaction in detail..."
                 />
@@ -293,7 +293,7 @@ export default function FormPageFive({ formRef, credential }: FormPageFiveProps)
                   className={styles.input}
                   type="time"
                   id="q43_reactionPhysTime"
-                  name="q43_reactionPhysTime"
+                  {...register('q43_reactionPhysTime')}
                 />
               </div>
             </div>
