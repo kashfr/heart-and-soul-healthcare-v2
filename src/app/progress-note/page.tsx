@@ -56,6 +56,7 @@ function ProgressNotePageInner() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [firebaseLoaded, setFirebaseLoaded] = useState(false);
+  const [formReady, setFormReady] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -98,13 +99,18 @@ function ProgressNotePageInner() {
     return () => form.removeEventListener('change', saveCheckboxes);
   }, [isEditMode, firebaseLoaded]);
 
-  // Restore checkbox states from localStorage on mount
+  // Restore checkbox states from localStorage on mount, then mark form as ready
   useEffect(() => {
+    if (!firebaseLoaded) return;
+
     const savedCheckboxes = localStorage.getItem(CHECKBOX_STORAGE_KEY);
-    if (!savedCheckboxes || !formRef.current || isEditMode) return;
+    if (!savedCheckboxes || !formRef.current || isEditMode) {
+      setFormReady(true);
+      return;
+    }
 
     const checkboxData = JSON.parse(savedCheckboxes) as Record<string, string[]>;
-    // Delay to ensure DOM is rendered
+    // Delay to ensure DOM is rendered, then restore and reveal
     setTimeout(() => {
       for (const [name, values] of Object.entries(checkboxData)) {
         const checkboxes = formRef.current?.querySelectorAll(`input[type="checkbox"][name="${name}"]`);
@@ -113,7 +119,8 @@ function ProgressNotePageInner() {
           cb.checked = values.includes(cb.value);
         });
       }
-    }, 400);
+      setFormReady(true);
+    }, 300);
   }, [firebaseLoaded, isEditMode]);
 
   const activePages = getActivePages(credential);
@@ -408,8 +415,18 @@ function ProgressNotePageInner() {
   if (!firebaseLoaded) {
     return (
       <div className={`${styles.container} ${styles.wrap}`}>
-        <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-          <p>Loading...</p>
+        <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+          <div style={{
+            width: '40px',
+            height: '40px',
+            border: '4px solid #e0e0e0',
+            borderTop: '4px solid #27ae60',
+            borderRadius: '50%',
+            animation: 'spin 0.8s linear infinite',
+            margin: '0 auto 16px',
+          }} />
+          <p style={{ color: '#666', fontSize: '15px', margin: 0 }}>Loading patient data...</p>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
       </div>
     );
@@ -421,7 +438,7 @@ function ProgressNotePageInner() {
   });
 
   return (
-    <div className={`${styles.container} ${styles.wrap}`}>
+    <div className={`${styles.container} ${styles.wrap}`} style={!formReady ? { opacity: 0, pointerEvents: 'none', maxHeight: '100vh', overflow: 'hidden' } : undefined}>
       {isEditMode && editId && (
         <div style={{ background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px', padding: '10px 16px', marginBottom: '16px', fontSize: '14px', color: '#856404', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span>✏️ You are editing an existing progress note. Make your changes and click Update.</span>
