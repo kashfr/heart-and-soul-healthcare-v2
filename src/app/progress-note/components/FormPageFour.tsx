@@ -247,39 +247,6 @@ export default function FormPageFour({ formRef, register, watch, setValue, contr
         )}
       </div>
 
-      {/* Abuse / Neglect Screening */}
-      <div className={styles.section}>
-        <span className={styles.sectionLabel}>ABUSE / NEGLECT SCREENING</span>
-
-        <div className={styles.row}>
-          <div className={styles.f}>
-            <label className={styles.label}>Screening Performed?</label>
-            <div className={styles.radioRow}>
-              <label>
-                <DeselectableRadio name="q38_abuseScreening" value="Yes" />
-                Yes
-              </label>
-              <label>
-                <DeselectableRadio name="q38_abuseScreening" value="No" />
-                No
-              </label>
-            </div>
-          </div>
-        </div>
-
-        <div className={styles.row}>
-          <div className={styles.f} style={{ flex: '1 1 100%' }}>
-            <label className={styles.label} htmlFor="q38_abuseNotes">Notes</label>
-            <textarea
-              className={styles.textarea}
-              id="q38_abuseNotes"
-              {...register('q38_abuseNotes')}
-              rows={3}
-              placeholder="Document screening findings or concerns..."
-            />
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
