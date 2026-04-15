@@ -26,10 +26,18 @@ function calculateAge(dob: string): string {
   if (!dob) return '';
   const birth = new Date(dob + 'T12:00:00');
   const today = new Date();
-  let age = today.getFullYear() - birth.getFullYear();
-  const m = today.getMonth() - birth.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
-  return `${age} years old`;
+  let years = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) years--;
+  if (years >= 1) return `${years} year${years !== 1 ? 's' : ''} old`;
+  // Under 1 year — calculate months
+  let months = (today.getFullYear() - birth.getFullYear()) * 12 + (today.getMonth() - birth.getMonth());
+  if (today.getDate() < birth.getDate()) months--;
+  if (months >= 1) return `${months} month${months !== 1 ? 's' : ''} old`;
+  // Under 1 month — calculate days
+  const diffMs = today.getTime() - birth.getTime();
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  return `${days} day${days !== 1 ? 's' : ''} old`;
 }
 
 function formatDOB(dob: string): string {
