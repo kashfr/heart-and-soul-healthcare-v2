@@ -63,23 +63,31 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const calculateAge = (dob: string): string => {
+  // Calculate age as of a reference date (date of service), falling back to today
+  const calculateAge = (dob: string, asOfDate?: string): string => {
     const birthDate = new Date(dob + 'T12:00:00');
-    const today = new Date();
-    let years = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    const asOf = asOfDate ? new Date(asOfDate + 'T12:00:00') : new Date();
+    let years = asOf.getFullYear() - birthDate.getFullYear();
+    const monthDiff = asOf.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && asOf.getDate() < birthDate.getDate())) {
       years--;
     }
     if (years >= 1) return String(years);
     // Under 1 year — calculate months
-    let months = (today.getFullYear() - birthDate.getFullYear()) * 12 + (today.getMonth() - birthDate.getMonth());
-    if (today.getDate() < birthDate.getDate()) months--;
+    let months = (asOf.getFullYear() - birthDate.getFullYear()) * 12 + (asOf.getMonth() - birthDate.getMonth());
+    if (asOf.getDate() < birthDate.getDate()) months--;
     if (months >= 1) return `${months} mo`;
     // Under 1 month — calculate days
-    const diffMs = today.getTime() - birthDate.getTime();
+    const diffMs = asOf.getTime() - birthDate.getTime();
     const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
     return `${days} day${days !== 1 ? 's' : ''}`;
+  };
+
+  // Recalculate age whenever DOB or date of service changes
+  const recalcAge = (dob?: string, serviceDate?: string) => {
+    const d = dob || watch('q4_dateofBirth');
+    const s = serviceDate || watch('q6_dateofService');
+    if (d) setValue('q5_ageYears', calculateAge(d, s || undefined));
   };
 
   const handleSelectPatient = (patient: Patient) => {
@@ -90,15 +98,13 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
 
   const handleConfirmSelection = () => {
     if (selectedPatient) {
-      const age = calculateAge(selectedPatient.dob);
-
       // Set the search query to the selected patient name (this updates the visible input)
       setSearchQuery(selectedPatient.name);
 
       // Use react-hook-form setValue for all fields
       setValue('q3_clientName', selectedPatient.name);
       setValue('q4_dateofBirth', selectedPatient.dob);
-      setValue('q5_ageYears', String(age));
+      recalcAge(selectedPatient.dob);
       setValue('q10_primaryDiagnosis', selectedPatient.diagnosis || '');
       setValue('q200_addr_line1', selectedPatient.street || '');
       setValue('q200_city', selectedPatient.city || '');
@@ -201,7 +207,7 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
                 onChange: (e) => {
                   const dob = e.target.value;
                   if (!dob) return;
-                  setValue('q5_ageYears', calculateAge(dob));
+                  recalcAge(dob);
                 },
               })}
             />
@@ -306,7 +312,13 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
               defaultValue={today}
               max={today}
               required
-              {...register('q6_dateofService')}
+              {...register('q6_dateofService', {
+                onChange: (e) => {
+                  const serviceDate = e.target.value;
+                  if (!serviceDate) return;
+                  recalcAge(undefined, serviceDate);
+                },
+              })}
             />
           </div>
         </div>
