@@ -63,15 +63,23 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const calculateAge = (dob: string): number => {
-    const birthDate = new Date(dob);
+  const calculateAge = (dob: string): string => {
+    const birthDate = new Date(dob + 'T12:00:00');
     const today = new Date();
-    let age = today.getFullYear() - birthDate.getFullYear();
+    let years = today.getFullYear() - birthDate.getFullYear();
     const monthDiff = today.getMonth() - birthDate.getMonth();
     if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
+      years--;
     }
-    return age;
+    if (years >= 1) return String(years);
+    // Under 1 year — calculate months
+    let months = (today.getFullYear() - birthDate.getFullYear()) * 12 + (today.getMonth() - birthDate.getMonth());
+    if (today.getDate() < birthDate.getDate()) months--;
+    if (months >= 1) return `${months} mo`;
+    // Under 1 month — calculate days
+    const diffMs = today.getTime() - birthDate.getTime();
+    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    return `${days} day${days !== 1 ? 's' : ''}`;
   };
 
   const handleSelectPatient = (patient: Patient) => {
@@ -193,23 +201,19 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
                 onChange: (e) => {
                   const dob = e.target.value;
                   if (!dob) return;
-                  const birth = new Date(dob + 'T12:00:00');
-                  const today = new Date();
-                  let age = today.getFullYear() - birth.getFullYear();
-                  const m = today.getMonth() - birth.getMonth();
-                  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
-                  setValue('q5_ageYears', String(age));
+                  setValue('q5_ageYears', calculateAge(dob));
                 },
               })}
             />
           </div>
           <div className={styles.f}>
-            <label className={styles.label} htmlFor="q5_ageYears">Age in Years</label>
+            <label className={styles.label} htmlFor="q5_ageYears">Age</label>
             <input
               className={styles.input}
-              type="number"
+              type="text"
               id="q5_ageYears"
               {...register('q5_ageYears')}
+              readOnly
             />
           </div>
         </div>
