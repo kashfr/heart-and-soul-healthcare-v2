@@ -58,6 +58,7 @@ function ProgressNotePageInner() {
   const [firebaseLoaded, setFirebaseLoaded] = useState(false);
   const [formReady, setFormReady] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [showClearModal, setShowClearModal] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
   const STORAGE_KEY = 'progress-note-draft';
@@ -490,6 +491,25 @@ function ProgressNotePageInner() {
 
       <div className={styles.headerControls}>
         <div style={{ flex: 1 }} />
+        {!isEditMode && (
+          <button
+            type="button"
+            onClick={() => setShowClearModal(true)}
+            style={{
+              background: '#e74c3c',
+              color: 'white',
+              border: 'none',
+              padding: '10px 16px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: 600,
+              marginRight: '8px',
+            }}
+          >
+            Clear Form
+          </button>
+        )}
         <button
           className={styles.settingsBtn}
           onClick={() => setShowSettings(!showSettings)}
@@ -561,6 +581,51 @@ function ProgressNotePageInner() {
           onRemovePatient={handleRemovePatient}
           onClose={() => setShowSettings(false)}
         />
+      )}
+
+      {/* Clear Form Confirmation Modal */}
+      {showClearModal && (
+        <div className={`${styles.confirmModal} ${styles.active}`}>
+          <div className={styles.modalContent}>
+            <h2 style={{ color: '#c62828', marginTop: 0 }}>Clear Form?</h2>
+            <p style={{ color: '#555', lineHeight: 1.6, marginBottom: '20px' }}>
+              Are you sure you want to clear the entire form? All entered data will be permanently lost. This action cannot be undone.
+            </p>
+            <div className={styles.modalButtons}>
+              <button
+                type="button"
+                onClick={() => setShowClearModal(false)}
+                className={styles.cancelBtn}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  // Clear all localStorage
+                  localStorage.removeItem(STORAGE_KEY);
+                  localStorage.removeItem(CHECKBOX_STORAGE_KEY);
+                  localStorage.removeItem('progress-note-page');
+                  localStorage.removeItem('progress-note-radio-draft');
+                  // Reload the page so everything resets cleanly
+                  window.location.href = '/progress-note';
+                }}
+                style={{
+                  background: '#c62828',
+                  color: 'white',
+                  padding: '10px 20px',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                }}
+              >
+                Yes, Clear Everything
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
