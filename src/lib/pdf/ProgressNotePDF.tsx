@@ -12,7 +12,7 @@ export interface ProgressNoteData {
   client: {
     name: string;
     dob: string;
-    age: number;
+    age: string;
     diagnosis: string;
     address: string;
   };
@@ -63,7 +63,7 @@ export interface ProgressNoteData {
   };
   communication: {
     physicianNotified: string;
-    incidents: string;
+    incidents?: string;
     followUp: string;
     nextShiftPlan: string;
   };
@@ -552,7 +552,7 @@ export default function ProgressNotePDF({ data }: { data: ProgressNoteData }) {
           </View>
           <View style={s.twoCol}>
             <View style={s.twoColItem}>
-              <FieldPair label="Age" value={String(data.client.age)} />
+              <FieldPair label="Age" value={data.client.age} />
             </View>
             <View style={s.twoColItem}>
               <FieldPair
@@ -731,11 +731,13 @@ export default function ProgressNotePDF({ data }: { data: ProgressNoteData }) {
             label="Physician Notification"
             value={data.communication.physicianNotified}
           />
-          <TextBlock
-            label="Incidents / Unusual Occurrences"
-            value={data.communication.incidents}
-          />
-          <TextBlock label="Follow-Up" value={data.communication.followUp} />
+          {data.communication.incidents && (
+            <TextBlock
+              label="Incidents / Unusual Occurrences"
+              value={data.communication.incidents}
+            />
+          )}
+<TextBlock label="Follow-Up" value={data.communication.followUp} />
           <TextBlock
             label="Next Shift Plan"
             value={data.communication.nextShiftPlan}

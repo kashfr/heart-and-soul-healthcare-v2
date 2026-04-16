@@ -49,7 +49,10 @@ function ProgressNotePageInner() {
   const [currentPage, setCurrentPageState] = useState(savedPage);
   const setCurrentPage = (page: number) => {
     setCurrentPageState(page);
-    localStorage.setItem('progress-note-page', String(page));
+    // Don't persist page number in edit mode — it would leak into new-form sessions
+    if (!isEditMode) {
+      localStorage.setItem('progress-note-page', String(page));
+    }
   };
   const [credential, setCredential] = useState<CredentialTier>((savedParsed.q12_credential as CredentialTier) || '');
   const [showSettings, setShowSettings] = useState(false);
