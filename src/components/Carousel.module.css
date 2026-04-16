@@ -91,7 +91,7 @@
   position: relative;
   height: 90%;
   width: 100%;
-  border-radius: var(--radius-2xl);
+  border-radius: var(--radius-lg);
   overflow: hidden;
   box-shadow: var(--shadow-xl);
   transform: translateX(20px);
@@ -247,7 +247,7 @@
 
   .imageWrapper {
     height: auto;
-    aspect-ratio: 4/3;
+    aspect-ratio: 16/9;
     width: 100%;
     border-radius: var(--radius-xl);
     transform: none;
@@ -292,7 +292,7 @@
 @media (max-width: 768px) {
   .imageWrapper {
     height: auto;
-    aspect-ratio: 4/3;
+    aspect-ratio: 16/9;
   }
   
   .slideTitle {

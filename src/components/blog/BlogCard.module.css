@@ -1,6 +1,6 @@
 .card {
   background: var(--color-white);
-  border-radius: var(--radius-2xl);
+  border-radius: var(--radius-lg);
   overflow: hidden;
   box-shadow: var(--shadow-md);
   transition: all var(--transition-base);

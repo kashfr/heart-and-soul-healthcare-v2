@@ -258,6 +258,8 @@ export async function processReferralSubmission(data: any) {
           { id: 'e66213b7-52a9-4032-bb81-d4794b6619a0', value: referrer.phone ? formatPhoneForClickUp(referrer.phone) : '' }, // Referrer Phone
           { id: 'b3e956cc-6bc8-4383-b0a4-89aaa336ad0b', value: referrer.email || '' }, // Referrer Email
           { id: 'fff148ee-ebb0-46fb-be07-e4e2abdc4a66', value: referrer.organization || '' }, // Referrer Organization
+          // Status
+          { id: 'bd47e7aa-89dd-498b-bb5c-d9c72e010df5', value: '1d4ff3d2-53fc-44a4-904b-945ce29cd428' }, // Referral Status → Pending
           // Details
           { id: '84d9a6f5-c7a0-4c9f-820f-c4de7be2ba57', value: details.urgency }, // Urgency
           { id: '1553a6b0-7a54-4747-9ff3-667ad669cfeb', value: details.serviceNeeds || '' }, // Service Needs
