@@ -22,6 +22,7 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { processReferralSubmission } from '@/app/actions';
 import { ScrollReveal } from '@/components/animations';
+import { motion, AnimatePresence } from 'framer-motion';
 import styles from './page.module.css';
 
 // County data organized by tier
@@ -435,19 +436,43 @@ export default function ReferralPage() {
                     </select>
                   </div>
                   <div className={styles.programDescription}>
-                    {formData.programInterest ? (
-                      <>
-                        <div className={styles.programDescriptionHeader}>
-                          <Info size={16} />
-                          <span>About this program</span>
-                        </div>
-                        <p>{programs.find(p => p.value === formData.programInterest)?.description}</p>
-                      </>
-                    ) : (
-                      <p className={styles.programDescriptionPlaceholder}>
-                        Select a program to see a brief description
-                      </p>
-                    )}
+                    <AnimatePresence mode="wait">
+                      {formData.programInterest ? (
+                        <motion.div
+                          key={formData.programInterest}
+                          initial={{ opacity: 0, y: 12 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -8 }}
+                          transition={{ duration: 0.35, ease: [0.25, 0.1, 0.25, 1] }}
+                        >
+                          <div className={styles.programDescriptionHeader}>
+                            <Info size={14} />
+                            <span>About this program</span>
+                          </div>
+                          <p>{programs.find(p => p.value === formData.programInterest)?.description}</p>
+                          {formData.programInterest !== 'private-pay' && formData.programInterest !== 'other' && (
+                            <Link
+                              href={`/programs/${formData.programInterest}`}
+                              className={styles.programLearnMore}
+                              target="_blank"
+                            >
+                              Learn more about this program <ArrowRight size={14} />
+                            </Link>
+                          )}
+                        </motion.div>
+                      ) : (
+                        <motion.p
+                          key="placeholder"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className={styles.programDescriptionPlaceholder}
+                        >
+                          Select a program to see a brief description
+                        </motion.p>
+                      )}
+                    </AnimatePresence>
                   </div>
                 </div>
 

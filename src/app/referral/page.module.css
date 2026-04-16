@@ -239,37 +239,97 @@
 
 /* Program Description Box */
 .programDescription {
-  background: var(--color-gray-50);
-  border: 1px solid var(--color-gray-200);
+  position: relative;
+  background: linear-gradient(135deg, #f8fafc 0%, #f0f4f8 50%, #e8f0f8 100%);
+  border: 1px solid rgba(74, 111, 165, 0.12);
   border-radius: var(--radius-lg);
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-6) var(--space-6);
   display: flex;
   flex-direction: column;
   justify-content: center;
   min-height: 240px;
-  transition: all var(--transition-base);
+  transition: all 0.5s cubic-bezier(0.25, 0.1, 0.25, 1);
+  overflow: hidden;
+}
+
+.programDescription::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: linear-gradient(180deg, var(--color-accent), var(--color-gold));
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.programDescription:has(.programDescriptionHeader)::before {
+  opacity: 1;
+}
+
+.programDescription::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -50%;
+  width: 120%;
+  height: 120%;
+  background: radial-gradient(circle at center, rgba(74, 111, 165, 0.04) 0%, transparent 70%);
+  pointer-events: none;
 }
 
 .programDescriptionHeader {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  font-size: var(--text-sm);
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
   color: var(--color-accent);
-  margin-bottom: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid rgba(74, 111, 165, 0.1);
+}
+
+.programDescriptionHeader svg {
+  opacity: 0.7;
 }
 
 .programDescription p {
   font-size: var(--text-sm);
-  color: var(--color-gray-600);
-  line-height: 1.6;
+  color: var(--color-gray-700);
+  line-height: 1.8;
   margin: 0;
+  position: relative;
+  z-index: 1;
 }
 
 .programDescriptionPlaceholder {
   color: var(--color-gray-400) !important;
   font-style: italic;
+  text-align: center;
+  font-size: var(--text-sm) !important;
+}
+
+.programLearnMore {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-accent);
+  text-decoration: none;
+  transition: gap 0.2s ease, color 0.2s ease;
+  position: relative;
+  z-index: 1;
+}
+
+.programLearnMore:hover {
+  gap: var(--space-3);
+  color: var(--color-accent-dark);
 }
 
 /* County Section */
