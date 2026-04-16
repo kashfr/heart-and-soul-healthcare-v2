@@ -11,6 +11,9 @@ const siteUrl = "https://www.heartandsoulhc.org";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
+  verification: {
+    google: "wVGldzSX3AazX6w2I-Dq7HgyIDbt3DYzHYQeD8UucUM",
+  },
   title: {
     default: "Heart and Soul Healthcare | Home Health Services in Georgia",
     template: "%s | Heart and Soul Healthcare",
