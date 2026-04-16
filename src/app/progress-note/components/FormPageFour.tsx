@@ -117,8 +117,7 @@ export default function FormPageFour({ formRef, register, watch, setValue, contr
           </span>
           <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Nutrition &amp; Hydration</div>
         </div>
-        {expandedSections.nutrition && (
-          <div>
+        <div style={{ display: expandedSections.nutrition ? 'block' : 'none' }}>
             <div className={styles.row}>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q38_breakfastPct">Breakfast % Consumed</label>
@@ -205,9 +204,8 @@ export default function FormPageFour({ formRef, register, watch, setValue, contr
                   placeholder={hasAspirationConcerns ? 'Required — document aspiration concerns, precautions taken, and dietary modifications...' : 'Additional notes on nutrition and hydration...'}
                 />
               </div>
-            </div>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Housekeeping */}
@@ -223,8 +221,7 @@ export default function FormPageFour({ formRef, register, watch, setValue, contr
           </span>
           <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Housekeeping</div>
         </div>
-        {expandedSections.housekeeping && (
-          <div>
+        <div style={{ display: expandedSections.housekeeping ? 'block' : 'none' }}>
             <div className={styles.checkRow}>
               <label>
                 <input type="checkbox" name="q38_housekeeping" value="Linens changed/straightened" />
@@ -242,9 +239,8 @@ export default function FormPageFour({ formRef, register, watch, setValue, contr
                 <input type="checkbox" name="q38_housekeeping" value="Emergency supplies checked and restocked" />
                 Emergency supplies checked and restocked
               </label>
-            </div>
           </div>
-        )}
+        </div>
       </div>
 
     </div>

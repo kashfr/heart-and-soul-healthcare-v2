@@ -65,6 +65,12 @@ function ProgressNotePageInner() {
   const savedData = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
   const defaultValues = savedData ? JSON.parse(savedData) : {};
 
+  // Ensure date of service defaults to today if not already saved
+  if (!defaultValues.q6_dateofService) {
+    const now = new Date();
+    defaultValues.q6_dateofService = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  }
+
   const { register, watch, setValue, getValues, reset, control } = useForm<FormValues>({
     defaultValues,
   });
@@ -299,11 +305,13 @@ function ProgressNotePageInner() {
 
     if (!formRef.current) return;
 
-    // Check if an element or any ancestor is hidden via display:none
+    // Check if an element or any ancestor is hidden or disabled
     const isElementVisible = (el: HTMLElement): boolean => {
       let current: HTMLElement | null = el;
       while (current && current !== formRef.current) {
         if (current.style.display === 'none') return false;
+        // Detect credential-gated sections (opacity overlay with pointerEvents: none)
+        if (current.style.pointerEvents === 'none' && current.style.opacity !== '') return false;
         current = current.parentElement;
       }
       return true;
@@ -324,6 +332,23 @@ function ProgressNotePageInner() {
       return;
     }
 
+    // Validate client name (stored in hidden input, which HTML validation skips)
+    const clientName = getValues('q3_clientName');
+    if (!clientName || clientName.trim() === '') {
+      setCurrentPage(1);
+      setTimeout(() => {
+        const nameInput = formRef.current?.querySelector('#q3_clientNameSearch') as HTMLInputElement;
+        if (nameInput) {
+          nameInput.style.border = '2px solid #c62828';
+          nameInput.style.background = '#fff5f5';
+          nameInput.focus();
+          nameInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
+      alert('Please enter the client name before submitting.');
+      return;
+    }
+
     // Custom validation: find all required fields that are empty
     const requiredFields = formRef.current.querySelectorAll(
       'input[required], select[required], textarea[required]'
@@ -335,8 +360,27 @@ function ProgressNotePageInner() {
       // Skip hidden inputs (like signature, handled above)
       if (el.type === 'hidden') continue;
 
-      // Skip fields hidden by credential-conditional display:none
+      // Skip fields hidden by credential-conditional display:none or overlay
       if (!isElementVisible(el)) continue;
+
+      // For checkboxes, check the .checked property (not .value)
+      if (el.type === 'checkbox') {
+        if (!(el as HTMLInputElement).checked) {
+          const parentLabel = el.closest('label');
+          const rawLabel = parentLabel?.textContent || el.name;
+          const fieldName = rawLabel.replace(/\s*\*\s*/g, '').trim();
+
+          const page = getFieldPage(el);
+          setCurrentPage(page);
+          setTimeout(() => {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 100);
+
+          alert(`Please check "${fieldName}" on page ${page} before submitting.`);
+          return;
+        }
+        continue;
+      }
 
       if (!el.value || el.value.trim() === '') {
         // Find the label for this field

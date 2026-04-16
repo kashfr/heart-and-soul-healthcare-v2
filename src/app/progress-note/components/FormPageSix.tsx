@@ -60,8 +60,7 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
           </span>
           <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Education Details</div>
         </div>
-        {expandedSections.educationDetails && (
-          <div>
+        <div style={{ display: expandedSections.educationDetails ? 'block' : 'none' }}>
             <div className={styles.subsec}>Topics Covered (check all that apply)</div>
             <div className={styles.checkRow}>
               <label><input type="checkbox" name="q41_educationTopics" value="Seizure recognition" /> Seizure recognition</label>
@@ -135,9 +134,8 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
                   placeholder="Additional notes about education provided..."
                 />
               </div>
-            </div>
           </div>
-        )}
+        </div>
       </div>
 
       {/* GOALS OF CARE (LPN/RN only) */}
@@ -170,7 +168,7 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
             </span>
             <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Goal 1</div>
           </div>
-          {expandedSections.goal1 && (
+          <div style={{ display: expandedSections.goal1 ? 'block' : 'none' }}>
             <div>
               <div className={styles.row}>
                 <div className={styles.f} style={{ flex: '1 1 100%' }}>
@@ -205,8 +203,8 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
                   />
                 </div>
               </div>
-            </div>
-          )}
+          </div>
+          </div>
 
           <div
             className={styles.collapsibleHeader}
@@ -217,7 +215,7 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
             </span>
             <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Goal 2</div>
           </div>
-          {expandedSections.goal2 && (
+          <div style={{ display: expandedSections.goal2 ? 'block' : 'none' }}>
             <div>
               <div className={styles.row}>
                 <div className={styles.f} style={{ flex: '1 1 100%' }}>
@@ -252,8 +250,7 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
                   />
                 </div>
               </div>
-            </div>
-          )}
+          </div>
 
           <div
             className={styles.collapsibleHeader}
@@ -264,7 +261,7 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
             </span>
             <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Goal 3</div>
           </div>
-          {expandedSections.goal3 && (
+          <div style={{ display: expandedSections.goal3 ? 'block' : 'none' }}>
             <div>
               <div className={styles.row}>
                 <div className={styles.f} style={{ flex: '1 1 100%' }}>
@@ -299,8 +296,7 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
                   />
                 </div>
               </div>
-            </div>
-          )}
+          </div>
 
           <div className={styles.row}>
             <div className={styles.f} style={{ flex: '1 1 100%' }}>
@@ -326,7 +322,9 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
             </div>
           </div>
         </div>
+          </div>
       </div>
+          </div>
 
 
       {/* PHYSICIAN NOTIFICATION (LPN/RN only) */}
@@ -359,7 +357,7 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
             </span>
             <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Notification Details</div>
           </div>
-          {expandedSections.physicianNotification && (
+          <div style={{ display: expandedSections.physicianNotification ? 'block' : 'none' }}>
             <div>
               <div className={styles.row}>
                 <div className={styles.f}>
@@ -424,9 +422,9 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
                   />
                 </div>
               </div>
-            </div>
-          )}
+          </div>
         </div>
+          </div>
       </div>
 
       {/* FAMILY / GUARDIAN NOTIFICATION */}
@@ -458,7 +456,7 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
           </span>
           <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Notification Details</div>
         </div>
-        {expandedSections.familyNotification && (
+        <div style={{ display: expandedSections.familyNotification ? 'block' : 'none' }}>
           <div>
             <div className={styles.row}>
               <div className={styles.f}>
@@ -544,9 +542,9 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
                 />
               </div>
             </div>
-          </div>
-        )}
+        </div>
       </div>
+          </div>
 
       {/* AGENCY SUPERVISOR NOTIFICATION */}
       <div className={styles.section}>
@@ -577,7 +575,7 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
           </span>
           <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Notification Details</div>
         </div>
-        {expandedSections.supervisorNotification && (
+        <div style={{ display: expandedSections.supervisorNotification ? 'block' : 'none' }}>
           <div>
             <div className={styles.row}>
               <div className={styles.f}>
@@ -628,9 +626,9 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
                 </div>
               </div>
             </div>
-          </div>
-        )}
+        </div>
       </div>
+          </div>
 
     </div>
   );

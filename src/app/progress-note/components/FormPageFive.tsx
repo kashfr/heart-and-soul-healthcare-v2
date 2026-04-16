@@ -201,8 +201,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
           </span>
           <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0, color: '#c62828' }}>{'\u26A0'} Adverse Reaction / Intolerance Detail</div>
         </div>
-        {expandedSections.adverseReaction && (
-          <div>
+        <div style={{ display: expandedSections.adverseReaction ? 'block' : 'none' }}>
             <div className={styles.row}>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q43_reactionMed">Medication Involved</label>
@@ -296,9 +295,8 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
                   {...register('q43_reactionPhysTime')}
                 />
               </div>
-            </div>
           </div>
-        )}
+        </div>
       </div>
 
     </div>
