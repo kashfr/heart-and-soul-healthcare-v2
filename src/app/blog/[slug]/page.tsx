@@ -7,6 +7,7 @@ import { Calendar, Clock, User, ChevronRight } from 'lucide-react';
 import { getAllPosts, getPostBySlug, getRelatedPosts, CATEGORY_COLORS } from '@/lib/blog';
 import mdxComponents from '@/components/blog/MDXComponents';
 import BlogCard from '@/components/blog/BlogCard';
+import { ScrollReveal, StaggerContainer, StaggerItem } from '@/components/animations';
 import styles from './page.module.css';
 
 interface BlogPostPageProps {
@@ -149,9 +150,11 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
         {/* Content */}
         <div className={styles.postBody}>
           <div className="container">
-            <div className={styles.prose}>
-              <MDXRemote source={post.content} components={mdxComponents} />
-            </div>
+            <ScrollReveal direction="up" delay={0.1}>
+              <div className={styles.prose}>
+                <MDXRemote source={post.content} components={mdxComponents} />
+              </div>
+            </ScrollReveal>
           </div>
         </div>
 
@@ -178,20 +181,21 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
                 <h2>Related Articles</h2>
                 <p>Continue reading about {post.category}</p>
               </div>
-              <div className={styles.relatedGrid}>
+              <StaggerContainer className={styles.relatedGrid} staggerDelay={0.1}>
                 {relatedPosts.map((related) => (
-                  <BlogCard
-                    key={related.slug}
-                    title={related.title}
-                    excerpt={related.excerpt}
-                    date={related.date}
-                    category={related.category}
-                    readingTime={related.readingTime}
-                    slug={related.slug}
-                    featuredImage={related.featuredImage}
-                  />
+                  <StaggerItem key={related.slug}>
+                    <BlogCard
+                      title={related.title}
+                      excerpt={related.excerpt}
+                      date={related.date}
+                      category={related.category}
+                      readingTime={related.readingTime}
+                      slug={related.slug}
+                      featuredImage={related.featuredImage}
+                    />
+                  </StaggerItem>
                 ))}
-              </div>
+              </StaggerContainer>
             </div>
           </section>
         )}
