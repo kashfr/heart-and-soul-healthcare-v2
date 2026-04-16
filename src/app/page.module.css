@@ -350,6 +350,129 @@
   }
 }
 
+/* FAQ Section */
+.faqSection {
+  background: #ffffff;
+}
+
+.faqGrid {
+  max-width: 800px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.faqItem {
+  background: var(--color-gray-50);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+  padding: 0;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.faqItem[open] {
+  background: #ffffff;
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-md);
+}
+
+.faqQuestion {
+  padding: var(--space-5) var(--space-6);
+  font-weight: 600;
+  font-size: var(--text-base);
+  color: var(--color-gray-900);
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: color 0.2s ease;
+}
+
+.faqQuestion::-webkit-details-marker {
+  display: none;
+}
+
+.faqQuestion::after {
+  content: '+';
+  font-size: var(--text-xl);
+  font-weight: 300;
+  color: var(--color-accent);
+  transition: transform 0.3s ease;
+  flex-shrink: 0;
+  margin-left: var(--space-4);
+}
+
+.faqItem[open] .faqQuestion::after {
+  content: '−';
+}
+
+.faqItem[open] .faqQuestion {
+  color: var(--color-accent);
+}
+
+.faqAnswer {
+  padding: 0 var(--space-6) var(--space-6);
+  font-size: var(--text-sm);
+  color: var(--color-gray-600);
+  line-height: 1.8;
+  margin: 0;
+}
+
+/* Service Areas Section */
+.serviceAreasSection {
+  background: var(--color-gray-50);
+}
+
+.countyGroups {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-8);
+}
+
+.countyGroup h3 {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--color-gray-900);
+  margin-bottom: var(--space-4);
+}
+
+.countyTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.countyTag {
+  display: inline-block;
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-gray-700);
+  transition: all 0.2s ease;
+}
+
+.countyTag:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.countyTagExtended {
+  background: var(--color-gray-50);
+  border-style: dashed;
+}
+
+@media (max-width: 768px) {
+  .countyGroups {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 480px) {
   .trustGrid {
     grid-template-columns: 1fr 1fr;

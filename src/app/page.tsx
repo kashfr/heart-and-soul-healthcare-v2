@@ -3,12 +3,12 @@ import Link from 'next/link';
 import Image from 'next/image';
 
 export const metadata: Metadata = {
-  title: 'Heart and Soul Healthcare | Home Health Services in Georgia',
-  description: 'Heart and Soul Healthcare delivers compassionate home health care across Georgia through Medicaid waiver programs — GAPP, NOW/COMP, ICWP, and EDWP. Make a referral today.',
+  title: 'Heart and Soul Healthcare | Home Health Care Services in Georgia',
+  description: 'Georgia home health care serving Atlanta, Fulton, DeKalb, Cobb & Gwinnett counties. GAPP, NOW/COMP, ICWP & EDWP Medicaid waiver programs. Make a referral today.',
   alternates: { canonical: 'https://www.heartandsoulhc.org' },
   openGraph: {
-    title: 'Heart and Soul Healthcare | Home Health Services in Georgia',
-    description: 'Compassionate home health care across Georgia. GAPP, NOW/COMP, ICWP, and EDWP waiver programs. Make a referral today.',
+    title: 'Heart and Soul Healthcare | Home Health Care Services in Georgia',
+    description: 'Georgia home health care serving Atlanta and surrounding counties. GAPP, NOW/COMP, ICWP & EDWP Medicaid waiver programs.',
     url: 'https://www.heartandsoulhc.org',
   },
 };
@@ -110,9 +110,84 @@ const stats = [
   { number: '24/7', label: 'Care Available' },
 ];
 
+const faqs = [
+  {
+    question: 'What home health care services does Heart and Soul Healthcare provide in Georgia?',
+    answer: 'We provide skilled nursing, personal support, community living supports, respite care, and behavioral support services through Georgia\'s Medicaid waiver programs — GAPP, NOW/COMP, ICWP, and EDWP. Our services help individuals stay safely in their homes rather than entering institutional care.',
+  },
+  {
+    question: 'What counties in Georgia does Heart and Soul Healthcare serve?',
+    answer: 'We serve families across metro Atlanta and surrounding areas, including Fulton, DeKalb, Cobb, Clayton, Henry, Gwinnett, Fayette, Douglas, Forsyth, Rockdale, Cherokee, Paulding, Bartow, Newton, Spalding, Coweta, Carroll, Barrow, Gilmer, and Pickens counties.',
+  },
+  {
+    question: 'How do I apply for Medicaid waiver programs like GAPP or NOW/COMP in Georgia?',
+    answer: 'Start by enrolling in Georgia Medicaid through the Georgia Gateway portal (gateway.ga.gov) or by calling 1-800-282-4536. Once enrolled, contact the appropriate agency — DBHDD for NOW/COMP and ICWP, or your local Area Agency on Aging for EDWP — to begin the waiver application process. Our team can guide you through every step.',
+  },
+  {
+    question: 'Does Heart and Soul Healthcare accept Medicaid?',
+    answer: 'Yes. We are a Georgia Medicaid-enrolled provider and deliver services through all four major waiver programs: GAPP (children), NOW/COMP (intellectual/developmental disabilities), ICWP (physical disabilities and TBI), and EDWP (elderly and disabled adults). We also offer private pay options.',
+  },
+  {
+    question: 'How do I make a referral to Heart and Soul Healthcare?',
+    answer: 'You can submit a referral online through our referral form, call us at (678) 644-0337, or ask your physician, case manager, or support coordinator to refer directly. We accept referrals from families, healthcare providers, hospitals, and self-referrals.',
+  },
+  {
+    question: 'What is the difference between NOW and COMP waivers in Georgia?',
+    answer: 'Both serve individuals with intellectual and developmental disabilities, but COMP is for those with higher support needs requiring more daily care hours, while NOW serves individuals who need moderate support and are working toward greater independence. Both are administered by DBHDD.',
+  },
+];
+
+const serviceCounties = {
+  primary: ['Fulton', 'DeKalb', 'Cobb', 'Clayton', 'Henry', 'Gwinnett', 'Fayette', 'Douglas', 'Forsyth', 'Rockdale'],
+  extended: ['Cherokee', 'Paulding', 'Bartow', 'Newton', 'Spalding', 'Coweta', 'Carroll', 'Barrow', 'Gilmer', 'Pickens'],
+};
+
+const faqJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: faqs.map((faq) => ({
+    '@type': 'Question',
+    name: faq.question,
+    acceptedAnswer: {
+      '@type': 'Answer',
+      text: faq.answer,
+    },
+  })),
+};
+
+const serviceJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'HomeHealthCareService',
+  name: 'Heart and Soul Healthcare',
+  url: 'https://www.heartandsoulhc.org',
+  hasOfferCatalog: {
+    '@type': 'OfferCatalog',
+    name: 'Georgia Home Health Care Programs',
+    itemListElement: [
+      { '@type': 'OfferCatalog', name: 'GAPP — Georgia Pediatric Program', description: 'Skilled nursing for medically fragile children under 21' },
+      { '@type': 'OfferCatalog', name: 'NOW/COMP Waiver', description: 'Support for individuals with intellectual and developmental disabilities' },
+      { '@type': 'OfferCatalog', name: 'ICWP — Independent Care Waiver Program', description: 'Services for adults 21-64 with physical disabilities or TBI' },
+      { '@type': 'OfferCatalog', name: 'EDWP — Elderly & Disabled Waiver Program', description: 'Home-based care for elderly and disabled adults through CCSP and SOURCE' },
+    ],
+  },
+};
+
 export default function Home() {
   return (
     <>
+      {/* SEO structured data */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(serviceJsonLd) }}
+      />
+
+      {/* SEO h1 — visually integrated with carousel */}
+      <h1 className="sr-only">Home Health Care Services in Georgia — Heart and Soul Healthcare</h1>
+
       {/* Hero Carousel */}
       <Carousel />
 
@@ -284,7 +359,69 @@ export default function Home() {
         </div>
       </section>
 
-      <SectionDivider from="var(--color-primary)" to="var(--color-gray-50)" height={60} />
+      <SectionDivider from="var(--color-primary)" to="#ffffff" height={60} />
+
+      {/* FAQ Section */}
+      <section className={`section ${styles.faqSection}`}>
+        <div className="container">
+          <ScrollReveal direction="up">
+            <div className="section-header">
+              <span className={styles.sectionLabel}>Common Questions</span>
+              <TextReveal as="h2">Frequently Asked Questions</TextReveal>
+              <p>Answers to the most common questions about home health care and Medicaid waiver programs in Georgia.</p>
+            </div>
+          </ScrollReveal>
+          <div className={styles.faqGrid}>
+            {faqs.map((faq, index) => (
+              <ScrollReveal key={index} direction="up" delay={index * 0.08}>
+                <details className={styles.faqItem}>
+                  <summary className={styles.faqQuestion}>{faq.question}</summary>
+                  <p className={styles.faqAnswer}>{faq.answer}</p>
+                </details>
+              </ScrollReveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <SectionDivider from="#ffffff" to="var(--color-gray-50)" height={60} />
+
+      {/* Service Areas Section */}
+      <section className={`section ${styles.serviceAreasSection}`}>
+        <div className="container">
+          <ScrollReveal direction="up">
+            <div className="section-header">
+              <span className={styles.sectionLabel}>Where We Serve</span>
+              <TextReveal as="h2">Home Health Care Across Metro Atlanta &amp; Georgia</TextReveal>
+              <p>We provide in-home care services across 20 counties in Georgia, centered around the greater Atlanta metropolitan area.</p>
+            </div>
+          </ScrollReveal>
+          <div className={styles.countyGroups}>
+            <ScrollReveal direction="left" delay={0.1}>
+              <div className={styles.countyGroup}>
+                <h3>Primary Service Area</h3>
+                <div className={styles.countyTags}>
+                  {serviceCounties.primary.map((county) => (
+                    <span key={county} className={styles.countyTag}>{county} County</span>
+                  ))}
+                </div>
+              </div>
+            </ScrollReveal>
+            <ScrollReveal direction="right" delay={0.2}>
+              <div className={styles.countyGroup}>
+                <h3>Extended Service Area</h3>
+                <div className={styles.countyTags}>
+                  {serviceCounties.extended.map((county) => (
+                    <span key={county} className={`${styles.countyTag} ${styles.countyTagExtended}`}>{county} County</span>
+                  ))}
+                </div>
+              </div>
+            </ScrollReveal>
+          </div>
+        </div>
+      </section>
+
+      <SectionDivider from="var(--color-gray-50)" to="var(--color-gray-50)" height={60} />
 
       {/* CTA Section */}
       <section className={`section ${styles.ctaSection}`}>

@@ -25,9 +25,9 @@ export const metadata: Metadata = {
     images: [{ url: "/images/logo.webp", width: 130, height: 67, alt: "Heart and Soul Healthcare Logo" }],
   },
   twitter: {
-    card: "summary",
-    title: "Heart and Soul Healthcare | Home Health Services in Georgia",
-    description: "Compassionate home health care services throughout Georgia. Specializing in GAPP, NOW/COMP, ICWP, and EDWP waiver programs.",
+    card: "summary_large_image",
+    title: "Heart and Soul Healthcare | Home Health Care Services in Georgia",
+    description: "Georgia home health care serving Atlanta and surrounding counties. GAPP, NOW/COMP, ICWP & EDWP Medicaid waiver programs.",
   },
 };
 
@@ -47,9 +47,17 @@ const organizationJsonLd = {
     postalCode: "30309",
     addressCountry: "US",
   },
-  areaServed: {
-    "@type": "State",
-    name: "Georgia",
+  areaServed: [
+    { "@type": "State", name: "Georgia" },
+    { "@type": "City", name: "Atlanta", containedInPlace: { "@type": "State", name: "Georgia" } },
+    ...["Fulton", "DeKalb", "Cobb", "Clayton", "Henry", "Gwinnett", "Fayette", "Douglas", "Forsyth", "Rockdale", "Cherokee", "Paulding", "Bartow", "Newton", "Spalding", "Coweta", "Carroll", "Barrow", "Gilmer", "Pickens"].map(county => ({
+      "@type": "AdministrativeArea", name: `${county} County, Georgia`,
+    })),
+  ],
+  geo: {
+    "@type": "GeoCoordinates",
+    latitude: "33.7558",
+    longitude: "-84.3880",
   },
   description: "Heart and Soul Healthcare provides compassionate, professional home health care services throughout Georgia, specializing in Medicaid waiver programs including GAPP, NOW/COMP, ICWP, and EDWP.",
   openingHoursSpecification: {
