@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { getAllPosts, getAllCategories } from '@/lib/blog';
 import BlogCard from '@/components/blog/BlogCard';
 import CategoryFilter from '@/components/blog/CategoryFilter';
+import { ScrollReveal, StaggerContainer, StaggerItem } from '@/components/animations';
 import styles from './page.module.css';
 
 export const metadata: Metadata = {
@@ -62,20 +63,21 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
           </Suspense>
 
           {filteredPosts.length > 0 ? (
-            <div className={styles.postsGrid}>
+            <StaggerContainer className={styles.postsGrid} staggerDelay={0.1}>
               {filteredPosts.map((post) => (
-                <BlogCard
-                  key={post.slug}
-                  title={post.title}
-                  excerpt={post.excerpt}
-                  date={post.date}
-                  category={post.category}
-                  readingTime={post.readingTime}
-                  slug={post.slug}
-                  featuredImage={post.featuredImage}
-                />
+                <StaggerItem key={post.slug}>
+                  <BlogCard
+                    title={post.title}
+                    excerpt={post.excerpt}
+                    date={post.date}
+                    category={post.category}
+                    readingTime={post.readingTime}
+                    slug={post.slug}
+                    featuredImage={post.featuredImage}
+                  />
+                </StaggerItem>
               ))}
-            </div>
+            </StaggerContainer>
           ) : (
             <div className={styles.emptyState}>
               <BookOpen size={48} />
@@ -93,7 +95,7 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
       {/* CTA */}
       <section className={`section bg-gradient ${styles.ctaSection}`}>
         <div className="container">
-          <div className={styles.ctaContent}>
+          <ScrollReveal direction="up" className={styles.ctaContent}>
             <h2>Need Help Getting Started?</h2>
             <p>
               Our team is here to answer your questions about Georgia&apos;s home
@@ -107,7 +109,7 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
                 <Phone size={20} /> Contact Us
               </Link>
             </div>
-          </div>
+          </ScrollReveal>
         </div>
       </section>
     </div>

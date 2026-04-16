@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { LucideIcon, ArrowRight, Phone, CheckCircle, ExternalLink } from 'lucide-react';
+import { ScrollReveal, StaggerContainer, StaggerItem } from '@/components/animations';
 import styles from './ProgramPageTemplate.module.css';
 
 interface ServiceItem {
@@ -88,12 +89,12 @@ export default function ProgramPageTemplate({
       <section className={`section ${styles.targetSection}`}>
         <div className="container">
           <div className={styles.contentGrid}>
-            <div className={styles.contentInfo}>
+            <ScrollReveal direction="left" className={styles.contentInfo}>
               <span className={`${styles.sectionLabel} ${styles[accentColor]}`}>Who We Serve</span>
               <h2>Target Population</h2>
               <p className={styles.contentText}>{targetPopulation}</p>
-            </div>
-            <div className={styles.contentImage}>
+            </ScrollReveal>
+            <ScrollReveal direction="right" delay={0.15} className={styles.contentImage}>
               {populationImage ? (
                 <div className={styles.imageWrapper} style={{ aspectRatio: imageAspectRatio }}>
                   <Image
@@ -109,7 +110,7 @@ export default function ProgramPageTemplate({
                   <span>Population Image</span>
                 </div>
               )}
-            </div>
+            </ScrollReveal>
           </div>
         </div>
       </section>
@@ -118,7 +119,7 @@ export default function ProgramPageTemplate({
       <section className={`section bg-light ${styles.goalSection}`}>
         <div className="container">
           <div className={styles.contentGrid}>
-            <div className={styles.contentImage}>
+            <ScrollReveal direction="left" className={styles.contentImage}>
               {goalImage ? (
                 <div className={styles.imageWrapper} style={{ aspectRatio: imageAspectRatio }}>
                   <Image
@@ -134,12 +135,12 @@ export default function ProgramPageTemplate({
                   <span>Program Goal Image</span>
                 </div>
               )}
-            </div>
-            <div className={styles.contentInfo}>
+            </ScrollReveal>
+            <ScrollReveal direction="right" delay={0.15} className={styles.contentInfo}>
               <span className={`${styles.sectionLabel} ${styles[accentColor]}`}>Our Mission</span>
               <h2>Program Goal</h2>
               <p className={styles.contentText}>{programGoal}</p>
-            </div>
+            </ScrollReveal>
           </div>
         </div>
       </section>
@@ -147,14 +148,16 @@ export default function ProgramPageTemplate({
       {/* Services */}
       <section className={`section ${styles.servicesSection}`}>
         <div className="container">
-          <div className="section-header">
-            <span className={`${styles.sectionLabel} ${styles[accentColor]}`}>What We Provide</span>
-            <h2>Services Offered</h2>
-            <p>Comprehensive care services tailored to meet individual needs</p>
-          </div>
-          <div className={styles.servicesGrid}>
+          <ScrollReveal direction="up">
+            <div className="section-header">
+              <span className={`${styles.sectionLabel} ${styles[accentColor]}`}>What We Provide</span>
+              <h2>Services Offered</h2>
+              <p>Comprehensive care services tailored to meet individual needs</p>
+            </div>
+          </ScrollReveal>
+          <StaggerContainer className={styles.servicesGrid} staggerDelay={0.08}>
             {services.map((service, index) => (
-              <div key={index} className={`${styles.serviceCard} ${styles[accentColor]}`}>
+              <StaggerItem key={index} className={`${styles.serviceCard} ${styles[accentColor]}`}>
                 <div className={styles.serviceIcon}>
                   <CheckCircle size={24} />
                 </div>
@@ -162,9 +165,9 @@ export default function ProgramPageTemplate({
                   <h3>{service.title}</h3>
                   {service.description && <p>{service.description}</p>}
                 </div>
-              </div>
+              </StaggerItem>
             ))}
-          </div>
+          </StaggerContainer>
         </div>
       </section>
 
@@ -172,19 +175,21 @@ export default function ProgramPageTemplate({
       {faqs && faqs.length > 0 && (
         <section className={`section bg-light ${styles.faqSection}`}>
           <div className="container">
-            <div className="section-header">
-              <span className={`${styles.sectionLabel} ${styles[accentColor]}`}>Common Questions</span>
-              <h2>Frequently Asked Questions</h2>
-              <p>Answers to the most common questions about the {fullTitle}</p>
-            </div>
-            <div className={styles.faqList}>
+            <ScrollReveal direction="up">
+              <div className="section-header">
+                <span className={`${styles.sectionLabel} ${styles[accentColor]}`}>Common Questions</span>
+                <h2>Frequently Asked Questions</h2>
+                <p>Answers to the most common questions about the {fullTitle}</p>
+              </div>
+            </ScrollReveal>
+            <StaggerContainer className={styles.faqList} staggerDelay={0.08}>
               {faqs.map((faq, index) => (
-                <div key={index} className={styles.faqItem}>
+                <StaggerItem key={index} className={styles.faqItem}>
                   <h3 className={styles.faqQuestion}>{faq.question}</h3>
                   <p className={styles.faqAnswer}>{faq.answer}</p>
-                </div>
+                </StaggerItem>
               ))}
-            </div>
+            </StaggerContainer>
           </div>
         </section>
       )}
@@ -193,28 +198,31 @@ export default function ProgramPageTemplate({
       {officialResources && officialResources.length > 0 && (
         <section className={`section ${styles.resourcesSection}`}>
           <div className="container">
-            <div className="section-header">
-              <span className={`${styles.sectionLabel} ${styles[accentColor]}`}>Official Resources</span>
-              <h2>Helpful Links</h2>
-              <p>Official Georgia and federal government resources for the {fullTitle}</p>
-            </div>
-            <div className={styles.resourcesList}>
+            <ScrollReveal direction="up">
+              <div className="section-header">
+                <span className={`${styles.sectionLabel} ${styles[accentColor]}`}>Official Resources</span>
+                <h2>Helpful Links</h2>
+                <p>Official Georgia and federal government resources for the {fullTitle}</p>
+              </div>
+            </ScrollReveal>
+            <StaggerContainer className={styles.resourcesList} staggerDelay={0.08}>
               {officialResources.map((resource, index) => (
-                <a
-                  key={index}
-                  href={resource.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={styles.resourceCard}
-                >
-                  <div className={styles.resourceInfo}>
-                    <h3 className={styles.resourceLabel}>{resource.label}</h3>
-                    <p className={styles.resourceDesc}>{resource.description}</p>
-                  </div>
-                  <ExternalLink size={18} className={styles.resourceIcon} />
-                </a>
+                <StaggerItem key={index}>
+                  <a
+                    href={resource.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={styles.resourceCard}
+                  >
+                    <div className={styles.resourceInfo}>
+                      <h3 className={styles.resourceLabel}>{resource.label}</h3>
+                      <p className={styles.resourceDesc}>{resource.description}</p>
+                    </div>
+                    <ExternalLink size={18} className={styles.resourceIcon} />
+                  </a>
+                </StaggerItem>
               ))}
-            </div>
+            </StaggerContainer>
           </div>
         </section>
       )}
@@ -222,11 +230,11 @@ export default function ProgramPageTemplate({
       {/* CTA Section */}
       <section className={`section bg-gradient ${styles.ctaSection}`}>
         <div className="container">
-          <div className={styles.ctaContent}>
+          <ScrollReveal direction="up" className={styles.ctaContent}>
             <h2>Ready to Learn More?</h2>
             <p>
-              Contact us today to discuss how the {programName} program can benefit you 
-              or your loved one. Our team is here to answer your questions and guide you 
+              Contact us today to discuss how the {programName} program can benefit you
+              or your loved one. Our team is here to answer your questions and guide you
               through the process.
             </p>
             <div className={styles.ctaActions}>
@@ -237,7 +245,7 @@ export default function ProgramPageTemplate({
                 <Phone size={20} /> Contact Us
               </Link>
             </div>
-          </div>
+          </ScrollReveal>
         </div>
       </section>
     </div>

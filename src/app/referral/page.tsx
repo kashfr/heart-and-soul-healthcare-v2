@@ -21,6 +21,7 @@ import {
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { processReferralSubmission } from '@/app/actions';
+import { ScrollReveal } from '@/components/animations';
 import styles from './page.module.css';
 
 // County data organized by tier
@@ -382,6 +383,7 @@ export default function ReferralPage() {
       {/* Form Section */}
       <section className={`section ${styles.formSection}`}>
         <div className="container">
+          <ScrollReveal direction="up">
           {/* Progress Steps */}
           <div className={styles.progressContainer}>
             <div className={styles.progressSteps}>
@@ -879,6 +881,7 @@ export default function ReferralPage() {
               )}
             </div>
           </form>
+          </ScrollReveal>
         </div>
       </section>
     </div>

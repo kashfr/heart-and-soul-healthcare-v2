@@ -12,12 +12,12 @@ export const metadata: Metadata = {
     url: 'https://www.heartandsoulhc.org',
   },
 };
-import { 
-  Heart, 
-  Shield, 
-  Users, 
-  Clock, 
-  Award, 
+import {
+  Heart,
+  Shield,
+  Users,
+  Clock,
+  Award,
   ArrowRight,
   Baby,
   Brain,
@@ -28,6 +28,21 @@ import {
 } from 'lucide-react';
 import Carousel from '@/components/Carousel';
 import ProgramCard from '@/components/ProgramCard';
+import {
+  AnimatedTrustGrid,
+  AnimatedIntroContent,
+  AnimatedIntroImage,
+  AnimatedBadge,
+  AnimatedProgramsGrid,
+  AnimatedProgramItem,
+  AnimatedValuesContent,
+  AnimatedValuesImage,
+  AnimatedValuesList,
+  AnimatedValueItem,
+  AnimatedTestimonial,
+  AnimatedCTA,
+} from '@/components/animations/HomepageAnimations';
+import { ScrollReveal } from '@/components/animations';
 import styles from './page.module.css';
 
 const programs = [
@@ -104,14 +119,13 @@ export default function Home() {
       {/* Trust Indicators */}
       <section className={styles.trustSection}>
         <div className="container">
-          <div className={styles.trustGrid}>
-            {stats.map((stat, index) => (
-              <div key={index} className={styles.trustItem}>
-                <span className={styles.trustNumber}>{stat.number}</span>
-                <span className={styles.trustLabel}>{stat.label}</span>
-              </div>
-            ))}
-          </div>
+          <AnimatedTrustGrid
+            stats={stats}
+            className={styles.trustGrid}
+            itemClassName={styles.trustItem}
+            numberClassName={styles.trustNumber}
+            labelClassName={styles.trustLabel}
+          />
         </div>
       </section>
 
@@ -119,18 +133,18 @@ export default function Home() {
       <section className={`section ${styles.introSection}`}>
         <div className="container">
           <div className={styles.introGrid}>
-            <div className={styles.introContent}>
+            <AnimatedIntroContent className={styles.introContent}>
               <span className={styles.sectionLabel}>Welcome to Heart & Soul Healthcare</span>
               <h2>Dedicated to Enhancing Lives Through Professional Home Care</h2>
               <p>
-                At Heart and Soul Healthcare, we believe that everyone deserves access to quality 
-                healthcare in the comfort and familiarity of their own home. Our dedicated team of 
-                professionals is committed to providing exceptional care services that promote 
+                At Heart and Soul Healthcare, we believe that everyone deserves access to quality
+                healthcare in the comfort and familiarity of their own home. Our dedicated team of
+                professionals is committed to providing exceptional care services that promote
                 independence, dignity, and an enhanced quality of life.
               </p>
               <p>
-                We specialize in serving individuals across Georgia through various waiver programs, 
-                ensuring that our clients receive the personalized support they need to thrive in 
+                We specialize in serving individuals across Georgia through various waiver programs,
+                ensuring that our clients receive the personalized support they need to thrive in
                 their communities.
               </p>
               <div className={styles.introActions}>
@@ -141,8 +155,8 @@ export default function Home() {
                   Make a Referral
                 </Link>
               </div>
-            </div>
-            <div className={styles.introImage}>
+            </AnimatedIntroContent>
+            <AnimatedIntroImage className={styles.introImage}>
               <div className={styles.imageWrapper}>
                 <Image
                   src="/images/caring-professional.png"
@@ -152,14 +166,14 @@ export default function Home() {
                   sizes="(max-width: 768px) 100vw, 50vw"
                 />
               </div>
-              <div className={styles.experienceBadge}>
+              <AnimatedBadge className={styles.experienceBadge}>
                 <Award size={32} />
                 <div>
                   <span className={styles.badgeNumber}>15+</span>
                   <span className={styles.badgeText}>Years Experience</span>
                 </div>
-              </div>
-            </div>
+              </AnimatedBadge>
+            </AnimatedIntroImage>
           </div>
         </div>
       </section>
@@ -167,24 +181,30 @@ export default function Home() {
       {/* Programs Section */}
       <section className={`section bg-light ${styles.programsSection}`}>
         <div className="container">
-          <div className="section-header">
-            <span className={styles.sectionLabel}>What We Offer</span>
-            <h2>Our Care Programs</h2>
-            <p>
-              We provide comprehensive home health services through Georgia&apos;s waiver 
-              programs, designed to meet the unique needs of each individual we serve.
-            </p>
-          </div>
-          <div className={styles.programsGrid}>
+          <ScrollReveal direction="up">
+            <div className="section-header">
+              <span className={styles.sectionLabel}>What We Offer</span>
+              <h2>Our Care Programs</h2>
+              <p>
+                We provide comprehensive home health services through Georgia&apos;s waiver
+                programs, designed to meet the unique needs of each individual we serve.
+              </p>
+            </div>
+          </ScrollReveal>
+          <AnimatedProgramsGrid className={styles.programsGrid}>
             {programs.map((program, index) => (
-              <ProgramCard key={index} {...program} />
+              <AnimatedProgramItem key={index}>
+                <ProgramCard {...program} />
+              </AnimatedProgramItem>
             ))}
-          </div>
-          <div className={styles.programsCta}>
-            <Link href="/programs/other" className="btn btn-secondary">
-              View Other Programs <ArrowRight size={18} />
-            </Link>
-          </div>
+          </AnimatedProgramsGrid>
+          <ScrollReveal direction="up" delay={0.4}>
+            <div className={styles.programsCta}>
+              <Link href="/programs/other" className="btn btn-secondary">
+                View Other Programs <ArrowRight size={18} />
+              </Link>
+            </div>
+          </ScrollReveal>
         </div>
       </section>
 
@@ -192,17 +212,17 @@ export default function Home() {
       <section className={`section ${styles.valuesSection}`}>
         <div className="container">
           <div className={styles.valuesGrid}>
-            <div className={styles.valuesContent}>
+            <AnimatedValuesContent className={styles.valuesContent}>
               <span className={styles.sectionLabel}>Why Choose Us</span>
               <h2>Committed to Excellence in Care</h2>
               <p>
-                At Heart and Soul Healthcare, our commitment goes beyond providing services. 
-                We build lasting relationships with our clients and their families, ensuring 
+                At Heart and Soul Healthcare, our commitment goes beyond providing services.
+                We build lasting relationships with our clients and their families, ensuring
                 peace of mind and improved quality of life.
               </p>
-              <div className={styles.valuesList}>
+              <AnimatedValuesList className={styles.valuesList}>
                 {values.map((value, index) => (
-                  <div key={index} className={styles.valueItem}>
+                  <AnimatedValueItem key={index} className={styles.valueItem}>
                     <div className={styles.valueIcon}>
                       <value.icon size={24} />
                     </div>
@@ -210,11 +230,11 @@ export default function Home() {
                       <h4>{value.title}</h4>
                       <p>{value.description}</p>
                     </div>
-                  </div>
+                  </AnimatedValueItem>
                 ))}
-              </div>
-            </div>
-            <div className={styles.valuesImage}>
+              </AnimatedValuesList>
+            </AnimatedValuesContent>
+            <AnimatedValuesImage className={styles.valuesImage}>
               <div className={styles.imageWrapper}>
                 <Image
                   src="/images/care-team-v2.png"
@@ -224,7 +244,7 @@ export default function Home() {
                   sizes="(max-width: 768px) 100vw, 50vw"
                 />
               </div>
-            </div>
+            </AnimatedValuesImage>
           </div>
         </div>
       </section>
@@ -232,15 +252,15 @@ export default function Home() {
       {/* Testimonial Section */}
       <section className={`section bg-gradient ${styles.testimonialSection}`}>
         <div className="container">
-          <div className={styles.testimonialContent}>
+          <AnimatedTestimonial className={styles.testimonialContent}>
             <div className={styles.stars}>
               {[...Array(5)].map((_, i) => (
                 <Star key={i} size={24} fill="currentColor" />
               ))}
             </div>
             <blockquote className={styles.quote}>
-              &ldquo;Heart and Soul Healthcare has been a blessing for our family. The caregivers 
-              are not only professional but genuinely caring. They treat my mother with such 
+              &ldquo;Heart and Soul Healthcare has been a blessing for our family. The caregivers
+              are not only professional but genuinely caring. They treat my mother with such
               dignity and respect. We couldn&apos;t be more grateful for their exceptional service.&rdquo;
             </blockquote>
             <div className={styles.testimonialAuthor}>
@@ -252,18 +272,18 @@ export default function Home() {
                 <span className={styles.authorRole}>Client&apos;s Daughter</span>
               </div>
             </div>
-          </div>
+          </AnimatedTestimonial>
         </div>
       </section>
 
       {/* CTA Section */}
       <section className={`section ${styles.ctaSection}`}>
         <div className="container">
-          <div className={styles.ctaContent}>
+          <AnimatedCTA className={styles.ctaContent}>
             <div className={styles.ctaText}>
               <h2>Ready to Get Started?</h2>
               <p>
-                We&apos;re here to help you or your loved ones receive the quality care they deserve. 
+                We&apos;re here to help you or your loved ones receive the quality care they deserve.
                 Contact us today for a consultation or to make a referral.
               </p>
             </div>
@@ -275,7 +295,7 @@ export default function Home() {
                 <Phone size={20} /> Contact Us
               </Link>
             </div>
-          </div>
+          </AnimatedCTA>
         </div>
       </section>
     </>
