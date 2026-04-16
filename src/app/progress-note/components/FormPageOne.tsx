@@ -309,7 +309,6 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
               className={styles.input}
               type="date"
               id="q6_dateofService"
-              defaultValue={today}
               max={today}
               required
               {...register('q6_dateofService', {

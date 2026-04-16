@@ -311,8 +311,7 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
           </span>
           <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Detailed Appearance Findings</div>
         </div>
-        {expandedSections.detailedAppearance && (
-          <div>
+        <div style={{ display: expandedSections.detailedAppearance ? 'block' : 'none' }}>
             <div className={styles.row} style={{ marginTop: '10px' }}>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q15_skinColor">Skin Color</label>
@@ -359,8 +358,7 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                 />
               </div>
             </div>
-          </div>
-        )}
+        </div>
       </div>
 
       <div style={{ position: 'relative' }}>
@@ -530,8 +528,7 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
             </span>
             <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Additional Details</div>
           </div>
-          {expandedSections.additionalDetails && (
-            <div>
+          <div style={{ display: expandedSections.additionalDetails ? 'block' : 'none' }}>
               <div className={styles.row}>
                 <div className={styles.f}>
                   <label className={styles.label} htmlFor="q21_oxygenSource">Oxygen Source</label>
@@ -562,8 +559,7 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                   />
                 </div>
               </div>
-            </div>
-          )}
+          </div>
         </div>
       </div>
     </div>

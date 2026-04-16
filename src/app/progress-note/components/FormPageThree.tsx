@@ -49,8 +49,7 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
           </span>
           <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Activity Level</div>
         </div>
-        {expandedSections.activity && (
-          <div>
+        <div style={{ display: expandedSections.activity ? 'block' : 'none' }}>
             <div className={styles.radioRow}>
               <label>
                 <DeselectableRadio
@@ -80,9 +79,8 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                 />
                 Ambulates independently
               </label>
-            </div>
           </div>
-        )}
+        </div>
 
         {/* Pain Assessment Section */}
         <div
@@ -94,8 +92,7 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
           </span>
           <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Pain Assessment</div>
         </div>
-        {expandedSections.pain && (
-          <div>
+        <div style={{ display: expandedSections.pain ? 'block' : 'none' }}>
             {/* Scale selection and score — scale first, then score */}
             <div className={styles.row}>
               <div className={styles.f}>
@@ -386,9 +383,8 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                   placeholder="Additional pain observations..."
                 />
               </div>
-            </div>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Safety Checklist */}
@@ -544,8 +540,7 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
           </span>
           <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Neurological</div>
         </div>
-        {expandedSections.neuro && (
-          <div>
+        <div style={{ display: expandedSections.neuro ? 'block' : 'none' }}>
             <div className={styles.row}>
               <div className={styles.f}>
                 <label className={styles.label}>Status</label>
@@ -628,9 +623,8 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                   rows={2}
                 />
               </div>
-            </div>
           </div>
-        )}
+        </div>
 
         {/* Cardiovascular */}
         <div
@@ -642,8 +636,7 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
           </span>
           <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Cardiovascular</div>
         </div>
-        {expandedSections.cardio && (
-          <div>
+        <div style={{ display: expandedSections.cardio ? 'block' : 'none' }}>
             <div className={styles.row}>
               <div className={styles.f}>
                 <label className={styles.label}>Status</label>
@@ -726,9 +719,8 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                   rows={2}
                 />
               </div>
-            </div>
           </div>
-        )}
+        </div>
 
         {/* Respiratory */}
         <div
@@ -740,8 +732,7 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
           </span>
           <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Respiratory</div>
         </div>
-        {expandedSections.respiratory && (
-          <div>
+        <div style={{ display: expandedSections.respiratory ? 'block' : 'none' }}>
             <div className={styles.row}>
               <div className={styles.f}>
                 <label className={styles.label}>Status</label>
@@ -829,9 +820,8 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                   rows={2}
                 />
               </div>
-            </div>
           </div>
-        )}
+        </div>
 
         {/* Gastrointestinal */}
         <div
@@ -843,8 +833,7 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
           </span>
           <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Gastrointestinal</div>
         </div>
-        {expandedSections.gi && (
-          <div>
+        <div style={{ display: expandedSections.gi ? 'block' : 'none' }}>
             <div className={styles.row}>
               <div className={styles.f}>
                 <label className={styles.label}>Status</label>
@@ -985,9 +974,8 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                   rows={2}
                 />
               </div>
-            </div>
           </div>
-        )}
+        </div>
 
         {/* Genitourinary */}
         <div
@@ -999,8 +987,7 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
           </span>
           <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Genitourinary</div>
         </div>
-        {expandedSections.gu && (
-          <div>
+        <div style={{ display: expandedSections.gu ? 'block' : 'none' }}>
             <div className={styles.row}>
               <div className={styles.f}>
                 <label className={styles.label}>Status</label>
@@ -1135,9 +1122,8 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                   rows={2}
                 />
               </div>
-            </div>
           </div>
-        )}
+        </div>
 
         {/* Reproductive */}
         <div
@@ -1149,8 +1135,7 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
           </span>
           <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Reproductive</div>
         </div>
-        {expandedSections.reproductive && (
-          <div>
+        <div style={{ display: expandedSections.reproductive ? 'block' : 'none' }}>
             <div className={styles.row}>
               <div className={styles.f}>
                 <label className={styles.label}>Status</label>
@@ -1190,9 +1175,8 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                   rows={2}
                 />
               </div>
-            </div>
           </div>
-        )}
+        </div>
 
         {/* Skin / Integumentary */}
         <div
@@ -1204,8 +1188,7 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
           </span>
           <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Skin / Integumentary</div>
         </div>
-        {expandedSections.skin && (
-          <div>
+        <div style={{ display: expandedSections.skin ? 'block' : 'none' }}>
             <div className={styles.row}>
               <div className={styles.f}>
                 <label className={styles.label}>Status</label>
@@ -1315,9 +1298,8 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                   rows={2}
                 />
               </div>
-            </div>
           </div>
-        )}
+        </div>
 
         {/* Behavioral */}
         <div
@@ -1329,8 +1311,7 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
           </span>
           <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Behavioral</div>
         </div>
-        {expandedSections.behavioral && (
-          <div>
+        <div style={{ display: expandedSections.behavioral ? 'block' : 'none' }}>
             <div className={styles.row}>
               <div className={styles.f}>
                 <label className={styles.label}>Status</label>
@@ -1393,9 +1374,8 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                   rows={2}
                 />
               </div>
-            </div>
           </div>
-        )}
+        </div>
 
         {/* Endocrine (Diabetes Management) */}
         <div
@@ -1407,8 +1387,7 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
           </span>
           <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Endocrine (Diabetes Management)</div>
         </div>
-        {expandedSections.endocrine && (
-          <div>
+        <div style={{ display: expandedSections.endocrine ? 'block' : 'none' }}>
             <div className={styles.row}>
               <div className={styles.f}>
                 <label className={styles.label}>Status</label>
@@ -1589,9 +1568,8 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                   placeholder="Additional endocrine/diabetes observations..."
                 />
               </div>
-            </div>
           </div>
-        )}
+        </div>
       </div>
       </div>
     </div>
