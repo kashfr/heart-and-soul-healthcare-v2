@@ -26,8 +26,11 @@ export default function FormPageSeven({ formRef, register, watch, setValue, cont
 
   // Set total hours from prop when editing
   useEffect(() => {
-    if (initialTotalHours) setTotalHours(initialTotalHours);
-  }, [initialTotalHours]);
+    if (initialTotalHours) {
+      setTotalHours(initialTotalHours);
+      setValue('q9_totalHours', initialTotalHours);
+    }
+  }, [initialTotalHours, setValue]);
 
   const toggleSection = (section: string) => {
     setExpandedSections((prev) => ({
@@ -89,14 +92,16 @@ export default function FormPageSeven({ formRef, register, watch, setValue, cont
     img.src = initialSignature;
   }, [initialSignature, setValue]);
 
-  // Get position from either mouse or touch event
+  // Get position from either mouse or touch event, scaled to canvas intrinsic size
   const getPos = (e: React.MouseEvent | React.TouchEvent, canvas: HTMLCanvasElement) => {
     const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
     if ('touches' in e) {
       const touch = e.touches[0] || e.changedTouches[0];
-      return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+      return { x: (touch.clientX - rect.left) * scaleX, y: (touch.clientY - rect.top) * scaleY };
     }
-    return { x: (e as React.MouseEvent).clientX - rect.left, y: (e as React.MouseEvent).clientY - rect.top };
+    return { x: ((e as React.MouseEvent).clientX - rect.left) * scaleX, y: ((e as React.MouseEvent).clientY - rect.top) * scaleY };
   };
 
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
@@ -274,7 +279,6 @@ export default function FormPageSeven({ formRef, register, watch, setValue, cont
               type="text"
               id="q9_totalHours"
               {...register('q9_totalHours')}
-              value={totalHours}
               readOnly
               style={{ backgroundColor: '#f0f0f0' }}
             />
