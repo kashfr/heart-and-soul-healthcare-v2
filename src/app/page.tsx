@@ -42,7 +42,7 @@ import {
   AnimatedTestimonial,
   AnimatedCTA,
 } from '@/components/animations/HomepageAnimations';
-import { ScrollReveal } from '@/components/animations';
+import { ScrollReveal, TextReveal, SectionDivider } from '@/components/animations';
 import styles from './page.module.css';
 
 const programs = [
@@ -129,13 +129,15 @@ export default function Home() {
         </div>
       </section>
 
+      <SectionDivider from="var(--color-primary)" to="#ffffff" height={60} />
+
       {/* Intro Section */}
       <section className={`section ${styles.introSection}`}>
         <div className="container">
           <div className={styles.introGrid}>
             <AnimatedIntroContent className={styles.introContent}>
               <span className={styles.sectionLabel}>Welcome to Heart & Soul Healthcare</span>
-              <h2>Dedicated to Enhancing Lives Through Professional Home Care</h2>
+              <TextReveal as="h2">Dedicated to Enhancing Lives Through Professional Home Care</TextReveal>
               <p>
                 At Heart and Soul Healthcare, we believe that everyone deserves access to quality
                 healthcare in the comfort and familiarity of their own home. Our dedicated team of
@@ -178,13 +180,15 @@ export default function Home() {
         </div>
       </section>
 
+      <SectionDivider from="#ffffff" to="var(--color-gray-50)" height={60} />
+
       {/* Programs Section */}
       <section className={`section bg-light ${styles.programsSection}`}>
         <div className="container">
           <ScrollReveal direction="up">
             <div className="section-header">
               <span className={styles.sectionLabel}>What We Offer</span>
-              <h2>Our Care Programs</h2>
+              <TextReveal as="h2">Our Care Programs</TextReveal>
               <p>
                 We provide comprehensive home health services through Georgia&apos;s waiver
                 programs, designed to meet the unique needs of each individual we serve.
@@ -208,13 +212,15 @@ export default function Home() {
         </div>
       </section>
 
+      <SectionDivider from="var(--color-gray-50)" to="#ffffff" height={60} />
+
       {/* Why Choose Us */}
       <section className={`section ${styles.valuesSection}`}>
         <div className="container">
           <div className={styles.valuesGrid}>
             <AnimatedValuesContent className={styles.valuesContent}>
               <span className={styles.sectionLabel}>Why Choose Us</span>
-              <h2>Committed to Excellence in Care</h2>
+              <TextReveal as="h2">Committed to Excellence in Care</TextReveal>
               <p>
                 At Heart and Soul Healthcare, our commitment goes beyond providing services.
                 We build lasting relationships with our clients and their families, ensuring
@@ -249,6 +255,8 @@ export default function Home() {
         </div>
       </section>
 
+      <SectionDivider from="#ffffff" to="var(--color-primary)" height={60} />
+
       {/* Testimonial Section */}
       <section className={`section bg-gradient ${styles.testimonialSection}`}>
         <div className="container">
@@ -276,12 +284,14 @@ export default function Home() {
         </div>
       </section>
 
+      <SectionDivider from="var(--color-primary)" to="var(--color-gray-50)" height={60} />
+
       {/* CTA Section */}
       <section className={`section ${styles.ctaSection}`}>
         <div className="container">
           <AnimatedCTA className={styles.ctaContent}>
             <div className={styles.ctaText}>
-              <h2>Ready to Get Started?</h2>
+              <TextReveal as="h2">Ready to Get Started?</TextReveal>
               <p>
                 We&apos;re here to help you or your loved ones receive the quality care they deserve.
                 Contact us today for a consultation or to make a referral.

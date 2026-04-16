@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { ChevronLeft, ChevronRight, ArrowRight } from 'lucide-react';
+import { motion, useScroll, useTransform } from 'framer-motion';
 import styles from './Carousel.module.css';
 
 interface CarouselSlide {
@@ -64,6 +65,14 @@ export default function Carousel() {
   
   const startTimeRef = useRef<number>(Date.now());
   const animationFrameRef = useRef<number | undefined>(undefined);
+  const carouselRef = useRef<HTMLDivElement>(null);
+
+  // Parallax: image shifts subtly as user scrolls past the hero
+  const { scrollYProgress } = useScroll({
+    target: carouselRef,
+    offset: ['start start', 'end start'],
+  });
+  const imageY = useTransform(scrollYProgress, [0, 1], ['0%', '20%']);
   const progressRef = useRef(0);
 
   useEffect(() => {
@@ -117,7 +126,8 @@ export default function Carousel() {
   }, [nextSlide, currentSlide]);
 
   return (
-    <div 
+    <div
+      ref={carouselRef}
       className={styles.carousel}
     >
       <div className={styles.slidesContainer}>
@@ -144,14 +154,16 @@ export default function Carousel() {
                 {/* Right Image Side with Dots Wrapper */}
                 <div className={styles.imageSection}>
                   <div className={styles.imageWrapper}>
-                    <Image
-                      src={slide.image}
-                      alt={slide.subtitle}
-                      fill
-                      priority={index === 0}
-                      className={styles.slideImage}
-                      quality={75}
-                    />
+                    <motion.div style={{ y: imageY, position: 'relative', width: '100%', height: '100%', scale: 1.1 }}>
+                      <Image
+                        src={slide.image}
+                        alt={slide.subtitle}
+                        fill
+                        priority={index === 0}
+                        className={styles.slideImage}
+                        quality={75}
+                      />
+                    </motion.div>
                   </div>
                   {/* Mobile-only dots positioned below image */}
                   <div className={styles.mobileDots}>

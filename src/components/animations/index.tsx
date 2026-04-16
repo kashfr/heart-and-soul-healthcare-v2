@@ -289,6 +289,31 @@ export function FloatingElement({ children, className, style }: FloatingElementP
 }
 
 /* ------------------------------------------------------------------ */
+/*  SectionDivider — gradient bridge between sections                  */
+/* ------------------------------------------------------------------ */
+interface SectionDividerProps {
+  from: string;
+  to: string;
+  height?: number;
+}
+
+export function SectionDivider({ from, to, height = 80 }: SectionDividerProps) {
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        height: `${height}px`,
+        background: `linear-gradient(to bottom, ${from}, ${to})`,
+        marginTop: '-1px',
+        marginBottom: '-1px',
+        position: 'relative',
+        zIndex: 1,
+      }}
+    />
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  MotionCard — hover spring effect for cards                         */
 /* ------------------------------------------------------------------ */
 interface MotionCardProps {
