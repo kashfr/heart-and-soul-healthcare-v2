@@ -137,12 +137,24 @@ function ProgressNotePageInner() {
   const isFirstPage = activeIndex === 0;
 
   const handleCredentialChange = (value: string) => {
+    const oldCredential = credential;
     const newCredential = value as CredentialTier;
     setCredential(newCredential);
     // If current page is not in the new active pages, go to page 1
     const newActivePages = getActivePages(newCredential);
     if (!newActivePages.includes(currentPage)) {
       setCurrentPage(1);
+    }
+    // Clear LPN/RN-only radio values when downgrading to HHA/CNA
+    const wasLpnRn = oldCredential === 'LPN' || oldCredential === 'RN';
+    const isNowLpnRn = newCredential === 'LPN' || newCredential === 'RN';
+    if (wasLpnRn && !isNowLpnRn) {
+      // Clear radio values for skilled nursing (page 5) and LPN/RN-only sections
+      const lpnRnRadioKeys = Object.keys(radioState).filter(key =>
+        key.startsWith('q43_') || key.startsWith('q41_goal') || key.startsWith('q52_physician') ||
+        key.startsWith('q55_') || key.startsWith('q41_overallCarePlan')
+      );
+      lpnRnRadioKeys.forEach(key => setRadio(key, null));
     }
   };
 
@@ -172,6 +184,7 @@ function ProgressNotePageInner() {
         const data = await getSubmission(editId);
         if (!data) {
           alert('Submission not found.');
+          router.push('/progress-note/submissions');
           return;
         }
 
@@ -231,6 +244,7 @@ function ProgressNotePageInner() {
       } catch (error) {
         console.error('Failed to load submission for editing:', error);
         alert('Failed to load submission data.');
+        router.push('/progress-note/submissions');
       }
     };
 
@@ -240,7 +254,7 @@ function ProgressNotePageInner() {
   const handleAddPatient = async (patient: Patient) => {
     try {
       const newId = await addPatient(patient);
-      setPatients([...patients, { ...patient, id: newId }]);
+      setPatients(prev => [...prev, { ...patient, id: newId }]);
     } catch (error) {
       console.error('Failed to add patient:', error);
       alert('Failed to add patient. Please try again.');
@@ -250,7 +264,7 @@ function ProgressNotePageInner() {
   const handleUpdatePatient = async (patientId: string, data: Partial<Patient>) => {
     try {
       await updatePatient(patientId, data);
-      setPatients(patients.map(p => p.id === patientId ? { ...p, ...data } : p));
+      setPatients(prev => prev.map(p => p.id === patientId ? { ...p, ...data } : p));
     } catch (error) {
       console.error('Failed to update patient:', error);
       alert('Failed to update patient. Please try again.');

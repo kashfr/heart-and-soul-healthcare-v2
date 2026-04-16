@@ -25,7 +25,14 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
     endocrine: false,
   });
 
-  const [painScale, setPainScale] = useState<string>('');
+  // Initialize painScale from RHF value (for edit mode and localStorage restore)
+  const watchedScale = watch('q24_scaleUsed') || '';
+  const [painScale, setPainScale] = useState<string>(watchedScale);
+
+  // Sync painScale when RHF value changes (e.g., from reset() in edit mode)
+  if (watchedScale && watchedScale !== painScale) {
+    setPainScale(watchedScale);
+  }
 
   const toggleSection = (section: string) => {
     setExpandedSections((prev) => ({
