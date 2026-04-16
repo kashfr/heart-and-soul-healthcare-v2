@@ -59,22 +59,14 @@ export interface ProgressNoteFormData {
   q25_painLocation: string;
   q26_painDescription: string;
 
-  // Page 3: System Assessments
-  q30_neuroAssessment: string;
+  // Page 3: System Assessments (status fields set via DeselectableRadio, accessed as dynamic keys)
   q30_neuroNotes: string;
-  q31_cardioAssessment: string;
   q31_cardioNotes: string;
-  q32_respAssessment: string;
   q32_respNotes: string;
-  q33_giAssessment: string;
   q33_giNotes: string;
-  q34_guAssessment: string;
   q34_guNotes: string;
-  q35_reproAssessment: string;
   q35_reproNotes: string;
-  q36_skinAssessment: string;
   q36_skinNotes: string;
-  q37_behaveAssessment: string;
   q37_behaveNotes: string;
 
   // Page 4: Skilled Nursing Interventions
@@ -100,8 +92,6 @@ export interface ProgressNoteFormData {
   q53_physicianName: string;
   q54_notificationTime: string;
   q55_physicianOrders: string;
-  q56_incidents: string;
-  q57_incidentDetails: string;
   q58_followup: string;
   q59_followupDetails: string;
   q60_nextShiftPlan: string;
@@ -249,19 +239,10 @@ export function toProgressNoteData(
   ].filter(Boolean);
   const address = addressParts.join(', ');
 
-  // Determine system statuses
-  function systemStatus(assessment: string, defaultNormal: string): string {
-    if (!assessment) return 'WNL';
-    const values = assessment.split(',').map((v) => v.trim());
-    // If only the "normal" value is checked, it's WNL
-    if (values.length === 1 && values[0].toLowerCase().includes(defaultNormal.toLowerCase())) {
-      return 'WNL';
-    }
-    // If any non-normal values, it's abnormal
-    const hasAbnormal = values.some(
-      (v) => !v.toLowerCase().includes(defaultNormal.toLowerCase())
-    );
-    return hasAbnormal ? 'ABNORMAL' : 'WNL';
+  // System assessment status — the form now uses DeselectableRadio with WNL/Abnormal values
+  function systemStatus(statusValue: string): string {
+    if (!statusValue) return 'WNL';
+    return statusValue === 'Abnormal' ? 'ABNORMAL' : 'WNL';
   }
 
   // Build pain assessment string
@@ -281,23 +262,20 @@ export function toProgressNoteData(
     physicianNotified += `. Orders: ${form.q55_physicianOrders}`;
   }
 
-  // Build incidents string
-  let incidents = form.q56_incidents || 'No incidents';
-  if (form.q57_incidentDetails) {
-    incidents += `: ${form.q57_incidentDetails}`;
-  }
-
   // Build follow-up string
   let followUp = form.q58_followup || 'None';
   if (form.q59_followupDetails) {
     followUp += `. ${form.q59_followupDetails}`;
   }
 
+  // Access dynamic fields from the form data (radio/checkbox values merged at submit time)
+  const formAny = form as unknown as Record<string, string>;
+
   return {
     client: {
       name: form.q3_clientName || '',
       dob: formatDateUS(form.q4_dateofBirth),
-      age: parseInt(form.q5_ageYears || '0', 10),
+      age: form.q5_ageYears || '0',
       diagnosis: form.q10_primaryDiagnosis || '',
       address,
     },
@@ -312,9 +290,9 @@ export function toProgressNoteData(
       credential: form.q12_credential || '',
     },
     status: {
-      alertness: form.q13_orientationLevel || '',
-      orientation: form.q14_behavior || '',
-      appearance: form.q15_appearance || '',
+      alertness: formAny.q13_alertnessLevel || '',
+      orientation: formAny.q13_orientationLevel || '',
+      appearance: formAny.q15_appearance || '',
     },
     vitals: {
       temp: form.q16_temperature || '',
@@ -331,43 +309,43 @@ export function toProgressNoteData(
     systems: [
       {
         system: 'Neurological',
-        status: systemStatus(form.q30_neuroAssessment, 'alert and oriented'),
-        notes: [form.q30_neuroAssessment, form.q30_neuroNotes].filter(Boolean).join('. '),
+        status: systemStatus(formAny.q30_neuroStatus),
+        notes: [formAny.q30_neuroStatus, form.q30_neuroNotes].filter(Boolean).join('. '),
       },
       {
         system: 'Cardiovascular',
-        status: systemStatus(form.q31_cardioAssessment, 'heart rate regular'),
-        notes: [form.q31_cardioAssessment, form.q31_cardioNotes].filter(Boolean).join('. '),
+        status: systemStatus(formAny.q31_cardioStatus),
+        notes: [formAny.q31_cardioStatus, form.q31_cardioNotes].filter(Boolean).join('. '),
       },
       {
         system: 'Respiratory',
-        status: systemStatus(form.q32_respAssessment, 'clear bilaterally'),
-        notes: [form.q32_respAssessment, form.q32_respNotes].filter(Boolean).join('. '),
+        status: systemStatus(formAny.q32_respStatus),
+        notes: [formAny.q32_respStatus, form.q32_respNotes].filter(Boolean).join('. '),
       },
       {
         system: 'Gastrointestinal',
-        status: systemStatus(form.q33_giAssessment, 'appetite adequate'),
-        notes: [form.q33_giAssessment, form.q33_giNotes].filter(Boolean).join('. '),
+        status: systemStatus(formAny.q33_giStatus),
+        notes: [formAny.q33_giStatus, form.q33_giNotes].filter(Boolean).join('. '),
       },
       {
         system: 'Genitourinary',
-        status: systemStatus(form.q34_guAssessment, 'normal urination'),
-        notes: [form.q34_guAssessment, form.q34_guNotes].filter(Boolean).join('. '),
+        status: systemStatus(formAny.q34_guStatus),
+        notes: [formAny.q34_guStatus, form.q34_guNotes].filter(Boolean).join('. '),
       },
       {
         system: 'Reproductive',
-        status: systemStatus(form.q35_reproAssessment, 'no abnormalities'),
-        notes: [form.q35_reproAssessment, form.q35_reproNotes].filter(Boolean).join('. '),
+        status: systemStatus(formAny.q35_reproStatus),
+        notes: [formAny.q35_reproStatus, form.q35_reproNotes].filter(Boolean).join('. '),
       },
       {
         system: 'Skin/Integumentary',
-        status: systemStatus(form.q36_skinAssessment, 'intact'),
-        notes: [form.q36_skinAssessment, form.q36_skinNotes].filter(Boolean).join('. '),
+        status: systemStatus(formAny.q36_skinStatus),
+        notes: [formAny.q36_skinStatus, form.q36_skinNotes].filter(Boolean).join('. '),
       },
       {
         system: 'Behavioral/Emotional',
-        status: systemStatus(form.q37_behaveAssessment, 'calm'),
-        notes: [form.q37_behaveAssessment, form.q37_behaveNotes].filter(Boolean).join('. '),
+        status: systemStatus(formAny.q37_behaveStatus),
+        notes: [formAny.q37_behaveStatus, form.q37_behaveNotes].filter(Boolean).join('. '),
       },
     ],
     interventions: {
@@ -385,7 +363,6 @@ export function toProgressNoteData(
     },
     communication: {
       physicianNotified,
-      incidents,
       followUp,
       nextShiftPlan: form.q60_nextShiftPlan || '',
     },

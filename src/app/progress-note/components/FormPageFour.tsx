@@ -5,11 +5,13 @@ import type { FormPageProps } from '../types';
 import styles from '../page.module.css';
 import DeselectableRadio, { radioState, radioSubscribe, radioGetSnapshot } from './DeselectableRadio';
 
+const getGlobalSnapshotStr = () => String(radioGetSnapshot());
+
 interface FormPageFourProps extends FormPageProps {}
 
 export default function FormPageFour({ formRef, register, watch, setValue, control }: FormPageFourProps) {
   // Subscribe to radio state changes to reactively read aspiration concerns
-  useSyncExternalStore(radioSubscribe, radioGetSnapshot, radioGetSnapshot);
+  useSyncExternalStore(radioSubscribe, getGlobalSnapshotStr, getGlobalSnapshotStr);
   const hasAspirationConcerns = radioState['q38_aspirationConcerns'] === 'Yes';
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     nutrition: false,
