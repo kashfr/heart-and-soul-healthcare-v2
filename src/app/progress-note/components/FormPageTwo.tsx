@@ -4,35 +4,18 @@ import { useState, useCallback } from 'react';
 import type { FormPageProps } from '../types';
 import styles from '../page.module.css';
 import DeselectableRadio from './DeselectableRadio';
+import { getVitalRanges, getAgeGroupLabel, checkVitalRange, type VitalKey } from '@/lib/vitalRanges';
 
 interface FormPageTwoProps extends FormPageProps {
   credential?: string;
+  ageStr?: string;
+  dob?: string;
 }
-
-// Normal vital sign ranges
-const VITAL_RANGES = {
-  temperature: { low: 97.0, high: 99.5, unit: '°F', label: 'Temperature' },
-  systolic: { low: 90, high: 140, unit: 'mmHg', label: 'Systolic BP' },
-  diastolic: { low: 60, high: 90, unit: 'mmHg', label: 'Diastolic BP' },
-  pulse: { low: 60, high: 100, unit: 'bpm', label: 'Pulse' },
-  respiration: { low: 12, high: 20, unit: '/min', label: 'Respirations' },
-  oxygenSaturation: { low: 95, high: 100, unit: '%', label: 'O2 Saturation' },
-  bloodGlucose: { low: 70, high: 180, unit: 'mg/dL', label: 'Blood Glucose' },
-};
-
-type VitalKey = keyof typeof VITAL_RANGES;
 
 interface VitalAlert {
   vital: string;
   value: string;
   status: 'low' | 'high';
-}
-
-function checkVitalRange(key: VitalKey, value: number): 'normal' | 'low' | 'high' {
-  const range = VITAL_RANGES[key];
-  if (value < range.low) return 'low';
-  if (value > range.high) return 'high';
-  return 'normal';
 }
 
 const alertInputStyle = {
@@ -62,8 +45,10 @@ const warningItemStyle: React.CSSProperties = {
   padding: '2px 0',
 };
 
-export default function FormPageTwo({ formRef, register, watch, setValue, control, credential }: FormPageTwoProps) {
+export default function FormPageTwo({ formRef, register, watch, setValue, control, credential, ageStr, dob }: FormPageTwoProps) {
   const showVitals = credential !== 'HHA';
+  const ranges = getVitalRanges(ageStr || '', dob);
+  const ageGroupLabel = getAgeGroupLabel(ageStr || '', dob);
   const [alerts, setAlerts] = useState<Record<string, VitalAlert>>({});
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     detailedAppearance: false,
@@ -88,9 +73,10 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
       return;
     }
 
-    const status = checkVitalRange(key, value);
+    const status = checkVitalRange(key, value, ageStr || '', dob);
+    const currentRanges = getVitalRanges(ageStr || '', dob);
+    const range = currentRanges[key];
     if (status !== 'normal') {
-      const range = VITAL_RANGES[key];
       setAlerts(prev => ({
         ...prev,
         [key]: {
@@ -106,7 +92,7 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
         return next;
       });
     }
-  }, []);
+  }, [ageStr, dob]);
 
   const handleBPChange = useCallback((rawValue: string) => {
     const parts = rawValue.split('/');
@@ -115,7 +101,7 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
       const diastolic = parseFloat(parts[1]);
 
       if (!isNaN(systolic)) {
-        const sysStatus = checkVitalRange('systolic', systolic);
+        const sysStatus = checkVitalRange('systolic', systolic, ageStr || '', dob);
         if (sysStatus !== 'normal') {
           setAlerts(prev => ({
             ...prev,
@@ -127,7 +113,7 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
       }
 
       if (!isNaN(diastolic)) {
-        const diaStatus = checkVitalRange('diastolic', diastolic);
+        const diaStatus = checkVitalRange('diastolic', diastolic, ageStr || '', dob);
         if (diaStatus !== 'normal') {
           setAlerts(prev => ({
             ...prev,
@@ -145,7 +131,7 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
         return next;
       });
     }
-  }, []);
+  }, [ageStr, dob]);
 
   const alertList = Object.values(alerts);
   const hasAlerts = alertList.length > 0;
@@ -408,6 +394,11 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
         )}
         <div className={styles.section} style={!showVitals ? { opacity: 0.35, pointerEvents: 'none' } : undefined}>
           <span className={styles.sectionLabel}>VITAL SIGNS</span>
+          {ageStr && (
+            <p style={{ fontSize: '12px', color: '#666', margin: '4px 0 8px', fontStyle: 'italic' }}>
+              Ranges based on age group: <strong>{ageGroupLabel}</strong>
+            </p>
+          )}
 
           <div className={styles.row}>
             <div className={styles.f}>
