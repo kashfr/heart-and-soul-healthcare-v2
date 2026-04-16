@@ -36,7 +36,17 @@ export async function generateMetadata({ params }: BlogPostPageProps): Promise<M
       publishedTime: post.date,
       authors: [post.author],
       tags: post.tags,
-      images: post.featuredImage ? [{ url: post.featuredImage }] : undefined,
+      images: post.featuredImage
+        ? [{ url: `https://www.heartandsoulhc.org${post.featuredImage}`, width: 1792, height: 1024, alt: post.title }]
+        : undefined,
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: post.title,
+      description: post.description,
+      images: post.featuredImage
+        ? [`https://www.heartandsoulhc.org${post.featuredImage}`]
+        : undefined,
     },
   };
 }
@@ -83,11 +93,25 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
     },
   };
 
+  const breadcrumbJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://www.heartandsoulhc.org' },
+      { '@type': 'ListItem', position: 2, name: 'Blog', item: 'https://www.heartandsoulhc.org/blog' },
+      { '@type': 'ListItem', position: 3, name: post.title, item: `https://www.heartandsoulhc.org/blog/${slug}` },
+    ],
+  };
+
   return (
     <>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
       <article className={styles.postPage}>
         {/* Breadcrumb */}
@@ -136,10 +160,10 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
               <div className={styles.imageWrapper}>
                 <Image
                   src={post.featuredImage}
-                  alt={post.title}
-                  width={1200}
-                  height={600}
-                  style={{ width: '100%', height: 'auto', borderRadius: 'var(--radius-2xl)' }}
+                  alt={`Featured image for ${post.title}`}
+                  width={1792}
+                  height={1024}
+                  style={{ width: '100%', height: 'auto', borderRadius: 'var(--radius-lg)' }}
                   priority
                 />
               </div>

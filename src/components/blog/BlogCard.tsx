@@ -40,7 +40,7 @@ export default function BlogCard({
           {featuredImage ? (
             <Image
               src={featuredImage}
-              alt={title}
+              alt={`Featured image for ${title}`}
               fill
               style={{ objectFit: 'cover' }}
               sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
@@ -56,7 +56,7 @@ export default function BlogCard({
         </div>
 
         <div className={styles.content}>
-          <h3 className={styles.title}>{title}</h3>
+          <h2 className={styles.title}>{title}</h2>
           <p className={styles.excerpt}>{excerpt}</p>
 
           <div className={styles.meta}>
