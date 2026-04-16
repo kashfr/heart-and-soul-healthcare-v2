@@ -6,6 +6,9 @@
   transition: all var(--transition-base);
   position: relative;
   overflow: hidden;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .card::before {
@@ -81,6 +84,9 @@
 .content {
   position: relative;
   z-index: 1;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .subtitle {
@@ -121,6 +127,7 @@
   color: var(--color-gray-600);
   line-height: 1.7;
   margin-bottom: var(--space-5);
+  flex: 1;
 }
 
 .link {
