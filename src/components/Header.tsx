@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { Menu, X, ChevronDown, Phone } from 'lucide-react';
 import styles from './Header.module.css';
+import UserMenu from './UserMenu';
 
 const programLinks = [
   { href: '/programs/gapp', label: 'GAPP - Georgia Pediatric Program' },
@@ -38,6 +39,9 @@ export default function Header() {
             </div>
             <div className={styles.topBarItem}>
               <span>Providing compassionate care across Georgia</span>
+            </div>
+            <div className={styles.topBarItem} style={{ marginLeft: 'auto' }}>
+              <UserMenu />
             </div>
           </div>
         </div>

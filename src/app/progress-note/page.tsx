@@ -3,12 +3,11 @@
 import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
-import { getPatients, addPatient, updatePatient, removePatient, type Patient } from '@/lib/patients';
+import { getPatients, type Patient } from '@/lib/patients';
 import { saveSubmission, getSubmission, updateSubmission, type ProgressNoteFormData } from '@/lib/submissions';
 import { setRadio, radioState, clearRadioStorage } from './components/DeselectableRadio';
 import type { FormValues } from './types';
 import styles from './page.module.css';
-import SettingsPanel from './components/SettingsPanel';
 import FormPageOne from './components/FormPageOne';
 import FormPageTwo from './components/FormPageTwo';
 import FormPageThree from './components/FormPageThree';
@@ -55,7 +54,6 @@ function ProgressNotePageInner() {
     }
   };
   const [credential, setCredential] = useState<CredentialTier>((savedParsed.q12_credential as CredentialTier) || '');
-  const [showSettings, setShowSettings] = useState(false);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [firebaseLoaded, setFirebaseLoaded] = useState(false);
@@ -253,39 +251,6 @@ function ProgressNotePageInner() {
 
     loadEditData();
   }, [editId, editLoaded]);
-
-  const handleAddPatient = async (patient: Patient) => {
-    try {
-      const newId = await addPatient(patient);
-      setPatients(prev => [...prev, { ...patient, id: newId }]);
-    } catch (error) {
-      console.error('Failed to add patient:', error);
-      alert('Failed to add patient. Please try again.');
-    }
-  };
-
-  const handleUpdatePatient = async (patientId: string, data: Partial<Patient>) => {
-    try {
-      await updatePatient(patientId, data);
-      setPatients(prev => prev.map(p => p.id === patientId ? { ...p, ...data } : p));
-    } catch (error) {
-      console.error('Failed to update patient:', error);
-      alert('Failed to update patient. Please try again.');
-    }
-  };
-
-  const handleRemovePatient = async (patientId: string) => {
-    if (!window.confirm('Are you sure you want to remove this patient?')) {
-      return;
-    }
-    try {
-      await removePatient(patientId);
-      setPatients(patients.filter(p => p.id !== patientId));
-    } catch (error) {
-      console.error('Failed to remove patient:', error);
-      alert('Failed to remove patient. Please try again.');
-    }
-  };
 
   const handlePreviousPage = () => {
     if (activeIndex > 0) {
@@ -571,13 +536,6 @@ function ProgressNotePageInner() {
             Clear Form
           </button>
         )}
-        <button
-          className={styles.settingsBtn}
-          onClick={() => setShowSettings(!showSettings)}
-          title="Patient Management"
-        >
-          ⚙️ Settings
-        </button>
       </div>
 
       <div className={styles.progressBar} id="progressBar">
@@ -633,16 +591,6 @@ function ProgressNotePageInner() {
           )}
         </div>
       </form>
-
-      {showSettings && (
-        <SettingsPanel
-          patients={patients}
-          onAddPatient={handleAddPatient}
-          onUpdatePatient={handleUpdatePatient}
-          onRemovePatient={handleRemovePatient}
-          onClose={() => setShowSettings(false)}
-        />
-      )}
 
       {/* Clear Form Confirmation Modal */}
       {showClearModal && (

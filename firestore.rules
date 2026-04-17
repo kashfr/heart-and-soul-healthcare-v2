@@ -71,6 +71,15 @@ service cloud.firestore {
       allow delete: if true;
     }
 
+    // Staff profiles (role lookup)
+    // A signed-in user can read their own profile so the client can determine their role.
+    // Writes are intentionally denied here; profile creation/updates will flow through
+    // the Admin SDK during the invite + role management flow (Step 4).
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
+    }
+
     // Default deny
     match /{document=**} {
       allow read, write: if false;
