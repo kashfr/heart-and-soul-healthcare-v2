@@ -80,6 +80,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Batch export audit trail
+    // Signed-in users can write audit entries for their own exports.
+    // Reads are denied on the client; admins review via Firestore console (for now).
+    match /exportAudits/{auditId} {
+      allow create: if request.auth != null
+        && incomingData().userId == request.auth.uid
+        && incomingData().exportedAt == request.time
+        && incomingData().submissionIds is list
+        && incomingData().format in ['zip', 'merged-pdf'];
+      allow read, update, delete: if false;
+    }
+
     // Default deny
     match /{document=**} {
       allow read, write: if false;
