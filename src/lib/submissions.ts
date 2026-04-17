@@ -123,13 +123,19 @@ export interface SubmissionSummary {
 
 /**
  * Save a progress note form submission to Firestore.
+ * Pass { nurseId } to link the note to the signed-in nurse (enables her
+ * per-role filter on /admin/submissions).
  * Returns the document ID.
  */
-export async function saveSubmission(data: ProgressNoteFormData): Promise<string> {
+export async function saveSubmission(
+  data: ProgressNoteFormData,
+  options?: { nurseId?: string }
+): Promise<string> {
   try {
     const notesRef = collection(db, 'progressNotes');
     const docRef = await addDoc(notesRef, {
       ...data,
+      ...(options?.nurseId ? { nurseId: options.nurseId } : {}),
       submittedAt: serverTimestamp(),
       status: 'submitted',
     });

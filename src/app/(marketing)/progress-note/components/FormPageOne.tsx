@@ -9,9 +9,10 @@ interface FormPageOneProps extends FormPageProps {
   onCredentialChange?: (credential: string) => void;
   patients: Patient[];
   initialClientName?: string;
+  lockIdentity?: boolean;
 }
 
-export default function FormPageOne({ formRef, register, watch, setValue, control, onCredentialChange, patients, initialClientName }: FormPageOneProps) {
+export default function FormPageOne({ formRef, register, watch, setValue, control, onCredentialChange, patients, initialClientName, lockIdentity }: FormPageOneProps) {
   // Use local date to avoid timezone issues (UTC can show tomorrow's date)
   const now = new Date();
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -349,6 +350,9 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
               id="q11_nurseName"
               {...register('q11_nurseName')}
               required
+              readOnly={lockIdentity}
+              title={lockIdentity ? 'Locked to your staff profile.' : undefined}
+              style={lockIdentity ? { background: '#f1f5f9', cursor: 'not-allowed' } : undefined}
             />
           </div>
           <div className={styles.f}>
@@ -357,6 +361,9 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
               className={styles.select}
               id="q12_credential"
               required
+              disabled={lockIdentity}
+              title={lockIdentity ? 'Locked to your staff profile.' : undefined}
+              style={lockIdentity ? { background: '#f1f5f9', cursor: 'not-allowed' } : undefined}
               {...register('q12_credential', {
                 onChange: (e) => onCredentialChange?.(e.target.value),
               })}

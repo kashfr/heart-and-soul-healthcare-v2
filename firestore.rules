@@ -85,18 +85,19 @@ service cloud.firestore {
     }
 
     // Progress Notes (PHI)
-    // Create stays public for now so the /progress-note form keeps working
-    // without nurse authentication (we'll flip this in a later step once
-    // nurses are onboarded end-to-end).
+    // Create requires auth now that the /progress-note form is behind a sign-in
+    // gate. If nurseId is supplied it must match the caller's uid — this
+    // prevents a signed-in user from spoofing a submission as someone else.
     // Read: staff (admin/supervisor) see everything; a nurse sees only notes
     // whose nurseId matches her own uid.
     // Delete stays staff-only; nurses never delete.
     // Update: staff can update anything. Nurse edit permissions (own note
-    // only, with edit history) will land in Step 4b.3.
+    // only, with edit history) will land in Step 4b.5.
     match /progressNotes/{noteId} {
-      allow create: if
-        incomingData().submittedAt == request.time &&
-        incomingData().status == 'submitted';
+      allow create: if hasActiveProfile()
+        && incomingData().submittedAt == request.time
+        && incomingData().status == 'submitted'
+        && (!('nurseId' in incomingData()) || incomingData().nurseId == request.auth.uid);
       allow read: if isStaff()
         || (isNurse() && resource.data.nurseId == request.auth.uid);
       allow update: if isStaff();

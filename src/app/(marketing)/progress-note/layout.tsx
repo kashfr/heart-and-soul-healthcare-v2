@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import HideChrome from './components/HideChrome';
+import AuthedWrapper from './AuthedWrapper';
 
 export const metadata: Metadata = {
   title: 'Progress Note Form | Heart and Soul Healthcare',
@@ -16,7 +17,7 @@ export default function ProgressNoteLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <>
+    <AuthedWrapper>
       <HideChrome />
       <div
         style={{
@@ -27,6 +28,6 @@ export default function ProgressNoteLayout({
       >
         {children}
       </div>
-    </>
+    </AuthedWrapper>
   );
 }

@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { getPatients, type Patient } from '@/lib/patients';
 import { saveSubmission, getSubmission, updateSubmission, type ProgressNoteFormData } from '@/lib/submissions';
+import { useAuth } from '@/components/AuthProvider';
 import { setRadio, radioState, clearRadioStorage } from './components/DeselectableRadio';
 import type { FormValues } from './types';
 import styles from './page.module.css';
@@ -35,6 +36,8 @@ function getActivePages(credential: CredentialTier): number[] {
 function ProgressNotePageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { user, profile, role } = useAuth();
+  const isNurse = role === 'nurse';
   const editId = searchParams.get('edit');
   const [isEditMode, setIsEditMode] = useState(false);
   const [editLoaded, setEditLoaded] = useState(false);
@@ -136,6 +139,23 @@ function ProgressNotePageInner() {
   const activeIndex = activePages.indexOf(currentPage);
   const isLastPage = activeIndex === totalActivePages - 1;
   const isFirstPage = activeIndex === 0;
+
+  // When a signed-in nurse (or any staff with a profile) loads the form in new-note
+  // mode, prefill their name + credential from their profile so submissions are
+  // tied to the right person and the credential-based page filter kicks in.
+  const applyProfilePrefill = () => {
+    if (isEditMode || !profile) return;
+    if (profile.displayName) setValue('q11_nurseName', profile.displayName);
+    if (profile.credential) {
+      setValue('q12_credential', profile.credential);
+      setCredential(profile.credential as CredentialTier);
+    }
+  };
+
+  useEffect(() => {
+    applyProfilePrefill();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile, isEditMode]);
 
   const handleCredentialChange = (value: string) => {
     const oldCredential = credential;
@@ -421,7 +441,10 @@ function ProgressNotePageInner() {
         return;
       }
 
-      const docId = await saveSubmission(submission as unknown as ProgressNoteFormData);
+      const docId = await saveSubmission(
+        submission as unknown as ProgressNoteFormData,
+        user ? { nurseId: user.uid } : undefined
+      );
       alert(`Progress note submitted successfully!\nSubmission ID: ${docId}`);
       reset();
       localStorage.removeItem(STORAGE_KEY);
@@ -429,6 +452,8 @@ function ProgressNotePageInner() {
       localStorage.removeItem('progress-note-page');
       clearRadioStorage();
       formRef.current.reset();
+      // Re-apply the nurse identity prefill since reset() blew it away.
+      applyProfilePrefill();
       setCurrentPage(1);
       window.scrollTo(0, 0);
     } catch (error) {
@@ -556,7 +581,7 @@ function ProgressNotePageInner() {
       </div>
 
       <form ref={formRef} onSubmit={handleSubmit} className={styles.form} noValidate>
-        <div style={pageStyle(1)}><FormPageOne formRef={ref} register={register} watch={watch} setValue={setValue} control={control} onCredentialChange={handleCredentialChange} patients={patients} initialClientName={initialClientName} /></div>
+        <div style={pageStyle(1)}><FormPageOne formRef={ref} register={register} watch={watch} setValue={setValue} control={control} onCredentialChange={handleCredentialChange} patients={patients} initialClientName={initialClientName} lockIdentity={isNurse && !isEditMode} /></div>
         <div style={pageStyle(2)}><FormPageTwo formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} ageStr={watch('q5_ageYears')} dob={watch('q4_dateofBirth')} /></div>
         <div style={pageStyle(3)}><FormPageThree formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} /></div>
         <div style={pageStyle(4)}><FormPageFour formRef={ref} register={register} watch={watch} setValue={setValue} control={control} /></div>
