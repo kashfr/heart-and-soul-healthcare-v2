@@ -8,6 +8,7 @@ import {
   updateSubmission,
   type ProgressNoteFormData,
 } from '@/lib/submissions';
+import { useAuth } from '@/components/AuthProvider';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -16,6 +17,7 @@ interface PageProps {
 export default function EditSubmissionPage({ params }: PageProps) {
   const { id } = use(params);
   const router = useRouter();
+  const { user, profile, role } = useAuth();
   const [formData, setFormData] = useState<ProgressNoteFormData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -47,11 +49,15 @@ export default function EditSubmissionPage({ params }: PageProps) {
   };
 
   const handleSave = async () => {
-    if (!formData) return;
+    if (!formData || !user || !role) return;
     setSaving(true);
     try {
       const { submittedAt, status, ...updateData } = formData;
-      await updateSubmission(id, updateData);
+      await updateSubmission(id, updateData, {
+        uid: user.uid,
+        displayName: profile?.displayName ?? user.displayName ?? user.email,
+        role,
+      });
       setSaved(true);
     } catch (error) {
       console.error('Failed to save:', error);

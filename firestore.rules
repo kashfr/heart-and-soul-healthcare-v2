@@ -85,14 +85,12 @@ service cloud.firestore {
     }
 
     // Progress Notes (PHI)
-    // Create requires auth now that the /progress-note form is behind a sign-in
-    // gate. If nurseId is supplied it must match the caller's uid — this
-    // prevents a signed-in user from spoofing a submission as someone else.
-    // Read: staff (admin/supervisor) see everything; a nurse sees only notes
-    // whose nurseId matches her own uid.
+    // Create requires auth (form is gated). nurseId, if supplied, must match
+    // the caller's uid so a signed-in user can't submit as someone else.
+    // Read: staff see everything; a nurse sees only notes with her nurseId.
+    // Update: staff anywhere; a nurse on her own notes only, and she cannot
+    //   change nurseId or submittedAt (those are locked to the original).
     // Delete stays staff-only; nurses never delete.
-    // Update: staff can update anything. Nurse edit permissions (own note
-    // only, with edit history) will land in Step 4b.5.
     match /progressNotes/{noteId} {
       allow create: if hasActiveProfile()
         && incomingData().submittedAt == request.time
@@ -100,8 +98,28 @@ service cloud.firestore {
         && (!('nurseId' in incomingData()) || incomingData().nurseId == request.auth.uid);
       allow read: if isStaff()
         || (isNurse() && resource.data.nurseId == request.auth.uid);
-      allow update: if isStaff();
+      allow update: if isStaff()
+        || (isNurse()
+            && resource.data.nurseId == request.auth.uid
+            && incomingData().nurseId == resource.data.nurseId
+            && incomingData().submittedAt == resource.data.submittedAt);
       allow delete: if isStaff();
+
+      // Edit history — append-only audit trail for every update.
+      // Create: staff or the note's owning nurse. Entry's editedBy must
+      // match the caller, editedAt is request.time, and changes must be a map.
+      // Read: staff only. Nurses don't need to inspect their own history.
+      // Update/delete: denied for everyone, including via Admin SDK console
+      // edits (those bypass rules anyway — that's fine, we trust admins).
+      match /editHistory/{entryId} {
+        allow create: if (isStaff()
+              || (isNurse() && get(/databases/$(database)/documents/progressNotes/$(noteId)).data.nurseId == request.auth.uid))
+            && incomingData().editedBy == request.auth.uid
+            && incomingData().editedAt == request.time
+            && incomingData().changes is map;
+        allow read: if isStaff();
+        allow update, delete: if false;
+      }
     }
 
     // Staff profiles (role lookup)

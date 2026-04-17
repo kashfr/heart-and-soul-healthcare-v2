@@ -10,6 +10,7 @@ import {
 } from '@/lib/submissions';
 import { getVitalRanges, getAgeGroupLabel } from '@/lib/vitalRanges';
 import { useAuth } from '@/components/AuthProvider';
+import RevisionHistory from '@/components/RevisionHistory';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -827,6 +828,9 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             Confidential - Heart and Soul Healthcare | This document contains protected health information (PHI)
           </p>
         </div>
+
+        {/* Revision history — staff only (rules deny read for nurses) */}
+        {!isNurse && <RevisionHistory submissionId={id} />}
       </div>
 
       {/* Print styles */}

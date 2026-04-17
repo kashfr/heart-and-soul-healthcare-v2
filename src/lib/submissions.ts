@@ -11,7 +11,9 @@ import {
   orderBy,
   serverTimestamp,
   Timestamp,
+  writeBatch,
 } from 'firebase/firestore';
+import type { Role } from './auth';
 import { db } from './firebase';
 
 /**
@@ -200,12 +202,82 @@ export async function getSubmission(id: string): Promise<ProgressNoteFormData | 
   }
 }
 
+export interface SubmissionEditor {
+  uid: string;
+  displayName?: string | null;
+  role: Role;
+}
+
 /**
- * Update a progress note submission.
+ * Fields that shouldn't count as "edits" (metadata / system-managed).
  */
-export async function updateSubmission(id: string, data: Partial<ProgressNoteFormData>): Promise<void> {
+const SKIP_DIFF_FIELDS = new Set([
+  'submittedAt',
+  'lastUpdatedAt',
+  'status',
+  'nurseId',
+  'claimedAt',
+  'claimedBy',
+]);
+
+function normalizeForDiff(v: unknown): string {
+  if (v === undefined || v === null) return '';
+  if (typeof v === 'string') return v;
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return String(v);
+  }
+}
+
+/**
+ * Update a progress note submission. When an `editor` is supplied, the update
+ * is batched with a write to `progressNotes/{id}/editHistory` recording who
+ * changed what and when — this is the audit trail supervisors review.
+ */
+export async function updateSubmission(
+  id: string,
+  data: Partial<ProgressNoteFormData>,
+  editor?: SubmissionEditor
+): Promise<void> {
   try {
     const docRef = doc(db, 'progressNotes', id);
+
+    if (editor) {
+      const existingSnap = await getDoc(docRef);
+      if (!existingSnap.exists()) {
+        throw new Error('Submission not found.');
+      }
+      const oldData = existingSnap.data() as Record<string, unknown>;
+      const changes: Record<string, { from: unknown; to: unknown }> = {};
+      for (const [key, newVal] of Object.entries(data)) {
+        if (SKIP_DIFF_FIELDS.has(key)) continue;
+        const oldVal = oldData[key];
+        if (normalizeForDiff(oldVal) !== normalizeForDiff(newVal)) {
+          changes[key] = { from: oldVal ?? null, to: newVal ?? null };
+        }
+      }
+
+      const batch = writeBatch(db);
+      batch.update(docRef, {
+        ...data,
+        lastUpdatedAt: serverTimestamp(),
+      });
+      if (Object.keys(changes).length > 0) {
+        const historyRef = doc(collection(docRef, 'editHistory'));
+        batch.set(historyRef, {
+          editedBy: editor.uid,
+          editedByName: editor.displayName || '',
+          editedByRole: editor.role,
+          editedAt: serverTimestamp(),
+          changes,
+        });
+      }
+      await batch.commit();
+      return;
+    }
+
+    // Legacy path: caller didn't supply editor info. Plain update, no audit entry.
     await updateDoc(docRef, {
       ...data,
       lastUpdatedAt: serverTimestamp(),
@@ -213,6 +285,42 @@ export async function updateSubmission(id: string, data: Partial<ProgressNoteFor
   } catch (error) {
     console.error('Error updating submission:', error);
     throw error;
+  }
+}
+
+export interface EditHistoryEntry {
+  id: string;
+  editedBy: string;
+  editedByName: string;
+  editedByRole: Role;
+  editedAt: Date | null;
+  changes: Record<string, { from: unknown; to: unknown }>;
+}
+
+/**
+ * Fetch the edit history for a progress note, most recent first.
+ * Visible to staff (admin/supervisor) per Firestore rules.
+ */
+export async function getEditHistory(id: string): Promise<EditHistoryEntry[]> {
+  try {
+    const historyRef = collection(db, 'progressNotes', id, 'editHistory');
+    const q = query(historyRef, orderBy('editedAt', 'desc'));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => {
+      const data = d.data();
+      const editedAt = data.editedAt as Timestamp | null;
+      return {
+        id: d.id,
+        editedBy: data.editedBy || '',
+        editedByName: data.editedByName || '',
+        editedByRole: (data.editedByRole || 'nurse') as Role,
+        editedAt: editedAt ? editedAt.toDate() : null,
+        changes: (data.changes || {}) as Record<string, { from: unknown; to: unknown }>,
+      };
+    });
+  } catch (error) {
+    console.error('Error fetching edit history:', error);
+    return [];
   }
 }
 

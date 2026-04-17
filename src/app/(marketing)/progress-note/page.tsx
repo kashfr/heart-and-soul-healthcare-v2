@@ -435,7 +435,18 @@ function ProgressNotePageInner() {
       const submission = values;
 
       if (isEditMode && editId) {
-        await updateSubmission(editId, submission as unknown as Partial<ProgressNoteFormData>);
+        if (!user || !role) {
+          throw new Error('You must be signed in to update a note.');
+        }
+        await updateSubmission(
+          editId,
+          submission as unknown as Partial<ProgressNoteFormData>,
+          {
+            uid: user.uid,
+            displayName: profile?.displayName ?? user.displayName ?? user.email,
+            role,
+          }
+        );
         alert('Progress note updated successfully!');
         window.location.href = `/admin/submissions/${editId}`;
         return;
