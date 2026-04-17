@@ -119,7 +119,7 @@ function NavCard({
 
   if (disabled) return body;
   return (
-    <Link href={href} style={{ textDecoration: 'none', color: 'inherit' }}>
+    <Link href={href} style={{ textDecoration: 'none', color: 'inherit', display: 'block', height: '100%' }}>
       {body}
     </Link>
   );
@@ -175,6 +175,7 @@ const cardStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: 10,
+  height: '100%',
   transition: 'transform 0.12s, box-shadow 0.12s',
   boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
 };
