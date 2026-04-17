@@ -2,9 +2,11 @@
 
 import { Suspense, useEffect, useState, type FormEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { useAuth } from '@/components/AuthProvider';
+
+type Mode = 'signIn' | 'reset';
 
 function LoginForm() {
   const router = useRouter();
@@ -12,10 +14,12 @@ function LoginForm() {
   const redirect = searchParams.get('redirect') || '/admin';
   const { user, loading } = useAuth();
 
+  const [mode, setMode] = useState<Mode>('signIn');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resetSentTo, setResetSentTo] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && user) {
@@ -23,7 +27,13 @@ function LoginForm() {
     }
   }, [loading, user, redirect, router]);
 
-  const handleSubmit = async (e: FormEvent) => {
+  const switchMode = (next: Mode) => {
+    setMode(next);
+    setError(null);
+    setResetSentTo(null);
+  };
+
+  const handleSignIn = async (e: FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
@@ -40,6 +50,8 @@ function LoginForm() {
         setError('Invalid email or password.');
       } else if (code === 'auth/too-many-requests') {
         setError('Too many attempts. Try again later or reset your password.');
+      } else if (code === 'auth/user-disabled') {
+        setError('This account is deactivated. Contact your administrator.');
       } else {
         setError('Sign in failed. Please try again.');
       }
@@ -47,48 +59,161 @@ function LoginForm() {
     }
   };
 
+  const handleReset = async (e: FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    const target = email.trim();
+    try {
+      await sendPasswordResetEmail(auth, target);
+    } catch (err) {
+      const code = (err as { code?: string }).code || '';
+      // Intentionally treat auth/user-not-found the same as success below —
+      // we don't want to reveal which emails have accounts.
+      if (code === 'auth/invalid-email') {
+        setError('Please enter a valid email address.');
+        setSubmitting(false);
+        return;
+      } else if (code === 'auth/too-many-requests') {
+        setError('Too many requests. Please try again in a few minutes.');
+        setSubmitting(false);
+        return;
+      }
+      // Fall through to success state even on other errors.
+    }
+    setResetSentTo(target);
+    setSubmitting(false);
+  };
+
   return (
     <div style={containerStyle}>
       <div style={cardStyle}>
-        <h1 style={titleStyle}>Sign in</h1>
-        <p style={subtitleStyle}>Heart and Soul Healthcare staff portal</p>
+        {mode === 'signIn' && (
+          <>
+            <h1 style={titleStyle}>Sign in</h1>
+            <p style={subtitleStyle}>Heart and Soul Healthcare staff portal</p>
 
-        <form onSubmit={handleSubmit} style={formStyle}>
-          <label style={labelStyle}>
-            Email
-            <input
-              type="email"
-              required
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              style={inputStyle}
-            />
-          </label>
+            <form onSubmit={handleSignIn} style={formStyle}>
+              <label style={labelStyle}>
+                Email
+                <input
+                  type="email"
+                  required
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  style={inputStyle}
+                />
+              </label>
 
-          <label style={labelStyle}>
-            Password
-            <input
-              type="password"
-              required
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              style={inputStyle}
-            />
-          </label>
+              <label style={labelStyle}>
+                Password
+                <input
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  style={inputStyle}
+                />
+              </label>
 
-          {error && <div style={errorStyle}>{error}</div>}
+              {error && <div style={errorStyle}>{error}</div>}
 
-          <button type="submit" disabled={submitting} style={buttonStyle}>
-            {submitting ? 'Signing in…' : 'Sign in'}
-          </button>
-        </form>
+              <button type="submit" disabled={submitting} style={primaryBtnStyle}>
+                {submitting ? 'Signing in…' : 'Sign in'}
+              </button>
+            </form>
 
-        <p style={footerStyle}>
-          Accounts are created by invitation only. If you need access,
-          contact your administrator.
-        </p>
+            <div style={forgotRowStyle}>
+              <button
+                type="button"
+                onClick={() => switchMode('reset')}
+                style={linkBtnStyle}
+              >
+                Forgot password?
+              </button>
+            </div>
+
+            <p style={footerStyle}>
+              Accounts are created by invitation only. If you need access,
+              contact your administrator.
+            </p>
+          </>
+        )}
+
+        {mode === 'reset' && !resetSentTo && (
+          <>
+            <h1 style={titleStyle}>Reset password</h1>
+            <p style={subtitleStyle}>
+              Enter the email for your staff account and we&apos;ll send you a
+              link to set a new password.
+            </p>
+
+            <form onSubmit={handleReset} style={formStyle}>
+              <label style={labelStyle}>
+                Email
+                <input
+                  type="email"
+                  required
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  style={inputStyle}
+                  placeholder="you@heartandsoulhc.org"
+                />
+              </label>
+
+              {error && <div style={errorStyle}>{error}</div>}
+
+              <button type="submit" disabled={submitting} style={primaryBtnStyle}>
+                {submitting ? 'Sending…' : 'Send reset link'}
+              </button>
+            </form>
+
+            <div style={forgotRowStyle}>
+              <button
+                type="button"
+                onClick={() => switchMode('signIn')}
+                style={linkBtnStyle}
+              >
+                ← Back to sign in
+              </button>
+            </div>
+          </>
+        )}
+
+        {mode === 'reset' && resetSentTo && (
+          <>
+            <h1 style={titleStyle}>Check your email</h1>
+            <p style={subtitleStyle}>
+              If an account exists for <strong>{resetSentTo}</strong>, a password-reset
+              link is on the way. Links expire after about an hour — use it soon.
+              Check spam if you don&apos;t see it within a few minutes.
+            </p>
+
+            <button
+              type="button"
+              onClick={() => switchMode('signIn')}
+              style={primaryBtnStyle}
+            >
+              Back to sign in
+            </button>
+
+            <div style={forgotRowStyle}>
+              <button
+                type="button"
+                onClick={() => {
+                  setResetSentTo(null);
+                  setError(null);
+                }}
+                style={linkBtnStyle}
+              >
+                Send to a different email
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -165,7 +290,7 @@ const errorStyle: React.CSSProperties = {
   fontSize: 13,
 };
 
-const buttonStyle: React.CSSProperties = {
+const primaryBtnStyle: React.CSSProperties = {
   background: '#27ae60',
   color: 'white',
   padding: '12px 16px',
@@ -174,6 +299,22 @@ const buttonStyle: React.CSSProperties = {
   fontSize: 15,
   fontWeight: 700,
   cursor: 'pointer',
+};
+
+const forgotRowStyle: React.CSSProperties = {
+  textAlign: 'center',
+  marginTop: 16,
+};
+
+const linkBtnStyle: React.CSSProperties = {
+  background: 'transparent',
+  border: 'none',
+  color: '#27ae60',
+  fontSize: 13,
+  fontWeight: 600,
+  cursor: 'pointer',
+  padding: 0,
+  fontFamily: 'inherit',
 };
 
 const footerStyle: React.CSSProperties = {
