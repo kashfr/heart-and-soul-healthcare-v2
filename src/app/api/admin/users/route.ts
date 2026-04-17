@@ -86,18 +86,28 @@ export async function POST(request: Request) {
   };
   await adminDb().collection('users').doc(userRecord.uid).set(profile);
 
-  // Claim orphan progress notes submitted under this exact name.
-  const orphanSnap = await adminDb()
-    .collection('progressNotes')
-    .where('q11_nurseName', '==', displayName)
-    .get();
-
-  const toClaim = orphanSnap.docs.filter((d) => !d.data().nurseId);
+  // Claim orphan progress notes submitted under this nurse's name.
+  // We scan in memory and match on trimmed + lowercased nurseName so small
+  // data-entry drift (trailing spaces, stray capitalization) doesn't cause
+  // silent misses like it did for our first batch of nurses. When we claim a
+  // note we also rewrite q11_nurseName to the normalized profile displayName,
+  // so subsequent queries stay clean. This is O(N) over progressNotes — fine
+  // for our current volume; revisit with a normalized lookup field if the
+  // collection grows past a few thousand.
+  const normalizedTarget = displayName.trim().toLowerCase();
+  const allNotes = await adminDb().collection('progressNotes').get();
+  const toClaim = allNotes.docs.filter((d) => {
+    const data = d.data();
+    if (data.nurseId) return false;
+    const stored = (data.q11_nurseName || '').trim().toLowerCase();
+    return stored !== '' && stored === normalizedTarget;
+  });
   if (toClaim.length > 0) {
     const batch = adminDb().batch();
     for (const d of toClaim) {
       batch.update(d.ref, {
         nurseId: userRecord.uid,
+        q11_nurseName: displayName,
         claimedAt: FieldValue.serverTimestamp(),
         claimedBy: caller.uid,
       });
