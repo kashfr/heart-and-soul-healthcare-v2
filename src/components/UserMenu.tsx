@@ -65,7 +65,7 @@ export default function UserMenu() {
             </Link>
           )}
 
-          <Link href="/progress-note/submissions" onClick={() => setOpen(false)} style={menuItemStyle}>
+          <Link href="/admin/submissions" onClick={() => setOpen(false)} style={menuItemStyle}>
             Submissions
           </Link>
 

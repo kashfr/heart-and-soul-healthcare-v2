@@ -66,7 +66,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
     if (!confirmed) return;
     try {
       await deleteSubmission(id);
-      router.push('/progress-note/submissions');
+      router.push('/admin/submissions');
     } catch (error) {
       console.error('Failed to delete submission:', error);
       alert('Failed to delete submission. Please try again.');
@@ -93,7 +93,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             <p style={{ fontSize: 18, fontWeight: 600, color: '#c62828' }}>
               Submission not found
             </p>
-            <Link href="/progress-note/submissions" style={backLinkStyle}>
+            <Link href="/admin/submissions" style={backLinkStyle}>
               &larr; Back to Submissions
             </Link>
           </div>
@@ -288,7 +288,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
       <div style={wrapStyle}>
         {/* Actions bar - hidden on print */}
         <div style={actionsBarStyle} className="no-print">
-          <Link href="/progress-note/submissions" style={backLinkStyle}>
+          <Link href="/admin/submissions" style={backLinkStyle}>
             &larr; Back to Submissions
           </Link>
           <div style={{ display: 'flex', gap: 10 }}>

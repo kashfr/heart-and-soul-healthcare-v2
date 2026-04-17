@@ -185,7 +185,7 @@ function ProgressNotePageInner() {
         const data = await getSubmission(editId);
         if (!data) {
           alert('Submission not found.');
-          router.push('/progress-note/submissions');
+          router.push('/admin/submissions');
           return;
         }
 
@@ -245,7 +245,7 @@ function ProgressNotePageInner() {
       } catch (error) {
         console.error('Failed to load submission for editing:', error);
         alert('Failed to load submission data.');
-        router.push('/progress-note/submissions');
+        router.push('/admin/submissions');
       }
     };
 
@@ -417,7 +417,7 @@ function ProgressNotePageInner() {
       if (isEditMode && editId) {
         await updateSubmission(editId, submission as unknown as Partial<ProgressNoteFormData>);
         alert('Progress note updated successfully!');
-        window.location.href = `/progress-note/submissions/${editId}`;
+        window.location.href = `/admin/submissions/${editId}`;
         return;
       }
 
@@ -471,7 +471,7 @@ function ProgressNotePageInner() {
           <span>✏️ You are editing an existing progress note. Make your changes and click Update.</span>
           <button
             type="button"
-            onClick={() => router.push(`/progress-note/submissions/${editId}`)}
+            onClick={() => router.push(`/admin/submissions/${editId}`)}
             style={{
               background: '#856404',
               color: 'white',

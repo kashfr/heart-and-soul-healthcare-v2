@@ -9,7 +9,7 @@ import { useAuth } from '@/components/AuthProvider';
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirect = searchParams.get('redirect') || '/progress-note/submissions';
+  const redirect = searchParams.get('redirect') || '/admin';
   const { user, loading } = useAuth();
 
   const [email, setEmail] = useState('');

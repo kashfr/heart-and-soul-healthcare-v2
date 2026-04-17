@@ -149,15 +149,6 @@ export default function SubmissionsPage() {
           <p style={subtitleStyle}>All submitted nursing progress notes</p>
         </div>
 
-        <div style={controlsStyle}>
-          <Link href="/progress-note" style={backLinkStyle}>
-            &larr; Back to Form
-          </Link>
-          <Link href="/admin" style={backLinkStyle}>
-            Admin Dashboard &rarr;
-          </Link>
-        </div>
-
         {selected.size > 0 && (
           <div style={bulkBarStyle}>
             <span style={{ fontWeight: 600, color: '#2c3e50' }}>
@@ -248,7 +239,7 @@ export default function SubmissionsPage() {
                       <td style={{ ...tdStyle, textAlign: 'center' }}>
                         <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
                           <Link
-                            href={`/progress-note/submissions/${s.id}`}
+                            href={`/admin/submissions/${s.id}`}
                             style={viewBtnStyle}
                           >
                             View

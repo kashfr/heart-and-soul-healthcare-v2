@@ -81,7 +81,7 @@ export default function EditSubmissionPage({ params }: PageProps) {
             <p style={{ fontSize: 18, fontWeight: 600, color: '#c62828' }}>
               Submission not found
             </p>
-            <Link href="/progress-note/submissions" style={linkStyle}>
+            <Link href="/admin/submissions" style={linkStyle}>
               &larr; Back to Submissions
             </Link>
           </div>
@@ -95,7 +95,7 @@ export default function EditSubmissionPage({ params }: PageProps) {
       <div style={wrapStyle}>
         {/* Actions bar */}
         <div style={actionsBarStyle}>
-          <Link href={`/progress-note/submissions/${id}`} style={linkStyle}>
+          <Link href={`/admin/submissions/${id}`} style={linkStyle}>
             &larr; Back to Detail View
           </Link>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -104,7 +104,7 @@ export default function EditSubmissionPage({ params }: PageProps) {
                 Changes saved successfully
               </span>
             )}
-            <Link href={`/progress-note/submissions/${id}`} style={cancelBtnStyle}>
+            <Link href={`/admin/submissions/${id}`} style={cancelBtnStyle}>
               Cancel
             </Link>
             <button onClick={handleSave} disabled={saving} style={saveBtnStyle}>
@@ -211,7 +211,7 @@ export default function EditSubmissionPage({ params }: PageProps) {
               Changes saved successfully
             </span>
           )}
-          <Link href={`/progress-note/submissions/${id}`} style={cancelBtnStyle}>
+          <Link href={`/admin/submissions/${id}`} style={cancelBtnStyle}>
             Cancel
           </Link>
           <button onClick={handleSave} disabled={saving} style={saveBtnStyle}>

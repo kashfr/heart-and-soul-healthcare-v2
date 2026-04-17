@@ -14,6 +14,20 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  async redirects() {
+    return [
+      {
+        source: "/progress-note/submissions",
+        destination: "/admin/submissions",
+        permanent: true,
+      },
+      {
+        source: "/progress-note/submissions/:path*",
+        destination: "/admin/submissions/:path*",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;
