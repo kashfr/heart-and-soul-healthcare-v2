@@ -1,51 +1,95 @@
 'use client';
 
 import Link from 'next/link';
-import { Users, ClipboardList, UserCog, FileText } from 'lucide-react';
+import { Users, ClipboardList, UserCog, FileText, FilePlus } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
+import type { Role } from '@/lib/auth';
+
+interface Card {
+  href: string;
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  allow: Role[];
+  disabled?: boolean;
+}
+
+const CARDS: Card[] = [
+  {
+    href: '/progress-note',
+    icon: <FilePlus size={22} />,
+    title: 'Submit a progress note',
+    description: 'Fill out a new shift note. The form auto-fills your name and credential.',
+    allow: ['nurse'],
+  },
+  {
+    href: '/admin/submissions',
+    icon: <ClipboardList size={22} />,
+    title: 'My notes',
+    description: 'View and edit your submitted progress notes.',
+    allow: ['nurse'],
+  },
+  {
+    href: '/admin/patients',
+    icon: <Users size={22} />,
+    title: 'Patient Roster',
+    description: 'Add, edit, and remove patients. Nurses pick from this roster on the progress-note form.',
+    allow: ['admin'],
+  },
+  {
+    href: '/admin/submissions',
+    icon: <ClipboardList size={22} />,
+    title: 'Progress Note Submissions',
+    description: 'View and manage all submitted progress notes across staff.',
+    allow: ['admin', 'supervisor'],
+  },
+  {
+    href: '/admin/users',
+    icon: <UserCog size={22} />,
+    title: 'Staff & Roles',
+    description: 'Invite nurses and supervisors, manage roles and access.',
+    allow: ['admin'],
+  },
+  {
+    href: '/referral',
+    icon: <FileText size={22} />,
+    title: 'Referrals',
+    description: 'Track incoming referral submissions. (Coming soon)',
+    allow: ['admin'],
+    disabled: true,
+  },
+];
+
+const ROLE_KICKER: Record<Role, string> = {
+  admin: 'Admin',
+  supervisor: 'Supervisor',
+  nurse: 'Nurse',
+};
 
 export default function AdminDashboardPage() {
-  const { profile } = useAuth();
+  const { profile, role } = useAuth();
+
+  const visibleCards = CARDS.filter((c) => role && c.allow.includes(role));
+  const kicker = role ? ROLE_KICKER[role] : '';
+  const firstName = profile?.displayName?.split(' ')[0] ?? '';
 
   return (
     <div style={containerStyle}>
       <div style={wrapStyle}>
         <header style={headerStyle}>
           <div>
-            <p style={kickerStyle}>Admin</p>
+            <p style={kickerStyle}>{kicker}</p>
             <h1 style={titleStyle}>Dashboard</h1>
             <p style={subtitleStyle}>
-              Welcome back{profile?.displayName ? `, ${profile.displayName.split(' ')[0]}` : ''}.
+              Welcome back{firstName ? `, ${firstName}` : ''}.
             </p>
           </div>
         </header>
 
         <section style={gridStyle}>
-          <NavCard
-            href="/admin/patients"
-            icon={<Users size={22} />}
-            title="Patient Roster"
-            description="Add, edit, and remove patients. Nurses pick from this roster on the progress-note form."
-          />
-          <NavCard
-            href="/progress-note/submissions"
-            icon={<ClipboardList size={22} />}
-            title="Progress Note Submissions"
-            description="View and manage all submitted progress notes across staff."
-          />
-          <NavCard
-            href="/admin/users"
-            icon={<UserCog size={22} />}
-            title="Staff & Roles"
-            description="Invite nurses and supervisors, manage roles and access."
-          />
-          <NavCard
-            href="/referral"
-            icon={<FileText size={22} />}
-            title="Referrals"
-            description="Track incoming referral submissions. (Coming soon)"
-            disabled
-          />
+          {visibleCards.map((c) => (
+            <NavCard key={c.href + c.title} {...c} />
+          ))}
         </section>
       </div>
     </div>

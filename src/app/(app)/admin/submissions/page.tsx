@@ -17,7 +17,8 @@ import { useAuth } from '@/components/AuthProvider';
 const MAX_BATCH = 50;
 
 export default function SubmissionsPage() {
-  const { user } = useAuth();
+  const { user, role, loading: authLoading } = useAuth();
+  const isNurse = role === 'nurse';
   const [submissions, setSubmissions] = useState<SubmissionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -28,14 +29,16 @@ export default function SubmissionsPage() {
   const [exportError, setExportError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (authLoading) return;
     (async () => {
       try {
-        setSubmissions(await getSubmissions());
+        const options = isNurse && user ? { nurseId: user.uid } : undefined;
+        setSubmissions(await getSubmissions(options));
       } finally {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [authLoading, isNurse, user]);
 
   const selectedIds = useMemo(() => Array.from(selected), [selected]);
 
@@ -244,9 +247,11 @@ export default function SubmissionsPage() {
                           >
                             View
                           </Link>
-                          <button onClick={() => handleDelete(s)} style={deleteBtnStyle}>
-                            Delete
-                          </button>
+                          {!isNurse && (
+                            <button onClick={() => handleDelete(s)} style={deleteBtnStyle}>
+                              Delete
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

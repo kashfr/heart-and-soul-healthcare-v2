@@ -9,7 +9,7 @@ export default function AppGroupLayout({
   children: React.ReactNode;
 }) {
   return (
-    <AuthGuard allow={['admin', 'supervisor']}>
+    <AuthGuard allow={['admin', 'supervisor', 'nurse']}>
       <AppShell>{children}</AppShell>
     </AuthGuard>
   );

@@ -7,6 +7,7 @@ import {
   deleteDoc,
   doc,
   query,
+  where,
   orderBy,
   serverTimestamp,
   Timestamp,
@@ -140,15 +141,19 @@ export async function saveSubmission(data: ProgressNoteFormData): Promise<string
 }
 
 /**
- * Get all progress note submissions, ordered by date descending.
+ * Get progress note submissions, ordered by date descending.
+ * Pass { nurseId } to scope the list to a single nurse (used by nurses viewing
+ * their own notes; admin + supervisor call with no args to see everything).
  */
-export async function getSubmissions(): Promise<SubmissionSummary[]> {
+export async function getSubmissions(options?: { nurseId?: string }): Promise<SubmissionSummary[]> {
   try {
     const notesRef = collection(db, 'progressNotes');
-    const q = query(notesRef, orderBy('submittedAt', 'desc'));
+    const q = options?.nurseId
+      ? query(notesRef, where('nurseId', '==', options.nurseId))
+      : query(notesRef, orderBy('submittedAt', 'desc'));
     const snapshot = await getDocs(q);
 
-    return snapshot.docs.map((d) => {
+    const rows = snapshot.docs.map((d) => {
       const data = d.data();
       const submittedAt = data.submittedAt as Timestamp | null;
       return {
@@ -161,6 +166,13 @@ export async function getSubmissions(): Promise<SubmissionSummary[]> {
         status: data.status || 'submitted',
       };
     });
+
+    // When filtering by nurseId we skip the orderBy (avoids needing a composite
+    // index) and sort client-side instead.
+    if (options?.nurseId) {
+      rows.sort((a, b) => (b.submittedAt?.getTime() ?? 0) - (a.submittedAt?.getTime() ?? 0));
+    }
+    return rows;
   } catch (error) {
     console.error('Error fetching submissions:', error);
     return [];

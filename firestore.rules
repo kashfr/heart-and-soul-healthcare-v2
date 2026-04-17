@@ -33,6 +33,10 @@ service cloud.firestore {
       return hasActiveProfile() && (getRole() == 'admin' || getRole() == 'supervisor');
     }
 
+    function isNurse() {
+      return hasActiveProfile() && getRole() == 'nurse';
+    }
+
     // --- Collections ---
 
     // Contact Submissions — public create, everything else via Admin SDK
@@ -81,16 +85,22 @@ service cloud.firestore {
     }
 
     // Progress Notes (PHI)
-    // Create stays public so the /progress-note form keeps working without
-    // nurse authentication. Read/update/delete require admin or supervisor.
-    // Per-nurse ownership (nurses can read their own only) will land once
-    // nurses are authenticated and notes carry a nurseId.
+    // Create stays public for now so the /progress-note form keeps working
+    // without nurse authentication (we'll flip this in a later step once
+    // nurses are onboarded end-to-end).
+    // Read: staff (admin/supervisor) see everything; a nurse sees only notes
+    // whose nurseId matches her own uid.
+    // Delete stays staff-only; nurses never delete.
+    // Update: staff can update anything. Nurse edit permissions (own note
+    // only, with edit history) will land in Step 4b.3.
     match /progressNotes/{noteId} {
       allow create: if
         incomingData().submittedAt == request.time &&
         incomingData().status == 'submitted';
-      allow read: if isStaff();
-      allow update, delete: if isStaff();
+      allow read: if isStaff()
+        || (isNurse() && resource.data.nurseId == request.auth.uid);
+      allow update: if isStaff();
+      allow delete: if isStaff();
     }
 
     // Staff profiles (role lookup)

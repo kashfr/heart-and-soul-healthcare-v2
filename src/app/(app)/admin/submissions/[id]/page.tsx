@@ -9,6 +9,7 @@ import {
   type ProgressNoteFormData,
 } from '@/lib/submissions';
 import { getVitalRanges, getAgeGroupLabel } from '@/lib/vitalRanges';
+import { useAuth } from '@/components/AuthProvider';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -32,17 +33,30 @@ function hasValue(v: string | undefined): boolean {
 export default function SubmissionDetailPage({ params }: PageProps) {
   const { id } = use(params);
   const router = useRouter();
+  const { user, role, loading: authLoading } = useAuth();
+  const isNurse = role === 'nurse';
   const [formData, setFormData] = useState<ProgressNoteFormData | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
+    if (authLoading) return;
     const load = async () => {
       try {
         const data = await getSubmission(id);
         if (!data) {
           setNotFound(true);
           return;
+        }
+        // Nurses can only view their own notes. The Firestore rules enforce
+        // this, but we also check client-side to render a clean 'not found'
+        // page instead of a permission error if a nurse visits a bad URL.
+        if (isNurse && user) {
+          const nurseId = (data as unknown as Record<string, string>).nurseId;
+          if (nurseId !== user.uid) {
+            setNotFound(true);
+            return;
+          }
         }
         setFormData(data);
       } catch (error) {
@@ -53,7 +67,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
       }
     };
     load();
-  }, [id]);
+  }, [authLoading, id, isNurse, user]);
 
   const handlePrint = () => {
     window.print();
@@ -298,9 +312,11 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             <button onClick={handlePrint} style={primaryBtnStyle}>
               Print / Save as PDF
             </button>
-            <button onClick={handleDelete} style={dangerBtnStyle}>
-              Delete
-            </button>
+            {!isNurse && (
+              <button onClick={handleDelete} style={dangerBtnStyle}>
+                Delete
+              </button>
+            )}
           </div>
         </div>
 
