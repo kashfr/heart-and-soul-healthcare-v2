@@ -2,94 +2,119 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
+    // --- Helpers ---
+
     function incomingData() {
       return request.resource.data;
     }
 
-    // Contact Submissions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Reads the caller's users/{uid} doc to check their role.
+    // Adds one document read per rule evaluation; will be replaced with
+    // custom claims on the ID token once the Admin SDK invite flow lands.
+    function getRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function hasActiveProfile() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true;
+    }
+
+    function isAdmin() {
+      return hasActiveProfile() && getRole() == 'admin';
+    }
+
+    function isStaff() {
+      return hasActiveProfile() && (getRole() == 'admin' || getRole() == 'supervisor');
+    }
+
+    // --- Collections ---
+
+    // Contact Submissions — public create, everything else via Admin SDK
     match /contactSubmissions/{submissionId} {
-      allow read, update, delete: if false; // Only allow Admin SDK
+      allow read, update, delete: if false;
       allow create: if
-        // Required fields
         incomingData().name is string && incomingData().name.size() > 0 &&
         incomingData().email is string && incomingData().email.size() > 0 &&
         incomingData().subject is string && incomingData().subject.size() > 0 &&
         incomingData().message is string && incomingData().message.size() > 0 &&
-        // Status and Timestamp
         incomingData().status == 'new' &&
         incomingData().submittedAt == request.time &&
-        // Optional fields checking
         (incomingData().get('phone', '') is string);
     }
 
-    // Referral Submissions
+    // Referral Submissions — public create, everything else via Admin SDK
     match /referralSubmissions/{submissionId} {
       allow read, update, delete: if false;
       allow create: if
-        // Validate structure exists
         incomingData().client is map &&
         incomingData().program is map &&
         incomingData().referrer is map &&
         incomingData().details is map &&
-
-        // Basic Client Info validation
         incomingData().client.firstName is string && incomingData().client.firstName.size() > 0 &&
         incomingData().client.lastName is string && incomingData().client.lastName.size() > 0 &&
         incomingData().client.dob is string &&
         incomingData().client.phone is string &&
-
-        // Metadata
         incomingData().status == 'new' &&
         incomingData().submittedAt == request.time;
     }
 
-    // Patient Roster (for nurse progress notes)
+    // Patient Roster
+    // Reads are currently public so the unauthenticated /progress-note form can
+    // power its PatientSearch autofill. This will tighten to isStaff() once
+    // nurses are authenticated (Step 4+). Writes are already admin-only.
     match /patients/{patientId} {
       allow read: if true;
-      allow create: if
+      allow create: if isAdmin() &&
         incomingData().name is string && incomingData().name.size() > 0 &&
         incomingData().dob is string && incomingData().dob.size() > 0 &&
-        incomingData().diagnosis is string &&
-        incomingData().street is string &&
-        incomingData().city is string &&
-        incomingData().state is string &&
-        incomingData().zip is string &&
         incomingData().createdAt == request.time;
-      allow update: if
+      allow update: if isAdmin() &&
         incomingData().name is string && incomingData().name.size() > 0 &&
         incomingData().dob is string && incomingData().dob.size() > 0;
-      allow delete: if true;
+      allow delete: if isAdmin();
     }
 
-    // Progress Notes
+    // Progress Notes (PHI)
+    // Create stays public so the /progress-note form keeps working without
+    // nurse authentication. Read/update/delete require admin or supervisor.
+    // Per-nurse ownership (nurses can read their own only) will land once
+    // nurses are authenticated and notes carry a nurseId.
     match /progressNotes/{noteId} {
-      allow read: if true;
       allow create: if
-        incomingData().submittedAt == request.time;
-      allow update: if true;
-      allow delete: if true;
+        incomingData().submittedAt == request.time &&
+        incomingData().status == 'submitted';
+      allow read: if isStaff();
+      allow update, delete: if isStaff();
     }
 
     // Staff profiles (role lookup)
-    // A signed-in user can read their own profile so the client can determine their role.
-    // Writes are intentionally denied here; profile creation/updates will flow through
-    // the Admin SDK during the invite + role management flow (Step 4).
+    // A signed-in user can always read their own profile so the client can
+    // determine their role. Admins can read all profiles (for future
+    // /admin/users management). Writes flow through the Admin SDK during
+    // the invite flow (Step 4).
     match /users/{userId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
       allow write: if false;
     }
 
     // Batch export audit trail
-    // Signed-in users can write audit entries for their own exports.
-    // Reads are denied on the client; admins review via Firestore console (for now).
+    // Signed-in staff write audit entries for their own exports; admins can
+    // review all audit entries. Nothing is ever updated or deleted from the
+    // client — the audit log is append-only by design.
     match /exportAudits/{auditId} {
-      allow create: if request.auth != null
+      allow create: if isStaff()
         && incomingData().userId == request.auth.uid
         && incomingData().exportedAt == request.time
         && incomingData().submissionIds is list
         && incomingData().format in ['zip', 'merged-pdf'];
-      allow read, update, delete: if false;
+      allow read: if isAdmin();
+      allow update, delete: if false;
     }
 
     // Default deny
