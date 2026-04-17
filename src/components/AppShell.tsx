@@ -28,7 +28,7 @@ const NAV: NavItem[] = [
   { href: '/admin', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
   { href: '/admin/patients', label: 'Patients', icon: <Users size={18} />, allow: ['admin'] },
   { href: '/admin/submissions', label: 'Submissions', icon: <ClipboardList size={18} /> },
-  { href: '/admin/users', label: 'Staff & Roles', icon: <UserCog size={18} />, allow: ['admin'], disabled: true },
+  { href: '/admin/users', label: 'Staff & Roles', icon: <UserCog size={18} />, allow: ['admin'] },
   { href: '/admin/referrals', label: 'Referrals', icon: <FileText size={18} />, allow: ['admin'], disabled: true },
 ];
 

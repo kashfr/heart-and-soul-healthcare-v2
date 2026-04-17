@@ -37,8 +37,7 @@ export default function AdminDashboardPage() {
             href="/admin/users"
             icon={<UserCog size={22} />}
             title="Staff & Roles"
-            description="Invite nurses and supervisors, manage roles and access. (Coming soon)"
-            disabled
+            description="Invite nurses and supervisors, manage roles and access."
           />
           <NavCard
             href="/referral"
