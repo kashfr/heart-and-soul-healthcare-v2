@@ -3,6 +3,7 @@ import Script from "next/script";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import CookieConsent from "@/components/CookieConsent";
+import { AuthProvider } from "@/components/AuthProvider";
 import "./globals.css";
 
 const GA_MEASUREMENT_ID = "G-26HBSM36Q3";
@@ -100,12 +101,14 @@ export default function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
         />
-        <Header />
-        <main style={{ paddingTop: '0' }}>
-          {children}
-        </main>
-        <Footer />
-        <CookieConsent />
+        <AuthProvider>
+          <Header />
+          <main style={{ paddingTop: '0' }}>
+            {children}
+          </main>
+          <Footer />
+          <CookieConsent />
+        </AuthProvider>
       </body>
     </html>
   );
