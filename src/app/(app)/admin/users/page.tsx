@@ -307,7 +307,7 @@ function AddStaffModal({
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               style={inputStyle}
-              placeholder="e.g., Angela Chambers"
+              placeholder="e.g., Jordan Rivera"
               disabled={submitting}
             />
           </Field>
