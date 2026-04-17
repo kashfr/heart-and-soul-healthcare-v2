@@ -635,7 +635,7 @@ function SuccessModal({ result, onClose }: { result: CreateResult; onClose: () =
       `Click the link below to set your password for the Heart and Soul Healthcare staff portal:\n\n` +
       `${result.resetLink}\n\n` +
       `Once your password is set, sign in at https://www.heartandsoulhc.org/login\n\n` +
-      `If the link has expired, let me know and I'll send a fresh one.\n\n` +
+      `If the link has already expired (they're only good for about an hour), no worries — head to https://www.heartandsoulhc.org/login and click "Forgot password?" under the Sign in button to send yourself a fresh one.\n\n` +
       `— Heart and Soul Healthcare`
   );
   const mailtoHref = `mailto:${encodeURIComponent(result.email)}?subject=${mailtoSubject}&body=${mailtoBody}`;
