@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 import { PDFDocument } from 'pdf-lib';
-import { getSubmission, toProgressNoteData } from './submissions';
+import { getSubmission } from './submissions';
 import type { ProgressNoteFormData } from './submissions';
 
 export type ExportFormat = 'zip' | 'merged-pdf';
@@ -46,11 +46,12 @@ function pdfFilenameFor(form: ProgressNoteFormData): string {
 async function fetchPdfForSubmission(id: string): Promise<{ form: ProgressNoteFormData; bytes: Uint8Array }> {
   const form = await getSubmission(id);
   if (!form) throw new Error(`Submission ${id} not found`);
-  const data = toProgressNoteData(form);
+  // Send the raw form data — the PDF renderer now reads every q##_* field
+  // directly instead of a lossy transformed shape.
   const res = await fetch('/api/progress-note/pdf', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
+    body: JSON.stringify(form),
   });
   if (!res.ok) {
     throw new Error(`PDF render failed for ${id}: ${res.status}`);
