@@ -19,10 +19,11 @@ function badRequest(message: string) {
 }
 
 export async function POST(request: Request) {
-  // Only admins can create staff accounts.
+  // Admins + supervisors can create staff accounts. Supervisors cannot create
+  // admin accounts (we enforce that after parsing the body).
   let caller;
   try {
-    caller = await requireRole(request, ['admin']);
+    caller = await requireRole(request, ['admin', 'supervisor']);
   } catch (err) {
     if (err instanceof AdminAuthError) {
       return NextResponse.json({ error: err.message }, { status: err.status });
@@ -47,6 +48,12 @@ export async function POST(request: Request) {
   if (!VALID_ROLES.includes(role)) return badRequest('role must be admin, supervisor, or nurse.');
   if (role === 'nurse' && !credential) {
     return badRequest('credential is required for nurses.');
+  }
+  if (caller.role === 'supervisor' && role === 'admin') {
+    return NextResponse.json(
+      { error: 'Supervisors cannot create admin accounts.' },
+      { status: 403 }
+    );
   }
 
   // Create the Firebase Auth user. A random password is set so the account
@@ -131,9 +138,9 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  // Admin-only staff list.
+  // Staff list is visible to admins + supervisors — they both manage staff.
   try {
-    await requireRole(request, ['admin']);
+    await requireRole(request, ['admin', 'supervisor']);
   } catch (err) {
     if (err instanceof AdminAuthError) {
       return NextResponse.json({ error: err.message }, { status: err.status });

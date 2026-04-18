@@ -7,5 +7,5 @@ export default function PatientsLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <AuthGuard allow={['admin']}>{children}</AuthGuard>;
+  return <AuthGuard allow={['admin', 'supervisor']}>{children}</AuthGuard>;
 }

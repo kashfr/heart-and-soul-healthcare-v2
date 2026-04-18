@@ -34,7 +34,7 @@ const CARDS: Card[] = [
     icon: <Users size={22} />,
     title: 'Patient Roster',
     description: 'Add, edit, and remove patients. Nurses pick from this roster on the progress-note form.',
-    allow: ['admin'],
+    allow: ['admin', 'supervisor'],
   },
   {
     href: '/admin/submissions',
@@ -48,7 +48,7 @@ const CARDS: Card[] = [
     icon: <UserCog size={22} />,
     title: 'Staff & Roles',
     description: 'Invite nurses and supervisors, manage roles and access.',
-    allow: ['admin'],
+    allow: ['admin', 'supervisor'],
   },
   {
     href: '/referral',

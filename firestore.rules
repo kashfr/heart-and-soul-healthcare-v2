@@ -74,14 +74,14 @@ service cloud.firestore {
     // nurses are authenticated (Step 4+). Writes are already admin-only.
     match /patients/{patientId} {
       allow read: if true;
-      allow create: if isAdmin() &&
+      allow create: if isStaff() &&
         incomingData().name is string && incomingData().name.size() > 0 &&
         incomingData().dob is string && incomingData().dob.size() > 0 &&
         incomingData().createdAt == request.time;
-      allow update: if isAdmin() &&
+      allow update: if isStaff() &&
         incomingData().name is string && incomingData().name.size() > 0 &&
         incomingData().dob is string && incomingData().dob.size() > 0;
-      allow delete: if isAdmin();
+      allow delete: if isStaff();
     }
 
     // Progress Notes (PHI)
@@ -124,11 +124,12 @@ service cloud.firestore {
 
     // Staff profiles (role lookup)
     // A signed-in user can always read their own profile so the client can
-    // determine their role. Admins can read all profiles (for future
-    // /admin/users management). Writes flow through the Admin SDK during
-    // the invite flow (Step 4).
+    // determine their role. Admins + supervisors can read all profiles (they
+    // both manage staff via /admin/users). Writes flow through the Admin SDK
+    // so the server can enforce the finer-grained "supervisor cannot touch
+    // admin" rules.
     match /users/{userId} {
-      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow read: if isSignedIn() && (request.auth.uid == userId || isStaff());
       allow write: if false;
     }
 

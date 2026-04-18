@@ -7,5 +7,5 @@ export default function UsersLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <AuthGuard allow={['admin']}>{children}</AuthGuard>;
+  return <AuthGuard allow={['admin', 'supervisor']}>{children}</AuthGuard>;
 }

@@ -10,6 +10,7 @@ import {
   Pencil,
   UserMinus,
   UserCheck,
+  Lock,
 } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { useAuth } from '@/components/AuthProvider';
@@ -53,7 +54,8 @@ const CREDENTIAL_OPTIONS: { value: string; label: string }[] = [
 ];
 
 export default function AdminUsersPage() {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, role: currentRole } = useAuth();
+  const isSupervisor = currentRole === 'supervisor';
   const [staff, setStaff] = useState<StaffRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
@@ -136,6 +138,7 @@ export default function AdminUsersPage() {
           <StaffTable
             rows={active}
             currentUserUid={currentUser?.uid}
+            callerRole={currentRole}
             onEdit={setEditing}
           />
         )}
@@ -149,6 +152,7 @@ export default function AdminUsersPage() {
             <StaffTable
               rows={deactivated}
               currentUserUid={currentUser?.uid}
+              callerRole={currentRole}
               onEdit={setEditing}
               muted
             />
@@ -157,13 +161,18 @@ export default function AdminUsersPage() {
       </div>
 
       {addOpen && (
-        <AddStaffModal onClose={() => setAddOpen(false)} onCreated={handleCreated} />
+        <AddStaffModal
+          onClose={() => setAddOpen(false)}
+          onCreated={handleCreated}
+          callerIsSupervisor={isSupervisor}
+        />
       )}
 
       {editing && (
         <EditStaffModal
           staff={editing}
           isSelf={currentUser?.uid === editing.uid}
+          callerIsSupervisor={isSupervisor}
           onClose={() => setEditing(null)}
           onSaved={handleSaved}
           onLinkRegenerated={handleLinkRegenerated}
@@ -178,11 +187,13 @@ export default function AdminUsersPage() {
 function StaffTable({
   rows,
   currentUserUid,
+  callerRole,
   onEdit,
   muted,
 }: {
   rows: StaffRow[];
   currentUserUid: string | undefined;
+  callerRole: Role | null;
   onEdit: (s: StaffRow) => void;
   muted?: boolean;
 }) {
@@ -202,17 +213,24 @@ function StaffTable({
         <tbody>
           {rows.map((s, i) => {
             const isSelf = s.uid === currentUserUid;
+            const isLockedForSupervisor = callerRole === 'supervisor' && s.role === 'admin';
             const rowStyle: React.CSSProperties = {
               ...(i % 2 === 1 ? altRowStyle : {}),
               ...(muted ? { opacity: 0.7 } : {}),
-              cursor: 'pointer',
+              cursor: isLockedForSupervisor ? 'not-allowed' : 'pointer',
             };
             return (
               <tr
                 key={s.uid}
                 style={rowStyle}
-                onClick={() => onEdit(s)}
-                onMouseEnter={(e) => (e.currentTarget.style.background = '#f1f5f9')}
+                title={isLockedForSupervisor ? 'Admin accounts can only be managed by another admin.' : undefined}
+                onClick={() => {
+                  if (isLockedForSupervisor) return;
+                  onEdit(s);
+                }}
+                onMouseEnter={(e) => {
+                  if (!isLockedForSupervisor) e.currentTarget.style.background = '#f1f5f9';
+                }}
                 onMouseLeave={(e) =>
                   (e.currentTarget.style.background = i % 2 === 1 ? '#fafbfc' : 'white')
                 }
@@ -240,7 +258,7 @@ function StaffTable({
                   </span>
                 </td>
                 <td style={{ ...tdStyle, textAlign: 'right', color: '#94a3b8' }}>
-                  <Pencil size={14} />
+                  {isLockedForSupervisor ? <Lock size={14} /> : <Pencil size={14} />}
                 </td>
               </tr>
             );
@@ -254,10 +272,15 @@ function StaffTable({
 function AddStaffModal({
   onClose,
   onCreated,
+  callerIsSupervisor,
 }: {
   onClose: () => void;
   onCreated: (r: CreateResult) => void;
+  callerIsSupervisor: boolean;
 }) {
+  const roleOptions = callerIsSupervisor
+    ? ROLE_OPTIONS.filter((o) => o.value !== 'admin')
+    : ROLE_OPTIONS;
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<Role>('nurse');
@@ -326,7 +349,7 @@ function AddStaffModal({
 
           <Field label="Role *">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {ROLE_OPTIONS.map((opt) => (
+              {roleOptions.map((opt) => (
                 <label key={opt.value} style={roleOptionStyle}>
                   <input
                     type="radio"
@@ -383,16 +406,21 @@ function AddStaffModal({
 function EditStaffModal({
   staff,
   isSelf,
+  callerIsSupervisor,
   onClose,
   onSaved,
   onLinkRegenerated,
 }: {
   staff: StaffRow;
   isSelf: boolean;
+  callerIsSupervisor: boolean;
   onClose: () => void;
   onSaved: (s: StaffRow) => void;
   onLinkRegenerated: (r: CreateResult) => void;
 }) {
+  const roleOptions = callerIsSupervisor
+    ? ROLE_OPTIONS.filter((o) => o.value !== 'admin')
+    : ROLE_OPTIONS;
   const [displayName, setDisplayName] = useState(staff.displayName || '');
   const [credential, setCredential] = useState(staff.credential || '');
   const [role, setRole] = useState<Role>(staff.role || 'nurse');
@@ -531,7 +559,7 @@ function EditStaffModal({
 
           <Field label="Role *" help={isSelf ? 'You cannot change your own role.' : undefined}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {ROLE_OPTIONS.map((opt) => (
+              {roleOptions.map((opt) => (
                 <label key={opt.value} style={{ ...roleOptionStyle, opacity: isSelf ? 0.6 : 1 }}>
                   <input
                     type="radio"

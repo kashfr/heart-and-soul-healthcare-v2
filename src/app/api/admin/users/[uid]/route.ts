@@ -29,7 +29,7 @@ export async function PATCH(
 
   let caller;
   try {
-    caller = await requireRole(request, ['admin']);
+    caller = await requireRole(request, ['admin', 'supervisor']);
   } catch (err) {
     if (err instanceof AdminAuthError) {
       return NextResponse.json({ error: err.message }, { status: err.status });
@@ -42,6 +42,24 @@ export async function PATCH(
     body = await request.json();
   } catch {
     return badRequest('Invalid JSON body.');
+  }
+
+  // Supervisors cannot touch admin accounts at all (edit, role-change,
+  // deactivate) and cannot promote anyone to admin. Admins can do anything.
+  const ref = adminDb().collection('users').doc(uid);
+  const snap = await ref.get();
+  if (!snap.exists) {
+    return NextResponse.json({ error: 'User not found.' }, { status: 404 });
+  }
+  const targetRole = snap.data()?.role as Role | undefined;
+
+  if (caller.role === 'supervisor') {
+    if (targetRole === 'admin') {
+      return forbidden('Supervisors cannot modify admin accounts.');
+    }
+    if (body.role === 'admin') {
+      return forbidden('Supervisors cannot promote users to admin.');
+    }
   }
 
   const update: Record<string, unknown> = {};
@@ -73,12 +91,6 @@ export async function PATCH(
 
   if (Object.keys(update).length === 0) {
     return badRequest('No updatable fields supplied.');
-  }
-
-  const ref = adminDb().collection('users').doc(uid);
-  const snap = await ref.get();
-  if (!snap.exists) {
-    return NextResponse.json({ error: 'User not found.' }, { status: 404 });
   }
 
   update.updatedAt = FieldValue.serverTimestamp();

@@ -8,8 +8,9 @@ export async function POST(
 ) {
   const { uid } = await params;
 
+  let caller;
   try {
-    await requireRole(request, ['admin']);
+    caller = await requireRole(request, ['admin', 'supervisor']);
   } catch (err) {
     if (err instanceof AdminAuthError) {
       return NextResponse.json({ error: err.message }, { status: err.status });
@@ -25,6 +26,14 @@ export async function POST(
   const email = profile.email;
   if (!email) {
     return NextResponse.json({ error: 'User has no email on file.' }, { status: 400 });
+  }
+
+  // Supervisors cannot reset password links for admin accounts.
+  if (caller.role === 'supervisor' && profile.role === 'admin') {
+    return NextResponse.json(
+      { error: 'Supervisors cannot generate reset links for admin accounts.' },
+      { status: 403 }
+    );
   }
 
   const resetLink = await adminAuth().generatePasswordResetLink(email);
