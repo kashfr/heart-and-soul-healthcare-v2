@@ -34,7 +34,7 @@ const slides: CarouselSlide[] = [
     description: 'Person-centered support for individuals with intellectual and developmental disabilities to live meaningful lives in the community.',
     href: '/programs/now-comp',
     buttonText: 'Explore NOW/COMP',
-    image: '/images/now-comp-slide.png',
+    image: '/images/now-comp-art-class.png',
   },
   {
     id: 'icwp',
