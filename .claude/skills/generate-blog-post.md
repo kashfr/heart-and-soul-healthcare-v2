@@ -40,21 +40,48 @@ author: "Heart and Soul Healthcare"
 category: "One of: GAPP, NOW/COMP, ICWP, EDWP, Caregiver Resources, Medicaid Guide, Company News"
 tags: ["tag1", "tag2", "tag3"]
 excerpt: "Short excerpt for blog cards"
+featuredImage: "/images/blog/PLACEHOLDER-slug-hero.png"
 published: true
 ---
 ```
 
-6. **File Naming**: Use kebab-case slug derived from the title. Example: `how-to-apply-for-gapp-georgia.mdx`
+6. **Image Placeholders** (Claude Code cannot generate images — the human will add them before merging):
 
-7. **Git Workflow**:
+   **Featured Image:**
+   - Set `featuredImage` in frontmatter to `/images/blog/PLACEHOLDER-<slug>-hero.png`
+
+   **Inline Images:**
+   - Include exactly 3 inline placeholder images distributed at natural visual breakpoints throughout the post
+   - Use this format: `![Detailed descriptive alt text that doubles as an image generation prompt](/images/blog/PLACEHOLDER-<slug>-<section-keyword>.png)`
+   - The alt text MUST be detailed enough to serve as an AI image generation prompt (describe the scene, subjects, mood, setting, and lighting)
+   - Place them after major section headings where a visual break enhances readability
+   - Use descriptive filenames: e.g., `PLACEHOLDER-medicaid-guide-family-documents.png`
+
+   **Image Generation Prompts in PR Body:**
+   - In the PR description, include a `## Image Prompts` section
+   - For each placeholder (hero + 3 inline = 4 total), write a detailed image generation prompt including:
+     - Subject matter and composition
+     - Setting and lighting (warm, natural light preferred)
+     - Mood (hopeful, compassionate, professional)
+     - Style: "Professional editorial photography, warm tones, natural lighting"
+     - Aspect ratio: 16:9 for hero, 3:2 for inline
+   - After the prompts, include a checklist of the placeholder filenames that need to be replaced
+
+7. **File Naming**: Use kebab-case slug derived from the title. Example: `how-to-apply-for-gapp-georgia.mdx`
+
+8. **Git Workflow**:
    - Create a new branch: `blog/<slug>`
    - Write the MDX file to `content/blog/<slug>.mdx`
    - Commit with message: `content: add blog post — "<title>"`
    - Push and open a PR with:
      - Title: `Blog: <post title>`
-     - Body: Summary of the post, target keywords, and category
+     - Body must include:
+       - Summary of the post, target keywords, and category
+       - `## Image Prompts` section with detailed prompts for each placeholder image
+       - `## Image Checklist` with a markdown checkbox list of all placeholder filenames to replace
+       - A note that it was auto-generated and needs images + human review before merging
 
-8. **Category Color Reference** (for context, not included in the file):
+9. **Category Color Reference** (for context, not included in the file):
    - GAPP → teal
    - NOW/COMP → gold
    - ICWP → sage
