@@ -89,8 +89,8 @@ const values = [
 ];
 
 const stats = [
-  { number: '15+', label: 'Years of Service' },
-  { number: '1,000+', label: 'Families Served' },
+  { number: '3+', label: 'Years of Service' },
+  { number: '100+', label: 'Families Served' },
   { number: '100%', label: 'Commitment' },
   { number: '24/7', label: 'Care Available' },
 ];
@@ -155,7 +155,7 @@ export default function Home() {
               <div className={styles.experienceBadge}>
                 <Award size={32} />
                 <div>
-                  <span className={styles.badgeNumber}>15+</span>
+                  <span className={styles.badgeNumber}>3+</span>
                   <span className={styles.badgeText}>Years Experience</span>
                 </div>
               </div>
