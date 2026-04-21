@@ -95,6 +95,23 @@ const s = StyleSheet.create({
     fontSize: 9,
     color: RED,
   },
+  groupHeader: {
+    borderLeftWidth: 3,
+    borderLeftColor: NAVY,
+    borderLeftStyle: 'solid',
+    backgroundColor: '#f5f7fa',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    marginTop: 8,
+    marginBottom: 6,
+  },
+  groupHeaderText: {
+    fontSize: 11,
+    fontFamily: 'Helvetica-Bold',
+    color: NAVY,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
   section: {
     borderWidth: 1,
     borderColor: '#ccc',
@@ -391,6 +408,14 @@ function checkVitals(data: ProgressNoteFormData) {
 
 // --- Reusable components ---
 
+function GroupHeader({ title }: { title: string }) {
+  return (
+    <View style={s.groupHeader} wrap={false}>
+      <Text style={s.groupHeaderText}>{title}</Text>
+    </View>
+  );
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <View style={s.section} wrap={false}>
@@ -607,6 +632,9 @@ export default function ProgressNotePDF({ data }: ProgressNotePDFProps) {
           </View>
         )}
 
+        {/* === GROUP 1: Client & Shift === */}
+        <GroupHeader title="Client & Shift" />
+
         {/* 1. Client Information */}
         {anyHasValue(data, ['q3_clientName', 'q4_dateofBirth', 'q5_ageYears', 'q10_primaryDiagnosis', 'q200_addr_line1']) && (
           <Section title="Client Information">
@@ -643,6 +671,9 @@ export default function ProgressNotePDF({ data }: ProgressNotePDFProps) {
             </FieldRow>
           </Section>
         )}
+
+        {/* === GROUP 2: Status & Vitals === */}
+        <GroupHeader title="Status & Vitals" />
 
         {/* 4. Client Status */}
         {anyHasValue(data, [
@@ -702,6 +733,9 @@ export default function ProgressNotePDF({ data }: ProgressNotePDFProps) {
           </View>
         )}
 
+        {/* === GROUP 3: Observations & Systems === */}
+        <GroupHeader title="Observations & Systems" />
+
         {/* 6. Observations */}
         {anyHasValue(data, [
           'q23_activityLevel', 'q24_scaleUsed', 'q24_painScore', 'q24_verbalComplaints',
@@ -758,6 +792,9 @@ export default function ProgressNotePDF({ data }: ProgressNotePDFProps) {
           </SectionBreakable>
         )}
 
+        {/* === GROUP 4: Personal Care & Nutrition === */}
+        <GroupHeader title="Personal Care & Nutrition" />
+
         {/* 9. Personal Care / ADLs */}
         {anyHasValue(data, ['q38_personalCare', 'q38_personalCareNotes']) && (
           <Section title="Personal Care / ADLs">
@@ -797,6 +834,9 @@ export default function ProgressNotePDF({ data }: ProgressNotePDFProps) {
             {hasValue(data.q38_abuseNotes) && <TextBlock label="Notes" value={data.q38_abuseNotes} />}
           </Section>
         )}
+
+        {/* === GROUP 5: Meds & Interventions === */}
+        <GroupHeader title="Meds & Interventions" />
 
         {/* 13. Skilled Nursing Interventions (LPN/RN only) */}
         {isLpnRn && anyHasValue(data, ['q38_interventions', 'q39_interventionDetails', 'q40_skillJustification']) && (
@@ -839,6 +879,9 @@ export default function ProgressNotePDF({ data }: ProgressNotePDFProps) {
             {hasValue(data.q43_postEventMonitoring) && <TextBlock label="Post-Event" value={data.q43_postEventMonitoring} />}
           </SectionBreakable>
         )}
+
+        {/* === GROUP 6: Education & Notifications === */}
+        <GroupHeader title="Education & Notifications" />
 
         {/* 15. Education */}
         {anyHasValue(data, [
@@ -956,6 +999,9 @@ export default function ProgressNotePDF({ data }: ProgressNotePDFProps) {
             {hasValue(data.q57_incidentDetails) && <TextBlock label="Details" value={data.q57_incidentDetails} />}
           </Section>
         )}
+
+        {/* === GROUP 7: Summary & Signature === */}
+        <GroupHeader title="Summary & Signature" />
 
         {/* 22. End-of-Shift Handoff */}
         {anyHasValue(data, [

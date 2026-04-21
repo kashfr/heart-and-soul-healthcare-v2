@@ -388,6 +388,9 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           </div>
         )}
 
+        {/* === GROUP 1: Client & Shift === */}
+        <GroupHeader title="Client & Shift" />
+
         {/* 1. CLIENT INFORMATION */}
         <ConditionalSection
           title="Client Information"
@@ -430,6 +433,9 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             <Field label="Credential" value={data.q12_credential} />
           </FieldRow>
         </ConditionalSection>
+
+        {/* === GROUP 2: Status & Vitals === */}
+        <GroupHeader title="Status & Vitals" />
 
         {/* 4. CLIENT STATUS */}
         <ConditionalSection
@@ -486,6 +492,9 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             </div>
           )}
         </ConditionalSection>
+
+        {/* === GROUP 3: Observations & Systems === */}
+        <GroupHeader title="Observations & Systems" />
 
         {/* 6. OBSERVATIONS */}
         <ConditionalSection
@@ -567,6 +576,9 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           </Section>
         )}
 
+        {/* === GROUP 4: Personal Care & Nutrition === */}
+        <GroupHeader title="Personal Care & Nutrition" />
+
         {/* 9. PERSONAL CARE / ADLs */}
         <ConditionalSection
           title="Personal Care / ADLs"
@@ -615,6 +627,9 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           {hasValue(data.q38_abuseNotes) && <TextBlock label="Notes" value={data.q38_abuseNotes} />}
         </ConditionalSection>
 
+        {/* === GROUP 5: Meds & Interventions === */}
+        <GroupHeader title="Meds & Interventions" />
+
         {/* 13. SKILLED NURSING INTERVENTIONS (LPN/RN only) */}
         {isLpnRn && anyHasValue(['q38_interventions', 'q39_interventionDetails', 'q40_skillJustification']) && (
           <Section title="Skilled Nursing Interventions">
@@ -656,6 +671,9 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             {hasValue(data.q43_postEventMonitoring) && <TextBlock label="Post-Event" value={data.q43_postEventMonitoring} />}
           </Section>
         )}
+
+        {/* === GROUP 6: Education & Notifications === */}
+        <GroupHeader title="Education & Notifications" />
 
         {/* 15. EDUCATION */}
         <ConditionalSection
@@ -784,6 +802,9 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           {hasValue(data.q57_incidentDetails) && <TextBlock label="Details" value={data.q57_incidentDetails} />}
         </ConditionalSection>
 
+        {/* === GROUP 7: Summary & Signature === */}
+        <GroupHeader title="Summary & Signature" />
+
         {/* 22. END-OF-SHIFT HANDOFF */}
         <ConditionalSection
           title="End-of-Shift Handoff"
@@ -881,6 +902,14 @@ export default function SubmissionDetailPage({ params }: PageProps) {
 }
 
 // --- Sub-components ---
+
+function GroupHeader({ title }: { title: string }) {
+  return (
+    <div style={groupHeaderStyle} className="print-group-header">
+      <span style={groupHeaderTextStyle}>{title}</span>
+    </div>
+  );
+}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -1060,6 +1089,23 @@ const formDateStyle: React.CSSProperties = {
   color: '#555',
   marginTop: 4,
   marginBottom: 0,
+};
+
+const groupHeaderStyle: React.CSSProperties = {
+  borderLeft: '4px solid #1a3a5c',
+  background: '#f5f7fa',
+  padding: '8px 14px',
+  marginTop: 18,
+  marginBottom: 10,
+  borderRadius: 2,
+};
+
+const groupHeaderTextStyle: React.CSSProperties = {
+  fontSize: 15,
+  fontWeight: 700,
+  color: '#1a3a5c',
+  letterSpacing: 0.5,
+  textTransform: 'uppercase',
 };
 
 const sectionStyle: React.CSSProperties = {

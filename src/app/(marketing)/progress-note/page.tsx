@@ -19,6 +19,16 @@ import FormPageSeven from './components/FormPageSeven';
 
 type CredentialTier = 'HHA' | 'CNA' | 'LPN' | 'RN' | '';
 
+const PAGE_LABELS: Record<number, { full: string; short: string }> = {
+  1: { full: 'Client & Shift', short: 'Client' },
+  2: { full: 'Status & Vitals', short: 'Status' },
+  3: { full: 'Observations & Systems', short: 'Systems' },
+  4: { full: 'Personal Care & Nutrition', short: 'Care' },
+  5: { full: 'Meds & Interventions', short: 'Meds' },
+  6: { full: 'Education & Notifications', short: 'Alerts' },
+  7: { full: 'Summary & Signature', short: 'Summary' },
+};
+
 function getActivePages(credential: CredentialTier): number[] {
   switch (credential) {
     case 'HHA':
@@ -575,20 +585,27 @@ function ProgressNotePageInner() {
       </div>
 
       <div className={styles.progressBar} id="progressBar">
-        {activePages.map((page, index) => (
-          <div
-            key={page}
-            className={`${styles.progressDot} ${
-              page === currentPage ? styles.active : ''
-            } ${index < activeIndex ? styles.completed : ''}`}
-            onClick={() => {
-              setCurrentPage(page);
-              window.scrollTo(0, 0);
-            }}
-          >
-            {index + 1}
-          </div>
-        ))}
+        {activePages.map((page, index) => {
+          const label = PAGE_LABELS[page] ?? { full: '', short: '' };
+          return (
+            <div
+              key={page}
+              className={`${styles.progressDot} ${
+                page === currentPage ? styles.active : ''
+              } ${index < activeIndex ? styles.completed : ''}`}
+              onClick={() => {
+                setCurrentPage(page);
+                window.scrollTo(0, 0);
+              }}
+              title={`${index + 1}. ${label.full}`}
+              aria-label={`Step ${index + 1}: ${label.full}`}
+            >
+              <span className={styles.progressDotNum}>{index + 1}</span>
+              <span className={`${styles.progressDotLabel} ${styles.progressDotLabelFull}`}>{label.full}</span>
+              <span className={`${styles.progressDotLabel} ${styles.progressDotLabelShort}`}>{label.short}</span>
+            </div>
+          );
+        })}
       </div>
 
       <form ref={formRef} onSubmit={handleSubmit} className={styles.form} noValidate>
