@@ -2,8 +2,14 @@
 
 import { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Download, X } from 'lucide-react';
-import { getSubmissions, deleteSubmission, type SubmissionSummary } from '@/lib/submissions';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { Archive as ArchiveIcon, Download, RotateCcw, X } from 'lucide-react';
+import {
+  getSubmissions,
+  setSubmissionsArchive,
+  type ArchiveView,
+  type SubmissionSummary,
+} from '@/lib/submissions';
 import {
   buildZip,
   buildMergedPdf,
@@ -19,7 +25,10 @@ const MAX_BATCH = 50;
 export default function SubmissionsPage() {
   const { user, role, loading: authLoading } = useAuth();
   const isNurse = role === 'nurse';
-  const [submissions, setSubmissions] = useState<SubmissionSummary[]>([]);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const view: ArchiveView = searchParams.get('view') === 'archived' ? 'archived' : 'active';
+  const [allSubmissions, setAllSubmissions] = useState<SubmissionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [modalOpen, setModalOpen] = useState(false);
@@ -27,18 +36,44 @@ export default function SubmissionsPage() {
   const [exporting, setExporting] = useState(false);
   const [progress, setProgress] = useState<BatchExportProgress | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (authLoading) return;
     (async () => {
       try {
         const options = isNurse && user ? { nurseId: user.uid } : undefined;
-        setSubmissions(await getSubmissions(options));
+        setAllSubmissions(await getSubmissions(options));
       } finally {
         setLoading(false);
       }
     })();
   }, [authLoading, isNurse, user]);
+
+  // Scope-aware filter. Nurses key on nurseArchivedAt (personal scope);
+  // staff key on archivedAt (admin scope). Scopes are independent: a note
+  // archived by the nurse is still visible to staff in their Active tab.
+  const submissions = useMemo(() => {
+    const key: 'archivedAt' | 'nurseArchivedAt' = isNurse ? 'nurseArchivedAt' : 'archivedAt';
+    return allSubmissions.filter((s) =>
+      view === 'archived' ? s[key] != null : s[key] == null
+    );
+  }, [allSubmissions, view, isNurse]);
+
+  const activeCount = useMemo(() => {
+    const key: 'archivedAt' | 'nurseArchivedAt' = isNurse ? 'nurseArchivedAt' : 'archivedAt';
+    return allSubmissions.filter((s) => s[key] == null).length;
+  }, [allSubmissions, isNurse]);
+  const archivedCount = allSubmissions.length - activeCount;
+
+  const setView = (next: ArchiveView) => {
+    setSelected(new Set());
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === 'archived') params.set('view', 'archived');
+    else params.delete('view');
+    const qs = params.toString();
+    router.replace(qs ? `/admin/submissions?${qs}` : '/admin/submissions');
+  };
 
   const selectedIds = useMemo(() => Array.from(selected), [selected]);
 
@@ -74,19 +109,73 @@ export default function SubmissionsPage() {
 
   const clearSelection = () => setSelected(new Set());
 
-  const handleDelete = async (s: SubmissionSummary) => {
-    if (!window.confirm(`Delete progress note for ${s.clientName} on ${s.dateOfService}?`)) return;
+  const handleBulkArchive = async (action: 'archive' | 'restore') => {
+    if (!user || !role) return;
+    if (selectedIds.length === 0) return;
+    if (action === 'archive') {
+      const msg = isNurse
+        ? `Archive ${selectedIds.length} note${selectedIds.length === 1 ? '' : 's'} from your view? Your supervisor will still see them. Nothing is deleted.`
+        : `Archive ${selectedIds.length} note${selectedIds.length === 1 ? '' : 's'}? They will be hidden from the default view but nothing is deleted.`;
+      if (!window.confirm(msg)) return;
+    }
+    setBusy(true);
     try {
-      await deleteSubmission(s.id);
-      setSubmissions((prev) => prev.filter((item) => item.id !== s.id));
+      await setSubmissionsArchive(
+        selectedIds,
+        isNurse ? 'nurse' : 'staff',
+        action,
+        { uid: user.uid, displayName: user.displayName, role }
+      );
+      // Optimistically update local state so the row leaves the current tab.
+      setAllSubmissions((prev) =>
+        prev.map((s) => {
+          if (!selected.has(s.id)) return s;
+          const key = isNurse ? 'nurseArchivedAt' : 'archivedAt';
+          return { ...s, [key]: action === 'archive' ? new Date() : null };
+        })
+      );
+      clearSelection();
+    } catch (err) {
+      console.error(`Failed to ${action}:`, err);
+      alert(`Failed to ${action}. Please try again.`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRowArchive = async (s: SubmissionSummary, action: 'archive' | 'restore') => {
+    if (!user || !role) return;
+    if (action === 'archive') {
+      const msg = isNurse
+        ? `Archive the note for ${s.clientName} on ${s.dateOfService} from your view? Your supervisor will still see it. Nothing is deleted.`
+        : `Archive the note for ${s.clientName} on ${s.dateOfService}? It will be hidden from the default view but nothing is deleted.`;
+      if (!window.confirm(msg)) return;
+    }
+    setBusy(true);
+    try {
+      await setSubmissionsArchive(
+        [s.id],
+        isNurse ? 'nurse' : 'staff',
+        action,
+        { uid: user.uid, displayName: user.displayName, role }
+      );
+      setAllSubmissions((prev) =>
+        prev.map((item) => {
+          if (item.id !== s.id) return item;
+          const key = isNurse ? 'nurseArchivedAt' : 'archivedAt';
+          return { ...item, [key]: action === 'archive' ? new Date() : null };
+        })
+      );
       setSelected((prev) => {
         const next = new Set(prev);
         next.delete(s.id);
         return next;
       });
     } catch (err) {
-      console.error('Failed to delete submission:', err);
-      alert('Failed to delete submission. Please try again.');
+      console.error(`Failed to ${action}:`, err);
+      alert(`Failed to ${action}. Please try again.`);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -152,6 +241,27 @@ export default function SubmissionsPage() {
           <p style={subtitleStyle}>All submitted nursing progress notes</p>
         </div>
 
+        <div style={tabsStyle} role="tablist" aria-label="Submissions view">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === 'active'}
+            onClick={() => setView('active')}
+            style={view === 'active' ? tabActiveStyle : tabStyle}
+          >
+            Active <span style={tabCountStyle}>{activeCount}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === 'archived'}
+            onClick={() => setView('archived')}
+            style={view === 'archived' ? tabActiveStyle : tabStyle}
+          >
+            Archived <span style={tabCountStyle}>{archivedCount}</span>
+          </button>
+        </div>
+
         {selected.size > 0 && (
           <div style={bulkBarStyle}>
             <span style={{ fontWeight: 600, color: '#2c3e50' }}>
@@ -165,11 +275,30 @@ export default function SubmissionsPage() {
               </span>
             )}
             <div style={{ flex: 1 }} />
-            <button onClick={openExportModal} style={exportBtnStyle}>
+            <button onClick={openExportModal} style={exportBtnStyle} disabled={busy}>
               <Download size={14} />
               Export as PDF
             </button>
-            <button onClick={clearSelection} style={clearBtnStyle}>
+            {view === 'active' ? (
+              <button
+                onClick={() => handleBulkArchive('archive')}
+                style={archiveBtnStyle}
+                disabled={busy}
+              >
+                <ArchiveIcon size={14} />
+                Archive
+              </button>
+            ) : (
+              <button
+                onClick={() => handleBulkArchive('restore')}
+                style={restoreBtnStyle}
+                disabled={busy}
+              >
+                <RotateCcw size={14} />
+                Restore
+              </button>
+            )}
+            <button onClick={clearSelection} style={clearBtnStyle} disabled={busy}>
               <X size={14} />
               Clear
             </button>
@@ -247,9 +376,21 @@ export default function SubmissionsPage() {
                           >
                             View
                           </Link>
-                          {!isNurse && (
-                            <button onClick={() => handleDelete(s)} style={deleteBtnStyle}>
-                              Delete
+                          {view === 'active' ? (
+                            <button
+                              onClick={() => handleRowArchive(s, 'archive')}
+                              style={rowArchiveBtnStyle}
+                              disabled={busy}
+                            >
+                              Archive
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleRowArchive(s, 'restore')}
+                              style={rowArchiveBtnStyle}
+                              disabled={busy}
+                            >
+                              Restore
                             </button>
                           )}
                         </div>
@@ -441,6 +582,82 @@ const bulkMetaStyle: React.CSSProperties = {
   borderRadius: 999,
 };
 
+const tabsStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 4,
+  marginBottom: 14,
+  borderBottom: '1px solid #e0e0e0',
+};
+
+const tabStyle: React.CSSProperties = {
+  background: 'transparent',
+  border: 'none',
+  borderBottom: '2px solid transparent',
+  padding: '10px 16px',
+  fontSize: 14,
+  fontWeight: 600,
+  color: '#5c6b7a',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  marginBottom: -1,
+};
+
+const tabActiveStyle: React.CSSProperties = {
+  ...{
+    background: 'transparent',
+    border: 'none',
+    padding: '10px 16px',
+    fontSize: 14,
+    fontWeight: 700,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+  },
+  color: '#2c3e50',
+  borderBottom: '2px solid #27ae60',
+  marginBottom: -1,
+};
+
+const tabCountStyle: React.CSSProperties = {
+  display: 'inline-block',
+  marginLeft: 6,
+  padding: '1px 8px',
+  background: '#eef1f4',
+  borderRadius: 999,
+  fontSize: 12,
+  fontWeight: 700,
+  color: '#5c6b7a',
+};
+
+const archiveBtnStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  background: '#5c6b7a',
+  color: 'white',
+  padding: '8px 14px',
+  borderRadius: 6,
+  border: 'none',
+  fontSize: 13,
+  fontWeight: 700,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
+
+const restoreBtnStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  background: '#34495e',
+  color: 'white',
+  padding: '8px 14px',
+  borderRadius: 6,
+  border: 'none',
+  fontSize: 13,
+  fontWeight: 700,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
+
 const exportBtnStyle: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
@@ -549,10 +766,10 @@ const viewBtnStyle: React.CSSProperties = {
   fontWeight: 600,
 };
 
-const deleteBtnStyle: React.CSSProperties = {
+const rowArchiveBtnStyle: React.CSSProperties = {
   display: 'inline-block',
   background: '#f5f5f5',
-  color: '#c44',
+  color: '#2c3e50',
   padding: '6px 16px',
   borderRadius: 4,
   border: '1px solid #ddd',

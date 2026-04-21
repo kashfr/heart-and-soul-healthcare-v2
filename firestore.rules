@@ -98,11 +98,17 @@ service cloud.firestore {
         && (!('nurseId' in incomingData()) || incomingData().nurseId == request.auth.uid);
       allow read: if isStaff()
         || (isNurse() && resource.data.nurseId == request.auth.uid);
+      // A nurse may toggle her personal archive fields (nurseArchivedAt/By)
+      // but must never touch the staff-scope archive fields (archivedAt/By).
+      // Using get('archivedAt', null) so the rule works whether the field
+      // exists yet or not.
       allow update: if isStaff()
         || (isNurse()
             && resource.data.nurseId == request.auth.uid
             && incomingData().nurseId == resource.data.nurseId
-            && incomingData().submittedAt == resource.data.submittedAt);
+            && incomingData().submittedAt == resource.data.submittedAt
+            && incomingData().get('archivedAt', null) == resource.data.get('archivedAt', null)
+            && incomingData().get('archivedBy', null) == resource.data.get('archivedBy', null));
       allow delete: if isStaff();
 
       // Edit history — append-only audit trail for every update.

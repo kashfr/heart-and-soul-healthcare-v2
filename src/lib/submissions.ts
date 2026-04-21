@@ -121,7 +121,12 @@ export interface SubmissionSummary {
   dateOfService: string;
   submittedAt: Date | null;
   status: string;
+  archivedAt: Date | null;
+  nurseArchivedAt: Date | null;
 }
+
+export type ArchiveScope = 'staff' | 'nurse';
+export type ArchiveView = 'active' | 'archived';
 
 /**
  * Save a progress note form submission to Firestore.
@@ -164,6 +169,8 @@ export async function getSubmissions(options?: { nurseId?: string }): Promise<Su
     const rows = snapshot.docs.map((d) => {
       const data = d.data();
       const submittedAt = data.submittedAt as Timestamp | null;
+      const archivedAt = data.archivedAt as Timestamp | null | undefined;
+      const nurseArchivedAt = data.nurseArchivedAt as Timestamp | null | undefined;
       return {
         id: d.id,
         clientName: data.q3_clientName || '',
@@ -172,6 +179,8 @@ export async function getSubmissions(options?: { nurseId?: string }): Promise<Su
         dateOfService: formatDateUS(data.q6_dateofService || ''),
         submittedAt: submittedAt ? submittedAt.toDate() : null,
         status: data.status || 'submitted',
+        archivedAt: archivedAt ? archivedAt.toDate() : null,
+        nurseArchivedAt: nurseArchivedAt ? nurseArchivedAt.toDate() : null,
       };
     });
 
@@ -218,6 +227,10 @@ const SKIP_DIFF_FIELDS = new Set([
   'nurseId',
   'claimedAt',
   'claimedBy',
+  'archivedAt',
+  'archivedBy',
+  'nurseArchivedAt',
+  'nurseArchivedBy',
 ]);
 
 function normalizeForDiff(v: unknown): string {
@@ -322,6 +335,43 @@ export async function getEditHistory(id: string): Promise<EditHistoryEntry[]> {
     console.error('Error fetching edit history:', error);
     return [];
   }
+}
+
+/**
+ * Archive (staff scope) or personally archive (nurse scope) a batch of notes.
+ * Writes an audit entry to each note's editHistory subcollection recording
+ * who archived/restored and under which scope.
+ */
+export async function setSubmissionsArchive(
+  ids: string[],
+  scope: ArchiveScope,
+  action: 'archive' | 'restore',
+  editor: SubmissionEditor
+): Promise<void> {
+  if (ids.length === 0) return;
+  const batch = writeBatch(db);
+  const timestamp = serverTimestamp();
+  const fieldAt = scope === 'staff' ? 'archivedAt' : 'nurseArchivedAt';
+  const fieldBy = scope === 'staff' ? 'archivedBy' : 'nurseArchivedBy';
+
+  for (const id of ids) {
+    const docRef = doc(db, 'progressNotes', id);
+    batch.update(docRef, {
+      [fieldAt]: action === 'archive' ? timestamp : null,
+      [fieldBy]: action === 'archive' ? editor.uid : null,
+      lastUpdatedAt: timestamp,
+    });
+    const historyRef = doc(collection(docRef, 'editHistory'));
+    batch.set(historyRef, {
+      editedBy: editor.uid,
+      editedByName: editor.displayName || '',
+      editedByRole: editor.role,
+      editedAt: timestamp,
+      changes: {},
+      action: `${scope}:${action}`,
+    });
+  }
+  await batch.commit();
 }
 
 /**

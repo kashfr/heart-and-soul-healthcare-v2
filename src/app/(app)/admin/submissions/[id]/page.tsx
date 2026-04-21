@@ -2,10 +2,9 @@
 
 import { useState, useEffect, use } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import {
   getSubmission,
-  deleteSubmission,
+  setSubmissionsArchive,
   type ProgressNoteFormData,
 } from '@/lib/submissions';
 import { getVitalRanges, getAgeGroupLabel } from '@/lib/vitalRanges';
@@ -33,7 +32,6 @@ function hasValue(v: string | undefined): boolean {
 
 export default function SubmissionDetailPage({ params }: PageProps) {
   const { id } = use(params);
-  const router = useRouter();
   const { user, role, loading: authLoading } = useAuth();
   const isNurse = role === 'nurse';
   const [formData, setFormData] = useState<ProgressNoteFormData | null>(null);
@@ -74,17 +72,27 @@ export default function SubmissionDetailPage({ params }: PageProps) {
     window.print();
   };
 
-  const handleDelete = async () => {
-    const confirmed = window.confirm(
-      'Are you sure you want to delete this progress note? This cannot be undone.'
-    );
-    if (!confirmed) return;
+  const handleArchiveToggle = async (action: 'archive' | 'restore') => {
+    if (!user || !role) return;
+    if (action === 'archive') {
+      const msg = isNurse
+        ? 'Archive this note from your view? Your supervisor will still see it. Nothing is deleted.'
+        : 'Archive this note? It will be hidden from the default view but nothing is deleted.';
+      if (!window.confirm(msg)) return;
+    }
     try {
-      await deleteSubmission(id);
-      router.push('/admin/submissions');
-    } catch (error) {
-      console.error('Failed to delete submission:', error);
-      alert('Failed to delete submission. Please try again.');
+      await setSubmissionsArchive(
+        [id],
+        isNurse ? 'nurse' : 'staff',
+        action,
+        { uid: user.uid, displayName: user.displayName, role }
+      );
+      // Reload so the badge + button reflect new state
+      const fresh = await getSubmission(id);
+      if (fresh) setFormData(fresh);
+    } catch (err) {
+      console.error(`Failed to ${action}:`, err);
+      alert(`Failed to ${action}. Please try again.`);
     }
   };
 
@@ -119,6 +127,13 @@ export default function SubmissionDetailPage({ params }: PageProps) {
 
   // Cast to dynamic record so we can access all fields including ones not in the interface
   const data = formData as unknown as Record<string, string>;
+  const rawData = formData as unknown as Record<string, unknown>;
+  const staffArchived = rawData.archivedAt != null;
+  const nurseArchived = rawData.nurseArchivedAt != null;
+  // The badge shown reflects the viewer's own scope:
+  // - staff see the staff archive state
+  // - nurses see their personal archive state
+  const isArchivedForViewer = isNurse ? nurseArchived : staffArchived;
 
   const credential = data.q12_credential || '';
   const isLpnRn = /^(LPN|RN)$/i.test(credential);
@@ -313,9 +328,19 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             <button onClick={handlePrint} style={primaryBtnStyle}>
               Print / Save as PDF
             </button>
-            {!isNurse && (
-              <button onClick={handleDelete} style={dangerBtnStyle}>
-                Delete
+            {isArchivedForViewer ? (
+              <button
+                onClick={() => handleArchiveToggle('restore')}
+                style={editBtnStyle}
+              >
+                Restore
+              </button>
+            ) : (
+              <button
+                onClick={() => handleArchiveToggle('archive')}
+                style={editBtnStyle}
+              >
+                Archive
               </button>
             )}
           </div>
@@ -327,6 +352,16 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           <p style={taglineStyle}>Compassionate Care, Professional Excellence</p>
           <h2 style={formTitleStyle}>HOME HEALTH PROGRESS NOTE</h2>
           <p style={formDateStyle}>Form Date: {fmtDate(data.q6_dateofService) || data.q6_dateofService}</p>
+          {(isNurse ? nurseArchived : staffArchived) && (
+            <div style={archivedBadgeStyle} className="no-print">
+              Archived{isNurse ? ' from your view' : ''}
+            </div>
+          )}
+          {!isNurse && nurseArchived && (
+            <div style={nurseArchivedNoteStyle} className="no-print">
+              Nurse has archived this from their personal view
+            </div>
+          )}
         </div>
 
         {/* Abnormal Vital Signs Alert Banner */}
@@ -964,22 +999,38 @@ const editBtnStyle: React.CSSProperties = {
   textDecoration: 'none',
 };
 
-const dangerBtnStyle: React.CSSProperties = {
-  background: '#f5f5f5',
-  color: '#c44',
-  border: '1px solid #ddd',
-  padding: '8px 20px',
-  borderRadius: 4,
-  cursor: 'pointer',
-  fontWeight: 600,
-  fontSize: 14,
-};
-
 const headerStyle: React.CSSProperties = {
   textAlign: 'center',
   borderBottom: `3px solid ${NAVY}`,
   paddingBottom: 12,
   marginBottom: 20,
+};
+
+const archivedBadgeStyle: React.CSSProperties = {
+  display: 'inline-block',
+  marginTop: 8,
+  padding: '4px 12px',
+  background: '#fff3e0',
+  color: '#9a4d00',
+  border: '1px solid #ffcc80',
+  borderRadius: 999,
+  fontSize: 12,
+  fontWeight: 700,
+  textTransform: 'uppercase',
+  letterSpacing: 0.5,
+};
+
+const nurseArchivedNoteStyle: React.CSSProperties = {
+  display: 'inline-block',
+  marginTop: 6,
+  marginLeft: 8,
+  padding: '2px 10px',
+  background: '#eef1f4',
+  color: '#5c6b7a',
+  border: '1px solid #dfe5ec',
+  borderRadius: 999,
+  fontSize: 11,
+  fontWeight: 600,
 };
 
 const companyNameStyle: React.CSSProperties = {
