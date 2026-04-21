@@ -3,7 +3,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Archive as ArchiveIcon, Download, RotateCcw, X } from 'lucide-react';
+import { Archive as ArchiveIcon, Download, RotateCcw, X, Search } from 'lucide-react';
 import {
   getSubmissions,
   setSubmissionsArchive,
@@ -21,13 +21,80 @@ import { logExport } from '@/lib/audit';
 import { useAuth } from '@/components/AuthProvider';
 
 const MAX_BATCH = 50;
+const PAGE_SIZE = 25;
+
+type Scope = 'active' | 'archived' | 'all';
+type SortKey = 'submittedAt' | 'dateOfService' | 'clientName' | 'nurseName';
+type SortDir = 'asc' | 'desc';
+type DatePreset = '' | 'today' | 'week' | 'month' | '30d';
+
+function parseDateOfService(mmddyyyy: string): Date | null {
+  const [m, d, y] = mmddyyyy.split('/').map(Number);
+  if (!m || !d || !y) return null;
+  return new Date(y, m - 1, d);
+}
+
+function startOfDay(d: Date) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function presetRange(preset: DatePreset): { start: Date | null; end: Date | null } {
+  if (!preset) return { start: null, end: null };
+  const now = startOfDay(new Date());
+  const end = new Date(now);
+  end.setHours(23, 59, 59, 999);
+  if (preset === 'today') return { start: now, end };
+  if (preset === 'week') {
+    const start = new Date(now);
+    start.setDate(start.getDate() - now.getDay());
+    return { start, end };
+  }
+  if (preset === 'month') {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    return { start, end };
+  }
+  if (preset === '30d') {
+    const start = new Date(now);
+    start.setDate(start.getDate() - 30);
+    return { start, end };
+  }
+  return { start: null, end: null };
+}
+
+function useDebounced<T>(value: T, delay = 250): T {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return v;
+}
 
 export default function SubmissionsPage() {
   const { user, role, loading: authLoading } = useAuth();
   const isNurse = role === 'nurse';
   const searchParams = useSearchParams();
   const router = useRouter();
-  const view: ArchiveView = searchParams.get('view') === 'archived' ? 'archived' : 'active';
+
+  const scope: Scope =
+    searchParams.get('view') === 'archived'
+      ? 'archived'
+      : searchParams.get('view') === 'all'
+      ? 'all'
+      : 'active';
+  const qParam = searchParams.get('q') ?? '';
+  const sortParam = (searchParams.get('sort') as SortKey) || 'submittedAt';
+  const dirParam = (searchParams.get('dir') as SortDir) || 'desc';
+  const credParam = searchParams.get('cred') ?? '';
+  const nurseParam = searchParams.get('nurse') ?? '';
+  const datePreset = (searchParams.get('range') as DatePreset) || '';
+  const flagAbnormal = searchParams.get('abn') === '1';
+  const flagIncident = searchParams.get('inc') === '1';
+  const flagPhysNotified = searchParams.get('phy') === '1';
+  const page = Math.max(1, Number(searchParams.get('p') || '1'));
+
   const [allSubmissions, setAllSubmissions] = useState<SubmissionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -37,6 +104,8 @@ export default function SubmissionsPage() {
   const [progress, setProgress] = useState<BatchExportProgress | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [queryInput, setQueryInput] = useState(qParam);
+  const debouncedQuery = useDebounced(queryInput, 250);
 
   useEffect(() => {
     if (authLoading) return;
@@ -50,15 +119,31 @@ export default function SubmissionsPage() {
     })();
   }, [authLoading, isNurse, user]);
 
-  // Scope-aware filter. Nurses key on nurseArchivedAt (personal scope);
-  // staff key on archivedAt (admin scope). Scopes are independent: a note
-  // archived by the nurse is still visible to staff in their Active tab.
-  const submissions = useMemo(() => {
+  const updateParams = (patch: Record<string, string | null>) => {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === null || v === '') params.delete(k);
+      else params.set(k, v);
+    }
+    const qs = params.toString();
+    router.replace(qs ? `/admin/submissions?${qs}` : '/admin/submissions');
+  };
+
+  // Sync debounced text input back to URL.
+  useEffect(() => {
+    if (debouncedQuery === qParam) return;
+    updateParams({ q: debouncedQuery || null, p: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedQuery]);
+
+  // Scope filter (independent per role).
+  const scoped = useMemo(() => {
     const key: 'archivedAt' | 'nurseArchivedAt' = isNurse ? 'nurseArchivedAt' : 'archivedAt';
+    if (scope === 'all') return allSubmissions;
     return allSubmissions.filter((s) =>
-      view === 'archived' ? s[key] != null : s[key] == null
+      scope === 'archived' ? s[key] != null : s[key] == null
     );
-  }, [allSubmissions, view, isNurse]);
+  }, [allSubmissions, scope, isNurse]);
 
   const activeCount = useMemo(() => {
     const key: 'archivedAt' | 'nurseArchivedAt' = isNurse ? 'nurseArchivedAt' : 'archivedAt';
@@ -66,20 +151,130 @@ export default function SubmissionsPage() {
   }, [allSubmissions, isNurse]);
   const archivedCount = allSubmissions.length - activeCount;
 
-  const setView = (next: ArchiveView) => {
+  // List of unique nurses for the admin filter dropdown.
+  const nurseOptions = useMemo(() => {
+    const set = new Set<string>();
+    allSubmissions.forEach((s) => s.nurseName && set.add(s.nurseName));
+    return Array.from(set).sort();
+  }, [allSubmissions]);
+
+  const { start: rangeStart, end: rangeEnd } = useMemo(
+    () => presetRange(datePreset),
+    [datePreset]
+  );
+
+  // Search + filters.
+  const filtered = useMemo(() => {
+    const q = qParam.trim().toLowerCase();
+    return scoped.filter((s) => {
+      if (q) {
+        const hay =
+          `${s.clientName} ${s.nurseName} ${s.diagnosis} ${s.dateOfService}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (credParam && s.credential !== credParam) return false;
+      if (nurseParam && s.nurseName !== nurseParam) return false;
+      if (flagAbnormal && !s.hasAbnormalVitals) return false;
+      if (flagIncident && !s.hasIncident) return false;
+      if (flagPhysNotified && !s.physicianNotified) return false;
+      if (rangeStart || rangeEnd) {
+        const d = parseDateOfService(s.dateOfService);
+        if (!d) return false;
+        if (rangeStart && d < rangeStart) return false;
+        if (rangeEnd && d > rangeEnd) return false;
+      }
+      return true;
+    });
+  }, [
+    scoped,
+    qParam,
+    credParam,
+    nurseParam,
+    flagAbnormal,
+    flagIncident,
+    flagPhysNotified,
+    rangeStart,
+    rangeEnd,
+  ]);
+
+  // Sort.
+  const sorted = useMemo(() => {
+    const copy = [...filtered];
+    copy.sort((a, b) => {
+      let av: string | number | null = '';
+      let bv: string | number | null = '';
+      if (sortParam === 'submittedAt') {
+        av = a.submittedAt?.getTime() ?? 0;
+        bv = b.submittedAt?.getTime() ?? 0;
+      } else if (sortParam === 'dateOfService') {
+        av = parseDateOfService(a.dateOfService)?.getTime() ?? 0;
+        bv = parseDateOfService(b.dateOfService)?.getTime() ?? 0;
+      } else if (sortParam === 'clientName') {
+        av = a.clientName.toLowerCase();
+        bv = b.clientName.toLowerCase();
+      } else {
+        av = a.nurseName.toLowerCase();
+        bv = b.nurseName.toLowerCase();
+      }
+      if (av < bv) return dirParam === 'asc' ? -1 : 1;
+      if (av > bv) return dirParam === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return copy;
+  }, [filtered, sortParam, dirParam]);
+
+  // Pagination.
+  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const pageStart = (safePage - 1) * PAGE_SIZE;
+  const pageEnd = Math.min(pageStart + PAGE_SIZE, sorted.length);
+  const submissions = sorted.slice(pageStart, pageEnd);
+
+  const setScope = (next: Scope) => {
     setSelected(new Set());
-    const params = new URLSearchParams(searchParams.toString());
-    if (next === 'archived') params.set('view', 'archived');
-    else params.delete('view');
-    const qs = params.toString();
-    router.replace(qs ? `/admin/submissions?${qs}` : '/admin/submissions');
+    updateParams({ view: next === 'active' ? null : next, p: null });
   };
 
-  const selectedIds = useMemo(() => Array.from(selected), [selected]);
+  const setSort = (key: SortKey) => {
+    if (sortParam === key) {
+      updateParams({ dir: dirParam === 'asc' ? 'desc' : 'asc', p: null });
+    } else {
+      updateParams({ sort: key, dir: 'desc', p: null });
+    }
+  };
 
+  const clearAllFilters = () => {
+    setQueryInput('');
+    setSelected(new Set());
+    updateParams({
+      q: null,
+      cred: null,
+      nurse: null,
+      range: null,
+      abn: null,
+      inc: null,
+      phy: null,
+      sort: null,
+      dir: null,
+      p: null,
+    });
+  };
+
+  const hasAnyFilter =
+    !!qParam ||
+    !!credParam ||
+    !!nurseParam ||
+    !!datePreset ||
+    flagAbnormal ||
+    flagIncident ||
+    flagPhysNotified ||
+    sortParam !== 'submittedAt' ||
+    dirParam !== 'desc';
+
+  const selectedIds = useMemo(() => Array.from(selected), [selected]);
   const selectedSubmissions = useMemo(
-    () => submissions.filter((s) => selected.has(s.id)),
-    [submissions, selected]
+    () => sorted.filter((s) => selected.has(s.id)),
+    [sorted, selected]
   );
 
   const dateRange = useMemo(() => {
@@ -100,10 +295,14 @@ export default function SubmissionsPage() {
     });
   };
 
-  const toggleAll = () => {
+  const toggleAllOnPage = () => {
     setSelected((prev) => {
-      if (prev.size === submissions.length) return new Set();
-      return new Set(submissions.map((s) => s.id));
+      const ids = submissions.map((s) => s.id);
+      const allOnPage = ids.every((id) => prev.has(id));
+      const next = new Set(prev);
+      if (allOnPage) ids.forEach((id) => next.delete(id));
+      else ids.forEach((id) => next.add(id));
+      return next;
     });
   };
 
@@ -126,7 +325,6 @@ export default function SubmissionsPage() {
         action,
         { uid: user.uid, displayName: user.displayName, role }
       );
-      // Optimistically update local state so the row leaves the current tab.
       setAllSubmissions((prev) =>
         prev.map((s) => {
           if (!selected.has(s.id)) return s;
@@ -230,8 +428,12 @@ export default function SubmissionsPage() {
     }
   };
 
-  const allSelected = submissions.length > 0 && selected.size === submissions.length;
-  const someSelected = selected.size > 0 && !allSelected;
+  const pageIds = submissions.map((s) => s.id);
+  const allOnPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const someOnPageSelected = pageIds.some((id) => selected.has(id)) && !allOnPageSelected;
+
+  const sortIndicator = (key: SortKey) =>
+    sortParam === key ? (dirParam === 'asc' ? ' ↑' : ' ↓') : '';
 
   return (
     <div style={containerStyle}>
@@ -245,21 +447,148 @@ export default function SubmissionsPage() {
           <button
             type="button"
             role="tab"
-            aria-selected={view === 'active'}
-            onClick={() => setView('active')}
-            style={view === 'active' ? tabActiveStyle : tabStyle}
+            aria-selected={scope === 'active'}
+            onClick={() => setScope('active')}
+            style={scope === 'active' ? tabActiveStyle : tabStyle}
           >
             Active <span style={tabCountStyle}>{activeCount}</span>
           </button>
           <button
             type="button"
             role="tab"
-            aria-selected={view === 'archived'}
-            onClick={() => setView('archived')}
-            style={view === 'archived' ? tabActiveStyle : tabStyle}
+            aria-selected={scope === 'archived'}
+            onClick={() => setScope('archived')}
+            style={scope === 'archived' ? tabActiveStyle : tabStyle}
           >
             Archived <span style={tabCountStyle}>{archivedCount}</span>
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={scope === 'all'}
+            onClick={() => setScope('all')}
+            style={scope === 'all' ? tabActiveStyle : tabStyle}
+            title="Search across active + archived"
+          >
+            All <span style={tabCountStyle}>{allSubmissions.length}</span>
+          </button>
+        </div>
+
+        {/* Filter bar */}
+        <div style={filterBarStyle}>
+          <div style={searchWrapStyle}>
+            <Search size={14} style={searchIconStyle} aria-hidden />
+            <input
+              type="search"
+              value={queryInput}
+              onChange={(e) => setQueryInput(e.target.value)}
+              placeholder="Search client, nurse, diagnosis, date…"
+              style={searchInputStyle}
+              aria-label="Search submissions"
+            />
+          </div>
+
+          <select
+            value={datePreset}
+            onChange={(e) => updateParams({ range: e.target.value || null, p: null })}
+            style={selectStyle}
+            aria-label="Date of service range"
+          >
+            <option value="">Any date</option>
+            <option value="today">Today</option>
+            <option value="week">This week</option>
+            <option value="month">This month</option>
+            <option value="30d">Last 30 days</option>
+          </select>
+
+          <select
+            value={credParam}
+            onChange={(e) => updateParams({ cred: e.target.value || null, p: null })}
+            style={selectStyle}
+            aria-label="Credential"
+          >
+            <option value="">All credentials</option>
+            <option value="HHA">HHA</option>
+            <option value="CNA">CNA</option>
+            <option value="LPN">LPN</option>
+            <option value="RN">RN</option>
+          </select>
+
+          {!isNurse && nurseOptions.length > 0 && (
+            <select
+              value={nurseParam}
+              onChange={(e) => updateParams({ nurse: e.target.value || null, p: null })}
+              style={selectStyle}
+              aria-label="Nurse"
+            >
+              <option value="">All nurses</option>
+              {nurseOptions.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          )}
+
+          <select
+            value={`${sortParam}:${dirParam}`}
+            onChange={(e) => {
+              const [k, d] = e.target.value.split(':') as [SortKey, SortDir];
+              updateParams({ sort: k, dir: d, p: null });
+            }}
+            style={selectStyle}
+            aria-label="Sort by"
+          >
+            <option value="submittedAt:desc">Newest submitted</option>
+            <option value="submittedAt:asc">Oldest submitted</option>
+            <option value="dateOfService:desc">Newest service date</option>
+            <option value="dateOfService:asc">Oldest service date</option>
+            <option value="clientName:asc">Client A–Z</option>
+            <option value="clientName:desc">Client Z–A</option>
+            <option value="nurseName:asc">Nurse A–Z</option>
+            <option value="nurseName:desc">Nurse Z–A</option>
+          </select>
+        </div>
+
+        <div style={flagsRowStyle}>
+          <label style={flagLabelStyle}>
+            <input
+              type="checkbox"
+              checked={flagAbnormal}
+              onChange={(e) => updateParams({ abn: e.target.checked ? '1' : null, p: null })}
+            />
+            Abnormal vitals
+          </label>
+          <label style={flagLabelStyle}>
+            <input
+              type="checkbox"
+              checked={flagIncident}
+              onChange={(e) => updateParams({ inc: e.target.checked ? '1' : null, p: null })}
+            />
+            Incident reported
+          </label>
+          <label style={flagLabelStyle}>
+            <input
+              type="checkbox"
+              checked={flagPhysNotified}
+              onChange={(e) => updateParams({ phy: e.target.checked ? '1' : null, p: null })}
+            />
+            Physician notified
+          </label>
+
+          <div style={{ flex: 1 }} />
+
+          <div style={resultCountStyle}>
+            {sorted.length === 0
+              ? 'No matches'
+              : `Showing ${pageStart + 1}–${pageEnd} of ${sorted.length}`}
+            {sorted.length !== scoped.length && ` (filtered from ${scoped.length})`}
+          </div>
+          {hasAnyFilter && (
+            <button type="button" onClick={clearAllFilters} style={clearFiltersBtnStyle}>
+              <X size={12} /> Clear all
+            </button>
+          )}
         </div>
 
         {selected.size > 0 && (
@@ -279,7 +608,7 @@ export default function SubmissionsPage() {
               <Download size={14} />
               Export as PDF
             </button>
-            {view === 'active' ? (
+            {scope !== 'archived' ? (
               <button
                 onClick={() => handleBulkArchive('archive')}
                 style={archiveBtnStyle}
@@ -309,98 +638,168 @@ export default function SubmissionsPage() {
           <div style={loadingStyle}>
             <p>Loading submissions...</p>
           </div>
-        ) : submissions.length === 0 ? (
+        ) : sorted.length === 0 ? (
           <div style={emptyStyle}>
-            <p style={emptyTitleStyle}>No submissions yet</p>
-            <p style={emptySubStyle}>Submitted progress notes will appear here.</p>
+            <p style={emptyTitleStyle}>
+              {allSubmissions.length === 0 ? 'No submissions yet' : 'No matches'}
+            </p>
+            <p style={emptySubStyle}>
+              {allSubmissions.length === 0
+                ? 'Submitted progress notes will appear here.'
+                : 'Try clearing a filter or broadening your search.'}
+            </p>
           </div>
         ) : (
-          <div style={tableWrapStyle}>
-            <table style={tableStyle}>
-              <thead>
-                <tr>
-                  <th style={{ ...thStyle, width: 40 }}>
-                    <input
-                      type="checkbox"
-                      checked={allSelected}
-                      ref={(el) => {
-                        if (el) el.indeterminate = someSelected;
-                      }}
-                      onChange={toggleAll}
-                      aria-label="Select all"
-                      style={checkboxStyle}
-                    />
-                  </th>
-                  <th style={thStyle}>Date of Service</th>
-                  <th style={thStyle}>Client Name</th>
-                  <th style={thStyle}>Nurse</th>
-                  <th style={thStyle}>Credential</th>
-                  <th style={thStyle}>Submitted At</th>
-                  <th style={{ ...thStyle, textAlign: 'center' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {submissions.map((s, i) => {
-                  const isSelected = selected.has(s.id);
-                  return (
-                    <tr
-                      key={s.id}
-                      style={{
-                        ...(i % 2 === 1 ? altRowStyle : {}),
-                        ...(isSelected ? { backgroundColor: '#eef5ff' } : {}),
-                      }}
+          <>
+            <div style={tableWrapStyle}>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={{ ...thStyle, width: 40 }}>
+                      <input
+                        type="checkbox"
+                        checked={allOnPageSelected}
+                        ref={(el) => {
+                          if (el) el.indeterminate = someOnPageSelected;
+                        }}
+                        onChange={toggleAllOnPage}
+                        aria-label="Select all on this page"
+                        style={checkboxStyle}
+                      />
+                    </th>
+                    <th
+                      style={{ ...thStyle, cursor: 'pointer' }}
+                      onClick={() => setSort('dateOfService')}
                     >
-                      <td style={tdStyle}>
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleRow(s.id)}
-                          aria-label={`Select ${s.clientName} ${s.dateOfService}`}
-                          style={checkboxStyle}
-                        />
-                      </td>
-                      <td style={tdStyle}>{s.dateOfService}</td>
-                      <td style={tdStyle}>{s.clientName}</td>
-                      <td style={tdStyle}>{s.nurseName}</td>
-                      <td style={tdStyle}>
-                        <span style={credentialBadge}>{s.credential}</span>
-                      </td>
-                      <td style={tdStyle}>
-                        {s.submittedAt ? s.submittedAt.toLocaleString() : '--'}
-                      </td>
-                      <td style={{ ...tdStyle, textAlign: 'center' }}>
-                        <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-                          <Link
-                            href={`/admin/submissions/${s.id}`}
-                            style={viewBtnStyle}
-                          >
-                            View
-                          </Link>
-                          {view === 'active' ? (
-                            <button
-                              onClick={() => handleRowArchive(s, 'archive')}
-                              style={rowArchiveBtnStyle}
-                              disabled={busy}
-                            >
-                              Archive
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleRowArchive(s, 'restore')}
-                              style={rowArchiveBtnStyle}
-                              disabled={busy}
-                            >
-                              Restore
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                      Date of Service{sortIndicator('dateOfService')}
+                    </th>
+                    <th
+                      style={{ ...thStyle, cursor: 'pointer' }}
+                      onClick={() => setSort('clientName')}
+                    >
+                      Client Name{sortIndicator('clientName')}
+                    </th>
+                    <th
+                      style={{ ...thStyle, cursor: 'pointer' }}
+                      onClick={() => setSort('nurseName')}
+                    >
+                      Nurse{sortIndicator('nurseName')}
+                    </th>
+                    <th style={thStyle}>Credential</th>
+                    <th style={thStyle}>Flags</th>
+                    <th
+                      style={{ ...thStyle, cursor: 'pointer' }}
+                      onClick={() => setSort('submittedAt')}
+                    >
+                      Submitted At{sortIndicator('submittedAt')}
+                    </th>
+                    <th style={{ ...thStyle, textAlign: 'center' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {submissions.map((s, i) => {
+                    const isSelected = selected.has(s.id);
+                    const rowArchived = isNurse ? s.nurseArchivedAt != null : s.archivedAt != null;
+                    return (
+                      <tr
+                        key={s.id}
+                        style={{
+                          ...(i % 2 === 1 ? altRowStyle : {}),
+                          ...(isSelected ? { backgroundColor: '#eef5ff' } : {}),
+                        }}
+                      >
+                        <td style={tdStyle}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleRow(s.id)}
+                            aria-label={`Select ${s.clientName} ${s.dateOfService}`}
+                            style={checkboxStyle}
+                          />
+                        </td>
+                        <td style={tdStyle}>{s.dateOfService}</td>
+                        <td style={tdStyle}>{s.clientName}</td>
+                        <td style={tdStyle}>{s.nurseName}</td>
+                        <td style={tdStyle}>
+                          <span style={credentialBadge}>{s.credential}</span>
+                        </td>
+                        <td style={tdStyle}>
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                            {s.hasAbnormalVitals && (
+                              <span style={flagBadgeRed} title="Abnormal vitals">
+                                Vitals
+                              </span>
+                            )}
+                            {s.hasIncident && (
+                              <span style={flagBadgeAmber} title="Incident reported">
+                                Incident
+                              </span>
+                            )}
+                            {s.physicianNotified && (
+                              <span style={flagBadgeBlue} title="Physician notified">
+                                Physician
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td style={tdStyle}>
+                          {s.submittedAt ? s.submittedAt.toLocaleString() : '--'}
+                        </td>
+                        <td style={{ ...tdStyle, textAlign: 'center' }}>
+                          <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                            <Link href={`/admin/submissions/${s.id}`} style={viewBtnStyle}>
+                              View
+                            </Link>
+                            {rowArchived ? (
+                              <button
+                                onClick={() => handleRowArchive(s, 'restore')}
+                                style={rowArchiveBtnStyle}
+                                disabled={busy}
+                              >
+                                Restore
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleRowArchive(s, 'archive')}
+                                style={rowArchiveBtnStyle}
+                                disabled={busy}
+                              >
+                                Archive
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {pageCount > 1 && (
+              <div style={paginationStyle}>
+                <button
+                  type="button"
+                  onClick={() => updateParams({ p: String(safePage - 1) })}
+                  disabled={safePage <= 1}
+                  style={pageBtnStyle}
+                >
+                  ← Prev
+                </button>
+                <span style={pageMetaStyle}>
+                  Page {safePage} of {pageCount}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => updateParams({ p: String(safePage + 1) })}
+                  disabled={safePage >= pageCount}
+                  style={pageBtnStyle}
+                >
+                  Next →
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -547,20 +946,6 @@ const subtitleStyle: React.CSSProperties = {
   margin: 0,
 };
 
-const controlsStyle: React.CSSProperties = {
-  marginBottom: 14,
-  display: 'flex',
-  gap: 16,
-  alignItems: 'center',
-};
-
-const backLinkStyle: React.CSSProperties = {
-  color: '#27ae60',
-  textDecoration: 'none',
-  fontWeight: 600,
-  fontSize: 14,
-};
-
 const bulkBarStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
@@ -603,15 +988,13 @@ const tabStyle: React.CSSProperties = {
 };
 
 const tabActiveStyle: React.CSSProperties = {
-  ...{
-    background: 'transparent',
-    border: 'none',
-    padding: '10px 16px',
-    fontSize: 14,
-    fontWeight: 700,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-  },
+  background: 'transparent',
+  border: 'none',
+  padding: '10px 16px',
+  fontSize: 14,
+  fontWeight: 700,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
   color: '#2c3e50',
   borderBottom: '2px solid #27ae60',
   marginBottom: -1,
@@ -626,6 +1009,89 @@ const tabCountStyle: React.CSSProperties = {
   fontSize: 12,
   fontWeight: 700,
   color: '#5c6b7a',
+};
+
+const filterBarStyle: React.CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  alignItems: 'center',
+  gap: 8,
+  marginBottom: 10,
+};
+
+const searchWrapStyle: React.CSSProperties = {
+  position: 'relative',
+  flex: '1 1 260px',
+  minWidth: 220,
+};
+
+const searchIconStyle: React.CSSProperties = {
+  position: 'absolute',
+  left: 10,
+  top: '50%',
+  transform: 'translateY(-50%)',
+  color: '#7f8c8d',
+  pointerEvents: 'none',
+};
+
+const searchInputStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '8px 10px 8px 30px',
+  border: '1px solid #dfe5ec',
+  borderRadius: 6,
+  fontSize: 14,
+  fontFamily: 'inherit',
+};
+
+const selectStyle: React.CSSProperties = {
+  padding: '8px 10px',
+  border: '1px solid #dfe5ec',
+  borderRadius: 6,
+  fontSize: 13,
+  fontFamily: 'inherit',
+  background: 'white',
+  color: '#2c3e50',
+};
+
+const flagsRowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+  gap: 14,
+  marginBottom: 14,
+  padding: '8px 12px',
+  background: '#f8fafc',
+  borderRadius: 6,
+  border: '1px solid #eef1f4',
+  fontSize: 13,
+};
+
+const flagLabelStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  color: '#2c3e50',
+  cursor: 'pointer',
+};
+
+const resultCountStyle: React.CSSProperties = {
+  color: '#5c6b7a',
+  fontSize: 12,
+};
+
+const clearFiltersBtnStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  background: 'white',
+  color: '#5c6b7a',
+  padding: '6px 10px',
+  borderRadius: 6,
+  border: '1px solid #dfe5ec',
+  fontSize: 12,
+  fontWeight: 600,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
 };
 
 const archiveBtnStyle: React.CSSProperties = {
@@ -733,6 +1199,7 @@ const thStyle: React.CSSProperties = {
   textTransform: 'uppercase',
   letterSpacing: 0.5,
   whiteSpace: 'nowrap',
+  userSelect: 'none',
 };
 
 const tdStyle: React.CSSProperties = {
@@ -753,6 +1220,34 @@ const credentialBadge: React.CSSProperties = {
   borderRadius: 4,
   fontWeight: 600,
   fontSize: 12,
+};
+
+const flagBadgeBase: React.CSSProperties = {
+  display: 'inline-block',
+  padding: '1px 6px',
+  borderRadius: 3,
+  fontSize: 11,
+  fontWeight: 700,
+  letterSpacing: 0.3,
+  whiteSpace: 'nowrap',
+};
+
+const flagBadgeRed: React.CSSProperties = {
+  ...flagBadgeBase,
+  background: '#fdecea',
+  color: '#b3261e',
+};
+
+const flagBadgeAmber: React.CSSProperties = {
+  ...flagBadgeBase,
+  background: '#fff4e5',
+  color: '#a35400',
+};
+
+const flagBadgeBlue: React.CSSProperties = {
+  ...flagBadgeBase,
+  background: '#e8eef4',
+  color: '#1a3a5c',
 };
 
 const viewBtnStyle: React.CSSProperties = {
@@ -782,6 +1277,31 @@ const checkboxStyle: React.CSSProperties = {
   width: 16,
   height: 16,
   cursor: 'pointer',
+};
+
+const paginationStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 16,
+  marginTop: 16,
+};
+
+const pageBtnStyle: React.CSSProperties = {
+  background: 'white',
+  border: '1px solid #dfe5ec',
+  color: '#2c3e50',
+  padding: '6px 12px',
+  borderRadius: 6,
+  fontSize: 13,
+  fontWeight: 600,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
+
+const pageMetaStyle: React.CSSProperties = {
+  color: '#5c6b7a',
+  fontSize: 13,
 };
 
 const modalBackdropStyle: React.CSSProperties = {

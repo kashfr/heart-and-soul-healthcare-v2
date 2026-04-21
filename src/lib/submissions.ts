@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import type { Role } from './auth';
 import { db } from './firebase';
+import { hasAnyAbnormalVital } from './vitalRanges';
 
 /**
  * All form fields from the 7-page progress note form.
@@ -118,11 +119,15 @@ export interface SubmissionSummary {
   clientName: string;
   nurseName: string;
   credential: string;
+  diagnosis: string;
   dateOfService: string;
   submittedAt: Date | null;
   status: string;
   archivedAt: Date | null;
   nurseArchivedAt: Date | null;
+  hasAbnormalVitals: boolean;
+  hasIncident: boolean;
+  physicianNotified: boolean;
 }
 
 export type ArchiveScope = 'staff' | 'nurse';
@@ -171,16 +176,25 @@ export async function getSubmissions(options?: { nurseId?: string }): Promise<Su
       const submittedAt = data.submittedAt as Timestamp | null;
       const archivedAt = data.archivedAt as Timestamp | null | undefined;
       const nurseArchivedAt = data.nurseArchivedAt as Timestamp | null | undefined;
+      const incidentType = String(data.q56_incidents || '').trim();
+      const incidentDetails = String(data.q57_incidentDetails || '').trim();
+      const hasIncident = Boolean(
+        incidentDetails || (incidentType && incidentType.toLowerCase() !== 'none')
+      );
       return {
         id: d.id,
         clientName: data.q3_clientName || '',
         nurseName: data.q11_nurseName || '',
         credential: data.q12_credential || '',
+        diagnosis: data.q10_primaryDiagnosis || '',
         dateOfService: formatDateUS(data.q6_dateofService || ''),
         submittedAt: submittedAt ? submittedAt.toDate() : null,
         status: data.status || 'submitted',
         archivedAt: archivedAt ? archivedAt.toDate() : null,
         nurseArchivedAt: nurseArchivedAt ? nurseArchivedAt.toDate() : null,
+        hasAbnormalVitals: hasAnyAbnormalVital(data),
+        hasIncident,
+        physicianNotified: String(data.q52_physicianNotify || '').toLowerCase() === 'yes',
       };
     });
 

@@ -212,3 +212,41 @@ export function checkVitalRange(
   if (value > range.high) return 'high';
   return 'normal';
 }
+
+/**
+ * Returns true if any recorded vital sign in the submission falls outside
+ * the age-appropriate range. Used for the dashboard "abnormal vitals" filter.
+ */
+export function hasAnyAbnormalVital(data: Record<string, unknown>): boolean {
+  const s = (k: string) => (typeof data[k] === 'string' ? (data[k] as string) : '');
+  const ageStr = s('q5_ageYears');
+  const dob = s('q4_dateofBirth');
+  const ranges = getVitalRanges(ageStr, dob);
+  const parseNum = (v: string) => parseFloat((v || '').replace(/[^0-9.]/g, ''));
+
+  const checks: Array<[string, VitalKey]> = [
+    ['q16_temperature', 'temperature'],
+    ['q18_pulse', 'pulse'],
+    ['q19_respiration', 'respiration'],
+    ['q20_oxygenSaturation', 'oxygenSaturation'],
+    ['q21_bloodGlucose', 'bloodGlucose'],
+  ];
+  for (const [field, key] of checks) {
+    const raw = s(field);
+    if (!raw) continue;
+    const v = parseNum(raw);
+    if (isNaN(v)) continue;
+    if (v < ranges[key].low || v > ranges[key].high) return true;
+  }
+
+  const bp = s('q17_bloodPressure');
+  if (bp) {
+    const [sysStr, diaStr] = bp.split('/');
+    const sys = parseFloat(sysStr);
+    const dia = parseFloat(diaStr);
+    if (!isNaN(sys) && (sys < ranges.systolic.low || sys > ranges.systolic.high)) return true;
+    if (!isNaN(dia) && (dia < ranges.diastolic.low || dia > ranges.diastolic.high)) return true;
+  }
+
+  return false;
+}
