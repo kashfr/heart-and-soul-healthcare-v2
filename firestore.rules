@@ -128,6 +128,19 @@ service cloud.firestore {
       }
     }
 
+    // Progress Note Drafts — work-in-progress notes, autosaved.
+    // Keyed by the authoring user's uid so there's exactly one active draft
+    // per user. Staff can read drafts for visibility; writes are owner-only.
+    match /noteDrafts/{draftId} {
+      allow create, update: if hasActiveProfile()
+        && request.auth.uid == draftId
+        && incomingData().nurseId == request.auth.uid;
+      allow read: if isStaff()
+        || (isSignedIn() && resource.data.nurseId == request.auth.uid);
+      allow delete: if isStaff()
+        || (isSignedIn() && resource.data.nurseId == request.auth.uid);
+    }
+
     // Staff profiles (role lookup)
     // A signed-in user can always read their own profile so the client can
     // determine their role. Admins + supervisors can read all profiles (they

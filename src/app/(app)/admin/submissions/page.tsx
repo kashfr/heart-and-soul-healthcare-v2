@@ -106,6 +106,20 @@ export default function SubmissionsPage() {
   const [busy, setBusy] = useState(false);
   const [queryInput, setQueryInput] = useState(qParam);
   const debouncedQuery = useDebounced(queryInput, 250);
+  const [draftSavedToast, setDraftSavedToast] = useState(false);
+
+  // Show the "Draft saved" confirmation when we arrive here via Save & exit.
+  useEffect(() => {
+    if (searchParams.get('draftSaved') === '1') {
+      setDraftSavedToast(true);
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete('draftSaved');
+      const qs = params.toString();
+      router.replace(qs ? `/admin/submissions?${qs}` : '/admin/submissions');
+      const t = setTimeout(() => setDraftSavedToast(false), 5000);
+      return () => clearTimeout(t);
+    }
+  }, [searchParams, router]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -438,6 +452,23 @@ export default function SubmissionsPage() {
   return (
     <div style={containerStyle}>
       <div style={wrapStyle}>
+        {draftSavedToast && (
+          <div
+            role="status"
+            style={{
+              background: '#d1fae5',
+              border: '1px solid #10b981',
+              color: '#065f46',
+              borderRadius: '6px',
+              padding: '12px 16px',
+              marginBottom: '16px',
+              fontSize: '14px',
+              fontWeight: 500,
+            }}
+          >
+            ✓ Draft saved. You can resume it anytime from the progress note page.
+          </div>
+        )}
         <div style={headerStyle}>
           <h1 style={titleStyle}>Progress Note Submissions</h1>
           <p style={subtitleStyle}>All submitted nursing progress notes</p>

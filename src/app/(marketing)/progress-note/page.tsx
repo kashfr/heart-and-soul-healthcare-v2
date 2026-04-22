@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { useCallback, useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { getPatients, type Patient } from '@/lib/patients';
 import { saveSubmission, getSubmission, updateSubmission, type ProgressNoteFormData } from '@/lib/submissions';
+import { saveDraft, loadDraft, deleteDraft, type NoteDraft } from '@/lib/drafts';
 import { useAuth } from '@/components/AuthProvider';
 import { setRadio, radioState, clearRadioStorage } from './components/DeselectableRadio';
 import type { FormValues } from './types';
@@ -74,6 +75,18 @@ function ProgressNotePageInner() {
   const [submitting, setSubmitting] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
+
+  // --- Cross-device draft state (Firestore) ---
+  // saveStatus drives the indicator in the sticky header.
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [pendingDraft, setPendingDraft] = useState<NoteDraft | null>(null);
+  const [resumeDecided, setResumeDecided] = useState(false); // banner dismissed / acted on
+  const [draftHydrated, setDraftHydrated] = useState(false); // autosave gate — don't save before we've loaded
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSaveAttemptRef = useRef<number>(0);
+  const AUTOSAVE_DEBOUNCE_MS = 3000;
+  const AUTOSAVE_MIN_INTERVAL_MS = 10000;
 
   const STORAGE_KEY = 'progress-note-draft';
   const savedData = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
@@ -187,6 +200,191 @@ function ProgressNotePageInner() {
       );
       lpnRnRadioKeys.forEach(key => setRadio(key, null));
     }
+  };
+
+  // --- Draft helpers ---
+
+  // Collect the entire form state (react-hook-form values + radio store +
+  // checkbox DOM state) into a single payload suitable for Firestore.
+  const collectDraftPayload = useCallback(() => {
+    const formValues = getValues() as Record<string, unknown>;
+
+    const radioSnapshot: Record<string, string> = {};
+    for (const [k, v] of Object.entries(radioState)) {
+      if (v) radioSnapshot[k] = v;
+    }
+
+    const checkboxSnapshot: Record<string, string[]> = {};
+    if (formRef.current) {
+      formRef.current.querySelectorAll('input[type="checkbox"]').forEach((el) => {
+        const cb = el as HTMLInputElement;
+        if (!checkboxSnapshot[cb.name]) checkboxSnapshot[cb.name] = [];
+        if (cb.checked) checkboxSnapshot[cb.name].push(cb.value);
+      });
+    }
+
+    return {
+      formValues,
+      radioState: radioSnapshot,
+      checkboxState: checkboxSnapshot,
+    };
+  }, [getValues]);
+
+  // Write the current form state to Firestore (used by autosave + Save & exit).
+  // Returns true if saved, false if skipped (not signed in / edit mode / empty).
+  const persistDraft = useCallback(async (): Promise<boolean> => {
+    if (!user || !profile || isEditMode) return false;
+    const { formValues, radioState: r, checkboxState: c } = collectDraftPayload();
+    // Skip autosave if the form is effectively empty (no client, no real content).
+    const clientName = String(formValues.q3_clientName || '').trim();
+    const hasAnyContent =
+      clientName ||
+      Object.keys(r).length > 0 ||
+      Object.values(c).some((arr) => arr.length > 0);
+    if (!hasAnyContent) return false;
+
+    setSaveStatus('saving');
+    try {
+      await saveDraft({
+        nurseId: user.uid,
+        nurseName: profile.displayName || user.email || '',
+        clientName,
+        dateOfService: String(formValues.q6_dateofService || ''),
+        currentPage,
+        formValues,
+        radioState: r,
+        checkboxState: c,
+      });
+      setSaveStatus('saved');
+      setLastSavedAt(new Date());
+      lastSaveAttemptRef.current = Date.now();
+      return true;
+    } catch (err) {
+      console.error('Draft save failed:', err);
+      setSaveStatus('error');
+      return false;
+    }
+  }, [user, profile, isEditMode, collectDraftPayload, currentPage]);
+
+  // Schedule a debounced autosave. Respects a minimum interval to cap write cost.
+  const scheduleAutosave = useCallback(() => {
+    if (!draftHydrated || isEditMode || !user) return;
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => {
+      const elapsed = Date.now() - lastSaveAttemptRef.current;
+      if (elapsed < AUTOSAVE_MIN_INTERVAL_MS) {
+        // Re-schedule once the floor has passed.
+        autosaveTimerRef.current = setTimeout(() => {
+          persistDraft();
+        }, AUTOSAVE_MIN_INTERVAL_MS - elapsed);
+        return;
+      }
+      persistDraft();
+    }, AUTOSAVE_DEBOUNCE_MS);
+  }, [draftHydrated, isEditMode, user, persistDraft]);
+
+  // Apply a loaded Firestore draft into the form (RHF + radios + checkboxes + page).
+  const hydrateFromDraft = useCallback((draft: NoteDraft) => {
+    reset(draft.formValues as FormValues);
+    setInitialClientName(String(draft.formValues.q3_clientName || ''));
+    if (draft.formValues.q12_credential) {
+      const cred = String(draft.formValues.q12_credential) as CredentialTier;
+      setCredential(cred);
+    }
+    if (draft.formValues.q61_signature) {
+      setInitialSignature(String(draft.formValues.q61_signature));
+    }
+    // Restore radio state (persist to localStorage too so DeselectableRadio sees it)
+    for (const [k, v] of Object.entries(draft.radioState)) {
+      setRadio(k, v);
+    }
+    // Restore checkbox state after DOM is ready
+    setTimeout(() => {
+      if (!formRef.current) return;
+      for (const [name, values] of Object.entries(draft.checkboxState)) {
+        const checkboxes = formRef.current.querySelectorAll(`input[type="checkbox"][name="${name}"]`);
+        checkboxes.forEach((el) => {
+          const cb = el as HTMLInputElement;
+          cb.checked = values.includes(cb.value);
+        });
+      }
+    }, 200);
+    setCurrentPage(draft.currentPage || 1);
+  }, [reset]);
+
+  // On mount (once auth + firebase are ready), check for an existing Firestore
+  // draft. If found, show the resume banner. Autosave is gated on draftHydrated
+  // so we never clobber an existing draft with an empty form on first render.
+  useEffect(() => {
+    if (!firebaseLoaded || !user || isEditMode || draftHydrated) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const draft = await loadDraft(user.uid);
+        if (cancelled) return;
+        if (draft) {
+          setPendingDraft(draft);
+          // Surface a banner; autosave stays disabled until the nurse decides.
+        } else {
+          setDraftHydrated(true);
+        }
+      } catch (err) {
+        console.error('Failed to load draft:', err);
+        setDraftHydrated(true); // fail open — allow autosave
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [firebaseLoaded, user, isEditMode, draftHydrated]);
+
+  // Autosave on form value changes.
+  useEffect(() => {
+    if (isEditMode) return;
+    const sub = watch(() => scheduleAutosave());
+    return () => sub.unsubscribe();
+  }, [watch, isEditMode, scheduleAutosave]);
+
+  // Autosave on page change (hard save, bypasses debounce).
+  useEffect(() => {
+    if (!draftHydrated || isEditMode) return;
+    persistDraft();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage]);
+
+  const handleResumeDraft = () => {
+    if (!pendingDraft) return;
+    hydrateFromDraft(pendingDraft);
+    setPendingDraft(null);
+    setResumeDecided(true);
+    // Small delay so the hydrate effects land before autosave gate opens.
+    setTimeout(() => setDraftHydrated(true), 400);
+  };
+
+  const handleStartFresh = async () => {
+    if (!user) return;
+    try {
+      await deleteDraft(user.uid);
+    } catch (err) {
+      console.error('Failed to clear old draft:', err);
+    }
+    setPendingDraft(null);
+    setResumeDecided(true);
+    setDraftHydrated(true);
+  };
+
+  const handleSaveAndExit = async () => {
+    // Force a save even if the debounce hasn't fired.
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    const saved = await persistDraft();
+    if (!saved && saveStatus !== 'error') {
+      // Nothing to save — still leave gracefully.
+      router.push('/admin/submissions');
+      return;
+    }
+    if (saveStatus === 'error') {
+      alert('We couldn\'t save your draft. Check your connection and try again.');
+      return;
+    }
+    router.push('/admin/submissions?draftSaved=1');
   };
 
   // Load patients from Firebase on mount
@@ -472,6 +670,12 @@ function ProgressNotePageInner() {
       localStorage.removeItem(CHECKBOX_STORAGE_KEY);
       localStorage.removeItem('progress-note-page');
       clearRadioStorage();
+      // Remove the Firestore draft — submission supersedes it.
+      if (user) {
+        try { await deleteDraft(user.uid); } catch (err) { console.error('Failed to delete draft after submit:', err); }
+      }
+      setSaveStatus('idle');
+      setLastSavedAt(null);
       formRef.current.reset();
       // Re-apply the nurse identity prefill since reset() blew it away.
       applyProfilePrefill();
@@ -552,6 +756,121 @@ function ProgressNotePageInner() {
             }}
           >
             {submitting ? 'Updating...' : 'Update'}
+          </button>
+        </div>
+      )}
+
+      {/* Resume-draft banner — blocks the form until the nurse chooses. */}
+      {pendingDraft && !resumeDecided && !isEditMode && (
+        <div
+          style={{
+            background: '#e8f4fd',
+            border: '1px solid #1a3a5c',
+            borderRadius: '6px',
+            padding: '16px 20px',
+            marginBottom: '16px',
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+          }}
+        >
+          <div style={{ fontSize: '14px', color: '#1a3a5c', lineHeight: 1.5 }}>
+            <strong>You have an unfinished progress note.</strong>
+            {pendingDraft.clientName && <> Client: <strong>{pendingDraft.clientName}</strong>.</>}
+            {pendingDraft.updatedAt && (
+              <> Last saved{' '}
+                {pendingDraft.updatedAt.toLocaleString([], {
+                  month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+                })}
+                .
+              </>
+            )}
+            <br />
+            Resume where you left off, or start a new blank note (the old draft will be discarded).
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              type="button"
+              onClick={handleResumeDraft}
+              style={{
+                background: '#1a3a5c',
+                color: 'white',
+                border: 'none',
+                padding: '10px 18px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: 600,
+              }}
+            >
+              Resume draft
+            </button>
+            <button
+              type="button"
+              onClick={handleStartFresh}
+              style={{
+                background: 'white',
+                color: '#1a3a5c',
+                border: '1px solid #1a3a5c',
+                padding: '10px 18px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: 600,
+              }}
+            >
+              Start fresh
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Sticky autosave header — visible on every page of the form. */}
+      {!isEditMode && user && (
+        <div
+          style={{
+            position: 'sticky',
+            top: 0,
+            zIndex: 20,
+            background: 'rgba(255,255,255,0.96)',
+            backdropFilter: 'blur(6px)',
+            borderBottom: '1px solid #e5e7eb',
+            margin: '0 -16px 12px',
+            padding: '8px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            gap: '12px',
+            fontSize: '13px',
+          }}
+        >
+          <span style={{ color: saveStatus === 'error' ? '#c62828' : '#6b7280' }}>
+            {saveStatus === 'saving' && 'Saving…'}
+            {saveStatus === 'saved' && lastSavedAt &&
+              `Saved ${lastSavedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`}
+            {saveStatus === 'error' && 'Save failed — check connection'}
+            {saveStatus === 'idle' && (draftHydrated ? 'Not yet saved' : 'Loading…')}
+          </span>
+          <button
+            type="button"
+            onClick={handleSaveAndExit}
+            disabled={saveStatus === 'saving'}
+            style={{
+              background: '#1a3a5c',
+              color: 'white',
+              border: 'none',
+              padding: '8px 16px',
+              borderRadius: '4px',
+              cursor: saveStatus === 'saving' ? 'not-allowed' : 'pointer',
+              fontSize: '13px',
+              fontWeight: 600,
+              opacity: saveStatus === 'saving' ? 0.6 : 1,
+            }}
+            title="Save this draft and return to the submissions dashboard"
+          >
+            Save &amp; exit
           </button>
         </div>
       )}
