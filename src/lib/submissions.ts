@@ -178,8 +178,18 @@ export async function getSubmissions(options?: { nurseId?: string }): Promise<Su
       const nurseArchivedAt = data.nurseArchivedAt as Timestamp | null | undefined;
       const incidentType = String(data.q56_incidents || '').trim();
       const incidentDetails = String(data.q57_incidentDetails || '').trim();
+      // "No incident" sentinel values from the radio options — treat as clean.
+      const NO_INCIDENT_VALUES = new Set([
+        '',
+        'none',
+        'no',
+        'no incidents',
+        'no incident',
+        'n/a',
+        'na',
+      ]);
       const hasIncident = Boolean(
-        incidentDetails || (incidentType && incidentType.toLowerCase() !== 'none')
+        incidentDetails || !NO_INCIDENT_VALUES.has(incidentType.toLowerCase())
       );
       return {
         id: d.id,
