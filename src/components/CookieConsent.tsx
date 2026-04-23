@@ -1,14 +1,26 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import styles from './CookieConsent.module.css';
 
 const COOKIE_CONSENT_KEY = 'heartandsoul_cookie_consent';
 
+// Routes that are nurse/staff-facing tools, not public marketing pages.
+// We don't show the cookie banner on these — it's distracting and the
+// visitor isn't a prospective client.
+const HIDDEN_ROUTES = ['/progress-note'];
+
 export default function CookieConsent() {
+  const pathname = usePathname();
   const [isVisible, setIsVisible] = useState(false);
 
+  const isHiddenRoute = HIDDEN_ROUTES.some(
+    (route) => pathname === route || pathname?.startsWith(`${route}/`)
+  );
+
   useEffect(() => {
+    if (isHiddenRoute) return;
     // Check if user has already consented
     const hasConsented = localStorage.getItem(COOKIE_CONSENT_KEY);
     if (!hasConsented) {
@@ -16,7 +28,7 @@ export default function CookieConsent() {
       const timer = setTimeout(() => setIsVisible(true), 1000);
       return () => clearTimeout(timer);
     }
-  }, []);
+  }, [isHiddenRoute]);
 
   const handleAccept = () => {
     localStorage.setItem(COOKIE_CONSENT_KEY, 'accepted');
@@ -28,7 +40,7 @@ export default function CookieConsent() {
     setIsVisible(false);
   };
 
-  if (!isVisible) return null;
+  if (isHiddenRoute || !isVisible) return null;
 
   return (
     <div className={styles.overlay}>

@@ -486,3 +486,10 @@ button {
     scroll-behavior: auto !important;
   }
 }
+
+/* Spinner animation used by the autosave "Saving…" indicator on
+   /progress-note. Declared globally so inline styles on icons can reference it
+   by name (CSS modules would otherwise scope the keyframe). */
+@keyframes hs-spin {
+  to { transform: rotate(360deg); }
+}

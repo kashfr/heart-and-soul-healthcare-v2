@@ -10,6 +10,7 @@ import {
   type ArchiveView,
   type SubmissionSummary,
 } from '@/lib/submissions';
+import { loadDraft, deleteDraft, type NoteDraft } from '@/lib/drafts';
 import {
   buildZip,
   buildMergedPdf,
@@ -107,6 +108,10 @@ export default function SubmissionsPage() {
   const [queryInput, setQueryInput] = useState(qParam);
   const debouncedQuery = useDebounced(queryInput, 250);
   const [draftSavedToast, setDraftSavedToast] = useState(false);
+  // The caller's own in-progress draft (one per user). Surfaced in a banner
+  // so nurses landing here after Save & exit can get back to their note.
+  const [myDraft, setMyDraft] = useState<NoteDraft | null>(null);
+  const [discardingDraft, setDiscardingDraft] = useState(false);
 
   // Show the "Draft saved" confirmation when we arrive here via Save & exit.
   useEffect(() => {
@@ -132,6 +137,37 @@ export default function SubmissionsPage() {
       }
     })();
   }, [authLoading, isNurse, user]);
+
+  // Load the caller's own draft (if any). Re-runs when the draftSaved toast
+  // fires so the banner reflects a just-saved draft without a hard refresh.
+  useEffect(() => {
+    if (authLoading || !user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const draft = await loadDraft(user.uid);
+        if (!cancelled) setMyDraft(draft);
+      } catch (err) {
+        console.error('Failed to load draft:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [authLoading, user, draftSavedToast]);
+
+  const handleDiscardDraft = async () => {
+    if (!user || discardingDraft) return;
+    if (!window.confirm('Discard this draft? This cannot be undone.')) return;
+    setDiscardingDraft(true);
+    try {
+      await deleteDraft(user.uid);
+      setMyDraft(null);
+    } catch (err) {
+      console.error('Failed to discard draft:', err);
+      alert('Could not discard the draft. Please try again.');
+    } finally {
+      setDiscardingDraft(false);
+    }
+  };
 
   const updateParams = (patch: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -446,6 +482,11 @@ export default function SubmissionsPage() {
   const allOnPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
   const someOnPageSelected = pageIds.some((id) => selected.has(id)) && !allOnPageSelected;
 
+  // The draft row is pinned at the top of the table on Active and All scopes
+  // (never Archived — drafts aren't archivable). It only appears on the first
+  // page since it isn't counted in the paginator.
+  const showDraftRow = myDraft != null && scope !== 'archived' && safePage === 1;
+
   const sortIndicator = (key: SortKey) =>
     sortParam === key ? (dirParam === 'asc' ? ' ↑' : ' ↓') : '';
 
@@ -669,7 +710,7 @@ export default function SubmissionsPage() {
           <div style={loadingStyle}>
             <p>Loading submissions...</p>
           </div>
-        ) : sorted.length === 0 ? (
+        ) : sorted.length === 0 && !showDraftRow ? (
           <div style={emptyStyle}>
             <p style={emptyTitleStyle}>
               {allSubmissions.length === 0 ? 'No submissions yet' : 'No matches'}
@@ -728,6 +769,63 @@ export default function SubmissionsPage() {
                   </tr>
                 </thead>
                 <tbody>
+                  {showDraftRow && myDraft && (
+                    <tr style={{ background: '#fffbeb', borderLeft: '3px solid #f59e0b' }}>
+                      <td style={tdStyle}>
+                        {/* Draft rows are never bulk-selectable — batch export
+                            and archive only apply to submitted notes. */}
+                        <input
+                          type="checkbox"
+                          disabled
+                          aria-label="Drafts cannot be selected"
+                          style={{ ...checkboxStyle, cursor: 'not-allowed', opacity: 0.4 }}
+                        />
+                      </td>
+                      <td style={tdStyle}>
+                        {myDraft.dateOfService
+                          ? (() => {
+                              // dateOfService is stored as YYYY-MM-DD in the draft
+                              const [y, m, d] = myDraft.dateOfService.split('-');
+                              return y && m && d ? `${m}/${d}/${y}` : myDraft.dateOfService;
+                            })()
+                          : '—'}
+                      </td>
+                      <td style={tdStyle}>{myDraft.clientName || <em style={{ color: '#94a3b8' }}>Not set</em>}</td>
+                      <td style={tdStyle}>{myDraft.nurseName || <em style={{ color: '#94a3b8' }}>Not set</em>}</td>
+                      <td style={tdStyle}>
+                        <span style={{ color: '#94a3b8', fontSize: 12 }}>—</span>
+                      </td>
+                      <td style={tdStyle}>
+                        <span style={draftBadgeStyle} title="This note hasn't been submitted yet">
+                          Draft
+                        </span>
+                      </td>
+                      <td style={tdStyle}>
+                        {myDraft.updatedAt ? (
+                          <span title={myDraft.updatedAt.toLocaleString()}>
+                            Saved {myDraft.updatedAt.toLocaleString([], {
+                              month: 'short', day: 'numeric',
+                              hour: 'numeric', minute: '2-digit',
+                            })}
+                          </span>
+                        ) : '--'}
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: 'center' }}>
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                          <Link href="/progress-note?resume=1" style={viewBtnStyle}>
+                            Resume
+                          </Link>
+                          <button
+                            onClick={handleDiscardDraft}
+                            disabled={discardingDraft}
+                            style={rowArchiveBtnStyle}
+                          >
+                            {discardingDraft ? 'Discarding…' : 'Discard'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                   {submissions.map((s, i) => {
                     const isSelected = selected.has(s.id);
                     const rowArchived = isNurse ? s.nurseArchivedAt != null : s.archivedAt != null;
@@ -1279,6 +1377,13 @@ const flagBadgeBlue: React.CSSProperties = {
   ...flagBadgeBase,
   background: '#e8eef4',
   color: '#1a3a5c',
+};
+
+const draftBadgeStyle: React.CSSProperties = {
+  ...flagBadgeBase,
+  background: '#fef3c7',
+  color: '#92400e',
+  border: '1px solid #fcd34d',
 };
 
 const viewBtnStyle: React.CSSProperties = {

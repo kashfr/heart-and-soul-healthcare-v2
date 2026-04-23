@@ -3,6 +3,7 @@
 import { useCallback, useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
+import { Check, AlertTriangle, Loader2 } from 'lucide-react';
 import { getPatients, type Patient } from '@/lib/patients';
 import { saveSubmission, getSubmission, updateSubmission, type ProgressNoteFormData } from '@/lib/submissions';
 import { saveDraft, loadDraft, deleteDraft, type NoteDraft } from '@/lib/drafts';
@@ -315,6 +316,9 @@ function ProgressNotePageInner() {
   // On mount (once auth + firebase are ready), check for an existing Firestore
   // draft. If found, show the resume banner. Autosave is gated on draftHydrated
   // so we never clobber an existing draft with an empty form on first render.
+  // If the URL carries ?resume=1 (the nurse clicked Resume on the dashboard
+  // banner), the decision is already made — auto-hydrate and skip the banner.
+  const autoResume = searchParams.get('resume') === '1';
   useEffect(() => {
     if (!firebaseLoaded || !user || isEditMode || draftHydrated) return;
     let cancelled = false;
@@ -323,8 +327,21 @@ function ProgressNotePageInner() {
         const draft = await loadDraft(user.uid);
         if (cancelled) return;
         if (draft) {
-          setPendingDraft(draft);
-          // Surface a banner; autosave stays disabled until the nurse decides.
+          if (autoResume) {
+            hydrateFromDraft(draft);
+            setResumeDecided(true);
+            // Same short delay we use in handleResumeDraft so autosave doesn't
+            // fire before the form has finished applying the saved values.
+            setTimeout(() => setDraftHydrated(true), 400);
+            // Strip ?resume=1 so a later refresh doesn't silently re-hydrate.
+            const params = new URLSearchParams(searchParams.toString());
+            params.delete('resume');
+            const qs = params.toString();
+            router.replace(qs ? `/progress-note?${qs}` : '/progress-note');
+          } else {
+            setPendingDraft(draft);
+            // Surface a banner; autosave stays disabled until the nurse decides.
+          }
         } else {
           setDraftHydrated(true);
         }
@@ -334,7 +351,7 @@ function ProgressNotePageInner() {
       }
     })();
     return () => { cancelled = true; };
-  }, [firebaseLoaded, user, isEditMode, draftHydrated]);
+  }, [firebaseLoaded, user, isEditMode, draftHydrated, autoResume, hydrateFromDraft, router, searchParams]);
 
   // Autosave on form value changes.
   useEffect(() => {
@@ -846,12 +863,59 @@ function ProgressNotePageInner() {
             fontSize: '13px',
           }}
         >
-          <span style={{ color: saveStatus === 'error' ? '#c62828' : '#6b7280' }}>
-            {saveStatus === 'saving' && 'Saving…'}
-            {saveStatus === 'saved' && lastSavedAt &&
-              `Saved ${lastSavedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`}
-            {saveStatus === 'error' && 'Save failed — check connection'}
-            {saveStatus === 'idle' && (draftHydrated ? 'Not yet saved' : 'Loading…')}
+          <span
+            role="status"
+            aria-live="polite"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 13,
+              fontWeight: 500,
+              padding: '4px 10px',
+              borderRadius: 999,
+              background:
+                saveStatus === 'saved' ? '#ecfdf5' :
+                saveStatus === 'saving' ? '#eff6ff' :
+                saveStatus === 'error' ? '#fef2f2' :
+                'transparent',
+              color:
+                saveStatus === 'saved' ? '#047857' :
+                saveStatus === 'saving' ? '#1d4ed8' :
+                saveStatus === 'error' ? '#b91c1c' :
+                '#6b7280',
+              border:
+                saveStatus === 'saved' ? '1px solid #a7f3d0' :
+                saveStatus === 'saving' ? '1px solid #bfdbfe' :
+                saveStatus === 'error' ? '1px solid #fecaca' :
+                '1px solid transparent',
+            }}
+          >
+            {saveStatus === 'saving' && (
+              <>
+                <Loader2 size={13} style={{ animation: 'hs-spin 1s linear infinite' }} aria-hidden />
+                Saving…
+              </>
+            )}
+            {saveStatus === 'saved' && lastSavedAt && (
+              <>
+                <Check size={13} aria-hidden />
+                Saved {lastSavedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+              </>
+            )}
+            {saveStatus === 'error' && (
+              <>
+                <AlertTriangle size={13} aria-hidden />
+                Save failed — check connection
+              </>
+            )}
+            {saveStatus === 'idle' && (
+              draftHydrated
+                ? 'Not yet saved'
+                : pendingDraft && !resumeDecided
+                  ? '' /* waiting on resume-banner decision */
+                  : 'Loading…'
+            )}
           </span>
           <button
             type="button"
@@ -879,6 +943,23 @@ function ProgressNotePageInner() {
         <h1>Heart and Soul Healthcare - Progress Note</h1>
         <p>Home Health Progress Note</p>
       </div>
+
+      {/* Autosave help text — sets expectations once, permanently. Hidden in
+          edit mode (staff editing a submitted note) because the save behavior
+          is different there. */}
+      {!isEditMode && user && (
+        <p
+          style={{
+            textAlign: 'center',
+            color: '#6b7280',
+            fontSize: 13,
+            margin: '0 0 12px',
+            fontStyle: 'italic',
+          }}
+        >
+          Your work saves automatically as you type. Use <strong>Save &amp; exit</strong> to leave and come back later.
+        </p>
+      )}
 
       <div className={styles.headerControls}>
         <div style={{ flex: 1 }} />

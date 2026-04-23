@@ -310,6 +310,22 @@
   box-shadow: 0 0 4px rgba(39, 174, 96, 0.3);
 }
 
+/* Hide the browser-native format mask on empty date / time inputs so they read
+   as truly empty (matching mobile Safari). Safari desktop otherwise renders
+   today's date / current time in gray, which looks like a saved value; Chrome
+   renders "mm/dd/yyyy" / "--:-- --", which is less misleading but still
+   inconsistent with the other text inputs on the form. We restore the mask on
+   focus so the format hint reappears while the nurse is typing.
+
+   Using opacity instead of color because opacity applies to the element AND
+   all descendants, sidestepping Safari's refusal to cascade `color` through
+   the ::-webkit-datetime-edit shadow DOM. */
+.input[type="date"]:not(:focus):invalid::-webkit-datetime-edit,
+.input[type="time"]:not(:focus):invalid::-webkit-datetime-edit {
+  opacity: 0;
+}
+
+
 .textarea {
   min-height: 80px;
   resize: vertical;
