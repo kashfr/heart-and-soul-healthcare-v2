@@ -13,7 +13,7 @@ set -euo pipefail
 MDX_FILE="${1:?Usage: $0 <path-to-mdx-file>}"
 PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 PUBLIC_DIR="$PROJECT_DIR/public/images/blog"
-QUALITY="${OPENAI_IMAGE_QUALITY:-high}"
+QUALITY="${OPENAI_IMAGE_QUALITY:-medium}"
 
 [ -z "${OPENAI_API_KEY:-}" ] && { echo "❌  OPENAI_API_KEY not set"; exit 1; }
 [ ! -f "$MDX_FILE" ] && { echo "❌  File not found: $MDX_FILE"; exit 1; }
@@ -32,29 +32,24 @@ generate_image() {
 
   echo "  → $name  ($size)"
 
-  local resp tmpfile
+  local tmpfile attempt err
   tmpfile=$(mktemp)
 
-  curl -sf -X POST "https://api.openai.com/v1/images/generations" \
-    -H "Authorization: Bearer $OPENAI_API_KEY" \
-    -H "Content-Type: application/json" \
-    -d "$(jq -n --arg p "$prompt" --arg s "$size" --arg q "$QUALITY" \
-         '{model: "gpt-image-2", prompt: $p, size: $s, quality: $q, n: 1}')" \
-    > "$tmpfile" || {
-    echo "    ❌  API request failed"
-    cat "$tmpfile"
-    rm -f "$tmpfile"
-    return 1
-  }
+  # Retry up to 3 times for transient API issues
+  for attempt in 1 2 3; do
+    curl -s -X POST "https://api.openai.com/v1/images/generations" \
+      -H "Authorization: Bearer $OPENAI_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d "$(jq -n --arg p "$prompt" --arg s "$size" --arg q "$QUALITY" \
+           '{model: "gpt-image-2", prompt: $p, size: $s, quality: $q, n: 1}')" \
+      > "$tmpfile"
 
-  # Check for an error in the response
-  local err
-  err=$(jq -r '.error.message // empty' "$tmpfile")
-  if [ -n "$err" ]; then
-    echo "    ❌  API error: $err"
-    rm -f "$tmpfile"
-    return 1
-  fi
+    err=$(jq -r '.error.message // empty' "$tmpfile" 2>/dev/null || echo "parse_error")
+    [ -z "$err" ] && break
+    [ "$attempt" = 3 ] && { echo "    ❌  Failed after 3 attempts: $err"; rm -f "$tmpfile"; return 1; }
+    echo "    ⏳  Retry $attempt: $err"
+    sleep 8
+  done
 
   # Decode base64 and save as PNG
   jq -r '.data[0].b64_json // empty' "$tmpfile" | base64 -d > "$output"
