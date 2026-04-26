@@ -2,66 +2,75 @@
 # generate-blog-images.sh
 # Usage: bash .claude/scripts/generate-blog-images.sh <path-to-mdx>
 #
-# Generates FLUX.2 Max images for all PLACEHOLDER entries in a blog MDX file.
-# Saves images to public/images/blog/ and rewrites MDX to remove PLACEHOLDER- prefix.
+# Generates images for all PLACEHOLDER entries in a blog MDX file using
+# OpenAI's gpt-image-2 model. Saves to public/images/blog/ and rewrites the
+# MDX to remove PLACEHOLDER- prefixes.
 #
-# Required env var: BFL_API_KEY
+# Required env var: OPENAI_API_KEY
 
 set -euo pipefail
 
 MDX_FILE="${1:?Usage: $0 <path-to-mdx-file>}"
 PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 PUBLIC_DIR="$PROJECT_DIR/public/images/blog"
+QUALITY="${OPENAI_IMAGE_QUALITY:-high}"
 
-[ -z "${BFL_API_KEY:-}" ] && { echo "❌  BFL_API_KEY not set"; exit 1; }
+[ -z "${OPENAI_API_KEY:-}" ] && { echo "❌  OPENAI_API_KEY not set"; exit 1; }
 [ ! -f "$MDX_FILE" ] && { echo "❌  File not found: $MDX_FILE"; exit 1; }
 
 mkdir -p "$PUBLIC_DIR"
 
-# ── generate_image <prompt> <width> <height> <output_path> ────────────────────
+# ── generate_image <prompt> <size> <output_path> ──────────────────────────────
+# size is WIDTHxHEIGHT (e.g. "1792x1024"). Both must be multiples of 16.
 generate_image() {
-  local prompt="$1" width="$2" height="$3" output="$4"
+  local prompt="$1" size="$2" output="$3"
   local name
   name=$(basename "$output")
 
-  echo "  → $name  (${width}×${height})"
+  # Append photorealism style cue to every prompt for consistent high quality output
+  prompt="$prompt Photorealism, professional editorial photography, sharp focus, high detail."
 
-  # Submit generation request
-  local resp
-  resp=$(curl -sf -X POST "https://api.bfl.ai/v1/flux-2-max" \
-    -H "x-key: $BFL_API_KEY" \
+  echo "  → $name  ($size)"
+
+  local resp tmpfile
+  tmpfile=$(mktemp)
+
+  curl -sf -X POST "https://api.openai.com/v1/images/generations" \
+    -H "Authorization: Bearer $OPENAI_API_KEY" \
     -H "Content-Type: application/json" \
-    -d "$(jq -n --arg p "$prompt" --argjson w "$width" --argjson h "$height" \
-         '{prompt: $p, width: $w, height: $h}')")
+    -d "$(jq -n --arg p "$prompt" --arg s "$size" --arg q "$QUALITY" \
+         '{model: "gpt-image-2", prompt: $p, size: $s, quality: $q, n: 1}')" \
+    > "$tmpfile" || {
+    echo "    ❌  API request failed"
+    cat "$tmpfile"
+    rm -f "$tmpfile"
+    return 1
+  }
 
-  local polling_url
-  polling_url=$(echo "$resp" | jq -r '.polling_url // empty')
-  [ -z "$polling_url" ] && { echo "    ❌  Submission failed: $resp"; return 1; }
+  # Check for an error in the response
+  local err
+  err=$(jq -r '.error.message // empty' "$tmpfile")
+  if [ -n "$err" ]; then
+    echo "    ❌  API error: $err"
+    rm -f "$tmpfile"
+    return 1
+  fi
 
-  # Poll until Ready (max ~3 min)
-  local i status poll img_url
-  for ((i=1; i<=45; i++)); do
-    sleep 4
-    poll=$(curl -sf "$polling_url" -H "x-key: $BFL_API_KEY")
-    status=$(echo "$poll" | jq -r '.status // "unknown"')
-    case "$status" in
-      Ready)
-        img_url=$(echo "$poll" | jq -r '.result.sample')
-        curl -sf -o "$output" "$img_url"
-        echo "    ✓  Saved"
-        return 0 ;;
-      Error|Failed|error|failed)
-        echo "    ❌  Generation failed: $poll"; return 1 ;;
-      *)
-        [ $((i % 5)) -eq 0 ] && echo "    ⏳  Waiting... ($((i*4))s) [$status]" ;;
-    esac
-  done
+  # Decode base64 and save as PNG
+  jq -r '.data[0].b64_json // empty' "$tmpfile" | base64 -d > "$output"
+  rm -f "$tmpfile"
 
-  echo "    ❌  Timed out after 3 minutes"; return 1
+  if [ ! -s "$output" ]; then
+    echo "    ❌  Empty output file"
+    return 1
+  fi
+
+  echo "    ✓  Saved"
 }
 
 echo ""
 echo "🖼   Generating images for: $(basename "$MDX_FILE")"
+echo "    Model: gpt-image-2  |  Quality: $QUALITY"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # ── Hero / featured image ─────────────────────────────────────────────────────
@@ -77,7 +86,7 @@ if [ -n "$hero_line" ]; then
     hero_prompt="Professional editorial healthcare photography hero image. ${title}. ${desc} Diverse Georgia community, warm natural window light, hopeful and compassionate mood, wide landscape composition, professional photography, warm tones."
   fi
 
-  generate_image "$hero_prompt" 1792 1024 "$PUBLIC_DIR/${hero_filename}.png"
+  generate_image "$hero_prompt" "1792x1024" "$PUBLIC_DIR/${hero_filename}.png"
 fi
 
 # ── Inline images ─────────────────────────────────────────────────────────────
@@ -85,7 +94,7 @@ while IFS= read -r line; do
   alt=$(echo "$line" | sed 's/!\[\(.*\)\](.*/\1/')
   filename=$(echo "$line" | sed 's|.*PLACEHOLDER-\([^)]*\)\.png.*|\1|')
   [ -z "$alt" ] || [ -z "$filename" ] && continue
-  generate_image "$alt" 1344 896 "$PUBLIC_DIR/${filename}.png"
+  generate_image "$alt" "1344x896" "$PUBLIC_DIR/${filename}.png"
 done < <(grep '!\[.*\](/images/blog/PLACEHOLDER-' "$MDX_FILE" || true)
 
 # ── Rewrite MDX: strip PLACEHOLDER- prefix from all image paths ───────────────
