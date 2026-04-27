@@ -4,12 +4,14 @@ import { useState } from 'react';
 import type { FormPageProps } from '../types';
 import styles from '../page.module.css';
 import DeselectableRadio from './DeselectableRadio';
+import FieldError from './FieldError';
+import { rangeValidator } from '../validators';
 
 interface FormPageThreeProps extends FormPageProps {
   credential?: string;
 }
 
-export default function FormPageThree({ formRef, register, watch, setValue, control, credential }: FormPageThreeProps) {
+export default function FormPageThree({ formRef, register, watch, setValue, control, credential, errors }: FormPageThreeProps) {
   const showSystemAssessments = credential === 'LPN' || credential === 'RN';
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     activity: false,
@@ -129,10 +131,13 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                     className={styles.input}
                     type="number"
                     id="q24_painScore"
-                    {...register('q24_painScore')}
+                    {...register('q24_painScore', {
+                      validate: rangeValidator(0, 10, 'Must be 0–10'),
+                    })}
                     min="0"
                     max="10"
                   />
+                  <FieldError name="q24_painScore" errors={errors} />
                 </div>
               )}
             </div>
@@ -215,11 +220,14 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                       className={styles.input}
                       type="number"
                       id="q24_painScoreFlacc"
-                      {...register('q24_painScore')}
+                      {...register('q24_painScore', {
+                        validate: rangeValidator(0, 10, 'Must be 0–10'),
+                      })}
                       min="0"
                       max="10"
                       placeholder="0-10"
                     />
+                    <FieldError name="q24_painScore" errors={errors} />
                   </div>
                 </div>
               </div>
@@ -293,11 +301,14 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                       className={styles.input}
                       type="number"
                       id="q24_painScoreNips"
-                      {...register('q24_painScore')}
+                      {...register('q24_painScore', {
+                        validate: rangeValidator(0, 7, 'Must be 0–7'),
+                      })}
                       min="0"
                       max="7"
                       placeholder="0-7"
                     />
+                    <FieldError name="q24_painScore" errors={errors} />
                   </div>
                   <div className={styles.f}>
                     <p style={{ fontSize: '11px', color: '#666', marginTop: '20px' }}>
@@ -605,7 +616,15 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q30_seizureDuration">Duration (min)</label>
-                <input className={styles.input} type="number" id="q30_seizureDuration" {...register('q30_seizureDuration')} />
+                <input
+                  className={styles.input}
+                  type="number"
+                  id="q30_seizureDuration"
+                  {...register('q30_seizureDuration', {
+                    validate: rangeValidator(0, 60, 'Must be 0–60 min'),
+                  })}
+                />
+                <FieldError name="q30_seizureDuration" errors={errors} />
               </div>
             </div>
             <div className={styles.row}>
@@ -1414,10 +1433,13 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                   className={styles.input}
                   type="number"
                   id="q38_preMealBG"
-                  {...register('q38_preMealBG')}
+                  {...register('q38_preMealBG', {
+                    validate: rangeValidator(20, 800, 'Must be 20–800 mg/dL'),
+                  })}
                   min="0"
                   placeholder="mg/dL"
                 />
+                <FieldError name="q38_preMealBG" errors={errors} />
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q38_postMealBG">Post-meal BG (mg/dL)</label>
@@ -1425,10 +1447,13 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                   className={styles.input}
                   type="number"
                   id="q38_postMealBG"
-                  {...register('q38_postMealBG')}
+                  {...register('q38_postMealBG', {
+                    validate: rangeValidator(20, 800, 'Must be 20–800 mg/dL'),
+                  })}
                   min="0"
                   placeholder="mg/dL"
                 />
+                <FieldError name="q38_postMealBG" errors={errors} />
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q38_bgTime">BG Monitoring Time</label>
@@ -1480,11 +1505,14 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                   className={styles.input}
                   type="number"
                   id="q38_insulinDose"
-                  {...register('q38_insulinDose')}
+                  {...register('q38_insulinDose', {
+                    validate: rangeValidator(0, 500, 'Must be 0–500 units'),
+                  })}
                   min="0"
                   step="0.5"
                   placeholder="Units"
                 />
+                <FieldError name="q38_insulinDose" errors={errors} />
               </div>
             </div>
             <div className={styles.row}>

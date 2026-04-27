@@ -4,12 +4,14 @@ import { useState, useSyncExternalStore } from 'react';
 import type { FormPageProps } from '../types';
 import styles from '../page.module.css';
 import DeselectableRadio, { radioState, radioSubscribe, radioGetSnapshot } from './DeselectableRadio';
+import FieldError from './FieldError';
+import { rangeValidator } from '../validators';
 
 const getGlobalSnapshotStr = () => String(radioGetSnapshot());
 
 interface FormPageFourProps extends FormPageProps {}
 
-export default function FormPageFour({ formRef, register, watch, setValue, control }: FormPageFourProps) {
+export default function FormPageFour({ formRef, register, watch, setValue, control, errors }: FormPageFourProps) {
   // Subscribe to radio state changes to reactively read aspiration concerns
   useSyncExternalStore(radioSubscribe, getGlobalSnapshotStr, getGlobalSnapshotStr);
   const hasAspirationConcerns = radioState['q38_aspirationConcerns'] === 'Yes';
@@ -127,11 +129,14 @@ export default function FormPageFour({ formRef, register, watch, setValue, contr
                   className={styles.input}
                   type="number"
                   id="q38_breakfastPct"
-                  {...register('q38_breakfastPct')}
+                  {...register('q38_breakfastPct', {
+                    validate: rangeValidator(0, 100, 'Must be 0–100'),
+                  })}
                   min="0"
                   max="100"
                   placeholder="0-100"
                 />
+                <FieldError name="q38_breakfastPct" errors={errors} />
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q38_lunchPct">Lunch % Consumed</label>
@@ -139,11 +144,14 @@ export default function FormPageFour({ formRef, register, watch, setValue, contr
                   className={styles.input}
                   type="number"
                   id="q38_lunchPct"
-                  {...register('q38_lunchPct')}
+                  {...register('q38_lunchPct', {
+                    validate: rangeValidator(0, 100, 'Must be 0–100'),
+                  })}
                   min="0"
                   max="100"
                   placeholder="0-100"
                 />
+                <FieldError name="q38_lunchPct" errors={errors} />
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q38_dinnerPct">Dinner % Consumed</label>
@@ -151,11 +159,14 @@ export default function FormPageFour({ formRef, register, watch, setValue, contr
                   className={styles.input}
                   type="number"
                   id="q38_dinnerPct"
-                  {...register('q38_dinnerPct')}
+                  {...register('q38_dinnerPct', {
+                    validate: rangeValidator(0, 100, 'Must be 0–100'),
+                  })}
                   min="0"
                   max="100"
                   placeholder="0-100"
                 />
+                <FieldError name="q38_dinnerPct" errors={errors} />
               </div>
             </div>
 

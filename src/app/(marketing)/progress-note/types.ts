@@ -1,4 +1,10 @@
-import { UseFormRegister, UseFormWatch, UseFormSetValue, Control } from 'react-hook-form';
+import {
+  UseFormRegister,
+  UseFormWatch,
+  UseFormSetValue,
+  Control,
+  FieldErrors,
+} from 'react-hook-form';
 
 export type FormValues = Record<string, string>;
 
@@ -8,4 +14,5 @@ export interface FormPageProps {
   watch: UseFormWatch<FormValues>;
   setValue: UseFormSetValue<FormValues>;
   control: Control<FormValues>;
+  errors?: FieldErrors<FormValues>;
 }

@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type { FormPageProps } from '../types';
 import styles from '../page.module.css';
 import DeselectableRadio from './DeselectableRadio';
+import FieldError from './FieldError';
+import { rangeValidator, VITAL_RANGE as RANGE } from '../validators';
 import { getVitalRanges, getAgeGroupLabel, checkVitalRange, type VitalKey } from '@/lib/vitalRanges';
 
 interface FormPageTwoProps extends FormPageProps {
@@ -45,7 +47,7 @@ const warningItemStyle: React.CSSProperties = {
   padding: '2px 0',
 };
 
-export default function FormPageTwo({ formRef, register, watch, setValue, control, credential, ageStr, dob }: FormPageTwoProps) {
+export default function FormPageTwo({ formRef, register, watch, setValue, control, credential, ageStr, dob, errors }: FormPageTwoProps) {
   const showVitals = credential !== 'HHA';
   const ranges = getVitalRanges(ageStr || '', dob);
   const ageGroupLabel = getAgeGroupLabel(ageStr || '', dob);
@@ -132,6 +134,17 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
       });
     }
   }, [ageStr, dob]);
+
+  // Keep the legacy q17_bloodPressure string ("S/D") in sync with the two
+  // numeric inputs so the dashboard, PDF, and vitalRanges helper keep working
+  // unchanged. Also re-runs the abnormal-vitals check on every change.
+  const sysWatch = watch('q17_systolic');
+  const diaWatch = watch('q17_diastolic');
+  useEffect(() => {
+    const joined = sysWatch || diaWatch ? `${sysWatch || ''}/${diaWatch || ''}` : '';
+    setValue('q17_bloodPressure', joined);
+    handleBPChange(joined);
+  }, [sysWatch, diaWatch, setValue, handleBPChange]);
 
   const alertList = Object.values(alerts);
   const hasAlerts = alertList.length > 0;
@@ -415,29 +428,55 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                 step="0.1"
                 required
                 {...register('q16_temperature', {
+                  validate: rangeValidator(RANGE.temperature.min, RANGE.temperature.max, RANGE.temperature.label),
                   onBlur: (e) => handleVitalChange('temperature', e.target.value),
                 })}
               />
+              <FieldError name="q16_temperature" errors={errors} />
             </div>
             <div className={styles.f}>
               <label
                 className={styles.label}
-                htmlFor="q17_bloodPressure"
+                htmlFor="q17_systolic"
                 style={isBPAbnormal ? alertLabelStyle : undefined}
               >
                 Blood Pressure (mmHg) * {isBPAbnormal && '⚠'}
               </label>
-              <input
-                className={styles.input}
-                style={isBPAbnormal ? alertInputStyle : undefined}
-                type="text"
-                id="q17_bloodPressure"
-                placeholder="120/80"
-                required
-                {...register('q17_bloodPressure', {
-                  onBlur: (e) => handleBPChange(e.target.value),
-                })}
-              />
+              {/* Two narrow numeric inputs read as a single BP entry. The
+                  legacy q17_bloodPressure string is kept in sync via the
+                  effect below so the dashboard, PDF, and abnormal-vitals
+                  helper continue to work without changes. */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <input
+                  className={styles.input}
+                  style={{ ...(isBPAbnormal ? alertInputStyle : undefined), maxWidth: 80, textAlign: 'center' }}
+                  type="number"
+                  id="q17_systolic"
+                  placeholder="120"
+                  aria-label="Systolic"
+                  required
+                  {...register('q17_systolic', {
+                    validate: rangeValidator(RANGE.systolic.min, RANGE.systolic.max, RANGE.systolic.label),
+                  })}
+                />
+                <span aria-hidden style={{ color: '#666', fontWeight: 600 }}>/</span>
+                <input
+                  className={styles.input}
+                  style={{ ...(isBPAbnormal ? alertInputStyle : undefined), maxWidth: 80, textAlign: 'center' }}
+                  type="number"
+                  id="q17_diastolic"
+                  placeholder="80"
+                  aria-label="Diastolic"
+                  required
+                  {...register('q17_diastolic', {
+                    validate: rangeValidator(RANGE.diastolic.min, RANGE.diastolic.max, RANGE.diastolic.label),
+                  })}
+                />
+              </div>
+              {/* Hidden mirror so the existing "120/80" key keeps working. */}
+              <input type="hidden" {...register('q17_bloodPressure')} />
+              <FieldError name="q17_systolic" errors={errors} />
+              <FieldError name="q17_diastolic" errors={errors} />
             </div>
             <div className={styles.f}>
               <label
@@ -454,9 +493,11 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                 id="q18_pulse"
                 required
                 {...register('q18_pulse', {
+                  validate: rangeValidator(RANGE.pulse.min, RANGE.pulse.max, RANGE.pulse.label),
                   onBlur: (e) => handleVitalChange('pulse', e.target.value),
                 })}
               />
+              <FieldError name="q18_pulse" errors={errors} />
             </div>
           </div>
 
@@ -476,9 +517,11 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                 id="q19_respiration"
                 required
                 {...register('q19_respiration', {
+                  validate: rangeValidator(RANGE.respiration.min, RANGE.respiration.max, RANGE.respiration.label),
                   onBlur: (e) => handleVitalChange('respiration', e.target.value),
                 })}
               />
+              <FieldError name="q19_respiration" errors={errors} />
             </div>
             <div className={styles.f}>
               <label
@@ -495,9 +538,11 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                 id="q20_oxygenSaturation"
                 required
                 {...register('q20_oxygenSaturation', {
+                  validate: rangeValidator(RANGE.o2.min, RANGE.o2.max, RANGE.o2.label),
                   onBlur: (e) => handleVitalChange('oxygenSaturation', e.target.value),
                 })}
               />
+              <FieldError name="q20_oxygenSaturation" errors={errors} />
             </div>
             <div className={styles.f}>
               <label
@@ -513,9 +558,11 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                 type="number"
                 id="q21_bloodGlucose"
                 {...register('q21_bloodGlucose', {
+                  validate: rangeValidator(RANGE.glucose.min, RANGE.glucose.max, RANGE.glucose.label),
                   onBlur: (e) => handleVitalChange('bloodGlucose', e.target.value),
                 })}
               />
+              <FieldError name="q21_bloodGlucose" errors={errors} />
             </div>
           </div>
 

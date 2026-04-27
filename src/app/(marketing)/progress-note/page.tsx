@@ -106,9 +106,11 @@ function ProgressNotePageInner() {
     defaultValues.q6_dateofService = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   }
 
-  const { register, watch, setValue, getValues, reset, control } = useForm<FormValues>({
+  const { register, watch, setValue, getValues, reset, control, formState, trigger } = useForm<FormValues>({
     defaultValues,
+    mode: 'onBlur', // Surface validation errors when the field loses focus, not only on submit
   });
+  const { errors } = formState;
 
   const CHECKBOX_STORAGE_KEY = 'progress-note-checkbox-draft';
 
@@ -452,6 +454,16 @@ function ProgressNotePageInner() {
         // Reset the entire form with saved data (synchronous for RHF fields)
         reset(rawData);
 
+        // Legacy submissions store BP as one "120/80" string; the form now
+        // exposes systolic + diastolic as separate numeric inputs. Parse the
+        // legacy value into the two new fields so editing an old note works
+        // seamlessly.
+        if (rawData.q17_bloodPressure) {
+          const [sys, dia] = rawData.q17_bloodPressure.split('/').map((p) => p.trim());
+          if (sys) setValue('q17_systolic', sys);
+          if (dia) setValue('q17_diastolic', dia);
+        }
+
         // Set React-controlled fields
         setInitialClientName(rawData.q3_clientName || '');
         if (rawData.q61_signature) setInitialSignature(rawData.q61_signature);
@@ -537,6 +549,34 @@ function ProgressNotePageInner() {
     e.preventDefault();
 
     if (!formRef.current) return;
+
+    // Run RHF's validation first. If any field's `validate` rule (e.g. our
+    // numeric range guards) fails, RHF populates `formState.errors`; we bail
+    // and let the inline FieldError messages do the talking. Without this
+    // trigger() call the rules wouldn't fire, since this handler is bound to
+    // the native onSubmit, not RHF's handleSubmit.
+    const valid = await trigger();
+    if (!valid) {
+      // The first errored field may be on a tab that isn't currently visible
+      // (the inactive page wrappers use display:none). Find which page-level
+      // wrapper contains it, switch the form to that page, then scroll the
+      // error into view on the next tick so the layout has time to update.
+      const firstInvalid = formRef.current.querySelector<HTMLElement>('[role="alert"]');
+      if (firstInvalid) {
+        let pageWrap: HTMLElement | null = firstInvalid;
+        while (pageWrap && pageWrap.parentElement !== formRef.current) {
+          pageWrap = pageWrap.parentElement;
+        }
+        if (pageWrap) {
+          const pageIndex = Array.from(formRef.current.children).indexOf(pageWrap);
+          if (pageIndex >= 0) setCurrentPage(pageIndex + 1);
+        }
+        setTimeout(() => {
+          firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 80);
+      }
+      return;
+    }
 
     // Check if an element or any ancestor is hidden or disabled
     const isElementVisible = (el: HTMLElement): boolean => {
@@ -1016,9 +1056,9 @@ function ProgressNotePageInner() {
 
       <form ref={formRef} onSubmit={handleSubmit} className={styles.form} noValidate>
         <div style={pageStyle(1)}><FormPageOne formRef={ref} register={register} watch={watch} setValue={setValue} control={control} onCredentialChange={handleCredentialChange} patients={patients} initialClientName={initialClientName} lockIdentity={isNurse && !isEditMode} /></div>
-        <div style={pageStyle(2)}><FormPageTwo formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} ageStr={watch('q5_ageYears')} dob={watch('q4_dateofBirth')} /></div>
-        <div style={pageStyle(3)}><FormPageThree formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} /></div>
-        <div style={pageStyle(4)}><FormPageFour formRef={ref} register={register} watch={watch} setValue={setValue} control={control} /></div>
+        <div style={pageStyle(2)}><FormPageTwo formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} ageStr={watch('q5_ageYears')} dob={watch('q4_dateofBirth')} errors={errors} /></div>
+        <div style={pageStyle(3)}><FormPageThree formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} errors={errors} /></div>
+        <div style={pageStyle(4)}><FormPageFour formRef={ref} register={register} watch={watch} setValue={setValue} control={control} errors={errors} /></div>
         <div style={pageStyle(5)}><FormPageFive formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} /></div>
         <div style={pageStyle(6)}><FormPageSix formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} /></div>
         <div style={pageStyle(7)}><FormPageSeven formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} initialSignature={initialSignature} initialTotalHours={initialTotalHours} /></div>
