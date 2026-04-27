@@ -413,6 +413,33 @@ function ProgressNotePageInner() {
     router.push('/admin/submissions?draftSaved=1');
   };
 
+  const [showDiscardModal, setShowDiscardModal] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
+
+  // Discard the current draft entirely: cancel any pending autosave, delete
+  // the Firestore draft (if one exists), wipe local form state, and leave
+  // the form. Used when a nurse decides not to keep what she's been typing.
+  const handleDiscard = async () => {
+    if (!user || discarding) return;
+    setDiscarding(true);
+    try {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+      await deleteDraft(user.uid);
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(CHECKBOX_STORAGE_KEY);
+      localStorage.removeItem('progress-note-page');
+      localStorage.removeItem('progress-note-radio-draft');
+      clearRadioStorage();
+      // Hard-navigate so the form unmounts cleanly and any in-flight autosave
+      // listeners are torn down.
+      window.location.href = '/admin/submissions?discarded=1';
+    } catch (err) {
+      console.error('Discard failed:', err);
+      alert('We couldn\'t discard the draft. Please try again.');
+      setDiscarding(false);
+    }
+  };
+
   // Load patients from Firebase on mount
   useEffect(() => {
     const loadPatients = async () => {
@@ -982,6 +1009,25 @@ function ProgressNotePageInner() {
           >
             Save &amp; exit
           </button>
+          <button
+            type="button"
+            onClick={() => setShowDiscardModal(true)}
+            disabled={discarding}
+            style={{
+              background: '#fff',
+              color: '#b91c1c',
+              border: '1px solid #fecaca',
+              padding: '8px 14px',
+              borderRadius: '4px',
+              cursor: discarding ? 'not-allowed' : 'pointer',
+              fontSize: '13px',
+              fontWeight: 600,
+              opacity: discarding ? 0.6 : 1,
+            }}
+            title="Discard this note without saving and return to the submissions dashboard"
+          >
+            Discard
+          </button>
         </div>
       )}
 
@@ -1130,6 +1176,48 @@ function ProgressNotePageInner() {
                 }}
               >
                 Yes, Clear Everything
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Discard confirmation modal — wipes the Firestore draft + localStorage
+          AND navigates away. Distinct from "Clear Form" which only resets the
+          current page in place. */}
+      {showDiscardModal && (
+        <div className={`${styles.confirmModal} ${styles.active}`}>
+          <div className={styles.modalContent}>
+            <h2 style={{ color: '#c62828', marginTop: 0 }}>Discard this note?</h2>
+            <p style={{ color: '#555', lineHeight: 1.6, marginBottom: '20px' }}>
+              All entered data will be permanently deleted and you&apos;ll return to your submissions list. This cannot be undone.
+            </p>
+            <div className={styles.modalButtons}>
+              <button
+                type="button"
+                onClick={() => setShowDiscardModal(false)}
+                className={styles.cancelBtn}
+                disabled={discarding}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDiscard}
+                disabled={discarding}
+                style={{
+                  background: '#c62828',
+                  color: 'white',
+                  padding: '10px 20px',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: discarding ? 'not-allowed' : 'pointer',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  opacity: discarding ? 0.6 : 1,
+                }}
+              >
+                {discarding ? 'Discarding…' : 'Yes, Discard'}
               </button>
             </div>
           </div>

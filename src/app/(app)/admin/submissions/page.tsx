@@ -108,22 +108,30 @@ export default function SubmissionsPage() {
   const [queryInput, setQueryInput] = useState(qParam);
   const debouncedQuery = useDebounced(queryInput, 250);
   const [draftSavedToast, setDraftSavedToast] = useState(false);
+  const [draftDiscardedToast, setDraftDiscardedToast] = useState(false);
   // The caller's own in-progress draft (one per user). Surfaced in a banner
   // so nurses landing here after Save & exit can get back to their note.
   const [myDraft, setMyDraft] = useState<NoteDraft | null>(null);
   const [discardingDraft, setDiscardingDraft] = useState(false);
 
-  // Show the "Draft saved" confirmation when we arrive here via Save & exit.
+  // Show a confirmation toast when we arrive here via Save & exit or Discard.
+  // Both share the same dismissal pattern; only one can be true at a time.
   useEffect(() => {
-    if (searchParams.get('draftSaved') === '1') {
-      setDraftSavedToast(true);
-      const params = new URLSearchParams(searchParams.toString());
-      params.delete('draftSaved');
-      const qs = params.toString();
-      router.replace(qs ? `/admin/submissions?${qs}` : '/admin/submissions');
-      const t = setTimeout(() => setDraftSavedToast(false), 5000);
-      return () => clearTimeout(t);
-    }
+    const saved = searchParams.get('draftSaved') === '1';
+    const discarded = searchParams.get('discarded') === '1';
+    if (!saved && !discarded) return;
+    if (saved) setDraftSavedToast(true);
+    if (discarded) setDraftDiscardedToast(true);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('draftSaved');
+    params.delete('discarded');
+    const qs = params.toString();
+    router.replace(qs ? `/admin/submissions?${qs}` : '/admin/submissions');
+    const t = setTimeout(() => {
+      setDraftSavedToast(false);
+      setDraftDiscardedToast(false);
+    }, 5000);
+    return () => clearTimeout(t);
   }, [searchParams, router]);
 
   useEffect(() => {
@@ -556,6 +564,23 @@ export default function SubmissionsPage() {
             }}
           >
             ✓ Draft saved. You can resume it anytime from the progress note page.
+          </div>
+        )}
+        {draftDiscardedToast && (
+          <div
+            role="status"
+            style={{
+              background: '#fef2f2',
+              border: '1px solid #fca5a5',
+              color: '#991b1b',
+              borderRadius: '6px',
+              padding: '12px 16px',
+              marginBottom: '16px',
+              fontSize: '14px',
+              fontWeight: 500,
+            }}
+          >
+            Draft discarded. Nothing was saved.
           </div>
         )}
         <div style={headerStyle}>
