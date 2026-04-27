@@ -51,7 +51,14 @@ function ProgressNotePageInner() {
   const { user, profile, role } = useAuth();
   const isNurse = role === 'nurse';
   const editId = searchParams.get('edit');
-  const [isEditMode, setIsEditMode] = useState(false);
+  // Derived synchronously from the URL so it's correct from the first render.
+  // Previously this was a useState that only flipped to true ~300ms after the
+  // submission finished loading — which created a race where RHF's reset()
+  // triggered a watch → scheduleAutosave → 3s timer with the OLD closure
+  // capturing isEditMode=false. The timer then wrote the submission's data
+  // into a draft under the *current viewer's* uid (e.g. an admin opening a
+  // nurse's note). Bailing on editId from render zero closes that window.
+  const isEditMode = !!editId;
   const [editLoaded, setEditLoaded] = useState(false);
   const savedDraft = typeof window !== 'undefined' ? localStorage.getItem('progress-note-draft') : null;
   const savedParsed = savedDraft ? JSON.parse(savedDraft) : {};
@@ -474,7 +481,6 @@ function ProgressNotePageInner() {
             });
           }
 
-          setIsEditMode(true);
           setEditLoaded(true);
 
           // Calculate total hours from saved start/end times via React state
