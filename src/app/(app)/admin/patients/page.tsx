@@ -316,7 +316,7 @@ export default function AdminPatientsPage() {
                   <select
                     value={formData.state || ''}
                     onChange={(e) => setFormData((f) => ({ ...f, state: e.target.value }))}
-                    style={inputStyle}
+                    style={selectStyle}
                   >
                     <option value="">—</option>
                     {STATES.map((s) => (
@@ -393,5 +393,18 @@ const modalStyle: React.CSSProperties = { background: 'white', borderRadius: 10,
 const modalHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #f1f3f5' };
 const closeBtnStyle: React.CSSProperties = { background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#7f8c8d' };
 const inputStyle: React.CSSProperties = { padding: '10px 12px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit' };
+// Same as inputStyle but with the custom chevron-down used everywhere else on
+// the site. Suppresses the macOS native double-arrow ⇅ for visual consistency.
+const selectStyle: React.CSSProperties = {
+  ...inputStyle,
+  appearance: 'none',
+  WebkitAppearance: 'none',
+  MozAppearance: 'none',
+  paddingRight: 36,
+  background:
+    "white url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\") no-repeat right 12px center",
+  backgroundSize: '14px',
+  cursor: 'pointer',
+};
 const gridTwoStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 };
 const toastStyle: React.CSSProperties = { position: 'fixed', bottom: 20, right: 20, background: '#2c3e50', color: 'white', padding: '10px 16px', borderRadius: 8, fontSize: 13, boxShadow: '0 8px 20px rgba(0,0,0,0.2)', zIndex: 1100 };

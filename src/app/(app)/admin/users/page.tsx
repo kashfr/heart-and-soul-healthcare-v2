@@ -376,7 +376,7 @@ function AddStaffModal({
               required={role === 'nurse'}
               value={credential}
               onChange={(e) => setCredential(e.target.value)}
-              style={inputStyle}
+              style={selectStyle}
               disabled={submitting}
             >
               {CREDENTIAL_OPTIONS.map((opt) => (
@@ -546,7 +546,7 @@ function EditStaffModal({
               required={role === 'nurse'}
               value={credential}
               onChange={(e) => setCredential(e.target.value)}
-              style={inputStyle}
+              style={selectStyle}
               disabled={!!busy}
             >
               {CREDENTIAL_OPTIONS.map((opt) => (
@@ -763,6 +763,20 @@ const modalHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'ce
 const modalTitleStyle: React.CSSProperties = { margin: 0, fontSize: 18, color: '#2c3e50' };
 const modalCloseStyle: React.CSSProperties = { background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#7f8c8d' };
 const inputStyle: React.CSSProperties = { padding: '10px 12px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit' };
+// Same as inputStyle but with the custom chevron-down used everywhere else on
+// the site (contact form, progress-note form, submissions filters). Suppresses
+// the macOS native double-arrow ⇅ for visual consistency.
+const selectStyle: React.CSSProperties = {
+  ...inputStyle,
+  appearance: 'none',
+  WebkitAppearance: 'none',
+  MozAppearance: 'none',
+  paddingRight: 36,
+  background:
+    "white url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\") no-repeat right 12px center",
+  backgroundSize: '14px',
+  cursor: 'pointer',
+};
 const errorStyle: React.CSSProperties = { background: '#fdecea', color: '#b3261e', padding: '10px 12px', borderRadius: 6, fontSize: 13, margin: '0 0 14px' };
 const roleOptionStyle: React.CSSProperties = { display: 'flex', gap: 10, padding: 10, border: '1px solid #e5e7eb', borderRadius: 6, cursor: 'pointer', alignItems: 'flex-start' };
 const linkBoxStyle: React.CSSProperties = { background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 8, padding: 14, marginBottom: 4 };

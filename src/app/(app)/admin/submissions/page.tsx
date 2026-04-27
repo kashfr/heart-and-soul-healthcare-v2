@@ -213,6 +213,19 @@ export default function SubmissionsPage() {
     [datePreset]
   );
 
+  // Defined here (rather than after `sorted`) so the cross-scope-counts memo
+  // below can short-circuit when nothing is filtered.
+  const hasAnyFilter =
+    !!qParam ||
+    !!credParam ||
+    !!nurseParam ||
+    !!datePreset ||
+    flagAbnormal ||
+    flagIncident ||
+    flagPhysNotified ||
+    sortParam !== 'submittedAt' ||
+    dirParam !== 'desc';
+
   // Search + filters.
   const filtered = useMemo(() => {
     const q = qParam.trim().toLowerCase();
@@ -237,6 +250,52 @@ export default function SubmissionsPage() {
     });
   }, [
     scoped,
+    qParam,
+    credParam,
+    nurseParam,
+    flagAbnormal,
+    flagIncident,
+    flagPhysNotified,
+    rangeStart,
+    rangeEnd,
+  ]);
+
+  // Cross-scope match counts — apply every filter EXCEPT scope to the full
+  // submission set, then bucket by archived state. Powers the "0 in Active —
+  // try Archived (3)" affordance so a search that lands in the wrong tab
+  // doesn't dead-end. Skipped entirely when no filter is active.
+  const crossScopeCounts = useMemo(() => {
+    if (!hasAnyFilter) return null;
+    const q = qParam.trim().toLowerCase();
+    const archivedKey: 'archivedAt' | 'nurseArchivedAt' = isNurse
+      ? 'nurseArchivedAt'
+      : 'archivedAt';
+    let active = 0;
+    let archived = 0;
+    for (const s of allSubmissions) {
+      if (q) {
+        const hay = `${s.clientName} ${s.nurseName} ${s.diagnosis} ${s.dateOfService}`.toLowerCase();
+        if (!hay.includes(q)) continue;
+      }
+      if (credParam && s.credential !== credParam) continue;
+      if (nurseParam && s.nurseName !== nurseParam) continue;
+      if (flagAbnormal && !s.hasAbnormalVitals) continue;
+      if (flagIncident && !s.hasIncident) continue;
+      if (flagPhysNotified && !s.physicianNotified) continue;
+      if (rangeStart || rangeEnd) {
+        const d = parseDateOfService(s.dateOfService);
+        if (!d) continue;
+        if (rangeStart && d < rangeStart) continue;
+        if (rangeEnd && d > rangeEnd) continue;
+      }
+      if (s[archivedKey] != null) archived++;
+      else active++;
+    }
+    return { active, archived, total: active + archived };
+  }, [
+    hasAnyFilter,
+    allSubmissions,
+    isNurse,
     qParam,
     credParam,
     nurseParam,
@@ -309,17 +368,6 @@ export default function SubmissionsPage() {
       p: null,
     });
   };
-
-  const hasAnyFilter =
-    !!qParam ||
-    !!credParam ||
-    !!nurseParam ||
-    !!datePreset ||
-    flagAbnormal ||
-    flagIncident ||
-    flagPhysNotified ||
-    sortParam !== 'submittedAt' ||
-    dirParam !== 'desc';
 
   const selectedIds = useMemo(() => Array.from(selected), [selected]);
   const selectedSubmissions = useMemo(
@@ -650,18 +698,74 @@ export default function SubmissionsPage() {
 
           <div style={{ flex: 1 }} />
 
-          <div style={resultCountStyle}>
-            {sorted.length === 0
-              ? 'No matches'
-              : `Showing ${pageStart + 1}–${pageEnd} of ${sorted.length}`}
-            {sorted.length !== scoped.length && ` (filtered from ${scoped.length})`}
-          </div>
           {hasAnyFilter && (
             <button type="button" onClick={clearAllFilters} style={clearFiltersBtnStyle}>
               <X size={12} /> Clear all
             </button>
           )}
         </div>
+
+        {/* Prominent result banner — only shown when a filter is active.
+            Tells the nurse/admin exactly how many matches they have, and when
+            the current scope has zero hits, surfaces matches in other scopes
+            as one-click switches so a search doesn't dead-end on the wrong
+            tab. */}
+        {hasAnyFilter && (
+          <div
+            style={{
+              ...resultBannerStyle,
+              ...(sorted.length === 0 && crossScopeCounts && crossScopeCounts.total > 0
+                ? resultBannerEmptyStyle
+                : sorted.length === 0
+                  ? resultBannerNoneStyle
+                  : resultBannerHitStyle),
+            }}
+          >
+            {sorted.length > 0 && (
+              <>
+                <strong style={{ fontSize: 15, color: '#0f172a' }}>
+                  {sorted.length} {sorted.length === 1 ? 'match' : 'matches'}
+                </strong>
+                <span style={{ color: '#475569', fontSize: 13 }}>
+                  {sorted.length !== scoped.length && (
+                    <> · filtered from {scoped.length} in {scope === 'all' ? 'All' : scope === 'archived' ? 'Archived' : 'Active'}</>
+                  )}
+                  {pageCount > 1 && (
+                    <> · showing {pageStart + 1}–{pageEnd}</>
+                  )}
+                </span>
+              </>
+            )}
+            {sorted.length === 0 && (
+              <>
+                <strong style={{ fontSize: 15, color: '#7c2d12' }}>
+                  No matches in {scope === 'all' ? 'All' : scope === 'archived' ? 'Archived' : 'Active'}
+                </strong>
+                {crossScopeCounts && crossScopeCounts.total > 0 && (
+                  <span style={{ color: '#334155', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span>·</span>
+                    <span>Try:</span>
+                    {scope !== 'active' && crossScopeCounts.active > 0 && (
+                      <button type="button" onClick={() => setScope('active')} style={scopeJumpBtnStyle}>
+                        Active ({crossScopeCounts.active})
+                      </button>
+                    )}
+                    {scope !== 'archived' && crossScopeCounts.archived > 0 && (
+                      <button type="button" onClick={() => setScope('archived')} style={scopeJumpBtnStyle}>
+                        Archived ({crossScopeCounts.archived})
+                      </button>
+                    )}
+                    {scope !== 'all' && (
+                      <button type="button" onClick={() => setScope('all')} style={scopeJumpBtnStyle}>
+                        All ({crossScopeCounts.total})
+                      </button>
+                    )}
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
         {selected.size > 0 && (
           <div style={bulkBarStyle}>
@@ -1173,13 +1277,21 @@ const searchInputStyle: React.CSSProperties = {
 };
 
 const selectStyle: React.CSSProperties = {
-  padding: '8px 10px',
+  // Custom chevron via inline SVG so the dropdown matches the contact page's
+  // form-select look. Native chevron is suppressed with appearance: none.
+  appearance: 'none',
+  WebkitAppearance: 'none',
+  MozAppearance: 'none',
+  padding: '8px 32px 8px 10px',
   border: '1px solid #dfe5ec',
   borderRadius: 6,
   fontSize: 13,
   fontFamily: 'inherit',
-  background: 'white',
+  background:
+    "white url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\") no-repeat right 10px center",
+  backgroundSize: '14px',
   color: '#2c3e50',
+  cursor: 'pointer',
 };
 
 const flagsRowStyle: React.CSSProperties = {
@@ -1203,9 +1315,46 @@ const flagLabelStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 
-const resultCountStyle: React.CSSProperties = {
-  color: '#5c6b7a',
+const resultBannerStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  flexWrap: 'wrap',
+  padding: '10px 14px',
+  borderRadius: 8,
+  marginBottom: 12,
+  fontSize: 14,
+  border: '1px solid transparent',
+};
+
+// Filter active, matches found.
+const resultBannerHitStyle: React.CSSProperties = {
+  background: '#f0f9ff',
+  borderColor: '#bae6fd',
+};
+
+// Filter active, no matches in current scope, matches in another scope.
+const resultBannerEmptyStyle: React.CSSProperties = {
+  background: '#fff7ed',
+  borderColor: '#fed7aa',
+};
+
+// Filter active, zero matches anywhere.
+const resultBannerNoneStyle: React.CSSProperties = {
+  background: '#f8fafc',
+  borderColor: '#e2e8f0',
+};
+
+const scopeJumpBtnStyle: React.CSSProperties = {
+  background: '#fff',
+  border: '1px solid #fb923c',
+  color: '#9a3412',
+  padding: '4px 10px',
+  borderRadius: 999,
   fontSize: 12,
+  fontWeight: 600,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
 };
 
 const clearFiltersBtnStyle: React.CSSProperties = {
