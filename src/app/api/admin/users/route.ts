@@ -4,6 +4,7 @@ import { FirebaseAuthError } from 'firebase-admin/auth';
 import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
 import type { Role } from '@/lib/auth';
+import { sendStaffInvite } from '@/lib/emails/staffInvite';
 
 interface CreateUserBody {
   displayName: string;
@@ -126,6 +127,17 @@ export async function POST(request: Request) {
   // The link opens Firebase's hosted reset page for this project.
   const resetLink = await adminAuth().generatePasswordResetLink(email);
 
+  // Send the invitation email automatically via Resend. We return the
+  // outcome (and keep the resetLink in the payload) so the caller can fall
+  // back to "copy link + paste in mail client" if Resend rejects the send.
+  const emailResult = await sendStaffInvite({
+    to: email,
+    displayName,
+    role,
+    resetLink,
+    isResend: false,
+  });
+
   return NextResponse.json({
     uid: userRecord.uid,
     email,
@@ -134,6 +146,8 @@ export async function POST(request: Request) {
     credential: credential || null,
     resetLink,
     orphansClaimed: toClaim.length,
+    emailSent: emailResult.ok,
+    emailError: emailResult.ok ? undefined : emailResult.error,
   });
 }
 

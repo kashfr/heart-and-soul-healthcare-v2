@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
+import { sendStaffInvite, type StaffInviteRole } from '@/lib/emails/staffInvite';
 
 export async function POST(
   request: Request,
@@ -38,6 +39,17 @@ export async function POST(
 
   const resetLink = await adminAuth().generatePasswordResetLink(email);
 
+  // Auto-send the fresh link to the user so the admin doesn't have to copy +
+  // paste. The resetLink is still returned in the payload as a copy-paste
+  // fallback in case Resend can't deliver.
+  const emailResult = await sendStaffInvite({
+    to: email,
+    displayName: profile.displayName || email,
+    role: (profile.role as StaffInviteRole) || 'nurse',
+    resetLink,
+    isResend: true,
+  });
+
   return NextResponse.json({
     uid,
     email,
@@ -45,5 +57,7 @@ export async function POST(
     role: profile.role ?? null,
     credential: profile.credential ?? null,
     resetLink,
+    emailSent: emailResult.ok,
+    emailError: emailResult.ok ? undefined : emailResult.error,
   });
 }

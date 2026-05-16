@@ -34,6 +34,10 @@ interface CreateResult {
   credential: string | null;
   resetLink: string;
   orphansClaimed?: number;
+  /** True if Resend successfully sent the invite/reset email to the user. */
+  emailSent?: boolean;
+  /** Reason the email failed to send, when emailSent is false. */
+  emailError?: string;
 }
 
 const ROLE_OPTIONS: { value: Role; label: string; desc: string }[] = [
@@ -657,16 +661,6 @@ function SuccessModal({ result, onClose }: { result: CreateResult; onClose: () =
     }
   };
 
-  const mailtoSubject = encodeURIComponent('Set up your Heart and Soul Healthcare account');
-  const mailtoBody = encodeURIComponent(
-    `Hi ${result.displayName.split(/\s+/)[0]},\n\n` +
-      `Click the link below to set your password for the Heart and Soul Healthcare staff portal:\n\n` +
-      `${result.resetLink}\n\n` +
-      `Once your password is set, sign in at https://www.heartandsoulhc.org/login\n\n` +
-      `If the link has already expired (they're only good for about an hour), no worries — head to https://www.heartandsoulhc.org/login and click "Forgot password?" under the Sign in button to send yourself a fresh one.`
-  );
-  const mailtoHref = `mailto:${encodeURIComponent(result.email)}?subject=${mailtoSubject}&body=${mailtoBody}`;
-
   const title = typeof result.orphansClaimed === 'number' ? 'Account created' : 'Password-reset link generated';
 
   return (
@@ -692,13 +686,44 @@ function SuccessModal({ result, onClose }: { result: CreateResult; onClose: () =
             </div>
           )}
 
+          {result.emailSent && (
+            <div style={emailSuccessBoxStyle}>
+              <CheckCircle2 size={16} color="#15803d" style={{ flexShrink: 0, marginTop: 1 }} />
+              <div>
+                <div style={{ fontWeight: 600, color: '#14532d' }}>
+                  Invite sent to {result.email}
+                </div>
+                <div style={{ fontSize: 12, color: '#166534', marginTop: 2 }}>
+                  They&apos;ll get an email with a link to set their password. The link expires in about an hour.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {result.emailSent === false && (
+            <div style={emailFailBoxStyle}>
+              <Mail size={16} color="#b45309" style={{ flexShrink: 0, marginTop: 1 }} />
+              <div>
+                <div style={{ fontWeight: 600, color: '#78350f' }}>
+                  Email didn&apos;t send
+                </div>
+                <div style={{ fontSize: 12, color: '#92400e', marginTop: 2 }}>
+                  {result.emailError ? `${result.emailError}. ` : ''}
+                  Copy the link below and send it to the user manually.
+                </div>
+              </div>
+            </div>
+          )}
+
           <div style={linkBoxStyle}>
             <div style={{ fontSize: 12, fontWeight: 600, color: '#5c6b7a', marginBottom: 6 }}>
-              Password setup link
+              Password setup link {result.emailSent ? '(fallback copy)' : ''}
             </div>
             <div style={linkTextStyle}>{result.resetLink}</div>
             <div style={{ fontSize: 11, color: '#7f8c8d', marginTop: 8 }}>
-              Send this to the person so they can set their password. Link expires after ~1 hour; if it expires before they use it, use &quot;Resend reset link&quot; from the edit modal.
+              {result.emailSent
+                ? 'Only share this link directly if the user says they didn\'t receive the email.'
+                : 'Send this to the person so they can set their password. Link expires after ~1 hour.'}
             </div>
           </div>
 
@@ -706,11 +731,8 @@ function SuccessModal({ result, onClose }: { result: CreateResult; onClose: () =
             <button onClick={handleCopy} style={secondaryBtnStyle}>
               {copied ? <><CheckCircle2 size={14} /> Copied</> : <><Copy size={14} /> Copy link</>}
             </button>
-            <a href={mailtoHref} style={{ ...primaryBtnStyle, textDecoration: 'none' }}>
-              <Mail size={14} /> Draft email
-            </a>
             <div style={{ flex: 1 }} />
-            <button onClick={onClose} style={secondaryBtnStyle}>Done</button>
+            <button onClick={onClose} style={primaryBtnStyle}>Done</button>
           </div>
         </div>
       </div>
@@ -782,6 +804,8 @@ const roleOptionStyle: React.CSSProperties = { display: 'flex', gap: 10, padding
 const linkBoxStyle: React.CSSProperties = { background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 8, padding: 14, marginBottom: 4 };
 const linkTextStyle: React.CSSProperties = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, color: '#2c3e50', wordBreak: 'break-all' };
 const claimBoxStyle: React.CSSProperties = { background: '#eef5ff', border: '1px solid #bfd6f3', color: '#1a3a5c', padding: 10, borderRadius: 8, fontSize: 13, marginBottom: 14 };
+const emailSuccessBoxStyle: React.CSSProperties = { background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: 12, marginBottom: 14, display: 'flex', gap: 10, alignItems: 'flex-start' };
+const emailFailBoxStyle: React.CSSProperties = { background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: 12, marginBottom: 14, display: 'flex', gap: 10, alignItems: 'flex-start' };
 const metaBoxStyle: React.CSSProperties = { background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 8, padding: 12 };
 
 function roleBadgeStyle(role: Role | null): React.CSSProperties {
