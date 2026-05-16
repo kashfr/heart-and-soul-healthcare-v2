@@ -91,7 +91,7 @@ export async function sendStaffInvite({
               <td style="padding:8px 32px 24px;font-size:13px;line-height:1.6;color:#5c6b7a;">
                 <p style="margin:16px 0 8px;">Or paste this link into your browser:</p>
                 <p style="margin:0 0 16px;word-break:break-all;color:#1a3a5c;">${escapeHtml(resetLink)}</p>
-                <p style="margin:16px 0 0;color:#7f8c8d;">This link expires in about an hour. If it expires before you use it, head to <a href="${SIGNIN_URL}" style="color:#1a3a5c;">${SIGNIN_URL}</a> and click <strong>Forgot password?</strong> under the Sign in button to send yourself a fresh one.</p>
+                <p style="margin:16px 0 0;color:#7f8c8d;">If the link has expired by the time you use it, head to <a href="${SIGNIN_URL}" style="color:#1a3a5c;">${SIGNIN_URL}</a> and click <strong>Forgot password?</strong> under the Sign in button to send yourself a fresh one.</p>
               </td>
             </tr>
             <tr>
@@ -106,7 +106,7 @@ export async function sendStaffInvite({
   </body>
 </html>`;
 
-  const text = `Hi ${firstName},\n\n${intro.replace(/<[^>]+>/g, '')}\n\nSet up your password: ${resetLink}\n\nThis link expires in about an hour. If it expires before you use it, go to ${SIGNIN_URL} and click "Forgot password?" to send yourself a fresh one.\n\nOnce your password is set, sign in at ${SIGNIN_URL}.`;
+  const text = `Hi ${firstName},\n\n${intro.replace(/<[^>]+>/g, '')}\n\nSet up your password: ${resetLink}\n\nIf the link has expired by the time you use it, go to ${SIGNIN_URL} and click "Forgot password?" to send yourself a fresh one.\n\nOnce your password is set, sign in at ${SIGNIN_URL}.`;
 
   try {
     const { error } = await resend.emails.send({

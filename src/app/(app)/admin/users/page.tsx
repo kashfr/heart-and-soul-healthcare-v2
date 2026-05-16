@@ -694,7 +694,7 @@ function SuccessModal({ result, onClose }: { result: CreateResult; onClose: () =
                   Invite sent to {result.email}
                 </div>
                 <div style={{ fontSize: 12, color: '#166534', marginTop: 2 }}>
-                  They&apos;ll get an email with a link to set their password. The link expires in about an hour.
+                  They&apos;ll get an email with a link to set their password. If the link expires before they use it, they can click &quot;Forgot password?&quot; on the sign-in page for a fresh one.
                 </div>
               </div>
             </div>
@@ -723,7 +723,7 @@ function SuccessModal({ result, onClose }: { result: CreateResult; onClose: () =
             <div style={{ fontSize: 11, color: '#7f8c8d', marginTop: 8 }}>
               {result.emailSent
                 ? 'Only share this link directly if the user says they didn\'t receive the email.'
-                : 'Send this to the person so they can set their password. Link expires after ~1 hour.'}
+                : 'Send this to the person so they can set their password. If it expires before they use it, click "Resend reset link" on the edit modal for a fresh one.'}
             </div>
           </div>
 
