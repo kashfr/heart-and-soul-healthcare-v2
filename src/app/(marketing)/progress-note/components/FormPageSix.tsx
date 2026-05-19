@@ -419,6 +419,7 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
                         return !!v || 'Required when physician was notified.';
                       },
                     })}
+                    required={physicianNotified === 'Yes'}
                   />
                   <FieldError name="q54_notificationTime" errors={errors} />
                 </div>
@@ -436,6 +437,7 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
                         return (v && v.trim().length > 0) || 'Required when physician was notified.';
                       },
                     })}
+                    required={physicianNotified === 'Yes'}
                   />
                   <FieldError name="q53_physicianName" errors={errors} />
                 </div>
@@ -455,6 +457,7 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
                         return !!v || 'Required when physician was notified.';
                       },
                     })}
+                    required={physicianNotified === 'Yes'}
                   >
                     <option value="">-- Select --</option>
                     <option value="Phone">Phone</option>
@@ -480,6 +483,7 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
                         return (v && v.trim().length > 0) || 'Required when physician was notified.';
                       },
                     })}
+                    required={physicianNotified === 'Yes'}
                     rows={3}
                     placeholder="Describe what was reported to physician..."
                   />
@@ -501,6 +505,7 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
                         return (v && v.trim().length > 0) || 'Required when physician was notified.';
                       },
                     })}
+                    required={physicianNotified === 'Yes'}
                     rows={3}
                     placeholder="Document physician response and any new orders..."
                   />

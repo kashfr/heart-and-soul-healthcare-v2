@@ -556,66 +556,76 @@ function ProgressNotePageInner() {
     }
   };
 
-  // Find which page a form element belongs to (1-7)
-  // Page wrapper divs are direct children of the form, pages 1-7 map to indices 0-6
-  const getFieldPage = (element: HTMLElement): number => {
-    let parent = element.parentElement;
-    while (parent && parent !== formRef.current) {
-      if (parent.parentElement === formRef.current) {
-        const siblings = Array.from(formRef.current!.children);
-        const index = siblings.indexOf(parent);
-        // indices 0-6 correspond to pages 1-7
-        if (index >= 0 && index <= 6) return index + 1;
-      }
-      parent = parent.parentElement;
-    }
-    return 1;
-  };
-
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     if (!formRef.current) return;
 
-    // Run RHF's validation first. If any field's `validate` rule (e.g. our
-    // numeric range guards) fails, RHF populates `formState.errors`; we bail
-    // and let the inline FieldError messages do the talking. Without this
-    // trigger() call the rules wouldn't fire, since this handler is bound to
-    // the native onSubmit, not RHF's handleSubmit.
-    const valid = await trigger();
-    if (!valid) {
-      // The first errored field may be on a tab that isn't currently visible
-      // (the inactive page wrappers use display:none). Find which page-level
-      // wrapper contains it, switch the form to that page, then scroll the
-      // error into view on the next tick so the layout has time to update.
-      const firstInvalid = formRef.current.querySelector<HTMLElement>('[role="alert"]');
-      if (firstInvalid) {
-        let pageWrap: HTMLElement | null = firstInvalid;
-        while (pageWrap && pageWrap.parentElement !== formRef.current) {
-          pageWrap = pageWrap.parentElement;
-        }
-        if (pageWrap) {
-          const pageIndex = Array.from(formRef.current.children).indexOf(pageWrap);
-          if (pageIndex >= 0) setCurrentPage(pageIndex + 1);
-        }
-        setTimeout(() => {
-          firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }, 80);
-      }
-      return;
-    }
-
-    // Check if an element or any ancestor is hidden or disabled
+    // Helper: is this element (or any ancestor up to the form) hidden? Used
+    // to skip fields on inactive tabs (display:none) and credential-gated
+    // sections (overlay with pointerEvents:none).
     const isElementVisible = (el: HTMLElement): boolean => {
       let current: HTMLElement | null = el;
       while (current && current !== formRef.current) {
         if (current.style.display === 'none') return false;
-        // Detect credential-gated sections (opacity overlay with pointerEvents: none)
         if (current.style.pointerEvents === 'none' && current.style.opacity !== '') return false;
         current = current.parentElement;
       }
       return true;
     };
+
+    // Run RHF's validation so the validate rules (numeric range guards,
+    // conditional physician-notify rules) populate formState.errors and
+    // render inline <span role="alert"> messages we can find in the DOM.
+    await trigger();
+
+    // Single needs-attention pass — walks the form in DOM order so the
+    // form jumps to whichever issue appears FIRST across all 7 pages,
+    // not whichever RHF rule fires first. Two sources:
+    //   1. <span role="alert"> rendered by FieldError (RHF rule failures)
+    //   2. <input/select/textarea required> that's visible and empty
+    //
+    // Using querySelectorAll preserves DOM order, so a missing Client Name
+    // on page 1 wins over a missing physician detail on page 6. Selecting
+    // both kinds in a single query keeps the ordering correct without
+    // having to merge two sorted lists.
+    const candidates = Array.from(
+      formRef.current.querySelectorAll<HTMLElement>(
+        '[role="alert"], input[required], select[required], textarea[required]'
+      )
+    ).filter((el) => {
+      if (!isElementVisible(el)) return false;
+      if (el.getAttribute('role') === 'alert') return true;
+      const input = el as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+      if ((input as HTMLInputElement).type === 'hidden') return false;
+      if ((input as HTMLInputElement).type === 'checkbox') {
+        return !(input as HTMLInputElement).checked;
+      }
+      return !input.value || input.value.trim() === '';
+    });
+
+    if (candidates.length > 0) {
+      const target = candidates[0];
+      // Walk up to the page-level wrapper (direct child of the form) so we
+      // can switch tabs before scrolling.
+      let pageWrap: HTMLElement | null = target;
+      while (pageWrap && pageWrap.parentElement !== formRef.current) {
+        pageWrap = pageWrap.parentElement;
+      }
+      if (pageWrap) {
+        const pageIndex = Array.from(formRef.current.children).indexOf(pageWrap);
+        if (pageIndex >= 0) setCurrentPage(pageIndex + 1);
+      }
+      setTimeout(() => {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Focus the field itself when it's an input (not the alert message).
+        const tag = target.tagName;
+        if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') {
+          (target as HTMLElement).focus();
+        }
+      }, 80);
+      return;
+    }
 
     // Validate signature first (stored via react-hook-form setValue)
     const signatureValue = getValues('q61_signature');
@@ -649,63 +659,8 @@ function ProgressNotePageInner() {
       return;
     }
 
-    // Custom validation: find all required fields that are empty
-    const requiredFields = formRef.current.querySelectorAll(
-      'input[required], select[required], textarea[required]'
-    );
-
-    for (const field of requiredFields) {
-      const el = field as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
-
-      // Skip hidden inputs (like signature, handled above)
-      if (el.type === 'hidden') continue;
-
-      // Skip fields hidden by credential-conditional display:none or overlay
-      if (!isElementVisible(el)) continue;
-
-      // For checkboxes, check the .checked property (not .value)
-      if (el.type === 'checkbox') {
-        if (!(el as HTMLInputElement).checked) {
-          const parentLabel = el.closest('label');
-          const rawLabel = parentLabel?.textContent || el.name;
-          const fieldName = rawLabel.replace(/\s*\*\s*/g, '').trim();
-
-          const page = getFieldPage(el);
-          setCurrentPage(page);
-          setTimeout(() => {
-            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }, 100);
-
-          alert(`Please check "${fieldName}" on page ${page} before submitting.`);
-          return;
-        }
-        continue;
-      }
-
-      if (!el.value || el.value.trim() === '') {
-        // Find the label for this field
-        const fieldId = el.id;
-        const label = fieldId ? formRef.current!.querySelector(`label[for="${fieldId}"]`) : null;
-        const parentLabel = el.closest('div')?.querySelector('label');
-        const rawLabel = label?.textContent || parentLabel?.textContent || el.name;
-        const fieldName = rawLabel.replace(/\s*\*\s*/g, '').replace(/\s*⚠\s*/g, '').trim();
-
-        // Navigate to the page containing this field
-        const page = getFieldPage(el);
-        setCurrentPage(page);
-
-        // Wait for page to render, then focus and highlight
-        setTimeout(() => {
-          el.style.border = '2px solid #c62828';
-          el.style.background = '#fff5f5';
-          el.focus();
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }, 100);
-
-        alert(`Please fill in "${fieldName}" on page ${page} before submitting.`);
-        return;
-      }
-    }
+    // The required-field + RHF-rule validation now happens above in the
+    // unified DOM-order pass, so the old per-field loop is gone.
 
     try {
       setSubmitting(true);

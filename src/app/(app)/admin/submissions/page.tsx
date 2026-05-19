@@ -3,7 +3,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Archive as ArchiveIcon, Download, RotateCcw, X, Search } from 'lucide-react';
+import { Archive as ArchiveIcon, Download, RotateCcw, X, Search, Plus } from 'lucide-react';
 import {
   getSubmissions,
   setSubmissionsArchive,
@@ -584,8 +584,25 @@ export default function SubmissionsPage() {
           </div>
         )}
         <div style={headerStyle}>
-          <h1 style={titleStyle}>Progress Note Submissions</h1>
-          <p style={subtitleStyle}>All submitted nursing progress notes</p>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h1 style={titleStyle}>Progress Note Submissions</h1>
+            <p style={subtitleStyle}>All submitted nursing progress notes</p>
+          </div>
+          {/* Hidden for supervisors — they review notes but don't author them.
+              Label swaps to "Resume draft" when a draft already exists so the
+              nurse never gets a "wait, what's this banner?" moment after
+              clicking. The link target is the same either way; the
+              progress-note page's existing resume-banner logic handles the
+              actual hydrate. */}
+          {role !== 'supervisor' && (
+            <Link
+              href={myDraft ? '/progress-note?resume=1' : '/progress-note'}
+              style={newNoteBtnStyle}
+            >
+              <Plus size={16} />
+              {myDraft ? 'Resume draft' : 'New progress note'}
+            </Link>
+          )}
         </div>
 
         <div style={tabsStyle} role="tablist" aria-label="Submissions view">
@@ -1185,7 +1202,11 @@ const wrapStyle: React.CSSProperties = {
 };
 
 const headerStyle: React.CSSProperties = {
-  textAlign: 'center',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 16,
+  flexWrap: 'wrap',
   marginBottom: 24,
   borderBottom: '3px solid #2c3e50',
   paddingBottom: 16,
@@ -1196,6 +1217,23 @@ const titleStyle: React.CSSProperties = {
   fontSize: 24,
   marginBottom: 4,
   marginTop: 0,
+};
+
+const newNoteBtnStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  background: '#27ae60',
+  color: 'white',
+  padding: '10px 14px',
+  borderRadius: 6,
+  border: 'none',
+  fontSize: 14,
+  fontWeight: 700,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  textDecoration: 'none',
+  flexShrink: 0,
 };
 
 const subtitleStyle: React.CSSProperties = {

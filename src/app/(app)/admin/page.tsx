@@ -1,8 +1,10 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Users, ClipboardList, UserCog, FileText, FilePlus } from 'lucide-react';
+import { Users, ClipboardList, UserCog, FileText, FilePlus, FileEdit } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
+import { loadDraft, type NoteDraft } from '@/lib/drafts';
 import type { Role } from '@/lib/auth';
 
 interface Card {
@@ -14,14 +16,9 @@ interface Card {
   disabled?: boolean;
 }
 
+// The "Submit a progress note" card is built dynamically below so the
+// title/description/href can swap when the caller has an unfinished draft.
 const CARDS: Card[] = [
-  {
-    href: '/progress-note',
-    icon: <FilePlus size={22} />,
-    title: 'Submit a progress note',
-    description: 'Fill out a new shift note. The form auto-fills your name and credential.',
-    allow: ['nurse'],
-  },
   {
     href: '/admin/submissions',
     icon: <ClipboardList size={22} />,
@@ -67,9 +64,49 @@ const ROLE_KICKER: Record<Role, string> = {
 };
 
 export default function AdminDashboardPage() {
-  const { profile, role } = useAuth();
+  const { user, profile, role } = useAuth();
+  const [myDraft, setMyDraft] = useState<NoteDraft | null>(null);
 
-  const visibleCards = CARDS.filter((c) => role && c.allow.includes(role));
+  // Surface the caller's own draft so the "Submit a progress note" card can
+  // flip into "Resume draft" mode. Skipped for supervisors — they don't see
+  // the card at all. Errors are intentionally swallowed; on failure the card
+  // stays in its default "new note" state, which is a safe fallback.
+  useEffect(() => {
+    if (!user || role === 'supervisor') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const draft = await loadDraft(user.uid);
+        if (!cancelled) setMyDraft(draft);
+      } catch (err) {
+        console.error('Dashboard draft load failed:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user, role]);
+
+  // Built per-render so it reflects the latest draft state. Available to
+  // nurses + admins (admins so they can test/demo); supervisors don't author
+  // notes so the card is omitted from their dashboard.
+  const noteCard: Card = myDraft
+    ? {
+        href: '/progress-note?resume=1',
+        icon: <FileEdit size={22} />,
+        title: 'Resume your draft',
+        description: myDraft.clientName
+          ? `Pick up where you left off on ${myDraft.clientName}'s note.`
+          : 'Pick up where you left off on your unfinished note.',
+        allow: ['nurse', 'admin'],
+      }
+    : {
+        href: '/progress-note',
+        icon: <FilePlus size={22} />,
+        title: 'Submit a progress note',
+        description: 'Fill out a new shift note. The form auto-fills your name and credential.',
+        allow: ['nurse', 'admin'],
+      };
+
+  const visibleCards = [noteCard, ...CARDS].filter((c) => role && c.allow.includes(role));
   const kicker = role ? ROLE_KICKER[role] : '';
   const firstName = profile?.displayName?.split(' ')[0] ?? '';
 
