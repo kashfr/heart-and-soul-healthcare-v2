@@ -5,7 +5,6 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { Menu, X, ChevronDown, Phone } from 'lucide-react';
 import styles from './Header.module.css';
-import UserMenu from './UserMenu';
 
 const programLinks = [
   { href: '/programs/gapp', label: 'GAPP - Georgia Pediatric Program' },
@@ -40,9 +39,11 @@ export default function Header() {
             <div className={styles.topBarItem}>
               <span>Providing compassionate care across Georgia</span>
             </div>
-            <div className={styles.topBarItem} style={{ marginLeft: 'auto' }}>
-              <UserMenu />
-            </div>
+            {/* UserMenu was here — it's been removed from the public marketing
+                header. Signed-in staff/nurses still see their avatar + menu
+                in the AppShell layout (admin portal), which is the right
+                place for it. The public site stays anonymous-feeling for
+                visitors. */}
           </div>
         </div>
       </div>
