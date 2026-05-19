@@ -1,16 +1,35 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { FormPageProps } from '../types';
 import styles from '../page.module.css';
-import DeselectableRadio from './DeselectableRadio';
+import DeselectableRadio, { radioState, radioSubscribe, radioGetSnapshot } from './DeselectableRadio';
+import FieldError from './FieldError';
 
 interface FormPageSixProps extends FormPageProps {
   credential?: string;
 }
 
-export default function FormPageSix({ formRef, register, watch, setValue, control, credential }: FormPageSixProps) {
+const getRadioSnapshotStr = () => String(radioGetSnapshot());
+
+export default function FormPageSix({ formRef, register, watch, setValue, control, credential, errors }: FormPageSixProps) {
   const isLpnRn = credential === 'LPN' || credential === 'RN';
+
+  // Subscribe to the global radio store so this component re-renders whenever
+  // a radio changes — needed to drive the conditional-required logic on the
+  // Physician Notification section (the detail fields only become required
+  // once the nurse picks "Yes" on q52_physicianNotify).
+  useSyncExternalStore(radioSubscribe, getRadioSnapshotStr, getRadioSnapshotStr);
+  const physicianNotified = radioState['q52_physicianNotify'] || '';
+
+  // Keep the hidden RHF mirror in sync with the radio store so RHF's
+  // validate rules + trigger() see the latest value. The radio itself isn't
+  // a registered field; this hidden input is what `trigger()` validates and
+  // what scrolls into view when the validation fails.
+  useEffect(() => {
+    setValue('q52_physicianNotify', physicianNotified);
+  }, [physicianNotified, setValue]);
+
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     educationDetails: false,
     goal1: false,
@@ -28,6 +47,18 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
       [section]: !prev[section],
     }));
   };
+
+  // Auto-expand the Notification Details collapsible the moment the nurse
+  // picks "Yes" — otherwise the five required fields would be hidden inside
+  // a collapsed section and she'd see validation errors with no fields to
+  // fix. She can still collapse it manually after.
+  useEffect(() => {
+    if (physicianNotified === 'Yes') {
+      setExpandedSections((prev) =>
+        prev.physicianNotification ? prev : { ...prev, physicianNotification: true }
+      );
+    }
+  }, [physicianNotified]);
 
   return (
     <div>
@@ -334,7 +365,7 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
 
           <div className={styles.row}>
             <div className={styles.f} style={{ flex: '1 1 100%' }}>
-              <label className={styles.label}>Physician Notified?</label>
+              <label className={styles.label}>Physician Notified? *</label>
               <div className={styles.radioRow}>
                 <label>
                   <DeselectableRadio name="q52_physicianNotify" value="Yes" />
@@ -345,6 +376,18 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
                   No
                 </label>
               </div>
+              {/* Hidden RHF mirror — validation rules + trigger() act on this.
+                  Value stays in sync via the useEffect above. */}
+              <input
+                type="hidden"
+                {...register('q52_physicianNotify', {
+                  validate: (v) => {
+                    if (!isLpnRn) return true; // section is hidden for non-LPN/RN nurses
+                    return v === 'Yes' || v === 'No' || 'Please select Yes or No.';
+                  },
+                })}
+              />
+              <FieldError name="q52_physicianNotify" errors={errors} />
             </div>
           </div>
 
@@ -355,38 +398,63 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
             <span className={styles.toggleArrow}>
               {expandedSections.physicianNotification ? '▼' : '▶'}
             </span>
-            <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Notification Details</div>
+            <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>
+              Notification Details {physicianNotified === 'Yes' && <span style={{ color: '#c62828' }}>*</span>}
+            </div>
           </div>
           <div style={{ display: expandedSections.physicianNotification ? 'block' : 'none' }}>
             <div>
               <div className={styles.row}>
                 <div className={styles.f}>
-                  <label className={styles.label} htmlFor="q54_notificationTime">Time Notified</label>
+                  <label className={styles.label} htmlFor="q54_notificationTime">
+                    Time Notified {physicianNotified === 'Yes' && '*'}
+                  </label>
                   <input
                     className={styles.input}
                     type="time"
                     id="q54_notificationTime"
-                    {...register('q54_notificationTime')}
+                    {...register('q54_notificationTime', {
+                      validate: (v) => {
+                        if (!isLpnRn || physicianNotified !== 'Yes') return true;
+                        return !!v || 'Required when physician was notified.';
+                      },
+                    })}
                   />
+                  <FieldError name="q54_notificationTime" errors={errors} />
                 </div>
                 <div className={styles.f}>
-                  <label className={styles.label} htmlFor="q53_physicianName">Physician Name</label>
+                  <label className={styles.label} htmlFor="q53_physicianName">
+                    Physician Name {physicianNotified === 'Yes' && '*'}
+                  </label>
                   <input
                     className={styles.input}
                     type="text"
                     id="q53_physicianName"
-                    {...register('q53_physicianName')}
+                    {...register('q53_physicianName', {
+                      validate: (v) => {
+                        if (!isLpnRn || physicianNotified !== 'Yes') return true;
+                        return (v && v.trim().length > 0) || 'Required when physician was notified.';
+                      },
+                    })}
                   />
+                  <FieldError name="q53_physicianName" errors={errors} />
                 </div>
               </div>
 
               <div className={styles.row}>
                 <div className={styles.f}>
-                  <label className={styles.label} htmlFor="q52_notifyMethod">Method</label>
+                  <label className={styles.label} htmlFor="q52_notifyMethod">
+                    Method {physicianNotified === 'Yes' && '*'}
+                  </label>
                   <select
                     className={styles.select}
                     id="q52_notifyMethod"
-                    {...register('q52_notifyMethod')}
+                    {...register('q52_notifyMethod', {
+                      validate: (v) => {
+                        if (!isLpnRn || physicianNotified !== 'Yes') return true;
+                        return !!v || 'Required when physician was notified.';
+                      },
+                    })}
                   >
                     <option value="">-- Select --</option>
                     <option value="Phone">Phone</option>
@@ -394,32 +462,49 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
                     <option value="Portal/Electronic">Portal/Electronic</option>
                     <option value="Other">Other</option>
                   </select>
+                  <FieldError name="q52_notifyMethod" errors={errors} />
                 </div>
               </div>
 
               <div className={styles.row}>
                 <div className={styles.f} style={{ flex: '1 1 100%' }}>
-                  <label className={styles.label} htmlFor="q52_infoReported">Information Reported</label>
+                  <label className={styles.label} htmlFor="q52_infoReported">
+                    Information Reported {physicianNotified === 'Yes' && '*'}
+                  </label>
                   <textarea
                     className={styles.textarea}
                     id="q52_infoReported"
-                    {...register('q52_infoReported')}
+                    {...register('q52_infoReported', {
+                      validate: (v) => {
+                        if (!isLpnRn || physicianNotified !== 'Yes') return true;
+                        return (v && v.trim().length > 0) || 'Required when physician was notified.';
+                      },
+                    })}
                     rows={3}
                     placeholder="Describe what was reported to physician..."
                   />
+                  <FieldError name="q52_infoReported" errors={errors} />
                 </div>
               </div>
 
               <div className={styles.row}>
                 <div className={styles.f} style={{ flex: '1 1 100%' }}>
-                  <label className={styles.label} htmlFor="q55_physicianOrders">Response / New Orders</label>
+                  <label className={styles.label} htmlFor="q55_physicianOrders">
+                    Response / New Orders {physicianNotified === 'Yes' && '*'}
+                  </label>
                   <textarea
                     className={styles.textarea}
                     id="q55_physicianOrders"
-                    {...register('q55_physicianOrders')}
+                    {...register('q55_physicianOrders', {
+                      validate: (v) => {
+                        if (!isLpnRn || physicianNotified !== 'Yes') return true;
+                        return (v && v.trim().length > 0) || 'Required when physician was notified.';
+                      },
+                    })}
                     rows={3}
                     placeholder="Document physician response and any new orders..."
                   />
+                  <FieldError name="q55_physicianOrders" errors={errors} />
                 </div>
               </div>
           </div>
