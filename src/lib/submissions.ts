@@ -112,13 +112,24 @@ export interface ProgressNoteFormData {
   // Metadata
   submittedAt?: Timestamp | ReturnType<typeof serverTimestamp>;
   status?: string;
+
+  // RN co-signature (written by /api/admin/submissions/[id]/cosign).
+  // Only populated for HHA/CNA/LPN notes after an RN has signed off.
+  cosignedAt?: Timestamp | null;
+  cosignedBy?: string;
+  cosignedByName?: string;
+  cosignedCredential?: string;
+  cosignedSignature?: string;
 }
 
 export interface SubmissionSummary {
   id: string;
   clientName: string;
   nurseName: string;
+  /** Author's clinical credential at submit time: HHA | CNA | LPN | RN. */
   credential: string;
+  /** Author's Firebase uid (used by the cosign self-author guard + nurse-only filtering). */
+  nurseId: string;
   diagnosis: string;
   dateOfService: string;
   submittedAt: Date | null;
@@ -128,10 +139,19 @@ export interface SubmissionSummary {
   hasAbnormalVitals: boolean;
   hasIncident: boolean;
   physicianNotified: boolean;
+  // --- RN co-signature (only populated for HHA/CNA/LPN notes once an RN signs off) ---
+  cosignedAt: Date | null;
+  cosignedByName: string;
+  cosignedCredential: string;
 }
 
 export type ArchiveScope = 'staff' | 'nurse';
 export type ArchiveView = 'active' | 'archived';
+
+// Re-export so existing import sites (`import { needsCosign } from '@/lib/submissions'`)
+// keep working. The helper lives in cosignClient.ts so its tests don't drag in
+// the Firebase SDK that this module initializes.
+export { needsCosign } from './cosignClient';
 
 /**
  * Save a progress note form submission to Firestore.
@@ -191,11 +211,13 @@ export async function getSubmissions(options?: { nurseId?: string }): Promise<Su
       const hasIncident = Boolean(
         incidentDetails || !NO_INCIDENT_VALUES.has(incidentType.toLowerCase())
       );
+      const cosignedAt = data.cosignedAt as Timestamp | null | undefined;
       return {
         id: d.id,
         clientName: data.q3_clientName || '',
         nurseName: data.q11_nurseName || '',
         credential: data.q12_credential || '',
+        nurseId: data.nurseId || '',
         diagnosis: data.q10_primaryDiagnosis || '',
         dateOfService: formatDateUS(data.q6_dateofService || ''),
         submittedAt: submittedAt ? submittedAt.toDate() : null,
@@ -205,6 +227,9 @@ export async function getSubmissions(options?: { nurseId?: string }): Promise<Su
         hasAbnormalVitals: hasAnyAbnormalVital(data),
         hasIncident,
         physicianNotified: String(data.q52_physicianNotify || '').toLowerCase() === 'yes',
+        cosignedAt: cosignedAt ? cosignedAt.toDate() : null,
+        cosignedByName: data.cosignedByName || '',
+        cosignedCredential: data.cosignedCredential || '',
       };
     });
 

@@ -1,16 +1,18 @@
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
+import { useCallback, useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Archive as ArchiveIcon, Download, RotateCcw, X, Search, Plus } from 'lucide-react';
+import { Archive as ArchiveIcon, Download, RotateCcw, X, Search, Plus, CheckCircle2 } from 'lucide-react';
 import {
   getSubmissions,
   setSubmissionsArchive,
+  needsCosign,
   type ArchiveView,
   type SubmissionSummary,
 } from '@/lib/submissions';
 import { loadDraft, deleteDraft, type NoteDraft } from '@/lib/drafts';
+import CoSignModal from '@/components/CoSignModal';
 import {
   buildZip,
   buildMergedPdf,
@@ -74,8 +76,11 @@ function useDebounced<T>(value: T, delay = 250): T {
 }
 
 export default function SubmissionsPage() {
-  const { user, role, loading: authLoading } = useAuth();
+  const { user, profile, role, loading: authLoading } = useAuth();
   const isNurse = role === 'nurse';
+  /** Whether the signed-in user can co-sign HHA/CNA/LPN notes. Their staff
+      profile credential must be RN; their portal role can be anything. */
+  const isRn = profile?.credential === 'RN';
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -94,6 +99,7 @@ export default function SubmissionsPage() {
   const flagAbnormal = searchParams.get('abn') === '1';
   const flagIncident = searchParams.get('inc') === '1';
   const flagPhysNotified = searchParams.get('phy') === '1';
+  const flagNeedsCosign = searchParams.get('cosign') === '1';
   const page = Math.max(1, Number(searchParams.get('p') || '1'));
 
   const [allSubmissions, setAllSubmissions] = useState<SubmissionSummary[]>([]);
@@ -109,6 +115,10 @@ export default function SubmissionsPage() {
   const debouncedQuery = useDebounced(queryInput, 250);
   const [draftSavedToast, setDraftSavedToast] = useState(false);
   const [draftDiscardedToast, setDraftDiscardedToast] = useState(false);
+  /** The notes currently shown in the co-sign modal (1 = per-note flow, many = batch). */
+  const [cosignTargets, setCosignTargets] = useState<SubmissionSummary[]>([]);
+  /** Toast: how many notes were just cosigned. Auto-clears. */
+  const [cosignToast, setCosignToast] = useState<number>(0);
   // The caller's own in-progress draft (one per user). Surfaced in a banner
   // so nurses landing here after Save & exit can get back to their note.
   const [myDraft, setMyDraft] = useState<NoteDraft | null>(null);
@@ -134,17 +144,22 @@ export default function SubmissionsPage() {
     return () => clearTimeout(t);
   }, [searchParams, router]);
 
+  const reloadSubmissions = useCallback(async () => {
+    if (!user) return;
+    const options = isNurse ? { nurseId: user.uid } : undefined;
+    setAllSubmissions(await getSubmissions(options));
+  }, [isNurse, user]);
+
   useEffect(() => {
     if (authLoading) return;
     (async () => {
       try {
-        const options = isNurse && user ? { nurseId: user.uid } : undefined;
-        setAllSubmissions(await getSubmissions(options));
+        await reloadSubmissions();
       } finally {
         setLoading(false);
       }
     })();
-  }, [authLoading, isNurse, user]);
+  }, [authLoading, reloadSubmissions]);
 
   // Load the caller's own draft (if any). Re-runs when the draftSaved toast
   // fires so the banner reflects a just-saved draft without a hard refresh.
@@ -194,6 +209,26 @@ export default function SubmissionsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedQuery]);
 
+  // When an RN lands here with no filters applied at all, default to the
+  // "Needs co-signature" view — that's almost always what they came for.
+  // We only do this once per session via sessionStorage so the RN can clear
+  // the filter and not have it reappear every time they navigate back.
+  useEffect(() => {
+    if (!isRn || authLoading) return;
+    if (typeof window === 'undefined') return;
+    if (sessionStorage.getItem('rn-cosign-default-applied') === '1') return;
+    const hasAnyFilter =
+      qParam || credParam || nurseParam || datePreset ||
+      flagAbnormal || flagIncident || flagPhysNotified || flagNeedsCosign;
+    if (hasAnyFilter) {
+      sessionStorage.setItem('rn-cosign-default-applied', '1');
+      return;
+    }
+    sessionStorage.setItem('rn-cosign-default-applied', '1');
+    updateParams({ cosign: '1' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRn, authLoading]);
+
   // Scope filter (independent per role).
   const scoped = useMemo(() => {
     const key: 'archivedAt' | 'nurseArchivedAt' = isNurse ? 'nurseArchivedAt' : 'archivedAt';
@@ -231,6 +266,7 @@ export default function SubmissionsPage() {
     flagAbnormal ||
     flagIncident ||
     flagPhysNotified ||
+    flagNeedsCosign ||
     sortParam !== 'submittedAt' ||
     dirParam !== 'desc';
 
@@ -248,6 +284,7 @@ export default function SubmissionsPage() {
       if (flagAbnormal && !s.hasAbnormalVitals) return false;
       if (flagIncident && !s.hasIncident) return false;
       if (flagPhysNotified && !s.physicianNotified) return false;
+      if (flagNeedsCosign && !needsCosign(s)) return false;
       if (rangeStart || rangeEnd) {
         const d = parseDateOfService(s.dateOfService);
         if (!d) return false;
@@ -264,6 +301,7 @@ export default function SubmissionsPage() {
     flagAbnormal,
     flagIncident,
     flagPhysNotified,
+    flagNeedsCosign,
     rangeStart,
     rangeEnd,
   ]);
@@ -290,6 +328,7 @@ export default function SubmissionsPage() {
       if (flagAbnormal && !s.hasAbnormalVitals) continue;
       if (flagIncident && !s.hasIncident) continue;
       if (flagPhysNotified && !s.physicianNotified) continue;
+      if (flagNeedsCosign && !needsCosign(s)) continue;
       if (rangeStart || rangeEnd) {
         const d = parseDateOfService(s.dateOfService);
         if (!d) continue;
@@ -310,6 +349,7 @@ export default function SubmissionsPage() {
     flagAbnormal,
     flagIncident,
     flagPhysNotified,
+    flagNeedsCosign,
     rangeStart,
     rangeEnd,
   ]);
@@ -371,6 +411,7 @@ export default function SubmissionsPage() {
       abn: null,
       inc: null,
       phy: null,
+      cosign: null,
       sort: null,
       dir: null,
       p: null,
@@ -391,6 +432,39 @@ export default function SubmissionsPage() {
       .sort();
     return { start: dates[0] || null, end: dates[dates.length - 1] || null };
   }, [selectedSubmissions]);
+
+  // For the bulk Co-sign button: the RN can sign every selected note (i.e. all
+  // are HHA/CNA/LPN, not already cosigned, not authored by the RN). If even one
+  // selected note fails this, the button shows disabled with a tooltip — cleaner
+  // than letting them click and getting partial-failure messages back.
+  const bulkCosignState = useMemo(() => {
+    if (!isRn || selectedSubmissions.length === 0) {
+      return { canBulkCosign: false, blockedReason: '' as string };
+    }
+    const blockers: string[] = [];
+    for (const s of selectedSubmissions) {
+      if (s.credential === 'RN') {
+        blockers.push('RN-authored notes do not need co-sign');
+        break;
+      }
+      if (s.cosignedAt != null) {
+        blockers.push('one or more notes are already co-signed');
+        break;
+      }
+      if (s.nurseId && s.nurseId === user?.uid) {
+        blockers.push('you cannot co-sign a note you authored');
+        break;
+      }
+      if (!needsCosign(s)) {
+        blockers.push('one or more notes are not eligible for co-sign');
+        break;
+      }
+    }
+    return {
+      canBulkCosign: blockers.length === 0,
+      blockedReason: blockers[0] || '',
+    };
+  }, [isRn, selectedSubmissions, user?.uid]);
 
   const toggleRow = (id: string) => {
     setSelected((prev) => {
@@ -583,6 +657,23 @@ export default function SubmissionsPage() {
             Draft discarded. Nothing was saved.
           </div>
         )}
+        {cosignToast > 0 && (
+          <div
+            role="status"
+            style={{
+              background: '#d1fae5',
+              border: '1px solid #10b981',
+              color: '#065f46',
+              borderRadius: '6px',
+              padding: '12px 16px',
+              marginBottom: '16px',
+              fontSize: '14px',
+              fontWeight: 500,
+            }}
+          >
+            ✓ Co-signed {cosignToast} {cosignToast === 1 ? 'note' : 'notes'}.
+          </div>
+        )}
         <div style={headerStyle}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <h1 style={titleStyle}>Progress Note Submissions</h1>
@@ -737,6 +828,14 @@ export default function SubmissionsPage() {
             />
             Physician notified
           </label>
+          <label style={flagLabelStyle}>
+            <input
+              type="checkbox"
+              checked={flagNeedsCosign}
+              onChange={(e) => updateParams({ cosign: e.target.checked ? '1' : null, p: null })}
+            />
+            Needs co-signature
+          </label>
 
           <div style={{ flex: 1 }} />
 
@@ -822,6 +921,25 @@ export default function SubmissionsPage() {
               </span>
             )}
             <div style={{ flex: 1 }} />
+            {isRn && (
+              <button
+                onClick={() => setCosignTargets([...selectedSubmissions])}
+                style={{
+                  ...bulkCosignBtnStyle,
+                  opacity: bulkCosignState.canBulkCosign ? 1 : 0.55,
+                  cursor: bulkCosignState.canBulkCosign ? 'pointer' : 'not-allowed',
+                }}
+                disabled={busy || !bulkCosignState.canBulkCosign}
+                title={
+                  bulkCosignState.canBulkCosign
+                    ? `Co-sign all ${selectedSubmissions.length} selected notes`
+                    : `Cannot co-sign — ${bulkCosignState.blockedReason}`
+                }
+              >
+                <CheckCircle2 size={14} />
+                Co-sign selected
+              </button>
+            )}
             <button onClick={openExportModal} style={exportBtnStyle} disabled={busy}>
               <Download size={14} />
               Export as PDF
@@ -1015,6 +1133,11 @@ export default function SubmissionsPage() {
                                 Physician
                               </span>
                             )}
+                            {needsCosign(s) && (
+                              <span style={flagBadgeAmber} title="Awaiting RN co-signature">
+                                Needs co-sign
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td style={tdStyle}>
@@ -1025,6 +1148,16 @@ export default function SubmissionsPage() {
                             <Link href={`/admin/submissions/${s.id}`} style={viewBtnStyle}>
                               View
                             </Link>
+                            {isRn && needsCosign(s) && s.nurseId !== user?.uid && (
+                              <button
+                                onClick={() => setCosignTargets([s])}
+                                style={rowCosignBtnStyle}
+                                disabled={busy}
+                                title="Co-sign this note"
+                              >
+                                Co-sign
+                              </button>
+                            )}
                             {rowArchived ? (
                               <button
                                 onClick={() => handleRowArchive(s, 'restore')}
@@ -1181,6 +1314,27 @@ export default function SubmissionsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {cosignTargets.length > 0 && (
+        <CoSignModal
+          notes={cosignTargets}
+          onClose={() => setCosignTargets([])}
+          onSuccess={async (cosignedIds) => {
+            setCosignToast(cosignedIds.length);
+            // Drop the cosigned notes from the selection so the bulk bar
+            // doesn't try to re-act on them, then reload from Firestore so the
+            // pills + buttons reflect the new cosignedAt timestamps.
+            setSelected((prev) => {
+              const next = new Set(prev);
+              for (const id of cosignedIds) next.delete(id);
+              return next;
+            });
+            await reloadSubmissions();
+            // Auto-clear the toast after a few seconds.
+            setTimeout(() => setCosignToast(0), 5000);
+          }}
+        />
       )}
     </div>
   );
@@ -1480,6 +1634,20 @@ const exportBtnStyle: React.CSSProperties = {
   fontFamily: 'inherit',
 };
 
+const bulkCosignBtnStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  background: '#1a3a5c',
+  color: 'white',
+  padding: '8px 14px',
+  borderRadius: 6,
+  border: 'none',
+  fontSize: 13,
+  fontWeight: 700,
+  fontFamily: 'inherit',
+};
+
 const clearBtnStyle: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
@@ -1618,6 +1786,18 @@ const rowArchiveBtnStyle: React.CSSProperties = {
   border: '1px solid #ddd',
   fontSize: 13,
   fontWeight: 600,
+  cursor: 'pointer',
+};
+
+const rowCosignBtnStyle: React.CSSProperties = {
+  display: 'inline-block',
+  background: '#27ae60',
+  color: 'white',
+  padding: '6px 16px',
+  borderRadius: 4,
+  border: 'none',
+  fontSize: 13,
+  fontWeight: 700,
   cursor: 'pointer',
 };
 

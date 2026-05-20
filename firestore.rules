@@ -100,15 +100,31 @@ service cloud.firestore {
         || (isNurse() && resource.data.nurseId == request.auth.uid);
       // A nurse may toggle her personal archive fields (nurseArchivedAt/By)
       // but must never touch the staff-scope archive fields (archivedAt/By).
-      // Using get('archivedAt', null) so the rule works whether the field
-      // exists yet or not.
-      allow update: if isStaff()
+      // Co-signature fields (cosignedAt/By/ByName/Credential/Signature) are
+      // off-limits to every client — only the Admin SDK route at
+      // /api/admin/submissions/[id]/cosign writes them, since the credential
+      // + self-author checks are cleanest server-side. We pin every cosign
+      // field to its prior value (default null) so staff edits via the
+      // submissions view can't quietly forge a co-sign.
+      // Using get('field', null) so the rule works whether the field exists
+      // yet or not.
+      allow update: if (isStaff()
+            && incomingData().get('cosignedAt', null) == resource.data.get('cosignedAt', null)
+            && incomingData().get('cosignedBy', null) == resource.data.get('cosignedBy', null)
+            && incomingData().get('cosignedByName', null) == resource.data.get('cosignedByName', null)
+            && incomingData().get('cosignedCredential', null) == resource.data.get('cosignedCredential', null)
+            && incomingData().get('cosignedSignature', null) == resource.data.get('cosignedSignature', null))
         || (isNurse()
             && resource.data.nurseId == request.auth.uid
             && incomingData().nurseId == resource.data.nurseId
             && incomingData().submittedAt == resource.data.submittedAt
             && incomingData().get('archivedAt', null) == resource.data.get('archivedAt', null)
-            && incomingData().get('archivedBy', null) == resource.data.get('archivedBy', null));
+            && incomingData().get('archivedBy', null) == resource.data.get('archivedBy', null)
+            && incomingData().get('cosignedAt', null) == resource.data.get('cosignedAt', null)
+            && incomingData().get('cosignedBy', null) == resource.data.get('cosignedBy', null)
+            && incomingData().get('cosignedByName', null) == resource.data.get('cosignedByName', null)
+            && incomingData().get('cosignedCredential', null) == resource.data.get('cosignedCredential', null)
+            && incomingData().get('cosignedSignature', null) == resource.data.get('cosignedSignature', null));
       allow delete: if isStaff();
 
       // Edit history — append-only audit trail for every update.

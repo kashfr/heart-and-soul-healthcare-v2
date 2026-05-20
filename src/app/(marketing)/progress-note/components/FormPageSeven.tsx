@@ -4,6 +4,7 @@ import { useRef, useEffect, useState } from 'react';
 import type { FormPageProps } from '../types';
 import styles from '../page.module.css';
 import DeselectableRadio from './DeselectableRadio';
+import SignatureCanvas, { type SignatureCanvasHandle } from '@/components/SignatureCanvas';
 
 interface FormPageSevenProps extends FormPageProps {
   credential?: string;
@@ -14,9 +15,7 @@ interface FormPageSevenProps extends FormPageProps {
 export default function FormPageSeven({ formRef, register, watch, setValue, control, credential, initialSignature, initialTotalHours }: FormPageSevenProps) {
   const now = new Date();
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [signatureImage, setSignatureImage] = useState<string>('');
+  const sigRef = useRef<SignatureCanvasHandle>(null);
   const [totalHours, setTotalHours] = useState<string>('');
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     handoff: false,
@@ -61,103 +60,14 @@ export default function FormPageSeven({ formRef, register, watch, setValue, cont
     }
   };
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = 'white';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.strokeStyle = 'black';
-        ctx.lineWidth = 2;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-      }
-    }
-  }, []);
-
-  // Load existing signature when editing
-  useEffect(() => {
-    if (!initialSignature || !canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const img = new Image();
-    img.onload = () => {
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      setSignatureImage(initialSignature);
-      setValue('q61_signature', initialSignature);
-    };
-    img.src = initialSignature;
-  }, [initialSignature, setValue]);
-
-  // Get position from either mouse or touch event, scaled to canvas intrinsic size
-  const getPos = (e: React.MouseEvent | React.TouchEvent, canvas: HTMLCanvasElement) => {
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    if ('touches' in e) {
-      const touch = e.touches[0] || e.changedTouches[0];
-      return { x: (touch.clientX - rect.left) * scaleX, y: (touch.clientY - rect.top) * scaleY };
-    }
-    return { x: ((e as React.MouseEvent).clientX - rect.left) * scaleX, y: ((e as React.MouseEvent).clientY - rect.top) * scaleY };
-  };
-
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    e.preventDefault(); // Prevent scrolling on touch
-    setIsDrawing(true);
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const pos = getPos(e, canvas);
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.beginPath();
-        ctx.moveTo(pos.x, pos.y);
-      }
-    }
-  };
-
-  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
-    e.preventDefault(); // Prevent scrolling on touch
-
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const pos = getPos(e, canvas);
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.lineTo(pos.x, pos.y);
-        ctx.stroke();
-      }
-    }
-  };
-
-  const stopDrawing = () => {
-    setIsDrawing(false);
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.closePath();
-      }
-      const dataUrl = canvas.toDataURL();
-      setSignatureImage(dataUrl);
-      setValue('q61_signature', dataUrl);
-    }
+  // Mirror the signature back into RHF so the rest of the form submit / draft
+  // autosave logic continues to work unchanged.
+  const handleSignatureChange = (dataUrl: string) => {
+    setValue('q61_signature', dataUrl);
   };
 
   const clearSignature = () => {
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = 'white';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-      }
-      setSignatureImage('');
-      setValue('q61_signature', '');
-    }
+    sigRef.current?.clear();
   };
 
   return (
@@ -400,27 +310,13 @@ export default function FormPageSeven({ formRef, register, watch, setValue, cont
         </p>
         <div style={{ marginBottom: '1rem' }}>
           <label className={styles.label}>Signature *</label>
-          <canvas
-            ref={canvasRef}
+          <SignatureCanvas
+            ref={sigRef}
             width={400}
             height={150}
-            onMouseDown={startDrawing}
-            onMouseMove={draw}
-            onMouseUp={stopDrawing}
-            onMouseLeave={stopDrawing}
-            onTouchStart={startDrawing}
-            onTouchMove={draw}
-            onTouchEnd={stopDrawing}
-            onTouchCancel={stopDrawing}
+            initialSignature={initialSignature}
+            onChange={handleSignatureChange}
             className={styles.signaturePad}
-            style={{
-              display: 'block',
-              backgroundColor: 'white',
-              width: '100%',
-              maxWidth: '400px',
-              height: 'auto',
-              touchAction: 'none',
-            }}
           />
           <input
             type="hidden"

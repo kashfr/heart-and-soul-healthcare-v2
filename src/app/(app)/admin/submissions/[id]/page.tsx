@@ -867,6 +867,43 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           )}
         </Section>
 
+        {/* 25b. RN CO-SIGNATURE — only relevant for HHA/CNA/LPN notes. RN-authored
+            notes don't need a second signature, so we skip the section entirely.
+            cosignedAt is a Firestore Timestamp so we read it from rawData
+            (Record<string, unknown>) rather than the string-cast data view. */}
+        {data.q12_credential !== 'RN' && data.q12_credential !== '' && (() => {
+          const cosignedAt = rawData.cosignedAt as { toDate(): Date } | null | undefined;
+          return (
+            <Section title="RN Co-Signature">
+              {cosignedAt ? (
+                <>
+                  <FieldRow>
+                    <Field label="Printed Name" value={data.cosignedByName || ''} />
+                    <Field label="Credential" value={data.cosignedCredential || 'RN'} />
+                    <Field label="Date Signed" value={cosignedAt.toDate().toLocaleString()} />
+                  </FieldRow>
+                  {hasValue(data.cosignedSignature) && (
+                    <div style={{ marginTop: '12px' }}>
+                      <div style={{ fontSize: '10px', fontWeight: 700, color: '#444', textTransform: 'uppercase' as const, marginBottom: '4px' }}>
+                        SIGNATURE:
+                      </div>
+                      <img
+                        src={data.cosignedSignature}
+                        alt="RN co-signature"
+                        style={{ maxWidth: '300px', height: 'auto', border: '1px solid #ddd', borderRadius: '4px' }}
+                      />
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p style={{ margin: 0, color: '#7f8c8d', fontStyle: 'italic' }}>
+                  Pending RN review.
+                </p>
+              )}
+            </Section>
+          );
+        })()}
+
         {/* 26. ADDITIONAL NOTES */}
         <ConditionalSection
           title="Additional Notes"

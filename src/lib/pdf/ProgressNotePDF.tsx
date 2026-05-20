@@ -1061,6 +1061,38 @@ export default function ProgressNotePDF({ data }: ProgressNotePDFProps) {
           </View>
         </Section>
 
+        {/* 25b. RN Co-Signature — only relevant for HHA/CNA/LPN notes. Always
+            rendered for those credentials (even when pending) so the printed
+            PDF shows the compliance status at a glance. cosignedAt is a
+            Firestore Timestamp at runtime but the PDF's data shape is
+            string-only, hence the unknown cast. */}
+        {data.q12_credential !== 'RN' && data.q12_credential !== '' && (() => {
+          const cosignedAt = data.cosignedAt as unknown as { toDate(): Date } | null | undefined;
+          return (
+            <Section title="RN Co-Signature">
+              {cosignedAt ? (
+                <View style={s.signatureGrid}>
+                  <View style={{ flex: 1 }}>
+                    <Field label="Printed Name" value={data.cosignedByName || ''} />
+                    <Field label="Credential" value={data.cosignedCredential || 'RN'} />
+                    <Field label="Date Signed" value={cosignedAt.toDate().toLocaleDateString()} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    {hasValue(data.cosignedSignature) ? (
+                      <View>
+                        <Text style={s.signatureLabel}>Signature:</Text>
+                        <Image src={data.cosignedSignature as string} style={{ width: 200, height: 75, marginTop: 4 }} />
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+              ) : (
+                <Text style={{ fontStyle: 'italic', color: '#555' }}>Pending RN review.</Text>
+              )}
+            </Section>
+          );
+        })()}
+
         {/* 26. Additional Notes */}
         {hasValue(data.q66_additionalNotes) && (
           <Section title="Additional Notes">
