@@ -10,6 +10,7 @@ import {
   type ProgressNoteFormData,
 } from '@/lib/submissions';
 import { needsCosign } from '@/lib/cosignClient';
+import { pdfFilenameFor, triggerDownload } from '@/lib/batchExport';
 import { getVitalRanges, getAgeGroupLabel } from '@/lib/vitalRanges';
 import { useAuth } from '@/components/AuthProvider';
 import RevisionHistory from '@/components/RevisionHistory';
@@ -86,8 +87,32 @@ export default function SubmissionDetailPage({ params }: PageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, id, isNurse, user]);
 
-  const handlePrint = () => {
-    window.print();
+  /** Download a clean PDF of the note using the same server-side renderer as
+      the bulk export (/api/progress-note/pdf → @react-pdf/renderer). The old
+      handler called window.print(), which screenshot the styled web view and
+      came out with the page chrome / grey card border. This produces output
+      identical to the bulk export. */
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const handleDownloadPdf = async () => {
+    if (!formData || downloadingPdf) return;
+    setDownloadingPdf(true);
+    try {
+      const res = await fetch('/api/progress-note/pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+      if (!res.ok) {
+        throw new Error(`PDF render failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      triggerDownload(blob, pdfFilenameFor(formData));
+    } catch (err) {
+      console.error('PDF download failed:', err);
+      alert('Could not download the PDF. Please try again.');
+    } finally {
+      setDownloadingPdf(false);
+    }
   };
 
   const handleArchiveToggle = async (action: 'archive' | 'restore') => {
@@ -343,8 +368,12 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             <Link href={`/progress-note?edit=${id}`} style={editBtnStyle}>
               Edit
             </Link>
-            <button onClick={handlePrint} style={primaryBtnStyle}>
-              Print / Save as PDF
+            <button
+              onClick={handleDownloadPdf}
+              disabled={downloadingPdf}
+              style={{ ...primaryBtnStyle, opacity: downloadingPdf ? 0.6 : 1, cursor: downloadingPdf ? 'not-allowed' : 'pointer' }}
+            >
+              {downloadingPdf ? 'Generating PDF…' : 'Download PDF'}
             </button>
             {isArchivedForViewer ? (
               <button

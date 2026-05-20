@@ -36,7 +36,7 @@ function isoDate(s: string): string | null {
   return null;
 }
 
-function pdfFilenameFor(form: ProgressNoteFormData): string {
+export function pdfFilenameFor(form: ProgressNoteFormData): string {
   const date = isoDate(form.q6_dateofService) || 'unknown-date';
   const client = sanitize(form.q3_clientName || 'client');
   const nurse = sanitize(form.q11_nurseName || 'nurse');
