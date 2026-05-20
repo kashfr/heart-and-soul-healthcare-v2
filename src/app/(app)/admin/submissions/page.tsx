@@ -1149,14 +1149,19 @@ export default function SubmissionsPage() {
                               View
                             </Link>
                             {isRn && needsCosign(s) && s.nurseId !== user?.uid && (
-                              <button
-                                onClick={() => setCosignTargets([s])}
+                              // The row button is now a *navigation* into the
+                              // view page in cosign mode. Single-note signing
+                              // must go through a full read of the note —
+                              // signing from a row would let the RN co-sign
+                              // without ever seeing the clinical content,
+                              // which defeats the compliance review.
+                              <Link
+                                href={`/admin/submissions/${s.id}?cosign=1`}
                                 style={rowCosignBtnStyle}
-                                disabled={busy}
-                                title="Co-sign this note"
+                                title="Review and co-sign this note"
                               >
                                 Co-sign
-                              </button>
+                              </Link>
                             )}
                             {rowArchived ? (
                               <button

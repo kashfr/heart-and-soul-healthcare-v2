@@ -2,14 +2,19 @@
 
 import { useState, useEffect, use } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { CheckCircle2 } from 'lucide-react';
 import {
   getSubmission,
   setSubmissionsArchive,
   type ProgressNoteFormData,
 } from '@/lib/submissions';
+import { needsCosign } from '@/lib/cosignClient';
 import { getVitalRanges, getAgeGroupLabel } from '@/lib/vitalRanges';
 import { useAuth } from '@/components/AuthProvider';
 import RevisionHistory from '@/components/RevisionHistory';
+import CoSignModal from '@/components/CoSignModal';
+import type { SubmissionSummary } from '@/lib/submissions';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -32,40 +37,53 @@ function hasValue(v: string | undefined): boolean {
 
 export default function SubmissionDetailPage({ params }: PageProps) {
   const { id } = use(params);
-  const { user, role, loading: authLoading } = useAuth();
+  const { user, profile, role, loading: authLoading } = useAuth();
   const isNurse = role === 'nurse';
+  /** Whether the signed-in user can co-sign HHA/CNA/LPN notes (their staff
+      profile credential is RN). */
+  const isRn = profile?.credential === 'RN';
+  const searchParams = useSearchParams();
+  /** True when the URL carries ?cosign=1, i.e. the RN came here via the
+      Submissions row Co-sign button and we should encourage signing once
+      they've read the note. */
+  const cosignMode = searchParams.get('cosign') === '1';
   const [formData, setFormData] = useState<ProgressNoteFormData | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  /** When set, opens the signature modal for this single note. */
+  const [cosignModalOpen, setCosignModalOpen] = useState(false);
+  const [cosignToastCount, setCosignToastCount] = useState(0);
 
-  useEffect(() => {
-    if (authLoading) return;
-    const load = async () => {
-      try {
-        const data = await getSubmission(id);
-        if (!data) {
+  const loadNote = async () => {
+    try {
+      const data = await getSubmission(id);
+      if (!data) {
+        setNotFound(true);
+        return;
+      }
+      // Nurses can only view their own notes. The Firestore rules enforce
+      // this, but we also check client-side to render a clean 'not found'
+      // page instead of a permission error if a nurse visits a bad URL.
+      if (isNurse && user) {
+        const nurseId = (data as unknown as Record<string, string>).nurseId;
+        if (nurseId !== user.uid) {
           setNotFound(true);
           return;
         }
-        // Nurses can only view their own notes. The Firestore rules enforce
-        // this, but we also check client-side to render a clean 'not found'
-        // page instead of a permission error if a nurse visits a bad URL.
-        if (isNurse && user) {
-          const nurseId = (data as unknown as Record<string, string>).nurseId;
-          if (nurseId !== user.uid) {
-            setNotFound(true);
-            return;
-          }
-        }
-        setFormData(data);
-      } catch (error) {
-        console.error('Failed to load submission:', error);
-        setNotFound(true);
-      } finally {
-        setLoading(false);
       }
-    };
-    load();
+      setFormData(data);
+    } catch (error) {
+      console.error('Failed to load submission:', error);
+      setNotFound(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (authLoading) return;
+    loadNote();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, id, isNurse, user]);
 
   const handlePrint = () => {
@@ -934,6 +952,89 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           .print-section { break-inside: avoid; page-break-inside: avoid; }
         }
       `}</style>
+
+      {/* Sticky cosign bar — only when the RN navigated here from the
+          Submissions row Co-sign button (?cosign=1) AND the note is actually
+          eligible for them to sign. Hidden once they sign (cosignedAt
+          becomes non-null after refetch) so the bar disappears in place. */}
+      {(() => {
+        const noteCredential = data.q12_credential;
+        const cosignedAt = rawData.cosignedAt as { toDate(): Date } | null | undefined;
+        const noteAuthorUid = (data as Record<string, string>).nurseId || '';
+        const cosignable =
+          cosignMode &&
+          isRn &&
+          !cosignedAt &&
+          noteCredential !== 'RN' &&
+          noteCredential !== '' &&
+          noteAuthorUid !== user?.uid;
+        if (!cosignable) return null;
+        return (
+          <div className="no-print" style={stickyCosignBarStyle}>
+            <div style={stickyCosignInnerStyle}>
+              <div>
+                <div style={{ fontWeight: 700, color: '#0f172a', fontSize: 15 }}>
+                  Reviewed this note?
+                </div>
+                <div style={{ fontSize: 13, color: '#475569' }}>
+                  Click below to add your RN co-signature.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCosignModalOpen(true)}
+                style={stickyCosignBtnStyle}
+              >
+                <CheckCircle2 size={16} />
+                Co-sign this note
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Toast after a successful single-note cosign on this page. */}
+      {cosignToastCount > 0 && (
+        <div className="no-print" style={cosignToastStyle} role="status">
+          ✓ Co-signed. Your signature is now on this note.
+        </div>
+      )}
+
+      {/* Single-note co-sign modal. Built from the in-memory note so we can
+          show the client/author summary without re-fetching anything. */}
+      {cosignModalOpen && (() => {
+        const summary: SubmissionSummary = {
+          id,
+          clientName: data.q3_clientName || '',
+          nurseName: data.q11_nurseName || '',
+          credential: data.q12_credential || '',
+          nurseId: (data as Record<string, string>).nurseId || '',
+          diagnosis: data.q10_primaryDiagnosis || '',
+          dateOfService: fmtDate(data.q6_dateofService) || data.q6_dateofService || '',
+          submittedAt: null,
+          status: 'submitted',
+          archivedAt: null,
+          nurseArchivedAt: null,
+          hasAbnormalVitals: false,
+          hasIncident: false,
+          physicianNotified: false,
+          cosignedAt: null,
+          cosignedByName: '',
+          cosignedCredential: '',
+        };
+        return (
+          <CoSignModal
+            notes={[summary]}
+            onClose={() => setCosignModalOpen(false)}
+            onSuccess={async (ids) => {
+              setCosignModalOpen(false);
+              setCosignToastCount(ids.length);
+              await loadNote();
+              setTimeout(() => setCosignToastCount(0), 5000);
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -1016,6 +1117,58 @@ const containerStyle: React.CSSProperties = {
   maxWidth: 900,
   margin: '0 auto',
   padding: 20,
+};
+
+const stickyCosignBarStyle: React.CSSProperties = {
+  position: 'fixed',
+  bottom: 0,
+  left: 0,
+  right: 0,
+  background: '#fff7ed',
+  borderTop: '1px solid #fdba74',
+  boxShadow: '0 -4px 12px rgba(15, 23, 42, 0.06)',
+  zIndex: 50,
+  padding: '12px 20px',
+};
+
+const stickyCosignInnerStyle: React.CSSProperties = {
+  maxWidth: 900,
+  margin: '0 auto',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 16,
+  flexWrap: 'wrap',
+};
+
+const stickyCosignBtnStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  background: '#27ae60',
+  color: 'white',
+  border: 'none',
+  padding: '10px 18px',
+  borderRadius: 6,
+  fontSize: 14,
+  fontWeight: 700,
+  cursor: 'pointer',
+};
+
+const cosignToastStyle: React.CSSProperties = {
+  position: 'fixed',
+  bottom: 80,
+  left: '50%',
+  transform: 'translateX(-50%)',
+  background: '#d1fae5',
+  border: '1px solid #10b981',
+  color: '#065f46',
+  borderRadius: 6,
+  padding: '12px 18px',
+  fontSize: 14,
+  fontWeight: 600,
+  zIndex: 60,
+  boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
 };
 
 const wrapStyle: React.CSSProperties = {

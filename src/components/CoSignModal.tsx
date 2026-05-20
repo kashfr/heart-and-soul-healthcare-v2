@@ -1,7 +1,7 @@
 'use client';
 
-import { useRef, useState } from 'react';
-import { CheckCircle2, X } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { CheckCircle2, ExternalLink, X } from 'lucide-react';
 import SignatureCanvas, { type SignatureCanvasHandle } from './SignatureCanvas';
 import { authedFetch } from '@/lib/authedFetch';
 import type { SubmissionSummary } from '@/lib/submissions';
@@ -32,8 +32,17 @@ export default function CoSignModal({ notes, onClose, onSuccess }: CoSignModalPr
   const [partialFailures, setPartialFailures] = useState<
     { id: string; reason: string; message: string }[]
   >([]);
+  // Per-note "I've reviewed this" attestations, only used in batch mode.
+  // Single-mode reaches this modal from the view page, where the RN has
+  // already read the note, so no checkbox is needed.
+  const [reviewed, setReviewed] = useState<Record<string, boolean>>({});
 
   const isBatch = notes.length > 1;
+  const allReviewed = useMemo(
+    () => (isBatch ? notes.every((n) => reviewed[n.id]) : true),
+    [isBatch, notes, reviewed]
+  );
+  const canSubmit = !submitting && !!signature && allReviewed;
 
   const handleClear = () => {
     sigRef.current?.clear();
@@ -116,6 +125,21 @@ export default function CoSignModal({ notes, onClose, onSuccess }: CoSignModalPr
           <div style={noteListStyle}>
             {notes.map((n) => (
               <div key={n.id} style={noteRowStyle}>
+                {isBatch && (
+                  <label style={reviewLabelStyle} title="Tick once you've opened the note and reviewed it">
+                    <input
+                      type="checkbox"
+                      checked={!!reviewed[n.id]}
+                      onChange={(e) =>
+                        setReviewed((prev) => ({ ...prev, [n.id]: e.target.checked }))
+                      }
+                      disabled={submitting}
+                    />
+                    <span style={{ fontSize: 12, color: '#475569', fontWeight: 600 }}>
+                      Reviewed
+                    </span>
+                  </label>
+                )}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, color: '#1a3a5c' }}>{n.clientName || '—'}</div>
                   <div style={{ fontSize: 12, color: '#5c6b7a' }}>
@@ -123,9 +147,26 @@ export default function CoSignModal({ notes, onClose, onSuccess }: CoSignModalPr
                     <span style={{ fontWeight: 600 }}>({n.credential || '—'})</span>
                   </div>
                 </div>
+                {isBatch && (
+                  <a
+                    href={`/admin/submissions/${n.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={viewLinkStyle}
+                  >
+                    <ExternalLink size={12} />
+                    View
+                  </a>
+                )}
               </div>
             ))}
           </div>
+          {isBatch && !allReviewed && (
+            <p style={{ margin: '8px 0 0', fontSize: 12, color: '#92400e' }}>
+              Tick the &quot;Reviewed&quot; box on every note before signing. Open them in new
+              tabs with the View link to read the clinical content.
+            </p>
+          )}
 
           <div style={{ marginTop: 16 }}>
             <label style={labelStyle}>Your signature *</label>
@@ -173,8 +214,15 @@ export default function CoSignModal({ notes, onClose, onSuccess }: CoSignModalPr
           </button>
           <button
             onClick={handleSubmit}
-            disabled={submitting || !signature}
-            style={{ ...primaryBtnStyle, opacity: submitting || !signature ? 0.6 : 1 }}
+            disabled={!canSubmit}
+            style={{ ...primaryBtnStyle, opacity: canSubmit ? 1 : 0.6, cursor: canSubmit ? 'pointer' : 'not-allowed' }}
+            title={
+              !signature
+                ? 'Draw your signature first'
+                : isBatch && !allReviewed
+                  ? 'Tick the Reviewed box on every note first'
+                  : ''
+            }
             type="button"
           >
             {submitting ? (
@@ -267,6 +315,31 @@ const noteRowStyle: React.CSSProperties = {
   padding: '8px 10px',
   display: 'flex',
   alignItems: 'center',
+  gap: 10,
+};
+
+const reviewLabelStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  cursor: 'pointer',
+  userSelect: 'none',
+  flexShrink: 0,
+};
+
+const viewLinkStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  color: '#1a3a5c',
+  fontSize: 12,
+  fontWeight: 600,
+  textDecoration: 'none',
+  border: '1px solid #cbd5e1',
+  padding: '4px 8px',
+  borderRadius: 4,
+  background: 'white',
+  flexShrink: 0,
 };
 
 const labelStyle: React.CSSProperties = {
