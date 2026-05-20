@@ -679,13 +679,16 @@ export default function SubmissionsPage() {
             <h1 style={titleStyle}>Progress Note Submissions</h1>
             <p style={subtitleStyle}>All submitted nursing progress notes</p>
           </div>
-          {/* Hidden for supervisors — they review notes but don't author them.
+          {/* Visible to anyone who can author a progress note: any user with
+              a clinical credential (HHA / CNA / LPN / RN), OR an admin (so
+              they can still demo / test the flow). This catches RN-credentialed
+              supervisors who are clinically licensed and need to author too.
+              A pure non-clinical supervisor still doesn't see it.
               Label swaps to "Resume draft" when a draft already exists so the
-              nurse never gets a "wait, what's this banner?" moment after
+              user never gets a "wait, what's this banner?" moment after
               clicking. The link target is the same either way; the
-              progress-note page's existing resume-banner logic handles the
-              actual hydrate. */}
-          {role !== 'supervisor' && (
+              progress-note page's existing resume-banner logic hydrates. */}
+          {(!!profile?.credential || role === 'admin') && (
             <Link
               href={myDraft ? '/progress-note?resume=1' : '/progress-note'}
               style={newNoteBtnStyle}

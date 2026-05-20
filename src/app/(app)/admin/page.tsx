@@ -67,12 +67,18 @@ export default function AdminDashboardPage() {
   const { user, profile, role } = useAuth();
   const [myDraft, setMyDraft] = useState<NoteDraft | null>(null);
 
+  // Anyone with a clinical credential (HHA / CNA / LPN / RN) can author a
+  // progress note, regardless of their portal role. That covers nurses (who
+  // always have a credential) AND admins/supervisors who happen to also be
+  // clinically licensed (e.g. an RN promoted to supervisor). Pure-admin users
+  // without a credential still see the card so they can demo/test the form.
+  const canAuthorNote = !!profile?.credential || role === 'admin';
+
   // Surface the caller's own draft so the "Submit a progress note" card can
-  // flip into "Resume draft" mode. Skipped for supervisors — they don't see
-  // the card at all. Errors are intentionally swallowed; on failure the card
-  // stays in its default "new note" state, which is a safe fallback.
+  // flip into "Resume draft" mode. Skipped when the user can't author notes
+  // (e.g. a non-clinical supervisor) since there's nothing to draft.
   useEffect(() => {
-    if (!user || role === 'supervisor') return;
+    if (!user || !canAuthorNote) return;
     let cancelled = false;
     (async () => {
       try {
@@ -83,11 +89,9 @@ export default function AdminDashboardPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [user, role]);
+  }, [user, canAuthorNote]);
 
-  // Built per-render so it reflects the latest draft state. Available to
-  // nurses + admins (admins so they can test/demo); supervisors don't author
-  // notes so the card is omitted from their dashboard.
+  // Built per-render so it reflects the latest draft state.
   const noteCard: Card = myDraft
     ? {
         href: '/progress-note?resume=1',
@@ -96,17 +100,20 @@ export default function AdminDashboardPage() {
         description: myDraft.clientName
           ? `Pick up where you left off on ${myDraft.clientName}'s note.`
           : 'Pick up where you left off on your unfinished note.',
-        allow: ['nurse', 'admin'],
+        allow: ['nurse', 'admin', 'supervisor'],
       }
     : {
         href: '/progress-note',
         icon: <FilePlus size={22} />,
         title: 'Submit a progress note',
         description: 'Fill out a new shift note. The form auto-fills your name and credential.',
-        allow: ['nurse', 'admin'],
+        allow: ['nurse', 'admin', 'supervisor'],
       };
 
-  const visibleCards = [noteCard, ...CARDS].filter((c) => role && c.allow.includes(role));
+  const visibleCards = [
+    ...(canAuthorNote ? [noteCard] : []),
+    ...CARDS.filter((c) => role && c.allow.includes(role)),
+  ];
   const kicker = role ? ROLE_KICKER[role] : '';
   const firstName = profile?.displayName?.split(' ')[0] ?? '';
 
