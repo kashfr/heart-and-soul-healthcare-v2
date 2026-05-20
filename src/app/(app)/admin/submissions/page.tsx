@@ -1783,6 +1783,7 @@ const viewBtnStyle: React.CSSProperties = {
   textDecoration: 'none',
   fontSize: 13,
   fontWeight: 600,
+  whiteSpace: 'nowrap',
 };
 
 const rowArchiveBtnStyle: React.CSSProperties = {
@@ -1795,6 +1796,7 @@ const rowArchiveBtnStyle: React.CSSProperties = {
   fontSize: 13,
   fontWeight: 600,
   cursor: 'pointer',
+  whiteSpace: 'nowrap',
 };
 
 const rowCosignBtnStyle: React.CSSProperties = {
@@ -1807,6 +1809,7 @@ const rowCosignBtnStyle: React.CSSProperties = {
   fontSize: 13,
   fontWeight: 700,
   cursor: 'pointer',
+  whiteSpace: 'nowrap',
 };
 
 const checkboxStyle: React.CSSProperties = {
