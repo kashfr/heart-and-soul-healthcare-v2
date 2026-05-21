@@ -165,7 +165,7 @@ export async function GET(request: Request) {
   // Not using orderBy on createdAt so docs without that field (e.g. the
   // manually-bootstrapped first admin) still show up. Sort client-side.
   const snap = await adminDb().collection('users').get();
-  const users = snap.docs.map((d) => {
+  const baseUsers = snap.docs.map((d) => {
     const data = d.data();
     const createdAt = data.createdAt?.toMillis?.() ?? null;
     return {
@@ -178,6 +178,31 @@ export async function GET(request: Request) {
       createdAt,
     };
   });
+
+  // Pull `lastSignInTime` from Firebase Auth so the UI can distinguish
+  // "invited but never signed in" (Pending) from "actually using the
+  // platform" (Active). getUsers() takes up to 100 identifiers per call —
+  // staff lists are well below that, so a single batched call suffices.
+  // On failure we degrade gracefully: every user defaults to hasSignedIn
+  // = false (Pending), which is a safe wrong-state (encourages the admin
+  // to verify) rather than falsely showing Active.
+  const signedInMap = new Map<string, boolean>();
+  if (baseUsers.length > 0) {
+    try {
+      const result = await adminAuth().getUsers(baseUsers.map((u) => ({ uid: u.uid })));
+      for (const record of result.users) {
+        const lastSignIn = record.metadata?.lastSignInTime;
+        signedInMap.set(record.uid, !!lastSignIn && lastSignIn !== '');
+      }
+    } catch (err) {
+      console.error('Failed to enrich staff list with Firebase Auth lastSignInTime:', err);
+    }
+  }
+
+  const users = baseUsers.map((u) => ({
+    ...u,
+    hasSignedIn: signedInMap.get(u.uid) ?? false,
+  }));
   users.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
 
   return NextResponse.json({ users });

@@ -23,6 +23,9 @@ interface StaffRow {
   role: Role | null;
   credential: string | null;
   active: boolean;
+  /** True once the user has signed in to the portal at least once (driven
+      by Firebase Auth's metadata.lastSignInTime, fetched server-side). */
+  hasSignedIn: boolean;
   createdAt: number | null;
 }
 
@@ -251,15 +254,36 @@ function StaffTable({
                 </td>
                 <td style={tdStyle}>{s.credential || <span style={{ color: '#aaa' }}>—</span>}</td>
                 <td style={tdStyle}>
-                  <span
-                    style={{
-                      ...statusBadgeStyle,
-                      color: s.active ? '#2a7a2a' : '#a33',
-                      background: s.active ? '#e8f4e8' : '#fdecea',
-                    }}
-                  >
-                    {s.active ? 'Active' : 'Deactivated'}
-                  </span>
+                  {/* Tri-state: Deactivated > Pending > Active. The pending
+                      bucket means the account exists + we sent an invite but
+                      the user hasn't completed the password-setup flow yet.
+                      Amber matches the "Needs co-sign" pill on the
+                      Submissions dashboard so the visual language stays
+                      consistent across portal surfaces. */}
+                  {(() => {
+                    if (!s.active) {
+                      return (
+                        <span style={{ ...statusBadgeStyle, color: '#a33', background: '#fdecea' }}>
+                          Deactivated
+                        </span>
+                      );
+                    }
+                    if (!s.hasSignedIn) {
+                      return (
+                        <span
+                          style={{ ...statusBadgeStyle, color: '#a35400', background: '#fff4e5' }}
+                          title="Account created and invite sent, but they haven't signed in yet."
+                        >
+                          Pending
+                        </span>
+                      );
+                    }
+                    return (
+                      <span style={{ ...statusBadgeStyle, color: '#2a7a2a', background: '#e8f4e8' }}>
+                        Active
+                      </span>
+                    );
+                  })()}
                 </td>
                 <td style={{ ...tdStyle, textAlign: 'right', color: '#94a3b8' }}>
                   {isLockedForSupervisor ? <Lock size={14} /> : <Pencil size={14} />}
