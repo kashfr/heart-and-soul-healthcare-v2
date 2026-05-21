@@ -450,15 +450,21 @@ function EditStaffModal({
     ? ROLE_OPTIONS.filter((o) => o.value !== 'admin')
     : ROLE_OPTIONS;
   const [displayName, setDisplayName] = useState(staff.displayName || '');
+  const [email, setEmail] = useState(staff.email || '');
   const [credential, setCredential] = useState(staff.credential || '');
   const [role, setRole] = useState<Role>(staff.role || 'nurse');
   const [busy, setBusy] = useState<null | 'save' | 'deactivate' | 'reactivate' | 'link'>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Case-insensitive comparison so saving without any change to the email
+  // doesn't trigger an unnecessary PATCH or a notification to the old address.
+  const emailChanged = email.trim().toLowerCase() !== (staff.email || '').toLowerCase();
+
   const dirty =
     displayName.trim() !== (staff.displayName || '') ||
     credential.trim() !== (staff.credential || '') ||
-    role !== staff.role;
+    role !== staff.role ||
+    emailChanged;
 
   const close = () => {
     if (busy) return;
@@ -487,6 +493,7 @@ function EditStaffModal({
       if (displayName.trim() !== (staff.displayName || '')) patchBody.displayName = displayName.trim();
       if (credential.trim() !== (staff.credential || '')) patchBody.credential = credential.trim();
       if (role !== staff.role) patchBody.role = role;
+      if (emailChanged) patchBody.email = email.trim();
       const updated = await patch(patchBody);
       if (updated) onSaved(updated);
     } catch (err) {
@@ -550,10 +557,23 @@ function EditStaffModal({
         </div>
 
         <form onSubmit={handleSave} style={{ padding: 20 }}>
-          <div style={{ ...metaBoxStyle, marginBottom: 14 }}>
-            <div style={{ fontSize: 12, color: '#5c6b7a' }}>Email (cannot be changed)</div>
-            <div style={{ fontWeight: 600, color: '#2c3e50' }}>{staff.email}</div>
-          </div>
+          <Field
+            label="Email *"
+            help={
+              emailChanged
+                ? `Changing this will change how this person signs in. They'll need to use the new email for their next login. A heads-up email goes to the old address (${staff.email}) so they can flag the change if it wasn't authorized. Existing notes stay linked.`
+                : 'Used as both the contact address and the sign-in identifier.'
+            }
+          >
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              style={inputStyle}
+              disabled={!!busy}
+            />
+          </Field>
 
           <Field label="Full name *">
             <input

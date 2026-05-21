@@ -1,16 +1,23 @@
 import { NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
+import { FirebaseAuthError } from 'firebase-admin/auth';
 import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
+import { sendEmailChangedNotice } from '@/lib/emails/emailChanged';
 import type { Role } from '@/lib/auth';
 
 const VALID_ROLES: Role[] = ['admin', 'supervisor', 'nurse'];
+
+// Lightweight RFC-5322-ish format check. Firebase Auth does stricter
+// validation server-side; this just catches obvious typos before the call.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface PatchBody {
   displayName?: string;
   credential?: string;
   role?: Role;
   active?: boolean;
+  email?: string;
 }
 
 function badRequest(message: string) {
@@ -89,6 +96,21 @@ export async function PATCH(
     update.active = body.active;
   }
 
+  // Email change: validate, normalize, and detect whether it actually
+  // differs from what's on file. The Firebase Auth update + old-address
+  // notification happen later, after the Firestore write succeeds.
+  const previousEmail = (snap.data()?.email as string | undefined) ?? null;
+  let normalizedNewEmail: string | null = null;
+  if (body.email !== undefined) {
+    const trimmed = body.email.trim().toLowerCase();
+    if (!trimmed) return badRequest('Email cannot be empty.');
+    if (!EMAIL_RE.test(trimmed)) return badRequest('That doesn\'t look like a valid email address.');
+    if (trimmed !== (previousEmail || '').toLowerCase()) {
+      normalizedNewEmail = trimmed;
+      update.email = trimmed;
+    }
+  }
+
   if (Object.keys(update).length === 0) {
     return badRequest('No updatable fields supplied.');
   }
@@ -96,10 +118,40 @@ export async function PATCH(
   update.updatedAt = FieldValue.serverTimestamp();
   update.updatedBy = caller.uid;
 
+  // Email change goes through Firebase Auth FIRST so collisions
+  // ("email-already-in-use") bail out before we touch Firestore. Setting
+  // emailVerified:false matches Firebase's own behavior on email change —
+  // the new address starts unverified, which is the safe default.
+  if (normalizedNewEmail) {
+    try {
+      await adminAuth().updateUser(uid, {
+        email: normalizedNewEmail,
+        emailVerified: false,
+      });
+    } catch (err) {
+      if (err instanceof FirebaseAuthError) {
+        if (err.code === 'auth/email-already-exists' || err.code === 'auth/email-already-in-use') {
+          return NextResponse.json(
+            { error: 'Another account already uses that email address.' },
+            { status: 409 }
+          );
+        }
+        if (err.code === 'auth/invalid-email') {
+          return badRequest('That email address was rejected as invalid.');
+        }
+      }
+      console.error('Firebase Auth email update failed:', err);
+      return NextResponse.json(
+        { error: 'Could not update the email address. Please try again.' },
+        { status: 500 }
+      );
+    }
+  }
+
   await ref.update(update);
 
   // Keep Firebase Auth displayName in sync + handle disable/enable + force
-  // signout of active sessions when deactivating.
+  // signout of active sessions when deactivating. Email is handled above.
   const authUpdate: { displayName?: string; disabled?: boolean } = {};
   if (body.displayName !== undefined) authUpdate.displayName = update.displayName as string;
   if (body.active !== undefined) authUpdate.disabled = body.active === false;
@@ -110,6 +162,21 @@ export async function PATCH(
     // Force any open sessions to re-auth; combined with disabled:true, they
     // won't be able to sign back in.
     await adminAuth().revokeRefreshTokens(uid);
+  }
+
+  // Best-effort security notification to the OLD address. Non-fatal: the
+  // change has already succeeded, the user just won't get the heads-up
+  // email. We swallow the result here (logged inside the helper) so a
+  // Resend hiccup doesn't fail the whole request.
+  if (normalizedNewEmail && previousEmail) {
+    const targetName =
+      (snap.data()?.displayName as string | undefined) || previousEmail;
+    void sendEmailChangedNotice({
+      to: previousEmail,
+      displayName: targetName,
+      newEmail: normalizedNewEmail,
+      changedByName: caller.profile.displayName || caller.email || 'an administrator',
+    });
   }
 
   const fresh = (await ref.get()).data() || {};
