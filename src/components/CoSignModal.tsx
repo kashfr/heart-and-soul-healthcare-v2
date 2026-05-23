@@ -359,6 +359,10 @@ const canvasFrameStyle: React.CSSProperties = {
 };
 
 const clearBtnStyle: React.CSSProperties = {
+  // marginLeft creates breathing room between the right edge of the
+  // signature canvas and this text link (both elements are inline-block
+  // so they sit on the same line by default).
+  marginLeft: 12,
   marginTop: 8,
   background: 'transparent',
   color: '#1a3a5c',
