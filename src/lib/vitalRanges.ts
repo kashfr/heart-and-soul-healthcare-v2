@@ -54,9 +54,17 @@ const RANGES_BY_AGE_GROUP: Record<AgeGroup, VitalRangeSet> = {
     oxygenSaturation:{ low: 95,   high: 100,  unit: '%',     label: 'O2 Saturation' },
     bloodGlucose:    { low: 60,   high: 180,  unit: 'mg/dL', label: 'Blood Glucose' },
   },
+  // Pediatric pulse/respiration/SBP bounds below were widened from textbook
+  // "resting 5th-95th percentile" values to also accommodate normal awake/
+  // active and sleeping states (which our form doesn't capture as context).
+  // Systolic floors for toddlers track PALS hypotension threshold
+  // (70 + 2*age); upper bounds + pulse/RR ranges include AHA awake/play and
+  // sleep ranges. Conservative thresholds had been firing false-positive
+  // alerts on healthy pediatric patients; widening here keeps real
+  // abnormalities visible while suppressing edge-of-normal noise.
   toddler: {
     temperature:     { low: 97.5, high: 99.5, unit: '°F',    label: 'Temperature' },
-    systolic:        { low: 80,   high: 110,  unit: 'mmHg',  label: 'Systolic BP' },
+    systolic:        { low: 74,   high: 112,  unit: 'mmHg',  label: 'Systolic BP' },
     diastolic:       { low: 40,   high: 70,   unit: 'mmHg',  label: 'Diastolic BP' },
     pulse:           { low: 80,   high: 130,  unit: 'bpm',   label: 'Pulse' },
     respiration:     { low: 20,   high: 30,   unit: '/min',  label: 'Respirations' },
@@ -67,8 +75,8 @@ const RANGES_BY_AGE_GROUP: Record<AgeGroup, VitalRangeSet> = {
     temperature:     { low: 97.5, high: 99.0, unit: '°F',    label: 'Temperature' },
     systolic:        { low: 80,   high: 110,  unit: 'mmHg',  label: 'Systolic BP' },
     diastolic:       { low: 45,   high: 70,   unit: 'mmHg',  label: 'Diastolic BP' },
-    pulse:           { low: 80,   high: 120,  unit: 'bpm',   label: 'Pulse' },
-    respiration:     { low: 20,   high: 28,   unit: '/min',  label: 'Respirations' },
+    pulse:           { low: 70,   high: 130,  unit: 'bpm',   label: 'Pulse' },
+    respiration:     { low: 18,   high: 30,   unit: '/min',  label: 'Respirations' },
     oxygenSaturation:{ low: 95,   high: 100,  unit: '%',     label: 'O2 Saturation' },
     bloodGlucose:    { low: 70,   high: 180,  unit: 'mg/dL', label: 'Blood Glucose' },
   },
@@ -76,8 +84,8 @@ const RANGES_BY_AGE_GROUP: Record<AgeGroup, VitalRangeSet> = {
     temperature:     { low: 97.0, high: 99.0, unit: '°F',    label: 'Temperature' },
     systolic:        { low: 85,   high: 120,  unit: 'mmHg',  label: 'Systolic BP' },
     diastolic:       { low: 50,   high: 75,   unit: 'mmHg',  label: 'Diastolic BP' },
-    pulse:           { low: 70,   high: 110,  unit: 'bpm',   label: 'Pulse' },
-    respiration:     { low: 16,   high: 24,   unit: '/min',  label: 'Respirations' },
+    pulse:           { low: 60,   high: 130,  unit: 'bpm',   label: 'Pulse' },
+    respiration:     { low: 14,   high: 28,   unit: '/min',  label: 'Respirations' },
     oxygenSaturation:{ low: 95,   high: 100,  unit: '%',     label: 'O2 Saturation' },
     bloodGlucose:    { low: 70,   high: 180,  unit: 'mg/dL', label: 'Blood Glucose' },
   },

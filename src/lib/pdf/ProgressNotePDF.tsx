@@ -7,6 +7,7 @@ import {
   Image,
   StyleSheet,
 } from '@react-pdf/renderer';
+import { getVitalRanges, getAgeGroupLabel } from '@/lib/vitalRanges';
 
 /**
  * Raw form data stored on a progress-note document. Every field is a string
@@ -340,31 +341,16 @@ function parseNumeric(val: string | undefined): number {
   return parseFloat(val.replace(/[^0-9.]/g, ''));
 }
 
-interface VitalRanges {
-  temperature: { low: number; high: number };
-  systolic: { low: number; high: number };
-  diastolic: { low: number; high: number };
-  pulse: { low: number; high: number };
-  respiration: { low: number; high: number };
-  oxygenSaturation: { low: number; high: number };
-  bloodGlucose: { low: number; high: number };
-}
-
-// Adult default ranges. For a full age-specific implementation we'd need to
-// port lib/vitalRanges.ts into the PDF module; for now we use adult defaults,
-// which matches the banner guidance already on the detail page.
-const DEFAULT_RANGES: VitalRanges = {
-  temperature: { low: 97.0, high: 99.5 },
-  systolic: { low: 90, high: 140 },
-  diastolic: { low: 60, high: 90 },
-  pulse: { low: 60, high: 100 },
-  respiration: { low: 12, high: 20 },
-  oxygenSaturation: { low: 95, high: 100 },
-  bloodGlucose: { low: 70, high: 180 },
-};
-
+// Age-appropriate vital-sign ranges are pulled from the shared
+// `vitalRanges.ts` helper so the PDF stays in lockstep with the dashboard
+// pill, the detail view banner, and the in-form real-time alerts. The
+// extra `unit` / `label` fields on the shared shape are ignored here — we
+// only use the numeric bounds.
 function checkVitals(data: ProgressNoteFormData) {
-  const ranges = DEFAULT_RANGES;
+  const ageStr = data.q5_ageYears || '';
+  const dob = data.q4_dateofBirth || '';
+  const ranges = getVitalRanges(ageStr, dob);
+  const ageGroupLabel = getAgeGroupLabel(ageStr, dob);
   const alerts: string[] = [];
   const temp = parseNumeric(data.q16_temperature);
   const tempAbnormal = !isNaN(temp) && (temp < ranges.temperature.low || temp > ranges.temperature.high);
@@ -395,6 +381,7 @@ function checkVitals(data: ProgressNoteFormData) {
 
   return {
     alerts,
+    ageGroupLabel,
     cells: [
       { label: 'Temperature', value: data.q16_temperature || '--', abnormal: tempAbnormal },
       { label: 'Blood Pressure', value: data.q17_bloodPressure || '--', abnormal: bpAbnormal },
@@ -609,7 +596,7 @@ export default function ProgressNotePDF({ data }: ProgressNotePDFProps) {
     .filter((p) => hasValue(p))
     .join(', ');
 
-  const { alerts: abnormalVitals, cells: vitalCells } = checkVitals(data);
+  const { alerts: abnormalVitals, cells: vitalCells, ageGroupLabel } = checkVitals(data);
 
   return (
     <Document>
@@ -626,6 +613,7 @@ export default function ProgressNotePDF({ data }: ProgressNotePDFProps) {
         {abnormalVitals.length > 0 && (
           <View style={s.alertBanner} wrap={false}>
             <Text style={s.alertBannerTitle}>ABNORMAL VITAL SIGNS DETECTED</Text>
+            <Text style={s.alertBannerSub}>Ranges based on age group: {ageGroupLabel}</Text>
             {abnormalVitals.map((a, i) => (
               <Text key={i} style={s.alertBannerItem}>• {a}</Text>
             ))}
