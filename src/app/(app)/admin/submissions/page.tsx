@@ -1219,7 +1219,7 @@ export default function SubmissionsPage() {
                   type="button"
                   onClick={() => updateParams({ p: String(safePage - 1) })}
                   disabled={safePage <= 1}
-                  style={pageBtnStyle}
+                  style={safePage <= 1 ? { ...pageBtnStyle, ...pageBtnDisabledStyle } : pageBtnStyle}
                 >
                   ← Prev
                 </button>
@@ -1230,7 +1230,7 @@ export default function SubmissionsPage() {
                   type="button"
                   onClick={() => updateParams({ p: String(safePage + 1) })}
                   disabled={safePage >= pageCount}
-                  style={pageBtnStyle}
+                  style={safePage >= pageCount ? { ...pageBtnStyle, ...pageBtnDisabledStyle } : pageBtnStyle}
                 >
                   Next →
                 </button>
@@ -1857,6 +1857,17 @@ const pageBtnStyle: React.CSSProperties = {
   fontWeight: 600,
   cursor: 'pointer',
   fontFamily: 'inherit',
+};
+
+// Merged into pageBtnStyle when the button is at an edge of the pagination
+// (Prev on page 1, Next on the last page). Mirrors the disabled affordances
+// used elsewhere — muted bg + text, no-drop cursor — so the user can tell
+// at a glance there's nowhere to go in that direction.
+const pageBtnDisabledStyle: React.CSSProperties = {
+  background: '#f5f7fa',
+  color: '#a5afba',
+  borderColor: '#e5eaf0',
+  cursor: 'not-allowed',
 };
 
 const pageMetaStyle: React.CSSProperties = {
