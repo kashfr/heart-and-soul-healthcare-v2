@@ -306,6 +306,27 @@ export default function SubmissionsPage() {
     rangeEnd,
   ]);
 
+  // Keep the bulk-action selection in lockstep with what's actually visible.
+  // Without this, narrowing the search after selecting (or switching scope
+  // tabs) leaves a stale "39 selected" pinned to the bulk bar even though
+  // only 17 rows match — confusing, and worse, the export would actually
+  // act on all 39. Re-trimming on every filter change keeps the counter
+  // honest and matches the user's mental model: "selection = what I see
+  // checked." Returns `prev` unchanged when no IDs were dropped so React
+  // skips an unnecessary re-render.
+  useEffect(() => {
+    const visibleIds = new Set(filtered.map((s) => s.id));
+    setSelected((prev) => {
+      let dropped = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (visibleIds.has(id)) next.add(id);
+        else dropped = true;
+      }
+      return dropped ? next : prev;
+    });
+  }, [filtered]);
+
   // Cross-scope match counts — apply every filter EXCEPT scope to the full
   // submission set, then bucket by archived state. Powers the "0 in Active —
   // try Archived (3)" affordance so a search that lands in the wrong tab

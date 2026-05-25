@@ -341,6 +341,37 @@ function parseNumeric(val: string | undefined): number {
   return parseFloat(val.replace(/[^0-9.]/g, ''));
 }
 
+// `cosignedAt` reaches the PDF renderer in three different shapes depending
+// on the call path:
+//   1. Firestore `Timestamp` (rare — only when the caller hands the renderer
+//      a live snapshot without round-tripping through JSON).
+//   2. Plain `{ seconds, nanoseconds }` POJO — the common case. The PDF
+//      route receives form data via JSON body, and `JSON.stringify` strips
+//      `Timestamp.toDate`, leaving only the seconds/nanos fields behind.
+//   3. ISO date string — defensive fallback if anyone pre-serializes.
+// Falling back through these shapes keeps both the bulk export and the
+// single-note Download PDF working for co-signed notes.
+function readCosignedDate(v: unknown): Date | null {
+  if (!v) return null;
+  if (typeof v === 'string') {
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof v === 'object') {
+    const obj = v as Record<string, unknown>;
+    if (typeof (obj as { toDate?: unknown }).toDate === 'function') {
+      try {
+        return (obj as { toDate: () => Date }).toDate();
+      } catch {
+        return null;
+      }
+    }
+    if (typeof obj.seconds === 'number') return new Date(obj.seconds * 1000);
+    if (typeof obj._seconds === 'number') return new Date((obj._seconds as number) * 1000);
+  }
+  return null;
+}
+
 // Age-appropriate vital-sign ranges are pulled from the shared
 // `vitalRanges.ts` helper so the PDF stays in lockstep with the dashboard
 // pill, the detail view banner, and the in-form real-time alerts. The
@@ -1051,19 +1082,19 @@ export default function ProgressNotePDF({ data }: ProgressNotePDFProps) {
 
         {/* 25b. RN Co-Signature — only relevant for HHA/CNA/LPN notes. Always
             rendered for those credentials (even when pending) so the printed
-            PDF shows the compliance status at a glance. cosignedAt is a
-            Firestore Timestamp at runtime but the PDF's data shape is
-            string-only, hence the unknown cast. */}
+            PDF shows the compliance status at a glance. `cosignedAt` reach
+            the renderer in multiple shapes (Timestamp / POJO / string), so
+            `readCosignedDate` normalizes them — see the helper above. */}
         {data.q12_credential !== 'RN' && data.q12_credential !== '' && (() => {
-          const cosignedAt = data.cosignedAt as unknown as { toDate(): Date } | null | undefined;
+          const cosignedDate = readCosignedDate(data.cosignedAt);
           return (
             <Section title="RN Co-Signature">
-              {cosignedAt ? (
+              {cosignedDate ? (
                 <View style={s.signatureGrid}>
                   <View style={{ flex: 1 }}>
                     <Field label="Printed Name" value={data.cosignedByName || ''} />
                     <Field label="Credential" value={data.cosignedCredential || 'RN'} />
-                    <Field label="Date Signed" value={cosignedAt.toDate().toLocaleDateString()} />
+                    <Field label="Date Signed" value={cosignedDate.toLocaleDateString()} />
                   </View>
                   <View style={{ flex: 1 }}>
                     {hasValue(data.cosignedSignature) ? (
