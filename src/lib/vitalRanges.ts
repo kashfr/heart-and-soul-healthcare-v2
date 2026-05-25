@@ -72,7 +72,10 @@ const RANGES_BY_AGE_GROUP: Record<AgeGroup, VitalRangeSet> = {
     bloodGlucose:    { low: 70,   high: 180,  unit: 'mg/dL', label: 'Blood Glucose' },
   },
   preschool: {
-    temperature:     { low: 97.5, high: 99.0, unit: '°F',    label: 'Temperature' },
+    // Temp floor matches schoolAge at 97.0: real 4-5yo baselines run
+    // consistently in the 97.0-97.5 band, which the previous 97.5 floor
+    // was alerting on as false hypothermia.
+    temperature:     { low: 97.0, high: 99.0, unit: '°F',    label: 'Temperature' },
     systolic:        { low: 80,   high: 110,  unit: 'mmHg',  label: 'Systolic BP' },
     diastolic:       { low: 45,   high: 70,   unit: 'mmHg',  label: 'Diastolic BP' },
     pulse:           { low: 70,   high: 130,  unit: 'bpm',   label: 'Pulse' },
@@ -119,13 +122,52 @@ const RANGES_BY_AGE_GROUP: Record<AgeGroup, VitalRangeSet> = {
 };
 
 /**
- * Determine age group from the q5_ageYears field value.
- * Handles formats: "5" (years), "9 mo" (months), "14 days" (days)
+ * Treat patients younger than this many months as `infant` regardless of
+ * what the form's `q5_ageYears` says, because pediatric vital ranges
+ * shift sharply at the infant→toddler boundary (HR 100-150 vs. 80-130)
+ * and a 12-17 month old is clinically still very much in the infant
+ * bracket — flagging their normal infant tachycardia as abnormal
+ * because they technically turned "1" is the wrong call.
+ */
+const INFANT_MAX_MONTHS = 18;
+
+function computeAgeInMonths(dob: string, now: Date = new Date()): number | null {
+  // Anchor at noon to avoid DST/midnight off-by-one issues across timezones.
+  const birth = new Date(dob + 'T12:00:00');
+  if (isNaN(birth.getTime())) return null;
+  let months =
+    (now.getFullYear() - birth.getFullYear()) * 12 +
+    (now.getMonth() - birth.getMonth());
+  if (now.getDate() < birth.getDate()) months--;
+  return Math.max(0, months);
+}
+
+function ageGroupForMonths(months: number): AgeGroup {
+  if (months < 1) return 'newborn';
+  if (months < INFANT_MAX_MONTHS) return 'infant';
+  const years = Math.floor(months / 12);
+  if (years <= 3) return 'toddler';
+  if (years <= 5) return 'preschool';
+  if (years <= 12) return 'schoolAge';
+  if (years <= 17) return 'adolescent';
+  if (years <= 64) return 'adult';
+  return 'elderly';
+}
+
+/**
+ * Determine age group from a date of birth, falling back to a free-form
+ * age string ("5", "9 mo", "14 days") when DOB is missing or unparseable.
+ *
+ * DOB is preferred because it's authoritative: the form derives `ageStr`
+ * from DOB at year resolution, which silently rounds 14-month-olds down
+ * to "1" and gets them classified as toddlers instead of infants. Going
+ * through DOB recovers the month precision.
  */
 export function getAgeGroup(ageStr: string, dob?: string): AgeGroup {
-  if (!ageStr && !dob) return 'adult'; // default fallback
-
-  let ageInMonths: number;
+  if (dob) {
+    const months = computeAgeInMonths(dob);
+    if (months !== null) return ageGroupForMonths(months);
+  }
 
   if (ageStr) {
     const trimmed = ageStr.trim().toLowerCase();
@@ -155,26 +197,6 @@ export function getAgeGroup(ageStr: string, dob?: string): AgeGroup {
       if (years <= 64) return 'adult';
       return 'elderly';
     }
-  }
-
-  // Fallback: calculate from DOB if provided
-  if (dob) {
-    const birth = new Date(dob + 'T12:00:00');
-    const today = new Date();
-    ageInMonths =
-      (today.getFullYear() - birth.getFullYear()) * 12 +
-      (today.getMonth() - birth.getMonth());
-    if (today.getDate() < birth.getDate()) ageInMonths--;
-
-    if (ageInMonths < 1) return 'newborn';
-    if (ageInMonths < 12) return 'infant';
-    const years = Math.floor(ageInMonths / 12);
-    if (years <= 3) return 'toddler';
-    if (years <= 5) return 'preschool';
-    if (years <= 12) return 'schoolAge';
-    if (years <= 17) return 'adolescent';
-    if (years <= 64) return 'adult';
-    return 'elderly';
   }
 
   return 'adult';
