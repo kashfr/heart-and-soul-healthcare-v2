@@ -4,6 +4,7 @@ import {
   dayDiff,
   normalizeName,
   findPatientCandidates,
+  findNameCandidates,
   findExactPatientId,
   type RosterPatientLite,
 } from './levenshtein';
@@ -149,5 +150,61 @@ describe('findPatientCandidates', () => {
     // "yanra fernando-bautista" vs "yanira fernando-bautista" — distance 1
     const result = findPatientCandidates('Yanra Fernando-Bautista', '2022-02-18', roster);
     expect(result[0].patientId).toBe('p1');
+  });
+});
+
+describe('findNameCandidates (name-only, form-side)', () => {
+  const roster: RosterPatientLite[] = [
+    { id: 'p1', name: 'Yanira Fernando-Bautista', dob: '2022-02-18' },
+    { id: 'p2', name: 'Tora Vinson', dob: '2018-02-22' },
+    { id: 'p3', name: 'Sapphire Simmons', dob: '2023-10-26' },
+  ];
+
+  it('finds the right patient on truncated last name (no DOB required)', () => {
+    const result = findNameCandidates('yanira fernando b', roster);
+    expect(result[0].patientId).toBe('p1');
+  });
+
+  it('finds the right patient on just the first name', () => {
+    const result = findNameCandidates('yanira', roster);
+    expect(result[0].patientId).toBe('p1');
+  });
+
+  it('finds the right patient on missing-hyphen variant', () => {
+    const result = findNameCandidates('Yanira Fernando Bautista', roster);
+    expect(result[0].patientId).toBe('p1');
+  });
+
+  it('returns nothing for very short queries', () => {
+    expect(findNameCandidates('ya', roster)).toEqual([]);
+    expect(findNameCandidates('', roster)).toEqual([]);
+  });
+
+  it('does not surface unrelated patients', () => {
+    const result = findNameCandidates('yanira fernando b', roster);
+    const ids = result.map((c) => c.patientId);
+    expect(ids).toContain('p1');
+    expect(ids).not.toContain('p2');
+    expect(ids).not.toContain('p3');
+  });
+
+  it('does not require any DOB info to function', () => {
+    // Same call as findPatientCandidates would need typedDob, but here
+    // we never pass one — the function should still surface the match.
+    const result = findNameCandidates('Yanra Fernando-Bautista', roster);
+    expect(result[0].patientId).toBe('p1');
+  });
+
+  it('returns top-N by name distance', () => {
+    const r: RosterPatientLite[] = [
+      { id: 'a', name: 'Anna Smith', dob: '2020-01-01' },
+      { id: 'b', name: 'Anna Smyth', dob: '2020-01-01' },
+      { id: 'c', name: 'Tora Vinson', dob: '2018-02-22' },
+    ];
+    // "Anna Smith" → distance 0 vs p:a, distance 1 vs p:b, far from c
+    const result = findNameCandidates('Anna Smith', r, 2);
+    expect(result.length).toBe(2);
+    expect(result[0].patientId).toBe('a');
+    expect(result[1].patientId).toBe('b');
   });
 });

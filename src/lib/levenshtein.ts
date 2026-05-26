@@ -154,6 +154,71 @@ export function findPatientCandidates(
 }
 
 /**
+ * Form-side roster suggestion based on NAME only. Used by both:
+ *   - the Page-1 "did you mean?" banner that fires while the nurse is
+ *     still typing the client name (DOB is empty), and
+ *   - the pre-submit safety net modal (DOB is shown in the modal as
+ *     informational context but doesn't gate matching — the whole point
+ *     of the safety net is to catch typos regardless of what the nurse
+ *     entered for DOB).
+ *
+ * Why a separate function from findPatientCandidates? Because gating
+ * suggestions on DOB defeats the purpose of a real-time prompt — the
+ * autofill is supposed to POPULATE the DOB for her once she accepts.
+ * The DOB-aware variant below stays useful for the backfill admin
+ * review, where historical notes have both fields and DOB is a strong
+ * corroborating signal.
+ *
+ * Signals (in order of strength):
+ *   - Exact normalized name
+ *   - Substring match either direction (typed in roster, or vice versa)
+ *   - Levenshtein distance ≤ 5
+ *   - First-word (first-name) match
+ *
+ * Returns candidates ranked by name distance (lower = better).
+ */
+export function findNameCandidates(
+  typedName: string,
+  roster: RosterPatientLite[],
+  maxResults = 1,
+): MatchCandidate[] {
+  const normTyped = normalizeName(typedName);
+  if (normTyped.length < 3) return [];
+  const typedFirst = normTyped.split(' ')[0] || '';
+
+  const candidates: MatchCandidate[] = [];
+
+  for (const p of roster) {
+    const normName = normalizeName(p.name);
+    const nameDist = levenshtein(normName, normTyped);
+    const rosterFirst = normName.split(' ')[0] || '';
+    const firstWordMatch = typedFirst.length > 0 && typedFirst === rosterFirst;
+    // Either direction — handles both partial typing ("yanira fern")
+    // and ambient extra text ("yanira fernando b").
+    const isSubstring = normName.includes(normTyped) || normTyped.includes(normName);
+
+    let reason: string | null = null;
+    if (nameDist === 0) reason = 'Exact name';
+    else if (isSubstring) reason = 'Substring match';
+    else if (nameDist <= 5) reason = `Name distance ${nameDist}`;
+    else if (firstWordMatch) reason = 'First-name match';
+
+    if (reason !== null) {
+      candidates.push({
+        patientId: p.id,
+        patientName: p.name,
+        patientDob: p.dob,
+        score: nameDist,
+        reason,
+      });
+    }
+  }
+
+  candidates.sort((a, b) => a.score - b.score);
+  return candidates.slice(0, maxResults);
+}
+
+/**
  * Strict-match lookup used by the backfill auto-link pass — name and DOB
  * must both match exactly (after normalization). Returns the patient id
  * or null if zero or multiple roster docs match.

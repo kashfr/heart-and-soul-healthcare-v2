@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { Check, AlertTriangle, Loader2 } from 'lucide-react';
 import { getPatients, type Patient } from '@/lib/patients';
-import { findPatientCandidates, type RosterPatientLite, type MatchCandidate } from '@/lib/levenshtein';
+import { findNameCandidates, type RosterPatientLite, type MatchCandidate } from '@/lib/levenshtein';
 import { saveSubmission, getSubmission, updateSubmission, type ProgressNoteFormData } from '@/lib/submissions';
 import { saveDraft, loadDraft, deleteDraft, type NoteDraft } from '@/lib/drafts';
 import { useAuth } from '@/components/AuthProvider';
@@ -687,13 +687,16 @@ function ProgressNotePageInner() {
     // before the form re-submits, so we don't loop forever.
     if (!skipPatientConfirmRef.current) {
       const typedName = String(getValues('q3_clientName') || '').trim();
-      const typedDob = String(getValues('q4_dateofBirth') || '').trim();
       const linkedPatientId = String(getValues('patientId') || '').trim();
       if (!linkedPatientId && typedName) {
+        // Name-only match here too. Whether her typed DOB happens to
+        // match the roster patient's DOB or not is interesting context
+        // for the modal, but it shouldn't gate whether we prompt — a
+        // close name match is enough reason to confirm with the nurse.
         const rosterLite: RosterPatientLite[] = patients
           .filter((p): p is Patient & { id: string } => !!p.id)
           .map((p) => ({ id: p.id, name: p.name, dob: p.dob }));
-        const candidates = findPatientCandidates(typedName, typedDob, rosterLite, 1);
+        const candidates = findNameCandidates(typedName, rosterLite, 1);
         if (candidates.length > 0) {
           setPendingPatientConfirm({ typedName, candidate: candidates[0] });
           return;

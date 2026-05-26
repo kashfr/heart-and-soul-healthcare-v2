@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Patient } from '@/lib/patients';
-import { findPatientCandidates, type RosterPatientLite } from '@/lib/levenshtein';
+import { findNameCandidates, type RosterPatientLite } from '@/lib/levenshtein';
 import type { FormPageProps } from '../types';
 import styles from '../page.module.css';
 
@@ -30,15 +30,11 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
   const [dismissedSuggestionFor, setDismissedSuggestionFor] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Watch the DOB so the fuzzy matcher can weigh it alongside name distance.
-  // Toddlers with similar last names but different birthdays should not
-  // collide with each other in the candidate list.
-  const watchedDob = watch('q4_dateofBirth');
-
-  // Fuzzy candidates — only used to drive the "Did you mean?" banner that
-  // fills the gap when the existing substring dropdown can't catch a
-  // typo. `findPatientCandidates` returns top-3 ranked by composite
-  // name-distance + DOB-drift score.
+  // Fuzzy candidates — drives the "Did you mean?" banner that fills the
+  // gap when the existing substring dropdown can't catch a typo (because
+  // it uses raw includes() without name normalization). Name-only match
+  // on purpose: at the moment the banner needs to fire, the nurse hasn't
+  // entered DOB yet — the autofill populates it for her once she accepts.
   const rosterLite: RosterPatientLite[] = useMemo(
     () =>
       patients
@@ -46,11 +42,10 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
         .map((p) => ({ id: p.id, name: p.name, dob: p.dob })),
     [patients],
   );
-  const fuzzyCandidates = useMemo(() => {
-    const q = searchQuery.trim();
-    if (q.length < 3) return [];
-    return findPatientCandidates(q, watchedDob || '', rosterLite, 1);
-  }, [searchQuery, watchedDob, rosterLite]);
+  const fuzzyCandidates = useMemo(
+    () => findNameCandidates(searchQuery.trim(), rosterLite, 1),
+    [searchQuery, rosterLite],
+  );
 
   // Banner appears when:
   //   - the substring dropdown isn't already surfacing matches (no point
