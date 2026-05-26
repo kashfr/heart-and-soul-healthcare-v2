@@ -24,6 +24,15 @@ export interface Patient {
   zip: string;
   mrn?: string;
   createdAt?: unknown;
+  /**
+   * Care team — list of nurse uids who can read all progressNotes for
+   * this patient (regardless of who authored each note). Populated by:
+   *   - the backfill script (seeds from historical authors)
+   *   - auto-add on note submission (Phase 3)
+   *   - admin/supervisor editing the patient (Phase 3)
+   * Reads are still author-only when this list is empty or missing.
+   */
+  assignedNurseIds?: string[];
 }
 
 /**

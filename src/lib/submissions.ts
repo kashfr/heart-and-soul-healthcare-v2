@@ -120,6 +120,21 @@ export interface ProgressNoteFormData {
   cosignedByName?: string;
   cosignedCredential?: string;
   cosignedSignature?: string;
+
+  // Link to the canonical patient roster doc. Populated by:
+  //   - the backfill script (matches existing notes to patients by name+DOB)
+  //   - the form's auto-fill picker (when a nurse selects from roster)
+  // When null/missing, the note was submitted with a free-text patient name
+  // that didn't match the roster — care-team visibility doesn't extend to
+  // these notes and they stay author-only.
+  patientId?: string | null;
+  /**
+   * Admin marker: this note appeared in the maintenance link-review queue
+   * and the admin explicitly chose to skip it. Keeps it out of subsequent
+   * review queues. Independent of `patientId` — a note can be both
+   * reviewed-and-skipped (no link possible) and reviewed-and-linked.
+   */
+  linkReviewed?: boolean;
 }
 
 export interface SubmissionSummary {

@@ -9,6 +9,7 @@ import {
   ClipboardList,
   UserCog,
   FileText,
+  Wrench,
   Menu,
   X,
 } from 'lucide-react';
@@ -29,6 +30,7 @@ const NAV: NavItem[] = [
   { href: '/admin/patients', label: 'Patients', icon: <Users size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/submissions', label: 'Submissions', icon: <ClipboardList size={18} /> },
   { href: '/admin/users', label: 'Staff & Roles', icon: <UserCog size={18} />, allow: ['admin', 'supervisor'] },
+  { href: '/admin/maintenance/link-notes', label: 'Maintenance', icon: <Wrench size={18} />, allow: ['admin'] },
   { href: '/admin/referrals', label: 'Referrals', icon: <FileText size={18} />, allow: ['admin'], disabled: true },
 ];
 
