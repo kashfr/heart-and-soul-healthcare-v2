@@ -8,6 +8,7 @@ import { getPatients, type Patient } from '@/lib/patients';
 import { findNameCandidates, type RosterPatientLite, type MatchCandidate } from '@/lib/levenshtein';
 import { saveSubmission, getSubmission, updateSubmission, type ProgressNoteFormData } from '@/lib/submissions';
 import { saveDraft, loadDraft, deleteDraft, type NoteDraft } from '@/lib/drafts';
+import { authedFetch } from '@/lib/authedFetch';
 import { useAuth } from '@/components/AuthProvider';
 import { setRadio, radioState, clearRadioStorage } from './components/DeselectableRadio';
 import type { FormValues } from './types';
@@ -754,6 +755,20 @@ function ProgressNotePageInner() {
         submission as unknown as ProgressNoteFormData,
         user ? { nurseId: user.uid } : undefined
       );
+      // Self-healing care-team membership: if the note linked to a
+      // roster patient (nurse picked from autofill or the "did you
+      // mean?" banner), tell the server to arrayUnion the author into
+      // that patient's assignedNurseIds. Fire-and-forget — the note is
+      // already saved, this just unlocks future cross-nurse visibility.
+      // Failure here is logged but never surfaced to the user.
+      const submittedPatientId = String(submission.patientId || '').trim();
+      if (user && submittedPatientId) {
+        void authedFetch('/api/care-team/auto-add-author', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ noteId: docId }),
+        }).catch((err) => console.error('Auto-add to care team failed:', err));
+      }
       alert(`Progress note submitted successfully!\nSubmission ID: ${docId}`);
       reset();
       localStorage.removeItem(STORAGE_KEY);

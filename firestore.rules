@@ -96,8 +96,19 @@ service cloud.firestore {
         && incomingData().submittedAt == request.time
         && incomingData().status == 'submitted'
         && (!('nurseId' in incomingData()) || incomingData().nurseId == request.auth.uid);
+      // Care-team read: a nurse can also read a note when she's on the
+      // assignedNurseIds list of the patient that note is linked to
+      // (patientId field, populated by Phase 1 backfill + the form's
+      // roster-picker + the maintenance link flow). The get() pattern
+      // matches getRole() above. Notes with no patientId (free-text
+      // entries that didn't match the roster) stay author-only —
+      // they never resolve a patient doc to check.
       allow read: if isStaff()
-        || (isNurse() && resource.data.nurseId == request.auth.uid);
+        || (isNurse() && resource.data.nurseId == request.auth.uid)
+        || (isNurse()
+            && resource.data.get('patientId', null) != null
+            && get(/databases/$(database)/documents/patients/$(resource.data.patientId))
+                 .data.get('assignedNurseIds', []).hasAny([request.auth.uid]));
       // A nurse may toggle her personal archive fields (nurseArchivedAt/By)
       // but must never touch the staff-scope archive fields (archivedAt/By).
       // Co-signature fields (cosignedAt/By/ByName/Credential/Signature) are
