@@ -269,8 +269,10 @@ export default function LinkNotesPage() {
           <h1 style={titleStyle}>Link unmatched progress notes</h1>
           <p style={subStyle}>
             Notes whose typed patient name or DOB doesn&apos;t exactly match the roster.
-            Linking a note attaches it to a patient record so other nurses on that patient&apos;s
-            care team can see it. The original typed values on the note are not modified.
+            <strong> Linking a note overwrites its client name and DOB with the roster&apos;s canonical
+            values</strong> (the original typed values are preserved in the note&apos;s edit history for
+            audit). This fixes downstream billing issues and makes the note visible to other nurses
+            on that patient&apos;s care team.
           </p>
         </div>
         <button
