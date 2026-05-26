@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { Check, AlertTriangle, Loader2 } from 'lucide-react';
 import { getPatients, type Patient } from '@/lib/patients';
+import { findPatientCandidates, type RosterPatientLite, type MatchCandidate } from '@/lib/levenshtein';
 import { saveSubmission, getSubmission, updateSubmission, type ProgressNoteFormData } from '@/lib/submissions';
 import { saveDraft, loadDraft, deleteDraft, type NoteDraft } from '@/lib/drafts';
 import { useAuth } from '@/components/AuthProvider';
@@ -82,6 +83,18 @@ function ProgressNotePageInner() {
   const [formReady, setFormReady] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
+  // Pre-submit "did you mean?" confirmation state. Set when the nurse
+  // hits Submit with a typed client name that fuzzy-matches a roster
+  // patient but no patientId was ever captured (she never picked from
+  // the dropdown or the Page-1 fuzzy banner). Holds the candidate +
+  // the typed name so the modal can render both side-by-side.
+  const [pendingPatientConfirm, setPendingPatientConfirm] = useState<
+    { typedName: string; candidate: MatchCandidate } | null
+  >(null);
+  // Ref (not state) so the re-submit after the modal closes sees the
+  // updated value synchronously — state updates wouldn't have flushed
+  // by the time the form re-submits.
+  const skipPatientConfirmRef = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
 
   // --- Cross-device draft state (Firestore) ---
@@ -662,6 +675,35 @@ function ProgressNotePageInner() {
     // The required-field + RHF-rule validation now happens above in the
     // unified DOM-order pass, so the old per-field loop is gone.
 
+    // Checkpoint 2 of the "did you mean?" flow — last-mile safety net.
+    // If the nurse typed a client name that fuzzy-matches a roster
+    // patient but never actually picked one (no patientId captured by
+    // FormPageOne), interrupt with a confirmation modal so she explicitly
+    // chooses between using the roster patient (cleans the data) and
+    // submitting as typed (preserves her intent for legitimate edge
+    // cases like a new patient not yet in the roster).
+    //
+    // skipPatientConfirmRef is flipped to true by either modal button
+    // before the form re-submits, so we don't loop forever.
+    if (!skipPatientConfirmRef.current) {
+      const typedName = String(getValues('q3_clientName') || '').trim();
+      const typedDob = String(getValues('q4_dateofBirth') || '').trim();
+      const linkedPatientId = String(getValues('patientId') || '').trim();
+      if (!linkedPatientId && typedName) {
+        const rosterLite: RosterPatientLite[] = patients
+          .filter((p): p is Patient & { id: string } => !!p.id)
+          .map((p) => ({ id: p.id, name: p.name, dob: p.dob }));
+        const candidates = findPatientCandidates(typedName, typedDob, rosterLite, 1);
+        if (candidates.length > 0) {
+          setPendingPatientConfirm({ typedName, candidate: candidates[0] });
+          return;
+        }
+      }
+    }
+    // Consume the skip so a subsequent edit-then-resubmit re-arms the
+    // check. One-shot pass, never sticky.
+    skipPatientConfirmRef.current = false;
+
     try {
       setSubmitting(true);
 
@@ -1091,6 +1133,110 @@ function ProgressNotePageInner() {
           )}
         </div>
       </form>
+
+      {/* Pre-submit "did you mean?" confirmation — Checkpoint 2.
+          Fires when the nurse's typed client name fuzzy-matches a roster
+          patient but no patientId was captured (she never picked from
+          the dropdown or accepted the Page-1 banner). She must either
+          accept the roster patient (cleans the data) or explicitly
+          choose to submit as typed (preserves intent for legit new
+          patients not yet in the roster). */}
+      {pendingPatientConfirm && (
+        <div className={`${styles.confirmModal} ${styles.active}`}>
+          <div className={styles.modalContent}>
+            <h2 style={{ color: '#7c3a00', marginTop: 0 }}>
+              Did you mean a patient already in the roster?
+            </h2>
+            <p style={{ color: '#555', lineHeight: 1.6, marginBottom: 8 }}>
+              You&apos;re about to submit this note for:
+            </p>
+            <p
+              style={{
+                background: '#f8fafc',
+                border: '1px solid #e5eaf0',
+                padding: '8px 12px',
+                borderRadius: 6,
+                fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+                fontSize: 14,
+                color: '#1a3a5c',
+                margin: '0 0 12px 0',
+              }}
+            >
+              {pendingPatientConfirm.typedName}
+            </p>
+            <p style={{ color: '#555', lineHeight: 1.6, marginBottom: 8 }}>
+              That name closely matches an existing patient in your roster:
+            </p>
+            <p
+              style={{
+                background: '#e8f5e9',
+                border: '1px solid #c8e6c9',
+                padding: '8px 12px',
+                borderRadius: 6,
+                fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+                fontSize: 14,
+                color: '#1a3a5c',
+                margin: '0 0 16px 0',
+              }}
+            >
+              {pendingPatientConfirm.candidate.patientName}{' '}
+              <span style={{ color: '#5c6b7a', fontSize: 12 }}>
+                (DOB {pendingPatientConfirm.candidate.patientDob})
+              </span>
+            </p>
+            <p style={{ color: '#666', fontSize: 13, lineHeight: 1.5, marginBottom: 20 }}>
+              Using the roster patient auto-fills the canonical name + DOB so other nurses on
+              the care team can see your note. Choose &quot;Submit as typed&quot; only if this
+              really is a different patient.
+            </p>
+            <div className={styles.modalButtons}>
+              <button
+                type="button"
+                onClick={() => {
+                  // "Submit as typed" — proceed without linking to roster.
+                  // The note keeps the typed values; no patientId is set.
+                  skipPatientConfirmRef.current = true;
+                  setPendingPatientConfirm(null);
+                  // Re-fire the submit. requestSubmit() goes through the
+                  // form's submit event so our handleSubmit runs again,
+                  // but this time the skip ref short-circuits the check.
+                  setTimeout(() => formRef.current?.requestSubmit(), 0);
+                }}
+                className={styles.cancelBtn}
+              >
+                Submit as typed
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  // "Use roster patient" — overwrite the typed name/DOB
+                  // with canonical roster values, fill in the other roster
+                  // fields, capture patientId, then re-submit.
+                  const target = patients.find(
+                    (p) => p.id === pendingPatientConfirm.candidate.patientId,
+                  );
+                  if (target) {
+                    setValue('q3_clientName', target.name);
+                    setValue('q4_dateofBirth', target.dob);
+                    setValue('q10_primaryDiagnosis', target.diagnosis || '');
+                    setValue('q200_addr_line1', target.street || '');
+                    setValue('q200_city', target.city || '');
+                    setValue('q200_state', target.state || '');
+                    setValue('q200_postal', target.zip || '');
+                    setValue('patientId', target.id || '');
+                  }
+                  skipPatientConfirmRef.current = true;
+                  setPendingPatientConfirm(null);
+                  setTimeout(() => formRef.current?.requestSubmit(), 0);
+                }}
+                className={styles.confirmBtn}
+              >
+                Use {pendingPatientConfirm.candidate.patientName}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Clear Form Confirmation Modal */}
       {showClearModal && (

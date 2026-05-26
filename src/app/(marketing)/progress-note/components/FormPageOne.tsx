@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Patient } from '@/lib/patients';
+import { findPatientCandidates, type RosterPatientLite } from '@/lib/levenshtein';
 import type { FormPageProps } from '../types';
 import styles from '../page.module.css';
 
@@ -22,7 +23,50 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [justSelected, setJustSelected] = useState(false);
+  // When the nurse explicitly dismisses the fuzzy-match banner, we
+  // remember which typed string she dismissed for so the same suggestion
+  // doesn't keep popping back up with every keystroke that re-yields the
+  // same candidate. Cleared when she types something new.
+  const [dismissedSuggestionFor, setDismissedSuggestionFor] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Watch the DOB so the fuzzy matcher can weigh it alongside name distance.
+  // Toddlers with similar last names but different birthdays should not
+  // collide with each other in the candidate list.
+  const watchedDob = watch('q4_dateofBirth');
+
+  // Fuzzy candidates — only used to drive the "Did you mean?" banner that
+  // fills the gap when the existing substring dropdown can't catch a
+  // typo. `findPatientCandidates` returns top-3 ranked by composite
+  // name-distance + DOB-drift score.
+  const rosterLite: RosterPatientLite[] = useMemo(
+    () =>
+      patients
+        .filter((p): p is Patient & { id: string } => !!p.id)
+        .map((p) => ({ id: p.id, name: p.name, dob: p.dob })),
+    [patients],
+  );
+  const fuzzyCandidates = useMemo(() => {
+    const q = searchQuery.trim();
+    if (q.length < 3) return [];
+    return findPatientCandidates(q, watchedDob || '', rosterLite, 1);
+  }, [searchQuery, watchedDob, rosterLite]);
+
+  // Banner appears when:
+  //   - the substring dropdown isn't already surfacing matches (no point
+  //     duplicating what the nurse can already see)
+  //   - we DO have at least one fuzzy candidate
+  //   - the nurse hasn't explicitly dismissed it for this exact typed
+  //     string yet
+  //   - and she hasn't just finished accepting a selection (the typed
+  //     name still differs from the picked patient — see justSelected
+  //     guard below).
+  const topFuzzy = fuzzyCandidates[0];
+  const showFuzzyBanner =
+    !showDropdown &&
+    !justSelected &&
+    !!topFuzzy &&
+    dismissedSuggestionFor !== searchQuery.trim();
 
   useEffect(() => {
     if (initialClientName) {
@@ -111,10 +155,17 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
       setValue('q200_city', selectedPatient.city || '');
       setValue('q200_state', selectedPatient.state || '');
       setValue('q200_postal', selectedPatient.zip || '');
+      // Hidden patientId carries the roster link through to Firestore.
+      // This is what tells the pre-submit check on Page 7 that the
+      // nurse actually picked from the roster (so it skips the
+      // "did you mean?" modal).
+      setValue('patientId', selectedPatient.id || '');
 
       setShowConfirmModal(false);
       setSelectedPatient(null);
       setJustSelected(true);
+      // Clear any dismissed suggestion since the name is now settled.
+      setDismissedSuggestionFor(null);
     }
   };
 
@@ -123,11 +174,26 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
     setSelectedPatient(null);
   };
 
-  // Sync the react-hook-form value whenever the user types manually
+  // Sync the react-hook-form value whenever the user types manually.
+  // Any keystroke clears patientId — if she previously picked from the
+  // roster and is now editing the name, the link is no longer valid;
+  // she can always re-pick from the dropdown or the fuzzy-match banner.
   const handleNameChange = (value: string) => {
     setSearchQuery(value);
     setJustSelected(false);
     setValue('q3_clientName', value);
+    setValue('patientId', '');
+    // Reset dismissal state — a new typed value deserves a fresh look.
+    setDismissedSuggestionFor(null);
+  };
+
+  // Accept the fuzzy-match banner suggestion. Same effect as picking
+  // from the substring dropdown — opens the existing confirmation modal
+  // so the nurse explicitly OKs the auto-fill before her data changes.
+  const acceptFuzzyCandidate = () => {
+    if (!topFuzzy) return;
+    const patient = patients.find((p) => p.id === topFuzzy.patientId);
+    if (patient) handleSelectPatient(patient);
   };
 
   return (
@@ -154,6 +220,15 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
               id="q3_clientName"
               {...register('q3_clientName')}
               required
+            />
+            {/* Hidden patientId — set when the nurse picks from the roster
+                dropdown OR the fuzzy-match banner. The pre-submit check
+                on Page 7 uses its presence/absence to decide whether to
+                interrupt with the "did you mean?" confirmation modal. */}
+            <input
+              type="hidden"
+              id="patientId"
+              {...register('patientId')}
             />
             {showDropdown && (
               <div
@@ -190,6 +265,70 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
                     </span>
                   </div>
                 ))}
+              </div>
+            )}
+            {/* Fuzzy-match banner — Checkpoint 1 of the "did you mean?"
+                flow. Surfaces a roster suggestion when the typed string
+                isn't a substring match but is close enough (Levenshtein
+                ≤ 3 / exact DOB / first-name + close DOB) to be plausibly
+                the same patient. Designed to be impossible to miss
+                without being modal. */}
+            {showFuzzyBanner && topFuzzy && (
+              <div
+                role="alert"
+                style={{
+                  marginTop: 8,
+                  background: '#fff4e5',
+                  border: '1px solid #f5c98a',
+                  borderLeft: '4px solid #d8830f',
+                  borderRadius: 6,
+                  padding: '12px 14px',
+                  fontSize: 13,
+                  color: '#7c3a00',
+                }}
+              >
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>
+                  Did you mean <span style={{ color: '#5a2a00' }}>{topFuzzy.patientName}</span>?
+                </div>
+                <div style={{ fontSize: 12, color: '#8c5a25', marginBottom: 10 }}>
+                  DOB {topFuzzy.patientDob} · {topFuzzy.reason}
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={acceptFuzzyCandidate}
+                    style={{
+                      background: '#0e7c4a',
+                      color: 'white',
+                      border: 'none',
+                      padding: '6px 14px',
+                      borderRadius: 4,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    Use {topFuzzy.patientName}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDismissedSuggestionFor(searchQuery.trim())}
+                    style={{
+                      background: 'white',
+                      color: '#7c3a00',
+                      border: '1px solid #d8830f',
+                      padding: '6px 14px',
+                      borderRadius: 4,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    No, keep what I typed
+                  </button>
+                </div>
               </div>
             )}
           </div>
