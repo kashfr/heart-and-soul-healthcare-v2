@@ -47,6 +47,20 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
     [searchQuery, rosterLite],
   );
 
+  // Lock the patient-info fields whenever a roster patient is bound to
+  // this note (handleConfirmSelection sets patientId; handleNameChange
+  // clears it on any keystroke into the Client Name search). Prevents
+  // accidental edits to canonical roster data; the nurse can still
+  // change patients by editing the Client Name search input, which
+  // clears patientId and re-enables the fields.
+  const watchedPatientId = watch('patientId');
+  const lockPatientFields = !!(watchedPatientId && String(watchedPatientId).trim());
+  const lockedTitle =
+    'Auto-filled from the patient roster. Edit the Client Name field above to change patients or unlock.';
+  const lockedFieldStyle: React.CSSProperties | undefined = lockPatientFields
+    ? { background: '#f1f5f9', cursor: 'not-allowed' }
+    : undefined;
+
   // Banner appears when:
   //   - the substring dropdown isn't already surfacing matches (no point
   //     duplicating what the nurse can already see)
@@ -338,6 +352,9 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
               id="q4_dateofBirth"
               max={today}
               required
+              readOnly={lockPatientFields}
+              title={lockPatientFields ? lockedTitle : undefined}
+              style={lockedFieldStyle}
               {...register('q4_dateofBirth', {
                 onChange: (e) => {
                   const dob = e.target.value;
@@ -355,6 +372,8 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
               id="q5_ageYears"
               {...register('q5_ageYears')}
               readOnly
+              title={lockPatientFields ? lockedTitle : 'Calculated from Date of Birth.'}
+              style={lockedFieldStyle}
             />
           </div>
         </div>
@@ -368,6 +387,9 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
               id="q10_primaryDiagnosis"
               {...register('q10_primaryDiagnosis')}
               required
+              readOnly={lockPatientFields}
+              title={lockPatientFields ? lockedTitle : undefined}
+              style={lockedFieldStyle}
             />
           </div>
         </div>
@@ -381,6 +403,9 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
               id="q200_addr_line1"
               {...register('q200_addr_line1')}
               required
+              readOnly={lockPatientFields}
+              title={lockPatientFields ? lockedTitle : undefined}
+              style={lockedFieldStyle}
             />
           </div>
         </div>
@@ -394,6 +419,9 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
               id="q200_city"
               {...register('q200_city')}
               required
+              readOnly={lockPatientFields}
+              title={lockPatientFields ? lockedTitle : undefined}
+              style={lockedFieldStyle}
             />
           </div>
           <div className={styles.f}>
@@ -403,6 +431,9 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
               id="q200_state"
               {...register('q200_state')}
               required
+              disabled={lockPatientFields}
+              title={lockPatientFields ? lockedTitle : undefined}
+              style={lockedFieldStyle}
             >
               <option value="">Select...</option>
               <option value="AL">AL</option><option value="AK">AK</option><option value="AZ">AZ</option><option value="AR">AR</option>
@@ -428,6 +459,9 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
               id="q200_postal"
               {...register('q200_postal')}
               required
+              readOnly={lockPatientFields}
+              title={lockPatientFields ? lockedTitle : undefined}
+              style={lockedFieldStyle}
             />
           </div>
         </div>
