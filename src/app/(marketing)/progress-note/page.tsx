@@ -755,14 +755,14 @@ function ProgressNotePageInner() {
         submission as unknown as ProgressNoteFormData,
         user ? { nurseId: user.uid } : undefined
       );
-      // Self-healing care-team membership: if the note linked to a
-      // roster patient (nurse picked from autofill or the "did you
-      // mean?" banner), tell the server to arrayUnion the author into
-      // that patient's assignedNurseIds. Fire-and-forget — the note is
-      // already saved, this just unlocks future cross-nurse visibility.
-      // Failure here is logged but never surfaced to the user.
-      const submittedPatientId = String(submission.patientId || '').trim();
-      if (user && submittedPatientId) {
+      // Self-healing care-team membership. Always fired post-save —
+      // the endpoint handles BOTH the "patientId set by the form"
+      // case AND the "nurse typed manually so patientId is empty but
+      // name+DOB exact-match a roster patient" case. The latter
+      // recovers notes that would otherwise pile up in the
+      // /admin/maintenance/link-notes queue. Fire-and-forget — the
+      // note is already saved either way.
+      if (user) {
         void authedFetch('/api/care-team/auto-add-author', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

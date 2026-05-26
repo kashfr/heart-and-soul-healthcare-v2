@@ -2,26 +2,39 @@ import { NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
+import { findExactPatientId, type RosterPatientLite } from '@/lib/levenshtein';
 
 /**
  * POST /api/care-team/auto-add-author
  * Body: { noteId: string }
  *
- * Self-healing care-team membership: after a nurse submits a progress
- * note that links to a roster patient (patientId is set), this endpoint
- * adds the author's uid to that patient's `assignedNurseIds`. Means a
- * nurse picking up a new shift for a patient gets read access to the
- * rest of the care team's notes automatically — no admin click needed.
+ * Two things in one endpoint, both triggered after a nurse submits a
+ * progress note:
+ *
+ *   1. Auto-link (server-side fallback for the maintenance queue):
+ *      If the note has no `patientId` but its typed `q3_clientName` +
+ *      `q4_dateofBirth` exact-match a roster patient (same logic as
+ *      the one-time backfill), set `patientId` here. Catches the case
+ *      where the nurse typed the patient identity manually instead of
+ *      picking from the roster dropdown — without this, those notes
+ *      would silently accumulate in /admin/maintenance/link-notes.
+ *      Only EXACT matches are auto-linked; near matches still go to
+ *      admin review (where the "did you mean" normalization applies).
+ *
+ *   2. Care-team membership: once a `patientId` is known (either set
+ *      by the form or just inferred above), arrayUnion the caller's
+ *      uid into that patient's `assignedNurseIds`. Means a nurse
+ *      picking up a new shift gets read access to the rest of the
+ *      team's notes automatically — no admin click needed.
  *
  * Security: the caller's uid MUST match the note's nurseId. This
  * prevents anyone from granting themselves access to an arbitrary
- * patient by guessing or supplying a noteId they didn't author. The
- * note is also required to have a patientId — free-text notes that
- * weren't roster-matched can't be used to escalate membership.
+ * patient by guessing a noteId they didn't author.
  *
  * Failure is non-fatal at the caller — the note is already saved by
- * the time we get here. Worst case the nurse just doesn't get
- * auto-added and an admin can add her manually from the Patients page.
+ * the time we get here. Worst case the nurse doesn't get auto-added
+ * and an admin can either link the note from the maintenance page or
+ * add her manually from the Patients page.
  *
  * Allowed callers: nurse, supervisor, admin (any signed-in staff who
  * might author a note for a patient).
@@ -57,7 +70,8 @@ export async function POST(request: Request) {
   }
   const noteData = noteSnap.data() || {};
   const noteNurseId = (noteData.nurseId as string) || '';
-  const patientId = (noteData.patientId as string | null | undefined) || null;
+  let patientId = (noteData.patientId as string | null | undefined) || null;
+  let autoLinked = false;
 
   // Caller must be the author of the note. Without this check a nurse
   // could pass any noteId and grant herself access to any patient.
@@ -68,9 +82,37 @@ export async function POST(request: Request) {
     );
   }
 
-  // No patient link → nothing to add to. Not an error — the form may
-  // have submitted a free-text patient name. Tell the caller it was a
-  // no-op so it can no-op in turn.
+  // Step 1 — auto-link fallback. If the form didn't capture patientId
+  // (nurse typed the identity manually instead of picking from the
+  // dropdown), try to recover it here via the same exact name+DOB
+  // match the one-time backfill uses. Near matches are intentionally
+  // NOT auto-linked — those still go to the admin review queue so
+  // the "did you mean" normalization step can apply.
+  if (!patientId) {
+    const typedName = (noteData.q3_clientName as string) || '';
+    const typedDob = (noteData.q4_dateofBirth as string) || '';
+    if (typedName && typedDob) {
+      const patientsSnap = await db.collection('patients').get();
+      const roster: RosterPatientLite[] = patientsSnap.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          name: (data.name as string) || '',
+          dob: (data.dob as string) || '',
+        };
+      });
+      const match = findExactPatientId(typedName, typedDob, roster);
+      if (match) {
+        await noteRef.update({ patientId: match });
+        patientId = match;
+        autoLinked = true;
+      }
+    }
+  }
+
+  // Still no patient link after the auto-link pass → can't add to a
+  // team. Returned as a no-op rather than an error so the fire-and-
+  // forget caller doesn't show a scary log line.
   if (!patientId) {
     return NextResponse.json({ added: false, reason: 'no-patient-link' });
   }
@@ -98,6 +140,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     added: true,
     patientId,
+    autoLinked,
     careTeamSize: team.length,
   });
 }
