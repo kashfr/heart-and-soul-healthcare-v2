@@ -153,6 +153,51 @@ export function findPatientCandidates(
   return candidates.slice(0, maxResults);
 }
 
+// ----- Per-word fuzzy matching helpers used by findNameCandidates -----
+
+function nameTokens(s: string): string[] {
+  return normalizeName(s)
+    .split(' ')
+    .filter((w) => w.length > 0);
+}
+
+/**
+ * For a single typed word, find the best-matching word inside a roster
+ * patient name. Returns { dist, matched } where `matched` says whether
+ * the match is good enough to count toward the candidate's overall
+ * tally.
+ *
+ * Three positive signals (any one is enough):
+ *   - Prefix: typed is the start of a roster word, and typed is at
+ *     least 30% of the roster word's length. Catches "fern" → "fernando"
+ *     and "yan" → "yanira".
+ *   - Small absolute distance (≤ 2): catches single-character typos
+ *     in short words.
+ *   - Proportional tolerance (typed.length ≥ 4 and dist ≤ length/3):
+ *     catches "yanra" → "yanira" (dist 1, 5 chars allowed up to 1).
+ */
+function bestWordMatch(
+  typedWord: string,
+  rosterWords: string[],
+): { dist: number; matched: boolean } {
+  let bestDist = Infinity;
+  for (const rw of rosterWords) {
+    if (
+      typedWord.length >= 2 &&
+      rw.startsWith(typedWord) &&
+      typedWord.length / rw.length >= 0.3
+    ) {
+      return { dist: 0, matched: true };
+    }
+    const d = levenshtein(typedWord, rw);
+    if (d < bestDist) bestDist = d;
+  }
+  const matched =
+    bestDist <= 2 ||
+    (typedWord.length >= 4 && bestDist <= Math.floor(typedWord.length / 3));
+  return { dist: bestDist, matched };
+}
+
 /**
  * Form-side roster suggestion based on NAME only. Used by both:
  *   - the Page-1 "did you mean?" banner that fires while the nurse is
@@ -162,56 +207,80 @@ export function findPatientCandidates(
  *     of the safety net is to catch typos regardless of what the nurse
  *     entered for DOB).
  *
- * Why a separate function from findPatientCandidates? Because gating
- * suggestions on DOB defeats the purpose of a real-time prompt — the
- * autofill is supposed to POPULATE the DOB for her once she accepts.
- * The DOB-aware variant below stays useful for the backfill admin
- * review, where historical notes have both fields and DOB is a strong
- * corroborating signal.
+ * Per-word fuzzy matching: tokenize both typed name and each roster
+ * name, then for every typed word find the best-matching roster word.
+ * A patient is a candidate when at least 50% of typed words have a
+ * good match. This catches multi-typo + truncation combos like
+ * "yanra fern" → "Yanira Fernando-Bautista" that whole-string
+ * Levenshtein misses because the overall distance is enormous even
+ * though the words match individually.
  *
- * Signals (in order of strength):
- *   - Exact normalized name
- *   - Substring match either direction (typed in roster, or vice versa)
- *   - Levenshtein distance ≤ 5
- *   - First-word (first-name) match
+ * Single-character typed words (e.g. "y" or middle initials) are
+ * filtered out of the tally — too noisy on their own.
  *
- * Returns candidates ranked by name distance (lower = better).
+ * Returns candidates ranked by composite score (lower = better):
+ * sum of per-word edit distances, plus a 10-point penalty per
+ * unmatched typed word.
  */
 export function findNameCandidates(
   typedName: string,
   roster: RosterPatientLite[],
   maxResults = 1,
 ): MatchCandidate[] {
-  const normTyped = normalizeName(typedName);
-  if (normTyped.length < 3) return [];
-  const typedFirst = normTyped.split(' ')[0] || '';
+  // Only words with 2+ chars count toward the match tally — single
+  // chars like a middle initial would surface every patient otherwise.
+  const typedWords = nameTokens(typedName).filter((w) => w.length >= 2);
+  if (typedWords.length === 0) return [];
+  // Guard against ultra-short queries even after the per-word filter
+  // (e.g. "y" + "x" both filtered would still leave nothing, but two
+  // 2-letter words "ya bo" would only total 4 chars — still pretty
+  // noisy. Require at least 3 chars across all eligible words.)
+  if (typedWords.join('').length < 3) return [];
 
   const candidates: MatchCandidate[] = [];
 
   for (const p of roster) {
-    const normName = normalizeName(p.name);
-    const nameDist = levenshtein(normName, normTyped);
-    const rosterFirst = normName.split(' ')[0] || '';
-    const firstWordMatch = typedFirst.length > 0 && typedFirst === rosterFirst;
-    // Either direction — handles both partial typing ("yanira fern")
-    // and ambient extra text ("yanira fernando b").
-    const isSubstring = normName.includes(normTyped) || normTyped.includes(normName);
+    const rosterWords = nameTokens(p.name);
+    if (rosterWords.length === 0) continue;
 
-    let reason: string | null = null;
-    if (nameDist === 0) reason = 'Exact name';
-    else if (isSubstring) reason = 'Substring match';
-    else if (nameDist <= 5) reason = `Name distance ${nameDist}`;
-    else if (firstWordMatch) reason = 'First-name match';
-
-    if (reason !== null) {
-      candidates.push({
-        patientId: p.id,
-        patientName: p.name,
-        patientDob: p.dob,
-        score: nameDist,
-        reason,
-      });
+    let matchedWords = 0;
+    let totalDist = 0;
+    for (const tw of typedWords) {
+      const { dist, matched } = bestWordMatch(tw, rosterWords);
+      if (matched) {
+        matchedWords++;
+        totalDist += dist;
+      }
     }
+
+    // 1-2 typed words: need them all. 3+: need at least half. Stops
+    // single-word typos from accidentally claiming a patient with a
+    // similar-sounding name on the wrong side of a "yes that's the
+    // right person" judgment, while still being forgiving when the
+    // nurse types a longer query with some words wrong.
+    const requiredMatches =
+      typedWords.length <= 2 ? typedWords.length : Math.ceil(typedWords.length * 0.5);
+    if (matchedWords < requiredMatches) continue;
+
+    const unmatched = typedWords.length - matchedWords;
+    const score = totalDist + unmatched * 10;
+
+    let reason: string;
+    if (totalDist === 0 && unmatched === 0) {
+      reason = 'Exact word match';
+    } else if (unmatched === 0) {
+      reason = `${matchedWords} word${matchedWords === 1 ? '' : 's'} matched (typo)`;
+    } else {
+      reason = `${matchedWords}/${typedWords.length} words matched`;
+    }
+
+    candidates.push({
+      patientId: p.id,
+      patientName: p.name,
+      patientDob: p.dob,
+      score,
+      reason,
+    });
   }
 
   candidates.sort((a, b) => a.score - b.score);

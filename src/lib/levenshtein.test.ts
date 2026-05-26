@@ -207,4 +207,44 @@ describe('findNameCandidates (name-only, form-side)', () => {
     expect(result[0].patientId).toBe('a');
     expect(result[1].patientId).toBe('b');
   });
+
+  // The regression that drove the per-word matching rewrite: nurse
+  // types a typo in the first name AND truncates the last name
+  // ("yanra fern" instead of "Yanira Fernando-Bautista"). Whole-string
+  // Levenshtein punishes this combo too harshly (distance ~14); per-word
+  // matching recognizes each word individually.
+  it('finds the right patient with first-name typo + truncated last name', () => {
+    const result = findNameCandidates('yanra fern', roster);
+    expect(result.length).toBeGreaterThan(0);
+    expect(result[0].patientId).toBe('p1');
+  });
+
+  it('finds the right patient on prefix of just first name', () => {
+    const result = findNameCandidates('yan', roster);
+    expect(result.length).toBeGreaterThan(0);
+    expect(result[0].patientId).toBe('p1');
+  });
+
+  it('finds the right patient with last name typo only', () => {
+    // "yanira fernanda" — first name exact, last name 1-char typo
+    const result = findNameCandidates('yanira fernanda', roster);
+    expect(result[0].patientId).toBe('p1');
+  });
+
+  it('does not surface a different patient on mostly-mismatched words', () => {
+    // "tora vinson" should match Tora, not Yanira
+    const r: RosterPatientLite[] = [
+      { id: 'p1', name: 'Yanira Fernando-Bautista', dob: '2022-02-18' },
+      { id: 'p2', name: 'Tora Vinson', dob: '2018-02-22' },
+    ];
+    const result = findNameCandidates('tora vinson', r, 3);
+    expect(result[0].patientId).toBe('p2');
+    const ids = result.map((c) => c.patientId);
+    expect(ids).not.toContain('p1');
+  });
+
+  it('does not require a DOB to be present anywhere in the call', () => {
+    // Sanity: the function signature really is name-only — no `typedDob`.
+    expect(findNameCandidates('yanira', roster).length).toBeGreaterThan(0);
+  });
 });
