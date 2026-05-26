@@ -6,6 +6,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { Archive as ArchiveIcon, Download, RotateCcw, X, Search, Plus, CheckCircle2 } from 'lucide-react';
 import {
   getSubmissions,
+  getNurseAccessibleSubmissions,
   setSubmissionsArchive,
   needsCosign,
   type ArchiveView,
@@ -26,7 +27,13 @@ import { useAuth } from '@/components/AuthProvider';
 const MAX_BATCH = 50;
 const PAGE_SIZE = 25;
 
-type Scope = 'active' | 'archived' | 'all';
+// 'team' is nurse-only: notes for patients she's on the care team for
+// where the AUTHOR is somebody else. Used to browse what her teammates
+// have written without her own notes mixed in. Archive state still
+// applies (uses the nurse-personal archive field), so a nurse can
+// archive a care-team note from her view without affecting anyone
+// else's. Admin/supervisor never see this scope.
+type Scope = 'active' | 'archived' | 'all' | 'team';
 type SortKey = 'submittedAt' | 'dateOfService' | 'clientName' | 'nurseName';
 type SortDir = 'asc' | 'desc';
 type DatePreset = '' | 'today' | 'week' | 'month' | '30d';
@@ -89,6 +96,8 @@ export default function SubmissionsPage() {
       ? 'archived'
       : searchParams.get('view') === 'all'
       ? 'all'
+      : searchParams.get('view') === 'team'
+      ? 'team'
       : 'active';
   const qParam = searchParams.get('q') ?? '';
   const sortParam = (searchParams.get('sort') as SortKey) || 'submittedAt';
@@ -146,8 +155,16 @@ export default function SubmissionsPage() {
 
   const reloadSubmissions = useCallback(async () => {
     if (!user) return;
-    const options = isNurse ? { nurseId: user.uid } : undefined;
-    setAllSubmissions(await getSubmissions(options));
+    // Nurses see two slices: their own authored notes PLUS any notes
+    // for patients on their care team (Phase 3 visibility). The
+    // multi-query helper handles the merge so the dashboard can keep
+    // treating the result as a single flat list. Admin/supervisor
+    // still get the full set via the unscoped path.
+    if (isNurse) {
+      setAllSubmissions(await getNurseAccessibleSubmissions(user.uid));
+    } else {
+      setAllSubmissions(await getSubmissions());
+    }
   }, [isNurse, user]);
 
   useEffect(() => {
@@ -230,19 +247,41 @@ export default function SubmissionsPage() {
   }, [isRn, authLoading]);
 
   // Scope filter (independent per role).
+  // The 'team' scope is nurse-only — it shows notes for patients
+  // she's on the care team for BUT was authored by someone else.
+  // Archive state still applies via the nurse-personal archive field
+  // so a nurse can hide team notes from her view without affecting
+  // anyone else.
   const scoped = useMemo(() => {
     const key: 'archivedAt' | 'nurseArchivedAt' = isNurse ? 'nurseArchivedAt' : 'archivedAt';
+    if (scope === 'team') {
+      const myUid = user?.uid;
+      return allSubmissions.filter(
+        (s) => s[key] == null && s.nurseId && s.nurseId !== myUid,
+      );
+    }
     if (scope === 'all') return allSubmissions;
     return allSubmissions.filter((s) =>
       scope === 'archived' ? s[key] != null : s[key] == null
     );
-  }, [allSubmissions, scope, isNurse]);
+  }, [allSubmissions, scope, isNurse, user?.uid]);
 
   const activeCount = useMemo(() => {
     const key: 'archivedAt' | 'nurseArchivedAt' = isNurse ? 'nurseArchivedAt' : 'archivedAt';
     return allSubmissions.filter((s) => s[key] == null).length;
   }, [allSubmissions, isNurse]);
   const archivedCount = allSubmissions.length - activeCount;
+  // Team count: only relevant for nurses. Counts active (non-personally-
+  // archived) notes authored by other care-team members. Used to label
+  // the Care team tab and to suppress the tab entirely when she has no
+  // team-visible notes yet.
+  const teamCount = useMemo(() => {
+    if (!isNurse) return 0;
+    const myUid = user?.uid;
+    return allSubmissions.filter(
+      (s) => s.nurseArchivedAt == null && s.nurseId && s.nurseId !== myUid,
+    ).length;
+  }, [allSubmissions, isNurse, user?.uid]);
 
   // List of unique nurses for the admin filter dropdown.
   const nurseOptions = useMemo(() => {
@@ -749,6 +788,21 @@ export default function SubmissionsPage() {
           >
             All <span style={tabCountStyle}>{allSubmissions.length}</span>
           </button>
+          {/* Care team tab — nurse-only. Surfaces notes for patients
+              she's on the care team for that were authored by other
+              nurses (Phase 3 cross-nurse visibility). */}
+          {isNurse && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={scope === 'team'}
+              onClick={() => setScope('team')}
+              style={scope === 'team' ? tabActiveStyle : tabStyle}
+              title="Notes from other nurses on patients you also work with"
+            >
+              Care team <span style={tabCountStyle}>{teamCount}</span>
+            </button>
+          )}
         </div>
 
         {/* Filter bar */}
@@ -1134,7 +1188,16 @@ export default function SubmissionsPage() {
                             style={checkboxStyle}
                           />
                         </td>
-                        <td style={tdStyle}>{s.dateOfService}</td>
+                        <td style={tdStyle}>
+                          {s.dateOfService}
+                          {/* Care-team marker — visible only to nurses
+                              looking at notes someone else authored.
+                              Subtle subtext under the date keeps the
+                              column compact without adding a new one. */}
+                          {isNurse && s.nurseId && s.nurseId !== user?.uid && (
+                            <div style={byOtherNurseStyle}>by {s.nurseName || 'another nurse'}</div>
+                          )}
+                        </td>
                         <td style={tdStyle}>{s.clientName}</td>
                         <td style={tdStyle}>{s.nurseName}</td>
                         <td style={tdStyle}>
@@ -1187,22 +1250,31 @@ export default function SubmissionsPage() {
                                 Co-sign
                               </Link>
                             )}
-                            {rowArchived ? (
-                              <button
-                                onClick={() => handleRowArchive(s, 'restore')}
-                                style={rowArchiveBtnStyle}
-                                disabled={busy}
-                              >
-                                Restore
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => handleRowArchive(s, 'archive')}
-                                style={rowArchiveBtnStyle}
-                                disabled={busy}
-                              >
-                                Archive
-                              </button>
+                            {/* Archive button gated for nurses to own notes only.
+                                The personal-archive field (nurseArchivedAt) lives
+                                on the note doc itself — there's no per-nurse view
+                                state — so a nurse archiving a teammate's note would
+                                hide it from the teammate too. Firestore rules also
+                                deny the write. Cleaner to just hide the button on
+                                care-team rows; admin/supervisor still see it. */}
+                            {(!isNurse || !s.nurseId || s.nurseId === user?.uid) && (
+                              rowArchived ? (
+                                <button
+                                  onClick={() => handleRowArchive(s, 'restore')}
+                                  style={rowArchiveBtnStyle}
+                                  disabled={busy}
+                                >
+                                  Restore
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleRowArchive(s, 'archive')}
+                                  style={rowArchiveBtnStyle}
+                                  disabled={busy}
+                                >
+                                  Archive
+                                </button>
+                              )
                             )}
                           </div>
                         </td>
@@ -1837,6 +1909,17 @@ const checkboxStyle: React.CSSProperties = {
   width: 16,
   height: 16,
   cursor: 'pointer',
+};
+
+// Subtle "by Andrea Hall" subtext rendered under the date-of-service
+// cell on rows whose author is somebody other than the current nurse.
+// Communicates "this is a teammate's note" at a glance without adding
+// another column.
+const byOtherNurseStyle: React.CSSProperties = {
+  fontSize: 11,
+  color: '#7f8c8d',
+  marginTop: 2,
+  fontStyle: 'italic',
 };
 
 const paginationStyle: React.CSSProperties = {

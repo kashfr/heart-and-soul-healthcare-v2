@@ -193,6 +193,59 @@ export async function saveSubmission(
   }
 }
 
+// "No incident" sentinel values from the radio options — treat as clean.
+// Shared between getSubmissions and the care-team variant via the
+// mapping helper below.
+const NO_INCIDENT_VALUES = new Set([
+  '',
+  'none',
+  'no',
+  'no incidents',
+  'no incident',
+  'n/a',
+  'na',
+]);
+
+// Map a single progressNotes Firestore doc to the dashboard's
+// SubmissionSummary shape. Extracted so getSubmissions +
+// getNurseAccessibleSubmissions agree on every derived field
+// (hasIncident, hasAbnormalVitals, cosigned info, etc.). Update one
+// place, not two.
+function mapDocToSummary(d: {
+  id: string;
+  data(): Record<string, unknown>;
+}): SubmissionSummary {
+  const data = d.data();
+  const submittedAt = data.submittedAt as Timestamp | null;
+  const archivedAt = data.archivedAt as Timestamp | null | undefined;
+  const nurseArchivedAt = data.nurseArchivedAt as Timestamp | null | undefined;
+  const incidentType = String(data.q56_incidents || '').trim();
+  const incidentDetails = String(data.q57_incidentDetails || '').trim();
+  const hasIncident = Boolean(
+    incidentDetails || !NO_INCIDENT_VALUES.has(incidentType.toLowerCase())
+  );
+  const cosignedAt = data.cosignedAt as Timestamp | null | undefined;
+  return {
+    id: d.id,
+    clientName: (data.q3_clientName as string) || '',
+    nurseName: (data.q11_nurseName as string) || '',
+    credential: (data.q12_credential as string) || '',
+    nurseId: (data.nurseId as string) || '',
+    diagnosis: (data.q10_primaryDiagnosis as string) || '',
+    dateOfService: formatDateUS((data.q6_dateofService as string) || ''),
+    submittedAt: submittedAt ? submittedAt.toDate() : null,
+    status: (data.status as string) || 'submitted',
+    archivedAt: archivedAt ? archivedAt.toDate() : null,
+    nurseArchivedAt: nurseArchivedAt ? nurseArchivedAt.toDate() : null,
+    hasAbnormalVitals: hasAnyAbnormalVital(data),
+    hasIncident,
+    physicianNotified: String(data.q52_physicianNotify || '').toLowerCase() === 'yes',
+    cosignedAt: cosignedAt ? cosignedAt.toDate() : null,
+    cosignedByName: (data.cosignedByName as string) || '',
+    cosignedCredential: (data.cosignedCredential as string) || '',
+  };
+}
+
 /**
  * Get progress note submissions, ordered by date descending.
  * Pass { nurseId } to scope the list to a single nurse (used by nurses viewing
@@ -206,47 +259,7 @@ export async function getSubmissions(options?: { nurseId?: string }): Promise<Su
       : query(notesRef, orderBy('submittedAt', 'desc'));
     const snapshot = await getDocs(q);
 
-    const rows = snapshot.docs.map((d) => {
-      const data = d.data();
-      const submittedAt = data.submittedAt as Timestamp | null;
-      const archivedAt = data.archivedAt as Timestamp | null | undefined;
-      const nurseArchivedAt = data.nurseArchivedAt as Timestamp | null | undefined;
-      const incidentType = String(data.q56_incidents || '').trim();
-      const incidentDetails = String(data.q57_incidentDetails || '').trim();
-      // "No incident" sentinel values from the radio options — treat as clean.
-      const NO_INCIDENT_VALUES = new Set([
-        '',
-        'none',
-        'no',
-        'no incidents',
-        'no incident',
-        'n/a',
-        'na',
-      ]);
-      const hasIncident = Boolean(
-        incidentDetails || !NO_INCIDENT_VALUES.has(incidentType.toLowerCase())
-      );
-      const cosignedAt = data.cosignedAt as Timestamp | null | undefined;
-      return {
-        id: d.id,
-        clientName: data.q3_clientName || '',
-        nurseName: data.q11_nurseName || '',
-        credential: data.q12_credential || '',
-        nurseId: data.nurseId || '',
-        diagnosis: data.q10_primaryDiagnosis || '',
-        dateOfService: formatDateUS(data.q6_dateofService || ''),
-        submittedAt: submittedAt ? submittedAt.toDate() : null,
-        status: data.status || 'submitted',
-        archivedAt: archivedAt ? archivedAt.toDate() : null,
-        nurseArchivedAt: nurseArchivedAt ? nurseArchivedAt.toDate() : null,
-        hasAbnormalVitals: hasAnyAbnormalVital(data),
-        hasIncident,
-        physicianNotified: String(data.q52_physicianNotify || '').toLowerCase() === 'yes',
-        cosignedAt: cosignedAt ? cosignedAt.toDate() : null,
-        cosignedByName: data.cosignedByName || '',
-        cosignedCredential: data.cosignedCredential || '',
-      };
-    });
+    const rows = snapshot.docs.map((d) => mapDocToSummary(d));
 
     // When filtering by nurseId we skip the orderBy (avoids needing a composite
     // index) and sort client-side instead.
@@ -256,6 +269,79 @@ export async function getSubmissions(options?: { nurseId?: string }): Promise<Su
     return rows;
   } catch (error) {
     console.error('Error fetching submissions:', error);
+    return [];
+  }
+}
+
+// Firestore caps `in` queries at 30 values. We chunk patientIds at
+// that boundary when querying the care-team's notes; anything above
+// would fire as separate query batches.
+const FIRESTORE_IN_LIMIT = 30;
+
+/**
+ * Get every progress note this nurse is allowed to read — her own
+ * authored notes PLUS notes for any patient she's on the care team
+ * for. Powers the nurse view of /admin/submissions in Phase 3.
+ *
+ * Three reads:
+ *   1. patients where assignedNurseIds array-contains uid → collect
+ *      patientIds she has team access to.
+ *   2. progressNotes where nurseId == uid → her authored set
+ *      (covers notes with NO patientId — those stay author-only).
+ *   3. progressNotes where patientId in [chunk] → care-team notes,
+ *      chunked at the Firestore `in` cap.
+ *
+ * Merged by doc id (set-based dedupe so notes she authored for a
+ * care-team patient aren't double-counted), then sorted by
+ * submittedAt descending client-side. Each row maps to the same
+ * SubmissionSummary shape as getSubmissions — no new fields, so
+ * downstream filters/scopes work unchanged.
+ *
+ * Aligned with the Firestore rule's allow-read disjuncts: any note
+ * fetched here is either author-matched or care-team-matched.
+ */
+export async function getNurseAccessibleSubmissions(uid: string): Promise<SubmissionSummary[]> {
+  try {
+    // Step 1: which patients is this nurse on the care team for?
+    const patientsSnap = await getDocs(
+      query(collection(db, 'patients'), where('assignedNurseIds', 'array-contains', uid)),
+    );
+    const teamPatientIds = patientsSnap.docs.map((d) => d.id);
+
+    // Step 2: her own authored notes. Always runs even if step 1 is
+    // empty — she has notes she wrote regardless of any patient links.
+    const authoredSnap = await getDocs(
+      query(collection(db, 'progressNotes'), where('nurseId', '==', uid)),
+    );
+
+    // Step 3: care-team notes via patientId. Skipped when step 1 was
+    // empty (no team patients → no extra notes to fetch).
+    const teamChunks: Array<ReturnType<typeof mapDocToSummary>[]> = [];
+    for (let i = 0; i < teamPatientIds.length; i += FIRESTORE_IN_LIMIT) {
+      const chunk = teamPatientIds.slice(i, i + FIRESTORE_IN_LIMIT);
+      const snap = await getDocs(
+        query(collection(db, 'progressNotes'), where('patientId', 'in', chunk)),
+      );
+      teamChunks.push(snap.docs.map((d) => mapDocToSummary(d)));
+    }
+
+    // Merge + dedupe by note id. A note authored by this nurse for a
+    // care-team patient would otherwise appear in both step 2 and
+    // step 3.
+    const seen = new Set<string>();
+    const merged: SubmissionSummary[] = [];
+    for (const row of [...authoredSnap.docs.map((d) => mapDocToSummary(d)), ...teamChunks.flat()]) {
+      if (seen.has(row.id)) continue;
+      seen.add(row.id);
+      merged.push(row);
+    }
+
+    // No composite index → sort client-side, same pattern as the
+    // nurseId-filtered path of getSubmissions.
+    merged.sort((a, b) => (b.submittedAt?.getTime() ?? 0) - (a.submittedAt?.getTime() ?? 0));
+    return merged;
+  } catch (error) {
+    console.error('Error fetching nurse-accessible submissions:', error);
     return [];
   }
 }

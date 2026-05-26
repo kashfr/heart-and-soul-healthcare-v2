@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Search, Pencil, Trash2 } from 'lucide-react';
+import { ArrowLeft, Plus, Search, Pencil, Trash2, X, UserPlus } from 'lucide-react';
+import { arrayUnion, arrayRemove, doc, updateDoc } from 'firebase/firestore';
 import {
   Patient,
   addPatient,
@@ -10,6 +11,19 @@ import {
   removePatient,
   updatePatient,
 } from '@/lib/patients';
+import { db } from '@/lib/firebase';
+import { authedFetch } from '@/lib/authedFetch';
+
+// Shape returned by GET /api/admin/users — only the fields the care
+// team picker actually consumes.
+interface CareTeamStaff {
+  uid: string;
+  displayName: string | null;
+  email: string | null;
+  role: string;
+  credential: string | null;
+  active: boolean;
+}
 
 const emptyPatient: Partial<Patient> = {
   name: '',
@@ -55,6 +69,16 @@ export default function AdminPatientsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [query, setQuery] = useState('');
   const [toast, setToast] = useState<string | null>(null);
+  // Care team state — populated when the edit modal opens for an
+  // existing patient. Lives separately from formData because the chip
+  // add/remove writes go to Firestore immediately (no Save-button
+  // gating) so the UI feels snappy and the changes survive a
+  // Cancel of the rest of the modal.
+  const [staffList, setStaffList] = useState<CareTeamStaff[]>([]);
+  const [careTeam, setCareTeam] = useState<string[]>([]);
+  const [savingCareTeam, setSavingCareTeam] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState('');
 
   const todayISO = useMemo(() => {
     const d = new Date();
@@ -70,6 +94,40 @@ export default function AdminPatientsPage() {
       }
     })();
   }, []);
+
+  // Fetch the staff list lazily the first time the modal opens — it's
+  // only needed by the care team picker, which only renders in the
+  // edit flow. Cached for the rest of the page's lifetime.
+  useEffect(() => {
+    if (!formOpen || staffList.length > 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authedFetch('/api/admin/users');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setStaffList(data.users || []);
+      } catch (err) {
+        console.error('Failed to load staff list for care team:', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [formOpen, staffList.length]);
+
+  // Initialize the care-team chip list from the patient being edited.
+  // Resets on close + on add-patient (new patient has no team yet).
+  useEffect(() => {
+    if (!formOpen || !editingId) {
+      setCareTeam([]);
+      setPickerOpen(false);
+      setPickerQuery('');
+      return;
+    }
+    const patient = patients.find((p) => p.id === editingId);
+    setCareTeam(patient?.assignedNurseIds ?? []);
+  }, [formOpen, editingId, patients]);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -113,6 +171,87 @@ export default function AdminPatientsPage() {
       }
     } catch {
       showToast('Failed to remove patient.');
+    }
+  };
+
+  // Care-team helpers — kept right next to the modal handlers since
+  // they share editingId + patients state.
+  // Anyone who can author a note is a valid care-team member: that's
+  // staff with a credential set (RN/LPN/CNA/HHA) plus admins. Filters
+  // out inactive accounts so demoted users don't surface as options.
+  const eligibleStaff = useMemo(
+    () => staffList.filter((s) => s.active && (!!s.credential || s.role === 'admin')),
+    [staffList],
+  );
+  const careTeamMembers = useMemo(
+    () =>
+      careTeam
+        .map((uid) => eligibleStaff.find((s) => s.uid === uid))
+        .filter((s): s is CareTeamStaff => !!s),
+    [careTeam, eligibleStaff],
+  );
+  const addableStaff = useMemo(() => {
+    const onTeam = new Set(careTeam);
+    const q = pickerQuery.trim().toLowerCase();
+    return eligibleStaff
+      .filter((s) => !onTeam.has(s.uid))
+      .filter((s) => {
+        if (!q) return true;
+        const hay = `${s.displayName || ''} ${s.email || ''} ${s.credential || ''}`.toLowerCase();
+        return hay.includes(q);
+      });
+  }, [eligibleStaff, careTeam, pickerQuery]);
+
+  const handleAddNurse = async (uid: string) => {
+    if (!editingId || careTeam.includes(uid)) return;
+    setSavingCareTeam(true);
+    try {
+      await updateDoc(doc(db, 'patients', editingId), {
+        assignedNurseIds: arrayUnion(uid),
+      });
+      setCareTeam((prev) => (prev.includes(uid) ? prev : [...prev, uid]));
+      // Keep the page's in-memory roster in sync so the chip count is
+      // right after the modal closes without a refetch.
+      setPatients((prev) =>
+        prev.map((p) =>
+          p.id === editingId
+            ? { ...p, assignedNurseIds: [...(p.assignedNurseIds || []), uid] }
+            : p,
+        ),
+      );
+      setPickerOpen(false);
+      setPickerQuery('');
+    } catch (err) {
+      console.error('Failed to add nurse to care team:', err);
+      showToast('Failed to add nurse.');
+    } finally {
+      setSavingCareTeam(false);
+    }
+  };
+
+  const handleRemoveNurse = async (uid: string) => {
+    if (!editingId) return;
+    setSavingCareTeam(true);
+    try {
+      await updateDoc(doc(db, 'patients', editingId), {
+        assignedNurseIds: arrayRemove(uid),
+      });
+      setCareTeam((prev) => prev.filter((u) => u !== uid));
+      setPatients((prev) =>
+        prev.map((p) =>
+          p.id === editingId
+            ? {
+                ...p,
+                assignedNurseIds: (p.assignedNurseIds || []).filter((u) => u !== uid),
+              }
+            : p,
+        ),
+      );
+    } catch (err) {
+      console.error('Failed to remove nurse from care team:', err);
+      showToast('Failed to remove nurse.');
+    } finally {
+      setSavingCareTeam(false);
     }
   };
 
@@ -337,6 +476,104 @@ export default function AdminPatientsPage() {
                 </Field>
               </div>
 
+              {/* Care team — visible only when editing an existing
+                  patient (a brand-new patient has no id yet to attach
+                  arrayUnion writes to). Chip add / remove writes go
+                  to Firestore immediately; no Save-button gating.
+                  Phase 3 of the care-team feature. */}
+              {editingId && (
+                <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #f1f3f5' }}>
+                  <div style={careTeamHeaderStyle}>Care team</div>
+                  <div style={careTeamHelpStyle}>
+                    Nurses on this list can read every progress note for this patient (regardless of who wrote it). They can&apos;t edit each other&apos;s notes.
+                  </div>
+                  <div style={chipsRowStyle}>
+                    {careTeamMembers.length === 0 ? (
+                      <span style={emptyCareTeamStyle}>No nurses assigned yet.</span>
+                    ) : (
+                      careTeamMembers.map((s) => (
+                        <span key={s.uid} style={chipStyle}>
+                          {s.displayName || s.email || '(no name)'}
+                          {s.credential && (
+                            <span style={chipCredStyle}>{s.credential}</span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveNurse(s.uid)}
+                            disabled={savingCareTeam}
+                            style={chipRemoveBtnStyle}
+                            aria-label={`Remove ${s.displayName || 'nurse'}`}
+                            title="Remove from care team"
+                          >
+                            <X size={12} />
+                          </button>
+                        </span>
+                      ))
+                    )}
+                  </div>
+                  {pickerOpen ? (
+                    <div style={{ marginTop: 10 }}>
+                      <input
+                        type="text"
+                        placeholder="Type to search staff..."
+                        value={pickerQuery}
+                        onChange={(e) => setPickerQuery(e.target.value)}
+                        style={inputStyle}
+                        autoFocus
+                      />
+                      <div style={pickerListStyle}>
+                        {addableStaff.length === 0 ? (
+                          <div style={pickerEmptyStyle}>
+                            {eligibleStaff.length === 0
+                              ? 'Loading staff…'
+                              : 'No matches. Everyone eligible is already on the team.'}
+                          </div>
+                        ) : (
+                          addableStaff.map((s) => (
+                            <button
+                              key={s.uid}
+                              type="button"
+                              onClick={() => handleAddNurse(s.uid)}
+                              disabled={savingCareTeam}
+                              style={pickerItemStyle}
+                            >
+                              <span style={{ fontWeight: 600, color: '#2c3e50' }}>
+                                {s.displayName || s.email || '(no name)'}
+                              </span>
+                              {s.credential && (
+                                <span style={pickerCredStyle}>{s.credential}</span>
+                              )}
+                              {s.role === 'admin' && !s.credential && (
+                                <span style={pickerCredStyle}>ADMIN</span>
+                              )}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPickerOpen(false);
+                          setPickerQuery('');
+                        }}
+                        style={pickerCloseStyle}
+                      >
+                        Done
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setPickerOpen(true)}
+                      style={addNurseBtnStyle}
+                      disabled={savingCareTeam}
+                    >
+                      <UserPlus size={14} /> Add nurse
+                    </button>
+                  )}
+                </div>
+              )}
+
               <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
                 <button
                   type="button"
@@ -408,3 +645,19 @@ const selectStyle: React.CSSProperties = {
 };
 const gridTwoStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 };
 const toastStyle: React.CSSProperties = { position: 'fixed', bottom: 20, right: 20, background: '#2c3e50', color: 'white', padding: '10px 16px', borderRadius: 8, fontSize: 13, boxShadow: '0 8px 20px rgba(0,0,0,0.2)', zIndex: 1100 };
+
+// Care team styles. Used in the edit-patient modal's "Care team"
+// section to render assigned nurses as chips + the add-nurse picker.
+const careTeamHeaderStyle: React.CSSProperties = { fontSize: 13, fontWeight: 700, color: '#2c3e50', marginBottom: 4 };
+const careTeamHelpStyle: React.CSSProperties = { fontSize: 12, color: '#7f8c8d', marginBottom: 10, lineHeight: 1.5 };
+const chipsRowStyle: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 };
+const emptyCareTeamStyle: React.CSSProperties = { fontSize: 13, color: '#7f8c8d', fontStyle: 'italic' };
+const chipStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#eef4fb', color: '#1a3a5c', padding: '6px 6px 6px 12px', borderRadius: 999, fontSize: 13, border: '1px solid #c8def5' };
+const chipCredStyle: React.CSSProperties = { fontSize: 10, fontWeight: 700, background: '#1a3a5c', color: 'white', padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4 };
+const chipRemoveBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', color: '#1a3a5c', border: 'none', padding: 2, borderRadius: 999, cursor: 'pointer' };
+const addNurseBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', color: '#0e7c4a', border: '1px dashed #0e7c4a', padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
+const pickerListStyle: React.CSSProperties = { marginTop: 8, maxHeight: 200, overflowY: 'auto', border: '1px solid #e5eaf0', borderRadius: 6, background: 'white' };
+const pickerEmptyStyle: React.CSSProperties = { padding: '10px 12px', color: '#7f8c8d', fontSize: 13, fontStyle: 'italic' };
+const pickerItemStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', borderBottom: '1px solid #f1f3f5', padding: '10px 12px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' };
+const pickerCredStyle: React.CSSProperties = { fontSize: 10, fontWeight: 700, background: '#1a3a5c', color: 'white', padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4, marginLeft: 'auto' };
+const pickerCloseStyle: React.CSSProperties = { marginTop: 8, background: 'transparent', border: 'none', color: '#5c6b7a', fontSize: 13, fontWeight: 600, cursor: 'pointer', padding: '4px 0', fontFamily: 'inherit' };

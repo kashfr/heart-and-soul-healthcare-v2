@@ -62,16 +62,11 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         setNotFound(true);
         return;
       }
-      // Nurses can only view their own notes. The Firestore rules enforce
-      // this, but we also check client-side to render a clean 'not found'
-      // page instead of a permission error if a nurse visits a bad URL.
-      if (isNurse && user) {
-        const nurseId = (data as unknown as Record<string, string>).nurseId;
-        if (nurseId !== user.uid) {
-          setNotFound(true);
-          return;
-        }
-      }
+      // Nurses can view their own notes AND notes for patients they're
+      // on the care team for (Phase 3). The Firestore rules enforce both
+      // — if she has access to neither, getSubmission would have returned
+      // null via the catch above and we'd already be on the not-found
+      // path. No explicit author check needed here.
       setFormData(data);
     } catch (error) {
       console.error('Failed to load submission:', error);
@@ -177,6 +172,15 @@ export default function SubmissionDetailPage({ params }: PageProps) {
   // - staff see the staff archive state
   // - nurses see their personal archive state
   const isArchivedForViewer = isNurse ? nurseArchived : staffArchived;
+
+  // Care-team read access (Phase 3) means a nurse can land on this page
+  // for a note she didn't author. She can read it, but Edit + personal-
+  // archive are gated to the original author. Firestore rules already
+  // deny non-author writes; these checks make the UI honest about it.
+  const noteAuthorUid = (rawData as Record<string, string>).nurseId || '';
+  const isAuthor = !!user && noteAuthorUid === user.uid;
+  const canEdit = !isNurse || isAuthor;
+  const canPersonallyArchive = !isNurse || isAuthor;
 
   const credential = data.q12_credential || '';
   const isLpnRn = /^(LPN|RN)$/i.test(credential);
@@ -365,9 +369,11 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             &larr; Back to Submissions
           </Link>
           <div style={{ display: 'flex', gap: 10 }}>
-            <Link href={`/progress-note?edit=${id}`} style={editBtnStyle}>
-              Edit
-            </Link>
+            {canEdit && (
+              <Link href={`/progress-note?edit=${id}`} style={editBtnStyle}>
+                Edit
+              </Link>
+            )}
             <button
               onClick={handleDownloadPdf}
               disabled={downloadingPdf}
@@ -375,20 +381,22 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             >
               {downloadingPdf ? 'Generating PDF…' : 'Download PDF'}
             </button>
-            {isArchivedForViewer ? (
-              <button
-                onClick={() => handleArchiveToggle('restore')}
-                style={editBtnStyle}
-              >
-                Restore
-              </button>
-            ) : (
-              <button
-                onClick={() => handleArchiveToggle('archive')}
-                style={editBtnStyle}
-              >
-                Archive
-              </button>
+            {canPersonallyArchive && (
+              isArchivedForViewer ? (
+                <button
+                  onClick={() => handleArchiveToggle('restore')}
+                  style={editBtnStyle}
+                >
+                  Restore
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleArchiveToggle('archive')}
+                  style={editBtnStyle}
+                >
+                  Archive
+                </button>
+              )
             )}
           </div>
         </div>
