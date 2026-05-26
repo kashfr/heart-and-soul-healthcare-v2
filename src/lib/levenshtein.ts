@@ -78,14 +78,20 @@ export interface MatchCandidate {
 /**
  * Find roster patients that plausibly match the typed name + DOB.
  *
- * Three signals, any of which marks a patient as a candidate:
+ * Four signals, any of which marks a patient as a candidate:
  *   - Exact DOB match (very strong in a roster of ~dozens)
- *   - Levenshtein name distance ≤ 3 (handles typos)
+ *   - Levenshtein name distance ≤ 5 (handles typos like "Yanra" for
+ *     "Yanira" and short truncations)
+ *   - Exact normalized name (catches missing-hyphen / casing variants)
  *   - First "word" of the typed name matches the first word of a roster
- *     name AND DOB drift ≤ 30 days (handles truncated entries like
- *     "Yanira Fernando b")
+ *     name (handles "Yanira Fernando b" → "Yanira Fernando-Bautista"
+ *     where Levenshtein is high but the first name is unmistakable).
+ *     Crucially, the first-word path does NOT require a close DOB —
+ *     nurses often type the patient name before the DOB on Page 1, and
+ *     blocking the suggestion behind DOB defeats the whole point of a
+ *     real-time prompt.
  *
- * Returns the top N candidates ranked by composite score.
+ * Returns the top N candidates ranked by composite score (lower better).
  */
 export function findPatientCandidates(
   typedName: string,
@@ -104,30 +110,34 @@ export function findPatientCandidates(
     const firstWordMatch = typedFirst.length > 0 && typedFirst === rosterFirst;
     const exactDob = dobDist === 0;
     const exactName = nameDist === 0;
+    const closeName = nameDist <= 5;
+    const closeDob = dobDist !== Infinity && dobDist <= 30;
 
     let isCandidate = false;
     const reasons: string[] = [];
 
     if (exactName && exactDob) {
-      // Already perfectly linkable — caller will handle this as a strict
-      // match before falling through to candidates, so it's harmless to
-      // skip here. Included for completeness.
       isCandidate = true;
       reasons.push('Exact match');
     } else if (exactDob) {
       isCandidate = true;
       reasons.push(exactName ? 'DOB + name exact' : 'DOB exact, name differs');
-    } else if (nameDist <= 3) {
+    } else if (closeName) {
       isCandidate = true;
-      reasons.push(`Name distance ${nameDist}`);
-      if (dobDist <= 30 && dobDist !== Infinity) reasons.push(`DOB ±${dobDist}d`);
-    } else if (firstWordMatch && dobDist <= 30) {
+      reasons.push(exactName ? 'Name exact, DOB differs' : `Name distance ${nameDist}`);
+      if (closeDob) reasons.push(`DOB ±${dobDist}d`);
+    } else if (firstWordMatch) {
       isCandidate = true;
-      reasons.push('First-name match + close DOB');
+      if (exactDob) reasons.push('First-name match + DOB exact');
+      else if (closeDob) reasons.push(`First-name match + DOB ±${dobDist}d`);
+      else if (dobDist === Infinity) reasons.push('First-name match, no DOB yet');
+      else reasons.push('First-name match');
     }
 
     if (isCandidate) {
-      // Composite score: name distance counts double, DOB drift capped at 30.
+      // Composite score: name distance counts double, DOB drift capped at
+      // 30. Capped Infinity → 30 keeps blank-DOB candidates sortable
+      // (otherwise they'd all tie at NaN/Infinity).
       const score = nameDist * 2 + Math.min(dobDist, 30);
       candidates.push({
         patientId: p.id,

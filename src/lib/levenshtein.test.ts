@@ -118,4 +118,36 @@ describe('findPatientCandidates', () => {
     const result = findPatientCandidates('Yanira Fernando-Bautista', '2022-02-18', roster, 1);
     expect(result.length).toBe(1);
   });
+
+  // Regression: nurses type the name BEFORE the DOB on Page 1. The
+  // banner has to surface a suggestion even when typedDob is blank,
+  // otherwise it never fires for the most common path.
+  it('still suggests on first-name match when DOB is blank', () => {
+    const result = findPatientCandidates('yanira fernando b', '', roster);
+    expect(result.length).toBeGreaterThan(0);
+    expect(result[0].patientId).toBe('p1');
+    expect(result[0].reason.toLowerCase()).toContain('first-name match');
+  });
+
+  it('suggests on partial first name even without DOB', () => {
+    // Just the first name typed
+    const result = findPatientCandidates('yanira', '', roster);
+    expect(result.length).toBeGreaterThan(0);
+    expect(result[0].patientId).toBe('p1');
+  });
+
+  it('does not surface unrelated patients on first-name miss', () => {
+    const result = findPatientCandidates('yanira fernando b', '', roster);
+    const ids = result.map((c) => c.patientId);
+    // Only Yanira should match; Tora and Sapphire have different first names.
+    expect(ids).toContain('p1');
+    expect(ids).not.toContain('p2');
+    expect(ids).not.toContain('p3');
+  });
+
+  it('handles the small-typo case ("Yanra" for "Yanira") via widened name distance', () => {
+    // "yanra fernando-bautista" vs "yanira fernando-bautista" — distance 1
+    const result = findPatientCandidates('Yanra Fernando-Bautista', '2022-02-18', roster);
+    expect(result[0].patientId).toBe('p1');
+  });
 });
