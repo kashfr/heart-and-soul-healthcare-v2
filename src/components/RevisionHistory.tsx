@@ -5,7 +5,19 @@ import { History, ChevronDown, ChevronRight } from 'lucide-react';
 import { getEditHistory, type EditHistoryEntry } from '@/lib/submissions';
 import type { Role } from '@/lib/auth';
 
+// Field names whose camelCase doesn't decompose cleanly via the regex
+// splitter below ("dateofBirth" would otherwise read as "Dateof Birth"
+// because the splitter only breaks on capital letters). Add a mapping
+// here for any new offenders that show up in the revision-history UI.
+const FIELD_LABEL_OVERRIDES: Record<string, string> = {
+  q4_dateofBirth: 'Date of Birth',
+  q6_dateofService: 'Date of Service',
+  q200_addr_line1: 'Address Line 1',
+  q200_postal: 'Postal Code',
+};
+
 function prettyFieldName(key: string): string {
+  if (FIELD_LABEL_OVERRIDES[key]) return FIELD_LABEL_OVERRIDES[key];
   const cleaned = key.replace(/^q\d+_/, '').replace(/_/g, ' ');
   return cleaned
     .replace(/([A-Z])/g, ' $1')
