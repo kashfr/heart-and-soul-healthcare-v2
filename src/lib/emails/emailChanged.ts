@@ -9,8 +9,13 @@
  * succeeded; this notification is best-effort.
  */
 import { Resend } from 'resend';
+import { getServerSettings } from '../settingsServer';
 
-const FROM_EMAIL = 'Heart and Soul Healthcare <notifications@heartandsoulhc.org>';
+// The actual from-email *address* stays env-pinned because changing
+// it requires DNS/SPF/DKIM updates that go beyond a settings toggle.
+// The human-readable display name (the text before the angle bracket)
+// is configurable via /admin/settings → Branding.
+const FROM_ADDRESS = 'notifications@heartandsoulhc.org';
 const SIGNIN_URL = 'https://www.heartandsoulhc.org/login';
 
 export interface EmailChangedParams {
@@ -50,7 +55,15 @@ export async function sendEmailChangedNotice({
 
   const resend = new Resend(process.env.RESEND_API_KEY);
   const firstName = displayName.split(/\s+/)[0] || displayName;
-  const subject = 'Your Heart and Soul Healthcare account email was changed';
+
+  // Branding + subject pulled from /admin/settings so admin can rename
+  // the org or tune the subject line without a deploy. mergeWithDefaults
+  // guarantees orgName + subject are non-empty strings.
+  const settings = await getServerSettings();
+  const orgName = settings.branding.orgName;
+  const fromDisplay = settings.branding.fromEmailDisplay || orgName;
+  const subject = settings.emails.subjects.emailChanged;
+  const fromEmail = `${fromDisplay} <${FROM_ADDRESS}>`;
 
   const html = `<!doctype html>
 <html>
@@ -69,7 +82,7 @@ export async function sendEmailChangedNotice({
                 <p style="margin:0 0 16px;">Hi ${escapeHtml(firstName)},</p>
                 <p style="margin:0 0 16px;">
                   An administrator (${escapeHtml(changedByName)}) just changed the email on your
-                  Heart and Soul Healthcare staff portal account. From now on you'll sign in with:
+                  ${escapeHtml(orgName)} staff portal account. From now on you'll sign in with:
                 </p>
                 <p style="margin:0 0 20px;padding:10px 14px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;color:#1a3a5c;">
                   ${escapeHtml(newEmail)}
@@ -97,11 +110,11 @@ export async function sendEmailChangedNotice({
   </body>
 </html>`;
 
-  const text = `Hi ${firstName},\n\nAn administrator (${changedByName}) just changed the email on your Heart and Soul Healthcare staff portal account. From now on you'll sign in with:\n\n  ${newEmail}\n\nYour password and all of your existing notes are unchanged.\n\nIf you did NOT request this change, contact your administrator immediately.\n\nSign in at ${SIGNIN_URL}`;
+  const text = `Hi ${firstName},\n\nAn administrator (${changedByName}) just changed the email on your ${orgName} staff portal account. From now on you'll sign in with:\n\n  ${newEmail}\n\nYour password and all of your existing notes are unchanged.\n\nIf you did NOT request this change, contact your administrator immediately.\n\nSign in at ${SIGNIN_URL}`;
 
   try {
     const { error } = await resend.emails.send({
-      from: FROM_EMAIL,
+      from: fromEmail,
       to,
       subject,
       html,

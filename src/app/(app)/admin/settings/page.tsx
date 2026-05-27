@@ -119,6 +119,31 @@ export default function AdminSettingsPage() {
     });
   };
 
+  const updateBranding = <K extends keyof AppSettings['branding']>(
+    key: K,
+    value: AppSettings['branding'][K],
+  ) => {
+    setDirty(true);
+    setDraft((prev) => ({
+      ...prev,
+      branding: { ...prev.branding, [key]: value },
+    }));
+  };
+
+  const updateEmailSubject = <K extends keyof AppSettings['emails']['subjects']>(
+    key: K,
+    value: string,
+  ) => {
+    setDirty(true);
+    setDraft((prev) => ({
+      ...prev,
+      emails: {
+        ...prev.emails,
+        subjects: { ...prev.emails.subjects, [key]: value },
+      },
+    }));
+  };
+
   const showToast = (kind: 'ok' | 'err', text: string) => {
     setToast({ kind, text });
     setTimeout(() => setToast(null), 3000);
@@ -448,6 +473,99 @@ export default function AdminSettingsPage() {
                 </div>
               );
             })}
+          </div>
+        </section>
+
+        {/* --- Branding & emails --- */}
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Branding &amp; emails</h2>
+          <p style={sectionSubStyle}>
+            Org-identity strings shown in the staff portal sidebar, on PDFs, and as the
+            human-readable part of outbound email From lines. Changes apply on the next
+            page load. The actual from-email <em>address</em> stays env-pinned because
+            changing it requires DNS / SPF / DKIM updates; only the display name (the
+            text before <code>&lt;notifications@…&gt;</code>) is editable here. The
+            public marketing site footer is not affected — that&apos;s a separate code
+            edit.
+          </p>
+
+          <div style={fieldGridStyle}>
+            <Field
+              label="Organization name"
+              hint="Used in the sidebar, PDF header, detail-view header, and email bodies."
+            >
+              <input
+                type="text"
+                value={draft.branding.orgName}
+                onChange={(e) => updateBranding('orgName', e.target.value)}
+                maxLength={80}
+                style={inputStyle}
+              />
+            </Field>
+            <Field
+              label="Tagline"
+              hint="Subtitle under the org name on PDFs and the detail-view header."
+            >
+              <input
+                type="text"
+                value={draft.branding.tagline}
+                onChange={(e) => updateBranding('tagline', e.target.value)}
+                maxLength={120}
+                style={inputStyle}
+              />
+            </Field>
+            <Field
+              label="From-email display name"
+              hint="Shown to recipients before the email address. Leave blank to fall back to the organization name."
+            >
+              <input
+                type="text"
+                value={draft.branding.fromEmailDisplay}
+                onChange={(e) => updateBranding('fromEmailDisplay', e.target.value)}
+                maxLength={80}
+                style={inputStyle}
+              />
+            </Field>
+          </div>
+
+          <h3 style={{ fontSize: 14, color: '#2c3e50', margin: '20px 0 6px' }}>
+            Email subject lines
+          </h3>
+          <p style={{ ...sectionSubStyle, marginTop: 0, marginBottom: 12 }}>
+            Password-reset emails are sent by Firebase Auth, not this app — those are
+            configured separately in Firebase Console → Authentication → Templates.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <Field label="Staff invite (welcome)">
+              <input
+                type="text"
+                value={draft.emails.subjects.staffInviteWelcome}
+                onChange={(e) => updateEmailSubject('staffInviteWelcome', e.target.value)}
+                maxLength={200}
+                style={inputStyle}
+              />
+            </Field>
+            <Field label="Staff invite (resend / fresh link)">
+              <input
+                type="text"
+                value={draft.emails.subjects.staffInviteResend}
+                onChange={(e) => updateEmailSubject('staffInviteResend', e.target.value)}
+                maxLength={200}
+                style={inputStyle}
+              />
+            </Field>
+            <Field
+              label="Email-changed security notice"
+              hint="Sent to the OLD address when admin changes a staff member's email."
+            >
+              <input
+                type="text"
+                value={draft.emails.subjects.emailChanged}
+                onChange={(e) => updateEmailSubject('emailChanged', e.target.value)}
+                maxLength={200}
+                style={inputStyle}
+              />
+            </Field>
           </div>
         </section>
 

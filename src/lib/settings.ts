@@ -139,11 +139,58 @@ export interface VitalsSettings {
   rangesByAgeGroup: VitalRangesOverride;
 }
 
+/**
+ * Org-identity strings shown to users in the staff portal, on PDFs,
+ * and as the human-readable part of outbound email From lines. The
+ * actual from-email *address* stays in code/env (changing it requires
+ * DNS/SPF/DKIM updates that a settings toggle can't perform), but the
+ * display name and the other strings here are safe to make editable.
+ *
+ * Marketing-site Footer is intentionally NOT driven by this — the
+ * marketing layout doesn't mount SettingsProvider, and these strings
+ * are SEO-relevant where static is fine. If you ever need the public
+ * site to match, do it as a code edit alongside the settings change.
+ */
+export interface BrandingSettings {
+  /** Used in the AppShell sidebar, PDF header, detail-view header, and email bodies. */
+  orgName: string;
+  /** Subtitle under orgName on PDFs + the Submissions detail header. */
+  tagline: string;
+  /**
+   * Human-readable part of the From line on outgoing emails — the
+   * text before `<notifications@…>`. Empty string is treated as
+   * "fall back to orgName" so admin can leave this blank and rely on
+   * the main name.
+   */
+  fromEmailDisplay: string;
+}
+
+/**
+ * Subject lines for outbound transactional emails sent via Resend.
+ * Password-reset emails are sent by Firebase Auth itself (configurable
+ * in Firebase Console → Authentication → Templates) — those aren't
+ * controlled here and shouldn't try to be.
+ */
+export interface EmailsSubjects {
+  /** Initial staff invitation email when a new user is added. */
+  staffInviteWelcome: string;
+  /** "Send a fresh reset link" email for an existing staff user. */
+  staffInviteResend: string;
+  /** Security notice to the OLD email address when admin changes a staff email. */
+  emailChanged: string;
+}
+
+export interface EmailsSettings {
+  subjects: EmailsSubjects;
+}
+
 export interface AppSettings {
   submissions: SubmissionsSettings;
   cosign: CosignSettings;
   patient: PatientSettings;
   vitals: VitalsSettings;
+  branding: BrandingSettings;
+  emails: EmailsSettings;
 }
 
 /**
@@ -170,6 +217,18 @@ export const DEFAULT_SETTINGS: AppSettings = {
   vitals: {
     // Empty override map → use all hard-coded defaults in vitalRanges.ts.
     rangesByAgeGroup: {},
+  },
+  branding: {
+    orgName: 'Heart and Soul Healthcare',
+    tagline: 'Compassionate Care, Professional Excellence',
+    fromEmailDisplay: 'Heart and Soul Healthcare',
+  },
+  emails: {
+    subjects: {
+      staffInviteWelcome: 'Welcome to Heart and Soul Healthcare — set up your account',
+      staffInviteResend: 'Your Heart and Soul Healthcare password reset link',
+      emailChanged: 'Your Heart and Soul Healthcare account email was changed',
+    },
   },
 };
 
@@ -218,6 +277,45 @@ export function mergeWithDefaults(partial: unknown): AppSettings {
     },
     vitals: {
       rangesByAgeGroup: sanitizeVitalOverrides(vit.rangesByAgeGroup),
+    },
+    branding: mergeBranding(p.branding),
+    emails: mergeEmails(p.emails),
+  };
+}
+
+function mergeBranding(input: unknown): BrandingSettings {
+  const src = (input ?? {}) as Partial<BrandingSettings>;
+  return {
+    orgName:
+      typeof src.orgName === 'string' && src.orgName.trim()
+        ? src.orgName.trim()
+        : DEFAULT_SETTINGS.branding.orgName,
+    tagline:
+      typeof src.tagline === 'string' ? src.tagline : DEFAULT_SETTINGS.branding.tagline,
+    fromEmailDisplay:
+      typeof src.fromEmailDisplay === 'string'
+        ? src.fromEmailDisplay
+        : DEFAULT_SETTINGS.branding.fromEmailDisplay,
+  };
+}
+
+function mergeEmails(input: unknown): EmailsSettings {
+  const src = (input ?? {}) as Partial<EmailsSettings>;
+  const subs = (src.subjects ?? {}) as Partial<EmailsSubjects>;
+  return {
+    subjects: {
+      staffInviteWelcome:
+        typeof subs.staffInviteWelcome === 'string' && subs.staffInviteWelcome.trim()
+          ? subs.staffInviteWelcome.trim()
+          : DEFAULT_SETTINGS.emails.subjects.staffInviteWelcome,
+      staffInviteResend:
+        typeof subs.staffInviteResend === 'string' && subs.staffInviteResend.trim()
+          ? subs.staffInviteResend.trim()
+          : DEFAULT_SETTINGS.emails.subjects.staffInviteResend,
+      emailChanged:
+        typeof subs.emailChanged === 'string' && subs.emailChanged.trim()
+          ? subs.emailChanged.trim()
+          : DEFAULT_SETTINGS.emails.subjects.emailChanged,
     },
   };
 }
@@ -388,6 +486,63 @@ export function validateSettings(payload: unknown): AppSettings {
             `vitals.rangesByAgeGroup.${groupKey}.${vitalKey}`,
             `low (${p.low}) cannot exceed high (${p.high}).`,
           );
+        }
+      }
+    }
+  }
+
+  if (p.branding !== undefined) {
+    const b = p.branding as Partial<BrandingSettings>;
+    if (b.orgName !== undefined) {
+      if (typeof b.orgName !== 'string') {
+        throw new SettingsValidationError('branding.orgName', 'orgName must be a string.');
+      }
+      if (b.orgName.trim() === '') {
+        throw new SettingsValidationError('branding.orgName', 'orgName cannot be empty.');
+      }
+      if (b.orgName.length > 80) {
+        throw new SettingsValidationError('branding.orgName', 'orgName is too long (max 80 chars).');
+      }
+    }
+    if (b.tagline !== undefined && typeof b.tagline !== 'string') {
+      throw new SettingsValidationError('branding.tagline', 'tagline must be a string.');
+    }
+    if (b.tagline !== undefined && b.tagline.length > 120) {
+      throw new SettingsValidationError('branding.tagline', 'tagline is too long (max 120 chars).');
+    }
+    if (b.fromEmailDisplay !== undefined && typeof b.fromEmailDisplay !== 'string') {
+      throw new SettingsValidationError(
+        'branding.fromEmailDisplay',
+        'fromEmailDisplay must be a string.',
+      );
+    }
+    if (b.fromEmailDisplay !== undefined && b.fromEmailDisplay.length > 80) {
+      throw new SettingsValidationError(
+        'branding.fromEmailDisplay',
+        'fromEmailDisplay is too long (max 80 chars).',
+      );
+    }
+  }
+
+  if (p.emails !== undefined) {
+    const e = p.emails as Partial<EmailsSettings>;
+    if (e.subjects !== undefined) {
+      const subs = e.subjects as Partial<EmailsSubjects>;
+      for (const key of ['staffInviteWelcome', 'staffInviteResend', 'emailChanged'] as const) {
+        const v = subs[key];
+        if (v !== undefined) {
+          if (typeof v !== 'string') {
+            throw new SettingsValidationError(`emails.subjects.${key}`, `${key} must be a string.`);
+          }
+          if (v.trim() === '') {
+            throw new SettingsValidationError(`emails.subjects.${key}`, `${key} cannot be empty.`);
+          }
+          if (v.length > 200) {
+            throw new SettingsValidationError(
+              `emails.subjects.${key}`,
+              `${key} is too long (max 200 chars).`,
+            );
+          }
         }
       }
     }

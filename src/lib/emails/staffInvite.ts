@@ -10,8 +10,13 @@
  * link, send manually" if Resend rejects the send.
  */
 import { Resend } from 'resend';
+import { getServerSettings } from '../settingsServer';
 
-const FROM_EMAIL = 'Heart and Soul Healthcare <notifications@heartandsoulhc.org>';
+// The actual from-email *address* stays env-pinned because changing
+// it requires DNS/SPF/DKIM updates that go beyond a settings toggle.
+// The human-readable display name (the text before the angle bracket)
+// is configurable via /admin/settings → Branding.
+const FROM_ADDRESS = 'notifications@heartandsoulhc.org';
 const SIGNIN_URL = 'https://www.heartandsoulhc.org/login';
 
 export type StaffInviteRole = 'admin' | 'supervisor' | 'nurse';
@@ -56,13 +61,20 @@ export async function sendStaffInvite({
 
   const resend = new Resend(process.env.RESEND_API_KEY);
   const firstName = displayName.split(/\s+/)[0] || displayName;
+
+  // Branding + subject pulled from /admin/settings. Lets admin rename
+  // the org or rephrase the invite subject without redeploying.
+  const settings = await getServerSettings();
+  const orgName = settings.branding.orgName;
+  const fromDisplay = settings.branding.fromEmailDisplay || orgName;
   const subject = isResend
-    ? 'Your Heart and Soul Healthcare password reset link'
-    : 'Welcome to Heart and Soul Healthcare — set up your account';
+    ? settings.emails.subjects.staffInviteResend
+    : settings.emails.subjects.staffInviteWelcome;
+  const fromEmail = `${fromDisplay} <${FROM_ADDRESS}>`;
 
   const intro = isResend
-    ? `Here's a fresh password reset link for your Heart and Soul Healthcare staff portal account.`
-    : `You've been invited to the Heart and Soul Healthcare staff portal as ${roleLabel(role)}. Click the button below to set your password and finish setting up your account.`;
+    ? `Here's a fresh password reset link for your ${orgName} staff portal account.`
+    : `You've been invited to the ${orgName} staff portal as ${roleLabel(role)}. Click the button below to set your password and finish setting up your account.`;
 
   const html = `<!doctype html>
 <html>
@@ -73,7 +85,7 @@ export async function sendStaffInvite({
           <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
             <tr>
               <td style="padding:28px 32px 8px;">
-                <h1 style="margin:0;font-size:20px;color:#1a3a5c;">${isResend ? 'Password reset link' : 'Welcome to Heart and Soul Healthcare'}</h1>
+                <h1 style="margin:0;font-size:20px;color:#1a3a5c;">${isResend ? 'Password reset link' : `Welcome to ${escapeHtml(orgName)}`}</h1>
               </td>
             </tr>
             <tr>
@@ -110,7 +122,7 @@ export async function sendStaffInvite({
 
   try {
     const { error } = await resend.emails.send({
-      from: FROM_EMAIL,
+      from: fromEmail,
       to,
       subject,
       html,

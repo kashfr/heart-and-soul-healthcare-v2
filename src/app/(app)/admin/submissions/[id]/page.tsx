@@ -405,10 +405,10 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           </div>
         </div>
 
-        {/* Header */}
+        {/* Header — org name + tagline from /admin/settings → Branding. */}
         <div style={headerStyle}>
-          <h1 style={companyNameStyle}>Heart and Soul Healthcare</h1>
-          <p style={taglineStyle}>Compassionate Care, Professional Excellence</p>
+          <h1 style={companyNameStyle}>{appSettings.branding.orgName}</h1>
+          <p style={taglineStyle}>{appSettings.branding.tagline}</p>
           <h2 style={formTitleStyle}>HOME HEALTH PROGRESS NOTE</h2>
           <p style={formDateStyle}>Form Date: {fmtDate(data.q6_dateofService) || data.q6_dateofService}</p>
           {(isNurse ? nurseArchived : staffArchived) && (
@@ -977,7 +977,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         {/* Footer */}
         <div style={footerStyle}>
           <p style={{ margin: 0 }}>
-            Confidential - Heart and Soul Healthcare | This document contains protected health information (PHI)
+            Confidential - {appSettings.branding.orgName} | This document contains protected health information (PHI)
           </p>
         </div>
 

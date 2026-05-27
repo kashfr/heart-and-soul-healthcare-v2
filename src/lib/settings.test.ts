@@ -207,4 +207,63 @@ describe('mergeWithDefaults — new settings fields', () => {
     expect(merged.vitals.rangesByAgeGroup.adult?.pulse).toBeUndefined();
     expect(merged.vitals.rangesByAgeGroup.adult?.temperature).toEqual({ low: 97, high: 99 });
   });
+
+  it('fills in default branding when absent', () => {
+    const merged = mergeWithDefaults({});
+    expect(merged.branding.orgName).toBe('Heart and Soul Healthcare');
+    expect(merged.branding.tagline).toBe('Compassionate Care, Professional Excellence');
+    expect(merged.branding.fromEmailDisplay).toBe('Heart and Soul Healthcare');
+  });
+
+  it('trims orgName and ignores empty-string overrides', () => {
+    const merged = mergeWithDefaults({ branding: { orgName: '   ' as string } });
+    // Empty/whitespace orgName falls back to the default rather than
+    // leaving the sidebar / PDF blank.
+    expect(merged.branding.orgName).toBe('Heart and Soul Healthcare');
+  });
+
+  it('preserves a trimmed orgName override', () => {
+    const merged = mergeWithDefaults({ branding: { orgName: '  Acme Home Health  ' as string } });
+    expect(merged.branding.orgName).toBe('Acme Home Health');
+  });
+
+  it('fills in default email subjects when absent', () => {
+    const merged = mergeWithDefaults({});
+    expect(merged.emails.subjects.staffInviteWelcome).toMatch(/Welcome/);
+    expect(merged.emails.subjects.emailChanged).toMatch(/email was changed/);
+  });
+});
+
+describe('validateSettings — branding + emails', () => {
+  it('rejects an empty orgName', () => {
+    expect(() => validateSettings({ branding: { orgName: '' } })).toThrow(SettingsValidationError);
+  });
+
+  it('rejects an oversized orgName', () => {
+    expect(() => validateSettings({ branding: { orgName: 'x'.repeat(100) } })).toThrow(
+      SettingsValidationError,
+    );
+  });
+
+  it('accepts a valid branding update', () => {
+    const merged = validateSettings({
+      branding: { orgName: 'Acme', tagline: 'Hello', fromEmailDisplay: 'Acme Notifications' },
+    });
+    expect(merged.branding.orgName).toBe('Acme');
+    expect(merged.branding.fromEmailDisplay).toBe('Acme Notifications');
+  });
+
+  it('rejects an empty email subject', () => {
+    expect(() =>
+      validateSettings({ emails: { subjects: { staffInviteWelcome: '   ' } } as never }),
+    ).toThrow(SettingsValidationError);
+  });
+
+  it('rejects an oversized email subject', () => {
+    expect(() =>
+      validateSettings({
+        emails: { subjects: { emailChanged: 'x'.repeat(250) } } as never,
+      }),
+    ).toThrow(SettingsValidationError);
+  });
 });

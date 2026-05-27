@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from './AuthProvider';
+import { useSettings } from './SettingsProvider';
 import UserMenu from './UserMenu';
 import type { Role } from '@/lib/auth';
 
@@ -38,6 +39,7 @@ const NAV: NavItem[] = [
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { role } = useAuth();
+  const { settings: appSettings } = useSettings();
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -75,7 +77,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Link href="/admin" className="app-shell-brand" onClick={() => setMobileOpen(false)}>
             <div>
               <div style={{ fontWeight: 700, color: '#f5f7fa', fontSize: 14, lineHeight: 1.2 }}>
-                Heart & Soul
+                {appSettings.branding.orgName}
               </div>
               <div style={{ fontSize: 11, color: '#94a3b8', lineHeight: 1.2 }}>
                 Staff portal

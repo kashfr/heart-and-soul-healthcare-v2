@@ -22,15 +22,18 @@ export async function POST(request: Request) {
   try {
     const data: ProgressNoteFormData = await request.json();
 
-    // Pull vital-range overrides so the rendered PDF flags abnormal
-    // vitals using the same thresholds the admin set in /admin/settings.
-    // Without this, the PDF's abnormal-vitals banner would lag any
-    // tuning the clinical team did.
+    // Pull vital-range overrides + branding so the rendered PDF uses
+    // the admin-configured thresholds and org name/tagline. Both are
+    // read in one settings call.
     const settings = await getServerSettings();
     const vitalsOverride = settings.vitals.rangesByAgeGroup;
+    const branding = {
+      orgName: settings.branding.orgName,
+      tagline: settings.branding.tagline,
+    };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const element = React.createElement(ProgressNotePDF, { data, vitalsOverride }) as any;
+    const element = React.createElement(ProgressNotePDF, { data, vitalsOverride, branding }) as any;
     const buffer = await renderToBuffer(element);
 
     const clientName = sanitize(data.q3_clientName || 'client');

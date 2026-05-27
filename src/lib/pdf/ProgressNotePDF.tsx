@@ -25,6 +25,16 @@ export interface ProgressNotePDFProps {
    * omitted, the PDF falls back to defaults (existing behavior).
    */
   vitalsOverride?: VitalRangesOverride;
+  /**
+   * Optional org-identity strings. Comes from /admin/settings via
+   * the PDF route. When omitted, falls back to the hardcoded
+   * "Heart and Soul Healthcare" values — preserves behavior for any
+   * call site that hasn't been threaded through settings yet.
+   */
+  branding?: {
+    orgName?: string;
+    tagline?: string;
+  };
 }
 
 // Legacy export kept so any lingering imports don't break.
@@ -625,7 +635,9 @@ const SYSTEM_ASSESSMENTS: SystemConfig[] = [
 
 // --- Main document ---
 
-export default function ProgressNotePDF({ data, vitalsOverride }: ProgressNotePDFProps) {
+export default function ProgressNotePDF({ data, vitalsOverride, branding }: ProgressNotePDFProps) {
+  const orgName = branding?.orgName || 'Heart and Soul Healthcare';
+  const tagline = branding?.tagline ?? 'Compassionate Care, Professional Excellence';
   const credential = data.q12_credential || '';
   const isLpnRn = /^(LPN|RN)$/i.test(credential);
 
@@ -639,8 +651,8 @@ export default function ProgressNotePDF({ data, vitalsOverride }: ProgressNotePD
     <Document>
       <Page size="LETTER" style={s.page}>
         <View style={s.header} fixed>
-          <Text style={s.companyName}>Heart and Soul Healthcare</Text>
-          <Text style={s.companyTagline}>Compassionate Care, Professional Excellence</Text>
+          <Text style={s.companyName}>{orgName}</Text>
+          <Text style={s.companyTagline}>{tagline}</Text>
           <Text style={s.formTitle}>Home Health Progress Note</Text>
           <Text style={s.formDate}>
             Form Date: {fmtDate(data.q6_dateofService) || data.q6_dateofService || ''}
@@ -1127,8 +1139,8 @@ export default function ProgressNotePDF({ data, vitalsOverride }: ProgressNotePD
 
         <View style={s.footer} fixed>
           <Text>
-            Confidential · Heart and Soul Healthcare · This document contains
-            protected health information (PHI)
+            Confidential · {orgName} · This document contains protected health
+            information (PHI)
           </Text>
         </View>
 
