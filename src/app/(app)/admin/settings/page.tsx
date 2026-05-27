@@ -8,10 +8,17 @@ import { useSettings } from '@/components/SettingsProvider';
 import { authedFetch } from '@/lib/authedFetch';
 import {
   DEFAULT_SETTINGS,
+  ALL_COSIGNABLE_CREDENTIALS,
+  ALL_VITAL_AGE_GROUPS,
+  ALL_VITAL_RANGE_KEYS,
   type AppSettings,
   type SubmissionsSortKey,
   type SubmissionsSortDir,
   type SubmissionsScope,
+  type CosignableCredential,
+  type VitalAgeGroupKey,
+  type VitalRangeKey,
+  type VitalRangePair,
 } from '@/lib/settings';
 
 /**
@@ -59,6 +66,57 @@ export default function AdminSettingsPage() {
       ...prev,
       submissions: { ...prev.submissions, [key]: value },
     }));
+  };
+
+  const toggleCosignCredential = (cred: CosignableCredential) => {
+    setDirty(true);
+    setDraft((prev) => {
+      const set = new Set(prev.cosign.requiredCredentials);
+      if (set.has(cred)) set.delete(cred);
+      else set.add(cred);
+      // Preserve canonical order so the saved doc stays diff-friendly.
+      const ordered = ALL_COSIGNABLE_CREDENTIALS.filter((c) => set.has(c));
+      return { ...prev, cosign: { requiredCredentials: ordered } };
+    });
+  };
+
+  const togglePatientFreeText = (allowed: boolean) => {
+    setDirty(true);
+    setDraft((prev) => ({ ...prev, patient: { allowFreeText: allowed } }));
+  };
+
+  const updateVitalRange = (
+    group: VitalAgeGroupKey,
+    vital: VitalRangeKey,
+    field: keyof VitalRangePair,
+    value: number,
+  ) => {
+    setDirty(true);
+    setDraft((prev) => {
+      const existingGroup = prev.vitals.rangesByAgeGroup[group] ?? {};
+      const existingPair = existingGroup[vital] ?? { low: 0, high: 0 };
+      return {
+        ...prev,
+        vitals: {
+          rangesByAgeGroup: {
+            ...prev.vitals.rangesByAgeGroup,
+            [group]: {
+              ...existingGroup,
+              [vital]: { ...existingPair, [field]: value },
+            },
+          },
+        },
+      };
+    });
+  };
+
+  const clearVitalOverridesForGroup = (group: VitalAgeGroupKey) => {
+    setDirty(true);
+    setDraft((prev) => {
+      const next = { ...prev.vitals.rangesByAgeGroup };
+      delete next[group];
+      return { ...prev, vitals: { rangesByAgeGroup: next } };
+    });
   };
 
   const showToast = (kind: 'ok' | 'err', text: string) => {
@@ -218,6 +276,178 @@ export default function AdminSettingsPage() {
               onChange={(checked) => updateSubmissions('rnDefaultsToNeedsCosign', checked)}
               hint="When an RN opens /admin/submissions for the first time in a session and has no filters set, drop them on the Needs co-signature view. They can still clear it any time."
             />
+          </div>
+        </section>
+
+        {/* --- Co-signature requirements --- */}
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Co-signature requirements</h2>
+          <p style={sectionSubStyle}>
+            Which clinical credentials require an RN to co-sign every submitted note. RN
+            isn&apos;t in this list — RNs can&apos;t co-sign their own work, and an RN co-
+            signing another RN doesn&apos;t add clinical value. Notes that are already
+            co-signed stay co-signed regardless of changes here.
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {ALL_COSIGNABLE_CREDENTIALS.map((cred) => (
+              <Toggle
+                key={cred}
+                label={`Require RN co-sign on ${cred} notes`}
+                checked={draft.cosign.requiredCredentials.includes(cred)}
+                onChange={() => toggleCosignCredential(cred)}
+              />
+            ))}
+          </div>
+
+          {draft.cosign.requiredCredentials.length === 0 && (
+            <div style={{ ...infoBannerStyle, marginTop: 14 }}>
+              All credentials are unchecked. No notes will be flagged as needing co-
+              signature. Existing pending co-signs will disappear from the queue and
+              filter — use this if you genuinely have no RN to co-sign work.
+            </div>
+          )}
+        </section>
+
+        {/* --- Patient roster enforcement --- */}
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Patient roster</h2>
+          <p style={sectionSubStyle}>
+            Control whether nurses can type a patient name freely, or must select from
+            the existing roster. Tightening this stops typo notes from accumulating in
+            /admin/maintenance/link-notes; loosening it lets nurses get notes in for
+            patients you haven&apos;t added to the roster yet.
+          </p>
+
+          <Toggle
+            label="Allow free-text patient names on the progress-note form"
+            checked={draft.patient.allowFreeText}
+            onChange={togglePatientFreeText}
+            hint="When OFF, nurses can't submit the form unless they pick a patient from the roster. If a nurse has a new patient who isn't in the roster yet, an admin must add them first. (Admins themselves bypass this lock so they can still submit notes for not-yet-rostered patients.)"
+          />
+        </section>
+
+        {/* --- Pediatric vital ranges --- */}
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Vital sign ranges</h2>
+          <p style={sectionSubStyle}>
+            Per-age-group thresholds for what counts as an abnormal vital. Leave a cell
+            blank to use the hard-coded default. Set both low and high to override.
+            Changes apply to the dashboard &quot;Abnormal vitals&quot; pill, the detail
+            view banner, and downloaded PDFs. The progress-note form&apos;s real-time
+            colour highlighting continues to use the hard-coded defaults — fine for the
+            nurse&apos;s rough guide, since the dashboard and PDF will re-evaluate with
+            your thresholds.
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {ALL_VITAL_AGE_GROUPS.map((group) => {
+              const groupOverrides = draft.vitals.rangesByAgeGroup[group] ?? {};
+              const hasAnyOverride = Object.keys(groupOverrides).length > 0;
+              return (
+                <div
+                  key={group}
+                  style={{
+                    border: '1px solid #e5e7eb',
+                    borderRadius: 8,
+                    padding: 14,
+                    background: '#fafbfc',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: 8,
+                    }}
+                  >
+                    <strong style={{ color: '#2c3e50', fontSize: 14 }}>
+                      {AGE_GROUP_LABELS[group]}
+                    </strong>
+                    {hasAnyOverride && (
+                      <button
+                        type="button"
+                        onClick={() => clearVitalOverridesForGroup(group)}
+                        style={{
+                          background: 'transparent',
+                          border: '1px solid #c44',
+                          color: '#c44',
+                          padding: '4px 10px',
+                          borderRadius: 4,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          fontFamily: 'inherit',
+                        }}
+                      >
+                        Reset {AGE_GROUP_LABELS[group]} to defaults
+                      </button>
+                    )}
+                  </div>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                      gap: 10,
+                    }}
+                  >
+                    {ALL_VITAL_RANGE_KEYS.map((vital) => {
+                      const pair = groupOverrides[vital];
+                      return (
+                        <div
+                          key={vital}
+                          style={{
+                            border: '1px solid #e5e7eb',
+                            borderRadius: 6,
+                            padding: '8px 10px',
+                            background: 'white',
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 700,
+                              color: '#5c6b7a',
+                              textTransform: 'uppercase',
+                              letterSpacing: 0.4,
+                              marginBottom: 4,
+                            }}
+                          >
+                            {VITAL_LABELS[vital]}
+                          </div>
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <input
+                              type="number"
+                              step="any"
+                              placeholder="low"
+                              value={pair?.low ?? ''}
+                              onChange={(e) => {
+                                const n = parseFloat(e.target.value);
+                                if (Number.isFinite(n)) updateVitalRange(group, vital, 'low', n);
+                              }}
+                              style={smallNumberInputStyle}
+                            />
+                            <span style={{ color: '#7f8c8d' }}>–</span>
+                            <input
+                              type="number"
+                              step="any"
+                              placeholder="high"
+                              value={pair?.high ?? ''}
+                              onChange={(e) => {
+                                const n = parseFloat(e.target.value);
+                                if (Number.isFinite(n)) updateVitalRange(group, vital, 'high', n);
+                              }}
+                              style={smallNumberInputStyle}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </section>
 
@@ -421,4 +651,37 @@ const toastOkStyle: React.CSSProperties = {
 const toastErrStyle: React.CSSProperties = {
   ...toastOkStyle,
   background: '#c62828',
+};
+const smallNumberInputStyle: React.CSSProperties = {
+  width: '100%',
+  minWidth: 0,
+  padding: '6px 8px',
+  border: '1px solid #d0d7de',
+  borderRadius: 4,
+  fontSize: 13,
+  fontFamily: 'inherit',
+  textAlign: 'center',
+};
+
+// Human-readable labels for the vital-range editor — mirror the
+// strings already shown elsewhere in the app (the "Ranges based on
+// age group" banner on the detail view + PDF).
+const AGE_GROUP_LABELS: Record<VitalAgeGroupKey, string> = {
+  newborn: 'Newborn (0-28 days)',
+  infant: 'Infant (1-12 months)',
+  toddler: 'Toddler (1-3 years)',
+  preschool: 'Preschool (4-5 years)',
+  schoolAge: 'School Age (6-12 years)',
+  adolescent: 'Adolescent (13-17 years)',
+  adult: 'Adult (18-64 years)',
+  elderly: 'Elderly (65+ years)',
+};
+const VITAL_LABELS: Record<VitalRangeKey, string> = {
+  temperature: 'Temperature (°F)',
+  systolic: 'Systolic BP (mmHg)',
+  diastolic: 'Diastolic BP (mmHg)',
+  pulse: 'Pulse (bpm)',
+  respiration: 'Respirations (/min)',
+  oxygenSaturation: 'O2 Saturation (%)',
+  bloodGlucose: 'Blood Glucose (mg/dL)',
 };

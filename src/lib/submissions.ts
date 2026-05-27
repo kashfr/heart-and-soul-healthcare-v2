@@ -15,7 +15,7 @@ import {
 } from 'firebase/firestore';
 import type { Role } from './auth';
 import { db } from './firebase';
-import { hasAnyAbnormalVital } from './vitalRanges';
+import { hasAnyAbnormalVital, type VitalRangesOverride } from './vitalRanges';
 
 /**
  * All form fields from the 7-page progress note form.
@@ -211,10 +211,13 @@ const NO_INCIDENT_VALUES = new Set([
 // getNurseAccessibleSubmissions agree on every derived field
 // (hasIncident, hasAbnormalVitals, cosigned info, etc.). Update one
 // place, not two.
-function mapDocToSummary(d: {
-  id: string;
-  data(): Record<string, unknown>;
-}): SubmissionSummary {
+function mapDocToSummary(
+  d: {
+    id: string;
+    data(): Record<string, unknown>;
+  },
+  vitalsOverride?: VitalRangesOverride,
+): SubmissionSummary {
   const data = d.data();
   const submittedAt = data.submittedAt as Timestamp | null;
   const archivedAt = data.archivedAt as Timestamp | null | undefined;
@@ -237,7 +240,7 @@ function mapDocToSummary(d: {
     status: (data.status as string) || 'submitted',
     archivedAt: archivedAt ? archivedAt.toDate() : null,
     nurseArchivedAt: nurseArchivedAt ? nurseArchivedAt.toDate() : null,
-    hasAbnormalVitals: hasAnyAbnormalVital(data),
+    hasAbnormalVitals: hasAnyAbnormalVital(data, vitalsOverride),
     hasIncident,
     physicianNotified: String(data.q52_physicianNotify || '').toLowerCase() === 'yes',
     cosignedAt: cosignedAt ? cosignedAt.toDate() : null,
@@ -251,7 +254,9 @@ function mapDocToSummary(d: {
  * Pass { nurseId } to scope the list to a single nurse (used by nurses viewing
  * their own notes; admin + supervisor call with no args to see everything).
  */
-export async function getSubmissions(options?: { nurseId?: string }): Promise<SubmissionSummary[]> {
+export async function getSubmissions(
+  options?: { nurseId?: string; vitalsOverride?: VitalRangesOverride },
+): Promise<SubmissionSummary[]> {
   try {
     const notesRef = collection(db, 'progressNotes');
     const q = options?.nurseId
@@ -259,7 +264,7 @@ export async function getSubmissions(options?: { nurseId?: string }): Promise<Su
       : query(notesRef, orderBy('submittedAt', 'desc'));
     const snapshot = await getDocs(q);
 
-    const rows = snapshot.docs.map((d) => mapDocToSummary(d));
+    const rows = snapshot.docs.map((d) => mapDocToSummary(d, options?.vitalsOverride));
 
     // When filtering by nurseId we skip the orderBy (avoids needing a composite
     // index) and sort client-side instead.
@@ -300,7 +305,10 @@ const FIRESTORE_IN_LIMIT = 30;
  * Aligned with the Firestore rule's allow-read disjuncts: any note
  * fetched here is either author-matched or care-team-matched.
  */
-export async function getNurseAccessibleSubmissions(uid: string): Promise<SubmissionSummary[]> {
+export async function getNurseAccessibleSubmissions(
+  uid: string,
+  options?: { vitalsOverride?: VitalRangesOverride },
+): Promise<SubmissionSummary[]> {
   try {
     // Step 1: which patients is this nurse on the care team for?
     const patientsSnap = await getDocs(
@@ -316,13 +324,14 @@ export async function getNurseAccessibleSubmissions(uid: string): Promise<Submis
 
     // Step 3: care-team notes via patientId. Skipped when step 1 was
     // empty (no team patients → no extra notes to fetch).
+    const vitalsOverride = options?.vitalsOverride;
     const teamChunks: Array<ReturnType<typeof mapDocToSummary>[]> = [];
     for (let i = 0; i < teamPatientIds.length; i += FIRESTORE_IN_LIMIT) {
       const chunk = teamPatientIds.slice(i, i + FIRESTORE_IN_LIMIT);
       const snap = await getDocs(
         query(collection(db, 'progressNotes'), where('patientId', 'in', chunk)),
       );
-      teamChunks.push(snap.docs.map((d) => mapDocToSummary(d)));
+      teamChunks.push(snap.docs.map((d) => mapDocToSummary(d, vitalsOverride)));
     }
 
     // Merge + dedupe by note id. A note authored by this nurse for a
@@ -330,7 +339,7 @@ export async function getNurseAccessibleSubmissions(uid: string): Promise<Submis
     // step 3.
     const seen = new Set<string>();
     const merged: SubmissionSummary[] = [];
-    for (const row of [...authoredSnap.docs.map((d) => mapDocToSummary(d)), ...teamChunks.flat()]) {
+    for (const row of [...authoredSnap.docs.map((d) => mapDocToSummary(d, vitalsOverride)), ...teamChunks.flat()]) {
       if (seen.has(row.id)) continue;
       seen.add(row.id);
       merged.push(row);

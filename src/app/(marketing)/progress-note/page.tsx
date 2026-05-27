@@ -10,6 +10,7 @@ import { saveSubmission, getSubmission, updateSubmission, type ProgressNoteFormD
 import { saveDraft, loadDraft, deleteDraft, type NoteDraft } from '@/lib/drafts';
 import { authedFetch } from '@/lib/authedFetch';
 import { useAuth } from '@/components/AuthProvider';
+import { useSettings } from '@/components/SettingsProvider';
 import { setRadio, radioState, clearRadioStorage } from './components/DeselectableRadio';
 import type { FormValues } from './types';
 import styles from './page.module.css';
@@ -51,6 +52,10 @@ function ProgressNotePageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user, profile, role } = useAuth();
+  // Org-wide settings from /admin/settings. Read here so the submit
+  // handler can enforce patient.allowFreeText and any future form-level
+  // toggles without re-fetching per submit.
+  const { settings: appSettings } = useSettings();
   const isNurse = role === 'nurse';
   const editId = searchParams.get('edit');
   // Derived synchronously from the URL so it's correct from the first render.
@@ -675,6 +680,34 @@ function ProgressNotePageInner() {
 
     // The required-field + RHF-rule validation now happens above in the
     // unified DOM-order pass, so the old per-field loop is gone.
+
+    // Roster-only enforcement. When admin sets patient.allowFreeText
+    // to false in /admin/settings, the nurse must pick a patient from
+    // the roster — typed-only names are blocked. We check this BEFORE
+    // the "did you mean?" modal because that modal has a "Submit as
+    // typed" escape hatch we don't want available when free-text is
+    // disabled. Admin-authored notes can bypass via the "did you mean"
+    // flow because admins can submit notes for new patients ahead of
+    // a roster entry.
+    if (!appSettings.patient.allowFreeText && role !== 'admin') {
+      const linkedPatientId = String(getValues('patientId') || '').trim();
+      if (!linkedPatientId) {
+        setCurrentPage(1);
+        setTimeout(() => {
+          const nameInput = formRef.current?.querySelector('#q3_clientNameSearch') as HTMLInputElement;
+          if (nameInput) {
+            nameInput.style.border = '2px solid #c62828';
+            nameInput.style.background = '#fff5f5';
+            nameInput.focus();
+            nameInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 100);
+        alert(
+          'This form requires you to select a patient from the roster. Use the Client Name search field on page 1 to pick the patient. If the patient is new, ask an admin to add them to the roster first.',
+        );
+        return;
+      }
+    }
 
     // Checkpoint 2 of the "did you mean?" flow — last-mile safety net.
     // If the nurse typed a client name that fuzzy-matches a roster

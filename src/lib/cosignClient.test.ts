@@ -36,4 +36,33 @@ describe('needsCosign', () => {
   it('returns false for unknown credentials', () => {
     expect(needsCosign({ credential: 'MD', status: 'submitted', cosignedAt: null })).toBe(false);
   });
+
+  // --- Override-driven behavior (settings-backed) ---
+
+  it('honors a settings-derived required-credentials Set', () => {
+    // Admin removed LPN from the cosign list via /admin/settings.
+    const required = new Set(['HHA', 'CNA']);
+    expect(
+      needsCosign({ credential: 'LPN', status: 'submitted', cosignedAt: null }, required),
+    ).toBe(false);
+    expect(
+      needsCosign({ credential: 'CNA', status: 'submitted', cosignedAt: null }, required),
+    ).toBe(true);
+  });
+
+  it('accepts a plain array as the required-credentials override', () => {
+    expect(
+      needsCosign({ credential: 'CNA', status: 'submitted', cosignedAt: null }, ['CNA']),
+    ).toBe(true);
+    expect(
+      needsCosign({ credential: 'HHA', status: 'submitted', cosignedAt: null }, ['CNA']),
+    ).toBe(false);
+  });
+
+  it('treats an empty required-credentials override as "no notes need cosign"', () => {
+    // Edge case: org has no RN, admin disabled the requirement entirely.
+    expect(
+      needsCosign({ credential: 'CNA', status: 'submitted', cosignedAt: null }, []),
+    ).toBe(false);
+  });
 });

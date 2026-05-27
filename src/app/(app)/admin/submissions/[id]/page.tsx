@@ -10,6 +10,7 @@ import {
   type ProgressNoteFormData,
 } from '@/lib/submissions';
 import { needsCosign } from '@/lib/cosignClient';
+import { useSettings } from '@/components/SettingsProvider';
 import { pdfFilenameFor, triggerDownload } from '@/lib/batchExport';
 import { getVitalRanges, getAgeGroupLabel } from '@/lib/vitalRanges';
 import { useAuth } from '@/components/AuthProvider';
@@ -185,10 +186,13 @@ export default function SubmissionDetailPage({ params }: PageProps) {
   const credential = data.q12_credential || '';
   const isLpnRn = /^(LPN|RN)$/i.test(credential);
 
-  // Age-based vital signs range checking
+  // Age-based vital signs range checking. Overrides from /admin/settings
+  // bump any threshold off the hard-coded defaults — useful when the
+  // clinical team wants e.g. a wider preschool resp range.
   const ageStr = data.q5_ageYears || '';
   const patientDob = data.q4_dateofBirth || '';
-  const vitalRanges = getVitalRanges(ageStr, patientDob);
+  const { settings: appSettings } = useSettings();
+  const vitalRanges = getVitalRanges(ageStr, patientDob, appSettings.vitals.rangesByAgeGroup);
   const ageGroupLabel = getAgeGroupLabel(ageStr, patientDob);
 
   const abnormalVitals: string[] = [];

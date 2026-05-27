@@ -94,4 +94,117 @@ describe('validateSettings', () => {
       validateSettings({ submissions: { rnDefaultsToNeedsCosign: 'yes' as any } }),
     ).toThrow(SettingsValidationError);
   });
+
+  it('accepts a valid cosign.requiredCredentials list', () => {
+    const merged = validateSettings({ cosign: { requiredCredentials: ['CNA', 'LPN'] } });
+    expect(merged.cosign.requiredCredentials).toEqual(['CNA', 'LPN']);
+  });
+
+  it('accepts an empty cosign.requiredCredentials list', () => {
+    // Edge case: org has no RN on staff so they disable cosign entirely.
+    const merged = validateSettings({ cosign: { requiredCredentials: [] } });
+    expect(merged.cosign.requiredCredentials).toEqual([]);
+  });
+
+  it('rejects RN in cosign.requiredCredentials', () => {
+    expect(() =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      validateSettings({ cosign: { requiredCredentials: ['RN' as any] } }),
+    ).toThrow(SettingsValidationError);
+  });
+
+  it('rejects unknown credential strings', () => {
+    expect(() =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      validateSettings({ cosign: { requiredCredentials: ['MD' as any] } }),
+    ).toThrow(SettingsValidationError);
+  });
+
+  it('rejects non-array cosign.requiredCredentials', () => {
+    expect(() =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      validateSettings({ cosign: { requiredCredentials: 'CNA' as any } }),
+    ).toThrow(SettingsValidationError);
+  });
+
+  it('accepts boolean false for patient.allowFreeText', () => {
+    const merged = validateSettings({ patient: { allowFreeText: false } });
+    expect(merged.patient.allowFreeText).toBe(false);
+  });
+
+  it('rejects non-boolean patient.allowFreeText', () => {
+    expect(() =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      validateSettings({ patient: { allowFreeText: 'no' as any } }),
+    ).toThrow(SettingsValidationError);
+  });
+
+  it('accepts a valid vital range override', () => {
+    const merged = validateSettings({
+      vitals: { rangesByAgeGroup: { preschool: { temperature: { low: 96.5, high: 99.5 } } } },
+    });
+    expect(merged.vitals.rangesByAgeGroup.preschool?.temperature).toEqual({
+      low: 96.5,
+      high: 99.5,
+    });
+  });
+
+  it('rejects an unknown age group in vital overrides', () => {
+    expect(() =>
+      validateSettings({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        vitals: { rangesByAgeGroup: { martian: {} } as any },
+      }),
+    ).toThrow(SettingsValidationError);
+  });
+
+  it('rejects low > high in vital overrides', () => {
+    expect(() =>
+      validateSettings({
+        vitals: { rangesByAgeGroup: { adult: { pulse: { low: 200, high: 50 } } } },
+      }),
+    ).toThrow(SettingsValidationError);
+  });
+
+  it('rejects non-numeric low/high in vital overrides', () => {
+    expect(() =>
+      validateSettings({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        vitals: { rangesByAgeGroup: { adult: { pulse: { low: 'sixty' as any, high: 100 } } } },
+      }),
+    ).toThrow(SettingsValidationError);
+  });
+});
+
+describe('mergeWithDefaults — new settings fields', () => {
+  it('fills in default cosign + patient + vitals when absent', () => {
+    const merged = mergeWithDefaults({ submissions: { defaultSort: 'clientName' as const } });
+    expect(merged.cosign.requiredCredentials).toEqual(['HHA', 'CNA', 'LPN']);
+    expect(merged.patient.allowFreeText).toBe(true);
+    expect(merged.vitals.rangesByAgeGroup).toEqual({});
+  });
+
+  it('dedupes and filters unknown credentials in cosign list', () => {
+    // Defensive: a malformed Firestore doc shouldn't crash callers.
+    const merged = mergeWithDefaults({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      cosign: { requiredCredentials: ['CNA', 'CNA', 'RN' as any, 'MD' as any, 'LPN'] },
+    });
+    expect(merged.cosign.requiredCredentials).toEqual(['CNA', 'LPN']);
+  });
+
+  it('drops vital pairs with low > high', () => {
+    const merged = mergeWithDefaults({
+      vitals: {
+        rangesByAgeGroup: {
+          adult: {
+            pulse: { low: 200, high: 50 },
+            temperature: { low: 97, high: 99 },
+          },
+        },
+      },
+    });
+    expect(merged.vitals.rangesByAgeGroup.adult?.pulse).toBeUndefined();
+    expect(merged.vitals.rangesByAgeGroup.adult?.temperature).toEqual({ low: 97, high: 99 });
+  });
 });

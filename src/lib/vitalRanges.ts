@@ -203,11 +203,54 @@ export function getAgeGroup(ageStr: string, dob?: string): AgeGroup {
 }
 
 /**
- * Get the appropriate vital sign ranges for a patient based on their age.
+ * Sparse override map admin can set from /admin/settings. Per leaf —
+ * any { low, high } pair the override doesn't supply falls back to
+ * the hard-coded RANGES_BY_AGE_GROUP value. Lets the RN tune e.g.
+ * the preschool temperature floor without restating every other
+ * pediatric vital.
+ *
+ * Shape mirrors VitalRangesOverride in lib/settings.ts but typed
+ * locally so this module stays import-free of the settings module
+ * (the settings module declares the shape, this module just consumes
+ * it as data).
  */
-export function getVitalRanges(ageStr: string, dob?: string): VitalRangeSet {
+export type VitalRangesOverride = {
+  [G in AgeGroup]?: {
+    [V in VitalKey]?: { low: number; high: number };
+  };
+};
+
+/**
+ * Merge the hard-coded ranges for an age group with any per-leaf
+ * overrides passed in. Returns a fresh VitalRangeSet so callers can
+ * inspect/format the unit + label fields exactly as before.
+ */
+function mergeRanges(group: AgeGroup, overrides?: VitalRangesOverride): VitalRangeSet {
+  const base = RANGES_BY_AGE_GROUP[group];
+  const groupOverride = overrides?.[group];
+  if (!groupOverride) return base;
+  const out = { ...base };
+  for (const key of Object.keys(out) as VitalKey[]) {
+    const o = groupOverride[key];
+    if (o && Number.isFinite(o.low) && Number.isFinite(o.high) && o.low <= o.high) {
+      out[key] = { ...base[key], low: o.low, high: o.high };
+    }
+  }
+  return out;
+}
+
+/**
+ * Get the appropriate vital sign ranges for a patient based on their age.
+ * Optionally pass `overrides` (from /admin/settings) to bump any
+ * specific low/high pair off the hard-coded defaults.
+ */
+export function getVitalRanges(
+  ageStr: string,
+  dob?: string,
+  overrides?: VitalRangesOverride,
+): VitalRangeSet {
   const group = getAgeGroup(ageStr, dob);
-  return RANGES_BY_AGE_GROUP[group];
+  return mergeRanges(group, overrides);
 }
 
 /**
@@ -234,9 +277,10 @@ export function checkVitalRange(
   key: VitalKey,
   value: number,
   ageStr: string,
-  dob?: string
+  dob?: string,
+  overrides?: VitalRangesOverride,
 ): 'normal' | 'low' | 'high' {
-  const ranges = getVitalRanges(ageStr, dob);
+  const ranges = getVitalRanges(ageStr, dob, overrides);
   const range = ranges[key];
   if (value < range.low) return 'low';
   if (value > range.high) return 'high';
@@ -247,11 +291,14 @@ export function checkVitalRange(
  * Returns true if any recorded vital sign in the submission falls outside
  * the age-appropriate range. Used for the dashboard "abnormal vitals" filter.
  */
-export function hasAnyAbnormalVital(data: Record<string, unknown>): boolean {
+export function hasAnyAbnormalVital(
+  data: Record<string, unknown>,
+  overrides?: VitalRangesOverride,
+): boolean {
   const s = (k: string) => (typeof data[k] === 'string' ? (data[k] as string) : '');
   const ageStr = s('q5_ageYears');
   const dob = s('q4_dateofBirth');
-  const ranges = getVitalRanges(ageStr, dob);
+  const ranges = getVitalRanges(ageStr, dob, overrides);
   const parseNum = (v: string) => parseFloat((v || '').replace(/[^0-9.]/g, ''));
 
   const checks: Array<[string, VitalKey]> = [

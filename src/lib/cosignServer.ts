@@ -1,10 +1,8 @@
 import 'server-only';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
+import { getServerSettings } from './settingsServer';
 import type { AuthedCaller } from './adminAuthGuard';
-
-/** Credentials whose notes require an RN to co-sign. RN notes are exempt. */
-const COSIGN_REQUIRED_CREDENTIALS = new Set(['HHA', 'CNA', 'LPN']);
 
 export type CosignFailureReason =
   | 'not-found'
@@ -30,7 +28,7 @@ export type CosignResult = CosignSuccess | CosignFailure;
 const REASON_MESSAGES: Record<CosignFailureReason, string> = {
   'not-found': 'Note not found.',
   'wrong-status': 'Only submitted notes can be co-signed.',
-  'wrong-credential': 'Only HHA, CNA, and LPN notes need an RN co-signature.',
+  'wrong-credential': 'This note credential does not require co-signature per current settings.',
   'self-author': 'You cannot co-sign a note you authored.',
   'already-cosigned': 'This note has already been co-signed.',
 };
@@ -52,6 +50,17 @@ export async function cosignNote(
   caller: AuthedCaller,
   signature: string
 ): Promise<CosignResult> {
+  // Required-credential list comes from /admin/settings now. Admin can
+  // narrow (e.g. drop HHA) or widen (add a future credential). One
+  // settings read per cosign call — cheap and keeps the policy honest
+  // even mid-session if admin flips the toggle.
+  const settings = await getServerSettings();
+  // Widen to Set<string> so the .has(credential) check below — where
+  // `credential` is a raw string from Firestore — type-checks. The
+  // settings module's CosignableCredential union is a subset of string,
+  // so this is a safe widening.
+  const required: Set<string> = new Set(settings.cosign.requiredCredentials);
+
   const docRef = adminDb().collection('progressNotes').doc(noteId);
   const snap = await docRef.get();
   if (!snap.exists) return fail(noteId, 'not-found');
@@ -62,7 +71,7 @@ export async function cosignNote(
   const nurseId = String(data.nurseId || '');
 
   if (status !== 'submitted') return fail(noteId, 'wrong-status');
-  if (!COSIGN_REQUIRED_CREDENTIALS.has(credential)) return fail(noteId, 'wrong-credential');
+  if (!required.has(credential)) return fail(noteId, 'wrong-credential');
   if (nurseId && nurseId === caller.uid) return fail(noteId, 'self-author');
   if (data.cosignedAt != null) return fail(noteId, 'already-cosigned');
 

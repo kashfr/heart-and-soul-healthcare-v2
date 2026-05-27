@@ -102,6 +102,13 @@ export default function SubmissionsPage() {
   // DEFAULT_SETTINGS until the live doc lands a moment later.
   const { settings: appSettings } = useSettings();
   const subDefaults = appSettings.submissions;
+  // Memoize the cosign required-credentials Set so every needsCosign
+  // call below gets the same reference (and doesn't rebuild the Set
+  // on every row render).
+  const requiredCosignCreds = useMemo(
+    () => new Set(appSettings.cosign.requiredCredentials),
+    [appSettings.cosign.requiredCredentials],
+  );
 
   const scope: Scope =
     searchParams.get('view') === 'archived'
@@ -170,17 +177,22 @@ export default function SubmissionsPage() {
 
   const reloadSubmissions = useCallback(async () => {
     if (!user) return;
+    // Pass the admin-configured vital range overrides so the
+    // "Abnormal vitals" pill respects custom thresholds set via
+    // /admin/settings. The helper handles undefined fine — it just
+    // uses the hard-coded defaults.
+    const vitalsOverride = appSettings.vitals.rangesByAgeGroup;
     // Nurses see two slices: their own authored notes PLUS any notes
     // for patients on their care team (Phase 3 visibility). The
     // multi-query helper handles the merge so the dashboard can keep
     // treating the result as a single flat list. Admin/supervisor
     // still get the full set via the unscoped path.
     if (isNurse) {
-      setAllSubmissions(await getNurseAccessibleSubmissions(user.uid));
+      setAllSubmissions(await getNurseAccessibleSubmissions(user.uid, { vitalsOverride }));
     } else {
-      setAllSubmissions(await getSubmissions());
+      setAllSubmissions(await getSubmissions({ vitalsOverride }));
     }
-  }, [isNurse, user]);
+  }, [isNurse, user, appSettings.vitals.rangesByAgeGroup]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -341,7 +353,7 @@ export default function SubmissionsPage() {
       if (flagAbnormal && !s.hasAbnormalVitals) return false;
       if (flagIncident && !s.hasIncident) return false;
       if (flagPhysNotified && !s.physicianNotified) return false;
-      if (flagNeedsCosign && !needsCosign(s)) return false;
+      if (flagNeedsCosign && !needsCosign(s, requiredCosignCreds)) return false;
       if (rangeStart || rangeEnd) {
         const d = parseDateOfService(s.dateOfService);
         if (!d) return false;
@@ -406,7 +418,7 @@ export default function SubmissionsPage() {
       if (flagAbnormal && !s.hasAbnormalVitals) continue;
       if (flagIncident && !s.hasIncident) continue;
       if (flagPhysNotified && !s.physicianNotified) continue;
-      if (flagNeedsCosign && !needsCosign(s)) continue;
+      if (flagNeedsCosign && !needsCosign(s, requiredCosignCreds)) continue;
       if (rangeStart || rangeEnd) {
         const d = parseDateOfService(s.dateOfService);
         if (!d) continue;
@@ -535,7 +547,7 @@ export default function SubmissionsPage() {
         blockers.push('you cannot co-sign a note you authored');
         break;
       }
-      if (!needsCosign(s)) {
+      if (!needsCosign(s, requiredCosignCreds)) {
         blockers.push('one or more notes are not eligible for co-sign');
         break;
       }
@@ -1240,7 +1252,7 @@ export default function SubmissionsPage() {
                                 Physician
                               </span>
                             )}
-                            {needsCosign(s) && (
+                            {needsCosign(s, requiredCosignCreds) && (
                               <span style={flagBadgeAmber} title="Awaiting RN co-signature">
                                 Needs co-sign
                               </span>
@@ -1255,7 +1267,7 @@ export default function SubmissionsPage() {
                             <Link href={`/admin/submissions/${s.id}`} style={viewBtnStyle}>
                               View
                             </Link>
-                            {isRn && needsCosign(s) && s.nurseId !== user?.uid && (
+                            {isRn && needsCosign(s, requiredCosignCreds) && s.nurseId !== user?.uid && (
                               // The row button is now a *navigation* into the
                               // view page in cosign mode. Single-note signing
                               // must go through a full read of the note —

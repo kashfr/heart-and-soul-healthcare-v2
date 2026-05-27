@@ -7,7 +7,7 @@ import {
   Image,
   StyleSheet,
 } from '@react-pdf/renderer';
-import { getVitalRanges, getAgeGroupLabel } from '@/lib/vitalRanges';
+import { getVitalRanges, getAgeGroupLabel, type VitalRangesOverride } from '@/lib/vitalRanges';
 
 /**
  * Raw form data stored on a progress-note document. Every field is a string
@@ -19,6 +19,12 @@ export type ProgressNoteFormData = Record<string, string | undefined>;
 
 export interface ProgressNotePDFProps {
   data: ProgressNoteFormData;
+  /**
+   * Optional per-leaf overrides to the hard-coded age-aware vital
+   * ranges. Comes from /admin/settings via the PDF route. When
+   * omitted, the PDF falls back to defaults (existing behavior).
+   */
+  vitalsOverride?: VitalRangesOverride;
 }
 
 // Legacy export kept so any lingering imports don't break.
@@ -377,10 +383,10 @@ function readCosignedDate(v: unknown): Date | null {
 // pill, the detail view banner, and the in-form real-time alerts. The
 // extra `unit` / `label` fields on the shared shape are ignored here — we
 // only use the numeric bounds.
-function checkVitals(data: ProgressNoteFormData) {
+function checkVitals(data: ProgressNoteFormData, overrides?: VitalRangesOverride) {
   const ageStr = data.q5_ageYears || '';
   const dob = data.q4_dateofBirth || '';
-  const ranges = getVitalRanges(ageStr, dob);
+  const ranges = getVitalRanges(ageStr, dob, overrides);
   const ageGroupLabel = getAgeGroupLabel(ageStr, dob);
   const alerts: string[] = [];
   const temp = parseNumeric(data.q16_temperature);
@@ -619,7 +625,7 @@ const SYSTEM_ASSESSMENTS: SystemConfig[] = [
 
 // --- Main document ---
 
-export default function ProgressNotePDF({ data }: ProgressNotePDFProps) {
+export default function ProgressNotePDF({ data, vitalsOverride }: ProgressNotePDFProps) {
   const credential = data.q12_credential || '';
   const isLpnRn = /^(LPN|RN)$/i.test(credential);
 
@@ -627,7 +633,7 @@ export default function ProgressNotePDF({ data }: ProgressNotePDFProps) {
     .filter((p) => hasValue(p))
     .join(', ');
 
-  const { alerts: abnormalVitals, cells: vitalCells, ageGroupLabel } = checkVitals(data);
+  const { alerts: abnormalVitals, cells: vitalCells, ageGroupLabel } = checkVitals(data, vitalsOverride);
 
   return (
     <Document>

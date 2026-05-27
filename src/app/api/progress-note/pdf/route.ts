@@ -2,6 +2,7 @@ import { renderToBuffer } from '@react-pdf/renderer';
 import React from 'react';
 import ProgressNotePDF from '@/lib/pdf/ProgressNotePDF';
 import type { ProgressNoteFormData } from '@/lib/pdf/ProgressNotePDF';
+import { getServerSettings } from '@/lib/settingsServer';
 
 function sanitize(part: string): string {
   return (part || '').replace(/[^a-zA-Z0-9-]+/g, '_').replace(/^_+|_+$/g, '') || 'note';
@@ -21,8 +22,15 @@ export async function POST(request: Request) {
   try {
     const data: ProgressNoteFormData = await request.json();
 
+    // Pull vital-range overrides so the rendered PDF flags abnormal
+    // vitals using the same thresholds the admin set in /admin/settings.
+    // Without this, the PDF's abnormal-vitals banner would lag any
+    // tuning the clinical team did.
+    const settings = await getServerSettings();
+    const vitalsOverride = settings.vitals.rangesByAgeGroup;
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const element = React.createElement(ProgressNotePDF, { data }) as any;
+    const element = React.createElement(ProgressNotePDF, { data, vitalsOverride }) as any;
     const buffer = await renderToBuffer(element);
 
     const clientName = sanitize(data.q3_clientName || 'client');
