@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Claude Code working artifacts (worktrees + image previews)
+.claude/worktrees/
+.claude/image-previews/
