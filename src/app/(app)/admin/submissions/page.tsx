@@ -100,7 +100,10 @@ export default function SubmissionsPage() {
       ? 'team'
       : 'active';
   const qParam = searchParams.get('q') ?? '';
-  const sortParam = (searchParams.get('sort') as SortKey) || 'submittedAt';
+  // Default to date-of-service rather than submission timestamp: nurses
+  // sometimes log shifts late, and the clinically meaningful order is
+  // when the shift actually happened, not when it was typed up.
+  const sortParam = (searchParams.get('sort') as SortKey) || 'dateOfService';
   const dirParam = (searchParams.get('dir') as SortDir) || 'desc';
   const credParam = searchParams.get('cred') ?? '';
   const nurseParam = searchParams.get('nurse') ?? '';
@@ -306,7 +309,7 @@ export default function SubmissionsPage() {
     flagIncident ||
     flagPhysNotified ||
     flagNeedsCosign ||
-    sortParam !== 'submittedAt' ||
+    sortParam !== 'dateOfService' ||
     dirParam !== 'desc';
 
   // Search + filters.
