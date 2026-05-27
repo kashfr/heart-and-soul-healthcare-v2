@@ -193,6 +193,16 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Org-wide settings (single doc at settings/global). Any signed-in
+    // user can read so the client SettingsProvider can hydrate. Writes
+    // go through the admin-gated /api/admin/settings PUT route, which
+    // uses Admin SDK and therefore bypasses these rules — so we deny
+    // direct client writes here.
+    match /settings/{settingsId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
     // Default deny
     match /{document=**} {
       allow read, write: if false;

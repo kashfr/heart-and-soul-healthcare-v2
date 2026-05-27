@@ -2,6 +2,7 @@
 
 import { AuthGuard } from '@/components/AuthGuard';
 import { AppShell } from '@/components/AppShell';
+import { SettingsProvider } from '@/components/SettingsProvider';
 
 export default function AppGroupLayout({
   children,
@@ -10,7 +11,13 @@ export default function AppGroupLayout({
 }) {
   return (
     <AuthGuard allow={['admin', 'supervisor', 'nurse']}>
-      <AppShell>{children}</AppShell>
+      {/* SettingsProvider lives inside AuthGuard so the fetch only
+          fires for authenticated users (it hits an admin-gated API).
+          Wraps AppShell so every screen in the staff portal can read
+          org-wide defaults via useSettings(). */}
+      <SettingsProvider>
+        <AppShell>{children}</AppShell>
+      </SettingsProvider>
     </AuthGuard>
   );
 }

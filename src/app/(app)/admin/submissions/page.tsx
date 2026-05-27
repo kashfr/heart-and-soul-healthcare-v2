@@ -23,9 +23,15 @@ import {
 } from '@/lib/batchExport';
 import { logExport } from '@/lib/audit';
 import { useAuth } from '@/components/AuthProvider';
+import { useSettings } from '@/components/SettingsProvider';
 
 const MAX_BATCH = 50;
-const PAGE_SIZE = 25;
+// PAGE_SIZE used to be a constant here; it's now driven by
+// settings.submissions.pageSize so an admin can tune it from
+// /admin/settings without a deploy. The constant below is the
+// fallback for any code path that runs before the settings hook
+// hydrates (rare — the page only renders the table after auth).
+const FALLBACK_PAGE_SIZE = 25;
 
 // 'team' is nurse-only: notes for patients she's on the care team for
 // where the AUTHOR is somebody else. Used to browse what her teammates
@@ -90,6 +96,12 @@ export default function SubmissionsPage() {
   const isRn = profile?.credential === 'RN';
   const searchParams = useSearchParams();
   const router = useRouter();
+  // Org-wide defaults from /admin/settings. `settings` is the merged
+  // shape and never null, so we can read fields directly without a
+  // loading check — the very first render uses the hard-coded
+  // DEFAULT_SETTINGS until the live doc lands a moment later.
+  const { settings: appSettings } = useSettings();
+  const subDefaults = appSettings.submissions;
 
   const scope: Scope =
     searchParams.get('view') === 'archived'
@@ -98,13 +110,13 @@ export default function SubmissionsPage() {
       ? 'all'
       : searchParams.get('view') === 'team'
       ? 'team'
-      : 'active';
+      : (subDefaults.defaultScope as Scope);
   const qParam = searchParams.get('q') ?? '';
-  // Default to date-of-service rather than submission timestamp: nurses
-  // sometimes log shifts late, and the clinically meaningful order is
-  // when the shift actually happened, not when it was typed up.
-  const sortParam = (searchParams.get('sort') as SortKey) || 'dateOfService';
-  const dirParam = (searchParams.get('dir') as SortDir) || 'desc';
+  // Default sort + direction now come from settings/global so an admin
+  // can flip them from /admin/settings without a code change. URL
+  // params still override per-session.
+  const sortParam = (searchParams.get('sort') as SortKey) || subDefaults.defaultSort;
+  const dirParam = (searchParams.get('dir') as SortDir) || subDefaults.defaultDir;
   const credParam = searchParams.get('cred') ?? '';
   const nurseParam = searchParams.get('nurse') ?? '';
   const datePreset = (searchParams.get('range') as DatePreset) || '';
@@ -233,8 +245,11 @@ export default function SubmissionsPage() {
   // "Needs co-signature" view — that's almost always what they came for.
   // We only do this once per session via sessionStorage so the RN can clear
   // the filter and not have it reappear every time they navigate back.
+  // The whole behavior is opt-out via settings.submissions.rnDefaultsToNeedsCosign
+  // so an admin can disable it for the org from /admin/settings.
   useEffect(() => {
     if (!isRn || authLoading) return;
+    if (!subDefaults.rnDefaultsToNeedsCosign) return;
     if (typeof window === 'undefined') return;
     if (sessionStorage.getItem('rn-cosign-default-applied') === '1') return;
     const hasAnyFilter =
@@ -247,7 +262,7 @@ export default function SubmissionsPage() {
     sessionStorage.setItem('rn-cosign-default-applied', '1');
     updateParams({ cosign: '1' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRn, authLoading]);
+  }, [isRn, authLoading, subDefaults.rnDefaultsToNeedsCosign]);
 
   // Scope filter (independent per role).
   // The 'team' scope is nurse-only — it shows notes for patients
@@ -309,8 +324,8 @@ export default function SubmissionsPage() {
     flagIncident ||
     flagPhysNotified ||
     flagNeedsCosign ||
-    sortParam !== 'dateOfService' ||
-    dirParam !== 'desc';
+    sortParam !== subDefaults.defaultSort ||
+    dirParam !== subDefaults.defaultDir;
 
   // Search + filters.
   const filtered = useMemo(() => {
@@ -443,11 +458,13 @@ export default function SubmissionsPage() {
     return copy;
   }, [filtered, sortParam, dirParam]);
 
-  // Pagination.
-  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  // Pagination — page size from /admin/settings, with a fallback for
+  // the brief window before the settings hook hydrates on first paint.
+  const pageSize = subDefaults.pageSize || FALLBACK_PAGE_SIZE;
+  const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize));
   const safePage = Math.min(page, pageCount);
-  const pageStart = (safePage - 1) * PAGE_SIZE;
-  const pageEnd = Math.min(pageStart + PAGE_SIZE, sorted.length);
+  const pageStart = (safePage - 1) * pageSize;
+  const pageEnd = Math.min(pageStart + pageSize, sorted.length);
   const submissions = sorted.slice(pageStart, pageEnd);
 
   const setScope = (next: Scope) => {
