@@ -1297,7 +1297,7 @@ export default function SubmissionsPage() {
                           {s.submittedAt ? s.submittedAt.toLocaleString() : '--'}
                         </td>
                         <td style={{ ...tdStyle, textAlign: 'center' }}>
-                          <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                          <div style={{ display: 'flex', gap: 6, rowGap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
                             <Link href={`/admin/submissions/${s.id}`} style={viewBtnStyle}>
                               View
                             </Link>
@@ -1522,7 +1522,7 @@ export default function SubmissionsPage() {
 // --- Inline styles ---
 
 const containerStyle: React.CSSProperties = {
-  maxWidth: 1100,
+  maxWidth: 1400,
   margin: '0 auto',
   padding: 20,
 };
@@ -1949,7 +1949,7 @@ const viewBtnStyle: React.CSSProperties = {
   display: 'inline-block',
   background: '#34495e',
   color: 'white',
-  padding: '6px 16px',
+  padding: '5px 11px',
   borderRadius: 4,
   textDecoration: 'none',
   fontSize: 13,
@@ -1961,7 +1961,7 @@ const rowArchiveBtnStyle: React.CSSProperties = {
   display: 'inline-block',
   background: '#f5f5f5',
   color: '#2c3e50',
-  padding: '6px 16px',
+  padding: '5px 11px',
   borderRadius: 4,
   border: '1px solid #ddd',
   fontSize: 13,
@@ -1974,7 +1974,7 @@ const rowDeleteBtnStyle: React.CSSProperties = {
   display: 'inline-block',
   background: '#fff',
   color: '#c62828',
-  padding: '6px 16px',
+  padding: '5px 11px',
   borderRadius: 4,
   border: '1px solid #f0b4b4',
   fontSize: 13,
@@ -1987,7 +1987,7 @@ const rowCosignBtnStyle: React.CSSProperties = {
   display: 'inline-block',
   background: '#27ae60',
   color: 'white',
-  padding: '6px 16px',
+  padding: '5px 11px',
   borderRadius: 4,
   border: 'none',
   fontSize: 13,
