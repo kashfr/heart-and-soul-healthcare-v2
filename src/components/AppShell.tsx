@@ -13,11 +13,15 @@ import {
   Settings,
   Menu,
   X,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { useAuth } from './AuthProvider';
 import { useSettings } from './SettingsProvider';
 import UserMenu from './UserMenu';
 import type { Role } from '@/lib/auth';
+
+const COLLAPSE_KEY = 'app-shell-collapsed';
 
 interface NavItem {
   href: string;
@@ -42,6 +46,31 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { settings: appSettings } = useSettings();
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Desktop sidebar collapse, persisted to localStorage so it survives
+  // refreshes. Read lazily on first render; SSR has no window so it defaults
+  // to expanded, and the <aside> uses suppressHydrationWarning so the
+  // client's persisted value can differ from the server markup without a
+  // hydration warning.
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return localStorage.getItem(COLLAPSE_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleCollapsed = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0');
+      } catch {
+        /* ignore persistence failure */
+      }
+      return next;
+    });
+  };
 
   // Close the mobile drawer whenever the route changes.
   useEffect(() => {
@@ -72,10 +101,15 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="app-shell">
-      <aside className={`app-shell-sidebar${mobileOpen ? ' app-shell-sidebar--open' : ''}`}>
+      <aside
+        suppressHydrationWarning
+        className={`app-shell-sidebar${mobileOpen ? ' app-shell-sidebar--open' : ''}${
+          collapsed ? ' app-shell-sidebar--collapsed' : ''
+        }`}
+      >
         <div className="app-shell-sidebar-header">
           <Link href="/admin" className="app-shell-brand" onClick={() => setMobileOpen(false)}>
-            <div>
+            <div className="app-shell-brand-text">
               <div style={{ fontWeight: 700, color: '#f5f7fa', fontSize: 14, lineHeight: 1.2 }}>
                 {appSettings.branding.orgName}
               </div>
@@ -84,6 +118,14 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
             </div>
           </Link>
+          <button
+            onClick={toggleCollapsed}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            className="app-shell-icon-btn app-shell-collapse-btn"
+          >
+            {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+          </button>
           <button
             onClick={() => setMobileOpen(false)}
             aria-label="Close menu"
@@ -106,13 +148,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             const inner = (
               <>
                 <span className="app-shell-nav-icon">{item.icon}</span>
-                <span>{item.label}</span>
+                <span className="app-shell-nav-label">{item.label}</span>
                 {item.disabled && <span className="app-shell-coming-soon">Soon</span>}
               </>
             );
             if (item.disabled) {
               return (
-                <div key={item.href} className={classes}>
+                <div key={item.href} className={classes} title={collapsed ? item.label : undefined}>
                   {inner}
                 </div>
               );
@@ -123,6 +165,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 href={item.href}
                 onClick={() => setMobileOpen(false)}
                 className={classes}
+                title={collapsed ? item.label : undefined}
               >
                 {inner}
               </Link>
@@ -131,8 +174,14 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="app-shell-sidebar-footer">
-          <Link href="/" className="app-shell-footer-link" onClick={() => setMobileOpen(false)}>
-            ← Back to public site
+          <Link
+            href="/"
+            className="app-shell-footer-link"
+            onClick={() => setMobileOpen(false)}
+            title={collapsed ? 'Back to public site' : undefined}
+          >
+            <span aria-hidden="true">←</span>
+            <span className="app-shell-nav-label"> Back to public site</span>
           </Link>
         </div>
       </aside>
@@ -178,6 +227,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           align-self: flex-start;
           height: 100vh;
           z-index: 70;
+          transition: width 0.18s ease;
         }
         .app-shell-sidebar-header {
           padding: 16px 18px;
@@ -294,12 +344,49 @@ export function AppShell({ children }: { children: ReactNode }) {
         .app-shell-backdrop {
           display: none;
         }
+        /* Collapse toggle: only meaningful on desktop, hidden on mobile
+           (mobile uses the hamburger/drawer instead). */
+        .app-shell-collapse-btn {
+          display: none;
+        }
 
         /* Desktop: sidebar sticks, hamburger + close buttons hidden */
         @media (min-width: 900px) {
           .app-shell-mobile-open,
           .app-shell-mobile-close {
             display: none;
+          }
+          .app-shell-collapse-btn {
+            display: inline-flex;
+          }
+
+          /* Collapsed rail: icon-only, labels + brand text hidden.
+             Compound selector (two classes) outranks the base
+             .app-shell-sidebar width; min/max pin it so the flex row
+             can't stretch it back. */
+          .app-shell-sidebar.app-shell-sidebar--collapsed {
+            width: 68px;
+            min-width: 68px;
+            max-width: 68px;
+          }
+          .app-shell-sidebar--collapsed .app-shell-brand,
+          .app-shell-sidebar--collapsed .app-shell-nav-label,
+          .app-shell-sidebar--collapsed .app-shell-coming-soon {
+            display: none;
+          }
+          .app-shell-sidebar--collapsed .app-shell-sidebar-header {
+            justify-content: center;
+            padding: 16px 0;
+          }
+          .app-shell-sidebar--collapsed .app-shell-nav-item {
+            justify-content: center;
+            gap: 0;
+            padding: 9px 0;
+          }
+          .app-shell-sidebar--collapsed .app-shell-sidebar-footer {
+            display: flex;
+            justify-content: center;
+            padding: 12px 0;
           }
         }
 
