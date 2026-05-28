@@ -97,8 +97,7 @@ export type VitalRangeKey =
   | 'diastolic'
   | 'pulse'
   | 'respiration'
-  | 'oxygenSaturation'
-  | 'bloodGlucose';
+  | 'oxygenSaturation';
 
 export const ALL_VITAL_RANGE_KEYS: readonly VitalRangeKey[] = [
   'temperature',
@@ -107,7 +106,6 @@ export const ALL_VITAL_RANGE_KEYS: readonly VitalRangeKey[] = [
   'pulse',
   'respiration',
   'oxygenSaturation',
-  'bloodGlucose',
 ];
 
 /** A single { low, high } pair. */

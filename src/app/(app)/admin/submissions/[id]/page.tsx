@@ -228,12 +228,6 @@ export default function SubmissionDetailPage({ params }: PageProps) {
     if (!isNaN(v) && (v < vitalRanges.oxygenSaturation.low || v > vitalRanges.oxygenSaturation.high))
       abnormalVitals.push(`SpO2: ${data.q20_oxygenSaturation}% (LOW)`);
   }
-  if (data.q21_bloodGlucose) {
-    const v = parseNum(data.q21_bloodGlucose);
-    if (!isNaN(v) && (v < vitalRanges.bloodGlucose.low || v > vitalRanges.bloodGlucose.high))
-      abnormalVitals.push(`Blood Glucose: ${data.q21_bloodGlucose} mg/dL (${v < vitalRanges.bloodGlucose.low ? 'LOW' : 'HIGH'})`);
-  }
-
   // Build address string
   const addressParts = [
     data.q200_addr_line1,
@@ -532,7 +526,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           title="Vital Signs"
           keys={[
             'q16_temperature', 'q17_bloodPressure', 'q18_pulse', 'q19_respiration',
-            'q20_oxygenSaturation', 'q21_bloodGlucose', 'q21_oxygenSource', 'q22_additionalObservations',
+            'q20_oxygenSaturation', 'q21_oxygenSource', 'q22_additionalObservations',
           ]}
           data={data}
         >
@@ -542,7 +536,6 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             <VitalCard label="Pulse" value={data.q18_pulse} />
             <VitalCard label="Respirations" value={data.q19_respiration} />
             <VitalCard label="SpO2" value={data.q20_oxygenSaturation} />
-            <VitalCard label="Blood Glucose" value={data.q21_bloodGlucose} />
             {hasValue(data.q21_oxygenSource) && <VitalCard label="Oxygen Source" value={data.q21_oxygenSource} />}
           </div>
           {hasValue(data.q22_additionalObservations) && (

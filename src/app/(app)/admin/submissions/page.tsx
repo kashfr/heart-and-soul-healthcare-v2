@@ -13,6 +13,7 @@ import {
   type SubmissionSummary,
 } from '@/lib/submissions';
 import { loadDraft, deleteDraft, type NoteDraft } from '@/lib/drafts';
+import { authedFetch } from '@/lib/authedFetch';
 import CoSignModal from '@/components/CoSignModal';
 import {
   buildZip,
@@ -644,6 +645,39 @@ export default function SubmissionsPage() {
     } catch (err) {
       console.error(`Failed to ${action}:`, err);
       alert(`Failed to ${action}. Please try again.`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Permanent delete — admin only. Goes through the Admin SDK route, which
+  // snapshots the note into deletedNotes (recoverable) before removing it.
+  // Gated again here defensively even though the button only renders for
+  // admins: the server route is the real authorization.
+  const handleRowDelete = async (s: SubmissionSummary) => {
+    if (role !== 'admin') return;
+    const msg =
+      `Permanently delete the note for ${s.clientName} on ${s.dateOfService}?\n\n` +
+      `This removes it from the submissions list. An audit copy is kept for recovery, ` +
+      `but the live note will be gone. This cannot be undone from here.`;
+    if (!window.confirm(msg)) return;
+
+    setBusy(true);
+    try {
+      const res = await authedFetch(`/api/admin/submissions/${s.id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `Delete failed (${res.status})`);
+      }
+      setAllSubmissions((prev) => prev.filter((item) => item.id !== s.id));
+      setSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(s.id);
+        return next;
+      });
+    } catch (err) {
+      console.error('Failed to delete note:', err);
+      alert(err instanceof Error ? err.message : 'Failed to delete. Please try again.');
     } finally {
       setBusy(false);
     }
@@ -1308,6 +1342,18 @@ export default function SubmissionsPage() {
                                 </button>
                               )
                             )}
+                            {/* Permanent delete — admin only. No one else,
+                                not even the authoring nurse, sees this. */}
+                            {role === 'admin' && (
+                              <button
+                                onClick={() => handleRowDelete(s)}
+                                style={rowDeleteBtnStyle}
+                                disabled={busy}
+                                title="Permanently delete this note (admin only)"
+                              >
+                                Delete
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -1918,6 +1964,19 @@ const rowArchiveBtnStyle: React.CSSProperties = {
   padding: '6px 16px',
   borderRadius: 4,
   border: '1px solid #ddd',
+  fontSize: 13,
+  fontWeight: 600,
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+};
+
+const rowDeleteBtnStyle: React.CSSProperties = {
+  display: 'inline-block',
+  background: '#fff',
+  color: '#c62828',
+  padding: '6px 16px',
+  borderRadius: 4,
+  border: '1px solid #f0b4b4',
   fontSize: 13,
   fontWeight: 600,
   cursor: 'pointer',

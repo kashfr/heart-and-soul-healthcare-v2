@@ -31,7 +31,6 @@ const testData = {
     pulse: '96 (irregular)',
     resp: '24',
     spo2: '91%',
-    bloodGlucose: '287 mg/dL',
   },
   observations: {
     activity: 'Client mostly bedbound today. Required full assist for transfers. Sat in wheelchair for 30 minutes during lunch but requested to return to bed due to fatigue and shortness of breath. Ambulation not attempted per nursing judgment.',
@@ -528,10 +527,6 @@ export default function ProgressNotePreview2() {
             <div style={styles.vitalCellAlert}>
               <div style={styles.vitalLabel}>SpO2</div>
               <div style={styles.vitalValueAlert}>{testData.vitals.spo2}</div>
-            </div>
-            <div style={styles.vitalCellAlert}>
-              <div style={styles.vitalLabel}>Blood Glucose</div>
-              <div style={styles.vitalValueAlert}>{testData.vitals.bloodGlucose}</div>
             </div>
           </div>
         </div>

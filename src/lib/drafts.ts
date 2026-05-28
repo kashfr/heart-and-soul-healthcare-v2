@@ -25,6 +25,11 @@ export interface NoteDraftPayload {
   formValues: Record<string, unknown>;
   radioState: Record<string, string>;
   checkboxState: Record<string, string[]>;
+  // Stable id reserved for the eventual submission. Carrying it on the
+  // draft means a retry after a reload (or on another device) reuses the
+  // same progressNotes doc id, so a flaky-network resubmit overwrites
+  // rather than duplicating. Optional for drafts written before this field.
+  submissionId?: string;
 }
 
 export interface NoteDraft extends NoteDraftPayload {
@@ -66,6 +71,7 @@ export async function loadDraft(uid: string): Promise<NoteDraft | null> {
     nurseName: String(data.nurseName || ''),
     clientName: String(data.clientName || ''),
     dateOfService: String(data.dateOfService || ''),
+    submissionId: data.submissionId ? String(data.submissionId) : undefined,
     currentPage: Number(data.currentPage || 1),
     formValues: (data.formValues || {}) as Record<string, unknown>,
     radioState: (data.radioState || {}) as Record<string, string>,

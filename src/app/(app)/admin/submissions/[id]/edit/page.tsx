@@ -184,7 +184,7 @@ export default function EditSubmissionPage({ params }: PageProps) {
           <FieldRow>
             <EditField label="Respirations" field="q19_respiration" value={formData.q19_respiration} onChange={handleChange} />
             <EditField label="SpO2" field="q20_oxygenSaturation" value={formData.q20_oxygenSaturation} onChange={handleChange} />
-            <EditField label="Blood Glucose" field="q21_bloodGlucose" value={formData.q21_bloodGlucose} onChange={handleChange} />
+            <EditField label="Oxygen Source" field="q21_oxygenSource" value={formData.q21_oxygenSource} onChange={handleChange} />
           </FieldRow>
         </Section>
 

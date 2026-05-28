@@ -3,12 +3,13 @@ import {
   getDocs,
   getDoc,
   addDoc,
+  setDoc,
   updateDoc,
-  deleteDoc,
   doc,
   query,
   where,
   orderBy,
+  limit,
   serverTimestamp,
   Timestamp,
   writeBatch,
@@ -52,7 +53,7 @@ export interface ProgressNoteFormData {
   q18_pulse: string;
   q19_respiration: string;
   q20_oxygenSaturation: string;
-  q21_bloodGlucose: string;
+  q21_oxygenSource: string;
 
   // Page 2: Additional Observations
   q22_additionalObservations: string;
@@ -176,21 +177,97 @@ export { needsCosign } from './cosignClient';
  */
 export async function saveSubmission(
   data: ProgressNoteFormData,
-  options?: { nurseId?: string }
+  options?: { nurseId?: string; submissionId?: string }
 ): Promise<string> {
   try {
-    const notesRef = collection(db, 'progressNotes');
-    const docRef = await addDoc(notesRef, {
+    const payload = {
       ...data,
       ...(options?.nurseId ? { nurseId: options.nurseId } : {}),
       submittedAt: serverTimestamp(),
       status: 'submitted',
-    });
+    };
+    // When a stable submissionId is supplied, write to that exact doc id so
+    // a flaky-network retry overwrites the same note instead of creating a
+    // duplicate. Callers guard against overwriting an already-written note
+    // via submissionExists() first, so this is a fresh create in practice.
+    if (options?.submissionId) {
+      const docRef = doc(db, 'progressNotes', options.submissionId);
+      await setDoc(docRef, payload);
+      return docRef.id;
+    }
+    const notesRef = collection(db, 'progressNotes');
+    const docRef = await addDoc(notesRef, payload);
     return docRef.id;
   } catch (error) {
     console.error('Error saving submission:', error);
     throw error;
   }
+}
+
+/**
+ * Does a progress note with this exact doc id already exist? Used by the
+ * form before writing so an idempotent retry (same submissionId) is treated
+ * as an already-successful submission rather than re-written.
+ */
+export async function submissionExists(id: string): Promise<boolean> {
+  if (!id) return false;
+  const snap = await getDoc(doc(db, 'progressNotes', id));
+  return snap.exists();
+}
+
+export interface DuplicateMatch {
+  id: string;
+  clientName: string;
+  dateOfService: string;
+  submittedAt: Date | null;
+}
+
+/**
+ * Look for an already-submitted note for the same nurse + date of service +
+ * patient (or typed client name when no patient is linked). Used to warn a
+ * nurse who starts a brand-new note for a shift she already documented —
+ * the deterministic-id retry path can't catch this because a new draft gets
+ * a new submissionId. Pass `excludeId` so the note being written now (on a
+ * retry) doesn't match itself.
+ */
+export async function findDuplicateSubmission(args: {
+  nurseId?: string;
+  dateOfService: string;
+  patientId?: string;
+  clientName?: string;
+  excludeId?: string;
+}): Promise<DuplicateMatch | null> {
+  const { nurseId, dateOfService, patientId, clientName, excludeId } = args;
+  if (!nurseId || !dateOfService) return null;
+
+  const notesRef = collection(db, 'progressNotes');
+  const constraints = [
+    where('nurseId', '==', nurseId),
+    where('q6_dateofService', '==', dateOfService),
+  ];
+  // Prefer the strong key (patientId); fall back to the typed client name
+  // when the note isn't linked to a roster patient.
+  if (patientId) {
+    constraints.push(where('patientId', '==', patientId));
+  } else if (clientName) {
+    constraints.push(where('q3_clientName', '==', clientName));
+  } else {
+    return null;
+  }
+
+  const snapshot = await getDocs(query(notesRef, ...constraints, limit(2)));
+  for (const d of snapshot.docs) {
+    if (excludeId && d.id === excludeId) continue;
+    const data = d.data();
+    const submittedAt = data.submittedAt as Timestamp | null;
+    return {
+      id: d.id,
+      clientName: String(data.q3_clientName || ''),
+      dateOfService: String(data.q6_dateofService || ''),
+      submittedAt: submittedAt ? submittedAt.toDate() : null,
+    };
+  }
+  return null;
 }
 
 // "No incident" sentinel values from the radio options — treat as clean.
@@ -531,19 +608,6 @@ export async function setSubmissionsArchive(
     });
   }
   await batch.commit();
-}
-
-/**
- * Delete a progress note submission.
- */
-export async function deleteSubmission(id: string): Promise<void> {
-  try {
-    const docRef = doc(db, 'progressNotes', id);
-    await deleteDoc(docRef);
-  } catch (error) {
-    console.error('Error deleting submission:', error);
-    throw error;
-  }
 }
 
 /**

@@ -801,5 +801,4 @@ const VITAL_LABELS: Record<VitalRangeKey, string> = {
   pulse: 'Pulse (bpm)',
   respiration: 'Respirations (/min)',
   oxygenSaturation: 'O2 Saturation (%)',
-  bloodGlucose: 'Blood Glucose (mg/dL)',
 };

@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form';
 import { Check, AlertTriangle, Loader2 } from 'lucide-react';
 import { getPatients, type Patient } from '@/lib/patients';
 import { findNameCandidates, type RosterPatientLite, type MatchCandidate } from '@/lib/levenshtein';
-import { saveSubmission, getSubmission, updateSubmission, type ProgressNoteFormData } from '@/lib/submissions';
+import { saveSubmission, getSubmission, updateSubmission, submissionExists, findDuplicateSubmission, type ProgressNoteFormData, type DuplicateMatch } from '@/lib/submissions';
 import { saveDraft, loadDraft, deleteDraft, type NoteDraft } from '@/lib/drafts';
 import { authedFetch } from '@/lib/authedFetch';
 import { useAuth } from '@/components/AuthProvider';
@@ -102,6 +102,27 @@ function ProgressNotePageInner() {
   // by the time the form re-submits.
   const skipPatientConfirmRef = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
+
+  // Stable id for the note this form will eventually submit. Generated
+  // lazily (first autosave or submit), persisted on the draft, and reused
+  // across retries so a flaky-network resubmit overwrites the same doc
+  // instead of creating a duplicate. Reset to '' after a successful submit.
+  const submissionIdRef = useRef<string>('');
+  const ensureSubmissionId = useCallback(() => {
+    if (!submissionIdRef.current) submissionIdRef.current = crypto.randomUUID();
+    return submissionIdRef.current;
+  }, []);
+
+  // Pre-submit duplicate guard. Set when the nurse submits a brand-new note
+  // for a shift she already documented (same nurse + date + patient). Holds
+  // the existing match so the modal can show what's already on file.
+  const [pendingDuplicateConfirm, setPendingDuplicateConfirm] = useState<DuplicateMatch | null>(null);
+  const skipDuplicateConfirmRef = useRef(false);
+
+  // Success splash shown briefly before redirecting to the confirmation page.
+  const [submittedInfo, setSubmittedInfo] = useState<
+    { id: string; clientName: string; dateOfService: string } | null
+  >(null);
 
   // --- Cross-device draft state (Firestore) ---
   // saveStatus drives the indicator in the sticky header.
@@ -279,6 +300,7 @@ function ProgressNotePageInner() {
         nurseName: profile.displayName || user.email || '',
         clientName,
         dateOfService: String(formValues.q6_dateofService || ''),
+        submissionId: ensureSubmissionId(),
         currentPage,
         formValues,
         radioState: r,
@@ -293,7 +315,7 @@ function ProgressNotePageInner() {
       setSaveStatus('error');
       return false;
     }
-  }, [user, profile, isEditMode, collectDraftPayload, currentPage]);
+  }, [user, profile, isEditMode, collectDraftPayload, currentPage, ensureSubmissionId]);
 
   // Schedule a debounced autosave. Respects a minimum interval to cap write cost.
   const scheduleAutosave = useCallback(() => {
@@ -315,6 +337,11 @@ function ProgressNotePageInner() {
   // Apply a loaded Firestore draft into the form (RHF + radios + checkboxes + page).
   const hydrateFromDraft = useCallback((draft: NoteDraft) => {
     reset(draft.formValues as FormValues);
+    // Carry the draft's reserved submission id so a resume-then-submit
+    // (or a retry after reload) overwrites the same note rather than
+    // duplicating. Drafts written before this field fall back to '' and
+    // a fresh id is minted on the next save/submit.
+    submissionIdRef.current = draft.submissionId || '';
     setInitialClientName(String(draft.formValues.q3_clientName || ''));
     if (draft.formValues.q12_credential) {
       const cred = String(draft.formValues.q12_credential) as CredentialTier;
@@ -545,7 +572,7 @@ function ProgressNotePageInner() {
           if (rawData.q7_shiftStart && rawData.q62_shiftEndTime) {
             const [sH, sM] = rawData.q7_shiftStart.split(':').map(Number);
             const [eH, eM] = rawData.q62_shiftEndTime.split(':').map(Number);
-            let startMin = sH * 60 + sM;
+            const startMin = sH * 60 + sM;
             let endMin = eH * 60 + eM;
             if (endMin < startMin) endMin += 24 * 60;
             setInitialTotalHours(((endMin - startMin) / 60).toFixed(2));
@@ -784,41 +811,83 @@ function ProgressNotePageInner() {
         return;
       }
 
-      const docId = await saveSubmission(
-        submission as unknown as ProgressNoteFormData,
-        user ? { nurseId: user.uid } : undefined
-      );
-      // Self-healing care-team membership. Always fired post-save —
-      // the endpoint handles BOTH the "patientId set by the form"
-      // case AND the "nurse typed manually so patientId is empty but
-      // name+DOB exact-match a roster patient" case. The latter
-      // recovers notes that would otherwise pile up in the
-      // /admin/maintenance/link-notes queue. Fire-and-forget — the
-      // note is already saved either way.
-      if (user) {
-        void authedFetch('/api/care-team/auto-add-author', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ noteId: docId }),
-        }).catch((err) => console.error('Auto-add to care team failed:', err));
+      const submissionId = ensureSubmissionId();
+      const clientNameVal = String(submission.q3_clientName || '');
+      const dateOfServiceVal = String(submission.q6_dateofService || '');
+      const patientIdVal = String(submission.patientId || '');
+
+      // Idempotent retry: if this exact note id was already written (a prior
+      // attempt succeeded server-side but the ack never reached the client,
+      // e.g. on spotty internet), don't write again — treat it as done.
+      const alreadyWritten = await submissionExists(submissionId);
+
+      let docId = submissionId;
+      if (!alreadyWritten) {
+        // Human-duplicate guard: a brand-new note (fresh id) for a shift the
+        // nurse already documented. The deterministic-id retry path can't
+        // catch this, so we ask once. skipDuplicateConfirmRef short-circuits
+        // the re-submit after she confirms.
+        if (!skipDuplicateConfirmRef.current && user) {
+          const dup = await findDuplicateSubmission({
+            nurseId: user.uid,
+            dateOfService: dateOfServiceVal,
+            patientId: patientIdVal || undefined,
+            clientName: clientNameVal || undefined,
+            excludeId: submissionId,
+          });
+          if (dup) {
+            setPendingDuplicateConfirm(dup);
+            setSubmitting(false);
+            return;
+          }
+        }
+
+        docId = await saveSubmission(
+          submission as unknown as ProgressNoteFormData,
+          { ...(user ? { nurseId: user.uid } : {}), submissionId }
+        );
+        // Self-healing care-team membership. Always fired post-save —
+        // the endpoint handles BOTH the "patientId set by the form"
+        // case AND the "nurse typed manually so patientId is empty but
+        // name+DOB exact-match a roster patient" case. The latter
+        // recovers notes that would otherwise pile up in the
+        // /admin/maintenance/link-notes queue. Fire-and-forget — the
+        // note is already saved either way.
+        if (user) {
+          void authedFetch('/api/care-team/auto-add-author', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ noteId: docId }),
+          }).catch((err) => console.error('Auto-add to care team failed:', err));
+        }
       }
-      alert(`Progress note submitted successfully!\nSubmission ID: ${docId}`);
+      skipDuplicateConfirmRef.current = false;
+
+      // Clear the form + draft so "Start another note" yields a blank form
+      // and nothing can be accidentally re-submitted. The success splash
+      // (below) then hands off to the confirmation page.
       reset();
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(CHECKBOX_STORAGE_KEY);
       localStorage.removeItem('progress-note-page');
       clearRadioStorage();
-      // Remove the Firestore draft — submission supersedes it.
       if (user) {
         try { await deleteDraft(user.uid); } catch (err) { console.error('Failed to delete draft after submit:', err); }
       }
+      // Mint a fresh id for the next note so it doesn't collide with this one.
+      submissionIdRef.current = '';
       setSaveStatus('idle');
       setLastSavedAt(null);
-      formRef.current.reset();
-      // Re-apply the nurse identity prefill since reset() blew it away.
-      applyProfilePrefill();
-      setCurrentPage(1);
-      window.scrollTo(0, 0);
+
+      // Show the success splash, then redirect to the dedicated confirmation
+      // page. Leaving the form entirely is what makes accidental re-submit
+      // impossible — there's no Submit button on the confirmation screen.
+      setSubmittedInfo({ id: docId, clientName: clientNameVal, dateOfService: dateOfServiceVal });
+      setTimeout(() => {
+        const qs = new URLSearchParams({ c: clientNameVal, d: dateOfServiceVal }).toString();
+        router.push(`/progress-note/submitted/${docId}?${qs}`);
+      }, 1800);
+      return;
     } catch (error) {
       console.error('Submission error:', error);
       alert('Failed to submit progress note. Please try again.');
@@ -1285,6 +1354,101 @@ function ProgressNotePageInner() {
                 Use {pendingPatientConfirm.candidate.patientName}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Duplicate-note confirmation. Fires when a note for this nurse +
+          date of service + patient already exists, to stop accidental
+          double submissions for the same shift. */}
+      {pendingDuplicateConfirm && (
+        <div className={`${styles.confirmModal} ${styles.active}`}>
+          <div className={styles.modalContent}>
+            <h2 style={{ color: '#7c3a00', marginTop: 0 }}>
+              A note for this shift already exists
+            </h2>
+            <p style={{ color: '#555', lineHeight: 1.6, marginBottom: 8 }}>
+              You&apos;ve already submitted a progress note for:
+            </p>
+            <p
+              style={{
+                background: '#fff8ec',
+                border: '1px solid #f0d9a8',
+                padding: '8px 12px',
+                borderRadius: 6,
+                fontSize: 14,
+                color: '#1a3a5c',
+                margin: '0 0 16px 0',
+              }}
+            >
+              <strong>{pendingDuplicateConfirm.clientName || 'this patient'}</strong>
+              {' '}on{' '}
+              <strong>{pendingDuplicateConfirm.dateOfService}</strong>
+              {pendingDuplicateConfirm.submittedAt && (
+                <span style={{ color: '#5c6b7a', fontSize: 12, display: 'block', marginTop: 4 }}>
+                  Submitted {pendingDuplicateConfirm.submittedAt.toLocaleString()}
+                </span>
+              )}
+            </p>
+            <p style={{ color: '#666', fontSize: 13, lineHeight: 1.5, marginBottom: 20 }}>
+              If you meant to update that note, cancel and edit the existing one instead.
+              Only submit again if this is genuinely a separate note for the same day.
+            </p>
+            <div className={styles.modalButtons}>
+              <button
+                type="button"
+                onClick={() => setPendingDuplicateConfirm(null)}
+                className={styles.cancelBtn}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  // Proceed with a brand-new note for the same shift. Mint a
+                  // fresh id so it can't collide with the existing one, arm
+                  // the skip so the guard doesn't fire again, and re-submit.
+                  submissionIdRef.current = crypto.randomUUID();
+                  skipDuplicateConfirmRef.current = true;
+                  setPendingDuplicateConfirm(null);
+                  setTimeout(() => formRef.current?.requestSubmit(), 0);
+                }}
+                className={styles.confirmBtn}
+              >
+                Submit anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success splash — shown briefly before the redirect to the
+          confirmation page. Covers the form so the now-cleared fields
+          aren't mistaken for an unsubmitted note. */}
+      {submittedInfo && (
+        <div className={`${styles.confirmModal} ${styles.active}`}>
+          <div className={styles.modalContent} style={{ textAlign: 'center' }}>
+            <div
+              style={{
+                width: 64,
+                height: 64,
+                borderRadius: '50%',
+                background: '#e8f5e9',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 16px',
+              }}
+            >
+              <Check size={36} color="#2e7d32" strokeWidth={3} />
+            </div>
+            <h2 style={{ color: '#2e7d32', marginTop: 0, marginBottom: 8 }}>
+              Note submitted
+            </h2>
+            <p style={{ color: '#555', lineHeight: 1.6, margin: 0 }}>
+              {submittedInfo.clientName ? `${submittedInfo.clientName}'s ` : ''}progress note was
+              saved successfully. Taking you to the confirmation…
+            </p>
           </div>
         </div>
       )}

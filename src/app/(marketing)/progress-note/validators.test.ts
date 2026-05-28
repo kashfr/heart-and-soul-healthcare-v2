@@ -54,7 +54,6 @@ describe('VITAL_RANGE typo guards', () => {
     ['pulse', '40', true],            // athlete bradycardia
     ['respiration', '60', true],      // newborn
     ['o2', '70', true],               // catastrophic but recorded
-    ['glucose', '500', true],         // severe hyperglycemia
     // Typos / impossible values (must fail)
     ['temperature', '970', false],    // typo: 97.0 → 970
     ['temperature', '9.7', false],
@@ -62,7 +61,6 @@ describe('VITAL_RANGE typo guards', () => {
     ['systolic', '1200', false],      // typo: trailing zero
     ['pulse', '9999', false],
     ['o2', '101', false],             // saturation can't exceed 100
-    ['glucose', '5000', false],
     ['respiration', '0', false],      // not breathing — should be a different field
     ['respiration', '999', false],
   ] as const;

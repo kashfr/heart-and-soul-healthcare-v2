@@ -422,10 +422,6 @@ function checkVitals(data: ProgressNoteFormData, overrides?: VitalRangesOverride
   const spo2Abnormal = !isNaN(spo2) && (spo2 < ranges.oxygenSaturation.low || spo2 > ranges.oxygenSaturation.high);
   if (spo2Abnormal) alerts.push(`SpO2: ${data.q20_oxygenSaturation}% (LOW)`);
 
-  const bg = parseNumeric(data.q21_bloodGlucose);
-  const bgAbnormal = !isNaN(bg) && hasValue(data.q21_bloodGlucose) && (bg < ranges.bloodGlucose.low || bg > ranges.bloodGlucose.high);
-  if (bgAbnormal) alerts.push(`Blood Glucose: ${data.q21_bloodGlucose} mg/dL (${bg < ranges.bloodGlucose.low ? 'LOW' : 'HIGH'})`);
-
   return {
     alerts,
     ageGroupLabel,
@@ -435,7 +431,6 @@ function checkVitals(data: ProgressNoteFormData, overrides?: VitalRangesOverride
       { label: 'Pulse', value: data.q18_pulse || '--', abnormal: pulseAbnormal },
       { label: 'Respirations', value: data.q19_respiration || '--', abnormal: respAbnormal },
       { label: 'SpO2', value: data.q20_oxygenSaturation || '--', abnormal: spo2Abnormal },
-      { label: 'Blood Glucose', value: data.q21_bloodGlucose || '--', abnormal: bgAbnormal },
     ],
   };
 }
@@ -742,7 +737,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding }: Prog
         {/* 5. Vital Signs */}
         {anyHasValue(data, [
           'q16_temperature', 'q17_bloodPressure', 'q18_pulse', 'q19_respiration',
-          'q20_oxygenSaturation', 'q21_bloodGlucose', 'q21_oxygenSource', 'q22_additionalObservations',
+          'q20_oxygenSaturation', 'q21_oxygenSource', 'q22_additionalObservations',
         ]) && (
           <View style={s.section} wrap={false}>
             <View style={s.sectionHeader}>

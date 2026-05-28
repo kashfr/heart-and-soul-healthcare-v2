@@ -31,7 +31,6 @@ const testData = {
     pulse: '72',
     resp: '18',
     spo2: '98%',
-    bloodGlucose: '110 mg/dL',
   },
   observations: {
     activity: 'Client was ambulatory with steady gait. Engaged in daily activities independently.',
@@ -468,10 +467,6 @@ export default function ProgressNotePreview() {
             <div style={styles.vitalCell}>
               <div style={styles.vitalLabel}>SpO2</div>
               <div style={styles.vitalValue}>{testData.vitals.spo2}</div>
-            </div>
-            <div style={styles.vitalCell}>
-              <div style={styles.vitalLabel}>Blood Glucose</div>
-              <div style={styles.vitalValue}>{testData.vitals.bloodGlucose}</div>
             </div>
           </div>
         </div>

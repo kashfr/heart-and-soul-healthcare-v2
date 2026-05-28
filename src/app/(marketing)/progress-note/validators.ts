@@ -38,5 +38,4 @@ export const VITAL_RANGE = {
   pulse: { min: 20, max: 250, label: 'Must be 20–250 bpm' },
   respiration: { min: 4, max: 80, label: 'Must be 4–80 breaths/min' },
   o2: { min: 50, max: 100, label: 'Must be 50–100 %' },
-  glucose: { min: 20, max: 800, label: 'Must be 20–800 mg/dL' },
 } as const;

@@ -20,7 +20,6 @@ export interface VitalRangeSet {
   pulse: VitalRange;
   respiration: VitalRange;
   oxygenSaturation: VitalRange;
-  bloodGlucose: VitalRange;
 }
 
 export type VitalKey = keyof VitalRangeSet;
@@ -43,7 +42,6 @@ const RANGES_BY_AGE_GROUP: Record<AgeGroup, VitalRangeSet> = {
     pulse:           { low: 100,  high: 160,  unit: 'bpm',   label: 'Pulse' },
     respiration:     { low: 30,   high: 60,   unit: '/min',  label: 'Respirations' },
     oxygenSaturation:{ low: 95,   high: 100,  unit: '%',     label: 'O2 Saturation' },
-    bloodGlucose:    { low: 40,   high: 180,  unit: 'mg/dL', label: 'Blood Glucose' },
   },
   infant: {
     temperature:     { low: 97.5, high: 99.5, unit: '°F',    label: 'Temperature' },
@@ -52,7 +50,6 @@ const RANGES_BY_AGE_GROUP: Record<AgeGroup, VitalRangeSet> = {
     pulse:           { low: 100,  high: 150,  unit: 'bpm',   label: 'Pulse' },
     respiration:     { low: 25,   high: 50,   unit: '/min',  label: 'Respirations' },
     oxygenSaturation:{ low: 95,   high: 100,  unit: '%',     label: 'O2 Saturation' },
-    bloodGlucose:    { low: 60,   high: 180,  unit: 'mg/dL', label: 'Blood Glucose' },
   },
   // Pediatric pulse/respiration/SBP bounds below were widened from textbook
   // "resting 5th-95th percentile" values to also accommodate normal awake/
@@ -69,7 +66,6 @@ const RANGES_BY_AGE_GROUP: Record<AgeGroup, VitalRangeSet> = {
     pulse:           { low: 80,   high: 130,  unit: 'bpm',   label: 'Pulse' },
     respiration:     { low: 20,   high: 30,   unit: '/min',  label: 'Respirations' },
     oxygenSaturation:{ low: 95,   high: 100,  unit: '%',     label: 'O2 Saturation' },
-    bloodGlucose:    { low: 70,   high: 180,  unit: 'mg/dL', label: 'Blood Glucose' },
   },
   preschool: {
     // Temp floor matches schoolAge at 97.0: real 4-5yo baselines run
@@ -81,7 +77,6 @@ const RANGES_BY_AGE_GROUP: Record<AgeGroup, VitalRangeSet> = {
     pulse:           { low: 70,   high: 130,  unit: 'bpm',   label: 'Pulse' },
     respiration:     { low: 18,   high: 30,   unit: '/min',  label: 'Respirations' },
     oxygenSaturation:{ low: 95,   high: 100,  unit: '%',     label: 'O2 Saturation' },
-    bloodGlucose:    { low: 70,   high: 180,  unit: 'mg/dL', label: 'Blood Glucose' },
   },
   schoolAge: {
     temperature:     { low: 97.0, high: 99.0, unit: '°F',    label: 'Temperature' },
@@ -90,7 +85,6 @@ const RANGES_BY_AGE_GROUP: Record<AgeGroup, VitalRangeSet> = {
     pulse:           { low: 60,   high: 130,  unit: 'bpm',   label: 'Pulse' },
     respiration:     { low: 14,   high: 28,   unit: '/min',  label: 'Respirations' },
     oxygenSaturation:{ low: 95,   high: 100,  unit: '%',     label: 'O2 Saturation' },
-    bloodGlucose:    { low: 70,   high: 180,  unit: 'mg/dL', label: 'Blood Glucose' },
   },
   adolescent: {
     temperature:     { low: 97.0, high: 99.0, unit: '°F',    label: 'Temperature' },
@@ -99,7 +93,6 @@ const RANGES_BY_AGE_GROUP: Record<AgeGroup, VitalRangeSet> = {
     pulse:           { low: 60,   high: 100,  unit: 'bpm',   label: 'Pulse' },
     respiration:     { low: 12,   high: 20,   unit: '/min',  label: 'Respirations' },
     oxygenSaturation:{ low: 95,   high: 100,  unit: '%',     label: 'O2 Saturation' },
-    bloodGlucose:    { low: 70,   high: 180,  unit: 'mg/dL', label: 'Blood Glucose' },
   },
   adult: {
     temperature:     { low: 97.0, high: 99.0, unit: '°F',    label: 'Temperature' },
@@ -108,7 +101,6 @@ const RANGES_BY_AGE_GROUP: Record<AgeGroup, VitalRangeSet> = {
     pulse:           { low: 60,   high: 100,  unit: 'bpm',   label: 'Pulse' },
     respiration:     { low: 12,   high: 20,   unit: '/min',  label: 'Respirations' },
     oxygenSaturation:{ low: 95,   high: 100,  unit: '%',     label: 'O2 Saturation' },
-    bloodGlucose:    { low: 70,   high: 180,  unit: 'mg/dL', label: 'Blood Glucose' },
   },
   elderly: {
     temperature:     { low: 96.0, high: 98.6, unit: '°F',    label: 'Temperature' },
@@ -117,7 +109,6 @@ const RANGES_BY_AGE_GROUP: Record<AgeGroup, VitalRangeSet> = {
     pulse:           { low: 60,   high: 100,  unit: 'bpm',   label: 'Pulse' },
     respiration:     { low: 12,   high: 20,   unit: '/min',  label: 'Respirations' },
     oxygenSaturation:{ low: 93,   high: 100,  unit: '%',     label: 'O2 Saturation' },
-    bloodGlucose:    { low: 70,   high: 180,  unit: 'mg/dL', label: 'Blood Glucose' },
   },
 };
 
@@ -306,7 +297,6 @@ export function hasAnyAbnormalVital(
     ['q18_pulse', 'pulse'],
     ['q19_respiration', 'respiration'],
     ['q20_oxygenSaturation', 'oxygenSaturation'],
-    ['q21_bloodGlucose', 'bloodGlucose'],
   ];
   for (const [field, key] of checks) {
     const raw = s(field);

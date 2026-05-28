@@ -136,7 +136,11 @@ service cloud.firestore {
             && incomingData().get('cosignedByName', null) == resource.data.get('cosignedByName', null)
             && incomingData().get('cosignedCredential', null) == resource.data.get('cosignedCredential', null)
             && incomingData().get('cosignedSignature', null) == resource.data.get('cosignedSignature', null));
-      allow delete: if isStaff();
+      // Delete is admin-only and flows exclusively through the Admin SDK
+      // route (/api/admin/submissions/[id] DELETE), which snapshots the note
+      // into deletedNotes first. Deny all client-side deletes — even staff —
+      // so the audit trail can never be bypassed.
+      allow delete: if false;
 
       // Edit history — append-only audit trail for every update.
       // Create: staff or the note's owning nurse. Entry's editedBy must
@@ -191,6 +195,16 @@ service cloud.firestore {
         && incomingData().format in ['zip', 'merged-pdf'];
       allow read: if isAdmin();
       allow update, delete: if false;
+    }
+
+    // Deleted-note audit trail. When an admin deletes a progress note, the
+    // Admin SDK route snapshots the full note here before removing it. Admin
+    // can read these for forensic recovery; all client writes are denied
+    // (the snapshot is written server-side via Admin SDK, which bypasses
+    // these rules).
+    match /deletedNotes/{noteId} {
+      allow read: if isAdmin();
+      allow write: if false;
     }
 
     // Org-wide settings (single doc at settings/global). Any signed-in
