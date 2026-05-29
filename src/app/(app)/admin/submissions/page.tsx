@@ -133,6 +133,9 @@ export default function SubmissionsPage() {
   const flagPhysNotified = searchParams.get('phy') === '1';
   const flagNeedsCosign = searchParams.get('cosign') === '1';
   const page = Math.max(1, Number(searchParams.get('p') || '1'));
+  // Current filter/sort state, carried to the note detail page so its
+  // "Back to Submissions" returns to this exact filtered view.
+  const returnQs = searchParams.toString();
 
   const [allSubmissions, setAllSubmissions] = useState<SubmissionSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1298,7 +1301,10 @@ export default function SubmissionsPage() {
                         </td>
                         <td style={{ ...tdStyle, textAlign: 'center' }}>
                           <div style={{ display: 'flex', gap: 6, rowGap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
-                            <Link href={`/admin/submissions/${s.id}`} style={viewBtnStyle}>
+                            <Link
+                              href={`/admin/submissions/${s.id}${returnQs ? `?back=${encodeURIComponent(returnQs)}` : ''}`}
+                              style={viewBtnStyle}
+                            >
                               View
                             </Link>
                             {isRn && needsCosign(s, requiredCosignCreds) && s.nurseId !== user?.uid && (
@@ -1309,7 +1315,7 @@ export default function SubmissionsPage() {
                               // without ever seeing the clinical content,
                               // which defeats the compliance review.
                               <Link
-                                href={`/admin/submissions/${s.id}?cosign=1`}
+                                href={`/admin/submissions/${s.id}?cosign=1${returnQs ? `&back=${encodeURIComponent(returnQs)}` : ''}`}
                                 style={rowCosignBtnStyle}
                                 title="Review and co-sign this note"
                               >

@@ -49,6 +49,12 @@ export default function SubmissionDetailPage({ params }: PageProps) {
       Submissions row Co-sign button and we should encourage signing once
       they've read the note. */
   const cosignMode = searchParams.get('cosign') === '1';
+  // Preserve the Submissions list's filters/sort when returning. The list
+  // passes its current query string as `back` on the View / Co-sign links, so
+  // "Back to Submissions" returns to that exact filtered view instead of the
+  // bare list. Falls back to the bare list when opened directly (no `back`).
+  const backParam = searchParams.get('back');
+  const backHref = backParam ? `/admin/submissions?${backParam}` : '/admin/submissions';
   const [formData, setFormData] = useState<ProgressNoteFormData | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -155,7 +161,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             <p style={{ fontSize: 18, fontWeight: 600, color: '#c62828' }}>
               Submission not found
             </p>
-            <Link href="/admin/submissions" style={backLinkStyle}>
+            <Link href={backHref} style={backLinkStyle}>
               &larr; Back to Submissions
             </Link>
           </div>
@@ -363,7 +369,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
       <div style={wrapStyle}>
         {/* Actions bar - hidden on print */}
         <div style={actionsBarStyle} className="no-print">
-          <Link href="/admin/submissions" style={backLinkStyle}>
+          <Link href={backHref} style={backLinkStyle}>
             &larr; Back to Submissions
           </Link>
           <div style={{ display: 'flex', gap: 10 }}>
