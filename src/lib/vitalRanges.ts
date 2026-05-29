@@ -24,7 +24,7 @@ export interface VitalRangeSet {
 
 export type VitalKey = keyof VitalRangeSet;
 
-type AgeGroup =
+export type AgeGroup =
   | 'newborn'     // 0-28 days
   | 'infant'      // 1-12 months
   | 'toddler'     // 1-3 years
@@ -33,6 +33,15 @@ type AgeGroup =
   | 'adolescent'  // 13-17 years
   | 'adult'       // 18-64 years
   | 'elderly';    // 65+ years
+
+/**
+ * The hard-coded default range for an age group + vital. Exposed so the admin
+ * vital-range settings can show the current default as the input placeholder —
+ * the admin sees the threshold before deciding whether to override it.
+ */
+export function getDefaultVitalRange(group: AgeGroup, vital: VitalKey): VitalRange {
+  return RANGES_BY_AGE_GROUP[group][vital];
+}
 
 const RANGES_BY_AGE_GROUP: Record<AgeGroup, VitalRangeSet> = {
   newborn: {

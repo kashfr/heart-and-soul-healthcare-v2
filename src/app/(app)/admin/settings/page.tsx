@@ -20,6 +20,7 @@ import {
   type VitalRangeKey,
   type VitalRangePair,
 } from '@/lib/settings';
+import { getDefaultVitalRange } from '@/lib/vitalRanges';
 
 /**
  * /admin/settings — admin-only org-wide configuration.
@@ -356,8 +357,9 @@ export default function AdminSettingsPage() {
         <section style={sectionStyle}>
           <h2 style={sectionTitleStyle}>Vital sign ranges</h2>
           <p style={sectionSubStyle}>
-            Per-age-group thresholds for what counts as an abnormal vital. Leave a cell
-            blank to use the hard-coded default. Set both low and high to override.
+            Per-age-group thresholds for what counts as an abnormal vital. The greyed-out
+            number in each field is the current default — leave a cell blank to keep it, or
+            type a value to override. Set both low and high to override a vital.
             Changes apply to the dashboard &quot;Abnormal vitals&quot; pill, the detail
             view banner, and downloaded PDFs. The progress-note form&apos;s real-time
             colour highlighting continues to use the hard-coded defaults — fine for the
@@ -419,6 +421,7 @@ export default function AdminSettingsPage() {
                   >
                     {ALL_VITAL_RANGE_KEYS.map((vital) => {
                       const pair = groupOverrides[vital];
+                      const def = getDefaultVitalRange(group, vital);
                       return (
                         <div
                           key={vital}
@@ -445,7 +448,7 @@ export default function AdminSettingsPage() {
                             <input
                               type="number"
                               step="any"
-                              placeholder="low"
+                              placeholder={String(def.low)}
                               value={pair?.low ?? ''}
                               onChange={(e) => {
                                 const n = parseFloat(e.target.value);
@@ -457,7 +460,7 @@ export default function AdminSettingsPage() {
                             <input
                               type="number"
                               step="any"
-                              placeholder="high"
+                              placeholder={String(def.high)}
                               value={pair?.high ?? ''}
                               onChange={(e) => {
                                 const n = parseFloat(e.target.value);
