@@ -1,26 +1,34 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import type { FormPageProps } from '../types';
 import styles from '../page.module.css';
-import DeselectableRadio from './DeselectableRadio';
+import DeselectableRadio, { radioState, radioSubscribe, radioGetSnapshot } from './DeselectableRadio';
+
+const ADVERSE_VALUE = 'Adverse reaction / intolerance — document below';
 
 interface FormPageFiveProps extends FormPageProps {
   credential?: string;
 }
 
 export default function FormPageFive({ formRef, register, watch, setValue, control, credential }: FormPageFiveProps) {
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    adverseReaction: false,
-    eventResponse: false,
-  });
+  // Re-render whenever any DeselectableRadio changes so this page can react to
+  // the Medication Tolerance choice. q43_medTolerance lives in the radio store
+  // (not react-hook-form), so we read its current value from there. The
+  // Adverse Reaction detail box only appears once a nurse explicitly reports
+  // an adverse reaction — keeping it hidden the rest of the time stops nurses
+  // assuming the (entirely optional) box is something they must fill in.
+  useSyncExternalStore(radioSubscribe, radioGetSnapshot, radioGetSnapshot);
+  const showAdverse = radioState['q43_medTolerance'] === ADVERSE_VALUE;
 
-  const toggleSection = (section: string) => {
-    setExpandedSections((prev) => ({
-      ...prev,
-      [section]: !prev[section],
-    }));
-  };
+  // Once the box appears it stays collapsible; default expanded so the nurse
+  // sees the fields right after choosing "adverse reaction."
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    adverseReaction: true,
+  });
+  const toggleSection = (key: string) =>
+    setExpandedSections((prev) => ({ ...prev, [key]: !prev[key] }));
+
   if (!credential || (credential !== 'LPN' && credential !== 'RN')) {
     return (
       <div>
@@ -176,15 +184,22 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
                 Tolerated without difficulty
               </label>
               <label>
-                <DeselectableRadio name="q43_medTolerance" value="Adverse reaction / intolerance — document below" />
+                <DeselectableRadio name="q43_medTolerance" value={ADVERSE_VALUE} />
                 Adverse reaction / intolerance — document below
               </label>
             </div>
+            <p style={{ margin: '6px 0 0', fontSize: 12, color: '#6b7280' }}>
+              Optional. Only choose &ldquo;Adverse reaction&rdquo; if the patient actually had a
+              reaction — it opens a detail box to document it. Otherwise leave this blank or
+              choose &ldquo;Tolerated without difficulty.&rdquo;
+            </p>
           </div>
         </div>
       </div>
 
-      {/* Adverse Reaction Detail Box */}
+      {/* Adverse Reaction Detail Box — only shown once the nurse reports an
+          adverse reaction via the Medication Tolerance radio above. */}
+      {showAdverse && (
       <div style={{
         background: '#fff3f0',
         borderLeft: '3px solid #c62828',
@@ -298,6 +313,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
           </div>
         </div>
       </div>
+      )}
 
     </div>
   );

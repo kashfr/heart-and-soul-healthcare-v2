@@ -427,7 +427,17 @@ function checkVitals(data: ProgressNoteFormData, overrides?: VitalRangesOverride
     ageGroupLabel,
     cells: [
       { label: 'Temperature', value: data.q16_temperature || '--', abnormal: tempAbnormal },
-      { label: 'Blood Pressure', value: data.q17_bloodPressure || '--', abnormal: bpAbnormal },
+      {
+        label: 'Blood Pressure',
+        value:
+          data.q17_bloodPressure ||
+          (data.q17_bpNotObtainedReason
+            ? `Not obtained — ${data.q17_bpNotObtainedReason}${
+                data.q17_bpNotObtainedNote ? ` (${data.q17_bpNotObtainedNote})` : ''
+              }`
+            : '--'),
+        abnormal: bpAbnormal,
+      },
       { label: 'Pulse', value: data.q18_pulse || '--', abnormal: pulseAbnormal },
       { label: 'Respirations', value: data.q19_respiration || '--', abnormal: respAbnormal },
       { label: 'SpO2', value: data.q20_oxygenSaturation || '--', abnormal: spo2Abnormal },

@@ -532,7 +532,17 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         >
           <div style={vitalsGridStyle}>
             <VitalCard label="Temperature" value={data.q16_temperature} />
-            <VitalCard label="Blood Pressure" value={data.q17_bloodPressure} />
+            <VitalCard
+              label="Blood Pressure"
+              value={
+                data.q17_bloodPressure ||
+                (data.q17_bpNotObtainedReason
+                  ? `Not obtained — ${data.q17_bpNotObtainedReason}${
+                      data.q17_bpNotObtainedNote ? ` (${data.q17_bpNotObtainedNote})` : ''
+                    }`
+                  : '')
+              }
+            />
             <VitalCard label="Pulse" value={data.q18_pulse} />
             <VitalCard label="Respirations" value={data.q19_respiration} />
             <VitalCard label="SpO2" value={data.q20_oxygenSaturation} />

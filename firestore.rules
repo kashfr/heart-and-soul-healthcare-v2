@@ -103,7 +103,18 @@ service cloud.firestore {
       // matches getRole() above. Notes with no patientId (free-text
       // entries that didn't match the roster) stay author-only —
       // they never resolve a patient doc to check.
-      allow read: if isStaff()
+      //
+      // First clause is the bug fix: the submit flow's idempotency precheck
+      // (submissionExists → getDoc(progressNotes/<fresh-id>)) reads a doc that
+      // does NOT exist yet. For a non-existent doc `resource` is null, so the
+      // nurse clauses below — which dereference resource.data — ERROR and the
+      // read is denied, throwing "Failed to submit progress note" before the
+      // create ever runs. That silently blocked every nurse submission. Allow
+      // any active user to read a non-existent note (it holds no data to leak)
+      // so the precheck resolves cleanly; staff already short-circuit via
+      // isStaff(). Same non-existent-doc hazard the noteDrafts rule calls out.
+      allow read: if (hasActiveProfile() && resource == null)
+        || isStaff()
         || (isNurse() && resource.data.nurseId == request.auth.uid)
         || (isNurse()
             && resource.data.get('patientId', null) != null

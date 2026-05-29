@@ -50,6 +50,10 @@ export interface ProgressNoteFormData {
   // Page 2: Vital Signs
   q16_temperature: string;
   q17_bloodPressure: string;
+  // When BP can't be measured the nurse records a reason instead of a reading:
+  // q17_bloodPressure stays empty and these capture the why.
+  q17_bpNotObtainedReason?: string;
+  q17_bpNotObtainedNote?: string;
   q18_pulse: string;
   q19_respiration: string;
   q20_oxygenSaturation: string;

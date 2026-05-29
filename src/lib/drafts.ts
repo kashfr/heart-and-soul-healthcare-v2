@@ -8,7 +8,9 @@
 
 import {
   doc,
+  collection,
   getDoc,
+  getDocs,
   setDoc,
   deleteDoc,
   serverTimestamp,
@@ -60,14 +62,11 @@ export async function saveDraft(payload: NoteDraftPayload): Promise<void> {
   }
 }
 
-export async function loadDraft(uid: string): Promise<NoteDraft | null> {
-  const snap = await getDoc(draftRef(uid));
-  if (!snap.exists()) return null;
-  const data = snap.data();
+function mapDraftDoc(id: string, data: Record<string, unknown>): NoteDraft {
   const createdAt = data.createdAt as Timestamp | null | undefined;
   const updatedAt = data.updatedAt as Timestamp | null | undefined;
   return {
-    nurseId: String(data.nurseId || ''),
+    nurseId: String(data.nurseId || id),
     nurseName: String(data.nurseName || ''),
     clientName: String(data.clientName || ''),
     dateOfService: String(data.dateOfService || ''),
@@ -79,6 +78,24 @@ export async function loadDraft(uid: string): Promise<NoteDraft | null> {
     createdAt: createdAt ? createdAt.toDate() : null,
     updatedAt: updatedAt ? updatedAt.toDate() : null,
   };
+}
+
+export async function loadDraft(uid: string): Promise<NoteDraft | null> {
+  const snap = await getDoc(draftRef(uid));
+  if (!snap.exists()) return null;
+  return mapDraftDoc(snap.id, snap.data());
+}
+
+/**
+ * List every in-progress draft, newest-updated first. Staff-only at the rules
+ * layer (admins + supervisors can read all drafts). Powers the In-Progress
+ * inspector so staff can see who's mid-note and what's blocking them.
+ */
+export async function listDrafts(): Promise<NoteDraft[]> {
+  const snap = await getDocs(collection(db, 'noteDrafts'));
+  const drafts = snap.docs.map((d) => mapDraftDoc(d.id, d.data()));
+  drafts.sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0));
+  return drafts;
 }
 
 export async function deleteDraft(uid: string): Promise<void> {

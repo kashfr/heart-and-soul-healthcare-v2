@@ -607,17 +607,27 @@ function ProgressNotePageInner() {
 
     if (!formRef.current) return;
 
-    // Helper: is this element (or any ancestor up to the form) hidden? Used
-    // to skip fields on inactive tabs (display:none) and credential-gated
-    // sections (overlay with pointerEvents:none).
-    const isElementVisible = (el: HTMLElement): boolean => {
+    // Helper: should this element be validated? We validate required fields on
+    // EVERY tab the current credential uses — not just the tab on screen — and
+    // jump to the first offender below. Submit lives on the last tab, so a
+    // tab-scoped check would let a blank field on an earlier tab slip through.
+    // We therefore IGNORE the page-level display:none that merely reflects the
+    // active tab, but still skip fields hidden inside a collapsed section or
+    // behind a credential overlay (pointerEvents:none), and skip whole tabs
+    // this credential doesn't use.
+    const isElementValidatable = (el: HTMLElement): boolean => {
+      const form = formRef.current;
+      if (!form) return false;
       let current: HTMLElement | null = el;
-      while (current && current !== formRef.current) {
+      while (current && current.parentElement && current.parentElement !== form) {
         if (current.style.display === 'none') return false;
         if (current.style.pointerEvents === 'none' && current.style.opacity !== '') return false;
         current = current.parentElement;
       }
-      return true;
+      // `current` is now the page-level wrapper (a direct child of the form).
+      if (!current || current.parentElement !== form) return false;
+      const pageNum = Array.from(form.children).indexOf(current) + 1;
+      return activePages.includes(pageNum);
     };
 
     // Run RHF's validation so the validate rules (numeric range guards,
@@ -640,7 +650,7 @@ function ProgressNotePageInner() {
         '[role="alert"], input[required], select[required], textarea[required]'
       )
     ).filter((el) => {
-      if (!isElementVisible(el)) return false;
+      if (!isElementValidatable(el)) return false;
       if (el.getAttribute('role') === 'alert') return true;
       const input = el as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
       if ((input as HTMLInputElement).type === 'hidden') return false;
@@ -652,6 +662,31 @@ function ProgressNotePageInner() {
 
     if (candidates.length > 0) {
       const target = candidates[0];
+
+      // Human-readable name for a candidate so the alert can say *what* is
+      // missing. The form is noValidate (native "please fill this in" bubbles
+      // are suppressed) and `required` isn't an RHF rule, so empty required
+      // fields render no inline message — without this the nurse just gets
+      // silently scrolled to a blank box and thinks Submit is broken.
+      const friendlyLabel = (el: HTMLElement): string => {
+        if (el.getAttribute('role') === 'alert') {
+          return (el.textContent || '').trim();
+        }
+        const id = el.id;
+        if (id) {
+          const lab = formRef.current?.querySelector<HTMLElement>(`label[for="${id}"]`);
+          if (lab?.textContent) return lab.textContent.replace(/[*⚠]/g, '').trim();
+        }
+        const aria = el.getAttribute('aria-label');
+        if (aria) return aria.trim();
+        const ph = (el as HTMLInputElement).placeholder;
+        if (ph) return ph.trim();
+        return 'a required field';
+      };
+      const missingLabels = Array.from(
+        new Set(candidates.map(friendlyLabel).filter(Boolean))
+      );
+
       // Walk up to the page-level wrapper (direct child of the form) so we
       // can switch tabs before scrolling.
       let pageWrap: HTMLElement | null = target;
@@ -664,12 +699,77 @@ function ProgressNotePageInner() {
       }
       setTimeout(() => {
         target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        // Focus the field itself when it's an input (not the alert message).
+        // Focus the field itself when it's an input (not the alert message),
+        // and flag it red so it's obvious which box needs attention. The
+        // highlight clears itself once she starts typing.
         const tag = target.tagName;
         if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') {
-          (target as HTMLElement).focus();
+          const inp = target as HTMLInputElement;
+          inp.style.border = '2px solid #c62828';
+          inp.style.background = '#fff5f5';
+          inp.focus();
+          const clearHighlight = () => {
+            inp.style.border = '';
+            inp.style.background = '';
+            inp.removeEventListener('input', clearHighlight);
+          };
+          inp.addEventListener('input', clearHighlight);
         }
       }, 80);
+
+      const list = missingLabels.slice(0, 6).map((l) => `• ${l}`).join('\n');
+      const more =
+        missingLabels.length > 6 ? `\n…and ${missingLabels.length - 6} more` : '';
+      alert(
+        `Please complete the following required field${missingLabels.length === 1 ? '' : 's'} before submitting:\n\n${list}${more}\n\nWe've taken you to the first one and highlighted it in red.`
+      );
+      return;
+    }
+
+    // Blood pressure: require either a full reading (both numbers) OR a
+    // documented reason it couldn't be obtained. We check this explicitly
+    // rather than with the HTML `required` attribute so (a) a nurse can
+    // legitimately skip BP when it's genuinely unobtainable, and (b) the
+    // check fires from any tab — the required-field scan above only sees the
+    // tab the nurse is currently on.
+    const bpSys = String(getValues('q17_systolic') || '').trim();
+    const bpDia = String(getValues('q17_diastolic') || '').trim();
+    const bpReason = String(getValues('q17_bpNotObtainedReason') || '').trim();
+    const bpHasReading = bpSys !== '' && bpDia !== '';
+    if (!bpHasReading && bpReason === '') {
+      const partial = bpSys !== '' || bpDia !== '';
+      setCurrentPage(2);
+      setTimeout(() => {
+        const sysEl = formRef.current?.querySelector('#q17_systolic') as HTMLInputElement | null;
+        if (sysEl) {
+          sysEl.style.border = '2px solid #c62828';
+          sysEl.style.background = '#fff5f5';
+          sysEl.focus();
+          sysEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
+      alert(
+        partial
+          ? 'Please enter BOTH blood pressure numbers (top and bottom), or choose a reason it could not be obtained.'
+          : 'Please enter a blood pressure, or — if it could not be obtained — choose a reason from the dropdown under the BP boxes on the Vitals tab.'
+      );
+      return;
+    }
+
+    // Client condition at shift end is a DeselectableRadio (stored in the
+    // radio module store, not RHF) with no HTML `required` attribute, so the
+    // required-field scan above can't see it. Enforce it explicitly like the
+    // signature/BP checks so it actually blocks submission.
+    const conditionAtEnd = String(radioState['q60_conditionAtEnd'] || '').trim();
+    if (!conditionAtEnd) {
+      setCurrentPage(activePages[activePages.length - 1]);
+      setTimeout(() => {
+        const radio = formRef.current?.querySelector(
+          'input[name="q60_conditionAtEnd"]'
+        ) as HTMLElement | null;
+        radio?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 100);
+      alert("Please select the client's condition at shift end before submitting.");
       return;
     }
 

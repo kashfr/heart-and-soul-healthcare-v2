@@ -119,6 +119,11 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
   const isAbnormal = (key: string) => key in alerts;
   const isBPAbnormal = 'systolic' in alerts || 'diastolic' in alerts;
 
+  // When a reason is chosen from the "unable to obtain BP" dropdown, the two
+  // numeric BP inputs are disabled/cleared and the reason satisfies the
+  // required-BP check at submit. Empty reason = a normal reading is expected.
+  const bpNotObtained = !!watch('q17_bpNotObtainedReason');
+
   return (
     <div>
       <div className={styles.section}>
@@ -401,7 +406,9 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                 {/* Two narrow numeric inputs read as a single BP entry. The
                     legacy q17_bloodPressure string is kept in sync via the
                     effect below so the dashboard, PDF, and abnormal-vitals
-                    helper continue to work without changes. */}
+                    helper continue to work without changes. BP is no longer a
+                    hard `required` field: a nurse who can't obtain it picks a
+                    reason from the dropdown instead (validated at submit). */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <input
                     className={styles.input}
@@ -410,7 +417,7 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                     id="q17_systolic"
                     placeholder="120"
                     aria-label="Systolic"
-                    required
+                    disabled={bpNotObtained}
                     {...register('q17_systolic', {
                       validate: rangeValidator(RANGE.systolic.min, RANGE.systolic.max, RANGE.systolic.label),
                     })}
@@ -423,7 +430,7 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                     id="q17_diastolic"
                     placeholder="80"
                     aria-label="Diastolic"
-                    required
+                    disabled={bpNotObtained}
                     {...register('q17_diastolic', {
                       validate: rangeValidator(RANGE.diastolic.min, RANGE.diastolic.max, RANGE.diastolic.label),
                     })}
@@ -431,6 +438,40 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                 </div>
                 {/* Hidden mirror so the existing "120/80" key keeps working. */}
                 <input type="hidden" {...register('q17_bloodPressure')} />
+                {/* Unable-to-obtain reason. Selecting any reason disables and
+                    clears the two inputs above and satisfies the BP check. */}
+                <select
+                  className={styles.select}
+                  id="q17_bpNotObtainedReason"
+                  aria-label="Reason blood pressure not obtained"
+                  style={{ marginTop: 6, fontSize: 13 }}
+                  {...register('q17_bpNotObtainedReason', {
+                    onChange: (e) => {
+                      if (e.target.value) {
+                        setValue('q17_systolic', '');
+                        setValue('q17_diastolic', '');
+                      } else {
+                        setValue('q17_bpNotObtainedNote', '');
+                      }
+                    },
+                  })}
+                >
+                  <option value="">BP recorded above &mdash; or select if unable to obtain&hellip;</option>
+                  <option value="Patient refused">Unable to obtain &mdash; patient refused</option>
+                  <option value="Unable to tolerate / uncooperative">Unable to obtain &mdash; unable to tolerate / uncooperative</option>
+                  <option value="Equipment unavailable or malfunction">Unable to obtain &mdash; equipment unavailable / malfunction</option>
+                  <option value="Clinically contraindicated">Unable to obtain &mdash; clinically contraindicated</option>
+                  <option value="Other">Unable to obtain &mdash; other (note below)</option>
+                </select>
+                {bpNotObtained && (
+                  <input
+                    className={styles.input}
+                    id="q17_bpNotObtainedNote"
+                    placeholder="Optional note (details on why BP wasn't obtained)…"
+                    style={{ marginTop: 6, fontSize: 13 }}
+                    {...register('q17_bpNotObtainedNote')}
+                  />
+                )}
                 <FieldError name="q17_systolic" errors={errors} />
                 <FieldError name="q17_diastolic" errors={errors} />
               </div>
