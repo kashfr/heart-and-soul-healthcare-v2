@@ -15,6 +15,7 @@ import {
 import { authedFetch } from '@/lib/authedFetch';
 import { useAuth } from '@/components/AuthProvider';
 import type { Role } from '@/lib/auth';
+import { formatUSPhone } from '@/lib/phone';
 
 interface StaffRow {
   uid: string;
@@ -22,6 +23,7 @@ interface StaffRow {
   displayName: string | null;
   role: Role | null;
   credential: string | null;
+  phone: string | null;
   active: boolean;
   /** True once the user has signed in to the portal at least once (driven
       by Firebase Auth's metadata.lastSignInTime, fetched server-side). */
@@ -35,6 +37,7 @@ interface CreateResult {
   displayName: string;
   role: Role;
   credential: string | null;
+  phone: string | null;
   resetLink: string;
   orphansClaimed?: number;
   /** True if Resend successfully sent the invite/reset email to the user. */
@@ -211,6 +214,7 @@ function StaffTable({
           <tr>
             <th style={thStyle}>Name</th>
             <th style={thStyle}>Email</th>
+            <th style={thStyle}>Phone</th>
             <th style={thStyle}>Role</th>
             <th style={thStyle}>Credential</th>
             <th style={thStyle}>Status</th>
@@ -249,6 +253,20 @@ function StaffTable({
                   </div>
                 </td>
                 <td style={tdStyle}>{s.email || '—'}</td>
+                <td style={tdStyle}>
+                  {s.phone ? (
+                    <a
+                      href={`tel:${s.phone.replace(/\D/g, '')}`}
+                      onClick={(e) => e.stopPropagation()}
+                      style={phoneLinkStyle}
+                      title={`Call ${s.displayName || 'this staff member'}`}
+                    >
+                      {s.phone}
+                    </a>
+                  ) : (
+                    <span style={{ color: '#aaa' }}>—</span>
+                  )}
+                </td>
                 <td style={tdStyle}>
                   <span style={roleBadgeStyle(s.role)}>{s.role || '—'}</span>
                 </td>
@@ -313,6 +331,7 @@ function AddStaffModal({
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<Role>('nurse');
   const [credential, setCredential] = useState('');
+  const [phone, setPhone] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -328,6 +347,7 @@ function AddStaffModal({
           email: email.trim().toLowerCase(),
           role,
           credential: credential.trim() || undefined,
+          phone: phone.trim() || undefined,
         }),
       });
       const body = await res.json();
@@ -371,6 +391,18 @@ function AddStaffModal({
               onChange={(e) => setEmail(e.target.value)}
               style={inputStyle}
               placeholder="staff@example.com"
+              disabled={submitting}
+            />
+          </Field>
+
+          <Field label="Phone" help="US number. Optional — lets a reviewer call the nurse about her notes.">
+            <input
+              type="tel"
+              inputMode="tel"
+              value={phone}
+              onChange={(e) => setPhone(formatUSPhone(e.target.value))}
+              style={inputStyle}
+              placeholder="(555) 123-4567"
               disabled={submitting}
             />
           </Field>
@@ -452,6 +484,7 @@ function EditStaffModal({
   const [displayName, setDisplayName] = useState(staff.displayName || '');
   const [email, setEmail] = useState(staff.email || '');
   const [credential, setCredential] = useState(staff.credential || '');
+  const [phone, setPhone] = useState(staff.phone || '');
   const [role, setRole] = useState<Role>(staff.role || 'nurse');
   const [busy, setBusy] = useState<null | 'save' | 'deactivate' | 'reactivate' | 'link'>(null);
   const [error, setError] = useState<string | null>(null);
@@ -463,6 +496,7 @@ function EditStaffModal({
   const dirty =
     displayName.trim() !== (staff.displayName || '') ||
     credential.trim() !== (staff.credential || '') ||
+    phone.trim() !== (staff.phone || '') ||
     role !== staff.role ||
     emailChanged;
 
@@ -492,6 +526,7 @@ function EditStaffModal({
       const patchBody: Record<string, unknown> = {};
       if (displayName.trim() !== (staff.displayName || '')) patchBody.displayName = displayName.trim();
       if (credential.trim() !== (staff.credential || '')) patchBody.credential = credential.trim();
+      if (phone.trim() !== (staff.phone || '')) patchBody.phone = phone.trim();
       if (role !== staff.role) patchBody.role = role;
       if (emailChanged) patchBody.email = email.trim();
       const updated = await patch(patchBody);
@@ -582,6 +617,18 @@ function EditStaffModal({
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               style={inputStyle}
+              disabled={!!busy}
+            />
+          </Field>
+
+          <Field label="Phone" help="US number. Optional — lets a reviewer call the nurse about her notes.">
+            <input
+              type="tel"
+              inputMode="tel"
+              value={phone}
+              onChange={(e) => setPhone(formatUSPhone(e.target.value))}
+              style={inputStyle}
+              placeholder="(555) 123-4567"
               disabled={!!busy}
             />
           </Field>
@@ -814,6 +861,7 @@ const tableWrapStyle: React.CSSProperties = { background: 'white', borderRadius:
 const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 14 };
 const thStyle: React.CSSProperties = { textAlign: 'left', padding: '12px 14px', borderBottom: '1px solid #e5e7eb', color: '#5c6b7a', fontWeight: 700, fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 };
 const tdStyle: React.CSSProperties = { padding: '12px 14px', borderBottom: '1px solid #f1f3f5', color: '#2c3e50' };
+const phoneLinkStyle: React.CSSProperties = { color: '#1a73e8', textDecoration: 'none', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' };
 const altRowStyle: React.CSSProperties = { background: '#fafbfc' };
 const sectionHeadingStyle: React.CSSProperties = { fontSize: 14, color: '#2c3e50', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: 0.5 };
 const statusBadgeStyle: React.CSSProperties = { display: 'inline-block', padding: '2px 8px', fontSize: 11, fontWeight: 700, borderRadius: 999, textTransform: 'uppercase', letterSpacing: 0.4 };

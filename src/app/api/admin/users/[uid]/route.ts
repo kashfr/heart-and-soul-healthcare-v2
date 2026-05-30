@@ -5,6 +5,7 @@ import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
 import { sendEmailChangedNotice } from '@/lib/emails/emailChanged';
 import type { Role } from '@/lib/auth';
+import { formatUSPhone, isValidUSPhone, phoneDigits } from '@/lib/phone';
 
 const VALID_ROLES: Role[] = ['admin', 'supervisor', 'nurse'];
 
@@ -18,6 +19,7 @@ interface PatchBody {
   role?: Role;
   active?: boolean;
   email?: string;
+  phone?: string;
 }
 
 function badRequest(message: string) {
@@ -79,6 +81,16 @@ export async function PATCH(
 
   if (body.credential !== undefined) {
     update.credential = body.credential.trim();
+  }
+
+  // Phone is optional and clearable. An empty string removes it; a non-empty
+  // value must be a complete US number and is stored normalized.
+  if (body.phone !== undefined) {
+    const trimmed = body.phone.trim();
+    if (trimmed && !isValidUSPhone(trimmed)) {
+      return badRequest('Phone number must be a 10-digit US number.');
+    }
+    update.phone = trimmed ? formatUSPhone(phoneDigits(trimmed)) : '';
   }
 
   if (body.role !== undefined) {
@@ -186,6 +198,7 @@ export async function PATCH(
     displayName: fresh.displayName ?? null,
     role: fresh.role ?? null,
     credential: fresh.credential ?? null,
+    phone: fresh.phone ?? null,
     active: fresh.active !== false,
   });
 }

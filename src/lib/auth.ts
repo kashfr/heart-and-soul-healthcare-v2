@@ -9,6 +9,9 @@ export interface UserProfile {
   displayName: string;
   role: Role;
   credential?: string;
+  /** US contact number in `(XXX) XXX-XXXX` format. Optional. Lets a reviewer
+      reach the nurse about something in her notes. */
+  phone?: string;
   active: boolean;
   createdAt?: unknown;
   invitedBy?: string;

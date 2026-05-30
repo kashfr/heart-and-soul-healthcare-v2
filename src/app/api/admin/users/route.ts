@@ -5,12 +5,14 @@ import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
 import type { Role } from '@/lib/auth';
 import { sendStaffInvite } from '@/lib/emails/staffInvite';
+import { formatUSPhone, isValidUSPhone, phoneDigits } from '@/lib/phone';
 
 interface CreateUserBody {
   displayName: string;
   email: string;
   role: Role;
   credential?: string;
+  phone?: string;
 }
 
 const VALID_ROLES: Role[] = ['admin', 'supervisor', 'nurse'];
@@ -43,6 +45,7 @@ export async function POST(request: Request) {
   const email = (body.email || '').trim().toLowerCase();
   const role = body.role;
   const credential = (body.credential || '').trim();
+  const phoneRaw = (body.phone || '').trim();
 
   if (!displayName) return badRequest('displayName is required.');
   if (!email || !/.+@.+\..+/.test(email)) return badRequest('A valid email is required.');
@@ -50,6 +53,12 @@ export async function POST(request: Request) {
   if (role === 'nurse' && !credential) {
     return badRequest('credential is required for nurses.');
   }
+  // Phone is optional, but if supplied it must be a complete US number. We
+  // store it in normalized `(XXX) XXX-XXXX` form regardless of how it arrives.
+  if (phoneRaw && !isValidUSPhone(phoneRaw)) {
+    return badRequest('Phone number must be a 10-digit US number.');
+  }
+  const phone = phoneRaw ? formatUSPhone(phoneDigits(phoneRaw)) : '';
   if (caller.role === 'supervisor' && role === 'admin') {
     return NextResponse.json(
       { error: 'Supervisors cannot create admin accounts.' },
@@ -88,6 +97,7 @@ export async function POST(request: Request) {
     displayName,
     role,
     ...(credential ? { credential } : {}),
+    ...(phone ? { phone } : {}),
     active: true,
     invitedBy: caller.uid,
     createdAt: FieldValue.serverTimestamp(),
@@ -144,6 +154,7 @@ export async function POST(request: Request) {
     displayName,
     role,
     credential: credential || null,
+    phone: phone || null,
     resetLink,
     orphansClaimed: toClaim.length,
     emailSent: emailResult.ok,
@@ -174,6 +185,7 @@ export async function GET(request: Request) {
       displayName: data.displayName ?? null,
       role: data.role ?? null,
       credential: data.credential ?? null,
+      phone: data.phone ?? null,
       active: data.active !== false,
       createdAt,
     };
