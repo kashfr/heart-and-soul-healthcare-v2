@@ -8,6 +8,7 @@ import {
   updateSubmission,
   type ProgressNoteFormData,
 } from '@/lib/submissions';
+import { computeAgeString } from '@/lib/age';
 import { useAuth } from '@/components/AuthProvider';
 
 interface PageProps {
@@ -44,7 +45,18 @@ export default function EditSubmissionPage({ params }: PageProps) {
   }, [id]);
 
   const handleChange = (field: keyof ProgressNoteFormData, value: string) => {
-    setFormData((prev) => (prev ? { ...prev, [field]: value } : prev));
+    setFormData((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, [field]: value };
+      // Age is derived from DOB as-of the date of service. Recompute it
+      // whenever either changes so a corrected DOB can't leave a stale age
+      // behind (the bug that left a 2022-born client showing "0 days").
+      if (field === 'q4_dateofBirth' || field === 'q6_dateofService') {
+        const recomputed = computeAgeString(next.q4_dateofBirth, next.q6_dateofService);
+        if (recomputed) next.q5_ageYears = recomputed;
+      }
+      return next;
+    });
     setSaved(false);
   };
 
@@ -53,6 +65,10 @@ export default function EditSubmissionPage({ params }: PageProps) {
     setSaving(true);
     try {
       const { submittedAt, status, ...updateData } = formData;
+      // Safety net: guarantee the stored age matches DOB + date of service on
+      // every save, even if the field was somehow set directly.
+      const recomputedAge = computeAgeString(updateData.q4_dateofBirth, updateData.q6_dateofService);
+      if (recomputedAge) updateData.q5_ageYears = recomputedAge;
       await updateSubmission(id, updateData, {
         uid: user.uid,
         displayName: profile?.displayName ?? user.displayName ?? user.email,
@@ -132,7 +148,7 @@ export default function EditSubmissionPage({ params }: PageProps) {
             <EditField label="Date of Birth" field="q4_dateofBirth" value={formData.q4_dateofBirth} onChange={handleChange} type="date" />
           </FieldRow>
           <FieldRow>
-            <EditField label="Age" field="q5_ageYears" value={formData.q5_ageYears} onChange={handleChange} />
+            <EditField label="Age" field="q5_ageYears" value={formData.q5_ageYears} onChange={handleChange} readOnly help="Auto-calculated from Date of Birth and Date of Service." />
             <EditField label="Primary Diagnosis" field="q10_primaryDiagnosis" value={formData.q10_primaryDiagnosis} onChange={handleChange} />
           </FieldRow>
           <FieldRow>
@@ -252,12 +268,16 @@ function EditField({
   value,
   onChange,
   type = 'text',
+  readOnly = false,
+  help,
 }: {
   label: string;
   field: keyof ProgressNoteFormData;
   value: string;
   onChange: (field: keyof ProgressNoteFormData, value: string) => void;
   type?: string;
+  readOnly?: boolean;
+  help?: string;
 }) {
   return (
     <div style={editFieldWrapStyle}>
@@ -266,8 +286,10 @@ function EditField({
         type={type}
         value={value || ''}
         onChange={(e) => onChange(field, e.target.value)}
-        style={editInputStyle}
+        readOnly={readOnly}
+        style={readOnly ? { ...editInputStyle, background: '#f1f3f5', color: '#5c6b7a', cursor: 'not-allowed' } : editInputStyle}
       />
+      {help && <span style={{ fontSize: 11, color: '#7f8c8d', display: 'block', marginTop: 4 }}>{help}</span>}
     </div>
   );
 }

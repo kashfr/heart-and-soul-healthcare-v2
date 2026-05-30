@@ -39,6 +39,26 @@ interface BackfillSummary {
   ranBy: string;
 }
 
+interface AgeChange {
+  noteId: string;
+  clientName: string;
+  dob: string;
+  dateOfService: string;
+  oldAge: string;
+  newAge: string;
+}
+
+interface AgeFixResult {
+  ranBy: string;
+  applied: boolean;
+  notesScanned: number;
+  changeCount: number;
+  changes: AgeChange[];
+  skippedNoDob: number;
+  skippedNoService: number;
+  skippedBadDate: number;
+}
+
 const wrapStyle: React.CSSProperties = {
   padding: 24,
   maxWidth: 960,
@@ -172,6 +192,9 @@ export default function LinkNotesPage() {
   const [summary, setSummary] = useState<BackfillSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
+  const [ageBusy, setAgeBusy] = useState<null | 'preview' | 'apply'>(null);
+  const [ageResult, setAgeResult] = useState<AgeFixResult | null>(null);
+  const [ageError, setAgeError] = useState<string | null>(null);
 
   const fetchQueue = useCallback(async () => {
     setLoading(true);
@@ -213,6 +236,28 @@ export default function LinkNotesPage() {
       setError(err instanceof Error ? err.message : 'Backfill failed.');
     } finally {
       setRunningBackfill(false);
+    }
+  };
+
+  const runAgeFix = async (apply: boolean) => {
+    setAgeBusy(apply ? 'apply' : 'preview');
+    setAgeError(null);
+    if (!apply) setAgeResult(null);
+    try {
+      const res = await authedFetch('/api/admin/maintenance/fix-ages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apply }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || `Age fix failed (HTTP ${res.status})`);
+      }
+      setAgeResult((await res.json()) as AgeFixResult);
+    } catch (err) {
+      setAgeError(err instanceof Error ? err.message : 'Age fix failed.');
+    } finally {
+      setAgeBusy(null);
     }
   };
 
@@ -295,6 +340,84 @@ export default function LinkNotesPage() {
           {summary.patientsBackfilled} patient care teams updated.
         </div>
       )}
+
+      {/* Fix client ages — recompute stale q5_ageYears from DOB + date of
+          service. Preview is a dry run; Apply writes. */}
+      <div style={{ ...cardStyle, marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <strong style={{ color: '#1a3a5c', fontSize: 15 }}>Fix client ages</strong>
+            <p style={{ ...subStyle, marginTop: 4 }}>
+              Recomputes each note&apos;s stored age from its date of birth as-of the date of service.
+              Fixes notes whose age went stale after a DOB correction. <strong>Preview</strong> shows
+              what would change without writing; <strong>Apply</strong> writes the fixes.
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => runAgeFix(false)}
+              disabled={ageBusy !== null}
+              style={{ ...skipBtnStyle, padding: '10px 16px', fontSize: 14, opacity: ageBusy ? 0.6 : 1 }}
+            >
+              {ageBusy === 'preview' ? 'Previewing…' : 'Preview'}
+            </button>
+            <button
+              type="button"
+              onClick={() => runAgeFix(true)}
+              disabled={ageBusy !== null || !ageResult || ageResult.changeCount === 0}
+              title={!ageResult ? 'Run Preview first' : ageResult.changeCount === 0 ? 'Nothing to fix' : undefined}
+              style={{ ...primaryBtn, opacity: ageBusy !== null || !ageResult || ageResult.changeCount === 0 ? 0.5 : 1 }}
+            >
+              {ageBusy === 'apply' ? 'Applying…' : 'Apply fixes'}
+            </button>
+          </div>
+        </div>
+
+        {ageError && (
+          <div style={{ background: '#fff3f0', border: '1px solid #ef9a9a', color: '#b71c1c', padding: 10, borderRadius: 6, marginTop: 12, fontSize: 13 }}>
+            {ageError}
+          </div>
+        )}
+
+        {ageResult && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ ...summaryStyle, marginBottom: ageResult.changeCount > 0 ? 10 : 0 }}>
+              {ageResult.applied ? <strong>Applied. </strong> : <strong>Preview (no changes written). </strong>}
+              Scanned {ageResult.notesScanned} notes ·{' '}
+              <strong>{ageResult.changeCount}</strong>{' '}
+              {ageResult.applied ? 'corrected' : 'would change'}
+              {(ageResult.skippedNoService > 0 || ageResult.skippedNoDob > 0 || ageResult.skippedBadDate > 0) && (
+                <> · skipped {ageResult.skippedNoDob} without DOB, {ageResult.skippedNoService} without date of service, {ageResult.skippedBadDate} with an unparseable date</>
+              )}
+              .
+              {!ageResult.applied && ageResult.changeCount > 0 && <> Click <strong>Apply fixes</strong> to write them.</>}
+            </div>
+            {ageResult.changeCount > 0 && (
+              <div style={{ border: '1px solid #eef2f7', borderRadius: 6, overflow: 'hidden' }}>
+                {ageResult.changes.map((c, i) => (
+                  <div
+                    key={c.noteId}
+                    style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'baseline', padding: '8px 12px', background: i % 2 ? '#fafbfc' : 'white', fontSize: 13 }}
+                  >
+                    <Link href={`/admin/submissions/${c.noteId}`} target="_blank" style={{ color: '#0e7c4a', fontWeight: 600 }}>
+                      {c.clientName || '(no name)'} ↗
+                    </Link>
+                    <span style={{ color: '#5c6b7a' }}>
+                      DOB {formatDate(c.dob)} · service {formatDate(c.dateOfService)}
+                    </span>
+                    <span style={{ marginLeft: 'auto', fontFamily: 'ui-monospace, SFMono-Regular, monospace' }}>
+                      <span style={{ color: '#b71c1c' }}>{c.oldAge}</span>
+                      {' → '}
+                      <span style={{ color: '#0e7c4a', fontWeight: 700 }}>{c.newAge}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {error && (
         <div

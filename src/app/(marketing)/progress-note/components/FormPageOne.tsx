@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Patient } from '@/lib/patients';
 import { findNameCandidates, type RosterPatientLite } from '@/lib/levenshtein';
+import { computeAgeString } from '@/lib/age';
 import type { FormPageProps } from '../types';
 import styles from '../page.module.css';
 
@@ -117,25 +118,11 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Calculate age as of a reference date (date of service), falling back to today
-  const calculateAge = (dob: string, asOfDate?: string): string => {
-    const birthDate = new Date(dob + 'T12:00:00');
-    const asOf = asOfDate ? new Date(asOfDate + 'T12:00:00') : new Date();
-    let years = asOf.getFullYear() - birthDate.getFullYear();
-    const monthDiff = asOf.getMonth() - birthDate.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && asOf.getDate() < birthDate.getDate())) {
-      years--;
-    }
-    if (years >= 1) return String(years);
-    // Under 1 year — calculate months
-    let months = (asOf.getFullYear() - birthDate.getFullYear()) * 12 + (asOf.getMonth() - birthDate.getMonth());
-    if (asOf.getDate() < birthDate.getDate()) months--;
-    if (months >= 1) return `${months} mo`;
-    // Under 1 month — calculate days
-    const diffMs = asOf.getTime() - birthDate.getTime();
-    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    return `${days} day${days !== 1 ? 's' : ''}`;
-  };
+  // Age as of a reference date (date of service), falling back to today.
+  // Shared with the admin note editor + maintenance recompute tool via
+  // src/lib/age.ts so the three can't drift.
+  const calculateAge = (dob: string, asOfDate?: string): string =>
+    computeAgeString(dob, asOfDate);
 
   // Recalculate age whenever DOB or date of service changes
   const recalcAge = (dob?: string, serviceDate?: string) => {
