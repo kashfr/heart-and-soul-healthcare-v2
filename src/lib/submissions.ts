@@ -492,6 +492,28 @@ function normalizeForDiff(v: unknown): string {
 }
 
 /**
+ * Compute the field-level diff between an existing note and an incoming update.
+ * Returns only the fields that actually changed (skipping system/metadata
+ * fields). Shared so the edit form can detect "did anything change?" on the
+ * client using the exact same rules the server uses to write the audit entry —
+ * no logic drift between the two.
+ */
+export function computeSubmissionChanges(
+  oldData: Record<string, unknown>,
+  newData: Partial<ProgressNoteFormData>
+): Record<string, { from: unknown; to: unknown }> {
+  const changes: Record<string, { from: unknown; to: unknown }> = {};
+  for (const [key, newVal] of Object.entries(newData)) {
+    if (SKIP_DIFF_FIELDS.has(key)) continue;
+    const oldVal = oldData[key];
+    if (normalizeForDiff(oldVal) !== normalizeForDiff(newVal)) {
+      changes[key] = { from: oldVal ?? null, to: newVal ?? null };
+    }
+  }
+  return changes;
+}
+
+/**
  * Update a progress note submission. When an `editor` is supplied, the update
  * is batched with a write to `progressNotes/{id}/editHistory` recording who
  * changed what and when — this is the audit trail supervisors review.
@@ -499,7 +521,8 @@ function normalizeForDiff(v: unknown): string {
 export async function updateSubmission(
   id: string,
   data: Partial<ProgressNoteFormData>,
-  editor?: SubmissionEditor
+  editor?: SubmissionEditor,
+  reason?: string
 ): Promise<void> {
   try {
     const docRef = doc(db, 'progressNotes', id);
@@ -510,14 +533,7 @@ export async function updateSubmission(
         throw new Error('Submission not found.');
       }
       const oldData = existingSnap.data() as Record<string, unknown>;
-      const changes: Record<string, { from: unknown; to: unknown }> = {};
-      for (const [key, newVal] of Object.entries(data)) {
-        if (SKIP_DIFF_FIELDS.has(key)) continue;
-        const oldVal = oldData[key];
-        if (normalizeForDiff(oldVal) !== normalizeForDiff(newVal)) {
-          changes[key] = { from: oldVal ?? null, to: newVal ?? null };
-        }
-      }
+      const changes = computeSubmissionChanges(oldData, data);
 
       const batch = writeBatch(db);
       batch.update(docRef, {
@@ -526,12 +542,17 @@ export async function updateSubmission(
       });
       if (Object.keys(changes).length > 0) {
         const historyRef = doc(collection(docRef, 'editHistory'));
+        const trimmedReason = reason?.trim();
         batch.set(historyRef, {
           editedBy: editor.uid,
           editedByName: editor.displayName || '',
           editedByRole: editor.role,
           editedAt: serverTimestamp(),
           changes,
+          // The editor's stated reason for the change. Required by the edit
+          // form for any change to an already-submitted note (compliance:
+          // corrections/addenda should record the "why").
+          ...(trimmedReason ? { reason: trimmedReason } : {}),
         });
       }
       await batch.commit();
@@ -556,6 +577,12 @@ export interface EditHistoryEntry {
   editedByRole: Role;
   editedAt: Date | null;
   changes: Record<string, { from: unknown; to: unknown }>;
+  /**
+   * The editor's stated reason for this change, captured at edit time. Distinct
+   * from `correctionNote` (an after-the-fact annotation) — this is what the
+   * editor typed when they saved the change.
+   */
+  reason?: string;
   /**
    * Optional after-the-fact annotation on a revision entry. Used to record a
    * factual correction/context note (e.g. "this field change was caused by a
@@ -585,6 +612,7 @@ export async function getEditHistory(id: string): Promise<EditHistoryEntry[]> {
         editedByRole: (data.editedByRole || 'nurse') as Role,
         editedAt: editedAt ? editedAt.toDate() : null,
         changes: (data.changes || {}) as Record<string, { from: unknown; to: unknown }>,
+        ...(data.reason ? { reason: data.reason as string } : {}),
         ...(data.correctionNote ? { correctionNote: data.correctionNote as string } : {}),
       };
     });

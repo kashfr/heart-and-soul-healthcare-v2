@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form';
 import { Check, AlertTriangle, Loader2 } from 'lucide-react';
 import { getPatients, type Patient } from '@/lib/patients';
 import { findNameCandidates, type RosterPatientLite, type MatchCandidate } from '@/lib/levenshtein';
-import { saveSubmission, getSubmission, updateSubmission, submissionExists, findDuplicateSubmission, type ProgressNoteFormData, type DuplicateMatch } from '@/lib/submissions';
+import { saveSubmission, getSubmission, updateSubmission, submissionExists, findDuplicateSubmission, computeSubmissionChanges, type ProgressNoteFormData, type DuplicateMatch } from '@/lib/submissions';
 import { saveDraft, loadDraft, deleteDraft, clearDuplicateRequest, subscribeOwnDupRequest, type NoteDraft, type DuplicateRequest } from '@/lib/drafts';
 import { normalizeName } from '@/lib/levenshtein';
 import { authedFetch } from '@/lib/authedFetch';
@@ -122,6 +122,17 @@ function ProgressNotePageInner() {
   // by the time the form re-submits.
   const skipPatientConfirmRef = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
+
+  // Edit-reason capture. When an already-submitted note is edited and the
+  // editor saves an actual change, we interrupt with a modal asking *why*
+  // (compliance: corrections/addenda should record a reason). The original
+  // loaded data is stashed so we can diff client-side and only prompt when
+  // something genuinely changed. editReasonRef holds the captured reason
+  // synchronously across the modal-close → requestSubmit() round-trip.
+  const originalEditDataRef = useRef<Record<string, unknown> | null>(null);
+  const editReasonRef = useRef('');
+  const [showEditReasonModal, setShowEditReasonModal] = useState(false);
+  const [editReasonText, setEditReasonText] = useState('');
 
   // Stable id for the note this form will eventually submit. Generated
   // lazily (first autosave or submit), persisted on the draft, and reused
@@ -544,6 +555,11 @@ function ProgressNotePageInner() {
 
         // Cast to Record for dynamic access
         const rawData = data as unknown as Record<string, string>;
+
+        // Snapshot the as-loaded values so the submit handler can diff against
+        // them and decide whether an edit actually changed anything (gates the
+        // "reason for edit" prompt).
+        originalEditDataRef.current = { ...(data as unknown as Record<string, unknown>) };
 
         // Set credential first to ensure correct pages are shown
         if (rawData.q12_credential) {
@@ -1019,6 +1035,23 @@ function ProgressNotePageInner() {
         if (!user || !role) {
           throw new Error('You must be signed in to update a note.');
         }
+
+        // If this edit actually changes a field and we haven't captured a
+        // reason yet, interrupt to ask why. The client-side diff uses the same
+        // rules the server uses to write the audit entry, so the prompt fires
+        // exactly when (and only when) an audit entry will be recorded.
+        const editChanges = originalEditDataRef.current
+          ? computeSubmissionChanges(
+              originalEditDataRef.current,
+              submission as unknown as Partial<ProgressNoteFormData>,
+            )
+          : {};
+        if (Object.keys(editChanges).length > 0 && !editReasonRef.current.trim()) {
+          setSubmitting(false);
+          setShowEditReasonModal(true);
+          return;
+        }
+
         await updateSubmission(
           editId,
           submission as unknown as Partial<ProgressNoteFormData>,
@@ -1026,8 +1059,10 @@ function ProgressNotePageInner() {
             uid: user.uid,
             displayName: profile?.displayName ?? user.displayName ?? user.email,
             role,
-          }
+          },
+          editReasonRef.current.trim() || undefined,
         );
+        editReasonRef.current = '';
         alert('Progress note updated successfully!');
         window.location.href = `/admin/submissions/${editId}`;
         return;
@@ -1606,6 +1641,96 @@ function ProgressNotePageInner() {
                 className={styles.confirmBtn}
               >
                 Use {pendingPatientConfirm.candidate.patientName}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reason-for-edit capture. Fires when an already-submitted note is
+          edited and the change is about to be saved. The editor's identity,
+          role, and timestamp are recorded automatically in the audit trail;
+          this captures the *why*. */}
+      {showEditReasonModal && (
+        <div className={`${styles.confirmModal} ${styles.active}`}>
+          <div className={styles.modalContent}>
+            <h2 style={{ color: '#1a3a5c', marginTop: 0 }}>
+              What changed, and why?
+            </h2>
+            <p style={{ color: '#555', lineHeight: 1.6, marginBottom: 12 }}>
+              You&apos;re editing a submitted note. Please note the reason for this
+              change — it&apos;s saved to the note&apos;s revision history. Your name,
+              role, and the date and time are recorded automatically.
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+              {[
+                'Corrected a data-entry error',
+                'Added information omitted at the time of charting',
+                'Updated per supervisor',
+                'Corrected the shift time',
+              ].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => setEditReasonText(preset)}
+                  style={{
+                    background: '#f1f5f9',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 999,
+                    padding: '4px 10px',
+                    fontSize: 12,
+                    color: '#334155',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {preset}
+                </button>
+              ))}
+            </div>
+            <textarea
+              value={editReasonText}
+              onChange={(e) => setEditReasonText(e.target.value)}
+              placeholder="e.g. Corrected the respiratory rate — transposed digits at entry."
+              rows={3}
+              autoFocus
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                padding: '8px 10px',
+                border: '1px solid #cbd5e1',
+                borderRadius: 6,
+                fontSize: 14,
+                fontFamily: 'inherit',
+                resize: 'vertical',
+                marginBottom: 16,
+              }}
+            />
+            <div className={styles.modalButtons}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEditReasonModal(false);
+                  setEditReasonText('');
+                }}
+                className={styles.cancelBtn}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!editReasonText.trim()}
+                onClick={() => {
+                  const reason = editReasonText.trim();
+                  if (!reason) return;
+                  editReasonRef.current = reason;
+                  setShowEditReasonModal(false);
+                  setEditReasonText('');
+                  setTimeout(() => formRef.current?.requestSubmit(), 0);
+                }}
+                className={styles.confirmBtn}
+                style={!editReasonText.trim() ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+              >
+                Save change
               </button>
             </div>
           </div>

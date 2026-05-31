@@ -43,3 +43,6 @@ next-env.d.ts
 # Claude Code working artifacts (worktrees + image previews)
 .claude/worktrees/
 .claude/image-previews/
+
+# Internal incident/compliance records — contain staff names, never commit
+GROOMING-DEFECT-INCIDENT-*.md

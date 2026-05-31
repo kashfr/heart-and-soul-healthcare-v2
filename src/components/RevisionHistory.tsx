@@ -121,6 +121,14 @@ function RevisionEntry({ entry }: { entry: EditHistoryEntry }) {
         </span>
       </button>
 
+      {entry.reason && (
+        <div style={reasonStyle}>
+          <span>
+            <strong>Reason for edit:</strong> {entry.reason}
+          </span>
+        </div>
+      )}
+
       {entry.correctionNote && (
         <div style={correctionNoteStyle}>
           <Info size={14} style={{ flexShrink: 0, marginTop: 1 }} />
@@ -171,6 +179,7 @@ const errorStyle: React.CSSProperties = { padding: '10px 12px', background: '#fd
 const listStyle: React.CSSProperties = { listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 };
 const entryStyle: React.CSSProperties = { border: '1px solid #e5e7eb', borderRadius: 6, background: '#fafbfc' };
 const entryHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 12px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', fontSize: 13, color: '#2c3e50' };
+const reasonStyle: React.CSSProperties = { margin: '0 12px 10px', padding: '8px 10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, color: '#334155', fontSize: 12.5, lineHeight: 1.45 };
 const correctionNoteStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 8, margin: '0 12px 10px', padding: '8px 10px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 6, color: '#1e40af', fontSize: 12.5, lineHeight: 1.45 };
 const diffWrapStyle: React.CSSProperties = { padding: '0 12px 12px' };
 const diffTableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
