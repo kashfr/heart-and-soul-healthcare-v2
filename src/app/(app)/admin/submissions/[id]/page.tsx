@@ -16,6 +16,7 @@ import { getVitalRanges, getAgeGroupLabel } from '@/lib/vitalRanges';
 import { useAuth } from '@/components/AuthProvider';
 import RevisionHistory from '@/components/RevisionHistory';
 import CoSignModal from '@/components/CoSignModal';
+import ClarificationPanel from '@/components/ClarificationPanel';
 import type { SubmissionSummary } from '@/lib/submissions';
 
 interface PageProps {
@@ -990,6 +991,18 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           </p>
         </div>
 
+        {/* Flag for clarification — visible to reviewers (to raise/resolve)
+            and to the note's author (to respond). */}
+        <ClarificationPanel
+          noteId={id}
+          clarification={formData.clarification}
+          viewerRole={role}
+          viewerCredential={profile?.credential}
+          viewerUid={user?.uid}
+          authorId={(formData as { nurseId?: string }).nurseId}
+          onChanged={loadNote}
+        />
+
         {/* Revision history — staff only (rules deny read for nurses) */}
         {!isNurse && <RevisionHistory submissionId={id} />}
       </div>
@@ -1029,6 +1042,12 @@ export default function SubmissionDetailPage({ params }: PageProps) {
                 <div style={{ fontSize: 13, color: '#475569' }}>
                   Click below to add your RN co-signature.
                 </div>
+                {formData?.clarification?.status === 'open' && (
+                  <div style={{ fontSize: 12.5, color: '#b45309', marginTop: 4, fontWeight: 600, maxWidth: 460 }}>
+                    ⚠ This note has an open clarification flag. You can still co-sign,
+                    but you may want it resolved first.
+                  </div>
+                )}
               </div>
               <button
                 type="button"
@@ -1071,6 +1090,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           cosignedAt: null,
           cosignedByName: '',
           cosignedCredential: '',
+          clarificationStatus: formData?.clarification?.status ?? null,
         };
         return (
           <CoSignModal

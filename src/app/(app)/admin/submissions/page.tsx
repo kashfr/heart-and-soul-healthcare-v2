@@ -1294,6 +1294,11 @@ export default function SubmissionsPage() {
                                 Needs co-sign
                               </span>
                             )}
+                            {s.clarificationStatus === 'open' && (
+                              <span style={flagBadgeAmber} title="Open clarification flag">
+                                Needs clarification
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td style={tdStyle}>

@@ -127,6 +127,12 @@ export interface ProgressNoteFormData {
   cosignedCredential?: string;
   cosignedSignature?: string;
 
+  // "Flag for clarification" thread (written by
+  // /api/admin/submissions/[id]/clarification). A reviewer (RN/supervisor/
+  // admin) asks the author a question; the author responds; a reviewer
+  // resolves. One active thread per note.
+  clarification?: NoteClarification | null;
+
   // Link to the canonical patient roster doc. Populated by:
   //   - the backfill script (matches existing notes to patients by name+DOB)
   //   - the form's auto-fill picker (when a nurse selects from roster)
@@ -141,6 +147,30 @@ export interface ProgressNoteFormData {
    * reviewed-and-skipped (no link possible) and reviewed-and-linked.
    */
   linkReviewed?: boolean;
+}
+
+/**
+ * "Flag for clarification" thread on a note. A reviewer raises a question, the
+ * author responds, a reviewer resolves. Timestamps are Firestore Timestamps as
+ * stored; the view layer converts as needed.
+ */
+export interface NoteClarification {
+  status: 'open' | 'resolved';
+  message: string;
+  flaggedBy: string;
+  flaggedByName: string;
+  flaggedByRole: Role;
+  flaggedAt?: Timestamp | null;
+  response?: string;
+  respondedBy?: string;
+  respondedByName?: string;
+  respondedByRole?: Role;
+  respondedAt?: Timestamp | null;
+  resolvedBy?: string;
+  resolvedByName?: string;
+  resolvedByRole?: Role;
+  resolvedAt?: Timestamp | null;
+  resolutionNote?: string;
 }
 
 export interface SubmissionSummary {
@@ -164,6 +194,8 @@ export interface SubmissionSummary {
   cosignedAt: Date | null;
   cosignedByName: string;
   cosignedCredential: string;
+  /** 'open' when a clarification flag is awaiting resolution, else null. */
+  clarificationStatus: 'open' | 'resolved' | null;
 }
 
 export type ArchiveScope = 'staff' | 'nurse';
@@ -335,6 +367,11 @@ function mapDocToSummary(
     cosignedAt: cosignedAt ? cosignedAt.toDate() : null,
     cosignedByName: (data.cosignedByName as string) || '',
     cosignedCredential: (data.cosignedCredential as string) || '',
+    clarificationStatus:
+      ((data.clarification as { status?: string } | undefined)?.status as
+        | 'open'
+        | 'resolved'
+        | undefined) ?? null,
   };
 }
 
