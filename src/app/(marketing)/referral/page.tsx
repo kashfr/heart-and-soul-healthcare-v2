@@ -451,13 +451,14 @@ export default function ReferralPage() {
                           </div>
                           <p>{programs.find(p => p.value === formData.programInterest)?.description}</p>
                           {formData.programInterest !== 'private-pay' && formData.programInterest !== 'other' && (
-                            <Link
+                            <a
                               href={`/programs/${formData.programInterest}`}
                               className={styles.programLearnMore}
                               target="_blank"
+                              rel="noopener noreferrer"
                             >
                               Learn more about this program <ArrowRight size={14} />
-                            </Link>
+                            </a>
                           )}
                         </motion.div>
                       ) : (

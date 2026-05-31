@@ -434,9 +434,9 @@ export default function LinkNotesPage() {
                     key={c.noteId}
                     style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'baseline', padding: '8px 12px', background: i % 2 ? '#fafbfc' : 'white', fontSize: 13 }}
                   >
-                    <Link href={`/admin/submissions/${c.noteId}`} target="_blank" style={{ color: '#0e7c4a', fontWeight: 600 }}>
+                    <a href={`/admin/submissions/${c.noteId}`} target="_blank" rel="noopener noreferrer" style={{ color: '#0e7c4a', fontWeight: 600 }}>
                       {c.clientName || '(no name)'} ↗
-                    </Link>
+                    </a>
                     <span style={{ color: '#5c6b7a' }}>
                       DOB {formatDate(c.dob)} · service {formatDate(c.dateOfService)}
                     </span>
@@ -502,9 +502,9 @@ export default function LinkNotesPage() {
                     key={n.id}
                     style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'baseline', padding: '8px 12px', background: ni % 2 ? '#fafbfc' : 'white', fontSize: 13 }}
                   >
-                    <Link href={`/admin/submissions/${n.id}`} target="_blank" style={{ color: '#0e7c4a', fontWeight: 600 }}>
+                    <a href={`/admin/submissions/${n.id}`} target="_blank" rel="noopener noreferrer" style={{ color: '#0e7c4a', fontWeight: 600 }}>
                       Open note ↗
-                    </Link>
+                    </a>
                     <span style={{ color: '#5c6b7a' }}>
                       {n.submittedAt ? `Submitted ${new Date(n.submittedAt).toLocaleString()}` : 'Submit time unknown'}
                     </span>
@@ -552,13 +552,14 @@ export default function LinkNotesPage() {
               <span style={{ color: '#5c6b7a', fontSize: 13 }}>
                 by {item.nurseName || 'Unknown nurse'}
               </span>
-              <Link
+              <a
                 href={`/admin/submissions/${item.noteId}`}
                 target="_blank"
+                rel="noopener noreferrer"
                 style={{ color: '#0e7c4a', fontSize: 13, marginLeft: 'auto' }}
               >
                 Open note ↗
-              </Link>
+              </a>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
               <span style={typedTagStyle}>Typed name: {item.typedName || '(blank)'}</span>

@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useState, type CSSProperties } from 'react';
-import Link from 'next/link';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -259,13 +258,14 @@ export default function InProgressPage() {
                         {dupReq.reason ? dupReq.reason : <em style={{ color: '#9ca3af' }}>(none given)</em>}
                       </div>
                       {conflictNoteId && (
-                        <Link
+                        <a
                           href={`/admin/submissions/${conflictNoteId}`}
                           target="_blank"
+                          rel="noopener noreferrer"
                           style={{ fontSize: 13, color: '#0e7c4a', fontWeight: 600 }}
                         >
                           View the existing note ↗
-                        </Link>
+                        </a>
                       )}
 
                       {actionError && busyId === id && (
