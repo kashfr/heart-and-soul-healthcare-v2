@@ -48,6 +48,25 @@ function getActivePages(credential: CredentialTier): number[] {
   }
 }
 
+/**
+ * Whether `optionValue` is present in a comma-joined "a, b, c" string. We
+ * deliberately do NOT split on ", " because some checkbox values contain ", "
+ * themselves (e.g. "Grooming (nail care, shaving, etc.)") — a naive split
+ * shatters them, so they fail to re-check and silently drop on the next save,
+ * corrupting the note AND making the edit's audit trail look like the editor
+ * removed clinical content. Match the full value bounded by the ", "
+ * delimiters or the string ends instead.
+ */
+function joinedValueIncludes(joined: string, optionValue: string): boolean {
+  if (!joined || !optionValue) return false;
+  return (
+    joined === optionValue ||
+    joined.startsWith(optionValue + ', ') ||
+    joined.endsWith(', ' + optionValue) ||
+    joined.includes(', ' + optionValue + ', ')
+  );
+}
+
 function ProgressNotePageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -559,10 +578,12 @@ function ProgressNotePageInner() {
           });
           for (const [key, value] of Object.entries(rawData)) {
             if (!value || !checkboxNames.has(key)) continue;
-            const values = value.split(', ');
             const checkboxes = formRef.current?.querySelectorAll(`input[type="checkbox"][name="${key}"]`);
             checkboxes?.forEach((cb) => {
-              (cb as HTMLInputElement).checked = values.includes((cb as HTMLInputElement).value);
+              (cb as HTMLInputElement).checked = joinedValueIncludes(
+                value as string,
+                (cb as HTMLInputElement).value
+              );
             });
           }
 
