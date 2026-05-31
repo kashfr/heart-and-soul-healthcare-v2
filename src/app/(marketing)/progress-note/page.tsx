@@ -145,6 +145,10 @@ function ProgressNotePageInner() {
   const [criticalFindings, setCriticalFindings] = useState<CriticalFinding[]>([]);
   const [criticalAck, setCriticalAck] = useState<'notified' | 'no_escalation_needed' | ''>('');
   const [criticalNote, setCriticalNote] = useState('');
+  // Who the nurse notified — drives the Tab-6 Physician/Supervisor "Notified?"
+  // fields so there's one consistent record.
+  const [criticalNotifiedSupervisor, setCriticalNotifiedSupervisor] = useState(false);
+  const [criticalNotifiedPhysician, setCriticalNotifiedPhysician] = useState(false);
 
   // Stable id for the note this form will eventually submit. Generated
   // lazily (first autosave or submit), persisted on the draft, and reused
@@ -1093,6 +1097,8 @@ function ProgressNotePageInner() {
           setCriticalFindings(findings);
           setCriticalAck('');
           setCriticalNote('');
+          setCriticalNotifiedSupervisor(false);
+          setCriticalNotifiedPhysician(false);
           setShowCriticalModal(true);
           setSubmitting(false);
           return;
@@ -1795,8 +1801,20 @@ function ProgressNotePageInner() {
             </p>
             <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 8, cursor: 'pointer' }}>
               <input type="radio" name="criticalAck" checked={criticalAck === 'notified'} onChange={() => setCriticalAck('notified')} style={{ marginTop: 3 }} />
-              <span style={{ fontSize: 13.5, color: '#333' }}>I notified per the chain of command (supervisor and/or provider).</span>
+              <span style={{ fontSize: 13.5, color: '#333' }}>I notified per the chain of command — select who:</span>
             </label>
+            {criticalAck === 'notified' && (
+              <div style={{ display: 'flex', gap: 18, margin: '0 0 10px 26px' }}>
+                <label style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', fontSize: 13 }}>
+                  <input type="checkbox" checked={criticalNotifiedSupervisor} onChange={(e) => setCriticalNotifiedSupervisor(e.target.checked)} />
+                  Supervisor
+                </label>
+                <label style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', fontSize: 13 }}>
+                  <input type="checkbox" checked={criticalNotifiedPhysician} onChange={(e) => setCriticalNotifiedPhysician(e.target.checked)} />
+                  Physician
+                </label>
+              </div>
+            )}
             <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 10, cursor: 'pointer' }}>
               <input type="radio" name="criticalAck" checked={criticalAck === 'no_escalation_needed'} onChange={() => setCriticalAck('no_escalation_needed')} style={{ marginTop: 3 }} />
               <span style={{ fontSize: 13.5, color: '#333' }}>No escalation needed.</span>
@@ -1823,14 +1841,31 @@ function ProgressNotePageInner() {
               </button>
               <button
                 type="button"
-                disabled={!criticalAck || !criticalNote.trim()}
+                disabled={!criticalAck || !criticalNote.trim() || (criticalAck === 'notified' && !criticalNotifiedSupervisor && !criticalNotifiedPhysician)}
                 className={styles.confirmBtn}
-                style={(!criticalAck || !criticalNote.trim()) ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                style={(!criticalAck || !criticalNote.trim() || (criticalAck === 'notified' && !criticalNotifiedSupervisor && !criticalNotifiedPhysician)) ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
                 onClick={() => {
-                  if (!criticalAck || !criticalNote.trim()) return;
+                  const noteTrim = criticalNote.trim();
+                  if (!criticalAck || !noteTrim) return;
+                  if (criticalAck === 'notified' && !criticalNotifiedSupervisor && !criticalNotifiedPhysician) return;
                   setValue('q67_criticalFlags', summarizeFindings(criticalFindings));
                   setValue('q67_escalationAck', criticalAck);
-                  setValue('q67_escalationNote', criticalNote.trim());
+                  setValue('q67_escalationNote', noteTrim);
+                  // Keep Tab 6 the single source of truth: reflect the escalation
+                  // in the Physician / Supervisor "Notified?" fields. Those are
+                  // DeselectableRadio values, so set them in the radio store (the
+                  // submit-time merge reads from there, not RHF).
+                  if (criticalAck === 'notified') {
+                    if (criticalNotifiedSupervisor) {
+                      useRadioStore.getState().setValue('q52_supervisorNotified', 'Yes');
+                      if (!String(getValues('q52_supervisorResponse') || '').trim()) {
+                        setValue('q52_supervisorResponse', noteTrim);
+                      }
+                    }
+                    if (criticalNotifiedPhysician) {
+                      useRadioStore.getState().setValue('q52_physicianNotify', 'Yes');
+                    }
+                  }
                   // Pass through on the re-submit; we've already cleared the
                   // patient-confirm step this attempt, so don't re-prompt it.
                   skipCriticalRef.current = true;
