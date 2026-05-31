@@ -7,7 +7,8 @@ import { Check, AlertTriangle, Loader2 } from 'lucide-react';
 import { getPatients, type Patient } from '@/lib/patients';
 import { findNameCandidates, type RosterPatientLite, type MatchCandidate } from '@/lib/levenshtein';
 import { saveSubmission, getSubmission, updateSubmission, submissionExists, findDuplicateSubmission, type ProgressNoteFormData, type DuplicateMatch } from '@/lib/submissions';
-import { saveDraft, loadDraft, deleteDraft, type NoteDraft } from '@/lib/drafts';
+import { saveDraft, loadDraft, deleteDraft, clearDuplicateRequest, subscribeOwnDupRequest, type NoteDraft, type DuplicateRequest } from '@/lib/drafts';
+import { normalizeName } from '@/lib/levenshtein';
 import { authedFetch } from '@/lib/authedFetch';
 import { useAuth } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
@@ -132,11 +133,17 @@ function ProgressNotePageInner() {
     return submissionIdRef.current;
   }, []);
 
-  // Pre-submit duplicate guard. Set when the nurse submits a brand-new note
-  // for a shift she already documented (same nurse + date + patient). Holds
-  // the existing match so the modal can show what's already on file.
-  const [pendingDuplicateConfirm, setPendingDuplicateConfirm] = useState<DuplicateMatch | null>(null);
-  const skipDuplicateConfirmRef = useRef(false);
+  // Duplicate-note hard stop. `dupBlock` holds the already-submitted match
+  // when the nurse is blocked (leaving Page 1 or at submit) from documenting a
+  // shift she already has a note for. `dupRequestState` mirrors her draft's
+  // approval request (pending / approved / denied), kept live via an own-draft
+  // subscription so the modal + banner react the moment an admin acts. The
+  // hard stop only lifts when an APPROVED request matches the current client +
+  // date; archived/deleted prior notes don't block (handled in the query).
+  const [dupBlock, setDupBlock] = useState<DuplicateMatch | null>(null);
+  const [dupRequestState, setDupRequestState] = useState<DuplicateRequest | undefined>(undefined);
+  const [dupReason, setDupReason] = useState('');
+  const [dupFiling, setDupFiling] = useState(false);
 
   // Success splash shown briefly before redirecting to the confirmation page.
   const [submittedInfo, setSubmittedInfo] = useState<
@@ -609,6 +616,94 @@ function ProgressNotePageInner() {
     loadEditData();
   }, [editId, editLoaded]);
 
+  // Keep the nurse's own duplicate-request state live so the modal/banner
+  // react the instant an admin approves or denies (no refresh).
+  useEffect(() => {
+    if (!user || isEditMode) return;
+    const unsub = subscribeOwnDupRequest(user.uid, (req) => setDupRequestState(req));
+    return () => unsub();
+  }, [user, isEditMode]);
+
+  // Does an approval request still apply to the client + date currently in the
+  // form? An approval is only honored for the exact shift it was granted for.
+  const reqMatchesCurrent = useCallback(
+    (req: DuplicateRequest | undefined): boolean => {
+      if (!req) return false;
+      const dos = String(getValues('q6_dateofService') || '').trim();
+      if (req.dateOfService !== dos) return false;
+      const pid = String(getValues('patientId') || '').trim();
+      if (pid && req.patientId) return req.patientId === pid;
+      return normalizeName(req.clientName) === normalizeName(String(getValues('q3_clientName') || ''));
+    },
+    [getValues]
+  );
+
+  // The duplicate hard stop. Returns true if she may proceed. `forSubmit`
+  // tightens it: at submit only an APPROVED matching request lets a duplicate
+  // through; for navigation a PENDING request also lets her keep working.
+  // Admins and edit-mode bypass entirely. Sets `dupBlock` (and surfaces the
+  // modal) when blocked.
+  const passesDuplicateGate = useCallback(
+    async (forSubmit: boolean): Promise<boolean> => {
+      if (!user || role === 'admin' || isEditMode) return true;
+      const clientName = String(getValues('q3_clientName') || '').trim();
+      const dateOfService = String(getValues('q6_dateofService') || '').trim();
+      const patientId = String(getValues('patientId') || '').trim();
+      if (!clientName || !dateOfService) return true; // not enough to check yet
+      const match = await findDuplicateSubmission({
+        nurseId: user.uid,
+        dateOfService,
+        patientId: patientId || undefined,
+        clientName,
+        excludeId: ensureSubmissionId(),
+      });
+      if (!match) {
+        setDupBlock(null);
+        return true;
+      }
+      const req = dupRequestState;
+      const matches = reqMatchesCurrent(req);
+      // A request left over from a different client/date no longer applies.
+      if (req && !matches && user) {
+        void clearDuplicateRequest(user.uid);
+      }
+      if (matches && req) {
+        if (req.status === 'approved') return true;
+        if (req.status === 'pending' && !forSubmit) return true;
+      }
+      setDupBlock(match);
+      return false;
+    },
+    [user, role, isEditMode, getValues, ensureSubmissionId, dupRequestState, reqMatchesCurrent]
+  );
+
+  // File (or re-file) the approval request, then let her keep working while it's
+  // pending. The own-draft subscription flips dupRequestState to 'pending'.
+  const fileDuplicateRequest = useCallback(async () => {
+    if (!user) return;
+    const clientName = String(getValues('q3_clientName') || '').trim();
+    const dateOfService = String(getValues('q6_dateofService') || '').trim();
+    const patientId = String(getValues('patientId') || '').trim();
+    setDupFiling(true);
+    try {
+      const res = await authedFetch('/api/duplicate-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientName, dateOfService, patientId: patientId || undefined, reason: dupReason.trim() }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || `Request failed (${res.status})`);
+      }
+      setDupBlock(null);
+      setDupReason('');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not send the request. Please try again.');
+    } finally {
+      setDupFiling(false);
+    }
+  }, [user, getValues, dupReason]);
+
   const handlePreviousPage = () => {
     if (activeIndex > 0) {
       setCurrentPage(activePages[activeIndex - 1]);
@@ -616,8 +711,14 @@ function ProgressNotePageInner() {
     }
   };
 
-  const handleNextPage = () => {
+  const handleNextPage = async () => {
     if (activeIndex < totalActivePages - 1) {
+      // Catch a duplicate at the start: block leaving Page 1 if she's already
+      // documented this client on this date (unless approved / pending).
+      if (currentPage === 1) {
+        const ok = await passesDuplicateGate(false);
+        if (!ok) return;
+      }
       setCurrentPage(activePages[activeIndex + 1]);
       window.scrollTo(0, 0);
     }
@@ -935,7 +1036,6 @@ function ProgressNotePageInner() {
       const submissionId = ensureSubmissionId();
       const clientNameVal = String(submission.q3_clientName || '');
       const dateOfServiceVal = String(submission.q6_dateofService || '');
-      const patientIdVal = String(submission.patientId || '');
 
       // Idempotent retry: if this exact note id was already written (a prior
       // attempt succeeded server-side but the ack never reached the client,
@@ -944,23 +1044,14 @@ function ProgressNotePageInner() {
 
       let docId = submissionId;
       if (!alreadyWritten) {
-        // Human-duplicate guard: a brand-new note (fresh id) for a shift the
-        // nurse already documented. The deterministic-id retry path can't
-        // catch this, so we ask once. skipDuplicateConfirmRef short-circuits
-        // the re-submit after she confirms.
-        if (!skipDuplicateConfirmRef.current && user) {
-          const dup = await findDuplicateSubmission({
-            nurseId: user.uid,
-            dateOfService: dateOfServiceVal,
-            patientId: patientIdVal || undefined,
-            clientName: clientNameVal || undefined,
-            excludeId: submissionId,
-          });
-          if (dup) {
-            setPendingDuplicateConfirm(dup);
-            setSubmitting(false);
-            return;
-          }
+        // Duplicate hard stop: block a second note for a shift she already
+        // documented. Only an APPROVED matching request lets it through;
+        // pending/denied/none surface the blocking modal. Admins + edit-mode
+        // bypass inside passesDuplicateGate.
+        const dupOk = await passesDuplicateGate(true);
+        if (!dupOk) {
+          setSubmitting(false);
+          return;
         }
 
         docId = await saveSubmission(
@@ -982,7 +1073,6 @@ function ProgressNotePageInner() {
           }).catch((err) => console.error('Auto-add to care team failed:', err));
         }
       }
-      skipDuplicateConfirmRef.current = false;
 
       // Clear the form + draft so "Start another note" yields a blank form
       // and nothing can be accidentally re-submitted. The success splash
@@ -1323,7 +1413,12 @@ function ProgressNotePageInner() {
               className={`${styles.progressDot} ${
                 page === currentPage ? styles.active : ''
               } ${index < activeIndex ? styles.completed : ''}`}
-              onClick={() => {
+              onClick={async () => {
+                // Same Page-1 duplicate guard as the Next button.
+                if (currentPage === 1 && page > 1) {
+                  const ok = await passesDuplicateGate(false);
+                  if (!ok) return;
+                }
                 setCurrentPage(page);
                 window.scrollTo(0, 0);
               }}
@@ -1337,6 +1432,44 @@ function ProgressNotePageInner() {
           );
         })}
       </div>
+
+      {/* Ambient duplicate-request banner — visible even when the modal is
+          closed so she always knows where the approval stands. */}
+      {(() => {
+        const req = reqMatchesCurrent(dupRequestState) ? dupRequestState : undefined;
+        if (!req || req.status === undefined) return null;
+        const base: React.CSSProperties = {
+          maxWidth: 900,
+          margin: '0 auto 12px',
+          padding: '10px 14px',
+          borderRadius: 8,
+          fontSize: 13,
+          lineHeight: 1.5,
+          border: '1px solid',
+        };
+        if (req.status === 'pending') {
+          return (
+            <div style={{ ...base, background: '#fffbeb', borderColor: '#fde68a', color: '#92400e' }}>
+              <strong>Approval requested.</strong> You can keep working on this note, but you can&apos;t
+              submit it until an admin or supervisor approves a second note for {req.clientName} on {req.dateOfService}.
+            </div>
+          );
+        }
+        if (req.status === 'approved') {
+          return (
+            <div style={{ ...base, background: '#f0fdf4', borderColor: '#bbf7d0', color: '#166534' }}>
+              <strong>Approved.</strong> {req.decidedByName ? `${req.decidedByName} approved` : 'A reviewer approved'} a
+              second note for {req.clientName} on {req.dateOfService}. You can submit this note.
+            </div>
+          );
+        }
+        return (
+          <div style={{ ...base, background: '#fdecea', borderColor: '#f5c6c0', color: '#7a1f17' }}>
+            <strong>Second note not approved.</strong>{req.denyNote ? ` ${req.denyNote}` : ''} Edit the existing
+            note instead, or request again from the duplicate prompt.
+          </div>
+        );
+      })()}
 
       <form ref={formRef} onSubmit={handleSubmit} className={styles.form} noValidate>
         <div style={pageStyle(1)}><FormPageOne formRef={ref} register={register} watch={watch} setValue={setValue} control={control} onCredentialChange={handleCredentialChange} patients={patients} initialClientName={initialClientName} lockIdentity={isNurse && !isEditMode} /></div>
@@ -1479,69 +1612,137 @@ function ProgressNotePageInner() {
         </div>
       )}
 
-      {/* Duplicate-note confirmation. Fires when a note for this nurse +
-          date of service + patient already exists, to stop accidental
-          double submissions for the same shift. */}
-      {pendingDuplicateConfirm && (
-        <div className={`${styles.confirmModal} ${styles.active}`}>
-          <div className={styles.modalContent}>
-            <h2 style={{ color: '#7c3a00', marginTop: 0 }}>
-              A note for this shift already exists
-            </h2>
-            <p style={{ color: '#555', lineHeight: 1.6, marginBottom: 8 }}>
-              You&apos;ve already submitted a progress note for:
-            </p>
-            <p
-              style={{
-                background: '#fff8ec',
-                border: '1px solid #f0d9a8',
-                padding: '8px 12px',
-                borderRadius: 6,
-                fontSize: 14,
-                color: '#1a3a5c',
-                margin: '0 0 16px 0',
-              }}
-            >
-              <strong>{pendingDuplicateConfirm.clientName || 'this patient'}</strong>
-              {' '}on{' '}
-              <strong>{pendingDuplicateConfirm.dateOfService}</strong>
-              {pendingDuplicateConfirm.submittedAt && (
-                <span style={{ color: '#5c6b7a', fontSize: 12, display: 'block', marginTop: 4 }}>
-                  Submitted {pendingDuplicateConfirm.submittedAt.toLocaleString()}
-                </span>
-              )}
-            </p>
-            <p style={{ color: '#666', fontSize: 13, lineHeight: 1.5, marginBottom: 20 }}>
-              If you meant to update that note, cancel and edit the existing one instead.
-              Only submit again if this is genuinely a separate note for the same day.
-            </p>
-            <div className={styles.modalButtons}>
-              <button
-                type="button"
-                onClick={() => setPendingDuplicateConfirm(null)}
-                className={styles.cancelBtn}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  // Proceed with a brand-new note for the same shift. Mint a
-                  // fresh id so it can't collide with the existing one, arm
-                  // the skip so the guard doesn't fire again, and re-submit.
-                  submissionIdRef.current = crypto.randomUUID();
-                  skipDuplicateConfirmRef.current = true;
-                  setPendingDuplicateConfirm(null);
-                  setTimeout(() => formRef.current?.requestSubmit(), 0);
+      {/* Duplicate-note HARD STOP. Fires when a note for this nurse + date of
+          service + client already exists. No "submit anyway" — the only way
+          through is an admin/supervisor approval, requested from here and
+          granted on the In Progress screen. The modal adapts to the request
+          state: fresh block, pending (waiting), or denied (with reason). */}
+      {dupBlock && (() => {
+        const matchedReq = reqMatchesCurrent(dupRequestState) ? dupRequestState : undefined;
+        const isPending = matchedReq?.status === 'pending';
+        const isDenied = matchedReq?.status === 'denied';
+        return (
+          <div className={`${styles.confirmModal} ${styles.active}`}>
+            <div className={styles.modalContent}>
+              <h2 style={{ color: isPending ? '#1a3a5c' : '#7c3a00', marginTop: 0 }}>
+                {isPending
+                  ? 'Waiting for approval'
+                  : isDenied
+                  ? 'Second note not approved'
+                  : 'You already have a note for this client on this date'}
+              </h2>
+
+              <p
+                style={{
+                  background: '#fff8ec',
+                  border: '1px solid #f0d9a8',
+                  padding: '8px 12px',
+                  borderRadius: 6,
+                  fontSize: 14,
+                  color: '#1a3a5c',
+                  margin: '0 0 16px 0',
                 }}
-                className={styles.confirmBtn}
               >
-                Submit anyway
-              </button>
+                <strong>{dupBlock.clientName || 'this client'}</strong> on{' '}
+                <strong>{dupBlock.dateOfService}</strong>
+                {dupBlock.submittedAt && (
+                  <span style={{ color: '#5c6b7a', fontSize: 12, display: 'block', marginTop: 4 }}>
+                    Submitted {dupBlock.submittedAt.toLocaleString()}
+                  </span>
+                )}
+              </p>
+
+              {isPending ? (
+                <p style={{ color: '#555', fontSize: 14, lineHeight: 1.6, marginBottom: 20 }}>
+                  Your request to submit a second note for this shift is awaiting approval from an
+                  admin or supervisor. You can keep working on it, but you can&apos;t submit until
+                  it&apos;s approved.
+                </p>
+              ) : isDenied ? (
+                <>
+                  <p style={{ color: '#555', fontSize: 14, lineHeight: 1.6, marginBottom: 8 }}>
+                    An admin or supervisor did not approve a second note for this shift.
+                  </p>
+                  {matchedReq?.denyNote && (
+                    <p
+                      style={{
+                        background: '#fdecea',
+                        border: '1px solid #f5c6c0',
+                        color: '#7a1f17',
+                        padding: '8px 12px',
+                        borderRadius: 6,
+                        fontSize: 13,
+                        margin: '0 0 16px 0',
+                      }}
+                    >
+                      <strong>Reason:</strong> {matchedReq.denyNote}
+                    </p>
+                  )}
+                  <p style={{ color: '#666', fontSize: 13, lineHeight: 1.5, marginBottom: 12 }}>
+                    If you meant to update the existing note, open it and edit that one instead. If
+                    you still believe a second note is needed, you can request again with more
+                    detail below.
+                  </p>
+                </>
+              ) : (
+                <p style={{ color: '#666', fontSize: 14, lineHeight: 1.6, marginBottom: 12 }}>
+                  If you meant to update that note, open it and edit the existing one instead.
+                  A second note for the same client and date needs an admin or supervisor to
+                  approve it first — tell us why and we&apos;ll send them the request.
+                </p>
+              )}
+
+              {!isPending && (
+                <textarea
+                  value={dupReason}
+                  onChange={(e) => setDupReason(e.target.value)}
+                  placeholder="Why do you need a second note for this shift? (e.g., separate AM and PM visit)"
+                  rows={3}
+                  disabled={dupFiling}
+                  style={{
+                    width: '100%',
+                    padding: '8px 10px',
+                    border: '1px solid #ccc',
+                    borderRadius: 6,
+                    fontSize: 14,
+                    fontFamily: 'inherit',
+                    boxSizing: 'border-box',
+                    resize: 'vertical',
+                    marginBottom: 16,
+                  }}
+                />
+              )}
+
+              <div className={styles.modalButtons}>
+                <button type="button" onClick={() => setDupBlock(null)} className={styles.cancelBtn}>
+                  {isPending ? 'Keep working' : 'Go back'}
+                </button>
+                {dupBlock.id && (
+                  <a
+                    href={`/admin/submissions/${dupBlock.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={styles.cancelBtn}
+                    style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+                  >
+                    View existing note ↗
+                  </a>
+                )}
+                {!isPending && (
+                  <button
+                    type="button"
+                    onClick={fileDuplicateRequest}
+                    disabled={dupFiling}
+                    className={styles.confirmBtn}
+                  >
+                    {dupFiling ? 'Sending…' : isDenied ? 'Request again' : 'Request approval'}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Success splash — shown briefly before the redirect to the
           confirmation page. Covers the form so the now-cleared fields

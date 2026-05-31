@@ -21,6 +21,7 @@ import { useAuth } from './AuthProvider';
 import { useSettings } from './SettingsProvider';
 import UserMenu from './UserMenu';
 import type { Role } from '@/lib/auth';
+import { subscribePendingDupCount } from '@/lib/drafts';
 
 const COLLAPSE_KEY = 'app-shell-collapsed';
 
@@ -73,6 +74,17 @@ export function AppShell({ children }: { children: ReactNode }) {
       return next;
     });
   };
+
+  // Live count of pending duplicate-note approval requests, shown as a badge
+  // on the In Progress nav item. Only admins + supervisors can act on these.
+  const [pendingDup, setPendingDup] = useState(0);
+  useEffect(() => {
+    // Only admins + supervisors can act on these; others never subscribe so the
+    // count stays at its initial 0.
+    if (role !== 'admin' && role !== 'supervisor') return;
+    const unsub = subscribePendingDupCount(setPendingDup);
+    return () => unsub();
+  }, [role]);
 
   // Close the mobile drawer whenever the route changes.
   useEffect(() => {
@@ -147,11 +159,20 @@ export function AppShell({ children }: { children: ReactNode }) {
             ]
               .filter(Boolean)
               .join(' ');
+            const badgeCount = item.href === '/admin/in-progress' ? pendingDup : 0;
             const inner = (
               <>
                 <span className="app-shell-nav-icon">{item.icon}</span>
                 <span className="app-shell-nav-label">{item.label}</span>
                 {item.disabled && <span className="app-shell-coming-soon">Soon</span>}
+                {badgeCount > 0 && (
+                  <span
+                    className="app-shell-nav-badge"
+                    title={`${badgeCount} duplicate-note request${badgeCount === 1 ? '' : 's'} awaiting approval`}
+                  >
+                    {badgeCount}
+                  </span>
+                )}
               </>
             );
             if (item.disabled) {
@@ -293,6 +314,32 @@ export function AppShell({ children }: { children: ReactNode }) {
           text-transform: uppercase;
           letter-spacing: 0.5px;
           font-weight: 700;
+        }
+        .app-shell-nav-badge {
+          margin-left: auto;
+          min-width: 18px;
+          height: 18px;
+          padding: 0 5px;
+          border-radius: 999px;
+          background: #f59e0b;
+          color: #1f2937;
+          font-size: 11px;
+          font-weight: 800;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          line-height: 1;
+        }
+        /* In the collapsed rail the label is hidden; pin the badge to the
+           icon's corner so the count still shows. */
+        .app-shell-sidebar--collapsed .app-shell-nav-badge {
+          position: absolute;
+          top: 4px;
+          right: 10px;
+          margin-left: 0;
+        }
+        .app-shell-sidebar--collapsed .app-shell-nav-item {
+          position: relative;
         }
         .app-shell-sidebar-footer {
           padding: 12px 16px;

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState, type CSSProperties } from 'react';
+import Link from 'next/link';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -8,8 +9,11 @@ import {
   ChevronRight,
   RefreshCw,
   Clock,
+  ShieldAlert,
 } from 'lucide-react';
 import { listDrafts, type NoteDraft } from '@/lib/drafts';
+import { findDuplicateSubmission } from '@/lib/submissions';
+import { authedFetch } from '@/lib/authedFetch';
 import {
   flattenDraft,
   getIncompleteRequired,
@@ -21,6 +25,46 @@ interface Row {
   draft: NoteDraft;
   flat: Record<string, string>;
   issues: NoteIssue[];
+  /** The already-submitted note this draft would duplicate (resolved only for
+      drafts with a pending approval request, for the "view existing" link). */
+  conflictNoteId: string | null;
+}
+
+// Keys we never want to surface in the full-note view (internal/plumbing or
+// rendered specially). Everything else entered is shown with a humanized label.
+const HIDDEN_FULL_KEYS = new Set(['patientId', 'submissionId', 'q61_signature']);
+
+// Nicer labels for keys whose auto-humanized form reads poorly.
+const FULL_LABEL_OVERRIDES: Record<string, string> = {
+  q3_clientName: 'Client name',
+  q4_dateofBirth: 'Date of birth',
+  q5_ageYears: 'Age',
+  q6_dateofService: 'Date of service',
+  q10_primaryDiagnosis: 'Primary diagnosis',
+  q200_addr_line1: 'Street address',
+  q200_city: 'City',
+  q200_state: 'State',
+  q200_postal: 'ZIP code',
+  q11_nurseName: 'Nurse / caregiver',
+  q12_credential: 'Credential',
+  q16_temperature: 'Temperature',
+  q17_systolic: 'Systolic BP',
+  q17_diastolic: 'Diastolic BP',
+  q18_pulse: 'Pulse',
+  q19_respiration: 'Respiration',
+  q20_oxygenSaturation: 'O₂ saturation',
+  q21_oxygenSource: 'Oxygen source',
+};
+
+function humanizeKey(key: string): string {
+  if (FULL_LABEL_OVERRIDES[key]) return FULL_LABEL_OVERRIDES[key];
+  return key
+    .replace(/^q\d+_/, '')
+    .replace(/_/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^./, (c) => c.toUpperCase());
 }
 
 function relativeTime(d: Date | null): string {
@@ -48,24 +92,73 @@ export default function InProgressPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [showFull, setShowFull] = useState<string | null>(null);
+  // Approve/deny flow state, keyed by the draft's nurseId.
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [denyForId, setDenyForId] = useState<string | null>(null);
+  const [denyNote, setDenyNote] = useState('');
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const drafts = await listDrafts();
-      setRows(
-        drafts.map((draft) => {
+      const built = await Promise.all(
+        drafts.map(async (draft) => {
           const flat = flattenDraft(draft);
-          return { draft, flat, issues: getIncompleteRequired(flat) };
+          // For a pending request, resolve the conflicting note so we can link
+          // straight to it from the approval panel.
+          let conflictNoteId: string | null = null;
+          if (draft.dupRequest?.status === 'pending') {
+            try {
+              const match = await findDuplicateSubmission({
+                nurseId: draft.nurseId,
+                dateOfService: draft.dupRequest.dateOfService || draft.dateOfService,
+                patientId: draft.dupRequest.patientId,
+                clientName: draft.dupRequest.clientName || draft.clientName,
+              });
+              conflictNoteId = match?.id ?? null;
+            } catch {
+              conflictNoteId = null;
+            }
+          }
+          return { draft, flat, issues: getIncompleteRequired(flat), conflictNoteId };
         })
       );
+      setRows(built);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load in-progress notes.');
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const decide = useCallback(
+    async (nurseId: string, decision: 'approve' | 'deny', note?: string) => {
+      setBusyId(nurseId);
+      setActionError(null);
+      try {
+        const res = await authedFetch('/api/admin/in-progress/dup-decision', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nurseId, decision, denyNote: note }),
+        });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          throw new Error(j.error || `Failed (HTTP ${res.status})`);
+        }
+        setDenyForId(null);
+        setDenyNote('');
+        await load();
+      } catch (e) {
+        setActionError(e instanceof Error ? e.message : 'Action failed.');
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [load]
+  );
 
   useEffect(() => {
     load();
@@ -94,10 +187,12 @@ export default function InProgressPage() {
 
       {!loading &&
         !error &&
-        rows.map(({ draft, flat, issues }) => {
+        rows.map(({ draft, flat, issues, conflictNoteId }) => {
           const id = draft.nurseId;
           const isOpen = expanded === id;
           const ready = issues.length === 0;
+          const dupReq = draft.dupRequest;
+          const pendingApproval = dupReq?.status === 'pending';
           return (
             <div key={id} style={cardStyle}>
               <button
@@ -129,6 +224,11 @@ export default function InProgressPage() {
                 >
                   <Clock size={12} /> {relativeTime(draft.updatedAt)}
                 </div>
+                {pendingApproval && (
+                  <span style={badgeApproval}>
+                    <ShieldAlert size={13} /> Needs your approval
+                  </span>
+                )}
                 <span style={ready ? badgeReady : badgeNeeds}>
                   {ready ? (
                     <>
@@ -144,6 +244,86 @@ export default function InProgressPage() {
 
               {isOpen && (
                 <div style={{ padding: '4px 16px 16px' }}>
+                  {pendingApproval && dupReq && (
+                    <div style={approvalPanel}>
+                      <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                        <ShieldAlert size={16} /> Duplicate-note approval requested
+                      </div>
+                      <p style={{ margin: '0 0 8px', fontSize: 13, lineHeight: 1.5 }}>
+                        {draft.nurseName || 'This nurse'} is asking to submit a <strong>second</strong> note for{' '}
+                        <strong>{dupReq.clientName}</strong> on <strong>{dupReq.dateOfService}</strong> — a client she has
+                        already documented on that date.
+                      </p>
+                      <div style={{ fontSize: 13, marginBottom: 10 }}>
+                        <span style={{ color: '#6b7280' }}>Her reason: </span>
+                        {dupReq.reason ? dupReq.reason : <em style={{ color: '#9ca3af' }}>(none given)</em>}
+                      </div>
+                      {conflictNoteId && (
+                        <Link
+                          href={`/admin/submissions/${conflictNoteId}`}
+                          target="_blank"
+                          style={{ fontSize: 13, color: '#0e7c4a', fontWeight: 600 }}
+                        >
+                          View the existing note ↗
+                        </Link>
+                      )}
+
+                      {actionError && busyId === id && (
+                        <div style={{ color: '#b91c1c', fontSize: 13, marginTop: 8 }}>{actionError}</div>
+                      )}
+
+                      {denyForId === id ? (
+                        <div style={{ marginTop: 12 }}>
+                          <textarea
+                            value={denyNote}
+                            onChange={(e) => setDenyNote(e.target.value)}
+                            placeholder="Optional note back to the nurse (e.g., edit the existing note instead)."
+                            rows={2}
+                            disabled={busyId === id}
+                            style={denyTextareaStyle}
+                          />
+                          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                            <button
+                              type="button"
+                              onClick={() => decide(id, 'deny', denyNote.trim())}
+                              disabled={busyId === id}
+                              style={denyConfirmBtn}
+                            >
+                              {busyId === id ? 'Denying…' : 'Confirm deny'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setDenyForId(null); setDenyNote(''); }}
+                              disabled={busyId === id}
+                              style={ghostBtn}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                          <button
+                            type="button"
+                            onClick={() => decide(id, 'approve')}
+                            disabled={busyId === id}
+                            style={approveBtn}
+                          >
+                            {busyId === id ? 'Approving…' : 'Approve second note'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setDenyForId(id); setActionError(null); }}
+                            disabled={busyId === id}
+                            style={denyBtn}
+                          >
+                            Deny
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {ready ? (
                     <div style={readyPanel}>
                       <CheckCircle2 size={16} style={{ flexShrink: 0, marginTop: 1 }} />
@@ -194,6 +374,37 @@ export default function InProgressPage() {
                       <Detail label="O₂ saturation" value={flat.q20_oxygenSaturation} />
                       <Detail label="Signature" value={flat.q61_signature ? 'Signed' : ''} />
                     </div>
+                  </div>
+
+                  <div style={{ marginTop: 14 }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowFull(showFull === id ? null : id)}
+                      style={fullToggleBtn}
+                    >
+                      {showFull === id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      {showFull === id ? 'Hide full note' : 'Show full note (everything entered)'}
+                    </button>
+                    {showFull === id && (() => {
+                      const entries = Object.entries(flat)
+                        .filter(([k, v]) => !HIDDEN_FULL_KEYS.has(k) && String(v).trim() !== '')
+                        .sort(([a], [b]) => humanizeKey(a).localeCompare(humanizeKey(b)));
+                      const signed = String(flat.q61_signature || '').trim() !== '';
+                      return (
+                        <div style={{ marginTop: 10 }}>
+                          {entries.length === 0 && !signed ? (
+                            <div style={{ fontSize: 13, color: '#9ca3af' }}>Nothing entered yet.</div>
+                          ) : (
+                            <div style={fullGrid}>
+                              {entries.map(([k, v]) => (
+                                <Detail key={k} label={humanizeKey(k)} value={String(v)} />
+                              ))}
+                              {signed && <Detail label="Signature" value="Signed" />}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               )}
@@ -319,4 +530,90 @@ const snapshotGrid: CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
   gap: '12px 16px',
+};
+
+const fullGrid: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+  gap: '10px 16px',
+};
+
+const badgeApproval: CSSProperties = {
+  ...badgeBase,
+  background: '#fef3c7',
+  color: '#92400e',
+  border: '1px solid #fcd34d',
+};
+
+const approvalPanel: CSSProperties = {
+  background: '#fffbeb',
+  border: '1px solid #fde68a',
+  color: '#92400e',
+  borderRadius: 8,
+  padding: '14px 16px',
+  marginBottom: 14,
+};
+
+const approveBtn: CSSProperties = {
+  background: '#0e7c4a',
+  color: 'white',
+  border: 'none',
+  padding: '8px 14px',
+  borderRadius: 6,
+  fontSize: 13,
+  fontWeight: 700,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
+
+const denyBtn: CSSProperties = {
+  background: 'white',
+  color: '#b3261e',
+  border: '1px solid #f5c6c0',
+  padding: '8px 14px',
+  borderRadius: 6,
+  fontSize: 13,
+  fontWeight: 700,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
+
+const denyConfirmBtn: CSSProperties = { ...denyBtn, background: '#fdecea' };
+
+const ghostBtn: CSSProperties = {
+  background: 'transparent',
+  color: '#6b7280',
+  border: '1px solid #d1d5db',
+  padding: '8px 14px',
+  borderRadius: 6,
+  fontSize: 13,
+  fontWeight: 600,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
+
+const denyTextareaStyle: CSSProperties = {
+  width: '100%',
+  padding: '8px 10px',
+  border: '1px solid #d1d5db',
+  borderRadius: 6,
+  fontSize: 13,
+  fontFamily: 'inherit',
+  boxSizing: 'border-box',
+  resize: 'vertical',
+  color: '#1f2937',
+};
+
+const fullToggleBtn: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  background: 'transparent',
+  border: 'none',
+  color: '#0e7c4a',
+  fontSize: 13,
+  fontWeight: 600,
+  cursor: 'pointer',
+  padding: 0,
+  fontFamily: 'inherit',
 };

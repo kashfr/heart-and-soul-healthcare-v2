@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Users, ClipboardList, UserCog, FileText, FilePlus, FileEdit } from 'lucide-react';
+import { Users, ClipboardList, UserCog, FileText, FilePlus, FileEdit, ShieldAlert } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
-import { loadDraft, type NoteDraft } from '@/lib/drafts';
+import { loadDraft, subscribePendingDupCount, type NoteDraft } from '@/lib/drafts';
 import type { Role } from '@/lib/auth';
 
 interface Card {
@@ -66,6 +66,14 @@ const ROLE_KICKER: Record<Role, string> = {
 export default function AdminDashboardPage() {
   const { user, profile, role } = useAuth();
   const [myDraft, setMyDraft] = useState<NoteDraft | null>(null);
+  const [pendingDup, setPendingDup] = useState(0);
+
+  // Pending duplicate-note approvals (admin + supervisor only).
+  useEffect(() => {
+    if (role !== 'admin' && role !== 'supervisor') return;
+    const unsub = subscribePendingDupCount(setPendingDup);
+    return () => unsub();
+  }, [role]);
 
   // Anyone with a clinical credential (HHA / CNA / LPN / RN) can author a
   // progress note, regardless of their portal role. That covers nurses (who
@@ -129,6 +137,22 @@ export default function AdminDashboardPage() {
             </p>
           </div>
         </header>
+
+        {pendingDup > 0 && (
+          <Link href="/admin/in-progress" style={{ textDecoration: 'none' }}>
+            <div style={alertBannerStyle}>
+              <ShieldAlert size={20} style={{ flexShrink: 0 }} />
+              <div>
+                <div style={{ fontWeight: 700 }}>
+                  {pendingDup} duplicate-note request{pendingDup === 1 ? '' : 's'} awaiting your approval
+                </div>
+                <div style={{ fontSize: 13, opacity: 0.9 }}>
+                  A nurse is asking to submit a second note for a client already documented that day. Review in In Progress →
+                </div>
+              </div>
+            </div>
+          </Link>
+        )}
 
         <section style={gridStyle}>
           {visibleCards.map((c) => (
@@ -209,6 +233,18 @@ const gridStyle: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
   gap: 16,
+};
+
+const alertBannerStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 12,
+  background: '#fffbeb',
+  border: '1px solid #fde68a',
+  color: '#92400e',
+  borderRadius: 10,
+  padding: '14px 18px',
+  marginBottom: 16,
 };
 
 const cardStyle: React.CSSProperties = {

@@ -9,7 +9,6 @@ import {
   query,
   where,
   orderBy,
-  limit,
   serverTimestamp,
   Timestamp,
   writeBatch,
@@ -17,6 +16,8 @@ import {
 import type { Role } from './auth';
 import { db } from './firebase';
 import { hasAnyAbnormalVital, type VitalRangesOverride } from './vitalRanges';
+import { normalizeName } from './levenshtein';
+import { noteIsActiveDuplicate } from './duplicateMatch';
 
 /**
  * All form fields from the 7-page progress note form.
@@ -228,11 +229,20 @@ export interface DuplicateMatch {
 
 /**
  * Look for an already-submitted note for the same nurse + date of service +
- * patient (or typed client name when no patient is linked). Used to warn a
- * nurse who starts a brand-new note for a shift she already documented —
- * the deterministic-id retry path can't catch this because a new draft gets
- * a new submissionId. Pass `excludeId` so the note being written now (on a
- * retry) doesn't match itself.
+ * patient. "Same patient" prefers the strong roster key (`patientId`); when a
+ * note isn't roster-linked it falls back to a NORMALIZED typed-name match
+ * (case/spacing/punctuation-insensitive) so "Fernando-Bautista" and
+ * "Fernando Bautista" are treated as the same person.
+ *
+ * Used both to catch a duplicate early (when the nurse leaves Page 1) and as
+ * the final submit-time guard. Pass `excludeId` so the note being written now
+ * (on a retry) doesn't match itself.
+ *
+ * Only ACTIVE notes block: admin-archived notes (status 'archived' or an
+ * `archivedAt` timestamp) are ignored, so archiving a bad note lets the nurse
+ * re-submit a fresh one. Deleted notes are removed from the collection
+ * entirely, so they never match. The query is scoped to one nurse + one date,
+ * so the in-memory filter runs over a tiny result set.
  */
 export async function findDuplicateSubmission(args: {
   nurseId?: string;
@@ -243,26 +253,24 @@ export async function findDuplicateSubmission(args: {
 }): Promise<DuplicateMatch | null> {
   const { nurseId, dateOfService, patientId, clientName, excludeId } = args;
   if (!nurseId || !dateOfService) return null;
+  // Need at least one identity signal to compare on.
+  const normName = normalizeName(clientName || '');
+  if (!patientId && !normName) return null;
 
   const notesRef = collection(db, 'progressNotes');
-  const constraints = [
-    where('nurseId', '==', nurseId),
-    where('q6_dateofService', '==', dateOfService),
-  ];
-  // Prefer the strong key (patientId); fall back to the typed client name
-  // when the note isn't linked to a roster patient.
-  if (patientId) {
-    constraints.push(where('patientId', '==', patientId));
-  } else if (clientName) {
-    constraints.push(where('q3_clientName', '==', clientName));
-  } else {
-    return null;
-  }
+  const snapshot = await getDocs(
+    query(
+      notesRef,
+      where('nurseId', '==', nurseId),
+      where('q6_dateofService', '==', dateOfService)
+    )
+  );
 
-  const snapshot = await getDocs(query(notesRef, ...constraints, limit(2)));
   for (const d of snapshot.docs) {
     if (excludeId && d.id === excludeId) continue;
     const data = d.data();
+    if (!noteIsActiveDuplicate(data, { patientId, normName })) continue;
+
     const submittedAt = data.submittedAt as Timestamp | null;
     return {
       id: d.id,
