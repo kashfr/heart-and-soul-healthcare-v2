@@ -49,6 +49,21 @@ export default function AdminSettingsPage() {
   }, [settings, dirty]);
 
   if (authLoading) return null;
+  // Wait for the SAVED settings before showing the form. SettingsProvider
+  // serves DEFAULT_SETTINGS until the GET resolves; rendering the form against
+  // those defaults shows values that aren't actually saved (e.g. the cosign
+  // auto-apply toggle defaults to ON), with the button reading "Saved" — which
+  // misleads the admin about the current config and risks saving defaults over
+  // real values. Hold until `ready` so the form always reflects what's stored.
+  if (!ready) {
+    return (
+      <div style={containerStyle}>
+        <div style={wrapStyle}>
+          <p style={{ color: '#7f8c8d' }}>Loading settings…</p>
+        </div>
+      </div>
+    );
+  }
   if (role !== 'admin') {
     return (
       <div style={containerStyle}>
