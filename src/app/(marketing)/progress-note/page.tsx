@@ -8,6 +8,7 @@ import { getPatients, type Patient } from '@/lib/patients';
 import { findNameCandidates, type RosterPatientLite, type MatchCandidate } from '@/lib/levenshtein';
 import { saveSubmission, getSubmission, updateSubmission, submissionExists, findDuplicateSubmission, computeSubmissionChanges, type ProgressNoteFormData, type DuplicateMatch } from '@/lib/submissions';
 import { saveDraft, loadDraft, deleteDraft, clearDuplicateRequest, subscribeOwnDupRequest, type NoteDraft, type DuplicateRequest } from '@/lib/drafts';
+import { getCriticalFindings, summarizeFindings, type CriticalFinding } from '@/lib/criticalVitals';
 import { normalizeName } from '@/lib/levenshtein';
 import { authedFetch } from '@/lib/authedFetch';
 import { useAuth } from '@/components/AuthProvider';
@@ -133,6 +134,17 @@ function ProgressNotePageInner() {
   const editReasonRef = useRef('');
   const [showEditReasonModal, setShowEditReasonModal] = useState(false);
   const [editReasonText, setEditReasonText] = useState('');
+
+  // Critical-vitals escalation gate. On submit, if a documented vital crosses a
+  // provider-notification threshold and escalation isn't already documented, we
+  // interrupt to capture the nurse's escalation or a "no escalation needed"
+  // acknowledgment. skipCriticalRef lets the post-acknowledgment re-submit
+  // pass through.
+  const skipCriticalRef = useRef(false);
+  const [showCriticalModal, setShowCriticalModal] = useState(false);
+  const [criticalFindings, setCriticalFindings] = useState<CriticalFinding[]>([]);
+  const [criticalAck, setCriticalAck] = useState<'notified' | 'no_escalation_needed' | ''>('');
+  const [criticalNote, setCriticalNote] = useState('');
 
   // Stable id for the note this form will eventually submit. Generated
   // lazily (first autosave or submit), persisted on the draft, and reused
@@ -1068,6 +1080,26 @@ function ProgressNotePageInner() {
         return;
       }
 
+      // Critical-vitals escalation gate (new notes only). If a documented vital
+      // crosses a provider-notification threshold and the nurse hasn't already
+      // documented escalation on the Communication page, prompt her to record
+      // the escalation she made — or to acknowledge why none was needed.
+      if (appSettings.criticalVitals?.enabled !== false && !skipCriticalRef.current) {
+        const findings = getCriticalFindings(submission as Record<string, unknown>);
+        const alreadyEscalated =
+          String(submission.q52_physicianNotify || '').toLowerCase() === 'yes' ||
+          String(submission.q52_supervisorNotified || '').toLowerCase() === 'yes';
+        if (findings.length > 0 && !alreadyEscalated) {
+          setCriticalFindings(findings);
+          setCriticalAck('');
+          setCriticalNote('');
+          setShowCriticalModal(true);
+          setSubmitting(false);
+          return;
+        }
+      }
+      skipCriticalRef.current = false;
+
       const submissionId = ensureSubmissionId();
       const clientNameVal = String(submission.q3_clientName || '');
       const dateOfServiceVal = String(submission.q6_dateofService || '');
@@ -1731,6 +1763,83 @@ function ProgressNotePageInner() {
                 style={!editReasonText.trim() ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
               >
                 Save change
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Critical-vitals escalation gate. Fires at submit when a documented
+          vital crosses a provider-notification threshold and escalation isn't
+          already documented. Soft stop: the nurse documents her escalation or
+          acknowledges why none was needed, then submits. */}
+      {showCriticalModal && (
+        <div className={`${styles.confirmModal} ${styles.active}`}>
+          <div className={styles.modalContent}>
+            <h2 style={{ color: '#b3261e', marginTop: 0 }}>
+              Provider notification may be needed
+            </h2>
+            <p style={{ color: '#555', lineHeight: 1.6, marginBottom: 10 }}>
+              One or more vitals you documented are at a level that typically warrants
+              notifying the provider per protocol:
+            </p>
+            <ul style={{ margin: '0 0 14px 0', paddingLeft: 18 }}>
+              {criticalFindings.map((f) => (
+                <li key={f.key} style={{ color: '#7a1f17', fontSize: 13.5, lineHeight: 1.5, marginBottom: 4 }}>
+                  {f.message}
+                </li>
+              ))}
+            </ul>
+            <p style={{ color: '#333', fontSize: 13.5, fontWeight: 600, marginBottom: 8 }}>
+              Before submitting, please record one of the following:
+            </p>
+            <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 8, cursor: 'pointer' }}>
+              <input type="radio" name="criticalAck" checked={criticalAck === 'notified'} onChange={() => setCriticalAck('notified')} style={{ marginTop: 3 }} />
+              <span style={{ fontSize: 13.5, color: '#333' }}>I notified per the chain of command (supervisor and/or provider).</span>
+            </label>
+            <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 10, cursor: 'pointer' }}>
+              <input type="radio" name="criticalAck" checked={criticalAck === 'no_escalation_needed'} onChange={() => setCriticalAck('no_escalation_needed')} style={{ marginTop: 3 }} />
+              <span style={{ fontSize: 13.5, color: '#333' }}>No escalation needed.</span>
+            </label>
+            {criticalAck && (
+              <textarea
+                value={criticalNote}
+                onChange={(e) => setCriticalNote(e.target.value)}
+                autoFocus
+                rows={3}
+                placeholder={criticalAck === 'notified'
+                  ? 'Who did you notify, and when? (e.g., Called supervisor J. Smith 14:05; MD paged 14:10)'
+                  : 'Why is no escalation needed? (e.g., known baseline for this patient; MD already aware)'}
+                style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', resize: 'vertical', marginBottom: 14 }}
+              />
+            )}
+            <div className={styles.modalButtons}>
+              <button
+                type="button"
+                className={styles.cancelBtn}
+                onClick={() => { setShowCriticalModal(false); }}
+              >
+                Go back
+              </button>
+              <button
+                type="button"
+                disabled={!criticalAck || !criticalNote.trim()}
+                className={styles.confirmBtn}
+                style={(!criticalAck || !criticalNote.trim()) ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                onClick={() => {
+                  if (!criticalAck || !criticalNote.trim()) return;
+                  setValue('q67_criticalFlags', summarizeFindings(criticalFindings));
+                  setValue('q67_escalationAck', criticalAck);
+                  setValue('q67_escalationNote', criticalNote.trim());
+                  // Pass through on the re-submit; we've already cleared the
+                  // patient-confirm step this attempt, so don't re-prompt it.
+                  skipCriticalRef.current = true;
+                  skipPatientConfirmRef.current = true;
+                  setShowCriticalModal(false);
+                  setTimeout(() => formRef.current?.requestSubmit(), 0);
+                }}
+              >
+                Confirm & submit
               </button>
             </div>
           </div>

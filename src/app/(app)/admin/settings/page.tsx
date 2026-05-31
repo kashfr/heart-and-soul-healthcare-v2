@@ -86,6 +86,11 @@ export default function AdminSettingsPage() {
     setDraft((prev) => ({ ...prev, patient: { allowFreeText: allowed } }));
   };
 
+  const toggleCriticalVitals = (enabled: boolean) => {
+    setDirty(true);
+    setDraft((prev) => ({ ...prev, criticalVitals: { enabled } }));
+  };
+
   const updateVitalRange = (
     group: VitalAgeGroupKey,
     vital: VitalRangeKey,
@@ -350,6 +355,25 @@ export default function AdminSettingsPage() {
             checked={draft.patient.allowFreeText}
             onChange={togglePatientFreeText}
             hint="When OFF, nurses can't submit the form unless they pick a patient from the roster. If a nurse has a new patient who isn't in the roster yet, an admin must add them first. (Admins themselves bypass this lock so they can still submit notes for not-yet-rostered patients.)"
+          />
+        </section>
+
+        {/* --- Critical-vitals escalation gate --- */}
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Critical-vitals escalation prompt</h2>
+          <p style={sectionSubStyle}>
+            When a nurse submits a note with a vital that crosses a provider-notification
+            (critical) threshold, the form prompts her to record the escalation she made —
+            or to acknowledge why none was needed. Thresholds are age-based draft values
+            pending clinical sign-off. Turn this off if the prompt proves too noisy before
+            the thresholds are tuned.
+          </p>
+
+          <Toggle
+            label="Prompt to document escalation on critical vitals"
+            checked={draft.criticalVitals.enabled}
+            onChange={toggleCriticalVitals}
+            hint="When ON, submitting a note whose heart rate, respiratory rate, SpO₂, systolic BP, or temperature crosses the age-based critical threshold asks the nurse to document who she notified, or to record that no escalation was needed and why. When OFF, no prompt appears."
           />
         </section>
 

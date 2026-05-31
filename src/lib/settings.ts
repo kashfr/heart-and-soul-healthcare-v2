@@ -182,11 +182,22 @@ export interface EmailsSettings {
   subjects: EmailsSubjects;
 }
 
+export interface CriticalVitalsSettings {
+  /**
+   * When true (default), submitting a note whose vitals cross a
+   * provider-notification threshold prompts the nurse to document escalation
+   * or acknowledge why none was needed. Admin safety valve to switch the prompt
+   * off if it proves too noisy before the thresholds are tuned.
+   */
+  enabled: boolean;
+}
+
 export interface AppSettings {
   submissions: SubmissionsSettings;
   cosign: CosignSettings;
   patient: PatientSettings;
   vitals: VitalsSettings;
+  criticalVitals: CriticalVitalsSettings;
   branding: BrandingSettings;
   emails: EmailsSettings;
 }
@@ -215,6 +226,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   vitals: {
     // Empty override map → use all hard-coded defaults in vitalRanges.ts.
     rangesByAgeGroup: {},
+  },
+  criticalVitals: {
+    enabled: true,
   },
   branding: {
     orgName: 'Heart and Soul Healthcare',
@@ -275,6 +289,12 @@ export function mergeWithDefaults(partial: unknown): AppSettings {
     },
     vitals: {
       rangesByAgeGroup: sanitizeVitalOverrides(vit.rangesByAgeGroup),
+    },
+    criticalVitals: {
+      enabled:
+        typeof (p.criticalVitals as Partial<CriticalVitalsSettings> | undefined)?.enabled === 'boolean'
+          ? (p.criticalVitals as CriticalVitalsSettings).enabled
+          : DEFAULT_SETTINGS.criticalVitals.enabled,
     },
     branding: mergeBranding(p.branding),
     emails: mergeEmails(p.emails),

@@ -16,6 +16,7 @@ import {
 import type { Role } from './auth';
 import { db } from './firebase';
 import { hasAnyAbnormalVital, type VitalRangesOverride } from './vitalRanges';
+import { hasCriticalVital } from './criticalVitals';
 import { normalizeName } from './levenshtein';
 import { noteIsActiveDuplicate } from './duplicateMatch';
 
@@ -115,6 +116,14 @@ export interface ProgressNoteFormData {
   q65_certification: string;
   q66_additionalNotes: string;
 
+  // Critical-vitals escalation gate. Populated when a documented vital crossed
+  // a provider-notification threshold at submit time and the nurse acknowledged
+  // it: either she notified per the chain of command, or recorded why no
+  // escalation was needed.
+  q67_criticalFlags?: string;       // summary of which vitals were critical
+  q67_escalationAck?: 'notified' | 'no_escalation_needed' | '';
+  q67_escalationNote?: string;      // who/when notified, or the no-escalation reason
+
   // Metadata
   submittedAt?: Timestamp | ReturnType<typeof serverTimestamp>;
   status?: string;
@@ -188,6 +197,8 @@ export interface SubmissionSummary {
   archivedAt: Date | null;
   nurseArchivedAt: Date | null;
   hasAbnormalVitals: boolean;
+  /** A recorded vital crossed a provider-notification (critical) threshold. */
+  hasCriticalVitals: boolean;
   hasIncident: boolean;
   physicianNotified: boolean;
   // --- RN co-signature (only populated for HHA/CNA/LPN notes once an RN signs off) ---
@@ -362,6 +373,7 @@ function mapDocToSummary(
     archivedAt: archivedAt ? archivedAt.toDate() : null,
     nurseArchivedAt: nurseArchivedAt ? nurseArchivedAt.toDate() : null,
     hasAbnormalVitals: hasAnyAbnormalVital(data, vitalsOverride),
+    hasCriticalVitals: hasCriticalVital(data),
     hasIncident,
     physicianNotified: String(data.q52_physicianNotify || '').toLowerCase() === 'yes',
     cosignedAt: cosignedAt ? cosignedAt.toDate() : null,

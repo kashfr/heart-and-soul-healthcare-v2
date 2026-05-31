@@ -1274,7 +1274,11 @@ export default function SubmissionsPage() {
                         </td>
                         <td style={tdStyle}>
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                            {s.hasAbnormalVitals && (
+                            {s.hasCriticalVitals ? (
+                              <span style={{ ...flagBadgeRed, fontWeight: 700 }} title="Critical vital — provider-notification threshold">
+                                Critical vital
+                              </span>
+                            ) : s.hasAbnormalVitals && (
                               <span style={flagBadgeRed} title="Abnormal vitals">
                                 Vitals
                               </span>

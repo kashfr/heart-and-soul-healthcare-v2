@@ -991,6 +991,29 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           </p>
         </div>
 
+        {/* Critical-vitals escalation — shown when the nurse acknowledged a
+            provider-notification-level vital at submit time. */}
+        {hasValue(data.q67_criticalFlags) && (
+          <div style={{ border: '1px solid #fecaca', background: '#fef2f2', borderRadius: 8, padding: '12px 14px', marginTop: 20 }}>
+            <div style={{ fontWeight: 700, color: '#b3261e', fontSize: 14, marginBottom: 6 }}>
+              ⚠ Critical vitals — escalation recorded
+            </div>
+            <div style={{ fontSize: 13, color: '#7a1f17', marginBottom: 4 }}>
+              <strong>Threshold(s) crossed:</strong> {data.q67_criticalFlags}
+            </div>
+            <div style={{ fontSize: 13, color: '#333' }}>
+              <strong>
+                {data.q67_escalationAck === 'notified'
+                  ? 'Escalation made: '
+                  : data.q67_escalationAck === 'no_escalation_needed'
+                    ? 'No escalation needed — reason: '
+                    : 'Note: '}
+              </strong>
+              {data.q67_escalationNote || '—'}
+            </div>
+          </div>
+        )}
+
         {/* Flag for clarification — visible to reviewers (to raise/resolve)
             and to the note's author (to respond). */}
         <ClarificationPanel
@@ -1085,6 +1108,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           archivedAt: null,
           nurseArchivedAt: null,
           hasAbnormalVitals: false,
+          hasCriticalVitals: false,
           hasIncident: false,
           physicianNotified: false,
           cosignedAt: null,
