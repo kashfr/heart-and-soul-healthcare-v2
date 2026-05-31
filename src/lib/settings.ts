@@ -14,6 +14,15 @@
  * and client hooks that import these types + defaults.
  */
 
+/**
+ * sessionStorage key the Submissions page uses to remember it has already
+ * auto-applied the "Needs co-signature" view once this session (so an RN who
+ * clears the filter isn't forced back to it on every navigation). The Settings
+ * page clears this key on save so a freshly-changed setting takes effect on the
+ * next Submissions visit — no new session/sign-in required.
+ */
+export const RN_COSIGN_SESSION_KEY = 'rn-cosign-default-applied';
+
 export type SubmissionsSortKey =
   | 'submittedAt'
   | 'dateOfService'

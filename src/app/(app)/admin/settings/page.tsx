@@ -11,6 +11,7 @@ import {
   ALL_COSIGNABLE_CREDENTIALS,
   ALL_VITAL_AGE_GROUPS,
   ALL_VITAL_RANGE_KEYS,
+  RN_COSIGN_SESSION_KEY,
   type AppSettings,
   type SubmissionsSortKey,
   type SubmissionsSortDir,
@@ -169,6 +170,15 @@ export default function AdminSettingsPage() {
         return;
       }
       await refresh();
+      // Let settings changes take effect THIS session without a re-login. The
+      // Submissions "Needs co-signature" auto-apply only runs once per session
+      // (tracked by this key); clearing it means the next Submissions visit
+      // re-evaluates against the value just saved.
+      try {
+        sessionStorage.removeItem(RN_COSIGN_SESSION_KEY);
+      } catch {
+        /* sessionStorage unavailable — non-fatal */
+      }
       setDirty(false);
       showToast('ok', 'Settings saved');
     } catch {

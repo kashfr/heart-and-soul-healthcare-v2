@@ -25,6 +25,7 @@ import {
 import { logExport } from '@/lib/audit';
 import { useAuth } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
+import { RN_COSIGN_SESSION_KEY } from '@/lib/settings';
 
 const MAX_BATCH = 50;
 // PAGE_SIZE used to be a constant here; it's now driven by
@@ -274,15 +275,15 @@ export default function SubmissionsPage() {
     if (!isRn || authLoading || !settingsReady) return;
     if (!subDefaults.rnDefaultsToNeedsCosign) return;
     if (typeof window === 'undefined') return;
-    if (sessionStorage.getItem('rn-cosign-default-applied') === '1') return;
+    if (sessionStorage.getItem(RN_COSIGN_SESSION_KEY) === '1') return;
     const hasAnyFilter =
       qParam || credParam || nurseParam || datePreset ||
       flagAbnormal || flagIncident || flagPhysNotified || flagNeedsCosign;
     if (hasAnyFilter) {
-      sessionStorage.setItem('rn-cosign-default-applied', '1');
+      sessionStorage.setItem(RN_COSIGN_SESSION_KEY, '1');
       return;
     }
-    sessionStorage.setItem('rn-cosign-default-applied', '1');
+    sessionStorage.setItem(RN_COSIGN_SESSION_KEY, '1');
     updateParams({ cosign: '1' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRn, authLoading, settingsReady, subDefaults.rnDefaultsToNeedsCosign]);
