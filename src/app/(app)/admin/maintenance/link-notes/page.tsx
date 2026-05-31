@@ -59,6 +59,20 @@ interface AgeFixResult {
   skippedBadDate: number;
 }
 
+interface DuplicateGroup {
+  clientName: string;
+  nurseName: string;
+  dateOfService: string;
+  notes: { id: string; submittedAt: number | null; patientId: string | null }[];
+}
+
+interface DuplicateAuditResult {
+  notesScanned: number;
+  duplicateSets: number;
+  duplicateNotes: number;
+  groups: DuplicateGroup[];
+}
+
 const wrapStyle: React.CSSProperties = {
   padding: 24,
   maxWidth: 960,
@@ -195,6 +209,9 @@ export default function LinkNotesPage() {
   const [ageBusy, setAgeBusy] = useState<null | 'preview' | 'apply'>(null);
   const [ageResult, setAgeResult] = useState<AgeFixResult | null>(null);
   const [ageError, setAgeError] = useState<string | null>(null);
+  const [dupBusy, setDupBusy] = useState(false);
+  const [dupResult, setDupResult] = useState<DuplicateAuditResult | null>(null);
+  const [dupError, setDupError] = useState<string | null>(null);
 
   const fetchQueue = useCallback(async () => {
     setLoading(true);
@@ -258,6 +275,23 @@ export default function LinkNotesPage() {
       setAgeError(err instanceof Error ? err.message : 'Age fix failed.');
     } finally {
       setAgeBusy(null);
+    }
+  };
+
+  const runDuplicateAudit = async () => {
+    setDupBusy(true);
+    setDupError(null);
+    try {
+      const res = await authedFetch('/api/admin/maintenance/duplicate-notes');
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || `Scan failed (HTTP ${res.status})`);
+      }
+      setDupResult((await res.json()) as DuplicateAuditResult);
+    } catch (err) {
+      setDupError(err instanceof Error ? err.message : 'Scan failed.');
+    } finally {
+      setDupBusy(false);
     }
   };
 
@@ -415,6 +449,70 @@ export default function LinkNotesPage() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+      </div>
+
+      {/* Find duplicate notes — read-only audit of already-submitted notes
+          that duplicate each other (same nurse + date of service + patient).
+          Lists them so the admin can archive the extras; changes nothing. */}
+      <div style={{ ...cardStyle, marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <strong style={{ color: '#1a3a5c', fontSize: 15 }}>Find duplicate notes</strong>
+            <p style={{ ...subStyle, marginTop: 4 }}>
+              Scans existing notes for more than one active note by the same nurse for the same client
+              on the same date of service. <strong>Read-only</strong> — open a note to archive the extra
+              one. (The submit-time hard stop prevents new duplicates; this finds ones submitted before.)
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={runDuplicateAudit}
+            disabled={dupBusy}
+            style={{ ...primaryBtn, opacity: dupBusy ? 0.6 : 1, cursor: dupBusy ? 'wait' : 'pointer' }}
+          >
+            {dupBusy ? 'Scanning…' : 'Scan for duplicates'}
+          </button>
+        </div>
+
+        {dupError && (
+          <div style={{ background: '#fff3f0', border: '1px solid #ef9a9a', color: '#b71c1c', padding: 10, borderRadius: 6, marginTop: 12, fontSize: 13 }}>
+            {dupError}
+          </div>
+        )}
+
+        {dupResult && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ ...summaryStyle, marginBottom: dupResult.duplicateSets > 0 ? 10 : 0 }}>
+              Scanned {dupResult.notesScanned} notes ·{' '}
+              <strong>{dupResult.duplicateSets}</strong> duplicate set{dupResult.duplicateSets === 1 ? '' : 's'}
+              {dupResult.duplicateSets > 0 && <> ({dupResult.duplicateNotes} notes total)</>}.
+              {dupResult.duplicateSets === 0 && ' No duplicate notes found.'}
+            </div>
+            {dupResult.groups.map((g, gi) => (
+              <div key={gi} style={{ border: '1px solid #eef2f7', borderRadius: 6, marginBottom: 10, overflow: 'hidden' }}>
+                <div style={{ background: '#fff8ec', borderBottom: '1px solid #f0d9a8', padding: '8px 12px', fontSize: 13 }}>
+                  <strong style={{ color: '#1a3a5c' }}>{g.clientName || '(no name)'}</strong> on{' '}
+                  <strong>{formatDate(g.dateOfService)}</strong>
+                  <span style={{ color: '#5c6b7a' }}> · {g.nurseName || 'Unknown nurse'} · {g.notes.length} notes</span>
+                </div>
+                {g.notes.map((n, ni) => (
+                  <div
+                    key={n.id}
+                    style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'baseline', padding: '8px 12px', background: ni % 2 ? '#fafbfc' : 'white', fontSize: 13 }}
+                  >
+                    <Link href={`/admin/submissions/${n.id}`} target="_blank" style={{ color: '#0e7c4a', fontWeight: 600 }}>
+                      Open note ↗
+                    </Link>
+                    <span style={{ color: '#5c6b7a' }}>
+                      {n.submittedAt ? `Submitted ${new Date(n.submittedAt).toLocaleString()}` : 'Submit time unknown'}
+                    </span>
+                    {ni === 0 && <span style={{ marginLeft: 'auto', ...reasonChipStyle, background: '#e8f4e8', color: '#166534' }}>most recent</span>}
+                  </div>
+                ))}
+              </div>
+            ))}
           </div>
         )}
       </div>
