@@ -101,7 +101,7 @@ export default function SubmissionsPage() {
   // shape and never null, so we can read fields directly without a
   // loading check — the very first render uses the hard-coded
   // DEFAULT_SETTINGS until the live doc lands a moment later.
-  const { settings: appSettings } = useSettings();
+  const { settings: appSettings, ready: settingsReady } = useSettings();
   const subDefaults = appSettings.submissions;
   // Memoize the cosign required-credentials Set so every needsCosign
   // call below gets the same reference (and doesn't rebuild the Set
@@ -263,8 +263,15 @@ export default function SubmissionsPage() {
   // the filter and not have it reappear every time they navigate back.
   // The whole behavior is opt-out via settings.submissions.rnDefaultsToNeedsCosign
   // so an admin can disable it for the org from /admin/settings.
+  //
+  // IMPORTANT: wait for `settingsReady`. SettingsProvider serves the hard-coded
+  // DEFAULT_SETTINGS (rnDefaultsToNeedsCosign: true) until the saved doc loads.
+  // Without this gate, on a fresh mount (e.g. landing here after discarding a
+  // new note) the effect would read the default `true` and apply ?cosign=1 even
+  // when the org has the setting turned OFF — then the sessionStorage guard hid
+  // it from re-firing, which is exactly the "checked once, can't reproduce" bug.
   useEffect(() => {
-    if (!isRn || authLoading) return;
+    if (!isRn || authLoading || !settingsReady) return;
     if (!subDefaults.rnDefaultsToNeedsCosign) return;
     if (typeof window === 'undefined') return;
     if (sessionStorage.getItem('rn-cosign-default-applied') === '1') return;
@@ -278,7 +285,7 @@ export default function SubmissionsPage() {
     sessionStorage.setItem('rn-cosign-default-applied', '1');
     updateParams({ cosign: '1' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRn, authLoading, subDefaults.rnDefaultsToNeedsCosign]);
+  }, [isRn, authLoading, settingsReady, subDefaults.rnDefaultsToNeedsCosign]);
 
   // Scope filter (independent per role).
   // The 'team' scope is nurse-only — it shows notes for patients
