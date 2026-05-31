@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { History, ChevronDown, ChevronRight } from 'lucide-react';
+import { History, ChevronDown, ChevronRight, Info } from 'lucide-react';
 import { getEditHistory, type EditHistoryEntry } from '@/lib/submissions';
 import type { Role } from '@/lib/auth';
 
@@ -121,6 +121,15 @@ function RevisionEntry({ entry }: { entry: EditHistoryEntry }) {
         </span>
       </button>
 
+      {entry.correctionNote && (
+        <div style={correctionNoteStyle}>
+          <Info size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>
+            <strong>Correction note:</strong> {entry.correctionNote}
+          </span>
+        </div>
+      )}
+
       {open && (
         <div style={diffWrapStyle}>
           {changedKeys.length === 0 ? (
@@ -162,6 +171,7 @@ const errorStyle: React.CSSProperties = { padding: '10px 12px', background: '#fd
 const listStyle: React.CSSProperties = { listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 };
 const entryStyle: React.CSSProperties = { border: '1px solid #e5e7eb', borderRadius: 6, background: '#fafbfc' };
 const entryHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 12px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', fontSize: 13, color: '#2c3e50' };
+const correctionNoteStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 8, margin: '0 12px 10px', padding: '8px 10px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 6, color: '#1e40af', fontSize: 12.5, lineHeight: 1.45 };
 const diffWrapStyle: React.CSSProperties = { padding: '0 12px 12px' };
 const diffTableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
 const diffThStyle: React.CSSProperties = { textAlign: 'left', padding: '6px 8px', borderBottom: '1px solid #e5e7eb', color: '#5c6b7a', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 };

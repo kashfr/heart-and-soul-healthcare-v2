@@ -38,27 +38,30 @@ export default function FormPageSeven({ formRef, register, watch, setValue, cont
     }));
   };
 
-  const calculateTotalHours = () => {
-    const startTime = watch('q7_shiftStart');
-    const endTime = watch('q62_shiftEndTime');
+  // Recompute Total Hours whenever EITHER the shift start or end time changes.
+  // This previously only fired from the end-time field's onChange, so editing
+  // just the start time on an existing note (e.g. correcting a 22:00 → 10:00
+  // typo) left the total stale — the value that should have dropped from 20.00
+  // to 8.00 never updated. Watching both fields keeps it correct for new notes,
+  // edits, and draft restores alike.
+  const shiftStartTime = watch('q7_shiftStart');
+  const shiftEndTime = watch('q62_shiftEndTime');
+  useEffect(() => {
+    if (!shiftStartTime || !shiftEndTime) return;
+    const [startHour, startMin] = shiftStartTime.split(':').map(Number);
+    const [endHour, endMin] = shiftEndTime.split(':').map(Number);
+    if ([startHour, startMin, endHour, endMin].some((n) => Number.isNaN(n))) return;
 
-    if (startTime && endTime) {
-      const [startHour, startMin] = startTime.split(':').map(Number);
-      const [endHour, endMin] = endTime.split(':').map(Number);
-
-      let startTotalMin = startHour * 60 + startMin;
-      let endTotalMin = endHour * 60 + endMin;
-
-      if (endTotalMin < startTotalMin) {
-        endTotalMin += 24 * 60;
-      }
-
-      const diffMin = endTotalMin - startTotalMin;
-      const hours = (diffMin / 60).toFixed(2);
-      setTotalHours(hours);
-      setValue('q9_totalHours', hours);
+    const startTotalMin = startHour * 60 + startMin;
+    let endTotalMin = endHour * 60 + endMin;
+    if (endTotalMin < startTotalMin) {
+      endTotalMin += 24 * 60; // overnight shift
     }
-  };
+
+    const hours = ((endTotalMin - startTotalMin) / 60).toFixed(2);
+    setTotalHours(hours);
+    setValue('q9_totalHours', hours);
+  }, [shiftStartTime, shiftEndTime, setValue]);
 
   // Mirror the signature back into RHF so the rest of the form submit / draft
   // autosave logic continues to work unchanged.
@@ -177,9 +180,7 @@ export default function FormPageSeven({ formRef, register, watch, setValue, cont
               type="time"
               id="q62_shiftEndTime"
               required
-              {...register('q62_shiftEndTime', {
-                onChange: calculateTotalHours,
-              })}
+              {...register('q62_shiftEndTime')}
             />
           </div>
           <div className={styles.f}>

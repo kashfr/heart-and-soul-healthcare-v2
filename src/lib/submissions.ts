@@ -548,6 +548,14 @@ export interface EditHistoryEntry {
   editedByRole: Role;
   editedAt: Date | null;
   changes: Record<string, { from: unknown; to: unknown }>;
+  /**
+   * Optional after-the-fact annotation on a revision entry. Used to record a
+   * factual correction/context note (e.g. "this field change was caused by a
+   * software defect, not an intentional edit") without altering or deleting
+   * the original diff. Append-only and additive — it never rewrites history,
+   * it explains it.
+   */
+  correctionNote?: string;
 }
 
 /**
@@ -569,6 +577,7 @@ export async function getEditHistory(id: string): Promise<EditHistoryEntry[]> {
         editedByRole: (data.editedByRole || 'nurse') as Role,
         editedAt: editedAt ? editedAt.toDate() : null,
         changes: (data.changes || {}) as Record<string, { from: unknown; to: unknown }>,
+        ...(data.correctionNote ? { correctionNote: data.correctionNote as string } : {}),
       };
     });
   } catch (error) {
