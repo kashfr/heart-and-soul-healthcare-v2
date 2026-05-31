@@ -1857,13 +1857,13 @@ function ProgressNotePageInner() {
                   // submit-time merge reads from there, not RHF).
                   if (criticalAck === 'notified') {
                     if (criticalNotifiedSupervisor) {
-                      useRadioStore.getState().setValue('q52_supervisorNotified', 'Yes');
+                      setRadio('q52_supervisorNotified', 'Yes');
                       if (!String(getValues('q52_supervisorResponse') || '').trim()) {
                         setValue('q52_supervisorResponse', noteTrim);
                       }
                     }
                     if (criticalNotifiedPhysician) {
-                      useRadioStore.getState().setValue('q52_physicianNotify', 'Yes');
+                      setRadio('q52_physicianNotify', 'Yes');
                     }
                   }
                   // Pass through on the re-submit; we've already cleared the
