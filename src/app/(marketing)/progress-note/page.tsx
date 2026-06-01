@@ -186,6 +186,12 @@ function ProgressNotePageInner() {
   const [draftHydrated, setDraftHydrated] = useState(false); // autosave gate — don't save before we've loaded
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSaveAttemptRef = useRef<number>(0);
+  // Latches true the moment a submit succeeds. After that, autosave must never
+  // run again: the post-submit reset() fires the form's watch() subscription,
+  // which would otherwise re-arm a debounced autosave and re-create the draft
+  // we just deleted (an orphan draft with a fresh submissionId). This guard
+  // makes scheduleAutosave + persistDraft hard no-ops once submitted.
+  const hasSubmittedRef = useRef(false);
   const AUTOSAVE_DEBOUNCE_MS = 3000;
   const AUTOSAVE_MIN_INTERVAL_MS = 10000;
 
@@ -336,7 +342,7 @@ function ProgressNotePageInner() {
   // Write the current form state to Firestore (used by autosave + Save & exit).
   // Returns true if saved, false if skipped (not signed in / edit mode / empty).
   const persistDraft = useCallback(async (): Promise<boolean> => {
-    if (!user || !profile || isEditMode) return false;
+    if (!user || !profile || isEditMode || hasSubmittedRef.current) return false;
     const { formValues, radioState: r, checkboxState: c } = collectDraftPayload();
     // Skip autosave if the form is effectively empty (no client, no real content).
     const clientName = String(formValues.q3_clientName || '').trim();
@@ -372,7 +378,7 @@ function ProgressNotePageInner() {
 
   // Schedule a debounced autosave. Respects a minimum interval to cap write cost.
   const scheduleAutosave = useCallback(() => {
-    if (!draftHydrated || isEditMode || !user) return;
+    if (!draftHydrated || isEditMode || !user || hasSubmittedRef.current) return;
     if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
     autosaveTimerRef.current = setTimeout(() => {
       const elapsed = Date.now() - lastSaveAttemptRef.current;
@@ -1185,6 +1191,18 @@ function ProgressNotePageInner() {
             body: JSON.stringify({ noteId: docId }),
           }).catch((err) => console.error('Auto-add to care team failed:', err));
         }
+      }
+
+      // Latch "submitted" and cancel any pending autosave BEFORE reset(). The
+      // reset() below fires the form's watch() subscription, which re-arms a
+      // debounced autosave; without this guard that timer fires after the
+      // deleteDraft() below and re-creates an orphan draft (a duplicate note
+      // with a fresh submissionId). The ref makes scheduleAutosave/persistDraft
+      // no-ops, and clearing the timer kills anything already queued.
+      hasSubmittedRef.current = true;
+      if (autosaveTimerRef.current) {
+        clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
       }
 
       // Clear the form + draft so "Start another note" yields a blank form
