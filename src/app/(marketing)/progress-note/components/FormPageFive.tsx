@@ -200,7 +200,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
       {/* Adverse Reaction Detail Box — only shown once the nurse reports an
           adverse reaction via the Medication Tolerance radio above. */}
       {showAdverse && (
-      <div style={{
+      <div id="adverse-reaction-detail" style={{
         background: '#fff3f0',
         borderLeft: '3px solid #c62828',
         borderRadius: '4px',
@@ -219,7 +219,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
         <div style={{ display: expandedSections.adverseReaction ? 'block' : 'none' }}>
             <div className={styles.row}>
               <div className={styles.f}>
-                <label className={styles.label} htmlFor="q43_reactionMed">Medication Involved</label>
+                <label className={styles.label} htmlFor="q43_reactionMed">Medication Involved *</label>
                 <input
                   className={styles.input}
                   type="text"
@@ -238,7 +238,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
               </div>
             </div>
 
-            <div className={styles.subsec}>Reaction Type</div>
+            <div className={styles.subsec}>Reaction Type <span style={{ color: '#c62828' }}>*</span></div>
             <div className={styles.checkRow}>
               <label>
                 <input type="checkbox" name="q43_reactionType" value="Nausea/Vomiting" />
@@ -276,7 +276,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
 
             <div className={styles.row}>
               <div className={styles.f} style={{ flex: '1 1 100%' }}>
-                <label className={styles.label} htmlFor="q43_reactionDescription">Description of Reaction</label>
+                <label className={styles.label} htmlFor="q43_reactionDescription">Description of Reaction *</label>
                 <textarea
                   className={styles.textarea}
                   id="q43_reactionDescription"
@@ -289,7 +289,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
 
             <div className={styles.row}>
               <div className={styles.f}>
-                <label className={styles.label}>Physician Notified?</label>
+                <label className={styles.label}>Physician Notified? *</label>
                 <div className={styles.radioRow}>
                   <label>
                     <DeselectableRadio name="q43_reactionPhysNotified" value="Yes" />

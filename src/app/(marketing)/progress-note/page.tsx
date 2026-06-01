@@ -927,6 +927,46 @@ function ProgressNotePageInner() {
       return;
     }
 
+    // Adverse drug reaction: when the nurse reports one via the Medication
+    // Tolerance radio (page 5, LPN/RN only), the detail box becomes required.
+    // We enforce it here rather than via the DOM `required` scan because the
+    // box is collapsible (display:none when collapsed hides the inputs from the
+    // scan), and the reaction-type checkbox group + Physician Notified radio
+    // aren't native-required elements.
+    const ADVERSE_VALUE = 'Adverse reaction / intolerance — document below';
+    if (
+      activePages.includes(5) &&
+      String(radioState['q43_medTolerance'] || '') === ADVERSE_VALUE
+    ) {
+      const reactionMed = String(getValues('q43_reactionMed') || '').trim();
+      const reactionDesc = String(getValues('q43_reactionDescription') || '').trim();
+      const reactionPhys = String(radioState['q43_reactionPhysNotified'] || '').trim();
+      const reactionTypeChecked =
+        (formRef.current?.querySelectorAll(
+          'input[type="checkbox"][name="q43_reactionType"]:checked'
+        ).length ?? 0) > 0;
+
+      const missing: string[] = [];
+      if (!reactionMed) missing.push('Medication Involved');
+      if (!reactionTypeChecked) missing.push('Reaction Type (select at least one)');
+      if (!reactionDesc) missing.push('Description of Reaction');
+      if (reactionPhys !== 'Yes' && reactionPhys !== 'No') missing.push('Physician Notified? (Yes or No)');
+
+      if (missing.length > 0) {
+        setCurrentPage(5);
+        setTimeout(() => {
+          const box = formRef.current?.querySelector('#adverse-reaction-detail') as HTMLElement | null;
+          box?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 100);
+        alert(
+          `You reported an adverse reaction, so please complete the Adverse Reaction / Intolerance Detail section before submitting:\n\n${missing
+            .map((m) => `• ${m}`)
+            .join('\n')}`
+        );
+        return;
+      }
+    }
+
     // Validate signature first (stored via react-hook-form setValue)
     const signatureValue = getValues('q61_signature');
     if (!signatureValue || signatureValue.trim() === '') {
