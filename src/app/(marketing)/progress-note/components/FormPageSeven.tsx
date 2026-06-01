@@ -38,30 +38,50 @@ export default function FormPageSeven({ formRef, register, watch, setValue, cont
     }));
   };
 
-  // Recompute Total Hours whenever EITHER the shift start or end time changes.
-  // This previously only fired from the end-time field's onChange, so editing
-  // just the start time on an existing note (e.g. correcting a 22:00 → 10:00
-  // typo) left the total stale — the value that should have dropped from 20.00
-  // to 8.00 never updated. Watching both fields keeps it correct for new notes,
-  // edits, and draft restores alike.
+  // Recompute Total Hours from the full start/end DATETIMES — not just the
+  // times. The shift starts on the Date of Service (q6_dateofService) at the
+  // Shift Start Time, and ends on the Shift End Date (q62_shiftEndDate) at the
+  // Shift End Time. Using only the times (with a single-day "overnight" roll)
+  // was wrong for shifts that span into the next day or longer — e.g.
+  // 5/31 08:00 → 6/1 16:00 totalled 8.00 instead of 32.00. We watch all four
+  // fields so the total stays correct on new notes, edits, and draft restores.
+  const dateOfService = watch('q6_dateofService');
   const shiftStartTime = watch('q7_shiftStart');
+  const shiftEndDate = watch('q62_shiftEndDate');
   const shiftEndTime = watch('q62_shiftEndTime');
   useEffect(() => {
     if (!shiftStartTime || !shiftEndTime) return;
+
+    // Preferred path: both dates present → exact elapsed time across days.
+    if (dateOfService && shiftEndDate) {
+      const start = new Date(`${dateOfService}T${shiftStartTime}`);
+      const end = new Date(`${shiftEndDate}T${shiftEndTime}`);
+      if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
+        const diffH = (end.getTime() - start.getTime()) / 3_600_000;
+        // End-before-start is a data-entry error; show 0 rather than a
+        // nonsensical negative until it's corrected.
+        const hours = (diffH >= 0 ? diffH : 0).toFixed(2);
+        setTotalHours(hours);
+        setValue('q9_totalHours', hours);
+        return;
+      }
+    }
+
+    // Fallback (used only while a date field is still blank mid-entry): time-only
+    // with a single-day overnight roll. Both dates are required to submit, so a
+    // completed note always uses the exact datetime path above.
     const [startHour, startMin] = shiftStartTime.split(':').map(Number);
     const [endHour, endMin] = shiftEndTime.split(':').map(Number);
     if ([startHour, startMin, endHour, endMin].some((n) => Number.isNaN(n))) return;
-
     const startTotalMin = startHour * 60 + startMin;
     let endTotalMin = endHour * 60 + endMin;
     if (endTotalMin < startTotalMin) {
       endTotalMin += 24 * 60; // overnight shift
     }
-
     const hours = ((endTotalMin - startTotalMin) / 60).toFixed(2);
     setTotalHours(hours);
     setValue('q9_totalHours', hours);
-  }, [shiftStartTime, shiftEndTime, setValue]);
+  }, [dateOfService, shiftStartTime, shiftEndDate, shiftEndTime, setValue]);
 
   // Mirror the signature back into RHF so the rest of the form submit / draft
   // autosave logic continues to work unchanged.
