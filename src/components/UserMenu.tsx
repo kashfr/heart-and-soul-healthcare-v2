@@ -55,7 +55,11 @@ export default function UserMenu() {
           <div style={menuHeaderStyle}>
             <div style={{ fontWeight: 700, color: '#2c3e50' }}>{displayName}</div>
             <div style={{ fontSize: 12, color: '#7f8c8d' }}>{user.email}</div>
-            {role && <div style={roleBadgeStyle}>{role}</div>}
+            {role && (
+              <div style={roleBadgeStyle}>
+                {role}{profile?.credential?.trim() ? ` · ${profile.credential.trim()}` : ''}
+              </div>
+            )}
           </div>
 
           {canAccessAdmin(role) && (
