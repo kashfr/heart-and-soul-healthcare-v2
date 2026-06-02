@@ -1,7 +1,47 @@
 import 'server-only';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
 import type { AuthedCaller } from './adminAuthGuard';
+
+/** One entry in the append-only clarification conversation. */
+interface ThreadMessage {
+  by: string;
+  byName: string;
+  byRole: string;
+  text: string;
+  at: Timestamp;
+}
+
+/**
+ * Build the thread for a note. Prefers an existing `thread` array; otherwise
+ * reconstructs it from the legacy single `message` + `response` fields so a
+ * not-yet-migrated note appends correctly instead of losing history.
+ */
+function existingThread(clar: Record<string, unknown> | undefined): ThreadMessage[] {
+  if (!clar) return [];
+  const t = clar.thread;
+  if (Array.isArray(t)) return t as ThreadMessage[];
+  const out: ThreadMessage[] = [];
+  if (clar.message) {
+    out.push({
+      by: String(clar.flaggedBy || ''),
+      byName: String(clar.flaggedByName || ''),
+      byRole: String(clar.flaggedByRole || 'supervisor'),
+      text: String(clar.message),
+      at: (clar.flaggedAt as Timestamp) || Timestamp.now(),
+    });
+  }
+  if (clar.response) {
+    out.push({
+      by: String(clar.respondedBy || ''),
+      byName: String(clar.respondedByName || ''),
+      byRole: String(clar.respondedByRole || 'nurse'),
+      text: String(clar.response),
+      at: (clar.respondedAt as Timestamp) || Timestamp.now(),
+    });
+  }
+  return out;
+}
 
 /**
  * "Flag for clarification" — a lightweight, non-adversarial way for a reviewer
@@ -56,7 +96,7 @@ export async function applyClarification(
   if (!snap.exists) return fail(noteId, 'not-found', 'Note not found.');
 
   const data = snap.data() || {};
-  const clarification = data.clarification as { status?: string } | undefined;
+  const clarification = data.clarification as Record<string, unknown> | undefined;
   const isOpen = clarification?.status === 'open';
   const authorId = String(data.nurseId || '');
   const name = caller.profile.displayName || '';
@@ -72,10 +112,20 @@ export async function applyClarification(
     if (!trimmed) {
       return fail(noteId, 'missing-text', 'A clarification message is required.');
     }
-    // Replace any prior (resolved) thread with the new open one.
+    // Replace any prior (resolved) thread with a brand-new open one. The
+    // opening question is both the legacy `message` (back-compat) and the first
+    // `thread` entry (source of truth going forward).
+    const firstMsg: ThreadMessage = {
+      by: caller.uid,
+      byName: name,
+      byRole: caller.role,
+      text: trimmed,
+      at: Timestamp.now(),
+    };
     await docRef.update({
       clarification: {
         status: 'open',
+        thread: [firstMsg],
         message: trimmed,
         flaggedBy: caller.uid,
         flaggedByName: name,
@@ -97,7 +147,21 @@ export async function applyClarification(
     if (!trimmed) {
       return fail(noteId, 'missing-text', 'A response is required.');
     }
+    // Append to the conversation (works for both the nurse author and reviewers).
+    // We can't use serverTimestamp() inside an array element, so we read-modify-
+    // write with a client-side Timestamp.now() for the message's `at`.
+    const thread = existingThread(clarification as Record<string, unknown> | undefined);
+    thread.push({
+      by: caller.uid,
+      byName: name,
+      byRole: caller.role,
+      text: trimmed,
+      at: Timestamp.now(),
+    });
     await docRef.update({
+      'clarification.thread': thread,
+      // Keep the legacy single-response fields pointing at the LATEST message so
+      // any old reader still shows something sensible.
       'clarification.response': trimmed,
       'clarification.respondedBy': caller.uid,
       'clarification.respondedByName': name,

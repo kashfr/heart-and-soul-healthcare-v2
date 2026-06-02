@@ -11,16 +11,28 @@
  */
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from './firebase';
+import { clarificationMessages, clarificationAwaitsNurse, type NoteClarification, type ClarificationMessage } from './submissions';
 
 export interface OpenClarification {
   noteId: string;
   clientName: string;
   dateOfService: string;
-  /** The reviewer's question. */
-  message: string;
+  /** The full back-and-forth, oldest first. */
+  thread: ClarificationMessage[];
+  /** The reviewer who opened the thread. */
   flaggedByName: string;
-  /** True once the nurse has typed a response (flag may still be `open` until a reviewer resolves). */
-  hasResponse: boolean;
+  /**
+   * True when the most recent message is from a REVIEWER (not the nurse), i.e.
+   * the nurse owes a reply. This is what arms the blocking gate. False once she
+   * has replied (last message is hers) — until a reviewer messages again.
+   */
+  awaitsNurse: boolean;
+  /**
+   * Millisecond timestamp of the latest message, so the gate's per-session
+   * "cleared" flag can key off it: dismissing suppresses only the message she's
+   * seen; a NEWER reviewer message produces a new key and re-arms the gate.
+   */
+  latestAt: number;
 }
 
 /**
@@ -49,17 +61,22 @@ export function subscribeMyOpenClarifications(
       const items: OpenClarification[] = [];
       snap.forEach((d) => {
         const data = d.data() as Record<string, unknown>;
-        const clar = data.clarification as
-          | { status?: string; message?: string; flaggedByName?: string; response?: string }
-          | undefined;
+        const clar = data.clarification as NoteClarification | undefined;
         if (clar?.status !== 'open') return;
+        const msgs = clarificationMessages(clar);
+        const last = msgs[msgs.length - 1];
+        const latestAt =
+          last?.at && typeof (last.at as { toMillis?: () => number }).toMillis === 'function'
+            ? (last.at as { toMillis: () => number }).toMillis()
+            : 0;
         items.push({
           noteId: d.id,
           clientName: String(data.q3_clientName || ''),
           dateOfService: String(data.q6_dateofService || ''),
-          message: String(clar.message || ''),
+          thread: msgs,
           flaggedByName: String(clar.flaggedByName || ''),
-          hasResponse: typeof clar.response === 'string' && clar.response.trim().length > 0,
+          awaitsNurse: clarificationAwaitsNurse(clar),
+          latestAt,
         });
       });
       // Stable order: oldest service date first so she works through them in order.

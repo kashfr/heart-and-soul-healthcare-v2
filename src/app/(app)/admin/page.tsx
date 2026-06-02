@@ -84,7 +84,7 @@ export default function AdminDashboardPage() {
       return;
     }
     const unsub = subscribeMyOpenClarifications(user.uid, (items) =>
-      setOpenClarifications(items.length),
+      setOpenClarifications(items.filter((i) => i.awaitsNurse).length),
     );
     return () => unsub();
   }, [role, user]);

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { MessageCircleQuestion, CheckCircle2 } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
-import type { NoteClarification } from '@/lib/submissions';
+import { clarificationMessages, type NoteClarification } from '@/lib/submissions';
 import type { Role } from '@/lib/auth';
 
 type TS = { toDate?: () => Date } | Date | null | undefined;
@@ -91,26 +91,26 @@ export default function ClarificationPanel({
           </button>
         )}
 
-        {/* Open or resolved thread: show the conversation. */}
+        {/* Open or resolved thread: show the full conversation. */}
         {clarification && (
           <div style={threadStyle}>
-            <div style={bubbleStyle(isOpen ? '#fffbeb' : '#f8fafc', isOpen ? '#fde68a' : '#e2e8f0')}>
-              <div style={metaStyle}>
-                {clarification.flaggedByName || 'Reviewer'} · {clarification.flaggedByRole} ·{' '}
-                {fmt(clarification.flaggedAt)}
-              </div>
-              <div style={msgStyle}>{clarification.message}</div>
-            </div>
-
-            {clarification.response && (
-              <div style={bubbleStyle('#eff6ff', '#bfdbfe')}>
-                <div style={metaStyle}>
-                  {clarification.respondedByName || 'Author'} · {clarification.respondedByRole} ·{' '}
-                  {fmt(clarification.respondedAt)} — response
+            {clarificationMessages(clarification).map((m, i) => {
+              const fromNurse = m.byRole === 'nurse';
+              return (
+                <div
+                  key={i}
+                  style={bubbleStyle(
+                    fromNurse ? '#eff6ff' : (isOpen ? '#fffbeb' : '#f8fafc'),
+                    fromNurse ? '#bfdbfe' : (isOpen ? '#fde68a' : '#e2e8f0'),
+                  )}
+                >
+                  <div style={metaStyle}>
+                    {m.byName || (fromNurse ? 'Author' : 'Reviewer')} · {m.byRole} · {fmt(m.at)}
+                  </div>
+                  <div style={msgStyle}>{m.text}</div>
                 </div>
-                <div style={msgStyle}>{clarification.response}</div>
-              </div>
-            )}
+              );
+            })}
 
             {isResolved && (
               <div style={{ ...metaStyle, display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
@@ -127,7 +127,7 @@ export default function ClarificationPanel({
           <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
             {(isAuthor || canReview) && (
               <button type="button" style={secondaryBtn} onClick={() => setMode('respond')}>
-                {clarification?.response ? 'Add a response' : 'Respond'}
+                {clarificationMessages(clarification).length > 1 ? 'Add a reply' : 'Respond'}
               </button>
             )}
             {canReview && (
