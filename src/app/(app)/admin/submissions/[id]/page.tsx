@@ -1050,8 +1050,9 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           />
         </div>
 
-        {/* Revision history — staff only (rules deny read for nurses) */}
-        {!isNurse && <RevisionHistory submissionId={id} />}
+        {/* Revision history — staff (any note) or the nurse author of THIS note
+            (her own only). Firestore rules enforce the same scoping. */}
+        {(!isNurse || isAuthor) && <RevisionHistory submissionId={id} />}
       </div>
 
       {/* Print styles */}
