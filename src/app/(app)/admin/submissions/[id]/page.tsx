@@ -63,6 +63,20 @@ export default function SubmissionDetailPage({ params }: PageProps) {
   const [cosignModalOpen, setCosignModalOpen] = useState(false);
   const [cosignToastCount, setCosignToastCount] = useState(0);
 
+  // The nurse arrived from the clarification queue (?clarify=1): scroll to and
+  // briefly highlight the clarification section once the note has loaded.
+  const clarifyMode = searchParams.get('clarify') === '1';
+  const [clarifyHighlight, setClarifyHighlight] = useState(false);
+  useEffect(() => {
+    if (!clarifyMode || loading || !formData) return;
+    const t = setTimeout(() => {
+      document.getElementById('clarification-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setClarifyHighlight(true);
+      setTimeout(() => setClarifyHighlight(false), 2600);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [clarifyMode, loading, formData]);
+
   const loadNote = async () => {
     try {
       const data = await getSubmission(id);
@@ -1015,16 +1029,26 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         )}
 
         {/* Flag for clarification — visible to reviewers (to raise/resolve)
-            and to the note's author (to respond). */}
-        <ClarificationPanel
-          noteId={id}
-          clarification={formData.clarification}
-          viewerRole={role}
-          viewerCredential={profile?.credential}
-          viewerUid={user?.uid}
-          authorId={(formData as { nurseId?: string }).nurseId}
-          onChanged={loadNote}
-        />
+            and to the note's author (to respond). When the nurse arrives via the
+            blocking queue (?clarify=1) we scroll to + briefly highlight this. */}
+        <div
+          id="clarification-section"
+          style={
+            clarifyHighlight
+              ? { outline: '3px solid #f59e0b', outlineOffset: 4, borderRadius: 10, transition: 'outline-color 0.6s' }
+              : undefined
+          }
+        >
+          <ClarificationPanel
+            noteId={id}
+            clarification={formData.clarification}
+            viewerRole={role}
+            viewerCredential={profile?.credential}
+            viewerUid={user?.uid}
+            authorId={(formData as { nurseId?: string }).nurseId}
+            onChanged={loadNote}
+          />
+        </div>
 
         {/* Revision history — staff only (rules deny read for nurses) */}
         {!isNurse && <RevisionHistory submissionId={id} />}

@@ -12,6 +12,7 @@
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from './firebase';
 import { clarificationMessages, clarificationAwaitsNurse, type NoteClarification, type ClarificationMessage } from './submissions';
+import { hasCriticalVital } from './criticalVitals';
 
 export interface OpenClarification {
   noteId: string;
@@ -21,6 +22,10 @@ export interface OpenClarification {
   thread: ClarificationMessage[];
   /** The reviewer who opened the thread. */
   flaggedByName: string;
+  /** The reviewer's most recent question (the latest reviewer message). */
+  latestReviewerMessage: string;
+  /** Whether this note crossed a critical-vital threshold — drives priority order. */
+  hasCriticalVitals: boolean;
   /**
    * True when the most recent message is from a REVIEWER (not the nurse), i.e.
    * the nurse owes a reply. This is what arms the blocking gate. False once she
@@ -33,6 +38,8 @@ export interface OpenClarification {
    * seen; a NEWER reviewer message produces a new key and re-arms the gate.
    */
   latestAt: number;
+  /** When the clarification was first raised (ms) — tiebreak for priority sort. */
+  flaggedAt: number;
 }
 
 /**
@@ -58,6 +65,11 @@ export function subscribeMyOpenClarifications(
   return onSnapshot(
     q,
     (snap) => {
+      const toMs = (ts: unknown): number =>
+        ts && typeof (ts as { toMillis?: () => number }).toMillis === 'function'
+          ? (ts as { toMillis: () => number }).toMillis()
+          : 0;
+
       const items: OpenClarification[] = [];
       snap.forEach((d) => {
         const data = d.data() as Record<string, unknown>;
@@ -65,22 +77,26 @@ export function subscribeMyOpenClarifications(
         if (clar?.status !== 'open') return;
         const msgs = clarificationMessages(clar);
         const last = msgs[msgs.length - 1];
-        const latestAt =
-          last?.at && typeof (last.at as { toMillis?: () => number }).toMillis === 'function'
-            ? (last.at as { toMillis: () => number }).toMillis()
-            : 0;
+        // Latest message authored by a reviewer (the question she owes a reply to).
+        const lastReviewer = [...msgs].reverse().find((m) => m.byRole !== 'nurse');
         items.push({
           noteId: d.id,
           clientName: String(data.q3_clientName || ''),
           dateOfService: String(data.q6_dateofService || ''),
           thread: msgs,
           flaggedByName: String(clar.flaggedByName || ''),
+          latestReviewerMessage: lastReviewer?.text || clar.message || '',
+          hasCriticalVitals: hasCriticalVital(data),
           awaitsNurse: clarificationAwaitsNurse(clar),
-          latestAt,
+          latestAt: toMs(last?.at),
+          flaggedAt: toMs(clar.flaggedAt),
         });
       });
-      // Stable order: oldest service date first so she works through them in order.
-      items.sort((a, b) => a.dateOfService.localeCompare(b.dateOfService));
+      // Priority order: critical-vital notes first, then oldest flag first (FIFO).
+      items.sort((a, b) => {
+        if (a.hasCriticalVitals !== b.hasCriticalVitals) return a.hasCriticalVitals ? -1 : 1;
+        return a.flaggedAt - b.flaggedAt;
+      });
       cb(items);
     },
     (err) => {
