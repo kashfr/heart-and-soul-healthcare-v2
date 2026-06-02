@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Users, ClipboardList, UserCog, FileText, FilePlus, FileEdit, ShieldAlert } from 'lucide-react';
+import { Users, ClipboardList, UserCog, FileText, FilePlus, FileEdit, ShieldAlert, MessageCircleQuestion } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { loadDraft, subscribePendingDupCount, type NoteDraft } from '@/lib/drafts';
+import { subscribeMyOpenClarifications } from '@/lib/clarifications';
 import type { Role } from '@/lib/auth';
 
 interface Card {
@@ -67,6 +68,7 @@ export default function AdminDashboardPage() {
   const { user, profile, role } = useAuth();
   const [myDraft, setMyDraft] = useState<NoteDraft | null>(null);
   const [pendingDup, setPendingDup] = useState(0);
+  const [openClarifications, setOpenClarifications] = useState(0);
 
   // Pending duplicate-note approvals (admin + supervisor only).
   useEffect(() => {
@@ -74,6 +76,18 @@ export default function AdminDashboardPage() {
     const unsub = subscribePendingDupCount(setPendingDup);
     return () => unsub();
   }, [role]);
+
+  // Open clarification requests on the nurse's own notes (nurse only).
+  useEffect(() => {
+    if (role !== 'nurse' || !user) {
+      setOpenClarifications(0);
+      return;
+    }
+    const unsub = subscribeMyOpenClarifications(user.uid, (items) =>
+      setOpenClarifications(items.length),
+    );
+    return () => unsub();
+  }, [role, user]);
 
   // Anyone with a clinical credential (HHA / CNA / LPN / RN) can author a
   // progress note, regardless of their portal role. That covers nurses (who
@@ -148,6 +162,22 @@ export default function AdminDashboardPage() {
                 </div>
                 <div style={{ fontSize: 13, opacity: 0.9 }}>
                   A nurse is asking to submit a second note for a client already documented that day. Review in In Progress →
+                </div>
+              </div>
+            </div>
+          </Link>
+        )}
+
+        {openClarifications > 0 && (
+          <Link href="/admin/submissions" style={{ textDecoration: 'none' }}>
+            <div style={clarificationBannerStyle}>
+              <MessageCircleQuestion size={20} style={{ flexShrink: 0 }} />
+              <div>
+                <div style={{ fontWeight: 700 }}>
+                  {openClarifications} note{openClarifications === 1 ? '' : 's'} need{openClarifications === 1 ? 's' : ''} your clarification
+                </div>
+                <div style={{ fontSize: 13, opacity: 0.9 }}>
+                  A reviewer asked a question about your documentation. Please respond so it can be resolved →
                 </div>
               </div>
             </div>
@@ -242,6 +272,18 @@ const alertBannerStyle: React.CSSProperties = {
   background: '#fffbeb',
   border: '1px solid #fde68a',
   color: '#92400e',
+  borderRadius: 10,
+  padding: '14px 18px',
+  marginBottom: 16,
+};
+
+const clarificationBannerStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 12,
+  background: '#fef2f2',
+  border: '1px solid #fecaca',
+  color: '#b3261e',
   borderRadius: 10,
   padding: '14px 18px',
   marginBottom: 16,

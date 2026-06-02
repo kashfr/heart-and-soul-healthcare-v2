@@ -20,8 +20,10 @@ import {
 import { useAuth } from './AuthProvider';
 import { useSettings } from './SettingsProvider';
 import UserMenu from './UserMenu';
+import ClarificationGate from './ClarificationGate';
 import type { Role } from '@/lib/auth';
 import { subscribePendingDupCount } from '@/lib/drafts';
+import { subscribeMyOpenClarifications } from '@/lib/clarifications';
 
 const COLLAPSE_KEY = 'app-shell-collapsed';
 
@@ -45,7 +47,7 @@ const NAV: NavItem[] = [
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   const { settings: appSettings } = useSettings();
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -86,6 +88,20 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => unsub();
   }, [role]);
 
+  // Live count of the signed-in nurse's OPEN clarification requests, shown as a
+  // badge on her Submissions nav item (and enforced by the blocking gate).
+  const [openClarifications, setOpenClarifications] = useState(0);
+  useEffect(() => {
+    if (role !== 'nurse' || !user) {
+      setOpenClarifications(0);
+      return;
+    }
+    const unsub = subscribeMyOpenClarifications(user.uid, (items) =>
+      setOpenClarifications(items.length),
+    );
+    return () => unsub();
+  }, [role, user]);
+
   // Close the mobile drawer whenever the route changes.
   useEffect(() => {
     setMobileOpen(false);
@@ -115,6 +131,10 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="app-shell">
+      {/* Blocking gate: a nurse with open clarification requests must respond
+          to each before she can use the portal. Renders nothing for non-nurses
+          or when there's nothing awaiting a response. */}
+      <ClarificationGate />
       <aside
         suppressHydrationWarning
         className={`app-shell-sidebar${mobileOpen ? ' app-shell-sidebar--open' : ''}${
@@ -159,17 +179,23 @@ export function AppShell({ children }: { children: ReactNode }) {
             ]
               .filter(Boolean)
               .join(' ');
-            const badgeCount = item.href === '/admin/in-progress' ? pendingDup : 0;
+            const badgeCount =
+              item.href === '/admin/in-progress'
+                ? pendingDup
+                : item.href === '/admin/submissions'
+                  ? openClarifications
+                  : 0;
+            const badgeTitle =
+              item.href === '/admin/in-progress'
+                ? `${badgeCount} duplicate-note request${badgeCount === 1 ? '' : 's'} awaiting approval`
+                : `${badgeCount} note${badgeCount === 1 ? '' : 's'} needing your clarification`;
             const inner = (
               <>
                 <span className="app-shell-nav-icon">{item.icon}</span>
                 <span className="app-shell-nav-label">{item.label}</span>
                 {item.disabled && <span className="app-shell-coming-soon">Soon</span>}
                 {badgeCount > 0 && (
-                  <span
-                    className="app-shell-nav-badge"
-                    title={`${badgeCount} duplicate-note request${badgeCount === 1 ? '' : 's'} awaiting approval`}
-                  >
+                  <span className="app-shell-nav-badge" title={badgeTitle}>
                     {badgeCount}
                   </span>
                 )}
