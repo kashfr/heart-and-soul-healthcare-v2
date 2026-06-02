@@ -116,6 +116,23 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
     handleBPChange(joined);
   }, [sysWatch, diaWatch, setValue, handleBPChange]);
 
+  // Re-check the single-value vitals (temp, pulse, respiration, O2) whenever
+  // their values change — including the PROGRAMMATIC populate when an existing
+  // note is loaded for editing. Previously these only re-evaluated on the
+  // input's onBlur, so opening a note with already-abnormal vitals rendered
+  // them as if normal (no red) until the nurse manually edited a field. Watching
+  // the RHF values fixes the edit-mode case (mirrors the BP effect above).
+  const tempWatch = watch('q16_temperature');
+  const pulseWatch = watch('q18_pulse');
+  const respWatch = watch('q19_respiration');
+  const o2Watch = watch('q20_oxygenSaturation');
+  useEffect(() => {
+    handleVitalChange('temperature', String(tempWatch ?? ''));
+    handleVitalChange('pulse', String(pulseWatch ?? ''));
+    handleVitalChange('respiration', String(respWatch ?? ''));
+    handleVitalChange('oxygenSaturation', String(o2Watch ?? ''));
+  }, [tempWatch, pulseWatch, respWatch, o2Watch, handleVitalChange]);
+
   const isAbnormal = (key: string) => key in alerts;
   const isBPAbnormal = 'systolic' in alerts || 'diastolic' in alerts;
 
