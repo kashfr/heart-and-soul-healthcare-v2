@@ -34,6 +34,20 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
   const ageGroupLabel = getAgeGroupLabel(ageStr || '', dob);
   const [alerts, setAlerts] = useState<Record<string, VitalAlert>>({});
 
+  // O2 saturation has a HARD physical ceiling of 100% (and floor of 0). Unlike
+  // the other vitals — where out-of-range is implausible-but-possible and only
+  // flagged at submit — an SpO2 over 100 is not real data, so we clamp it the
+  // instant it's entered rather than letting it sit on screen looking valid.
+  const clampO2 = useCallback((rawValue: string) => {
+    if (rawValue === '' || rawValue == null) return;
+    const n = Number(rawValue);
+    if (Number.isNaN(n)) return;
+    const clamped = Math.min(100, Math.max(0, n));
+    if (clamped !== n) {
+      setValue('q20_oxygenSaturation', String(clamped), { shouldValidate: true, shouldDirty: true });
+    }
+  }, [setValue]);
+
   const handleVitalChange = useCallback((key: VitalKey, rawValue: string) => {
     const value = parseFloat(rawValue);
     if (isNaN(value) || rawValue.trim() === '') {
@@ -404,6 +418,8 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                   type="number"
                   id="q16_temperature"
                   step="0.1"
+                  min={RANGE.temperature.min}
+                  max={RANGE.temperature.max}
                   required
                   {...register('q16_temperature', {
                     validate: rangeValidator(RANGE.temperature.min, RANGE.temperature.max, RANGE.temperature.label),
@@ -434,6 +450,8 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                     id="q17_systolic"
                     placeholder="120"
                     aria-label="Systolic"
+                    min={RANGE.systolic.min}
+                    max={RANGE.systolic.max}
                     disabled={bpNotObtained}
                     {...register('q17_systolic', {
                       validate: rangeValidator(RANGE.systolic.min, RANGE.systolic.max, RANGE.systolic.label),
@@ -447,6 +465,8 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                     id="q17_diastolic"
                     placeholder="80"
                     aria-label="Diastolic"
+                    min={RANGE.diastolic.min}
+                    max={RANGE.diastolic.max}
                     disabled={bpNotObtained}
                     {...register('q17_diastolic', {
                       validate: rangeValidator(RANGE.diastolic.min, RANGE.diastolic.max, RANGE.diastolic.label),
@@ -505,6 +525,8 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                   style={isAbnormal('pulse') ? alertInputStyle : undefined}
                   type="number"
                   id="q18_pulse"
+                  min={RANGE.pulse.min}
+                  max={RANGE.pulse.max}
                   required
                   {...register('q18_pulse', {
                     validate: rangeValidator(RANGE.pulse.min, RANGE.pulse.max, RANGE.pulse.label),
@@ -529,6 +551,8 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                   style={isAbnormal('respiration') ? alertInputStyle : undefined}
                   type="number"
                   id="q19_respiration"
+                  min={RANGE.respiration.min}
+                  max={RANGE.respiration.max}
                   required
                   {...register('q19_respiration', {
                     validate: rangeValidator(RANGE.respiration.min, RANGE.respiration.max, RANGE.respiration.label),
@@ -550,10 +574,16 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                   style={isAbnormal('oxygenSaturation') ? alertInputStyle : undefined}
                   type="number"
                   id="q20_oxygenSaturation"
+                  min={0}
+                  max={100}
                   required
                   {...register('q20_oxygenSaturation', {
                     validate: rangeValidator(RANGE.o2.min, RANGE.o2.max, RANGE.o2.label),
-                    onBlur: (e) => handleVitalChange('oxygenSaturation', e.target.value),
+                    onChange: (e) => clampO2(e.target.value),
+                    onBlur: (e) => {
+                      clampO2(e.target.value);
+                      handleVitalChange('oxygenSaturation', e.target.value);
+                    },
                   })}
                 />
                 <FieldError name="q20_oxygenSaturation" errors={errors} />
