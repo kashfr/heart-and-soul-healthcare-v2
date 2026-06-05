@@ -11,13 +11,15 @@
  */
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from './firebase';
-import { clarificationMessages, clarificationAwaitsNurse, type NoteClarification, type ClarificationMessage } from './submissions';
+import { clarificationMessages, clarificationAwaitsNurse, type NoteClarification, type ClarificationMessage, type ClarificationKind } from './submissions';
 import { hasCriticalVital } from './criticalVitals';
 
 export interface OpenClarification {
   noteId: string;
   clientName: string;
   dateOfService: string;
+  /** Flag intent: 'clarification' (a question) or 'correction' (must be fixed). */
+  kind: ClarificationKind;
   /** The full back-and-forth, oldest first. */
   thread: ClarificationMessage[];
   /** The reviewer who opened the thread. */
@@ -83,6 +85,7 @@ export function subscribeMyOpenClarifications(
           noteId: d.id,
           clientName: String(data.q3_clientName || ''),
           dateOfService: String(data.q6_dateofService || ''),
+          kind: clar.kind === 'correction' ? 'correction' : 'clarification',
           thread: msgs,
           flaggedByName: String(clar.flaggedByName || ''),
           latestReviewerMessage: lastReviewer?.text || clar.message || '',
@@ -92,9 +95,13 @@ export function subscribeMyOpenClarifications(
           flaggedAt: toMs(clar.flaggedAt),
         });
       });
-      // Priority order: critical-vital notes first, then oldest flag first (FIFO).
+      // Priority order: critical-vital notes first, then corrections (a wrong
+      // note is more urgent than a question), then oldest flag first (FIFO).
       items.sort((a, b) => {
         if (a.hasCriticalVitals !== b.hasCriticalVitals) return a.hasCriticalVitals ? -1 : 1;
+        const aCorr = a.kind === 'correction';
+        const bCorr = b.kind === 'correction';
+        if (aCorr !== bCorr) return aCorr ? -1 : 1;
         return a.flaggedAt - b.flaggedAt;
       });
       cb(items);

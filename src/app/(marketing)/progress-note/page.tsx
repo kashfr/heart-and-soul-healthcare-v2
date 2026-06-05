@@ -150,6 +150,12 @@ function ProgressNotePageInner() {
   const [criticalNotifiedSupervisor, setCriticalNotifiedSupervisor] = useState(false);
   const [criticalNotifiedPhysician, setCriticalNotifiedPhysician] = useState(false);
 
+  // Backdated date-of-service confirm. A date of service more than 7 days in the
+  // past is usually legitimate (a late entry) but is also where typos land, so
+  // we ask once. skipDateConfirmRef passes the re-submit after she confirms.
+  const skipDateConfirmRef = useRef(false);
+  const [pendingDateConfirm, setPendingDateConfirm] = useState<{ date: string; daysAgo: number } | null>(null);
+
   // Stable id for the note this form will eventually submit. Generated
   // lazily (first autosave or submit), persisted on the draft, and reused
   // across retries so a flaky-network resubmit overwrites the same doc
@@ -915,6 +921,37 @@ function ProgressNotePageInner() {
       );
       return;
     }
+
+    // Date-of-service guardrails. The picker has max={today}, but a date can
+    // still be typed; and a far-past date is where typos (wrong month/day) land.
+    // (a) HARD block a future date. (b) SOFT confirm when more than 7 days back.
+    const dosStr = String(getValues('q6_dateofService') || '').trim();
+    if (dosStr) {
+      // Compare at day granularity in local time (anchor at noon to dodge DST).
+      const dos = new Date(dosStr + 'T12:00:00');
+      const now = new Date();
+      const todayNoon = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0);
+      if (!Number.isNaN(dos.getTime())) {
+        const daysDiff = Math.round((todayNoon.getTime() - dos.getTime()) / 86_400_000);
+        if (daysDiff < 0) {
+          // Future date: hard stop, no override.
+          setCurrentPage(1);
+          setTimeout(() => {
+            const el = formRef.current?.querySelector('#q6_dateofService') as HTMLElement | null;
+            el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            (el as HTMLInputElement | null)?.focus();
+          }, 100);
+          alert('The date of service cannot be in the future. Please correct it before submitting.');
+          return;
+        }
+        if (daysDiff > 7 && !skipDateConfirmRef.current) {
+          // Backdated more than a week: confirm once (late entries are allowed).
+          setPendingDateConfirm({ date: dosStr, daysAgo: daysDiff });
+          return;
+        }
+      }
+    }
+    skipDateConfirmRef.current = false;
 
     // Client condition at shift end is a DeselectableRadio (stored in the
     // radio module store, not RHF) with no HTML `required` attribute, so the
@@ -1933,6 +1970,59 @@ function ProgressNotePageInner() {
                 }}
               >
                 Confirm & submit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Backdated date-of-service confirm. Soft stop when the date of service
+          is more than 7 days in the past. Late entries are legitimate, so this
+          is a confirm (not a block) to catch a typo'd month/day. */}
+      {pendingDateConfirm && (
+        <div className={`${styles.confirmModal} ${styles.active}`}>
+          <div className={styles.modalContent}>
+            <h2 style={{ color: '#7c3a00', marginTop: 0 }}>Double-check the date of service</h2>
+            <p style={{ color: '#555', lineHeight: 1.6, marginBottom: 8 }}>
+              You&apos;ve set the date of service to:
+            </p>
+            <p style={{ background: '#fff8ec', border: '1px solid #f0d9a8', padding: '8px 12px', borderRadius: 6, fontSize: 15, color: '#1a3a5c', margin: '0 0 12px 0', fontWeight: 700 }}>
+              {(() => { const p = pendingDateConfirm.date.split('-'); return p.length === 3 ? `${p[1]}/${p[2]}/${p[0]}` : pendingDateConfirm.date; })()}
+              {' '}
+              <span style={{ color: '#7c3a00', fontWeight: 600, fontSize: 13 }}>
+                ({pendingDateConfirm.daysAgo} days ago)
+              </span>
+            </p>
+            <p style={{ color: '#666', fontSize: 13, lineHeight: 1.5, marginBottom: 20 }}>
+              That&apos;s more than a week in the past. Late entries are fine, we just want to make
+              sure the date is right and not a typo. Is this the correct date of service?
+            </p>
+            <div className={styles.modalButtons}>
+              <button
+                type="button"
+                className={styles.cancelBtn}
+                onClick={() => {
+                  setPendingDateConfirm(null);
+                  setCurrentPage(1);
+                  setTimeout(() => {
+                    const el = formRef.current?.querySelector('#q6_dateofService') as HTMLElement | null;
+                    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    (el as HTMLInputElement | null)?.focus();
+                  }, 100);
+                }}
+              >
+                Let me fix the date
+              </button>
+              <button
+                type="button"
+                className={styles.confirmBtn}
+                onClick={() => {
+                  skipDateConfirmRef.current = true;
+                  setPendingDateConfirm(null);
+                  setTimeout(() => formRef.current?.requestSubmit(), 0);
+                }}
+              >
+                Yes, the date is correct
               </button>
             </div>
           </div>

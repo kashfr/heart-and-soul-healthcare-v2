@@ -37,12 +37,15 @@ export default function ClarificationPanel({
   const isAuthor = !!viewerUid && !!authorId && viewerUid === authorId;
 
   const [mode, setMode] = useState<null | 'flag' | 'respond' | 'resolve'>(null);
+  // Which kind of flag the reviewer is starting (only relevant in 'flag' mode).
+  const [flagKind, setFlagKind] = useState<'clarification' | 'correction'>('clarification');
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const isOpen = clarification?.status === 'open';
   const isResolved = clarification?.status === 'resolved';
+  const isCorrection = clarification?.kind === 'correction';
 
   // Nobody to show anything to: no thread and the viewer can't start one.
   if (!clarification && !canReview) return null;
@@ -54,7 +57,7 @@ export default function ClarificationPanel({
       const res = await authedFetch(`/api/admin/submissions/${noteId}/clarification`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, text: text.trim() }),
+        body: JSON.stringify({ action, text: text.trim(), ...(action === 'flag' ? { kind: flagKind } : {}) }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -73,24 +76,34 @@ export default function ClarificationPanel({
   return (
     <div style={wrapStyle} className="no-print">
       <div style={headerStyle}>
-        {isOpen ? (
-          <MessageCircleQuestion size={16} color="#b45309" />
-        ) : (
-          <MessageCircleQuestion size={16} color="#5c6b7a" />
-        )}
-        <strong style={{ fontSize: 14, color: '#2c3e50' }}>Clarification</strong>
-        {isOpen && <span style={openBadge}>Open</span>}
+        <MessageCircleQuestion size={16} color={isOpen ? (isCorrection ? '#b3261e' : '#b45309') : '#5c6b7a'} />
+        <strong style={{ fontSize: 14, color: '#2c3e50' }}>
+          {clarification ? (isCorrection ? 'Correction needed' : 'Clarification') : 'Clarification / Correction'}
+        </strong>
+        {isOpen && <span style={isCorrection ? correctionBadge : openBadge}>Open</span>}
         {isResolved && <span style={resolvedBadge}>Resolved</span>}
       </div>
 
       <div style={{ padding: '0 14px 14px' }}>
-        {/* No thread yet — reviewer can start one. */}
+        {/* No thread yet — reviewer can start one of two kinds. */}
         {!clarification && canReview && mode !== 'flag' && (
-          <button type="button" style={primaryBtn} onClick={() => setMode('flag')}>
-            Flag for clarification
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              style={secondaryBtn}
+              onClick={() => { setFlagKind('clarification'); setMode('flag'); }}
+            >
+              Flag for clarification
+            </button>
+            <button
+              type="button"
+              style={correctionBtn}
+              onClick={() => { setFlagKind('correction'); setMode('flag'); }}
+            >
+              Flag a correction
+            </button>
+          </div>
         )}
-
         {/* Open or resolved thread: show the full conversation. */}
         {clarification && (
           <div style={threadStyle}>
@@ -148,9 +161,11 @@ export default function ClarificationPanel({
               rows={3}
               placeholder={
                 mode === 'flag'
-                  ? 'What would you like the author to clarify? (a question, not a change request)'
+                  ? (flagKind === 'correction'
+                      ? 'What needs to be corrected? (e.g. the date of service should be 5/24, not 6/4)'
+                      : 'What would you like the author to clarify? (a question, not a change request)')
                   : mode === 'respond'
-                    ? 'Add your clarification…'
+                    ? 'Add your reply…'
                     : 'Optional note on how this was resolved…'
               }
               style={textareaStyle}
@@ -183,7 +198,7 @@ export default function ClarificationPanel({
                 {busy
                   ? 'Saving…'
                   : mode === 'flag'
-                    ? 'Send flag'
+                    ? (flagKind === 'correction' ? 'Send correction' : 'Send flag')
                     : mode === 'respond'
                       ? 'Send response'
                       : 'Resolve'}
@@ -199,6 +214,7 @@ export default function ClarificationPanel({
 const wrapStyle: React.CSSProperties = { border: '1px solid #e5e7eb', borderRadius: 8, background: 'white', marginTop: 20 };
 const headerStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px' };
 const openBadge: React.CSSProperties = { background: '#fef3c7', color: '#92400e', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, padding: '1px 8px', borderRadius: 999 };
+const correctionBadge: React.CSSProperties = { background: '#fee2e2', color: '#b3261e', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, padding: '1px 8px', borderRadius: 999 };
 const resolvedBadge: React.CSSProperties = { background: '#dcfce7', color: '#166534', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, padding: '1px 8px', borderRadius: 999 };
 const threadStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 8 };
 const bubbleStyle = (bg: string, border: string): React.CSSProperties => ({ background: bg, border: `1px solid ${border}`, borderRadius: 6, padding: '8px 10px' });
@@ -208,4 +224,5 @@ const textareaStyle: React.CSSProperties = { width: '100%', boxSizing: 'border-b
 const errStyle: React.CSSProperties = { color: '#b3261e', fontSize: 12.5, marginTop: 6 };
 const primaryBtn: React.CSSProperties = { background: '#1a3a5c', color: 'white', border: 'none', borderRadius: 6, padding: '7px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const secondaryBtn: React.CSSProperties = { background: 'white', color: '#1a3a5c', border: '1px solid #1a3a5c', borderRadius: 6, padding: '7px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
+const correctionBtn: React.CSSProperties = { background: '#b3261e', color: 'white', border: 'none', borderRadius: 6, padding: '7px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const ghostBtn: React.CSSProperties = { background: 'transparent', color: '#5c6b7a', border: '1px solid #cbd5e1', borderRadius: 6, padding: '7px 14px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' };

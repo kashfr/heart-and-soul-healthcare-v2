@@ -35,8 +35,9 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid action.' }, { status: 400 });
   }
   const text = String(body?.text || '');
+  const kind = body?.kind === 'correction' ? 'correction' : 'clarification';
 
-  const result = await applyClarification(id, caller, action, text);
+  const result = await applyClarification(id, caller, action, text, kind);
   if (!result.ok) {
     const status =
       result.reason === 'not-found' ? 404 : result.reason === 'forbidden' ? 403 : 409;

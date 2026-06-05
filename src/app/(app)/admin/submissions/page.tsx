@@ -1307,9 +1307,15 @@ export default function SubmissionsPage() {
                               </span>
                             )}
                             {s.clarificationStatus === 'open' && (
-                              <span style={flagBadgeAmber} title="Open clarification flag">
-                                Needs clarification
-                              </span>
+                              s.clarificationKind === 'correction' ? (
+                                <span style={flagBadgeRed} title="Open correction flag">
+                                  Needs correction
+                                </span>
+                              ) : (
+                                <span style={flagBadgeAmber} title="Open clarification flag">
+                                  Needs clarification
+                                </span>
+                              )
                             )}
                           </div>
                         </td>

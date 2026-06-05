@@ -89,7 +89,8 @@ export async function applyClarification(
   noteId: string,
   caller: AuthedCaller,
   action: ClarificationAction,
-  text: string
+  text: string,
+  kind?: 'clarification' | 'correction'
 ): Promise<ClarificationResult> {
   const docRef = adminDb().collection('progressNotes').doc(noteId);
   const snap = await docRef.get();
@@ -125,6 +126,7 @@ export async function applyClarification(
     await docRef.update({
       clarification: {
         status: 'open',
+        kind: kind === 'correction' ? 'correction' : 'clarification',
         thread: [firstMsg],
         message: trimmed,
         flaggedBy: caller.uid,

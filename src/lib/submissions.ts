@@ -181,8 +181,19 @@ export interface ClarificationMessage {
  * `message` / `response` fields are retained for backward-compat reads of any
  * note not yet migrated; new writes append to `thread`.
  */
+/**
+ * The intent of a flag:
+ *  - 'clarification' = a non-adversarial question for the author.
+ *  - 'correction'    = something is wrong and must be fixed (e.g. wrong date).
+ * Same blocking + reply + resolve machinery; only the label, tone, and color
+ * differ. Defaults to 'clarification' for any flag written before this field.
+ */
+export type ClarificationKind = 'clarification' | 'correction';
+
 export interface NoteClarification {
   status: 'open' | 'resolved';
+  /** What kind of flag this is. Absent → treat as 'clarification' (legacy). */
+  kind?: ClarificationKind;
   /** Append-only conversation. First entry is the reviewer's opening question. */
   thread?: ClarificationMessage[];
   message: string;
@@ -257,6 +268,8 @@ export interface SubmissionSummary {
   cosignedCredential: string;
   /** 'open' when a clarification flag is awaiting resolution, else null. */
   clarificationStatus: 'open' | 'resolved' | null;
+  /** Intent of an open flag: 'clarification' (question) or 'correction' (fix). */
+  clarificationKind: ClarificationKind | null;
 }
 
 export type ArchiveScope = 'staff' | 'nurse';
@@ -434,6 +447,8 @@ function mapDocToSummary(
         | 'open'
         | 'resolved'
         | undefined) ?? null,
+    clarificationKind:
+      ((data.clarification as { kind?: string } | undefined)?.kind as ClarificationKind | undefined) ?? null,
   };
 }
 
