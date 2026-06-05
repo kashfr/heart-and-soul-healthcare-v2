@@ -1162,6 +1162,12 @@ export default function SubmissionsPage() {
                       />
                     </th>
                     <th
+                      style={{ ...thStyle, width: 48, textAlign: 'right', color: '#94a3b8' }}
+                      title="Row number across the whole filtered list (continuous across pages)"
+                    >
+                      #
+                    </th>
+                    <th
                       style={{ ...thStyle, cursor: 'pointer' }}
                       onClick={() => setSort('dateOfService')}
                     >
@@ -1203,6 +1209,7 @@ export default function SubmissionsPage() {
                           style={{ ...checkboxStyle, cursor: 'not-allowed', opacity: 0.4 }}
                         />
                       </td>
+                      <td style={{ ...tdStyle, textAlign: 'right', color: '#cbd5e1' }}>—</td>
                       <td style={tdStyle}>
                         {myDraft.dateOfService
                           ? (() => {
@@ -1267,6 +1274,9 @@ export default function SubmissionsPage() {
                             aria-label={`Select ${s.clientName} ${s.dateOfService}`}
                             style={checkboxStyle}
                           />
+                        </td>
+                        <td style={{ ...tdStyle, textAlign: 'right', color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>
+                          {pageStart + i + 1}
                         </td>
                         <td style={tdStyle}>
                           {s.dateOfService}
