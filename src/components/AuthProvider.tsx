@@ -11,6 +11,7 @@ import { onAuthStateChanged, signOut as fbSignOut, type User } from 'firebase/au
 import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import type { UserProfile, Role } from '@/lib/auth';
+import { useViewAs } from './ImpersonationProvider';
 
 interface AuthContextValue {
   user: User | null;
@@ -77,4 +78,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   return useContext(AuthContext);
+}
+
+/**
+ * The EFFECTIVE identity for nurse-scoped READ/display logic. Normally this is
+ * the real signed-in user, but when an admin is using "View as" it returns the
+ * impersonated nurse's identity so her screens render. WRITE paths must keep
+ * using useAuth().user (the real admin), so author-only rules still apply and
+ * the view stays read-only.
+ */
+export interface EffectiveUser {
+  uid: string | null;
+  displayName: string | null;
+  role: Role | null;
+  credential: string | undefined;
+  isViewingAs: boolean;
+}
+
+export function useEffectiveUser(): EffectiveUser {
+  const { user, profile, role } = useAuth();
+  const { viewingAs } = useViewAs();
+  if (viewingAs) {
+    return {
+      uid: viewingAs.uid,
+      displayName: viewingAs.displayName,
+      role: 'nurse',
+      credential: viewingAs.credential ?? undefined,
+      isViewingAs: true,
+    };
+  }
+  return {
+    uid: user?.uid ?? null,
+    displayName: profile?.displayName ?? user?.displayName ?? null,
+    role,
+    credential: profile?.credential,
+    isViewingAs: false,
+  };
 }

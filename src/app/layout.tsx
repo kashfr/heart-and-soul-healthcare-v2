@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Script from "next/script";
 import { AuthProvider } from "@/components/AuthProvider";
+import { ImpersonationProvider } from "@/components/ImpersonationProvider";
 import "./globals.css";
 
 const GA_MEASUREMENT_ID = "G-26HBSM36Q3";
@@ -98,7 +99,9 @@ export default function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
         />
-        <AuthProvider>{children}</AuthProvider>
+        <ImpersonationProvider>
+          <AuthProvider>{children}</AuthProvider>
+        </ImpersonationProvider>
       </body>
     </html>
   );

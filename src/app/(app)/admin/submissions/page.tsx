@@ -23,7 +23,7 @@ import {
   type ExportFormat,
 } from '@/lib/batchExport';
 import { logExport } from '@/lib/audit';
-import { useAuth } from '@/components/AuthProvider';
+import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
 import { RN_COSIGN_SESSION_KEY } from '@/lib/settings';
 
@@ -91,7 +91,10 @@ function useDebounced<T>(value: T, delay = 250): T {
 }
 
 export default function SubmissionsPage() {
-  const { user, profile, role, loading: authLoading } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
+  // Effective identity: the impersonated nurse when an admin is "viewing as".
+  // The list scopes to the effective nurse so an admin previews her view.
+  const { uid: effectiveUid, role, isViewingAs } = useEffectiveUser();
   const isNurse = role === 'nurse';
   /** Whether the signed-in user can co-sign HHA/CNA/LPN notes. Their staff
       profile credential must be RN; their portal role can be anything. */
@@ -192,12 +195,12 @@ export default function SubmissionsPage() {
     // multi-query helper handles the merge so the dashboard can keep
     // treating the result as a single flat list. Admin/supervisor
     // still get the full set via the unscoped path.
-    if (isNurse) {
-      setAllSubmissions(await getNurseAccessibleSubmissions(user.uid, { vitalsOverride }));
+    if (isNurse && effectiveUid) {
+      setAllSubmissions(await getNurseAccessibleSubmissions(effectiveUid, { vitalsOverride }));
     } else {
       setAllSubmissions(await getSubmissions({ vitalsOverride }));
     }
-  }, [isNurse, user, appSettings.vitals.rangesByAgeGroup]);
+  }, [isNurse, effectiveUid, appSettings.vitals.rangesByAgeGroup]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -297,7 +300,7 @@ export default function SubmissionsPage() {
   const scoped = useMemo(() => {
     const key: 'archivedAt' | 'nurseArchivedAt' = isNurse ? 'nurseArchivedAt' : 'archivedAt';
     if (scope === 'team') {
-      const myUid = user?.uid;
+      const myUid = effectiveUid;
       return allSubmissions.filter(
         (s) => s[key] == null && s.nurseId && s.nurseId !== myUid,
       );
@@ -306,7 +309,7 @@ export default function SubmissionsPage() {
     return allSubmissions.filter((s) =>
       scope === 'archived' ? s[key] != null : s[key] == null
     );
-  }, [allSubmissions, scope, isNurse, user?.uid]);
+  }, [allSubmissions, scope, isNurse, effectiveUid]);
 
   const activeCount = useMemo(() => {
     const key: 'archivedAt' | 'nurseArchivedAt' = isNurse ? 'nurseArchivedAt' : 'archivedAt';
@@ -319,11 +322,11 @@ export default function SubmissionsPage() {
   // team-visible notes yet.
   const teamCount = useMemo(() => {
     if (!isNurse) return 0;
-    const myUid = user?.uid;
+    const myUid = effectiveUid;
     return allSubmissions.filter(
       (s) => s.nurseArchivedAt == null && s.nurseId && s.nurseId !== myUid,
     ).length;
-  }, [allSubmissions, isNurse, user?.uid]);
+  }, [allSubmissions, isNurse, effectiveUid]);
 
   // List of unique nurses for the admin filter dropdown.
   const nurseOptions = useMemo(() => {
@@ -825,7 +828,7 @@ export default function SubmissionsPage() {
               user never gets a "wait, what's this banner?" moment after
               clicking. The link target is the same either way; the
               progress-note page's existing resume-banner logic hydrates. */}
-          {(!!profile?.credential || role === 'admin') && (
+          {!isViewingAs && (!!profile?.credential || role === 'admin') && (
             <Link
               href={myDraft ? '/progress-note?resume=1' : '/progress-note'}
               style={newNoteBtnStyle}
@@ -1271,7 +1274,7 @@ export default function SubmissionsPage() {
                               looking at notes someone else authored.
                               Subtle subtext under the date keeps the
                               column compact without adding a new one. */}
-                          {isNurse && s.nurseId && s.nurseId !== user?.uid && (
+                          {isNurse && s.nurseId && s.nurseId !== effectiveUid && (
                             <div style={byOtherNurseStyle}>by {s.nurseName || 'another nurse'}</div>
                           )}
                         </td>
@@ -1330,7 +1333,7 @@ export default function SubmissionsPage() {
                             >
                               View
                             </Link>
-                            {isRn && needsCosign(s, requiredCosignCreds) && s.nurseId !== user?.uid && (
+                            {!isViewingAs && isRn && needsCosign(s, requiredCosignCreds) && s.nurseId !== user?.uid && (
                               // The row button is now a *navigation* into the
                               // view page in cosign mode. Single-note signing
                               // must go through a full read of the note —
@@ -1352,7 +1355,7 @@ export default function SubmissionsPage() {
                                 hide it from the teammate too. Firestore rules also
                                 deny the write. Cleaner to just hide the button on
                                 care-team rows; admin/supervisor still see it. */}
-                            {(!isNurse || !s.nurseId || s.nurseId === user?.uid) && (
+                            {!isViewingAs && (!isNurse || !s.nurseId || s.nurseId === effectiveUid) && (
                               rowArchived ? (
                                 <button
                                   onClick={() => handleRowArchive(s, 'restore')}

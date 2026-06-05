@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Users, ClipboardList, UserCog, FileText, FilePlus, FileEdit, ShieldAlert, MessageCircleQuestion } from 'lucide-react';
-import { useAuth } from '@/components/AuthProvider';
+import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { loadDraft, subscribePendingDupCount, type NoteDraft } from '@/lib/drafts';
 import { subscribeMyOpenClarifications } from '@/lib/clarifications';
 import type { Role } from '@/lib/auth';
@@ -65,12 +65,16 @@ const ROLE_KICKER: Record<Role, string> = {
 };
 
 export default function AdminDashboardPage() {
-  const { user, profile, role } = useAuth();
+  const { user, profile } = useAuth();
+  // Effective identity: the impersonated nurse when an admin is "viewing as",
+  // else the real user. The dashboard cards, kicker, and clarification banner
+  // render for the effective role so an admin previews the nurse dashboard.
+  const { uid: effectiveUid, role, credential: effectiveCredential, isViewingAs } = useEffectiveUser();
   const [myDraft, setMyDraft] = useState<NoteDraft | null>(null);
   const [pendingDup, setPendingDup] = useState(0);
   const [openClarifications, setOpenClarifications] = useState(0);
 
-  // Pending duplicate-note approvals (admin + supervisor only).
+  // Pending duplicate-note approvals (admin + supervisor only — real role).
   useEffect(() => {
     if (role !== 'admin' && role !== 'supervisor') return;
     const unsub = subscribePendingDupCount(setPendingDup);
@@ -79,22 +83,19 @@ export default function AdminDashboardPage() {
 
   // Open clarification requests on the nurse's own notes (nurse only).
   useEffect(() => {
-    if (role !== 'nurse' || !user) {
+    if (role !== 'nurse' || !effectiveUid) {
       setOpenClarifications(0);
       return;
     }
-    const unsub = subscribeMyOpenClarifications(user.uid, (items) =>
+    const unsub = subscribeMyOpenClarifications(effectiveUid, (items) =>
       setOpenClarifications(items.filter((i) => i.awaitsNurse).length),
     );
     return () => unsub();
-  }, [role, user]);
+  }, [role, effectiveUid]);
 
   // Anyone with a clinical credential (HHA / CNA / LPN / RN) can author a
-  // progress note, regardless of their portal role. That covers nurses (who
-  // always have a credential) AND admins/supervisors who happen to also be
-  // clinically licensed (e.g. an RN promoted to supervisor). Pure-admin users
-  // without a credential still see the card so they can demo/test the form.
-  const canAuthorNote = !!profile?.credential || role === 'admin';
+  // progress note. When viewing-as a nurse, hide the author CTA (read-only).
+  const canAuthorNote = !isViewingAs && (!!effectiveCredential || role === 'admin');
 
   // Surface the caller's own draft so the "Submit a progress note" card can
   // flip into "Resume draft" mode. Skipped when the user can't author notes

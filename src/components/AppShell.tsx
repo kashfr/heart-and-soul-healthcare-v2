@@ -17,7 +17,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
 } from 'lucide-react';
-import { useAuth } from './AuthProvider';
+import { useEffectiveUser } from './AuthProvider';
+import { useViewAs } from './ImpersonationProvider';
 import { useSettings } from './SettingsProvider';
 import UserMenu from './UserMenu';
 import ClarificationGate from './ClarificationGate';
@@ -46,8 +47,39 @@ const NAV: NavItem[] = [
   { href: '/admin/referrals', label: 'Referrals', icon: <FileText size={18} />, allow: ['admin'], disabled: true },
 ];
 
+const viewAsBannerStyle: React.CSSProperties = {
+  position: 'sticky',
+  top: 0,
+  zIndex: 80,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 14,
+  background: '#7c2d12',
+  color: '#fff',
+  fontSize: 13,
+  fontWeight: 600,
+  padding: '7px 14px',
+};
+const viewAsExitBtnStyle: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.18)',
+  color: '#fff',
+  border: '1px solid rgba(255,255,255,0.4)',
+  borderRadius: 6,
+  padding: '3px 12px',
+  fontSize: 12.5,
+  fontWeight: 700,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
+
 export function AppShell({ children }: { children: ReactNode }) {
-  const { role, user } = useAuth();
+  // Effective identity: the impersonated nurse when an admin is "viewing as".
+  // Nav role-gating + the nurse clarification badge use this so the admin's
+  // view-as mirrors the nurse. The view-as banner + exit use the impersonation
+  // context directly.
+  const { uid: effectiveUid, role, isViewingAs } = useEffectiveUser();
+  const { viewingAs, stopViewAs } = useViewAs();
   const { settings: appSettings } = useSettings();
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -92,15 +124,15 @@ export function AppShell({ children }: { children: ReactNode }) {
   // badge on her Submissions nav item (and enforced by the blocking gate).
   const [openClarifications, setOpenClarifications] = useState(0);
   useEffect(() => {
-    if (role !== 'nurse' || !user) {
+    if (role !== 'nurse' || !effectiveUid) {
       setOpenClarifications(0);
       return;
     }
-    const unsub = subscribeMyOpenClarifications(user.uid, (items) =>
+    const unsub = subscribeMyOpenClarifications(effectiveUid, (items) =>
       setOpenClarifications(items.filter((i) => i.awaitsNurse).length),
     );
     return () => unsub();
-  }, [role, user]);
+  }, [role, effectiveUid]);
 
   // Close the mobile drawer whenever the route changes.
   useEffect(() => {
@@ -131,6 +163,22 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="app-shell">
+      {/* View-as banner: pinned when an admin is impersonating a nurse (read-only). */}
+      {isViewingAs && viewingAs && (
+        <div style={viewAsBannerStyle} className="no-print">
+          <span>
+            👁 Viewing as <strong>{viewingAs.displayName}</strong>
+            {viewingAs.credential ? ` · ${viewingAs.credential}` : ''} (read-only)
+          </span>
+          <button
+            type="button"
+            onClick={() => { stopViewAs(); window.location.href = '/admin/users'; }}
+            style={viewAsExitBtnStyle}
+          >
+            Exit view-as
+          </button>
+        </div>
+      )}
       {/* Blocking gate: a nurse with open clarification requests must respond
           to each before she can use the portal. Renders nothing for non-nurses
           or when there's nothing awaiting a response. */}

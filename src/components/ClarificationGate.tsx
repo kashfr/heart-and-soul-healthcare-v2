@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { MessageCircleQuestion, AlertTriangle, ArrowRight } from 'lucide-react';
-import { useAuth } from './AuthProvider';
+import { useAuth, useEffectiveUser } from './AuthProvider';
 import { subscribeMyOpenClarifications, type OpenClarification } from '@/lib/clarifications';
 
 function fmtDate(v: string): string {
@@ -22,23 +22,26 @@ function fmtDate(v: string): string {
  * every OTHER page until all items are replied to. Reviewers are never gated.
  */
 export default function ClarificationGate() {
-  const { user, role, loading } = useAuth();
+  const { loading } = useAuth();
+  // Effective identity: the impersonated nurse when an admin is "viewing as",
+  // otherwise the real signed-in user. Lets an admin preview the nurse gate.
+  const { uid: effectiveUid, role: effectiveRole } = useEffectiveUser();
   const pathname = usePathname();
   const [items, setItems] = useState<OpenClarification[]>([]);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    if (loading || role !== 'nurse' || !user) {
+    if (loading || effectiveRole !== 'nurse' || !effectiveUid) {
       setItems([]);
       setReady(true);
       return;
     }
-    const unsub = subscribeMyOpenClarifications(user.uid, (next) => {
+    const unsub = subscribeMyOpenClarifications(effectiveUid, (next) => {
       setItems(next);
       setReady(true);
     });
     return () => unsub();
-  }, [loading, role, user]);
+  }, [loading, effectiveRole, effectiveUid]);
 
   // Everything still awaiting her reply, already in priority order from the lib.
   const pending = useMemo(() => items.filter((i) => i.awaitsNurse), [items]);
@@ -53,7 +56,7 @@ export default function ClarificationGate() {
     return !!viewingId && pending.some((p) => p.noteId === viewingId);
   }, [pathname, pending]);
 
-  if (role !== 'nurse' || !ready || pending.length === 0 || onAPendingNotePage) return null;
+  if (effectiveRole !== 'nurse' || !ready || pending.length === 0 || onAPendingNotePage) return null;
 
   return <GateQueue items={pending} />;
 }

@@ -232,6 +232,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Audit trail of admin "View as" (read-only impersonation) sessions.
+    // Written only via the Admin SDK (server route, which bypasses rules);
+    // readable by admins for oversight; never client-writable or mutable.
+    match /viewAsLog/{entryId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
     // Default deny
     match /{document=**} {
       allow read, write: if false;

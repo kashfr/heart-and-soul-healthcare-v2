@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { useAuth } from '@/components/AuthProvider';
+import { useViewAs } from '@/components/ImpersonationProvider';
 import type { Role } from '@/lib/auth';
 import { formatUSPhone } from '@/lib/phone';
 
@@ -65,7 +66,24 @@ const CREDENTIAL_OPTIONS: { value: string; label: string }[] = [
 
 export default function AdminUsersPage() {
   const { user: currentUser, role: currentRole } = useAuth();
+  const { startViewAs } = useViewAs();
   const isSupervisor = currentRole === 'supervisor';
+
+  // Admin-only "View as" (read-only impersonation for testing). Logs the session
+  // server-side, then routes to the dashboard rendered as that staff member.
+  const handleViewAs = async (s: StaffRow) => {
+    try {
+      await authedFetch('/api/admin/view-as', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetUid: s.uid, targetName: s.displayName || s.email || '' }),
+      }).catch(() => {}); // audit is best-effort; don't block the session on it
+      startViewAs({ uid: s.uid, displayName: s.displayName || s.email || 'Staff', credential: s.credential });
+      window.location.href = '/admin';
+    } catch (err) {
+      console.error('View-as failed:', err);
+    }
+  };
   const [staff, setStaff] = useState<StaffRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
@@ -150,6 +168,7 @@ export default function AdminUsersPage() {
             currentUserUid={currentUser?.uid}
             callerRole={currentRole}
             onEdit={setEditing}
+            onViewAs={currentRole === 'admin' ? handleViewAs : undefined}
           />
         )}
 
@@ -199,12 +218,14 @@ function StaffTable({
   currentUserUid,
   callerRole,
   onEdit,
+  onViewAs,
   muted,
 }: {
   rows: StaffRow[];
   currentUserUid: string | undefined;
   callerRole: Role | null;
   onEdit: (s: StaffRow) => void;
+  onViewAs?: (s: StaffRow) => void;
   muted?: boolean;
 }) {
   return (
@@ -304,7 +325,20 @@ function StaffTable({
                   })()}
                 </td>
                 <td style={{ ...tdStyle, textAlign: 'right', color: '#94a3b8' }}>
-                  {isLockedForSupervisor ? <Lock size={14} /> : <Pencil size={14} />}
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+                    {/* View as: admin-only, never on self or another admin. Read-only. */}
+                    {onViewAs && !isSelf && s.role !== 'admin' && s.active && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onViewAs(s); }}
+                        style={viewAsRowBtnStyle}
+                        title={`See the portal exactly as ${s.displayName || 'this staff member'} (read-only)`}
+                      >
+                        View as
+                      </button>
+                    )}
+                    {isLockedForSupervisor ? <Lock size={14} /> : <Pencil size={14} />}
+                  </div>
                 </td>
               </tr>
             );
@@ -866,6 +900,7 @@ const altRowStyle: React.CSSProperties = { background: '#fafbfc' };
 const sectionHeadingStyle: React.CSSProperties = { fontSize: 14, color: '#2c3e50', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: 0.5 };
 const statusBadgeStyle: React.CSSProperties = { display: 'inline-block', padding: '2px 8px', fontSize: 11, fontWeight: 700, borderRadius: 999, textTransform: 'uppercase', letterSpacing: 0.4 };
 const selfBadgeStyle: React.CSSProperties = { marginLeft: 8, fontSize: 10, padding: '2px 6px', borderRadius: 999, background: '#eef5ff', color: '#1a3a5c', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 };
+const viewAsRowBtnStyle: React.CSSProperties = { background: 'white', color: '#7c2d12', border: '1px solid #d6a78f', borderRadius: 6, padding: '3px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const primaryBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#27ae60', color: 'white', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
 const secondaryBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#eef1f4', color: '#2c3e50', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const dangerBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fdecea', color: '#b3261e', padding: '10px 14px', borderRadius: 6, border: '1px solid #f5c6c0', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };

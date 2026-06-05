@@ -13,7 +13,7 @@ import { needsCosign } from '@/lib/cosignClient';
 import { useSettings } from '@/components/SettingsProvider';
 import { pdfFilenameFor, triggerDownload } from '@/lib/batchExport';
 import { getVitalRanges, getAgeGroupLabel } from '@/lib/vitalRanges';
-import { useAuth } from '@/components/AuthProvider';
+import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import RevisionHistory from '@/components/RevisionHistory';
 import CoSignModal from '@/components/CoSignModal';
 import ClarificationPanel from '@/components/ClarificationPanel';
@@ -41,7 +41,11 @@ function hasValue(v: string | undefined): boolean {
 export default function SubmissionDetailPage({ params }: PageProps) {
   const { id } = use(params);
   const { user, profile, role, loading: authLoading } = useAuth();
-  const isNurse = role === 'nurse';
+  // Effective identity for view-as: when an admin is impersonating a nurse, the
+  // page should display as her (her revision history / respond button), but all
+  // writes stay disabled (isViewingAs). Real `user`/`role` drive write paths.
+  const { uid: effectiveUid, role: effectiveRole, isViewingAs } = useEffectiveUser();
+  const isNurse = effectiveRole === 'nurse';
   /** Whether the signed-in user can co-sign HHA/CNA/LPN notes (their staff
       profile credential is RN). */
   const isRn = profile?.credential === 'RN';
@@ -200,9 +204,12 @@ export default function SubmissionDetailPage({ params }: PageProps) {
   // archive are gated to the original author. Firestore rules already
   // deny non-author writes; these checks make the UI honest about it.
   const noteAuthorUid = (rawData as Record<string, string>).nurseId || '';
-  const isAuthor = !!user && noteAuthorUid === user.uid;
-  const canEdit = !isNurse || isAuthor;
-  const canPersonallyArchive = !isNurse || isAuthor;
+  // "Is the effective viewer the author?" drives what the nurse SEES (her own
+  // revision history, respond button). In view-as this matches the impersonated
+  // nurse. Writes are separately gated by !isViewingAs below.
+  const isAuthor = !!effectiveUid && noteAuthorUid === effectiveUid;
+  const canEdit = !isViewingAs && (!isNurse || isAuthor);
+  const canPersonallyArchive = !isViewingAs && (!isNurse || isAuthor);
 
   const credential = data.q12_credential || '';
   const isLpnRn = /^(LPN|RN)$/i.test(credential);
@@ -1042,10 +1049,11 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           <ClarificationPanel
             noteId={id}
             clarification={formData.clarification}
-            viewerRole={role}
-            viewerCredential={profile?.credential}
-            viewerUid={user?.uid}
+            viewerRole={isViewingAs ? effectiveRole : role}
+            viewerCredential={isViewingAs ? undefined : profile?.credential}
+            viewerUid={isViewingAs ? (effectiveUid ?? undefined) : user?.uid}
             authorId={(formData as { nurseId?: string }).nurseId}
+            readOnly={isViewingAs}
             onChanged={loadNote}
           />
         </div>

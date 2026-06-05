@@ -20,6 +20,9 @@ interface Props {
   viewerCredential?: string;
   viewerUid?: string;
   authorId?: string;
+  /** When true (admin in view-as mode), the thread is visible but all actions
+      are hidden — the panel is read-only. */
+  readOnly?: boolean;
   onChanged: () => void;
 }
 
@@ -30,11 +33,12 @@ export default function ClarificationPanel({
   viewerCredential,
   viewerUid,
   authorId,
+  readOnly = false,
   onChanged,
 }: Props) {
   const canReview =
-    viewerRole === 'admin' || viewerRole === 'supervisor' || viewerCredential === 'RN';
-  const isAuthor = !!viewerUid && !!authorId && viewerUid === authorId;
+    !readOnly && (viewerRole === 'admin' || viewerRole === 'supervisor' || viewerCredential === 'RN');
+  const isAuthor = !readOnly && !!viewerUid && !!authorId && viewerUid === authorId;
 
   const [mode, setMode] = useState<null | 'flag' | 'respond' | 'resolve'>(null);
   // Which kind of flag the reviewer is starting (only relevant in 'flag' mode).
