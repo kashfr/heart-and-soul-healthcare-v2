@@ -2,9 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { MessageCircleQuestion, AlertTriangle, ArrowRight, Eye } from 'lucide-react';
+import { MessageCircleQuestion, AlertTriangle, ArrowRight } from 'lucide-react';
 import { useAuth, useEffectiveUser } from './AuthProvider';
-import { useViewAs } from './ImpersonationProvider';
 import { subscribeMyOpenClarifications, type OpenClarification } from '@/lib/clarifications';
 
 function fmtDate(v: string): string {
@@ -26,8 +25,7 @@ export default function ClarificationGate() {
   const { loading } = useAuth();
   // Effective identity: the impersonated nurse when an admin is "viewing as",
   // otherwise the real signed-in user. Lets an admin preview the nurse gate.
-  const { uid: effectiveUid, role: effectiveRole, isViewingAs } = useEffectiveUser();
-  const { stopViewAs } = useViewAs();
+  const { uid: effectiveUid, role: effectiveRole } = useEffectiveUser();
   const pathname = usePathname();
   const [items, setItems] = useState<OpenClarification[]>([]);
   const [ready, setReady] = useState(false);
@@ -60,42 +58,13 @@ export default function ClarificationGate() {
 
   if (effectiveRole !== 'nurse' || !ready || pending.length === 0 || onAPendingNotePage) return null;
 
-  return (
-    <GateQueue
-      items={pending}
-      isViewingAs={isViewingAs}
-      onExitViewAs={() => { stopViewAs(); window.location.href = '/admin/users'; }}
-    />
-  );
+  return <GateQueue items={pending} />;
 }
 
-function GateQueue({
-  items,
-  isViewingAs,
-  onExitViewAs,
-}: {
-  items: OpenClarification[];
-  isViewingAs: boolean;
-  onExitViewAs: () => void;
-}) {
+function GateQueue({ items }: { items: OpenClarification[] }) {
   return (
     <div style={overlayStyle} role="dialog" aria-modal="true" aria-label="Clarification requests">
       <div style={panelStyle}>
-        {/* Admin escape hatch. When an admin is previewing this gate via
-            "View as", the blocking overlay would otherwise trap them with no
-            way out (a real nurse must reply; an admin just wants to look).
-            This always-visible bar lives INSIDE the topmost layer so it can
-            never be covered by the gate. */}
-        {isViewingAs && (
-          <div style={exitBarStyle}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <Eye size={14} /> You&apos;re previewing this as an admin (read-only).
-            </span>
-            <button type="button" onClick={onExitViewAs} style={exitBtnStyle}>
-              Exit view-as
-            </button>
-          </div>
-        )}
         <div style={headerStyle}>
           <MessageCircleQuestion size={22} color="#b45309" />
           <div>
@@ -163,8 +132,6 @@ function GateQueue({
 }
 
 const overlayStyle: React.CSSProperties = { position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(15, 23, 42, 0.55)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '40px 16px', overflowY: 'auto' };
-const exitBarStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', background: '#7c2d12', color: '#fff', borderRadius: 8, padding: '8px 12px', fontSize: 12.5, fontWeight: 600, marginBottom: 16 };
-const exitBtnStyle: React.CSSProperties = { background: 'rgba(255,255,255,0.18)', color: '#fff', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 6, padding: '4px 12px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
 const panelStyle: React.CSSProperties = { background: 'white', borderRadius: 12, boxShadow: '0 20px 60px rgba(0,0,0,0.3)', width: '100%', maxWidth: 560, padding: 22 };
 const headerStyle: React.CSSProperties = { display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 16 };
 const listStyle: React.CSSProperties = { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 12, maxHeight: '60vh', overflowY: 'auto' };
