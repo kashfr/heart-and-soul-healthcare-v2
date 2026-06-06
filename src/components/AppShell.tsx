@@ -50,7 +50,9 @@ const NAV: NavItem[] = [
 const viewAsBannerStyle: React.CSSProperties = {
   position: 'sticky',
   top: 0,
-  zIndex: 80,
+  // Must sit ABOVE the blocking clarification gate (z-index 9999) so an admin
+  // previewing a nurse who has an open gate can always reach "Exit view-as".
+  zIndex: 10000,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -183,6 +185,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           to each before she can use the portal. Renders nothing for non-nurses
           or when there's nothing awaiting a response. */}
       <ClarificationGate />
+      <div className="app-shell-body">
       <aside
         suppressHydrationWarning
         className={`app-shell-sidebar${mobileOpen ? ' app-shell-sidebar--open' : ''}${
@@ -305,12 +308,19 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <main className="app-shell-content">{children}</main>
       </div>
+      </div>
 
       <style>{`
         .app-shell {
           display: flex;
+          flex-direction: column;
           min-height: 100vh;
           background: #f5f7fa;
+        }
+        .app-shell-body {
+          display: flex;
+          flex: 1;
+          min-height: 0;
         }
         .app-shell-sidebar {
           width: 240px;
