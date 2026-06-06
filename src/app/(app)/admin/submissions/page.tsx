@@ -1258,15 +1258,24 @@ export default function SubmissionsPage() {
                   {submissions.map((s, i) => {
                     const isSelected = selected.has(s.id);
                     const rowArchived = isNurse ? s.nurseArchivedAt != null : s.archivedAt != null;
+                    // The whole row navigates to the note (replaces the old "View"
+                    // button, freeing space so the action buttons fit on one line).
+                    const viewHref = `/admin/submissions/${s.id}${returnQs ? `?back=${encodeURIComponent(returnQs)}` : ''}`;
+                    const restingBg = isSelected ? '#eef5ff' : i % 2 === 1 ? '#f9fafb' : 'white';
                     return (
                       <tr
                         key={s.id}
+                        onClick={() => router.push(viewHref)}
                         style={{
                           ...(i % 2 === 1 ? altRowStyle : {}),
                           ...(isSelected ? { backgroundColor: '#eef5ff' } : {}),
+                          cursor: 'pointer',
                         }}
+                        title={`Open ${s.clientName}'s note`}
+                        onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = '#f1f5f9'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = restingBg; }}
                       >
-                        <td style={tdStyle}>
+                        <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
                           <input
                             type="checkbox"
                             checked={isSelected}
@@ -1335,14 +1344,10 @@ export default function SubmissionsPage() {
                         <td style={tdStyle}>
                           {s.submittedAt ? s.submittedAt.toLocaleString() : '--'}
                         </td>
-                        <td style={{ ...tdStyle, textAlign: 'center' }}>
+                        {/* Actions cell stops click-propagation so the buttons
+                            don't also trigger the row's open-note navigation. */}
+                        <td style={{ ...tdStyle, textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
                           <div style={{ display: 'flex', gap: 6, rowGap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
-                            <Link
-                              href={`/admin/submissions/${s.id}${returnQs ? `?back=${encodeURIComponent(returnQs)}` : ''}`}
-                              style={viewBtnStyle}
-                            >
-                              View
-                            </Link>
                             {!isViewingAs && isRn && needsCosign(s, requiredCosignCreds) && s.nurseId !== user?.uid && (
                               // The row button is now a *navigation* into the
                               // view page in cosign mode. Single-note signing

@@ -57,7 +57,7 @@ const viewAsBannerStyle: React.CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
   gap: 14,
-  background: '#7c2d12',
+  background: '#3f6f8f',
   color: '#fff',
   fontSize: 13,
   fontWeight: 600,

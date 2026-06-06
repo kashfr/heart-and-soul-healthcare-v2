@@ -11,6 +11,7 @@ import {
   UserMinus,
   UserCheck,
   Lock,
+  Eye,
 } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { useAuth } from '@/components/AuthProvider';
@@ -333,7 +334,10 @@ function StaffTable({
                         onClick={(e) => { e.stopPropagation(); onViewAs(s); }}
                         style={viewAsRowBtnStyle}
                         title={`See the portal exactly as ${s.displayName || 'this staff member'} (read-only)`}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = '#345d78'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = '#3f6f8f'; }}
                       >
+                        <Eye size={13} />
                         View as
                       </button>
                     )}
@@ -900,7 +904,7 @@ const altRowStyle: React.CSSProperties = { background: '#fafbfc' };
 const sectionHeadingStyle: React.CSSProperties = { fontSize: 14, color: '#2c3e50', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: 0.5 };
 const statusBadgeStyle: React.CSSProperties = { display: 'inline-block', padding: '2px 8px', fontSize: 11, fontWeight: 700, borderRadius: 999, textTransform: 'uppercase', letterSpacing: 0.4 };
 const selfBadgeStyle: React.CSSProperties = { marginLeft: 8, fontSize: 10, padding: '2px 6px', borderRadius: 999, background: '#eef5ff', color: '#1a3a5c', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 };
-const viewAsRowBtnStyle: React.CSSProperties = { background: 'white', color: '#7c2d12', border: '1px solid #d6a78f', borderRadius: 6, padding: '3px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
+const viewAsRowBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, background: '#3f6f8f', color: 'white', border: 'none', borderRadius: 999, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', transition: 'background 0.15s ease' };
 const primaryBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#27ae60', color: 'white', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
 const secondaryBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#eef1f4', color: '#2c3e50', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const dangerBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fdecea', color: '#b3261e', padding: '10px 14px', borderRadius: 6, border: '1px solid #f5c6c0', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
