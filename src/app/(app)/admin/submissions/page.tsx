@@ -1289,13 +1289,6 @@ export default function SubmissionsPage() {
                         </td>
                         <td style={tdStyle}>
                           {s.dateOfService}
-                          {/* Care-team marker — visible only to nurses
-                              looking at notes someone else authored.
-                              Subtle subtext under the date keeps the
-                              column compact without adding a new one. */}
-                          {isNurse && s.nurseId && s.nurseId !== effectiveUid && (
-                            <div style={byOtherNurseStyle}>by {s.nurseName || 'another nurse'}</div>
-                          )}
                         </td>
                         <td style={tdStyle}>{s.clientName}</td>
                         <td style={tdStyle}>{s.nurseName}</td>
@@ -2053,15 +2046,6 @@ const checkboxStyle: React.CSSProperties = {
 
 // Subtle "by Andrea Hall" subtext rendered under the date-of-service
 // cell on rows whose author is somebody other than the current nurse.
-// Communicates "this is a teammate's note" at a glance without adding
-// another column.
-const byOtherNurseStyle: React.CSSProperties = {
-  fontSize: 11,
-  color: '#7f8c8d',
-  marginTop: 2,
-  fontStyle: 'italic',
-};
-
 const paginationStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
