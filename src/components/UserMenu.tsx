@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, LogOut, LayoutDashboard } from 'lucide-react';
+import { ChevronDown, LogOut, LayoutDashboard, UserCog } from 'lucide-react';
 import { useAuth } from './AuthProvider';
 import { canAccessAdmin } from '@/lib/auth';
 
@@ -71,6 +71,11 @@ export default function UserMenu() {
 
           <Link href="/admin/submissions" onClick={() => setOpen(false)} style={menuItemStyle}>
             Submissions
+          </Link>
+
+          <Link href="/admin/profile" onClick={() => setOpen(false)} style={menuItemStyle}>
+            <UserCog size={16} />
+            My profile
           </Link>
 
           <button onClick={handleSignOut} style={{ ...menuItemStyle, color: '#c44', width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}>

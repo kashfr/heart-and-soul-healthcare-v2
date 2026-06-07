@@ -31,6 +31,9 @@ interface StaffRow {
       by Firebase Auth's metadata.lastSignInTime, fetched server-side). */
   hasSignedIn: boolean;
   createdAt: number | null;
+  /** Present when the staff member has filed a self-service email-change
+      request awaiting approval. Null/absent otherwise. */
+  emailChangeRequest?: { newEmail: string; reason: string; status: 'pending' } | null;
 }
 
 interface CreateResult {
@@ -273,6 +276,11 @@ function StaffTable({
                     {s.displayName || '—'}
                     {isSelf && <span style={selfBadgeStyle}>You</span>}
                   </div>
+                  {s.emailChangeRequest && (
+                    <div style={emailReqChipStyle} title={`Requested new email: ${s.emailChangeRequest.newEmail}`}>
+                      <Mail size={11} /> Email change requested
+                    </div>
+                  )}
                 </td>
                 <td style={tdStyle}>{s.email || '—'}</td>
                 <td style={tdStyle}>
@@ -524,8 +532,9 @@ function EditStaffModal({
   const [credential, setCredential] = useState(staff.credential || '');
   const [phone, setPhone] = useState(staff.phone || '');
   const [role, setRole] = useState<Role>(staff.role || 'nurse');
-  const [busy, setBusy] = useState<null | 'save' | 'deactivate' | 'reactivate' | 'link'>(null);
+  const [busy, setBusy] = useState<null | 'save' | 'deactivate' | 'reactivate' | 'link' | 'approveEmail' | 'dismissEmail'>(null);
   const [error, setError] = useState<string | null>(null);
+  const emailRequest = staff.emailChangeRequest || null;
 
   // Case-insensitive comparison so saving without any change to the email
   // doesn't trigger an unnecessary PATCH or a notification to the old address.
@@ -571,6 +580,40 @@ function EditStaffModal({
       if (updated) onSaved(updated);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed.');
+      setBusy(null);
+    }
+  };
+
+  // Approve a self-service email-change request: this performs the real email
+  // change (updates Firebase Auth, notifies the old address) and clears the
+  // request — same path as an admin typing the new email in directly.
+  const handleApproveEmailRequest = async () => {
+    if (!emailRequest) return;
+    if (!window.confirm(
+      `Change ${staff.displayName || 'this user'}'s login email to ${emailRequest.newEmail}? ` +
+      `They'll sign in with the new address, and a heads-up goes to the old one (${staff.email}).`
+    )) return;
+    setBusy('approveEmail');
+    setError(null);
+    try {
+      const updated = await patch({ email: emailRequest.newEmail });
+      if (updated) onSaved(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not approve the request.');
+      setBusy(null);
+    }
+  };
+
+  // Dismiss a request without changing anything.
+  const handleDismissEmailRequest = async () => {
+    if (!emailRequest) return;
+    setBusy('dismissEmail');
+    setError(null);
+    try {
+      const updated = await patch({ clearEmailRequest: true });
+      if (updated) onSaved(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not dismiss the request.');
       setBusy(null);
     }
   };
@@ -630,6 +673,40 @@ function EditStaffModal({
         </div>
 
         <form onSubmit={handleSave} style={{ padding: 20 }}>
+          {emailRequest && (
+            <div style={emailReqBoxStyle}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontWeight: 700, color: '#a35400' }}>
+                <Mail size={15} /> Email change requested
+              </div>
+              <div style={{ marginTop: 8, fontSize: 14, color: '#2c3e50' }}>
+                {staff.displayName || 'This user'} asked to change their login email to{' '}
+                <strong>{emailRequest.newEmail}</strong>.
+              </div>
+              {emailRequest.reason && (
+                <div style={{ marginTop: 4, fontSize: 13, color: '#5c6b7a' }}>
+                  Reason: {emailRequest.reason}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={handleApproveEmailRequest}
+                  disabled={!!busy}
+                  style={{ ...approveBtnStyle, ...(busy ? { opacity: 0.6, cursor: 'not-allowed' } : {}) }}
+                >
+                  {busy === 'approveEmail' ? 'Approving…' : 'Approve & change email'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDismissEmailRequest}
+                  disabled={!!busy}
+                  style={{ ...secondaryBtnStyle, ...(busy ? { opacity: 0.6, cursor: 'not-allowed' } : {}) }}
+                >
+                  {busy === 'dismissEmail' ? 'Dismissing…' : 'Dismiss'}
+                </button>
+              </div>
+            </div>
+          )}
           <Field
             label="Email *"
             help={
@@ -905,6 +982,9 @@ const sectionHeadingStyle: React.CSSProperties = { fontSize: 14, color: '#2c3e50
 const statusBadgeStyle: React.CSSProperties = { display: 'inline-block', padding: '2px 8px', fontSize: 11, fontWeight: 700, borderRadius: 999, textTransform: 'uppercase', letterSpacing: 0.4 };
 const selfBadgeStyle: React.CSSProperties = { marginLeft: 8, fontSize: 10, padding: '2px 6px', borderRadius: 999, background: '#eef5ff', color: '#1a3a5c', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 };
 const viewAsRowBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, background: '#3f6f8f', color: 'white', border: 'none', borderRadius: 999, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', transition: 'background 0.15s ease' };
+const emailReqChipStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 5, background: '#fff4e5', color: '#a35400', border: '1px solid #f0d9a8', borderRadius: 999, padding: '2px 9px', fontSize: 11, fontWeight: 700, letterSpacing: 0.2 };
+const emailReqBoxStyle: React.CSSProperties = { background: '#fff8ec', border: '1px solid #f0d9a8', borderRadius: 8, padding: '14px 16px', marginBottom: 18 };
+const approveBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#27ae60', color: 'white', border: 'none', borderRadius: 6, padding: '8px 14px', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
 const primaryBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#27ae60', color: 'white', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
 const secondaryBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#eef1f4', color: '#2c3e50', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const dangerBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fdecea', color: '#b3261e', padding: '10px 14px', borderRadius: 6, border: '1px solid #f5c6c0', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };

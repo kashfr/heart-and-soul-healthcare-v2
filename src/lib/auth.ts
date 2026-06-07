@@ -3,6 +3,20 @@ import { db } from './firebase';
 
 export type Role = 'admin' | 'supervisor' | 'nurse';
 
+/** A staff member's self-service request to change their login email. Email is
+    the auth identity, so changes never happen client-side — the user proposes a
+    new address (with an optional reason) and an admin approves or dismisses it
+    from Staff & Roles. */
+export interface EmailChangeRequest {
+  /** The address the user wants to switch to (lowercased). */
+  newEmail: string;
+  /** Optional free-text reason for the change. */
+  reason?: string;
+  /** When the request was filed (Firestore Timestamp). */
+  requestedAt?: unknown;
+  status: 'pending';
+}
+
 export interface UserProfile {
   uid: string;
   email: string;
@@ -15,6 +29,9 @@ export interface UserProfile {
   active: boolean;
   createdAt?: unknown;
   invitedBy?: string;
+  /** Present when the user has an open self-service email-change request
+      awaiting admin approval. Cleared when an admin approves or dismisses it. */
+  emailChangeRequest?: EmailChangeRequest;
 }
 
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {

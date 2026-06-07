@@ -42,7 +42,9 @@ export async function POST(request: Request) {
   }
 
   const displayName = (body.displayName || '').trim();
-  const email = (body.email || '').trim().toLowerCase();
+  // Preserve the exact case the admin typed. Email is case-insensitive for
+  // sign-in (Firebase enforces uniqueness case-insensitively).
+  const email = (body.email || '').trim();
   const role = body.role;
   const credential = (body.credential || '').trim();
   const phoneRaw = (body.phone || '').trim();
@@ -179,6 +181,9 @@ export async function GET(request: Request) {
   const baseUsers = snap.docs.map((d) => {
     const data = d.data();
     const createdAt = data.createdAt?.toMillis?.() ?? null;
+    const ecr = data.emailChangeRequest as
+      | { newEmail?: string; reason?: string; status?: string }
+      | undefined;
     return {
       uid: d.id,
       email: data.email ?? null,
@@ -188,6 +193,10 @@ export async function GET(request: Request) {
       phone: data.phone ?? null,
       active: data.active !== false,
       createdAt,
+      emailChangeRequest:
+        ecr && ecr.status === 'pending' && ecr.newEmail
+          ? { newEmail: ecr.newEmail, reason: ecr.reason ?? '', status: 'pending' as const }
+          : null,
     };
   });
 

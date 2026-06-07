@@ -20,6 +20,8 @@ interface PatchBody {
   active?: boolean;
   email?: string;
   phone?: string;
+  /** Dismiss a pending self-service email-change request without applying it. */
+  clearEmailRequest?: boolean;
 }
 
 function badRequest(message: string) {
@@ -114,13 +116,22 @@ export async function PATCH(
   const previousEmail = (snap.data()?.email as string | undefined) ?? null;
   let normalizedNewEmail: string | null = null;
   if (body.email !== undefined) {
-    const trimmed = body.email.trim().toLowerCase();
+    // Preserve the exact case the admin typed. Email is case-insensitive for
+    // sign-in (Firebase enforces uniqueness case-insensitively), so we only
+    // lowercase for the "did it actually change?" comparison.
+    const trimmed = body.email.trim();
     if (!trimmed) return badRequest('Email cannot be empty.');
     if (!EMAIL_RE.test(trimmed)) return badRequest('That doesn\'t look like a valid email address.');
-    if (trimmed !== (previousEmail || '').toLowerCase()) {
+    if (trimmed.toLowerCase() !== (previousEmail || '').toLowerCase()) {
       normalizedNewEmail = trimmed;
       update.email = trimmed;
     }
+  }
+
+  // Applying an email (approving a request) or an explicit dismiss both clear
+  // any pending self-service email-change request on the doc.
+  if (normalizedNewEmail || body.clearEmailRequest) {
+    update.emailChangeRequest = FieldValue.delete();
   }
 
   if (Object.keys(update).length === 0) {
@@ -192,6 +203,9 @@ export async function PATCH(
   }
 
   const fresh = (await ref.get()).data() || {};
+  const freshEcr = fresh.emailChangeRequest as
+    | { newEmail?: string; reason?: string; status?: string }
+    | undefined;
   return NextResponse.json({
     uid,
     email: fresh.email ?? null,
@@ -200,5 +214,9 @@ export async function PATCH(
     credential: fresh.credential ?? null,
     phone: fresh.phone ?? null,
     active: fresh.active !== false,
+    emailChangeRequest:
+      freshEcr && freshEcr.status === 'pending' && freshEcr.newEmail
+        ? { newEmail: freshEcr.newEmail, reason: freshEcr.reason ?? '', status: 'pending' as const }
+        : null,
   });
 }
