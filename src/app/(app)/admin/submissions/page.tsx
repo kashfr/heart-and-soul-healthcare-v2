@@ -1193,7 +1193,7 @@ export default function SubmissionsPage() {
                     >
                       Submitted At{sortIndicator('submittedAt')}
                     </th>
-                    <th style={{ ...thStyle, textAlign: 'center' }}>Actions</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1239,8 +1239,8 @@ export default function SubmissionsPage() {
                           </span>
                         ) : '--'}
                       </td>
-                      <td style={{ ...tdStyle, textAlign: 'center' }}>
-                        <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                      <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
                           <Link href="/progress-note?resume=1" style={viewBtnStyle}>
                             Resume
                           </Link>
@@ -1345,9 +1345,11 @@ export default function SubmissionsPage() {
                           {s.submittedAt ? s.submittedAt.toLocaleString() : '--'}
                         </td>
                         {/* Actions cell stops click-propagation so the buttons
-                            don't also trigger the row's open-note navigation. */}
-                        <td style={{ ...tdStyle, textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
-                          <div style={{ display: 'flex', gap: 6, rowGap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
+                            don't also trigger the row's open-note navigation.
+                            whiteSpace:nowrap + flex nowrap keep all buttons on a
+                            single line (the column claims the width it needs). */}
+                        <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
+                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
                             {!isViewingAs && isRn && needsCosign(s, requiredCosignCreds) && s.nurseId !== user?.uid && (
                               // The row button is now a *navigation* into the
                               // view page in cosign mode. Single-note signing
