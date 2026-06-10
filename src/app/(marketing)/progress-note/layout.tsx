@@ -17,17 +17,28 @@ export default function ProgressNoteLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <AuthedWrapper>
-      <HideChrome />
-      <div
-        style={{
-          minHeight: '100vh',
-          background: '#f5f5f5',
-          padding: '20px',
+    <>
+      {/* Hide the marketing header/footer BEFORE paint. HideChrome (JS) does
+          the same in a useEffect, which runs after hydration and lets the
+          marketing chrome flash for a frame on load/reload. This server-rendered
+          style applies as soon as it's parsed, so there's no flicker. */}
+      <style
+        dangerouslySetInnerHTML={{
+          __html: 'header, footer { display: none !important; } main { padding-top: 0 !important; }',
         }}
-      >
-        {children}
-      </div>
-    </AuthedWrapper>
+      />
+      <AuthedWrapper>
+        <HideChrome />
+        <div
+          style={{
+            minHeight: '100vh',
+            background: '#f5f5f5',
+            padding: '20px',
+          }}
+        >
+          {children}
+        </div>
+      </AuthedWrapper>
+    </>
   );
 }

@@ -1,9 +1,11 @@
 import {
   collection,
+  getDoc,
   getDocs,
   addDoc,
   deleteDoc,
   updateDoc,
+  setDoc,
   doc,
   query,
   orderBy,
@@ -23,6 +25,12 @@ export interface Patient {
   state: string;
   zip: string;
   mrn?: string;
+  /**
+   * Whether this client requires a Medication Administration Record (MAR).
+   * Not all clients need one; this flag gates the MAR surfaces and drives the
+   * roster indicator. Lives on the directory doc (not sensitive PHI).
+   */
+  requiresMar?: boolean;
   createdAt?: unknown;
   /**
    * Care team — list of nurse uids who can read all progressNotes for
@@ -51,6 +59,20 @@ export async function getPatients(): Promise<Patient[]> {
   } catch (error) {
     console.error('Error fetching patients:', error);
     return [];
+  }
+}
+
+/**
+ * Get a single patient by id. Returns null when not found.
+ */
+export async function getPatient(id: string): Promise<Patient | null> {
+  try {
+    const ref = doc(db, 'patients', id);
+    const snap = await getDoc(ref);
+    return snap.exists() ? ({ id: snap.id, ...snap.data() } as Patient) : null;
+  } catch (error) {
+    console.error('Error fetching patient:', error);
+    return null;
   }
 }
 
@@ -95,6 +117,60 @@ export async function removePatient(id: string): Promise<void> {
     await deleteDoc(patientRef);
   } catch (error) {
     console.error('Error removing patient:', error);
+    throw error;
+  }
+}
+
+/**
+ * Sensitive clinical profile for a client (sex, allergies, attending
+ * physician, diet/special instructions). Stored in a separate, care-team-gated
+ * sub-record — NOT on the directory doc — so the full roster stays readable to
+ * any signed-in staff member (for the progress-note picker) while this PHI is
+ * visible only to staff and the client's assigned care team. Feeds the MAR
+ * header and any future allergy banners.
+ */
+export interface PatientClinical {
+  sex?: string;
+  allergies?: string;
+  physicianName?: string; // standing attending / primary physician
+  physicianPhone?: string;
+  diet?: string; // diet / special instructions
+  updatedAt?: unknown;
+}
+
+// Single well-known doc id under patients/{id}/clinical.
+const CLINICAL_DOC_ID = 'profile';
+const CLINICAL_FIELDS = ['sex', 'allergies', 'physicianName', 'physicianPhone', 'diet'] as const;
+
+/**
+ * Read a client's clinical profile. Returns null when none has been saved yet.
+ */
+export async function getPatientClinical(patientId: string): Promise<PatientClinical | null> {
+  try {
+    const ref = doc(db, 'patients', patientId, 'clinical', CLINICAL_DOC_ID);
+    const snap = await getDoc(ref);
+    return snap.exists() ? (snap.data() as PatientClinical) : null;
+  } catch (error) {
+    console.error('Error fetching patient clinical profile:', error);
+    return null;
+  }
+}
+
+/**
+ * Create or update a client's clinical profile (merge). Only defined fields are
+ * written, so a partially-loaded form can never blank out stored values.
+ */
+export async function savePatientClinical(patientId: string, data: PatientClinical): Promise<void> {
+  try {
+    const ref = doc(db, 'patients', patientId, 'clinical', CLINICAL_DOC_ID);
+    const payload: Record<string, unknown> = { updatedAt: serverTimestamp() };
+    for (const key of CLINICAL_FIELDS) {
+      const value = data[key];
+      if (value !== undefined) payload[key] = value;
+    }
+    await setDoc(ref, payload, { merge: true });
+  } catch (error) {
+    console.error('Error saving patient clinical profile:', error);
     throw error;
   }
 }

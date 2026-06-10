@@ -1,0 +1,13 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "marAdministrations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "patientId", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

@@ -6,9 +6,12 @@ import { ArrowLeft, Plus, Search, Pencil, Trash2, X, UserPlus } from 'lucide-rea
 import { arrayUnion, arrayRemove, doc, updateDoc } from 'firebase/firestore';
 import {
   Patient,
+  PatientClinical,
   addPatient,
   getPatients,
+  getPatientClinical,
   removePatient,
+  savePatientClinical,
   updatePatient,
 } from '@/lib/patients';
 import { db } from '@/lib/firebase';
@@ -33,6 +36,8 @@ const emptyPatient: Partial<Patient> = {
   city: '',
   state: '',
   zip: '',
+  mrn: '',
+  requiresMar: false,
 };
 
 const STATES = [
@@ -65,6 +70,9 @@ export default function AdminPatientsPage() {
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<Patient>>(emptyPatient);
+  // Sensitive clinical fields live in a separate care-team-gated sub-record,
+  // so they're tracked apart from the directory formData and saved alongside it.
+  const [clinical, setClinical] = useState<PatientClinical>({});
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [query, setQuery] = useState('');
@@ -129,6 +137,24 @@ export default function AdminPatientsPage() {
     setCareTeam(patient?.assignedNurseIds ?? []);
   }, [formOpen, editingId, patients]);
 
+  // Load the sensitive clinical sub-record when editing; reset to blank for a
+  // brand-new patient (it gets written after the patient doc is created).
+  useEffect(() => {
+    if (!formOpen) return;
+    if (!editingId) {
+      setClinical({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const data = await getPatientClinical(editingId);
+      if (!cancelled) setClinical(data ?? {});
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [formOpen, editingId]);
+
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 2500);
@@ -136,6 +162,7 @@ export default function AdminPatientsPage() {
 
   const resetForm = () => {
     setFormData(emptyPatient);
+    setClinical({});
     setEditingId(null);
   };
 
@@ -153,6 +180,8 @@ export default function AdminPatientsPage() {
       city: patient.city,
       state: patient.state,
       zip: patient.zip,
+      mrn: patient.mrn ?? '',
+      requiresMar: patient.requiresMar ?? false,
     });
     setEditingId(patient.id || null);
     setFormOpen(true);
@@ -263,17 +292,21 @@ export default function AdminPatientsPage() {
     }
     try {
       setSubmitting(true);
+      let savedId = editingId;
       if (editingId) {
         await updatePatient(editingId, formData);
         setPatients((prev) =>
           prev.map((p) => (p.id === editingId ? { ...(p as Patient), ...formData } : p))
         );
-        showToast(`${formData.name} updated`);
       } else {
-        const id = await addPatient(formData as Patient);
-        setPatients((prev) => [...prev, { ...(formData as Patient), id }]);
-        showToast(`${formData.name} added`);
+        savedId = await addPatient(formData as Patient);
+        setPatients((prev) => [...prev, { ...(formData as Patient), id: savedId as string }]);
       }
+      // Persist the sensitive clinical fields to the care-team-gated sub-record.
+      if (savedId) {
+        await savePatientClinical(savedId, clinical);
+      }
+      showToast(`${formData.name} ${editingId ? 'updated' : 'added'}`);
       resetForm();
       setFormOpen(false);
     } catch {
@@ -353,7 +386,10 @@ export default function AdminPatientsPage() {
                 {filtered.map((p, i) => (
                   <tr key={p.id} style={i % 2 === 1 ? altRowStyle : undefined}>
                     <td style={tdStyle}>
-                      <div style={{ fontWeight: 600, color: '#2c3e50' }}>{p.name}</div>
+                      <div style={{ fontWeight: 600, color: '#2c3e50', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {p.name}
+                        {p.requiresMar && <span style={marBadgeStyle} title="Requires a Medication Administration Record">MAR</span>}
+                      </div>
                     </td>
                     <td style={tdStyle}>{formatDOB(p.dob)}</td>
                     <td style={tdStyle}>
@@ -472,6 +508,90 @@ export default function AdminPatientsPage() {
                     value={formData.zip || ''}
                     onChange={(e) => setFormData((f) => ({ ...f, zip: e.target.value }))}
                     style={inputStyle}
+                  />
+                </Field>
+              </div>
+
+              {/* MAR & clinical details. The Requires-MAR flag and record #
+                  are directory fields (formData); the rest are sensitive
+                  clinical PHI written to the care-team-gated sub-record. */}
+              <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #f1f3f5' }}>
+                <div style={careTeamHeaderStyle}>MAR &amp; clinical details</div>
+                <div style={careTeamHelpStyle}>
+                  The clinical fields below feed this client&apos;s Medication Administration Record and are visible only to staff and the client&apos;s assigned care team.
+                </div>
+
+                <label style={requiresMarRowStyle}>
+                  <input
+                    type="checkbox"
+                    checked={!!formData.requiresMar}
+                    onChange={(e) => setFormData((f) => ({ ...f, requiresMar: e.target.checked }))}
+                  />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#2c3e50' }}>
+                    This client requires a MAR
+                  </span>
+                </label>
+
+                <div style={gridTwoStyle}>
+                  <Field label="Record #">
+                    <input
+                      type="text"
+                      value={formData.mrn || ''}
+                      onChange={(e) => setFormData((f) => ({ ...f, mrn: e.target.value }))}
+                      style={inputStyle}
+                      placeholder="e.g., 000123"
+                    />
+                  </Field>
+                  <Field label="Sex">
+                    <select
+                      value={clinical.sex || ''}
+                      onChange={(e) => setClinical((c) => ({ ...c, sex: e.target.value }))}
+                      style={selectStyle}
+                    >
+                      <option value="">—</option>
+                      <option value="Female">Female</option>
+                      <option value="Male">Male</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </Field>
+                </div>
+
+                <Field label="Allergies / adverse reactions">
+                  <textarea
+                    value={clinical.allergies || ''}
+                    onChange={(e) => setClinical((c) => ({ ...c, allergies: e.target.value }))}
+                    style={textareaStyle}
+                    placeholder="e.g., Penicillin (rash). Write NKDA if no known drug allergies."
+                  />
+                </Field>
+
+                <div style={gridTwoStyle}>
+                  <Field label="Attending physician">
+                    <input
+                      type="text"
+                      value={clinical.physicianName || ''}
+                      onChange={(e) => setClinical((c) => ({ ...c, physicianName: e.target.value }))}
+                      style={inputStyle}
+                      placeholder="Dr. Jane Smith"
+                    />
+                  </Field>
+                  <Field label="Physician phone">
+                    <input
+                      type="tel"
+                      value={clinical.physicianPhone || ''}
+                      onChange={(e) => setClinical((c) => ({ ...c, physicianPhone: e.target.value }))}
+                      style={inputStyle}
+                      placeholder="(555) 123-4567"
+                    />
+                  </Field>
+                </div>
+
+                <Field label="Diet / special instructions">
+                  <textarea
+                    value={clinical.diet || ''}
+                    onChange={(e) => setClinical((c) => ({ ...c, diet: e.target.value }))}
+                    style={textareaStyle}
+                    placeholder="e.g., Mechanical soft, thickened liquids, upright positioning"
                   />
                 </Field>
               </div>
@@ -630,6 +750,9 @@ const modalStyle: React.CSSProperties = { background: 'white', borderRadius: 10,
 const modalHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #f1f3f5' };
 const closeBtnStyle: React.CSSProperties = { background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#7f8c8d' };
 const inputStyle: React.CSSProperties = { padding: '10px 12px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit' };
+const textareaStyle: React.CSSProperties = { ...inputStyle, minHeight: 60, resize: 'vertical', lineHeight: 1.4 };
+const requiresMarRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, cursor: 'pointer' };
+const marBadgeStyle: React.CSSProperties = { display: 'inline-block', background: '#eef4fb', color: '#1a3a5c', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4, border: '1px solid #c8def5' };
 // Same as inputStyle but with the custom chevron-down used everywhere else on
 // the site. Suppresses the macOS native double-arrow ⇅ for visual consistency.
 const selectStyle: React.CSSProperties = {

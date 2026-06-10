@@ -10,6 +10,7 @@ import {
   FileClock,
   UserCog,
   FileText,
+  Pill,
   Wrench,
   Settings,
   Menu,
@@ -25,6 +26,7 @@ import ClarificationGate from './ClarificationGate';
 import type { Role } from '@/lib/auth';
 import { subscribePendingDupCount } from '@/lib/drafts';
 import { subscribeMyOpenClarifications } from '@/lib/clarifications';
+import { subscribePendingReviewCount } from '@/lib/mar';
 
 const COLLAPSE_KEY = 'app-shell-collapsed';
 
@@ -39,6 +41,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { href: '/admin', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
   { href: '/admin/patients', label: 'Patients', icon: <Users size={18} />, allow: ['admin', 'supervisor'] },
+  { href: '/admin/records', label: 'Records', icon: <Pill size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/submissions', label: 'Submissions', icon: <ClipboardList size={18} /> },
   { href: '/admin/in-progress', label: 'In Progress', icon: <FileClock size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/users', label: 'Staff & Roles', icon: <UserCog size={18} />, allow: ['admin', 'supervisor'] },
@@ -119,6 +122,15 @@ export function AppShell({ children }: { children: ReactNode }) {
     // count stays at its initial 0.
     if (role !== 'admin' && role !== 'supervisor') return;
     const unsub = subscribePendingDupCount(setPendingDup);
+    return () => unsub();
+  }, [role]);
+
+  // Live count of applied medication changes awaiting RN review, shown on the
+  // Records nav item. Admin + supervisor only (the tier that reviews them).
+  const [pendingMarReq, setPendingMarReq] = useState(0);
+  useEffect(() => {
+    if (role !== 'admin' && role !== 'supervisor') return;
+    const unsub = subscribePendingReviewCount(setPendingMarReq);
     return () => unsub();
   }, [role]);
 
@@ -233,13 +245,17 @@ export function AppShell({ children }: { children: ReactNode }) {
             const badgeCount =
               item.href === '/admin/in-progress'
                 ? pendingDup
-                : item.href === '/admin/submissions'
-                  ? openClarifications
-                  : 0;
+                : item.href === '/admin/records'
+                  ? pendingMarReq
+                  : item.href === '/admin/submissions'
+                    ? openClarifications
+                    : 0;
             const badgeTitle =
               item.href === '/admin/in-progress'
                 ? `${badgeCount} duplicate-note request${badgeCount === 1 ? '' : 's'} awaiting approval`
-                : `${badgeCount} note${badgeCount === 1 ? '' : 's'} needing your clarification`;
+                : item.href === '/admin/records'
+                  ? `${badgeCount} medication change${badgeCount === 1 ? '' : 's'} awaiting review`
+                  : `${badgeCount} note${badgeCount === 1 ? '' : 's'} needing your clarification`;
             const inner = (
               <>
                 <span className="app-shell-nav-icon">{item.icon}</span>

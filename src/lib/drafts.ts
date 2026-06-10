@@ -56,6 +56,12 @@ export interface NoteDraftPayload {
   formValues: Record<string, unknown>;
   radioState: Record<string, string>;
   checkboxState: Record<string, string[]>;
+  // MAR dose marks (Page 5 Given/Held/Refused cards), persisted as an array of
+  // { key, ...record } entries from the marAdminStore so a mid-note reload
+  // doesn't lose them. Stored as an array (not a map) because store keys
+  // contain user-derived text (med names) that isn't safe as Firestore field
+  // names. Optional for drafts written before this field.
+  marAdminState?: Array<{ key: string } & Record<string, unknown>>;
   // Stable id reserved for the eventual submission. Carrying it on the
   // draft means a retry after a reload (or on another device) reuses the
   // same progressNotes doc id, so a flaky-network resubmit overwrites
@@ -126,6 +132,7 @@ function mapDraftDoc(id: string, data: Record<string, unknown>): NoteDraft {
     formValues: (data.formValues || {}) as Record<string, unknown>,
     radioState: (data.radioState || {}) as Record<string, string>,
     checkboxState: (data.checkboxState || {}) as Record<string, string[]>,
+    marAdminState: (data.marAdminState || []) as Array<{ key: string } & Record<string, unknown>>,
     createdAt: createdAt ? createdAt.toDate() : null,
     updatedAt: updatedAt ? updatedAt.toDate() : null,
     dupRequest: mapDupRequest(data.dupRequest),

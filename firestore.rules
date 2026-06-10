@@ -68,12 +68,17 @@ service cloud.firestore {
         incomingData().submittedAt == request.time;
     }
 
-    // Patient Roster
-    // Reads are currently public so the unauthenticated /progress-note form can
-    // power its PatientSearch autofill. This will tighten to isStaff() once
-    // nurses are authenticated (Step 4+). Writes are already admin-only.
+    // Patient Roster (directory fields: name, dob, diagnosis, address,
+    // record #, requiresMar flag).
+    // The /progress-note form is authenticated (AuthGuard), so reads only need
+    // to be open to signed-in users — never the public. Nurses load the full
+    // roster for the form's autofill picker, so read stays at isSignedIn()
+    // rather than isStaff(); a whole-collection query would otherwise fail for
+    // a nurse the moment one doc is unreadable. Writes are staff-only.
+    // Sensitive clinical PHI (sex, allergies, attending physician, diet) does
+    // NOT live here — it's in the care-team-gated /clinical sub-record below.
     match /patients/{patientId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow create: if isStaff() &&
         incomingData().name is string && incomingData().name.size() > 0 &&
         incomingData().dob is string && incomingData().dob.size() > 0 &&
@@ -82,6 +87,98 @@ service cloud.firestore {
         incomingData().name is string && incomingData().name.size() > 0 &&
         incomingData().dob is string && incomingData().dob.size() > 0;
       allow delete: if isStaff();
+
+      // Sensitive clinical profile — single doc at clinical/profile.
+      // Holds sex, allergies, attending physician name/phone, and diet /
+      // special instructions for the MAR header. Read is scoped to staff OR a
+      // nurse on this patient's care team (assignedNurseIds), mirroring the
+      // progressNotes care-team read so a nurse can only see clinical PHI for
+      // clients she's actually assigned to. Writes are staff-only (managed from
+      // the admin Patients screen).
+      match /clinical/{clinicalId} {
+        allow read: if isStaff()
+          || (isNurse()
+              && get(/databases/$(database)/documents/patients/$(patientId))
+                   .data.get('assignedNurseIds', []).hasAny([request.auth.uid]));
+        allow write: if isStaff();
+      }
+    }
+
+    // MAR — standing medication orders (the regimen for a client's Medication
+    // Administration Record). One doc per medication per client, linked by
+    // patientId. Built/maintained by admin+supervisor (isStaff); a nurse on the
+    // client's care team can READ the orders so she can document administrations
+    // against them (Phase 3), mirroring the progressNotes care-team read.
+    // Orders are never lossily mutated — a dose change is a discontinue (status
+    // + endDate) plus a new order — so create pins createdBy/At and update
+    // pins patientId/createdBy/createdAt to their original values.
+    match /marOrders/{orderId} {
+      allow read: if isStaff()
+        || (isNurse()
+            && resource.data.get('patientId', null) != null
+            && get(/databases/$(database)/documents/patients/$(resource.data.patientId))
+                 .data.get('assignedNurseIds', []).hasAny([request.auth.uid]));
+      allow create: if isStaff()
+        && incomingData().patientId is string && incomingData().patientId.size() > 0
+        && incomingData().createdBy == request.auth.uid
+        && incomingData().createdAt == request.time
+        && incomingData().status == 'active';
+      allow update: if isStaff()
+        && incomingData().patientId == resource.data.patientId
+        && incomingData().get('createdBy', null) == resource.data.get('createdBy', null)
+        && incomingData().get('createdAt', null) == resource.data.get('createdAt', null);
+      allow delete: if isStaff();
+    }
+
+    // MAR — administration events (append-only). One doc per dose a nurse
+    // records as given/held/refused against an order. The compliance backbone:
+    // entries can NEVER be edited or deleted, so a correction is a new entry.
+    // Create is allowed for staff OR an active RN/LPN (the clinical credential
+    // that may document administrations — CNA/HHA are structurally blocked),
+    // with documentedBy pinned to the caller and at == request.time so a
+    // view-as session can't forge authorship. Read is scoped to staff, the
+    // documenter, or a nurse on the client's care team.
+    match /marAdministrations/{adminId} {
+      allow read: if isStaff()
+        || (isNurse() && resource.data.get('documentedBy', null) == request.auth.uid)
+        || (isNurse()
+            && resource.data.get('patientId', null) != null
+            && get(/databases/$(database)/documents/patients/$(resource.data.patientId))
+                 .data.get('assignedNurseIds', []).hasAny([request.auth.uid]));
+      allow create: if (isStaff()
+            || (hasActiveProfile()
+                && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('credential', '') in ['RN', 'LPN']))
+        && incomingData().documentedBy == request.auth.uid
+        && incomingData().at == request.time
+        && incomingData().patientId is string && incomingData().patientId.size() > 0
+        && incomingData().status in ['given', 'held', 'refused'];
+      allow update, delete: if false;
+    }
+
+    // MAR — medication-change records (add / change / discontinue). A nurse
+    // (RN/LPN, in scope) STAGES a change on her note (status 'staged'); it takes
+    // no effect until she submits, when an Admin SDK route APPLIES it (creates/
+    // discontinues the order) and flags it for RN review. There is no approval
+    // gate. Create is allowed for staff OR an active RN/LPN, with performedBy
+    // pinned and status forced to 'staged'. A nurse may DELETE her own change
+    // while it is still 'staged' (e.g. she removes it before submitting). Apply
+    // and review are server-only (Admin SDK), so client updates are denied and
+    // a delete is only allowed on a still-staged record.
+    match /marChangeRequests/{reqId} {
+      allow read: if isStaff()
+        || (isNurse() && resource.data.get('performedBy', null) == request.auth.uid);
+      allow create: if (isStaff()
+            || (hasActiveProfile()
+                && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('credential', '') in ['RN', 'LPN']))
+        && incomingData().performedBy == request.auth.uid
+        && incomingData().stagedAt == request.time
+        && incomingData().status == 'staged'
+        && incomingData().patientId is string && incomingData().patientId.size() > 0
+        && incomingData().sourceNoteId is string && incomingData().sourceNoteId.size() > 0
+        && incomingData().type in ['add', 'change', 'discontinue'];
+      allow delete: if resource.data.get('status', '') == 'staged'
+        && (isStaff() || resource.data.get('performedBy', null) == request.auth.uid);
+      allow update: if false;
     }
 
     // Progress Notes (PHI)

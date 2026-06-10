@@ -21,6 +21,14 @@ import FormPageTwo from './components/FormPageTwo';
 import FormPageThree from './components/FormPageThree';
 import FormPageFour from './components/FormPageFour';
 import FormPageFive from './components/FormPageFive';
+import { writeMarAdministrations, deleteStagedChangesForNote } from '@/lib/mar';
+import {
+  getAllMarAdmin,
+  clearMarAdmin,
+  setMarAdmin,
+  marAdminSubscribe,
+  type MarAdminRecord,
+} from './components/marAdminStore';
 import FormPageSix from './components/FormPageSix';
 import FormPageSeven from './components/FormPageSeven';
 
@@ -238,6 +246,7 @@ function ProgressNotePageInner() {
       const checkboxData: Record<string, string[]> = {};
       form.querySelectorAll('input[type="checkbox"]').forEach((el) => {
         const cb = el as HTMLInputElement;
+        if (!cb.name) return; // skip nameless UI toggles (e.g. the med-request modal's PRN / dose checkboxes); Firestore rejects an empty field name
         if (!checkboxData[cb.name]) checkboxData[cb.name] = [];
         if (cb.checked) checkboxData[cb.name].push(cb.value);
       });
@@ -333,6 +342,7 @@ function ProgressNotePageInner() {
     if (formRef.current) {
       formRef.current.querySelectorAll('input[type="checkbox"]').forEach((el) => {
         const cb = el as HTMLInputElement;
+        if (!cb.name) return; // skip nameless UI toggles; Firestore rejects an empty map key
         if (!checkboxSnapshot[cb.name]) checkboxSnapshot[cb.name] = [];
         if (cb.checked) checkboxSnapshot[cb.name].push(cb.value);
       });
@@ -342,6 +352,10 @@ function ProgressNotePageInner() {
       formValues,
       radioState: radioSnapshot,
       checkboxState: checkboxSnapshot,
+      // MAR dose marks ride along so a reload mid-note doesn't lose them.
+      // (Cast: the draft stores them as loose records since lib/drafts.ts
+      // doesn't import the component-level MarAdminRecord type.)
+      marAdminState: getAllMarAdmin() as unknown as Array<{ key: string } & Record<string, unknown>>,
     };
   }, [getValues]);
 
@@ -349,7 +363,7 @@ function ProgressNotePageInner() {
   // Returns true if saved, false if skipped (not signed in / edit mode / empty).
   const persistDraft = useCallback(async (): Promise<boolean> => {
     if (!user || !profile || isEditMode || hasSubmittedRef.current) return false;
-    const { formValues, radioState: r, checkboxState: c } = collectDraftPayload();
+    const { formValues, radioState: r, checkboxState: c, marAdminState: m } = collectDraftPayload();
     // Skip autosave if the form is effectively empty (no client, no real content).
     const clientName = String(formValues.q3_clientName || '').trim();
     const hasAnyContent =
@@ -370,6 +384,7 @@ function ProgressNotePageInner() {
         formValues,
         radioState: r,
         checkboxState: c,
+        marAdminState: m,
       });
       setSaveStatus('saved');
       setLastSavedAt(new Date());
@@ -399,6 +414,15 @@ function ProgressNotePageInner() {
     }, AUTOSAVE_DEBOUNCE_MS);
   }, [draftHydrated, isEditMode, user, persistDraft]);
 
+  // MAR dose marks live in the module store, not react-hook-form, so the form
+  // watch() never sees them — subscribe directly so marking a dose schedules
+  // the same debounced autosave as typing in a field.
+  useEffect(() => {
+    if (isEditMode) return;
+    const unsub = marAdminSubscribe(() => scheduleAutosave());
+    return () => unsub();
+  }, [isEditMode, scheduleAutosave]);
+
   // Apply a loaded Firestore draft into the form (RHF + radios + checkboxes + page).
   const hydrateFromDraft = useCallback((draft: NoteDraft) => {
     reset(draft.formValues as FormValues);
@@ -418,6 +442,11 @@ function ProgressNotePageInner() {
     // Restore radio state (persist to localStorage too so DeselectableRadio sees it)
     for (const [k, v] of Object.entries(draft.radioState)) {
       setRadio(k, v);
+    }
+    // Restore MAR dose marks (Page 5 Given/Held/Refused cards) into the store.
+    for (const entry of draft.marAdminState || []) {
+      const { key, ...rec } = entry;
+      if (key) setMarAdmin(key, rec as unknown as MarAdminRecord);
     }
     // Restore checkbox state after DOM is ready
     setTimeout(() => {
@@ -536,11 +565,15 @@ function ProgressNotePageInner() {
     try {
       if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
       await deleteDraft(user.uid);
+      // Remove any medication changes staged on this note so a discarded note
+      // leaves nothing behind. Best-effort.
+      if (submissionIdRef.current) await deleteStagedChangesForNote(submissionIdRef.current);
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(CHECKBOX_STORAGE_KEY);
       localStorage.removeItem('progress-note-page');
       localStorage.removeItem('progress-note-radio-draft');
       clearRadioStorage();
+      clearMarAdmin();
       // Hard-navigate so the form unmounts cleanly and any in-flight autosave
       // listeners are torn down.
       window.location.href = '/admin/submissions?discarded=1';
@@ -1119,7 +1152,8 @@ function ProgressNotePageInner() {
       // Merge checkbox values from DOM
       const checkboxNames = new Set<string>();
       formRef.current.querySelectorAll('input[type="checkbox"]').forEach((el) => {
-        checkboxNames.add((el as HTMLInputElement).name);
+        const name = (el as HTMLInputElement).name;
+        if (name) checkboxNames.add(name); // skip nameless UI toggles
       });
       for (const name of checkboxNames) {
         const checked = formRef.current.querySelectorAll(`input[type="checkbox"][name="${name}"]:checked`);
@@ -1228,6 +1262,60 @@ function ProgressNotePageInner() {
             body: JSON.stringify({ noteId: docId }),
           }).catch((err) => console.error('Auto-add to care team failed:', err));
         }
+
+        // Append-only MAR administration entries for the doses the nurse marked
+        // on Page 5. Batched (all-or-nothing); a failure is logged but never
+        // blocks the already-saved note. Filtered to this note's patientId so a
+        // stale mark from another client can't attach.
+        if (user && profile) {
+          const marPid = String(getValues('patientId') || '').trim();
+          const marDate = String(submission.q6_dateofService || '');
+          const marRecords = getAllMarAdmin()
+            .filter((r) => r.patientId === marPid && r.status)
+            .map((r) => ({
+              orderId: r.orderId,
+              medName: r.medName,
+              dose: r.dose,
+              units: r.units,
+              route: r.route,
+              scheduledTime: r.scheduledTime,
+              status: r.status as 'given' | 'held' | 'refused',
+              administeredByType: r.administeredByType,
+              administratorName: r.administratorName,
+              actualTime: r.actualTime,
+              initials: r.initials,
+              reason: r.reason,
+            }));
+          if (marPid && marRecords.length > 0) {
+            try {
+              await writeMarAdministrations(marRecords, {
+                patientId: marPid,
+                date: marDate,
+                sourceNoteId: docId,
+                documenter: {
+                  uid: user.uid,
+                  name: profile.displayName || user.email || '',
+                  credential: profile.credential || '',
+                },
+              });
+            } catch (err) {
+              console.error('Failed to write MAR administrations:', err);
+            }
+          }
+        }
+
+        // Apply any medication changes (add/change/discontinue) the nurse staged
+        // on this note. Best-effort post-save, like the care-team add above —
+        // the note is already saved, so a failure here is logged, not fatal.
+        // Only RN/LPN notes can carry staged changes (Page 5 is gated), so skip
+        // the call otherwise to avoid a needless 403.
+        if (user && (credential === 'RN' || credential === 'LPN')) {
+          void authedFetch('/api/mar/apply-changes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sourceNoteId: docId, today: dateOfServiceVal }),
+          }).catch((err) => console.error('Failed to apply staged MAR changes:', err));
+        }
       }
 
       // Latch "submitted" and cancel any pending autosave BEFORE reset(). The
@@ -1250,6 +1338,7 @@ function ProgressNotePageInner() {
       localStorage.removeItem(CHECKBOX_STORAGE_KEY);
       localStorage.removeItem('progress-note-page');
       clearRadioStorage();
+      clearMarAdmin();
       if (user) {
         try { await deleteDraft(user.uid); } catch (err) { console.error('Failed to delete draft after submit:', err); }
       }
@@ -1644,7 +1733,7 @@ function ProgressNotePageInner() {
         <div style={pageStyle(2)}><FormPageTwo formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} ageStr={watch('q5_ageYears')} dob={watch('q4_dateofBirth')} errors={errors} /></div>
         <div style={pageStyle(3)}><FormPageThree formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} errors={errors} /></div>
         <div style={pageStyle(4)}><FormPageFour formRef={ref} register={register} watch={watch} setValue={setValue} control={control} errors={errors} /></div>
-        <div style={pageStyle(5)}><FormPageFive formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} /></div>
+        <div style={pageStyle(5)}><FormPageFive formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} isEditMode={isEditMode} documenter={user && profile ? { uid: user.uid, name: profile.displayName || user.email || '', credential: profile.credential || '' } : undefined} getNoteId={ensureSubmissionId} /></div>
         <div style={pageStyle(6)}><FormPageSix formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} errors={errors} /></div>
         <div style={pageStyle(7)}><FormPageSeven formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} initialSignature={initialSignature} initialTotalHours={initialTotalHours} /></div>
 
@@ -2049,11 +2138,11 @@ function ProgressNotePageInner() {
                   : 'You already have a note for this client on this date'}
               </h2>
 
-              <p
+              <div
                 style={{
                   background: '#fff8ec',
                   border: '1px solid #f0d9a8',
-                  padding: '8px 12px',
+                  padding: '10px 12px',
                   borderRadius: 6,
                   fontSize: 14,
                   color: '#1a3a5c',
@@ -2067,7 +2156,24 @@ function ProgressNotePageInner() {
                     Submitted {dupBlock.submittedAt.toLocaleString()}
                   </span>
                 )}
-              </p>
+                {dupBlock.id && (
+                  <a
+                    href={`/admin/submissions/${dupBlock.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: 'inline-block',
+                      marginTop: 8,
+                      color: '#1a73c4',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      textDecoration: 'none',
+                    }}
+                  >
+                    View the existing note →
+                  </a>
+                )}
+              </div>
 
               {isPending ? (
                 <p style={{ color: '#555', fontSize: 14, lineHeight: 1.6, marginBottom: 20 }}>
@@ -2134,17 +2240,6 @@ function ProgressNotePageInner() {
                 <button type="button" onClick={() => setDupBlock(null)} className={styles.cancelBtn}>
                   {isPending ? 'Keep working' : 'Go back'}
                 </button>
-                {dupBlock.id && (
-                  <a
-                    href={`/admin/submissions/${dupBlock.id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={styles.cancelBtn}
-                    style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
-                  >
-                    View existing note ↗
-                  </a>
-                )}
                 {!isPending && (
                   <button
                     type="button"

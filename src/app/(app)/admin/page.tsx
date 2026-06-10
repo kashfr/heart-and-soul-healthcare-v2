@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Users, ClipboardList, UserCog, FileText, FilePlus, FileEdit, ShieldAlert, MessageCircleQuestion } from 'lucide-react';
+import { Users, ClipboardList, UserCog, FileText, Pill, FilePlus, FileEdit, ShieldAlert, MessageCircleQuestion } from 'lucide-react';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { loadDraft, subscribePendingDupCount, type NoteDraft } from '@/lib/drafts';
 import { subscribeMyOpenClarifications } from '@/lib/clarifications';
@@ -39,6 +39,13 @@ const CARDS: Card[] = [
     icon: <ClipboardList size={22} />,
     title: 'Progress Note Submissions',
     description: 'View and manage all submitted progress notes across staff.',
+    allow: ['admin', 'supervisor'],
+  },
+  {
+    href: '/admin/records',
+    icon: <Pill size={22} />,
+    title: 'Records (MAR)',
+    description: 'Build and manage Medication Administration Records for clients who require one.',
     allow: ['admin', 'supervisor'],
   },
   {
