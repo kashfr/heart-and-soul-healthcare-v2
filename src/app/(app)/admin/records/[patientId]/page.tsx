@@ -269,8 +269,8 @@ export default function RecordDetailPage() {
                   <Link href={`/admin/records/${patientId}/mar`} style={marLinkStyle}>
                     <CalendarDays size={14} /> Monthly MAR
                   </Link>
-                  <Link href="/admin/patients" style={editHeaderLinkStyle}>
-                    <Pencil size={13} /> Edit details
+                  <Link href={`/admin/patients?edit=${patientId}`} style={editHeaderLinkStyle}>
+                    <Pencil size={13} /> Edit client details
                   </Link>
                 </div>
               </div>

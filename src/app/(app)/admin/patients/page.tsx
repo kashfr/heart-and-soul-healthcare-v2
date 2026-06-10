@@ -96,7 +96,17 @@ export default function AdminPatientsPage() {
   useEffect(() => {
     (async () => {
       try {
-        setPatients(await getPatients());
+        const data = await getPatients();
+        setPatients(data);
+        // Deep link: /admin/patients?edit=<patientId> opens that client's edit
+        // modal directly (used by the Records header's "Edit client details").
+        // Strip the param afterward so a refresh doesn't re-open the modal.
+        const editId = new URLSearchParams(window.location.search).get('edit');
+        if (editId) {
+          const target = data.find((p) => p.id === editId);
+          if (target) handleEdit(target);
+          window.history.replaceState(null, '', '/admin/patients');
+        }
       } finally {
         setLoading(false);
       }
