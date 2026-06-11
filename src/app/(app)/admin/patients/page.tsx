@@ -333,7 +333,8 @@ export default function AdminPatientsPage() {
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.diagnosis?.toLowerCase().includes(q) ||
-        p.dob.includes(query)
+        p.dob.includes(query) ||
+        (p.mrn || '').includes(query.trim())
     );
   }, [patients, query]);
 
@@ -363,7 +364,7 @@ export default function AdminPatientsPage() {
             <Search size={16} color="#7f8c8d" />
             <input
               type="text"
-              placeholder="Search by name, diagnosis, or DOB"
+              placeholder="Search by name, diagnosis, DOB, or record #"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               style={searchInputStyle}
@@ -543,14 +544,10 @@ export default function AdminPatientsPage() {
                 </label>
 
                 <div style={gridTwoStyle}>
-                  <Field label="Record #">
-                    <input
-                      type="text"
-                      value={formData.mrn || ''}
-                      onChange={(e) => setFormData((f) => ({ ...f, mrn: e.target.value }))}
-                      style={inputStyle}
-                      placeholder="e.g., 000123"
-                    />
+                  <Field label="Record # (auto-assigned)">
+                    <div style={{ padding: '10px 0', fontWeight: 600, color: '#4a7cf7' }}>
+                      {formData.mrn || (editingId ? '-' : 'Assigned on save')}
+                    </div>
                   </Field>
                   <Field label="Sex">
                     <select

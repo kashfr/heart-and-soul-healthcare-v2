@@ -78,7 +78,10 @@ export default function RecordsPage() {
     if (!query.trim()) return marClients;
     const q = query.toLowerCase();
     return marClients.filter(
-      (p) => p.name.toLowerCase().includes(q) || p.diagnosis?.toLowerCase().includes(q),
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.diagnosis?.toLowerCase().includes(q) ||
+        (p.mrn || '').includes(query.trim()),
     );
   }, [marClients, query]);
 
@@ -140,7 +143,7 @@ export default function RecordsPage() {
             <Search size={16} color="#7f8c8d" />
             <input
               type="text"
-              placeholder="Search MAR clients by name or diagnosis"
+              placeholder="Search MAR clients by name, diagnosis, or record #"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               style={searchInputStyle}

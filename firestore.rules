@@ -104,6 +104,13 @@ service cloud.firestore {
       }
     }
 
+    // Auto-assigned record-number counter (counters/patients). Staff-only:
+    // patient creation, which consumes the counter inside a transaction, is
+    // already staff-gated. Numbers only ever increment (never reused).
+    match /counters/{counterId} {
+      allow read, write: if isStaff();
+    }
+
     // MAR — standing medication orders (the regimen for a client's Medication
     // Administration Record). One doc per medication per client, linked by
     // patientId. Built/maintained by admin+supervisor (isStaff); a nurse on the

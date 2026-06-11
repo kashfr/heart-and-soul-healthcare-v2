@@ -2,13 +2,13 @@ import {
   collection,
   getDoc,
   getDocs,
-  addDoc,
   deleteDoc,
   updateDoc,
   setDoc,
   doc,
   query,
   orderBy,
+  runTransaction,
   Query,
   DocumentData,
   serverTimestamp,
@@ -77,17 +77,28 @@ export async function getPatient(id: string): Promise<Patient | null> {
 }
 
 /**
- * Add a new patient to Firestore
- * Returns the new document ID
+ * Add a new patient to Firestore. The record number (mrn) is auto-assigned
+ * from an atomic counter (counters/patients) inside a transaction, so two
+ * simultaneous creations can never collide and numbers are never reused.
+ * Any caller-supplied mrn is ignored — the system owns this identifier.
+ * Returns the new document ID.
  */
 export async function addPatient(patient: Patient): Promise<string> {
   try {
-    const patientsRef = collection(db, 'patients');
-    const docRef = await addDoc(patientsRef, {
-      ...patient,
-      createdAt: serverTimestamp(),
+    const counterRef = doc(db, 'counters', 'patients');
+    const newRef = doc(collection(db, 'patients'));
+    await runTransaction(db, async (tx) => {
+      const counterSnap = await tx.get(counterRef);
+      const next = counterSnap.exists() ? Number(counterSnap.data().nextRecordNumber || 1) : 1;
+      const { id: _id, mrn: _mrn, createdAt: _ca, ...data } = patient;
+      tx.set(newRef, {
+        ...data,
+        mrn: String(next).padStart(6, '0'),
+        createdAt: serverTimestamp(),
+      });
+      tx.set(counterRef, { nextRecordNumber: next + 1 }, { merge: true });
     });
-    return docRef.id;
+    return newRef.id;
   } catch (error) {
     console.error('Error adding patient:', error);
     throw error;
@@ -95,12 +106,13 @@ export async function addPatient(patient: Patient): Promise<string> {
 }
 
 /**
- * Update an existing patient
+ * Update an existing patient. The record number (mrn) is stripped along with
+ * id/createdAt: it's system-assigned and must never drift through an edit.
  */
 export async function updatePatient(id: string, data: Partial<Patient>): Promise<void> {
   try {
     const patientRef = doc(db, 'patients', id);
-    const { id: _id, createdAt: _ca, ...updateData } = data;
+    const { id: _id, createdAt: _ca, mrn: _mrn, ...updateData } = data;
     await updateDoc(patientRef, updateData);
   } catch (error) {
     console.error('Error updating patient:', error);
