@@ -49,6 +49,10 @@ export default function SubmissionDetailPage({ params }: PageProps) {
   /** Whether the signed-in user can co-sign HHA/CNA/LPN notes (their staff
       profile credential is RN). */
   const isRn = profile?.credential === 'RN';
+  // Org-wide settings (vital-range overrides). MUST be called here with the
+  // other hooks — before any early return — or the hook order changes between
+  // the loading render and the loaded render (Rules of Hooks violation).
+  const { settings: appSettings } = useSettings();
   const searchParams = useSearchParams();
   /** True when the URL carries ?cosign=1, i.e. the RN came here via the
       Submissions row Co-sign button and we should encourage signing once
@@ -219,7 +223,6 @@ export default function SubmissionDetailPage({ params }: PageProps) {
   // clinical team wants e.g. a wider preschool resp range.
   const ageStr = data.q5_ageYears || '';
   const patientDob = data.q4_dateofBirth || '';
-  const { settings: appSettings } = useSettings();
   const vitalRanges = getVitalRanges(ageStr, patientDob, appSettings.vitals.rangesByAgeGroup);
   const ageGroupLabel = getAgeGroupLabel(ageStr, patientDob);
 

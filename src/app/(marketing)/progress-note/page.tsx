@@ -986,6 +986,31 @@ function ProgressNotePageInner() {
     }
     skipDateConfirmRef.current = false;
 
+    // Shift End Date (which prints as "Date Signed") can never be BEFORE the
+    // date of service: you can't sign off on a shift before it happened. Equal
+    // or later is fine (same-day, overnight into the next day, or a late
+    // signature). The picker floors at the service date, but a value can still
+    // be typed, so enforce it here. Future-dating is already blocked by the
+    // input's max={today}.
+    const shiftEndStr = String(getValues('q62_shiftEndDate') || '').trim();
+    if (dosStr && shiftEndStr) {
+      const dos = new Date(dosStr + 'T12:00:00');
+      const end = new Date(shiftEndStr + 'T12:00:00');
+      if (!Number.isNaN(dos.getTime()) && !Number.isNaN(end.getTime()) && end.getTime() < dos.getTime()) {
+        setCurrentPage(activePages[activePages.length - 1]);
+        setTimeout(() => {
+          const el = formRef.current?.querySelector('#q62_shiftEndDate') as HTMLElement | null;
+          el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          (el as HTMLInputElement | null)?.focus();
+        }, 100);
+        alert(
+          'The shift end date (date signed) cannot be before the date of service. ' +
+          'A note cannot be signed before the shift it documents. Please correct the shift end date.'
+        );
+        return;
+      }
+    }
+
     // Client condition at shift end is a DeselectableRadio (stored in the
     // radio module store, not RHF) with no HTML `required` attribute, so the
     // required-field scan above can't see it. Enforce it explicitly like the

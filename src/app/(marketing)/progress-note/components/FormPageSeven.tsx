@@ -188,6 +188,11 @@ export default function FormPageSeven({ formRef, register, watch, setValue, cont
               className={styles.input}
               type="date"
               id="q62_shiftEndDate"
+              // The shift can't end (and the note can't be signed) before the
+              // service was performed. Floor the picker at the date of service;
+              // ceiling stays today (no future-dating). Submit-time validation
+              // in page.tsx backstops this.
+              min={dateOfService || undefined}
               max={today}
               required
               {...register('q62_shiftEndDate')}
