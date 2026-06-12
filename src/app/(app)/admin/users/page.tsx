@@ -54,7 +54,7 @@ interface CreateResult {
 const ROLE_OPTIONS: { value: Role; label: string; desc: string }[] = [
   { value: 'admin', label: 'Admin', desc: 'Full access to everything, including staff management.' },
   { value: 'supervisor', label: 'Supervisor', desc: 'Review all submissions; cannot manage staff or patients.' },
-  { value: 'nurse', label: 'Nurse', desc: 'Submit and view only her own progress notes.' },
+  { value: 'nurse', label: 'Nurse', desc: 'Submit and view only their own progress notes.' },
 ];
 
 // Clinical credential levels. Independent of portal role — a supervisor can
@@ -441,7 +441,7 @@ function AddStaffModal({
             />
           </Field>
 
-          <Field label="Phone" help="US number. Optional — lets a reviewer call the nurse about her notes.">
+          <Field label="Phone" help="US number. Optional — lets a reviewer call the nurse about their notes.">
             <input
               type="tel"
               inputMode="tel"
@@ -736,7 +736,7 @@ function EditStaffModal({
             />
           </Field>
 
-          <Field label="Phone" help="US number. Optional — lets a reviewer call the nurse about her notes.">
+          <Field label="Phone" help="US number. Optional — lets a reviewer call the nurse about their notes.">
             <input
               type="tel"
               inputMode="tel"

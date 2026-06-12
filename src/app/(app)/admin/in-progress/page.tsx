@@ -250,11 +250,11 @@ export default function InProgressPage() {
                       </div>
                       <p style={{ margin: '0 0 8px', fontSize: 13, lineHeight: 1.5 }}>
                         {draft.nurseName || 'This nurse'} is asking to submit a <strong>second</strong> note for{' '}
-                        <strong>{dupReq.clientName}</strong> on <strong>{dupReq.dateOfService}</strong> — a client she has
-                        already documented on that date.
+                        <strong>{dupReq.clientName}</strong> on <strong>{dupReq.dateOfService}</strong> — a client already
+                        documented on that date.
                       </p>
                       <div style={{ fontSize: 13, marginBottom: 10 }}>
-                        <span style={{ color: '#6b7280' }}>Her reason: </span>
+                        <span style={{ color: '#6b7280' }}>Reason given: </span>
                         {dupReq.reason ? dupReq.reason : <em style={{ color: '#9ca3af' }}>(none given)</em>}
                       </div>
                       {conflictNoteId && (

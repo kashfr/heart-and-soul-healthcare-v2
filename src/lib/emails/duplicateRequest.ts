@@ -63,18 +63,18 @@ export async function sendDuplicateRequestNotice({
             <h1 style="margin:0;font-size:20px;color:#1a3a5c;">Duplicate-note approval needed</h1>
           </td></tr>
           <tr><td style="padding:8px 32px 0;font-size:15px;line-height:1.6;color:#2c3e50;">
-            <p style="margin:0 0 12px;"><strong>${escapeHtml(nurseName)}</strong> is asking to submit a <strong>second</strong> progress note for a client she has already documented on this date:</p>
+            <p style="margin:0 0 12px;"><strong>${escapeHtml(nurseName)}</strong> is asking to submit a <strong>second</strong> progress note for a client already documented on this date:</p>
             <p style="margin:0 0 8px;background:#fff8ec;border:1px solid #f0d9a8;padding:10px 12px;border-radius:6px;">
               <strong>${escapeHtml(clientName)}</strong> &middot; ${escapeHtml(dateOfService)}
             </p>
-            <p style="margin:0 0 4px;color:#5c6b7a;font-size:13px;">Her reason:</p>
+            <p style="margin:0 0 4px;color:#5c6b7a;font-size:13px;">Reason given:</p>
             <p style="margin:0 0 16px;padding:10px 12px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:6px;">${reason ? escapeHtml(reason) : '<em>(no reason given)</em>'}</p>
           </td></tr>
           <tr><td align="center" style="padding:8px 32px 8px;">
             <a href="${IN_PROGRESS_URL}" style="display:inline-block;background:#1a3a5c;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;font-size:15px;">Review in In&nbsp;Progress</a>
           </td></tr>
           <tr><td style="padding:8px 32px 24px;font-size:13px;line-height:1.6;color:#5c6b7a;">
-            <p style="margin:12px 0 0;">Approve or deny it on the In Progress screen. She can keep working but can&apos;t submit the second note until it&apos;s approved.</p>
+            <p style="margin:12px 0 0;">Approve or deny it on the In Progress screen. They can keep working but can&apos;t submit the second note until it&apos;s approved.</p>
           </td></tr>
           <tr><td style="padding:16px 32px;background:#f8fafc;border-top:1px solid #e5e7eb;font-size:12px;color:#7f8c8d;">
             ${escapeHtml(orgName)} staff portal &middot; <a href="${IN_PROGRESS_URL}" style="color:#1a3a5c;">${IN_PROGRESS_URL}</a>

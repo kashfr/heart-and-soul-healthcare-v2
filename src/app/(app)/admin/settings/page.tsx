@@ -388,7 +388,7 @@ export default function AdminSettingsPage() {
           <h2 style={sectionTitleStyle}>Critical-vitals escalation prompt</h2>
           <p style={sectionSubStyle}>
             When a nurse submits a note with a vital that crosses a provider-notification
-            (critical) threshold, the form prompts her to record the escalation she made —
+            (critical) threshold, the form prompts them to record the escalation they made —
             or to acknowledge why none was needed. Thresholds are age-based draft values
             pending clinical sign-off. Turn this off if the prompt proves too noisy before
             the thresholds are tuned.
@@ -398,7 +398,7 @@ export default function AdminSettingsPage() {
             label="Prompt to document escalation on critical vitals"
             checked={draft.criticalVitals.enabled}
             onChange={toggleCriticalVitals}
-            hint="When ON, submitting a note whose heart rate, respiratory rate, SpO₂, systolic BP, or temperature crosses the age-based critical threshold asks the nurse to document who she notified, or to record that no escalation was needed and why. When OFF, no prompt appears."
+            hint="When ON, submitting a note whose heart rate, respiratory rate, SpO₂, systolic BP, or temperature crosses the age-based critical threshold asks the nurse to document who they notified, or to record that no escalation was needed and why. When OFF, no prompt appears."
           />
         </section>
 
