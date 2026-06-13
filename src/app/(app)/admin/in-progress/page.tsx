@@ -46,6 +46,8 @@ const FULL_LABEL_OVERRIDES: Record<string, string> = {
   q200_postal: 'ZIP code',
   q11_nurseName: 'Nurse / caregiver',
   q12_credential: 'Credential',
+  q16_vitalsNotObtainedReason: 'Vitals not obtained — reason',
+  q16_vitalsNotObtainedNote: 'Vitals not obtained — note',
   q16_temperature: 'Temperature',
   q17_systolic: 'Systolic BP',
   q17_diastolic: 'Diastolic BP',
@@ -81,7 +83,11 @@ function bpDisplay(flat: Record<string, string>): string {
   const sys = (flat.q17_systolic || '').trim();
   const dia = (flat.q17_diastolic || '').trim();
   if (sys && dia) return `${sys}/${dia}`;
-  const reason = (flat.q17_bpNotObtainedReason || '').trim();
+  // BP-specific reason first, then the section-level "unable to obtain
+  // vitals" reason (which covers any vital left blank, BP included).
+  const reason =
+    (flat.q17_bpNotObtainedReason || '').trim() ||
+    (flat.q16_vitalsNotObtainedReason || '').trim();
   if (reason) return `Not obtained — ${reason}`;
   return '';
 }
@@ -367,6 +373,14 @@ export default function InProgressPage() {
                       <Detail label="Date of birth" value={flat.q4_dateofBirth} />
                       <Detail label="Credential" value={flat.q12_credential} />
                       <Detail label="Date of service" value={flat.q6_dateofService} />
+                      {(flat.q16_vitalsNotObtainedReason || '').trim() !== '' && (
+                        <Detail
+                          label="Vitals not obtained"
+                          value={`${flat.q16_vitalsNotObtainedReason}${
+                            (flat.q16_vitalsNotObtainedNote || '').trim() ? ` — ${flat.q16_vitalsNotObtainedNote}` : ''
+                          }`}
+                        />
+                      )}
                       <Detail label="Temperature" value={flat.q16_temperature} />
                       <Detail label="Blood pressure" value={bpDisplay(flat)} />
                       <Detail label="Pulse" value={flat.q18_pulse} />

@@ -88,6 +88,41 @@ describe('getIncompleteRequired', () => {
     });
   });
 
+  describe('section-level "unable to obtain vitals" reason', () => {
+    const VITAL_KEYS = [
+      'q16_temperature',
+      'q17_systolic',
+      'q17_diastolic',
+      'q18_pulse',
+      'q19_respiration',
+      'q20_oxygenSaturation',
+    ];
+
+    it('satisfies every vital when none could be obtained', () => {
+      const d = completeRN();
+      for (const k of VITAL_KEYS) delete d[k];
+      d.q16_vitalsNotObtainedReason = 'Parent/guardian refused';
+      expect(getIncompleteRequired(d)).toEqual([]);
+    });
+
+    it('covers only the blank vitals in a partial set', () => {
+      const d = completeRN();
+      delete d.q17_systolic;
+      delete d.q17_diastolic;
+      delete d.q20_oxygenSaturation;
+      d.q16_vitalsNotObtainedReason = 'Unable to tolerate / uncooperative';
+      expect(getIncompleteRequired(d)).toEqual([]);
+    });
+
+    it('still flags missing vitals when no reason is documented', () => {
+      const d = completeRN();
+      delete d.q18_pulse;
+      delete d.q20_oxygenSaturation;
+      expect(keys(d)).toContain('q18_pulse');
+      expect(keys(d)).toContain('q20_oxygenSaturation');
+    });
+  });
+
   describe('credential gating', () => {
     it('does not require vitals for an HHA', () => {
       const d = completeRN();

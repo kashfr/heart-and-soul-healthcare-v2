@@ -934,9 +934,14 @@ function ProgressNotePageInner() {
     const bpSys = String(getValues('q17_systolic') || '').trim();
     const bpDia = String(getValues('q17_diastolic') || '').trim();
     const bpReason = String(getValues('q17_bpNotObtainedReason') || '').trim();
+    // The section-level "unable to obtain vitals" reason also covers BP —
+    // but never a HALF-entered reading: one number with the other blank is a
+    // data error regardless of any documented reason.
+    const vitalsReason = String(getValues('q16_vitalsNotObtainedReason') || '').trim();
     const bpHasReading = bpSys !== '' && bpDia !== '';
-    if (!bpHasReading && bpReason === '') {
-      const partial = bpSys !== '' || bpDia !== '';
+    const bpPartial = (bpSys !== '') !== (bpDia !== '');
+    if (bpPartial || (!bpHasReading && bpReason === '' && vitalsReason === '')) {
+      const partial = bpPartial;
       setCurrentPage(2);
       setTimeout(() => {
         const sysEl = formRef.current?.querySelector('#q17_systolic') as HTMLInputElement | null;

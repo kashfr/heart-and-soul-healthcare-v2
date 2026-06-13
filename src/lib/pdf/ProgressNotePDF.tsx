@@ -431,8 +431,9 @@ function checkVitals(data: ProgressNoteFormData, overrides?: VitalRangesOverride
         label: 'Blood Pressure',
         value:
           data.q17_bloodPressure ||
+          // (Printed deliverable: colon, not an em dash.)
           (data.q17_bpNotObtainedReason
-            ? `Not obtained — ${data.q17_bpNotObtainedReason}${
+            ? `Not obtained: ${data.q17_bpNotObtainedReason}${
                 data.q17_bpNotObtainedNote ? ` (${data.q17_bpNotObtainedNote})` : ''
               }`
             : '--'),
@@ -746,6 +747,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding }: Prog
 
         {/* 5. Vital Signs */}
         {anyHasValue(data, [
+          'q16_vitalsNotObtainedReason',
           'q16_temperature', 'q17_bloodPressure', 'q18_pulse', 'q19_respiration',
           'q20_oxygenSaturation', 'q21_oxygenSource', 'q22_additionalObservations',
         ]) && (
@@ -767,9 +769,21 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding }: Prog
                 </View>
               )}
             </View>
-            {hasValue(data.q22_additionalObservations) && (
+            {(hasValue(data.q16_vitalsNotObtainedReason) || hasValue(data.q22_additionalObservations)) && (
               <View style={s.sectionBody}>
-                <TextBlock label="Additional Observations" value={data.q22_additionalObservations} />
+                {hasValue(data.q16_vitalsNotObtainedReason) && (
+                  // Covers whichever vitals are blank ("--") in the grid
+                  // above. (Printed deliverable: parentheses, no em dashes.)
+                  <TextBlock
+                    label="Vitals Not Obtained"
+                    value={`${data.q16_vitalsNotObtainedReason}${
+                      data.q16_vitalsNotObtainedNote ? ` (${data.q16_vitalsNotObtainedNote})` : ''
+                    }`}
+                  />
+                )}
+                {hasValue(data.q22_additionalObservations) && (
+                  <TextBlock label="Additional Observations" value={data.q22_additionalObservations} />
+                )}
               </View>
             )}
           </View>

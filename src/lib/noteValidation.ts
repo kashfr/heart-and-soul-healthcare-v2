@@ -9,8 +9,10 @@
  *
  * It encodes the form's required fields and their credential/condition gates:
  *   - Tab 1 (Client & Shift): always required.
- *   - Tab 2 (Vitals): required for every credential except HHA. Blood pressure
- *     is satisfied by a reading OR a documented "unable to obtain" reason.
+ *   - Tab 2 (Vitals): required for every credential except HHA. Every vital is
+ *     satisfied by a reading OR the section-level "unable to obtain vitals"
+ *     reason (q16_vitalsNotObtainedReason); blood pressure additionally
+ *     accepts its own BP-specific "unable to obtain" reason.
  *   - Tab 4: the nutrition note is required only when aspiration concerns = Yes.
  *   - Tab 5 (Skilled Nursing): the intervention narrative is required for LPN/RN.
  *   - Tab 6: physician-notification details are required only when the nurse
@@ -86,6 +88,9 @@ interface Rule {
 
 const ALWAYS = (): boolean => true;
 const simple = (key: string) => (d: Record<string, string>) => has(d, key);
+/** A vital is filled by its own value OR the section-level "unable to obtain vitals" reason. */
+const vitalOr = (key: string) => (d: Record<string, string>) =>
+  has(d, key) || has(d, 'q16_vitalsNotObtainedReason');
 
 const RULES: Rule[] = [
   // --- Tab 1: Client & Shift (always) ---
@@ -102,17 +107,23 @@ const RULES: Rule[] = [
   { key: 'q12_credential', label: 'Credential', tab: 1, applies: ALWAYS, filled: simple('q12_credential') },
 
   // --- Tab 2: Vitals (all credentials except HHA) ---
-  { key: 'q16_temperature', label: 'Temperature', tab: 2, applies: (_d, c) => c !== 'HHA', filled: simple('q16_temperature') },
+  // Each vital is satisfied by a reading OR the section-level "unable to
+  // obtain vitals" reason: the reason documents whichever vitals were left
+  // blank (partial sets are fine — recorded vitals still count on their own).
+  { key: 'q16_temperature', label: 'Temperature (a reading or an "unable to obtain vitals" reason)', tab: 2, applies: (_d, c) => c !== 'HHA', filled: vitalOr('q16_temperature') },
   {
     key: 'q17_bloodPressure',
     label: 'Blood pressure (a reading or an "unable to obtain" reason)',
     tab: 2,
     applies: (_d, c) => c !== 'HHA',
-    filled: (d) => (has(d, 'q17_systolic') && has(d, 'q17_diastolic')) || has(d, 'q17_bpNotObtainedReason'),
+    filled: (d) =>
+      (has(d, 'q17_systolic') && has(d, 'q17_diastolic')) ||
+      has(d, 'q17_bpNotObtainedReason') ||
+      has(d, 'q16_vitalsNotObtainedReason'),
   },
-  { key: 'q18_pulse', label: 'Pulse', tab: 2, applies: (_d, c) => c !== 'HHA', filled: simple('q18_pulse') },
-  { key: 'q19_respiration', label: 'Respiration', tab: 2, applies: (_d, c) => c !== 'HHA', filled: simple('q19_respiration') },
-  { key: 'q20_oxygenSaturation', label: 'O₂ saturation', tab: 2, applies: (_d, c) => c !== 'HHA', filled: simple('q20_oxygenSaturation') },
+  { key: 'q18_pulse', label: 'Pulse (a reading or an "unable to obtain vitals" reason)', tab: 2, applies: (_d, c) => c !== 'HHA', filled: vitalOr('q18_pulse') },
+  { key: 'q19_respiration', label: 'Respiration (a reading or an "unable to obtain vitals" reason)', tab: 2, applies: (_d, c) => c !== 'HHA', filled: vitalOr('q19_respiration') },
+  { key: 'q20_oxygenSaturation', label: 'O₂ saturation (a reading or an "unable to obtain vitals" reason)', tab: 2, applies: (_d, c) => c !== 'HHA', filled: vitalOr('q20_oxygenSaturation') },
 
   // --- Tab 4: nutrition note (only when aspiration concerns = Yes) ---
   {
