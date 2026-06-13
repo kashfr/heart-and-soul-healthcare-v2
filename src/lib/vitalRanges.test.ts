@@ -3,8 +3,36 @@ import {
   getVitalRanges,
   checkVitalRange,
   hasAnyAbnormalVital,
+  isBpRoutinelyRequired,
   type VitalRangesOverride,
 } from './vitalRanges';
+
+describe('isBpRoutinelyRequired (AAP: routine BP from age 3)', () => {
+  // Recent DOBs are computed against the real "now"; pick ages well clear of
+  // the 36-month boundary so the test isn't date-fragile.
+  it('is false for infants/toddlers under 3 (by DOB)', () => {
+    expect(isBpRoutinelyRequired('', '2024-09-01')).toBe(false); // ~1-2y
+    expect(isBpRoutinelyRequired('', '2025-01-01')).toBe(false); // ~1y
+  });
+
+  it('is true for children 3+ and adults (by DOB)', () => {
+    expect(isBpRoutinelyRequired('', '2020-01-01')).toBe(true); // ~6y
+    expect(isBpRoutinelyRequired('', '1990-01-01')).toBe(true); // adult
+  });
+
+  it('falls back to the age string when DOB is missing', () => {
+    expect(isBpRoutinelyRequired('2')).toBe(false);
+    expect(isBpRoutinelyRequired('3')).toBe(true);
+    expect(isBpRoutinelyRequired('5')).toBe(true);
+    expect(isBpRoutinelyRequired('6 mo')).toBe(false);
+    expect(isBpRoutinelyRequired('10 days')).toBe(false);
+  });
+
+  it('defaults to true when age is unknown/unparseable', () => {
+    expect(isBpRoutinelyRequired('')).toBe(true);
+    expect(isBpRoutinelyRequired('abc')).toBe(true);
+  });
+});
 
 describe('getVitalRanges — overrides', () => {
   it('returns hard-coded defaults when no override is passed', () => {

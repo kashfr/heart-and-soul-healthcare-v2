@@ -9,6 +9,7 @@ import { findNameCandidates, type RosterPatientLite, type MatchCandidate } from 
 import { saveSubmission, getSubmission, updateSubmission, submissionExists, findDuplicateSubmission, computeSubmissionChanges, type ProgressNoteFormData, type DuplicateMatch } from '@/lib/submissions';
 import { saveDraft, loadDraft, deleteDraft, clearDuplicateRequest, subscribeOwnDupRequest, type NoteDraft, type DuplicateRequest } from '@/lib/drafts';
 import { getCriticalFindings, summarizeFindings, type CriticalFinding } from '@/lib/criticalVitals';
+import { isBpRoutinelyRequired } from '@/lib/vitalRanges';
 import { normalizeName } from '@/lib/levenshtein';
 import { authedFetch } from '@/lib/authedFetch';
 import { useAuth } from '@/components/AuthProvider';
@@ -938,9 +939,16 @@ function ProgressNotePageInner() {
     // but never a HALF-entered reading: one number with the other blank is a
     // data error regardless of any documented reason.
     const vitalsReason = String(getValues('q16_vitalsNotObtainedReason') || '').trim();
+    // BP is only routinely required from age 3 (AAP). Under 3 it's optional, so
+    // a blank reading needs no reason — but a HALF-entered reading is a data
+    // error at any age.
+    const bpRequired = isBpRoutinelyRequired(
+      String(getValues('q5_ageYears') || ''),
+      String(getValues('q4_dateofBirth') || ''),
+    );
     const bpHasReading = bpSys !== '' && bpDia !== '';
     const bpPartial = (bpSys !== '') !== (bpDia !== '');
-    if (bpPartial || (!bpHasReading && bpReason === '' && vitalsReason === '')) {
+    if (bpPartial || (bpRequired && !bpHasReading && bpReason === '' && vitalsReason === '')) {
       const partial = bpPartial;
       setCurrentPage(2);
       setTimeout(() => {

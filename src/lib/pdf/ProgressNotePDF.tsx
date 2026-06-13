@@ -422,15 +422,26 @@ function checkVitals(data: ProgressNoteFormData, overrides?: VitalRangesOverride
   const spo2Abnormal = !isNaN(spo2) && (spo2 < ranges.oxygenSaturation.low || spo2 > ranges.oxygenSaturation.high);
   if (spo2Abnormal) alerts.push(`SpO2: ${data.q20_oxygenSaturation}% (LOW)`);
 
+  // How each reading was taken, appended in parentheses (e.g. "98.6 (Temporal)").
+  const bpMethodSite = [data.q17_bpMethod, data.q17_bpSite].filter(Boolean).join(', ');
+
   return {
     alerts,
     ageGroupLabel,
     cells: [
-      { label: 'Temperature', value: data.q16_temperature || '--', abnormal: tempAbnormal },
+      {
+        label: 'Temperature',
+        value: data.q16_temperature
+          ? `${data.q16_temperature}${data.q16_temperatureRoute ? ` (${data.q16_temperatureRoute})` : ''}`
+          : '--',
+        abnormal: tempAbnormal,
+      },
       {
         label: 'Blood Pressure',
         value:
-          data.q17_bloodPressure ||
+          (data.q17_bloodPressure
+            ? `${data.q17_bloodPressure}${bpMethodSite ? ` (${bpMethodSite})` : ''}`
+            : '') ||
           // (Printed deliverable: colon, not an em dash.)
           (data.q17_bpNotObtainedReason
             ? `Not obtained: ${data.q17_bpNotObtainedReason}${
@@ -439,7 +450,13 @@ function checkVitals(data: ProgressNoteFormData, overrides?: VitalRangesOverride
             : '--'),
         abnormal: bpAbnormal,
       },
-      { label: 'Pulse', value: data.q18_pulse || '--', abnormal: pulseAbnormal },
+      {
+        label: 'Pulse',
+        value: data.q18_pulse
+          ? `${data.q18_pulse}${data.q18_pulseSite ? ` (${data.q18_pulseSite})` : ''}`
+          : '--',
+        abnormal: pulseAbnormal,
+      },
       { label: 'Respirations', value: data.q19_respiration || '--', abnormal: respAbnormal },
       { label: 'SpO2', value: data.q20_oxygenSaturation || '--', abnormal: spo2Abnormal },
     ],
@@ -748,7 +765,8 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding }: Prog
         {/* 5. Vital Signs */}
         {anyHasValue(data, [
           'q16_vitalsNotObtainedReason',
-          'q16_temperature', 'q17_bloodPressure', 'q18_pulse', 'q19_respiration',
+          'q16_temperature', 'q16_temperatureRoute', 'q17_bloodPressure',
+          'q17_bpMethod', 'q17_bpSite', 'q18_pulse', 'q18_pulseSite', 'q19_respiration',
           'q20_oxygenSaturation', 'q21_oxygenSource', 'q22_additionalObservations',
         ]) && (
           <View style={s.section} wrap={false}>

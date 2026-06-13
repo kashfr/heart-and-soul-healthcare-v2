@@ -203,6 +203,33 @@ export function getAgeGroup(ageStr: string, dob?: string): AgeGroup {
 }
 
 /**
+ * Whether blood pressure is *routinely* required to be documented for a patient
+ * of this age. Per AAP / Bright Futures, routine BP screening begins at age 3;
+ * under 3 years BP is indicated only with specific risk factors (prematurity,
+ * cardiac/renal disease, BP-affecting meds, raised ICP) that the form can't
+ * know about — so we treat under-3 BP as optional and let the nurse record it
+ * when clinically indicated or ordered.
+ *
+ * Returns false ONLY when age can be positively determined as < 36 months.
+ * When age is unknown or unparseable it returns true (conservative: preserves
+ * the prior always-required behavior for adults and notes with no age yet).
+ */
+export function isBpRoutinelyRequired(ageStr: string, dob?: string): boolean {
+  if (dob) {
+    const months = computeAgeInMonths(dob);
+    if (months !== null) return months >= 36;
+  }
+  if (ageStr) {
+    const trimmed = ageStr.trim().toLowerCase();
+    // "X days" / "X mo" are newborns/infants — well under 3 years.
+    if (trimmed.includes('day') || trimmed.includes('mo')) return false;
+    const years = parseInt(trimmed);
+    if (!isNaN(years)) return years >= 3;
+  }
+  return true;
+}
+
+/**
  * Sparse override map admin can set from /admin/settings. Per leaf —
  * any { low, high } pair the override doesn't supply falls back to
  * the hard-coded RANGES_BY_AGE_GROUP value. Lets the RN tune e.g.

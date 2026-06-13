@@ -56,12 +56,17 @@ export interface ProgressNoteFormData {
   q16_vitalsNotObtainedReason?: string;
   q16_vitalsNotObtainedNote?: string;
   q16_temperature: string;
+  // How each vital was obtained — route/method/site affect interpretation.
+  q16_temperatureRoute?: string;
   q17_bloodPressure: string;
   // When BP can't be measured the nurse records a reason instead of a reading:
   // q17_bloodPressure stays empty and these capture the why.
   q17_bpNotObtainedReason?: string;
   q17_bpNotObtainedNote?: string;
+  q17_bpMethod?: string;
+  q17_bpSite?: string;
   q18_pulse: string;
+  q18_pulseSite?: string;
   q19_respiration: string;
   q20_oxygenSaturation: string;
   q21_oxygenSource: string;

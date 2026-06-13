@@ -6,7 +6,7 @@ import styles from '../page.module.css';
 import DeselectableRadio from './DeselectableRadio';
 import FieldError from './FieldError';
 import { rangeValidator, VITAL_RANGE as RANGE } from '../validators';
-import { getVitalRanges, getAgeGroupLabel, checkVitalRange, type VitalKey } from '@/lib/vitalRanges';
+import { getVitalRanges, getAgeGroupLabel, checkVitalRange, isBpRoutinelyRequired, type VitalKey } from '@/lib/vitalRanges';
 
 interface FormPageTwoProps extends FormPageProps {
   credential?: string;
@@ -32,6 +32,9 @@ const alertLabelStyle = {
 export default function FormPageTwo({ formRef, register, watch, setValue, control, credential, ageStr, dob, errors }: FormPageTwoProps) {
   const showVitals = credential !== 'HHA';
   const ageGroupLabel = getAgeGroupLabel(ageStr || '', dob);
+  // BP is routinely required from age 3 (AAP). Under 3 it's optional — recorded
+  // when clinically indicated/ordered — so we don't ask for a refusal reason.
+  const bpRequired = isBpRoutinelyRequired(ageStr || '', dob);
   const [alerts, setAlerts] = useState<Record<string, VitalAlert>>({});
 
   // O2 saturation has a HARD physical ceiling of 100% (and floor of 0). Unlike
@@ -477,6 +480,24 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                     onBlur: (e) => handleVitalChange('temperature', e.target.value),
                   })}
                 />
+                {/* Route is required once a temperature is entered — a reading
+                    is uninterpretable without it (axillary reads low, temporal
+                    high; the fever threshold shifts by route). */}
+                <select
+                  className={styles.select}
+                  id="q16_temperatureRoute"
+                  aria-label="Temperature route"
+                  style={{ marginTop: 6, fontSize: 13 }}
+                  required={showVitals && !!tempWatch}
+                  {...register('q16_temperatureRoute')}
+                >
+                  <option value="">Route&hellip;</option>
+                  <option value="Oral">Oral</option>
+                  <option value="Axillary">Axillary</option>
+                  <option value="Tympanic">Tympanic (ear)</option>
+                  <option value="Temporal">Temporal (forehead)</option>
+                  <option value="Rectal">Rectal</option>
+                </select>
                 <FieldError name="q16_temperature" errors={errors} />
               </div>
               <div className={styles.f}>
@@ -485,7 +506,7 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                   htmlFor="q17_systolic"
                   style={isBPAbnormal ? alertLabelStyle : undefined}
                 >
-                  Blood Pressure (mmHg) * {isBPAbnormal && '⚠'}
+                  Blood Pressure (mmHg) {bpRequired && '*'} {isBPAbnormal && '⚠'}
                 </label>
                 {/* Two narrow numeric inputs read as a single BP entry. The
                     legacy q17_bloodPressure string is kept in sync via the
@@ -526,39 +547,80 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                 </div>
                 {/* Hidden mirror so the existing "120/80" key keeps working. */}
                 <input type="hidden" {...register('q17_bloodPressure')} />
-                {/* Unable-to-obtain reason. Selecting any reason disables and
-                    clears the two inputs above and satisfies the BP check. */}
-                <select
-                  className={styles.select}
-                  id="q17_bpNotObtainedReason"
-                  aria-label="Reason blood pressure not obtained"
-                  style={{ marginTop: 6, fontSize: 13 }}
-                  {...register('q17_bpNotObtainedReason', {
-                    onChange: (e) => {
-                      if (e.target.value) {
-                        setValue('q17_systolic', '');
-                        setValue('q17_diastolic', '');
-                      } else {
-                        setValue('q17_bpNotObtainedNote', '');
-                      }
-                    },
-                  })}
-                >
-                  <option value="">BP recorded above &mdash; or select if unable to obtain&hellip;</option>
-                  <option value="Patient refused">Unable to obtain &mdash; patient refused</option>
-                  <option value="Unable to tolerate / uncooperative">Unable to obtain &mdash; unable to tolerate / uncooperative</option>
-                  <option value="Equipment unavailable or malfunction">Unable to obtain &mdash; equipment unavailable / malfunction</option>
-                  <option value="Clinically contraindicated">Unable to obtain &mdash; clinically contraindicated</option>
-                  <option value="Other">Unable to obtain &mdash; other (note below)</option>
-                </select>
-                {bpNotObtained && (
-                  <input
-                    className={styles.input}
-                    id="q17_bpNotObtainedNote"
-                    placeholder="Optional note (details on why BP wasn't obtained)…"
-                    style={{ marginTop: 6, fontSize: 13 }}
-                    {...register('q17_bpNotObtainedNote')}
-                  />
+                {/* How the reading was taken — method affects accuracy, site
+                    matters in infants (leg cuffs). Optional; hidden when BP
+                    is marked unable-to-obtain. */}
+                {!bpNotObtained && (
+                  <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                    <select
+                      className={styles.select}
+                      id="q17_bpMethod"
+                      aria-label="Blood pressure method"
+                      style={{ fontSize: 13 }}
+                      {...register('q17_bpMethod')}
+                    >
+                      <option value="">Method&hellip;</option>
+                      <option value="Manual (auscultation)">Manual (auscultation)</option>
+                      <option value="Automatic (oscillometric)">Automatic (oscillometric)</option>
+                    </select>
+                    <select
+                      className={styles.select}
+                      id="q17_bpSite"
+                      aria-label="Blood pressure site"
+                      style={{ fontSize: 13 }}
+                      {...register('q17_bpSite')}
+                    >
+                      <option value="">Site&hellip;</option>
+                      <option value="Left arm">Left arm</option>
+                      <option value="Right arm">Right arm</option>
+                      <option value="Left leg">Left leg</option>
+                      <option value="Right leg">Right leg</option>
+                    </select>
+                  </div>
+                )}
+                {/* Unable-to-obtain reason — only when BP is routinely required
+                    (age >= 3). Selecting any reason disables and clears the two
+                    inputs above and satisfies the BP check. */}
+                {bpRequired && (
+                  <>
+                    <select
+                      className={styles.select}
+                      id="q17_bpNotObtainedReason"
+                      aria-label="Reason blood pressure not obtained"
+                      style={{ marginTop: 6, fontSize: 13 }}
+                      {...register('q17_bpNotObtainedReason', {
+                        onChange: (e) => {
+                          if (e.target.value) {
+                            setValue('q17_systolic', '');
+                            setValue('q17_diastolic', '');
+                          } else {
+                            setValue('q17_bpNotObtainedNote', '');
+                          }
+                        },
+                      })}
+                    >
+                      <option value="">BP recorded above &mdash; or select if unable to obtain&hellip;</option>
+                      <option value="Patient refused">Unable to obtain &mdash; patient refused</option>
+                      <option value="Unable to tolerate / uncooperative">Unable to obtain &mdash; unable to tolerate / uncooperative</option>
+                      <option value="Equipment unavailable or malfunction">Unable to obtain &mdash; equipment unavailable / malfunction</option>
+                      <option value="Clinically contraindicated">Unable to obtain &mdash; clinically contraindicated</option>
+                      <option value="Other">Unable to obtain &mdash; other (note below)</option>
+                    </select>
+                    {bpNotObtained && (
+                      <input
+                        className={styles.input}
+                        id="q17_bpNotObtainedNote"
+                        placeholder="Optional note (details on why BP wasn't obtained)…"
+                        style={{ marginTop: 6, fontSize: 13 }}
+                        {...register('q17_bpNotObtainedNote')}
+                      />
+                    )}
+                  </>
+                )}
+                {!bpRequired && (
+                  <p style={{ fontSize: '12px', color: '#666', margin: '6px 0 0', fontStyle: 'italic' }}>
+                    Not routinely required under age 3 (AAP) &mdash; record if indicated or ordered.
+                  </p>
                 )}
                 <FieldError name="q17_systolic" errors={errors} />
                 <FieldError name="q17_diastolic" errors={errors} />
@@ -584,6 +646,21 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                     onBlur: (e) => handleVitalChange('pulse', e.target.value),
                   })}
                 />
+                {/* Site — apical is standard for infants/young children. Optional. */}
+                <select
+                  className={styles.select}
+                  id="q18_pulseSite"
+                  aria-label="Pulse site"
+                  style={{ marginTop: 6, fontSize: 13 }}
+                  {...register('q18_pulseSite')}
+                >
+                  <option value="">Site&hellip;</option>
+                  <option value="Radial">Radial</option>
+                  <option value="Apical">Apical</option>
+                  <option value="Brachial">Brachial</option>
+                  <option value="Carotid">Carotid</option>
+                  <option value="Other">Other</option>
+                </select>
                 <FieldError name="q18_pulse" errors={errors} />
               </div>
             </div>
