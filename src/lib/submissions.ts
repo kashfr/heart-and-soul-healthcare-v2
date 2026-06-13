@@ -50,6 +50,11 @@ export interface ProgressNoteFormData {
   q15_appearance: string;
 
   // Page 2: Vital Signs
+  // Section-level "unable to obtain vitals" reason: covers any vital left
+  // blank (full or partial refusal, uncooperative child, equipment failure).
+  // Vitals that WERE obtained are still recorded in their own fields.
+  q16_vitalsNotObtainedReason?: string;
+  q16_vitalsNotObtainedNote?: string;
   q16_temperature: string;
   q17_bloodPressure: string;
   // When BP can't be measured the nurse records a reason instead of a reading:

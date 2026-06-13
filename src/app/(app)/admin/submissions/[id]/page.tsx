@@ -556,6 +556,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         <ConditionalSection
           title="Vital Signs"
           keys={[
+            'q16_vitalsNotObtainedReason',
             'q16_temperature', 'q17_bloodPressure', 'q18_pulse', 'q19_respiration',
             'q20_oxygenSaturation', 'q21_oxygenSource', 'q22_additionalObservations',
           ]}
@@ -579,6 +580,17 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             <VitalCard label="SpO2" value={data.q20_oxygenSaturation} />
             {hasValue(data.q21_oxygenSource) && <VitalCard label="Oxygen Source" value={data.q21_oxygenSource} />}
           </div>
+          {hasValue(data.q16_vitalsNotObtainedReason) && (
+            <div style={{ padding: '8px 0' }}>
+              {/* Covers whichever vitals are blank in the grid above. */}
+              <TextBlock
+                label="Vitals Not Obtained"
+                value={`${data.q16_vitalsNotObtainedReason}${
+                  data.q16_vitalsNotObtainedNote ? ` — ${data.q16_vitalsNotObtainedNote}` : ''
+                }`}
+              />
+            </div>
+          )}
           {hasValue(data.q22_additionalObservations) && (
             <div style={{ padding: '8px 0' }}>
               <TextBlock label="Additional Observations" value={data.q22_additionalObservations} />

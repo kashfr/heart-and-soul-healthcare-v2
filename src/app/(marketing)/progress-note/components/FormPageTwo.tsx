@@ -155,6 +155,13 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
   // required-BP check at submit. Empty reason = a normal reading is expected.
   const bpNotObtained = !!watch('q17_bpNotObtainedReason');
 
+  // Section-level escape hatch: when vitals (any or all) couldn't be obtained
+  // — refusal, uncooperative child, equipment failure — the nurse documents
+  // one reason here instead. Unlike the BP-specific dropdown, this does NOT
+  // disable the inputs: whatever vitals WERE obtained should still be
+  // recorded, and the reason covers only the ones left blank.
+  const vitalsNotObtained = !!watch('q16_vitalsNotObtainedReason');
+
   return (
     <div>
       <div className={styles.section}>
@@ -403,6 +410,50 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
               </p>
             )}
 
+            {/* Unable-to-obtain reason for the vitals section as a whole.
+                Selecting a reason lifts the hard `required` on the vitals
+                inputs below — any vital still blank at submit is documented
+                as not obtained for this reason. Inputs stay enabled so a
+                partial set (e.g. temp + pulse on a child who fought the BP
+                cuff) can still be recorded. */}
+            <div style={{ margin: '0 0 10px' }}>
+              <select
+                className={styles.select}
+                id="q16_vitalsNotObtainedReason"
+                aria-label="Reason vitals not obtained"
+                style={{ fontSize: 13, maxWidth: 480 }}
+                {...register('q16_vitalsNotObtainedReason', {
+                  onChange: (e) => {
+                    if (!e.target.value) {
+                      setValue('q16_vitalsNotObtainedNote', '');
+                    }
+                  },
+                })}
+              >
+                <option value="">All vitals recorded below &mdash; or select if unable to obtain&hellip;</option>
+                <option value="Patient refused">Unable to obtain &mdash; patient refused</option>
+                <option value="Parent/guardian refused">Unable to obtain &mdash; parent/guardian refused</option>
+                <option value="Unable to tolerate / uncooperative">Unable to obtain &mdash; unable to tolerate / uncooperative</option>
+                <option value="Equipment unavailable or malfunction">Unable to obtain &mdash; equipment unavailable / malfunction</option>
+                <option value="Clinically contraindicated">Unable to obtain &mdash; clinically contraindicated</option>
+                <option value="Other">Unable to obtain &mdash; other (note below)</option>
+              </select>
+              {vitalsNotObtained && (
+                <>
+                  <input
+                    className={styles.input}
+                    id="q16_vitalsNotObtainedNote"
+                    placeholder="Optional note (details on why vitals weren't obtained)…"
+                    style={{ marginTop: 6, fontSize: 13, maxWidth: 480 }}
+                    {...register('q16_vitalsNotObtainedNote')}
+                  />
+                  <p style={{ fontSize: '12px', color: '#666', margin: '4px 0 0', fontStyle: 'italic' }}>
+                    Any vitals you were able to obtain can still be recorded below.
+                  </p>
+                </>
+              )}
+            </div>
+
             <div className={styles.row}>
               <div className={styles.f}>
                 <label
@@ -420,7 +471,7 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                   step="0.1"
                   min={RANGE.temperature.min}
                   max={RANGE.temperature.max}
-                  required
+                  required={!vitalsNotObtained}
                   {...register('q16_temperature', {
                     validate: rangeValidator(RANGE.temperature.min, RANGE.temperature.max, RANGE.temperature.label),
                     onBlur: (e) => handleVitalChange('temperature', e.target.value),
@@ -527,7 +578,7 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                   id="q18_pulse"
                   min={RANGE.pulse.min}
                   max={RANGE.pulse.max}
-                  required
+                  required={!vitalsNotObtained}
                   {...register('q18_pulse', {
                     validate: rangeValidator(RANGE.pulse.min, RANGE.pulse.max, RANGE.pulse.label),
                     onBlur: (e) => handleVitalChange('pulse', e.target.value),
@@ -553,7 +604,7 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                   id="q19_respiration"
                   min={RANGE.respiration.min}
                   max={RANGE.respiration.max}
-                  required
+                  required={!vitalsNotObtained}
                   {...register('q19_respiration', {
                     validate: rangeValidator(RANGE.respiration.min, RANGE.respiration.max, RANGE.respiration.label),
                     onBlur: (e) => handleVitalChange('respiration', e.target.value),
@@ -576,7 +627,7 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                   id="q20_oxygenSaturation"
                   min={0}
                   max={100}
-                  required
+                  required={!vitalsNotObtained}
                   {...register('q20_oxygenSaturation', {
                     validate: rangeValidator(RANGE.o2.min, RANGE.o2.max, RANGE.o2.label),
                     onChange: (e) => clampO2(e.target.value),
