@@ -9,7 +9,8 @@ import {
 function completeRN(): Record<string, string> {
   return {
     q3_clientName: 'Sapphire Simmons',
-    q4_dateofBirth: '2023-10-26',
+    // Age >= 3 so blood pressure is routinely required (see age-gate tests below).
+    q4_dateofBirth: '2016-05-26',
     q10_primaryDiagnosis: 'CP, Quadriplegic',
     q200_addr_line1: '3378 Greenbriar Pkwy',
     q200_city: 'Atlanta',
@@ -20,6 +21,7 @@ function completeRN(): Record<string, string> {
     q11_nurseName: 'Olayemi Akande',
     q12_credential: 'RN',
     q16_temperature: '97.5',
+    q16_temperatureRoute: 'Oral',
     q17_systolic: '120',
     q17_diastolic: '80',
     q18_pulse: '110',
@@ -85,6 +87,50 @@ describe('getIncompleteRequired', () => {
       const d = completeRN();
       delete d.q17_diastolic;
       expect(keys(d)).toContain('q17_bloodPressure');
+    });
+  });
+
+  describe('blood pressure age gate (AAP: routine from age 3)', () => {
+    it('does not require BP for a child under 3 with no reading or reason', () => {
+      const d = completeRN();
+      d.q4_dateofBirth = '2024-09-01'; // ~1.75y as of mid-2026
+      delete d.q5_ageYears;
+      delete d.q17_systolic;
+      delete d.q17_diastolic;
+      expect(keys(d)).not.toContain('q17_bloodPressure');
+    });
+
+    it('still requires BP for a child 3 or older', () => {
+      const d = completeRN();
+      d.q4_dateofBirth = '2020-01-01'; // >= 6y
+      delete d.q17_systolic;
+      delete d.q17_diastolic;
+      expect(keys(d)).toContain('q17_bloodPressure');
+    });
+
+    it('falls back to the age string when DOB is absent', () => {
+      const d = completeRN();
+      delete d.q4_dateofBirth;
+      d.q5_ageYears = '1';
+      delete d.q17_systolic;
+      delete d.q17_diastolic;
+      expect(keys(d)).not.toContain('q17_bloodPressure');
+    });
+  });
+
+  describe('temperature route', () => {
+    it('is required once a temperature value is present', () => {
+      const d = completeRN();
+      delete d.q16_temperatureRoute;
+      expect(keys(d)).toContain('q16_temperatureRoute');
+    });
+
+    it('is not required when no temperature was recorded', () => {
+      const d = completeRN();
+      delete d.q16_temperature;
+      delete d.q16_temperatureRoute;
+      d.q16_vitalsNotObtainedReason = 'Patient refused';
+      expect(keys(d)).not.toContain('q16_temperatureRoute');
     });
   });
 

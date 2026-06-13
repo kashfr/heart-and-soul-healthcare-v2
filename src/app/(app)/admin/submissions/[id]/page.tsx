@@ -557,17 +557,31 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           title="Vital Signs"
           keys={[
             'q16_vitalsNotObtainedReason',
-            'q16_temperature', 'q17_bloodPressure', 'q18_pulse', 'q19_respiration',
+            'q16_temperature', 'q16_temperatureRoute', 'q17_bloodPressure',
+            'q17_bpMethod', 'q17_bpSite', 'q18_pulse', 'q18_pulseSite', 'q19_respiration',
             'q20_oxygenSaturation', 'q21_oxygenSource', 'q22_additionalObservations',
           ]}
           data={data}
         >
           <div style={vitalsGridStyle}>
-            <VitalCard label="Temperature" value={data.q16_temperature} />
+            <VitalCard
+              label="Temperature"
+              value={
+                data.q16_temperature
+                  ? `${data.q16_temperature}${data.q16_temperatureRoute ? ` (${data.q16_temperatureRoute})` : ''}`
+                  : ''
+              }
+            />
             <VitalCard
               label="Blood Pressure"
               value={
-                data.q17_bloodPressure ||
+                (data.q17_bloodPressure
+                  ? `${data.q17_bloodPressure}${
+                      [data.q17_bpMethod, data.q17_bpSite].filter(Boolean).length
+                        ? ` (${[data.q17_bpMethod, data.q17_bpSite].filter(Boolean).join(', ')})`
+                        : ''
+                    }`
+                  : '') ||
                 (data.q17_bpNotObtainedReason
                   ? `Not obtained — ${data.q17_bpNotObtainedReason}${
                       data.q17_bpNotObtainedNote ? ` (${data.q17_bpNotObtainedNote})` : ''
@@ -575,7 +589,14 @@ export default function SubmissionDetailPage({ params }: PageProps) {
                   : '')
               }
             />
-            <VitalCard label="Pulse" value={data.q18_pulse} />
+            <VitalCard
+              label="Pulse"
+              value={
+                data.q18_pulse
+                  ? `${data.q18_pulse}${data.q18_pulseSite ? ` (${data.q18_pulseSite})` : ''}`
+                  : ''
+              }
+            />
             <VitalCard label="Respirations" value={data.q19_respiration} />
             <VitalCard label="SpO2" value={data.q20_oxygenSaturation} />
             {hasValue(data.q21_oxygenSource) && <VitalCard label="Oxygen Source" value={data.q21_oxygenSource} />}

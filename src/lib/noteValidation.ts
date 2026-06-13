@@ -24,6 +24,8 @@
  * in the UI but has no hard requirement, so it never blocks submission.
  */
 
+import { isBpRoutinelyRequired } from './vitalRanges';
+
 export interface NoteIssue {
   /** Field key (also the DOM id the nurse form scrolls to). */
   key: string;
@@ -111,11 +113,22 @@ const RULES: Rule[] = [
   // obtain vitals" reason: the reason documents whichever vitals were left
   // blank (partial sets are fine — recorded vitals still count on their own).
   { key: 'q16_temperature', label: 'Temperature (a reading or an "unable to obtain vitals" reason)', tab: 2, applies: (_d, c) => c !== 'HHA', filled: vitalOr('q16_temperature') },
+  // Temperature route is required once a temperature value is present — a
+  // reading can't be interpreted without knowing how it was taken.
+  {
+    key: 'q16_temperatureRoute',
+    label: 'Temperature route',
+    tab: 2,
+    applies: (d, c) => c !== 'HHA' && has(d, 'q16_temperature'),
+    filled: simple('q16_temperatureRoute'),
+  },
   {
     key: 'q17_bloodPressure',
     label: 'Blood pressure (a reading or an "unable to obtain" reason)',
     tab: 2,
-    applies: (_d, c) => c !== 'HHA',
+    // Routinely required from age 3 (AAP); under 3 BP is optional.
+    applies: (d, c) =>
+      c !== 'HHA' && isBpRoutinelyRequired(d['q5_ageYears'] || '', d['q4_dateofBirth']),
     filled: (d) =>
       (has(d, 'q17_systolic') && has(d, 'q17_diastolic')) ||
       has(d, 'q17_bpNotObtainedReason') ||

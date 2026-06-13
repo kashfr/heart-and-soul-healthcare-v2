@@ -49,9 +49,13 @@ const FULL_LABEL_OVERRIDES: Record<string, string> = {
   q16_vitalsNotObtainedReason: 'Vitals not obtained — reason',
   q16_vitalsNotObtainedNote: 'Vitals not obtained — note',
   q16_temperature: 'Temperature',
+  q16_temperatureRoute: 'Temperature route',
   q17_systolic: 'Systolic BP',
   q17_diastolic: 'Diastolic BP',
+  q17_bpMethod: 'BP method',
+  q17_bpSite: 'BP site',
   q18_pulse: 'Pulse',
+  q18_pulseSite: 'Pulse site',
   q19_respiration: 'Respiration',
   q20_oxygenSaturation: 'O₂ saturation',
   q21_oxygenSource: 'Oxygen source',
@@ -381,7 +385,14 @@ export default function InProgressPage() {
                           }`}
                         />
                       )}
-                      <Detail label="Temperature" value={flat.q16_temperature} />
+                      <Detail
+                        label="Temperature"
+                        value={
+                          flat.q16_temperature
+                            ? `${flat.q16_temperature}${flat.q16_temperatureRoute ? ` (${flat.q16_temperatureRoute})` : ''}`
+                            : ''
+                        }
+                      />
                       <Detail label="Blood pressure" value={bpDisplay(flat)} />
                       <Detail label="Pulse" value={flat.q18_pulse} />
                       <Detail label="Respiration" value={flat.q19_respiration} />
