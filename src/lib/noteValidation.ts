@@ -137,6 +137,15 @@ const RULES: Rule[] = [
   { key: 'q18_pulse', label: 'Pulse (a reading or an "unable to obtain vitals" reason)', tab: 2, applies: (_d, c) => c !== 'HHA', filled: vitalOr('q18_pulse') },
   { key: 'q19_respiration', label: 'Respiration (a reading or an "unable to obtain vitals" reason)', tab: 2, applies: (_d, c) => c !== 'HHA', filled: vitalOr('q19_respiration') },
   { key: 'q20_oxygenSaturation', label: 'O₂ saturation (a reading or an "unable to obtain vitals" reason)', tab: 2, applies: (_d, c) => c !== 'HHA', filled: vitalOr('q20_oxygenSaturation') },
+  // Oxygen source is required once an SpO2 value is present — the saturation
+  // can't be interpreted without knowing how the patient was oxygenated.
+  {
+    key: 'q21_oxygenSource',
+    label: 'Oxygen source (delivery for the recorded SpO₂)',
+    tab: 2,
+    applies: (d, c) => c !== 'HHA' && has(d, 'q20_oxygenSaturation'),
+    filled: simple('q21_oxygenSource'),
+  },
 
   // --- Tab 4: nutrition note (only when aspiration concerns = Yes) ---
   {

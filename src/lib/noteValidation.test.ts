@@ -27,6 +27,7 @@ function completeRN(): Record<string, string> {
     q18_pulse: '110',
     q19_respiration: '24',
     q20_oxygenSaturation: '95',
+    q21_oxygenSource: 'Room Air',
     q39_interventionDetails: 'Provided skilled care...',
     q62_shiftEndDate: '2026-05-26',
     q62_shiftEndTime: '18:36',
@@ -131,6 +132,29 @@ describe('getIncompleteRequired', () => {
       delete d.q16_temperatureRoute;
       d.q16_vitalsNotObtainedReason = 'Patient refused';
       expect(keys(d)).not.toContain('q16_temperatureRoute');
+    });
+  });
+
+  describe('oxygen source', () => {
+    it('is required once an SpO2 value is present', () => {
+      const d = completeRN();
+      delete d.q21_oxygenSource;
+      expect(keys(d)).toContain('q21_oxygenSource');
+    });
+
+    it('is not required when no SpO2 was recorded', () => {
+      const d = completeRN();
+      delete d.q20_oxygenSaturation;
+      delete d.q21_oxygenSource;
+      d.q16_vitalsNotObtainedReason = 'Patient refused';
+      expect(keys(d)).not.toContain('q21_oxygenSource');
+    });
+
+    it('is not required for an HHA', () => {
+      const d = completeRN();
+      d.q12_credential = 'HHA';
+      delete d.q21_oxygenSource;
+      expect(keys(d)).not.toContain('q21_oxygenSource');
     });
   });
 

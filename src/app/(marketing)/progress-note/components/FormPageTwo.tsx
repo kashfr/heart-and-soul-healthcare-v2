@@ -717,10 +717,17 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                 <FieldError name="q20_oxygenSaturation" errors={errors} />
               </div>
               <div className={styles.f}>
-                <label className={styles.label} htmlFor="q21_oxygenSource">Oxygen Source</label>
+                {/* Required once an SpO2 value is present: a saturation can't be
+                    interpreted without knowing the delivery (room air vs O2).
+                    No silent default — the nurse picks, since many of our
+                    patients are on home O2 / ventilators. Mirrors temp route. */}
+                <label className={styles.label} htmlFor="q21_oxygenSource">
+                  Oxygen Source {showVitals && !!o2Watch && '*'}
+                </label>
                 <select
                   className={styles.select}
                   id="q21_oxygenSource"
+                  required={showVitals && !!o2Watch}
                   {...register('q21_oxygenSource')}
                 >
                   <option value="">Select...</option>
