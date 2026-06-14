@@ -223,7 +223,7 @@ export default function EditSubmissionPage({ params }: PageProps) {
 
         {/* Additional Notes */}
         <Section title="Additional Notes">
-          <EditArea label="Additional Notes" field="q66_additionalNotes" value={formData.q66_additionalNotes} onChange={handleChange} rows={4} />
+          <EditArea label="Additional Notes" field="q60_endOfShiftNotes" value={formData.q60_endOfShiftNotes} onChange={handleChange} rows={4} />
         </Section>
 
         {/* Bottom save bar */}

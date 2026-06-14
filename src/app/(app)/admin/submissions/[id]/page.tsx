@@ -953,11 +953,10 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         {/* 23. FOLLOW-UP */}
         <ConditionalSection
           title="Follow-Up"
-          keys={['q58_followup', 'q59_followupDetails', 'q60_nextShiftPlan']}
+          keys={['q58_followup', 'q60_nextShiftPlan']}
           data={data}
         >
           {hasValue(data.q58_followup) && <TextBlock label="Care/Referrals" value={data.q58_followup} />}
-          {hasValue(data.q59_followupDetails) && <TextBlock label="Details" value={data.q59_followupDetails} />}
           {hasValue(data.q60_nextShiftPlan) && <TextBlock label="Next Shift Plan" value={data.q60_nextShiftPlan} />}
         </ConditionalSection>
 
@@ -1030,17 +1029,6 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             </Section>
           );
         })()}
-
-        {/* 26. ADDITIONAL NOTES */}
-        <ConditionalSection
-          title="Additional Notes"
-          keys={['q66_additionalNotes']}
-          data={data}
-        >
-          {hasValue(data.q66_additionalNotes) && (
-            <p style={{ margin: 0, lineHeight: 1.6 }}>{data.q66_additionalNotes}</p>
-          )}
-        </ConditionalSection>
 
         {/* Footer */}
         <div style={footerStyle}>

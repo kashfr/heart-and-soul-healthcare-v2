@@ -1203,10 +1203,9 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         )}
 
         {/* 23. Follow-Up */}
-        {anyHasValue(data, ['q58_followup', 'q59_followupDetails', 'q60_nextShiftPlan']) && (
+        {anyHasValue(data, ['q58_followup', 'q60_nextShiftPlan']) && (
           <Section title="Follow-Up">
             {hasValue(data.q58_followup) && <TextBlock label="Care / Referrals" value={data.q58_followup} />}
-            {hasValue(data.q59_followupDetails) && <TextBlock label="Details" value={data.q59_followupDetails} />}
             {hasValue(data.q60_nextShiftPlan) && <TextBlock label="Next Shift Plan" value={data.q60_nextShiftPlan} />}
           </Section>
         )}
@@ -1275,13 +1274,6 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
             </Section>
           );
         })()}
-
-        {/* 26. Additional Notes */}
-        {hasValue(data.q66_additionalNotes) && (
-          <Section title="Additional Notes">
-            <Text style={s.textBlockValue}>{data.q66_additionalNotes}</Text>
-          </Section>
-        )}
 
         {/* 27. Amendments & Audit Trail — edits made after the original
             submission. Append-only; the original entries are never removed.
