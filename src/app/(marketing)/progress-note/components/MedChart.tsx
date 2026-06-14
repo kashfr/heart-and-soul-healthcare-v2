@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, X, History, Pill } from 'lucide-react';
 import {
   getMarOrders,
@@ -16,8 +17,7 @@ const ADMIN_BY_LABELS: Record<string, string> = {
   family: 'Family member',
   responsibleParty: 'Responsible party',
   self: 'Client (self)',
-  caregiver: 'Caregiver / aide',
-  other: 'Other',
+  proxy: 'Proxy',
 };
 
 function todayISO(): string {
@@ -61,6 +61,29 @@ export default function MedChart({ patientId, patientName, initialDate, onClose 
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [timelines, setTimelines] = useState<Record<string, MarAdministration[]>>({});
   const [timelineLoading, setTimelineLoading] = useState<string | null>(null);
+
+  // Render into a portal on document.body: standard full-screen-overlay hygiene
+  // so this fixed sheet can never be clipped or out-stacked by an ancestor's
+  // stacking/scroll context. Portal only after mount so SSR/hydration stays in sync.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // While the chart is open: Escape closes it, and the page behind it is locked
+  // from scrolling so the user can't get "lost" underneath the overlay.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
 
   // Orders load once (all of them; discontinued ones still matter for past days).
   useEffect(() => {
@@ -138,10 +161,15 @@ export default function MedChart({ patientId, patientName, initialDate, onClose 
   const extras = dayAdmins.filter((a) => !consumedIds.has(a.id || ''));
   const isToday = day === today;
 
-  return (
-    <div style={sheet}>
+  if (!mounted) return null;
+
+  return createPortal(
+    <div style={sheet} role="dialog" aria-modal="true" aria-label="Medication chart">
       <div style={sheetInner}>
-        <header style={header}>
+        {/* Not a <header> element: the progress-note layout hides all <header>/
+            <footer> tags (marketing chrome) with `display:none !important`, which
+            would also swallow this bar and its close button. */}
+        <div style={header}>
           <div style={headerTop}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
               <Pill size={18} color="#1a3a5c" />
@@ -177,7 +205,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose 
               <ChevronRight size={20} />
             </button>
           </div>
-        </header>
+        </div>
 
         <div style={content}>
           {loading || dayLoading ? (
@@ -287,7 +315,8 @@ export default function MedChart({ patientId, patientName, initialDate, onClose 
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

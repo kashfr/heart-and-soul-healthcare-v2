@@ -27,8 +27,7 @@ const ADMIN_BY_LABELS: Record<string, string> = {
   family: 'Family member',
   responsibleParty: 'Responsible party',
   self: 'Client (self)',
-  caregiver: 'Caregiver / aide',
-  other: 'Other',
+  proxy: 'Proxy',
 };
 
 function currentMonth(): string {
@@ -381,7 +380,7 @@ export default function MonthlyMarPage() {
                 Hatched = order not active
               </span>
               <span style={{ ...legendChipStyle, background: '#fde68a', color: '#1a3a5c' }}>Amber column = today</span>
-              <span style={{ ...legendChipStyle, background: '#eef4fb', color: '#1a3a5c' }}>* = given by family/caregiver (see log)</span>
+              <span style={{ ...legendChipStyle, background: '#eef4fb', color: '#1a3a5c' }}>* = given by family/proxy (see log)</span>
             </div>
 
             {legend.length > 0 && (

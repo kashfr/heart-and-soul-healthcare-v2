@@ -19,8 +19,7 @@ const ADMIN_BY_LABELS: Record<string, string> = {
   family: 'Family member',
   responsibleParty: 'Responsible party',
   self: 'Client (self)',
-  caregiver: 'Caregiver / aide',
-  other: 'Other',
+  proxy: 'Proxy',
 };
 
 function daysInMonth(month: string): number {

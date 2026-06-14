@@ -21,7 +21,7 @@ export interface MarAdminRecord {
   scheduledTime: string; // 'HH:MM' or 'PRN'
   isPRN: boolean;
   status: AdminStatus;
-  administeredByType: string; // 'nurse' | 'family' | 'responsibleParty' | 'self' | 'caregiver' | 'other'
+  administeredByType: string; // 'nurse' | 'family' | 'responsibleParty' | 'self' | 'proxy'
   administratorName: string;
   actualTime: string;
   initials: string;

@@ -12,8 +12,7 @@ const ADMIN_BY_OPTIONS = [
   { value: 'family', label: 'Family member' },
   { value: 'responsibleParty', label: 'Responsible party' },
   { value: 'self', label: 'Client (self)' },
-  { value: 'caregiver', label: 'Caregiver / aide' },
-  { value: 'other', label: 'Other (specify)' },
+  { value: 'proxy', label: 'Proxy' },
 ];
 
 function todayISO(): string {
