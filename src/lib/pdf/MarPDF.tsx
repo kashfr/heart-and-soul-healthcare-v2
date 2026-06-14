@@ -14,7 +14,7 @@ export type MarCellStatus = 'given' | 'held' | 'refused' | 'none' | 'inactive';
 export interface MarPdfCell {
   label: string;
   status: MarCellStatus;
-  star: boolean; // administered by family/caregiver; see log
+  star: boolean; // administered by family/proxy; see log
 }
 
 export interface MarPdfRow {
@@ -297,7 +297,7 @@ export default function MarPDF({
 
         <Text style={s.legendNote}>
           A. Initials in a box = medication given. B. Circled = held or refused; see the log below for the
-          reason. C. * = administered by family / responsible party / caregiver (documented by the nurse; see
+          reason. C. * = administered by family / responsible party / proxy (documented by the nurse; see
           log). D. Gray = order not active that day. PRN doses: reason and result are recorded in the log.
         </Text>
 

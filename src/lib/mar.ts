@@ -192,7 +192,7 @@ export interface MarAdministration {
   date: string; // YYYY-MM-DD (date of service)
   scheduledTime: string; // 'HH:MM' or 'PRN'
   status: AdminStatus;
-  administeredByType: string; // 'nurse' | 'family' | 'responsibleParty' | 'self' | 'caregiver' | 'other'
+  administeredByType: string; // 'nurse' | 'family' | 'responsibleParty' | 'self' | 'proxy'
   administratorName: string; // who physically gave it, when not the documenting nurse
   actualTime: string;
   initials: string;
