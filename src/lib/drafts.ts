@@ -157,6 +157,30 @@ export async function listDrafts(): Promise<NoteDraft[]> {
   return drafts;
 }
 
+/**
+ * Live version of {@link listDrafts}: subscribes to the whole noteDrafts
+ * collection so the In-Progress inspector reflects each nurse's autosaves in
+ * real time (no manual refresh). Same staff-only rules and newest-updated-first
+ * ordering. Returns an unsubscribe function.
+ */
+export function subscribeDrafts(
+  cb: (drafts: NoteDraft[]) => void,
+  onError?: (err: Error) => void
+): () => void {
+  return onSnapshot(
+    collection(db, 'noteDrafts'),
+    (snap) => {
+      const drafts = snap.docs.map((d) => mapDraftDoc(d.id, d.data()));
+      drafts.sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0));
+      cb(drafts);
+    },
+    (err) => {
+      console.error('Drafts subscription failed:', err);
+      onError?.(err);
+    }
+  );
+}
+
 export async function deleteDraft(uid: string): Promise<void> {
   await deleteDoc(draftRef(uid));
 }
