@@ -12,6 +12,7 @@ import {
 import { needsCosign } from '@/lib/cosignClient';
 import { useSettings } from '@/components/SettingsProvider';
 import { pdfFilenameFor, triggerDownload } from '@/lib/batchExport';
+import { authedFetch } from '@/lib/authedFetch';
 import { getVitalRanges, getAgeGroupLabel } from '@/lib/vitalRanges';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import RevisionHistory from '@/components/RevisionHistory';
@@ -122,7 +123,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
     if (!formData || downloadingPdf) return;
     setDownloadingPdf(true);
     try {
-      const res = await fetch(`/api/progress-note/pdf?id=${encodeURIComponent(id)}`, {
+      const res = await authedFetch(`/api/progress-note/pdf?id=${encodeURIComponent(id)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
