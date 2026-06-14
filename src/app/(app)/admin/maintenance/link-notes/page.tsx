@@ -349,7 +349,7 @@ export default function LinkNotesPage() {
           <p style={subStyle}>
             Notes whose typed patient name or DOB doesn&apos;t exactly match the roster.
             <strong> Linking a note overwrites its client name and DOB with the roster&apos;s canonical
-            values</strong> (the original typed values are preserved in the note&apos;s edit history for
+            values</strong> (the original typed values are preserved in the note&apos;s amendment history for
             audit). This fixes downstream billing issues and makes the note visible to other nurses
             on that patient&apos;s care team.
           </p>

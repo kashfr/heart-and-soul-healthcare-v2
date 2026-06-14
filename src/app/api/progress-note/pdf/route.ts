@@ -1,8 +1,10 @@
 import { renderToBuffer } from '@react-pdf/renderer';
 import React from 'react';
 import ProgressNotePDF from '@/lib/pdf/ProgressNotePDF';
-import type { ProgressNoteFormData } from '@/lib/pdf/ProgressNotePDF';
+import type { ProgressNoteFormData, PdfAuditEntry } from '@/lib/pdf/ProgressNotePDF';
 import { getServerSettings } from '@/lib/settingsServer';
+import { getEditHistoryServer } from '@/lib/editHistoryServer';
+import { prettyFieldName, prettyValue } from '@/lib/revisionFormat';
 
 function sanitize(part: string): string {
   return (part || '').replace(/[^a-zA-Z0-9-]+/g, '_').replace(/^_+|_+$/g, '') || 'note';
@@ -32,8 +34,31 @@ export async function POST(request: Request) {
       tagline: settings.branding.tagline,
     };
 
+    // When a saved note id is supplied (?id=), append its audit trail so
+    // post-submission amendments travel with the export. Read server-side
+    // (authoritative) and pre-formatted here so the PDF stays a dumb renderer.
+    // Unsaved previews pass no id and get no audit section.
+    const noteId = new URL(request.url).searchParams.get('id');
+    let editHistory: PdfAuditEntry[] | undefined;
+    if (noteId) {
+      const rows = await getEditHistoryServer(noteId);
+      editHistory = rows.map((r) => ({
+        editedByName: r.editedByName,
+        editedByRole: r.editedByRole,
+        editedAt: r.editedAt ? r.editedAt.toLocaleString('en-US') : '—',
+        ...(r.reason ? { reason: r.reason } : {}),
+        ...(r.correctionNote ? { correctionNote: r.correctionNote } : {}),
+        ...(r.action ? { action: r.action } : {}),
+        changes: Object.keys(r.changes).map((k) => ({
+          field: prettyFieldName(k),
+          from: prettyValue(r.changes[k]?.from),
+          to: prettyValue(r.changes[k]?.to),
+        })),
+      }));
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const element = React.createElement(ProgressNotePDF, { data, vitalsOverride, branding }) as any;
+    const element = React.createElement(ProgressNotePDF, { data, vitalsOverride, branding, editHistory }) as any;
     const buffer = await renderToBuffer(element);
 
     const clientName = sanitize(data.q3_clientName || 'client');

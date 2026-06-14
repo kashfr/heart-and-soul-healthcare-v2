@@ -3,41 +3,8 @@
 import { useEffect, useState } from 'react';
 import { History, ChevronDown, ChevronRight, Info } from 'lucide-react';
 import { getEditHistory, type EditHistoryEntry } from '@/lib/submissions';
+import { prettyFieldName, prettyValue } from '@/lib/revisionFormat';
 import type { Role } from '@/lib/auth';
-
-// Field names whose camelCase doesn't decompose cleanly via the regex
-// splitter below ("dateofBirth" would otherwise read as "Dateof Birth"
-// because the splitter only breaks on capital letters). Add a mapping
-// here for any new offenders that show up in the revision-history UI.
-const FIELD_LABEL_OVERRIDES: Record<string, string> = {
-  q4_dateofBirth: 'Date of Birth',
-  q6_dateofService: 'Date of Service',
-  q200_addr_line1: 'Address Line 1',
-  q200_postal: 'Postal Code',
-};
-
-function prettyFieldName(key: string): string {
-  if (FIELD_LABEL_OVERRIDES[key]) return FIELD_LABEL_OVERRIDES[key];
-  const cleaned = key.replace(/^q\d+_/, '').replace(/_/g, ' ');
-  return cleaned
-    .replace(/([A-Z])/g, ' $1')
-    .replace(/^./, (c) => c.toUpperCase())
-    .trim()
-    .replace(/\s+/g, ' ');
-}
-
-function prettyValue(v: unknown): string {
-  if (v === null || v === undefined || v === '') return '—';
-  if (typeof v === 'string') {
-    if (v.startsWith('data:image/')) return '(signature image)';
-    return v.length > 200 ? v.slice(0, 200) + '…' : v;
-  }
-  try {
-    return JSON.stringify(v);
-  } catch {
-    return String(v);
-  }
-}
 
 export default function RevisionHistory({ submissionId }: { submissionId: string }) {
   const [entries, setEntries] = useState<EditHistoryEntry[] | null>(null);
@@ -60,7 +27,7 @@ export default function RevisionHistory({ submissionId }: { submissionId: string
       <div style={wrapStyle}>
         <div style={headerRowStyle}>
           <History size={16} color="#5c6b7a" />
-          <strong style={titleStyle}>Revision history</strong>
+          <strong style={titleStyle}>Amendment history</strong>
           <span style={countStyle}>loading…</span>
         </div>
       </div>
@@ -76,9 +43,9 @@ export default function RevisionHistory({ submissionId }: { submissionId: string
       >
         {collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
         <History size={16} color="#5c6b7a" />
-        <strong style={titleStyle}>Revision history</strong>
+        <strong style={titleStyle}>Amendment history</strong>
         <span style={countStyle}>
-          {entries && entries.length === 0 ? 'No edits' : `${entries?.length ?? 0} edit${entries?.length === 1 ? '' : 's'}`}
+          {entries && entries.length === 0 ? 'No amendments' : `${entries?.length ?? 0} amendment${entries?.length === 1 ? '' : 's'}`}
         </span>
       </button>
 
@@ -87,7 +54,7 @@ export default function RevisionHistory({ submissionId }: { submissionId: string
           {error && <div style={errorStyle}>{error}</div>}
           {entries && entries.length === 0 && !error && (
             <div style={emptyStyle}>
-              This note has not been edited since it was submitted.
+              This note has not been amended since it was submitted.
             </div>
           )}
           {entries && entries.length > 0 && (
@@ -124,7 +91,7 @@ function RevisionEntry({ entry }: { entry: EditHistoryEntry }) {
       {entry.reason && (
         <div style={reasonStyle}>
           <span>
-            <strong>Reason for edit:</strong> {entry.reason}
+            <strong>Reason for amendment:</strong> {entry.reason}
           </span>
         </div>
       )}
