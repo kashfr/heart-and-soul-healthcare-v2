@@ -5,6 +5,8 @@ import type { ProgressNoteFormData, PdfAuditEntry } from '@/lib/pdf/ProgressNote
 import { getServerSettings } from '@/lib/settingsServer';
 import { getEditHistoryServer } from '@/lib/editHistoryServer';
 import { prettyFieldName, prettyValue } from '@/lib/revisionFormat';
+import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
+import { adminDb } from '@/lib/firebaseAdmin';
 
 function sanitize(part: string): string {
   return (part || '').replace(/[^a-zA-Z0-9-]+/g, '_').replace(/^_+|_+$/g, '') || 'note';
@@ -41,6 +43,18 @@ export async function POST(request: Request) {
     const noteId = new URL(request.url).searchParams.get('id');
     let editHistory: PdfAuditEntry[] | undefined;
     if (noteId) {
+      // The audit trail is read server-side by id, so authorize the caller
+      // before disclosing it: any active staff member, and a nurse only for
+      // her own note (mirrors the in-app "staff see any, author sees own"
+      // policy). Requests without an id (unsaved previews) read no server data
+      // and remain open, preserving existing behavior.
+      const caller = await requireRole(request, ['admin', 'supervisor', 'nurse']);
+      if (caller.role === 'nurse') {
+        const noteSnap = await adminDb().collection('progressNotes').doc(noteId).get();
+        if (!noteSnap.exists || noteSnap.data()?.nurseId !== caller.uid) {
+          throw new AdminAuthError(403, 'You can only export the audit trail for your own notes.');
+        }
+      }
       const rows = await getEditHistoryServer(noteId);
       editHistory = rows.map((r) => ({
         editedByName: r.editedByName,
@@ -73,6 +87,12 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
+    if (error instanceof AdminAuthError) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: error.status,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
     console.error('PDF generation error:', error);
     return new Response(
       JSON.stringify({
