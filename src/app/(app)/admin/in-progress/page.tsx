@@ -6,11 +6,10 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  RefreshCw,
   Clock,
   ShieldAlert,
 } from 'lucide-react';
-import { listDrafts, type NoteDraft } from '@/lib/drafts';
+import { subscribeDrafts, type NoteDraft } from '@/lib/drafts';
 import { findDuplicateSubmission } from '@/lib/submissions';
 import { authedFetch } from '@/lib/authedFetch';
 import {
@@ -108,39 +107,30 @@ export default function InProgressPage() {
   const [denyNote, setDenyNote] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const drafts = await listDrafts();
-      const built = await Promise.all(
-        drafts.map(async (draft) => {
-          const flat = flattenDraft(draft);
-          // For a pending request, resolve the conflicting note so we can link
-          // straight to it from the approval panel.
-          let conflictNoteId: string | null = null;
-          if (draft.dupRequest?.status === 'pending') {
-            try {
-              const match = await findDuplicateSubmission({
-                nurseId: draft.nurseId,
-                dateOfService: draft.dupRequest.dateOfService || draft.dateOfService,
-                patientId: draft.dupRequest.patientId,
-                clientName: draft.dupRequest.clientName || draft.clientName,
-              });
-              conflictNoteId = match?.id ?? null;
-            } catch {
-              conflictNoteId = null;
-            }
+  // Build display rows from raw drafts: flatten, compute missing-required
+  // issues, and (for a pending duplicate request) resolve the conflicting note
+  // so the approval panel can link to it.
+  const buildRows = useCallback(async (drafts: NoteDraft[]): Promise<Row[]> => {
+    return Promise.all(
+      drafts.map(async (draft) => {
+        const flat = flattenDraft(draft);
+        let conflictNoteId: string | null = null;
+        if (draft.dupRequest?.status === 'pending') {
+          try {
+            const match = await findDuplicateSubmission({
+              nurseId: draft.nurseId,
+              dateOfService: draft.dupRequest.dateOfService || draft.dateOfService,
+              patientId: draft.dupRequest.patientId,
+              clientName: draft.dupRequest.clientName || draft.clientName,
+            });
+            conflictNoteId = match?.id ?? null;
+          } catch {
+            conflictNoteId = null;
           }
-          return { draft, flat, issues: getIncompleteRequired(flat), conflictNoteId };
-        })
-      );
-      setRows(built);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load in-progress notes.');
-    } finally {
-      setLoading(false);
-    }
+        }
+        return { draft, flat, issues: getIncompleteRequired(flat), conflictNoteId };
+      })
+    );
   }, []);
 
   const decide = useCallback(
@@ -159,19 +149,46 @@ export default function InProgressPage() {
         }
         setDenyForId(null);
         setDenyNote('');
-        await load();
+        // No manual reload: the live subscription below reflects the updated
+        // draft (dupRequest cleared/decided) automatically.
       } catch (e) {
         setActionError(e instanceof Error ? e.message : 'Action failed.');
       } finally {
         setBusyId(null);
       }
     },
-    [load]
+    []
   );
 
+  // Live subscription: rebuild rows on every draft change so the inspector
+  // stays current with each nurse's autosaves (no manual refresh). A token
+  // guards against out-of-order async completions — snapshots can fire faster
+  // than the per-draft conflict lookups resolve.
   useEffect(() => {
-    load();
-  }, [load]);
+    let active = true;
+    let token = 0;
+    const unsub = subscribeDrafts(
+      (drafts) => {
+        const myToken = ++token;
+        setError(null);
+        buildRows(drafts).then((built) => {
+          if (active && myToken === token) {
+            setRows(built);
+            setLoading(false);
+          }
+        });
+      },
+      (e) => {
+        if (!active) return;
+        setError(e.message || 'Failed to load in-progress notes.');
+        setLoading(false);
+      }
+    );
+    return () => {
+      active = false;
+      unsub();
+    };
+  }, [buildRows]);
 
   return (
     <div style={{ maxWidth: 980, margin: '0 auto', padding: 20 }}>
@@ -179,9 +196,9 @@ export default function InProgressPage() {
         <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1f2937', margin: 0 }}>
           In-Progress Notes
         </h1>
-        <button onClick={load} disabled={loading} title="Refresh" style={refreshBtnStyle}>
-          <RefreshCw size={15} /> Refresh
-        </button>
+        <span style={liveIndicatorStyle} title="Updates automatically as nurses save their notes">
+          <span style={liveDotStyle} /> Live
+        </span>
       </div>
       <p style={{ color: '#6b7280', margin: '0 0 20px', fontSize: 14, maxWidth: 680 }}>
         Notes a nurse has started but not yet submitted. Read-only — use this to see what&apos;s
@@ -482,18 +499,27 @@ const rowHeaderStyle: CSSProperties = {
   textAlign: 'left',
 };
 
-const refreshBtnStyle: CSSProperties = {
+const liveIndicatorStyle: CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   gap: 6,
-  fontSize: 13,
-  fontWeight: 600,
-  color: '#374151',
-  background: 'white',
-  border: '1px solid #d1d5db',
-  borderRadius: 6,
-  padding: '6px 12px',
-  cursor: 'pointer',
+  fontSize: 12,
+  fontWeight: 700,
+  color: '#166534',
+  background: '#e8f5e9',
+  border: '1px solid #bbf7d0',
+  borderRadius: 999,
+  padding: '4px 10px',
+  textTransform: 'uppercase',
+  letterSpacing: 0.4,
+};
+
+const liveDotStyle: CSSProperties = {
+  width: 7,
+  height: 7,
+  borderRadius: '50%',
+  background: '#22c55e',
+  display: 'inline-block',
 };
 
 const badgeBase: CSSProperties = {
