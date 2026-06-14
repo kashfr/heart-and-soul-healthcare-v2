@@ -48,7 +48,7 @@ async function fetchPdfForSubmission(id: string): Promise<{ form: ProgressNoteFo
   if (!form) throw new Error(`Submission ${id} not found`);
   // Send the raw form data — the PDF renderer now reads every q##_* field
   // directly instead of a lossy transformed shape.
-  const res = await fetch('/api/progress-note/pdf', {
+  const res = await fetch(`/api/progress-note/pdf?id=${encodeURIComponent(id)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(form),

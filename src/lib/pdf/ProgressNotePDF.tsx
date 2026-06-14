@@ -35,6 +35,24 @@ export interface ProgressNotePDFProps {
     orgName?: string;
     tagline?: string;
   };
+  /**
+   * Post-submission edit history (the audit trail / amendments), already
+   * formatted for display by the PDF route. When present and non-empty, an
+   * "Amendments & Audit Trail" section is appended so corrections made after
+   * the original submission travel with the exported record. Omitted for
+   * unsaved previews, which have no history.
+   */
+  editHistory?: PdfAuditEntry[];
+}
+
+export interface PdfAuditEntry {
+  editedByName: string;
+  editedByRole: string;
+  editedAt: string; // pre-formatted timestamp
+  reason?: string;
+  correctionNote?: string;
+  action?: string; // e.g. 'staff:archive'
+  changes: { field: string; from: string; to: string }[];
 }
 
 // Legacy export kept so any lingering imports don't break.
@@ -330,6 +348,87 @@ const s = StyleSheet.create({
     right: 36,
     fontSize: 8,
     color: '#999',
+  },
+  auditIntro: {
+    fontSize: 8,
+    color: '#555',
+    fontStyle: 'italic',
+    marginBottom: 6,
+  },
+  auditEntry: {
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 2,
+    backgroundColor: '#fafbfc',
+    padding: 6,
+    marginBottom: 6,
+  },
+  auditHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
+  auditWho: {
+    fontSize: 9,
+    fontFamily: 'Helvetica-Bold',
+    color: '#1a1a1a',
+  },
+  auditWhen: {
+    fontSize: 8,
+    color: '#777',
+  },
+  auditMeta: {
+    fontSize: 8.5,
+    color: '#334155',
+    marginTop: 2,
+    lineHeight: 1.4,
+  },
+  auditMetaLabel: {
+    fontFamily: 'Helvetica-Bold',
+    color: GRAY_TEXT,
+  },
+  auditTable: {
+    marginTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+  },
+  auditRowHead: {
+    flexDirection: 'row',
+    backgroundColor: '#f1f5f9',
+  },
+  auditRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eef1f4',
+  },
+  auditColField: {
+    width: '24%',
+    fontSize: 8,
+    fontFamily: 'Helvetica-Bold',
+    color: '#2c3e50',
+    padding: 3,
+  },
+  auditColVal: {
+    width: '38%',
+    fontSize: 8,
+    fontFamily: 'Helvetica-Bold',
+    color: GRAY_TEXT,
+    textTransform: 'uppercase',
+    padding: 3,
+  },
+  auditColFrom: {
+    width: '38%',
+    fontSize: 8,
+    color: '#a33',
+    backgroundColor: '#fdecea',
+    padding: 3,
+  },
+  auditColTo: {
+    width: '38%',
+    fontSize: 8,
+    color: '#2a7a2a',
+    backgroundColor: '#e8f4e8',
+    padding: 3,
   },
 });
 
@@ -658,7 +757,17 @@ const SYSTEM_ASSESSMENTS: SystemConfig[] = [
 
 // --- Main document ---
 
-export default function ProgressNotePDF({ data, vitalsOverride, branding }: ProgressNotePDFProps) {
+function auditActionLabel(action: string): string {
+  const map: Record<string, string> = {
+    'staff:archive': 'Archived (staff)',
+    'staff:restore': 'Restored (staff)',
+    'nurse:archive': 'Archived (nurse view)',
+    'nurse:restore': 'Restored (nurse view)',
+  };
+  return map[action] || action;
+}
+
+export default function ProgressNotePDF({ data, vitalsOverride, branding, editHistory }: ProgressNotePDFProps) {
   const orgName = branding?.orgName || 'Heart and Soul Healthcare';
   const tagline = branding?.tagline ?? 'Compassionate Care, Professional Excellence';
   const credential = data.q12_credential || '';
@@ -1172,6 +1281,65 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding }: Prog
           <Section title="Additional Notes">
             <Text style={s.textBlockValue}>{data.q66_additionalNotes}</Text>
           </Section>
+        )}
+
+        {/* 27. Amendments & Audit Trail — edits made after the original
+            submission. Append-only; the original entries are never removed.
+            Rendered last and allowed to break across pages. */}
+        {editHistory && editHistory.length > 0 && (
+          <SectionBreakable title="Amendments & Audit Trail">
+            <Text style={s.auditIntro}>
+              Changes recorded after this note was first submitted. Captured automatically; original
+              entries are never deleted.
+            </Text>
+            {editHistory.map((e, i) => (
+              <View key={i} style={s.auditEntry}>
+                <View style={s.auditHead}>
+                  <Text style={s.auditWho}>
+                    {e.editedByName || 'Unknown editor'}
+                    {e.editedByRole ? ` · ${e.editedByRole}` : ''}
+                  </Text>
+                  <Text style={s.auditWhen}>{e.editedAt}</Text>
+                </View>
+                {e.action ? (
+                  <Text style={s.auditMeta}>
+                    <Text style={s.auditMetaLabel}>Action: </Text>
+                    {auditActionLabel(e.action)}
+                  </Text>
+                ) : null}
+                {e.reason ? (
+                  <Text style={s.auditMeta}>
+                    <Text style={s.auditMetaLabel}>Reason for amendment: </Text>
+                    {e.reason}
+                  </Text>
+                ) : null}
+                {e.correctionNote ? (
+                  <Text style={s.auditMeta}>
+                    <Text style={s.auditMetaLabel}>Correction note: </Text>
+                    {e.correctionNote}
+                  </Text>
+                ) : null}
+                {e.changes.length > 0 ? (
+                  <View style={s.auditTable}>
+                    <View style={s.auditRowHead}>
+                      <Text style={s.auditColField}>Field</Text>
+                      <Text style={s.auditColVal}>From</Text>
+                      <Text style={s.auditColVal}>To</Text>
+                    </View>
+                    {e.changes.map((c, j) => (
+                      <View key={j} style={s.auditRow}>
+                        <Text style={s.auditColField}>{c.field}</Text>
+                        <Text style={s.auditColFrom}>{c.from}</Text>
+                        <Text style={s.auditColTo}>{c.to}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : e.action ? null : (
+                  <Text style={s.auditMeta}>No field-level changes recorded.</Text>
+                )}
+              </View>
+            ))}
+          </SectionBreakable>
         )}
 
         <View style={s.footer} fixed>

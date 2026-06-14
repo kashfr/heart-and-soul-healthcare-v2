@@ -1918,8 +1918,8 @@ function ProgressNotePageInner() {
               What changed, and why?
             </h2>
             <p style={{ color: '#555', lineHeight: 1.6, marginBottom: 12 }}>
-              You&apos;re editing a submitted note. Please note the reason for this
-              change — it&apos;s saved to the note&apos;s revision history. Your name,
+              You&apos;re amending a submitted note. Please note the reason for this
+              amendment — it&apos;s saved to the note&apos;s amendment history. Your name,
               role, and the date and time are recorded automatically.
             </p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>

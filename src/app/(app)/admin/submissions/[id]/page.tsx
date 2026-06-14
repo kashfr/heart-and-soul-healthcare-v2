@@ -122,7 +122,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
     if (!formData || downloadingPdf) return;
     setDownloadingPdf(true);
     try {
-      const res = await fetch('/api/progress-note/pdf', {
+      const res = await fetch(`/api/progress-note/pdf?id=${encodeURIComponent(id)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
@@ -400,7 +400,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           <div style={{ display: 'flex', gap: 10 }}>
             {canEdit && (
               <Link href={`/progress-note?edit=${id}`} style={editBtnStyle}>
-                Edit
+                Amend
               </Link>
             )}
             <button

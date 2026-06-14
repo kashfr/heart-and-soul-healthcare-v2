@@ -24,7 +24,7 @@ const CARDS: Card[] = [
     href: '/admin/submissions',
     icon: <ClipboardList size={22} />,
     title: 'My notes',
-    description: 'View and edit your submitted progress notes.',
+    description: 'View and amend your submitted progress notes.',
     allow: ['nurse'],
   },
   {
