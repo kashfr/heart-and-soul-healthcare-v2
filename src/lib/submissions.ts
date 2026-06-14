@@ -114,8 +114,10 @@ export interface ProgressNoteFormData {
   q54_notificationTime: string;
   q55_physicianOrders: string;
   q58_followup: string;
+  /** @deprecated Retired from the form and all output views 2026-06; retained so historical notes still type-check. */
   q59_followupDetails: string;
   q60_nextShiftPlan: string;
+  q60_endOfShiftNotes: string; // End-of-shift handoff "Additional Notes" — the single Additional Notes field
 
   // Page 7: Signature & Completion
   q61_signature: string;
@@ -124,6 +126,7 @@ export interface ProgressNoteFormData {
   q63_clinicalSummary: string;
   q64_carePlanStatus: string;
   q65_certification: string;
+  /** @deprecated Retired from the form and all output views 2026-06; retained so historical notes still type-check. */
   q66_additionalNotes: string;
 
   // Critical-vitals escalation gate. Populated when a documented vital crossed

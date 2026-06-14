@@ -137,26 +137,6 @@ export default function FormPageSeven({ formRef, register, watch, setValue, cont
         </div>
       </div>
 
-      {/* FOLLOW-UP DETAILS */}
-      <div className={styles.section}>
-        <span className={styles.sectionLabel}>FOLLOW-UP DETAILS</span>
-
-        <div className={styles.row}>
-          <div className={styles.f} style={{ flex: '1 1 100%' }}>
-            <label className={styles.label} htmlFor="q59_followupDetails">
-              Specific follow-up instructions or referral details:
-            </label>
-            <textarea
-              className={styles.textarea}
-              id="q59_followupDetails"
-              {...register('q59_followupDetails')}
-              rows={3}
-              placeholder="Include dates, contact information, specific instructions for patient/family"
-            />
-          </div>
-        </div>
-      </div>
-
       {/* PLANS FOR NEXT SHIFT */}
       <div className={styles.section}>
         <span className={styles.sectionLabel}>PLANS FOR NEXT SHIFT / CARE CONTINUATION</span>
@@ -172,88 +152,6 @@ export default function FormPageSeven({ formRef, register, watch, setValue, cont
               {...register('q60_nextShiftPlan')}
               rows={4}
               placeholder="Document continuing care needs, precautions, patient progress, and recommendations"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* SHIFT COMPLETION DETAILS */}
-      <div className={styles.section}>
-        <span className={styles.sectionLabel}>SHIFT COMPLETION DETAILS</span>
-
-        <div className={styles.row}>
-          <div className={styles.f}>
-            <label className={styles.label} htmlFor="q62_shiftEndDate">Shift End Date *</label>
-            <input
-              className={styles.input}
-              type="date"
-              id="q62_shiftEndDate"
-              // The shift can't end (and the note can't be signed) before the
-              // service was performed. Floor the picker at the date of service;
-              // ceiling stays today (no future-dating). Submit-time validation
-              // in page.tsx backstops this.
-              min={dateOfService || undefined}
-              max={today}
-              required
-              {...register('q62_shiftEndDate')}
-            />
-          </div>
-          <div className={styles.f}>
-            <label className={styles.label} htmlFor="q62_shiftEndTime">Shift End Time *</label>
-            <input
-              className={styles.input}
-              type="time"
-              id="q62_shiftEndTime"
-              required
-              {...register('q62_shiftEndTime')}
-            />
-          </div>
-          <div className={styles.f}>
-            <label className={styles.label} htmlFor="q9_totalHours">Total Hours</label>
-            <input
-              className={styles.input}
-              type="text"
-              id="q9_totalHours"
-              {...register('q9_totalHours')}
-              readOnly
-              style={{ backgroundColor: '#f0f0f0' }}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* CERTIFICATION */}
-      <div className={styles.section}>
-        <span className={styles.sectionLabel}>CERTIFICATION</span>
-
-        <div className={styles.checkRow}>
-          <label>
-            <input
-              type="checkbox"
-              name="q65_certification"
-              value="certified"
-              required
-            />
-            I certify that the information provided in this progress note is accurate and complete to the best of my knowledge. *
-          </label>
-        </div>
-      </div>
-
-      {/* ADDITIONAL NOTES */}
-      <div className={styles.section}>
-        <span className={styles.sectionLabel}>ADDITIONAL NOTES</span>
-
-        <div className={styles.row}>
-          <div className={styles.f} style={{ flex: '1 1 100%' }}>
-            <label className={styles.label} htmlFor="q66_additionalNotes">
-              Any additional information or comments:
-            </label>
-            <textarea
-              className={styles.textarea}
-              id="q66_additionalNotes"
-              {...register('q66_additionalNotes')}
-              rows={3}
-              placeholder="Optional additional documentation"
             />
           </div>
         </div>
@@ -323,6 +221,68 @@ export default function FormPageSeven({ formRef, register, watch, setValue, cont
               placeholder="Any additional end-of-shift notes..."
             />
           </div>
+        </div>
+      </div>
+
+      {/* SHIFT COMPLETION DETAILS */}
+      <div className={styles.section}>
+        <span className={styles.sectionLabel}>SHIFT COMPLETION DETAILS</span>
+
+        <div className={styles.row}>
+          <div className={styles.f}>
+            <label className={styles.label} htmlFor="q62_shiftEndDate">Shift End Date *</label>
+            <input
+              className={styles.input}
+              type="date"
+              id="q62_shiftEndDate"
+              // The shift can't end (and the note can't be signed) before the
+              // service was performed. Floor the picker at the date of service;
+              // ceiling stays today (no future-dating). Submit-time validation
+              // in page.tsx backstops this.
+              min={dateOfService || undefined}
+              max={today}
+              required
+              {...register('q62_shiftEndDate')}
+            />
+          </div>
+          <div className={styles.f}>
+            <label className={styles.label} htmlFor="q62_shiftEndTime">Shift End Time *</label>
+            <input
+              className={styles.input}
+              type="time"
+              id="q62_shiftEndTime"
+              required
+              {...register('q62_shiftEndTime')}
+            />
+          </div>
+          <div className={styles.f}>
+            <label className={styles.label} htmlFor="q9_totalHours">Total Hours</label>
+            <input
+              className={styles.input}
+              type="text"
+              id="q9_totalHours"
+              {...register('q9_totalHours')}
+              readOnly
+              style={{ backgroundColor: '#f0f0f0' }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* CERTIFICATION */}
+      <div className={styles.section}>
+        <span className={styles.sectionLabel}>CERTIFICATION</span>
+
+        <div className={styles.checkRow}>
+          <label>
+            <input
+              type="checkbox"
+              name="q65_certification"
+              value="certified"
+              required
+            />
+            I certify that the information provided in this progress note is accurate and complete to the best of my knowledge. *
+          </label>
         </div>
       </div>
 
