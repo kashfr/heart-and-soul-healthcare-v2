@@ -424,6 +424,18 @@ function ProgressNotePageInner() {
     return () => unsub();
   }, [isEditMode, scheduleAutosave]);
 
+  // The MAR mark store is a module-level singleton shared across the SPA. Reset
+  // it when a fresh note mounts and when this page unmounts, so dose marks from
+  // one note can never leak into the next (a resumed draft re-populates it via
+  // hydrateFromDraft, which also clears first). Without this, "Save & exit" /
+  // navigating between notes left marks resident that got submitted under the
+  // wrong note.
+  useEffect(() => {
+    if (isEditMode) return;
+    clearMarAdmin();
+    return () => clearMarAdmin();
+  }, [isEditMode]);
+
   // Apply a loaded Firestore draft into the form (RHF + radios + checkboxes + page).
   const hydrateFromDraft = useCallback((draft: NoteDraft) => {
     reset(draft.formValues as FormValues);
@@ -445,6 +457,11 @@ function ProgressNotePageInner() {
       setRadio(k, v);
     }
     // Restore MAR dose marks (Page 5 Given/Held/Refused cards) into the store.
+    // Clear FIRST so resume REPLACES the singleton store instead of unioning
+    // onto marks left resident from a previous note in this SPA session — those
+    // would otherwise ride along and be written under this note (the cross-note
+    // "phantom administration" leak).
+    clearMarAdmin();
     for (const entry of draft.marAdminState || []) {
       const { key, ...rec } = entry;
       if (key) setMarAdmin(key, rec as unknown as MarAdminRecord);
@@ -533,6 +550,9 @@ function ProgressNotePageInner() {
     } catch (err) {
       console.error('Failed to clear old draft:', err);
     }
+    // Start fresh = a clean MAR store too. No navigation/unmount happens here,
+    // so the singleton would otherwise keep marks resident from the prior note.
+    clearMarAdmin();
     setPendingDraft(null);
     setResumeDecided(true);
     setDraftHydrated(true);

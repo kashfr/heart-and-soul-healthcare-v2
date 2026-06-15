@@ -19,6 +19,7 @@ import MedChart from './MedChart';
 import {
   marAdminState,
   setMarAdmin,
+  getAllMarAdmin,
   marAdminKey,
   marAdminSubscribe,
   marAdminGetSnapshot,
@@ -154,10 +155,19 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
     else for (const t of o.scheduledTimes || []) marRows.push({ order: o, slot: t });
   }
 
+  // Apply a patch to the store entry under `key`, seeding from `fallback` when
+  // it doesn't exist yet. Used both for order-derived rows (updateMark) and for
+  // resumed "extra"/unlisted marks that have no current order row.
+  const patchMarkByKey = (key: string, fallback: MarAdminRecord, patch: Partial<MarAdminRecord>) => {
+    const existing = marAdminState[key] || fallback;
+    setMarAdmin(key, { ...existing, ...patch });
+  };
+
   const updateMark = (order: MarOrder, slot: string, patch: Partial<MarAdminRecord>) => {
     const key = marAdminKey(marPatientId, order.id || '', slot);
-    const existing: MarAdminRecord =
-      marAdminState[key] || {
+    patchMarkByKey(
+      key,
+      {
         patientId: marPatientId,
         orderId: order.id || '',
         medName: order.medName,
@@ -172,8 +182,134 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
         actualTime: slot === 'PRN' ? '' : slot,
         initials: marDefaultInitials,
         reason: '',
-      };
-    setMarAdmin(key, { ...existing, ...patch });
+      },
+      patch,
+    );
+  };
+
+  // Keys already shown by an order-derived row this render. Any OTHER store
+  // entry with a status — e.g. an "unlisted"/unscheduled one-off dose added via
+  // the change-request modal, restored on resume — is rendered as an editable
+  // "extra" card below. Without this the form silently hid doses it would still
+  // write at submit (the Oxycodone "no trace" bug).
+  const coveredKeys = new Set(
+    marRows.map(({ order, slot }) => marAdminKey(marPatientId, order.id || '', slot)),
+  );
+  const extraMarks = marPatientId
+    ? getAllMarAdmin().filter((r) => r.patientId === marPatientId && r.status && !coveredKeys.has(r.key))
+    : [];
+
+  // A dose already on record for this client+date, submitted on an EARLIER note
+  // (dayAdmins is submitted-only; the current draft isn't submitted yet, so
+  // these are always prior/other entries). Matches by order+slot for scheduled
+  // meds, and by med name for unlisted one-offs that carry no orderId.
+  const priorFor = (orderId: string, slot: string, medName: string): MarAdministration | undefined =>
+    dayAdmins.find((a) =>
+      orderId
+        ? a.orderId === orderId && a.scheduledTime === slot
+        : (a.medNameSnapshot || '').toLowerCase() === medName.toLowerCase(),
+    );
+
+  // Shared renderer for one MAR dose card, used for both scheduled-order rows
+  // and resumed "extra"/unlisted doses. `onPatch` writes to the right store key.
+  const renderDoseCard = (opts: {
+    cardKey: string;
+    rec: MarAdminRecord | undefined;
+    medName: string;
+    doseLabel: string;
+    badgeLabel: string;
+    badgeStyle: CSSProperties;
+    prior?: MarAdministration;
+    onPatch: (patch: Partial<MarAdminRecord>) => void;
+    extra?: boolean;
+    isPRN?: boolean;
+  }) => {
+    const status = opts.rec?.status || '';
+    const isNurseAdmin = !opts.rec || !opts.rec.administeredByType || opts.rec.administeredByType === 'nurse';
+    return (
+      <div key={opts.cardKey} style={marCardStyle}>
+        <div style={marCardHeadStyle}>
+          <div>
+            <span style={{ fontWeight: 700, color: '#1f2937' }}>{opts.medName}</span>
+            <span style={{ color: '#6b7280', marginLeft: 8, fontSize: 13 }}>{opts.doseLabel}</span>
+          </div>
+          <span style={opts.badgeStyle}>{opts.badgeLabel}</span>
+        </div>
+
+        {opts.extra && (
+          <div style={marExtraNoteStyle}>One-off dose documented this shift (not a scheduled order).</div>
+        )}
+
+        {opts.prior && (
+          <div style={marAlreadyChipStyle}>
+            Already documented today on another entry: {opts.prior.status === 'given' ? 'given' : opts.prior.status}
+            {opts.prior.status === 'given' && opts.prior.actualTime ? ` at ${opts.prior.actualTime}` : ''}
+            {opts.prior.initials ? ` (${opts.prior.initials})` : ''}
+            {opts.prior.documentedByName ? ` · ${opts.prior.documentedByName}` : ''}
+          </div>
+        )}
+
+        <div style={marStatusRowStyle}>
+          {(['given', 'held', 'refused'] as const).map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => {
+                // Real double-dose stop: confirm before recording a second
+                // "given" for a med already documented as given today. PRN
+                // ("as needed") meds are expected to repeat, so don't nag there.
+                if (s === 'given' && status !== 'given' && opts.prior?.status === 'given' && !opts.isPRN) {
+                  const when = opts.prior.actualTime ? ` at ${opts.prior.actualTime}` : '';
+                  const who = opts.prior.documentedByName ? ` by ${opts.prior.documentedByName}` : '';
+                  if (!window.confirm(`${opts.medName} is already documented as given today${when}${who}. Record another dose?`)) return;
+                }
+                opts.onPatch({ status: status === s ? '' : s });
+              }}
+              style={status === s ? marStatusBtnActive[s] : marStatusBtnStyle}
+            >
+              {s === 'given' ? 'Given' : s === 'held' ? 'Held' : 'Refused'}
+            </button>
+          ))}
+          {opts.extra && status && (
+            <button type="button" onClick={() => opts.onPatch({ status: '' })} style={stagedRemoveBtnStyle} title="Remove this dose">
+              Remove
+            </button>
+          )}
+        </div>
+
+        {status === 'given' && (
+          <div style={marDetailGridStyle}>
+            <label style={marFieldStyle}>
+              <span style={marFieldLabelStyle}>Time given</span>
+              <input type="time" value={opts.rec?.actualTime || ''} onChange={(e) => opts.onPatch({ actualTime: e.target.value })} style={marInputStyle} />
+            </label>
+            <label style={marFieldStyle}>
+              <span style={marFieldLabelStyle}>Initials</span>
+              <input type="text" value={opts.rec?.initials || ''} onChange={(e) => opts.onPatch({ initials: e.target.value })} style={marInputStyle} maxLength={5} />
+            </label>
+            <label style={marFieldStyle}>
+              <span style={marFieldLabelStyle}>Administered by</span>
+              <select value={opts.rec?.administeredByType || 'nurse'} onChange={(e) => opts.onPatch({ administeredByType: e.target.value })} style={marSelectStyle}>
+                {ADMIN_BY_OPTIONS.map((o) => (<option key={o.value} value={o.value}>{o.label}</option>))}
+              </select>
+            </label>
+            {!isNurseAdmin && (
+              <label style={marFieldStyle}>
+                <span style={marFieldLabelStyle}>Administrator name</span>
+                <input type="text" value={opts.rec?.administratorName || ''} onChange={(e) => opts.onPatch({ administratorName: e.target.value })} style={marInputStyle} placeholder="e.g., Jane Doe (daughter)" />
+              </label>
+            )}
+          </div>
+        )}
+
+        {(status === 'held' || status === 'refused') && (
+          <label style={{ ...marFieldStyle, marginTop: 10 }}>
+            <span style={marFieldLabelStyle}>Reason</span>
+            <input type="text" value={opts.rec?.reason || ''} onChange={(e) => opts.onPatch({ reason: e.target.value })} style={marInputStyle} placeholder={status === 'refused' ? 'Reason for refusal' : 'Reason held / omitted'} />
+          </label>
+        )}
+      </div>
+    );
   };
 
   if (!credential || (credential !== 'LPN' && credential !== 'RN')) {
@@ -307,134 +443,79 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
           <p style={marHintStyle}>Select a client from the roster on Page 1 to load their medication schedule.</p>
         ) : marLoading ? (
           <p style={marHintStyle}>Loading medications…</p>
-        ) : marRows.length === 0 ? (
-          marActiveCount > 0 ? (
-            <p style={marHintStyle}>
-              This client has {marActiveCount} active medication order{marActiveCount === 1 ? '' : 's'}, but none
-              apply to the date of service{marDate ? ` (${marDate})` : ''}. Check the date of service on Page 1 and the
-              order&apos;s start / end dates under Records; a shift dated before an order&apos;s start date won&apos;t show it.
-            </p>
-          ) : (
-            <p style={marHintStyle}>
-              No medications are on this client&apos;s MAR yet. If this client should have a MAR, build their orders
-              under Records.
-            </p>
-          )
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <p style={marHintStyle}>
-              Mark each due dose. Entries are saved when you submit the note and cannot be edited afterward.
-            </p>
-            {marRows.map(({ order, slot }) => {
-              const key = marAdminKey(marPatientId, order.id || '', slot);
-              const rec = marAdminState[key];
-              const status = rec?.status || '';
-              const isNurseAdmin = !rec || !rec.administeredByType || rec.administeredByType === 'nurse';
-              // A dose already documented for this slot today (by anyone); warn
-              // before the nurse double-documents. Doesn't block: corrections
-              // and legitimate repeat doses are still possible.
-              const prior = dayAdmins.find(
-                (a) => a.orderId === (order.id || '') && a.scheduledTime === slot,
-              );
-              return (
-                <div key={key} style={marCardStyle}>
-                  <div style={marCardHeadStyle}>
-                    <div>
-                      <span style={{ fontWeight: 700, color: '#1f2937' }}>{order.medName}</span>
-                      <span style={{ color: '#6b7280', marginLeft: 8, fontSize: 13 }}>
-                        {order.dose}{order.units ? ` ${order.units}` : ''} · {order.route}
-                      </span>
+            {marRows.length === 0 && extraMarks.length === 0 ? (
+              marActiveCount > 0 ? (
+                <p style={marHintStyle}>
+                  This client has {marActiveCount} active medication order{marActiveCount === 1 ? '' : 's'}, but none
+                  apply to the date of service{marDate ? ` (${marDate})` : ''}. Check the date of service on Page 1 and the
+                  order&apos;s start / end dates under Records; a shift dated before an order&apos;s start date won&apos;t show it.
+                </p>
+              ) : (
+                <p style={marHintStyle}>
+                  No medications are on this client&apos;s MAR yet. If this client should have a MAR, build their orders
+                  under Records.
+                </p>
+              )
+            ) : (
+              <>
+                <p style={marHintStyle}>
+                  Mark each due dose. Entries are saved when you submit the note and cannot be edited afterward.
+                </p>
+                {marRows.map(({ order, slot }) => {
+                  const key = marAdminKey(marPatientId, order.id || '', slot);
+                  return renderDoseCard({
+                    cardKey: key,
+                    rec: marAdminState[key],
+                    medName: order.medName,
+                    doseLabel: `${order.dose}${order.units ? ` ${order.units}` : ''} · ${order.route}`,
+                    badgeLabel: slot === 'PRN' ? 'PRN' : slot,
+                    badgeStyle: slot === 'PRN' ? marPrnBadgeStyle : marSlotBadgeStyle,
+                    prior: priorFor(order.id || '', slot, order.medName),
+                    onPatch: (patch) => updateMark(order, slot, patch),
+                    isPRN: slot === 'PRN',
+                  });
+                })}
+                {extraMarks.length > 0 && (
+                  <>
+                    <div style={marExtraHeaderStyle}>
+                      Other doses documented this shift
                     </div>
-                    <span style={slot === 'PRN' ? marPrnBadgeStyle : marSlotBadgeStyle}>
-                      {slot === 'PRN' ? 'PRN' : slot}
-                    </span>
-                  </div>
-
-                  {prior && (
-                    <div style={marAlreadyChipStyle}>
-                      Already documented today: {prior.status === 'given' ? 'given' : prior.status}
-                      {prior.status === 'given' && prior.actualTime ? ` at ${prior.actualTime}` : ''}
-                      {prior.initials ? ` (${prior.initials})` : ''}
-                      {prior.documentedByName ? ` · by ${prior.documentedByName}` : ''}
-                    </div>
-                  )}
-
-                  <div style={marStatusRowStyle}>
-                    {(['given', 'held', 'refused'] as const).map((s) => (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => updateMark(order, slot, { status: status === s ? '' : s })}
-                        style={status === s ? marStatusBtnActive[s] : marStatusBtnStyle}
-                      >
-                        {s === 'given' ? 'Given' : s === 'held' ? 'Held' : 'Refused'}
-                      </button>
-                    ))}
-                  </div>
-
-                  {status === 'given' && (
-                    <div style={marDetailGridStyle}>
-                      <label style={marFieldStyle}>
-                        <span style={marFieldLabelStyle}>Time given</span>
-                        <input
-                          type="time"
-                          value={rec?.actualTime || ''}
-                          onChange={(e) => updateMark(order, slot, { actualTime: e.target.value })}
-                          style={marInputStyle}
-                        />
-                      </label>
-                      <label style={marFieldStyle}>
-                        <span style={marFieldLabelStyle}>Initials</span>
-                        <input
-                          type="text"
-                          value={rec?.initials || ''}
-                          onChange={(e) => updateMark(order, slot, { initials: e.target.value })}
-                          style={marInputStyle}
-                          maxLength={5}
-                        />
-                      </label>
-                      <label style={marFieldStyle}>
-                        <span style={marFieldLabelStyle}>Administered by</span>
-                        <select
-                          value={rec?.administeredByType || 'nurse'}
-                          onChange={(e) => updateMark(order, slot, { administeredByType: e.target.value })}
-                          style={marSelectStyle}
-                        >
-                          {ADMIN_BY_OPTIONS.map((o) => (
-                            <option key={o.value} value={o.value}>{o.label}</option>
-                          ))}
-                        </select>
-                      </label>
-                      {!isNurseAdmin && (
-                        <label style={marFieldStyle}>
-                          <span style={marFieldLabelStyle}>Administrator name</span>
-                          <input
-                            type="text"
-                            value={rec?.administratorName || ''}
-                            onChange={(e) => updateMark(order, slot, { administratorName: e.target.value })}
-                            style={marInputStyle}
-                            placeholder="e.g., Jane Doe (daughter)"
-                          />
-                        </label>
-                      )}
-                    </div>
-                  )}
-
-                  {(status === 'held' || status === 'refused') && (
-                    <label style={{ ...marFieldStyle, marginTop: 10 }}>
-                      <span style={marFieldLabelStyle}>Reason</span>
-                      <input
-                        type="text"
-                        value={rec?.reason || ''}
-                        onChange={(e) => updateMark(order, slot, { reason: e.target.value })}
-                        style={marInputStyle}
-                        placeholder={status === 'refused' ? 'Reason for refusal' : 'Reason held / omitted'}
-                      />
-                    </label>
-                  )}
-                </div>
-              );
-            })}
+                    {extraMarks.map((rec) => {
+                      // A genuine unlisted one-off (added via the change-request
+                      // modal) carries no orderId; show it as an "Unscheduled"
+                      // one-off that can be removed. A record WITH an orderId is a
+                      // real scheduled dose whose order just isn't on the current
+                      // date's list (e.g. the date of service was changed) — show
+                      // it under its real time, never as a removable "one-off",
+                      // so a legitimate administration can't be mislabeled or
+                      // accidentally dropped.
+                      const isUnlisted = !rec.orderId;
+                      const sched = rec.scheduledTime;
+                      const badgeLabel = isUnlisted || !sched || sched === 'unscheduled'
+                        ? 'Unscheduled'
+                        : sched === 'PRN' ? 'PRN' : sched;
+                      const badgeStyle = badgeLabel === 'Unscheduled' || badgeLabel === 'PRN'
+                        ? marPrnBadgeStyle
+                        : marSlotBadgeStyle;
+                      return renderDoseCard({
+                        cardKey: rec.key,
+                        rec,
+                        medName: rec.medName,
+                        doseLabel: `${rec.dose}${rec.units ? ` ${rec.units}` : ''} · ${rec.route}`,
+                        badgeLabel,
+                        badgeStyle,
+                        prior: priorFor(rec.orderId || '', rec.scheduledTime, rec.medName),
+                        onPatch: (patch) => patchMarkByKey(rec.key, rec, patch),
+                        extra: isUnlisted,
+                        isPRN: rec.isPRN || sched === 'PRN',
+                      });
+                    })}
+                  </>
+                )}
+              </>
+            )}
           </div>
         )}
 
@@ -718,6 +799,8 @@ const marSelectStyle: CSSProperties = {
 const requestChangeBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 14, background: 'white', color: '#1a3a5c', border: '1px solid #c8def5', padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const viewChartBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 14, background: '#1a3a5c', color: 'white', border: '1px solid #1a3a5c', padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const marAlreadyChipStyle: CSSProperties = { marginTop: 8, background: '#fff7e6', border: '1px solid #f5d9a8', color: '#8a5a0d', borderRadius: 6, padding: '7px 10px', fontSize: 12.5, lineHeight: 1.45 };
+const marExtraNoteStyle: CSSProperties = { marginTop: 6, color: '#6b7280', fontSize: 12, fontStyle: 'italic' };
+const marExtraHeaderStyle: CSSProperties = { marginTop: 6, fontSize: 12, fontWeight: 700, color: '#5c6b7a', textTransform: 'uppercase', letterSpacing: 0.4 };
 const marFiledBannerStyle: CSSProperties = { marginTop: 12, background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#065f46', borderRadius: 6, padding: '10px 12px', fontSize: 13, lineHeight: 1.5 };
 const stagedBoxStyle: CSSProperties = { marginTop: 12, border: '1px solid #c8def5', background: '#f5f9fe', borderRadius: 8, padding: 10 };
 const stagedHeaderStyle: CSSProperties = { fontSize: 12, fontWeight: 700, color: '#1a3a5c', marginBottom: 8 };
