@@ -19,6 +19,7 @@ import {
   type MarOrder,
   type MarActor,
 } from '@/lib/mar';
+import { MED_FREQUENCIES } from '@/lib/medFrequencies';
 
 interface OrderForm {
   medName: string;
@@ -94,6 +95,9 @@ export default function RecordDetailPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<OrderForm>(emptyForm());
   const [submitting, setSubmitting] = useState(false);
+
+  // Read-only order detail (opened by clicking a medication row)
+  const [viewOrder, setViewOrder] = useState<MarOrder | null>(null);
 
   // Discontinue modal
   const [dcTarget, setDcTarget] = useState<MarOrder | null>(null);
@@ -313,11 +317,13 @@ export default function RecordDetailPage() {
                   orders={activeOrders}
                   onEdit={openEdit}
                   onDiscontinue={openDiscontinue}
+                  onView={setViewOrder}
                 />
                 {discontinuedOrders.length > 0 && (
                   <OrderTable
                     title={`Discontinued (${discontinuedOrders.length})`}
                     orders={discontinuedOrders}
+                    onView={setViewOrder}
                     discontinued
                   />
                 )}
@@ -398,13 +404,24 @@ export default function RecordDetailPage() {
                   </select>
                 </Field>
                 <Field label="Frequency">
-                  <input
-                    type="text"
+                  <select
                     value={form.frequencyLabel}
                     onChange={(e) => setForm((f) => ({ ...f, frequencyLabel: e.target.value }))}
-                    style={inputStyle}
-                    placeholder="e.g., BID, Q8H"
-                  />
+                    style={selectStyle}
+                  >
+                    <option value="">Select frequency…</option>
+                    {/* Preserve a pre-existing free-text value that isn't one of
+                        the standard options, so editing an old order doesn't
+                        silently blank or change its frequency. */}
+                    {form.frequencyLabel && !MED_FREQUENCIES.includes(form.frequencyLabel as (typeof MED_FREQUENCIES)[number]) && (
+                      <option value={form.frequencyLabel}>{form.frequencyLabel} (current)</option>
+                    )}
+                    {MED_FREQUENCIES.map((freq) => (
+                      <option key={freq} value={freq}>
+                        {freq}
+                      </option>
+                    ))}
+                  </select>
                 </Field>
               </div>
 
@@ -550,7 +567,82 @@ export default function RecordDetailPage() {
         </div>
       )}
 
+      {/* Read-only order detail (click a medication row to open) */}
+      {viewOrder && (
+        <div style={modalBackdropStyle} onClick={() => setViewOrder(null)}>
+          <div style={{ ...modalStyle, maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
+            <div style={modalHeaderStyle}>
+              <h2 style={{ margin: 0, fontSize: 18, color: '#2c3e50' }}>Medication order</h2>
+              <button onClick={() => setViewOrder(null)} style={closeBtnStyle} aria-label="Close">
+                ✕
+              </button>
+            </div>
+            <div style={{ padding: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+                <span style={{ fontSize: 18, fontWeight: 700, color: '#1a3a5c' }}>{viewOrder.medName}</span>
+                {viewOrder.isPRN && <span style={prnBadgeStyle}>PRN</span>}
+                {viewOrder.status === 'discontinued' && <span style={dcBadgeStyle}>Discontinued</span>}
+              </div>
+
+              <div style={detailGridStyle}>
+                <DetailRow label="Dose" value={`${viewOrder.dose}${viewOrder.units ? ` ${viewOrder.units}` : ''}`} />
+                <DetailRow label="Route" value={viewOrder.route} />
+                <DetailRow label="Frequency" value={viewOrder.frequencyLabel} />
+                <DetailRow label="Schedule" value={scheduleSummary(viewOrder)} />
+                <DetailRow label="Start date" value={formatDate(viewOrder.startDate)} />
+                <DetailRow
+                  label="End date"
+                  value={viewOrder.endDate ? formatDate(viewOrder.endDate) : viewOrder.status === 'discontinued' ? '-' : 'Ongoing'}
+                />
+                <DetailRow label="Ordering physician" value={viewOrder.orderingPhysician} />
+              </div>
+
+              {viewOrder.notes && (
+                <div style={{ marginTop: 14 }}>
+                  <div style={detailLabelStyle}>Notes</div>
+                  <div style={{ ...detailValueStyle, whiteSpace: 'pre-wrap' }}>{viewOrder.notes}</div>
+                </div>
+              )}
+
+              {viewOrder.status === 'discontinued' && (
+                <div style={{ marginTop: 14, background: '#fdecea', border: '1px solid #f5c6c0', borderRadius: 8, padding: '10px 12px' }}>
+                  <div style={detailLabelStyle}>Discontinued</div>
+                  <div style={detailValueStyle}>
+                    {viewOrder.discontinueReason || '-'}
+                    {viewOrder.endDate ? ` (effective ${formatDate(viewOrder.endDate)})` : ''}
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 10, marginTop: 18, justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => setViewOrder(null)} style={secondaryBtnStyle}>
+                  Close
+                </button>
+                {viewOrder.status === 'active' && (
+                  <button
+                    type="button"
+                    onClick={() => { const o = viewOrder; setViewOrder(null); openEdit(o); }}
+                    style={primaryBtnStyle}
+                  >
+                    <Pencil size={14} /> Edit order
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {toast && <div style={toastStyle}>{toast}</div>}
+    </div>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div>
+      <div style={detailLabelStyle}>{label}</div>
+      <div style={detailValueStyle}>{value || <span style={{ color: '#aaa' }}>-</span>}</div>
     </div>
   );
 }
@@ -571,12 +663,14 @@ function OrderTable({
   orders,
   onEdit,
   onDiscontinue,
+  onView,
   discontinued,
 }: {
   title: string;
   orders: MarOrder[];
   onEdit?: (o: MarOrder) => void;
   onDiscontinue?: (o: MarOrder) => void;
+  onView?: (o: MarOrder) => void;
   discontinued?: boolean;
 }) {
   return (
@@ -597,7 +691,14 @@ function OrderTable({
           </thead>
           <tbody>
             {orders.map((o, i) => (
-              <tr key={o.id} style={i % 2 === 1 ? altRowStyle : undefined}>
+              <tr
+                key={o.id}
+                style={{ ...(i % 2 === 1 ? altRowStyle : undefined), cursor: onView ? 'pointer' : undefined }}
+                onClick={onView ? () => onView(o) : undefined}
+                title={onView ? `View ${o.medName} order` : undefined}
+                onMouseEnter={onView ? (e) => { e.currentTarget.style.background = '#f1f5f9'; } : undefined}
+                onMouseLeave={onView ? (e) => { e.currentTarget.style.background = i % 2 === 1 ? '#f9fafb' : 'white'; } : undefined}
+              >
                 <td style={tdStyle}>
                   <div style={{ fontWeight: 600, color: '#2c3e50' }}>{o.medName}</div>
                   {o.frequencyLabel && <div style={subTextStyle}>{o.frequencyLabel}</div>}
@@ -611,7 +712,8 @@ function OrderTable({
                   {o.endDate ? ` → ${formatDate(o.endDate)}` : discontinued ? '' : ' → ongoing'}
                 </td>
                 {!discontinued && (
-                  <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  // Stop row-click (view) from firing when using the action buttons.
+                  <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                     <button onClick={() => onEdit?.(o)} style={iconBtnStyle} aria-label={`Edit ${o.medName}`} title="Edit">
                       <Pencil size={14} />
                     </button>
@@ -673,6 +775,10 @@ const tdStyle: React.CSSProperties = { padding: '11px 14px', borderBottom: '1px 
 const altRowStyle: React.CSSProperties = { background: '#fafbfc' };
 const subTextStyle: React.CSSProperties = { fontSize: 12, color: '#7f8c8d', marginTop: 2 };
 const prnBadgeStyle: React.CSSProperties = { display: 'inline-block', marginTop: 4, background: '#fef3e2', color: '#b56a17', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4 };
+const dcBadgeStyle: React.CSSProperties = { display: 'inline-block', background: '#fdecea', color: '#b3261e', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999, letterSpacing: 0.4, textTransform: 'uppercase' };
+const detailGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 14 };
+const detailLabelStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: '#9aa6b2', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 };
+const detailValueStyle: React.CSSProperties = { fontSize: 14.5, color: '#2c3e50' };
 const primaryBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#27ae60', color: 'white', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
 const secondaryBtnStyle: React.CSSProperties = { background: '#eef1f4', color: '#2c3e50', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const dangerBtnStyle: React.CSSProperties = { background: '#c0392b', color: 'white', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };

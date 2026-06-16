@@ -4,6 +4,7 @@ import { useState, type CSSProperties } from 'react';
 import { X, Plus, Clock } from 'lucide-react';
 import { stageChangeRequest, type MarOrder, type MarDocumenter, type MarChangeRequestType } from '@/lib/mar';
 import { setMarAdmin } from './marAdminStore';
+import { MED_FREQUENCIES } from '@/lib/medFrequencies';
 
 const ROUTES = ['PO (by mouth)', 'SL (sublingual)', 'Topical', 'Inhalation', 'Subcutaneous', 'IM', 'IV', 'Rectal', 'G-tube', 'J-tube', 'NG tube', 'Ophthalmic', 'Otic', 'Nasal'];
 const UNITS = ['mg', 'mcg', 'g', 'mL', 'units', 'mEq', 'tablet(s)', 'capsule(s)', 'puff(s)', 'drop(s)', 'patch(es)', 'spray(s)', '%'];
@@ -267,7 +268,13 @@ export default function MedChangeRequestModal({
                     </select>
                   </Field>
                   <Field label="Frequency">
-                    <input type="text" value={frequencyLabel} onChange={(e) => setFrequencyLabel(e.target.value)} style={input} placeholder="e.g., BID, Q8H" />
+                    <select value={frequencyLabel} onChange={(e) => setFrequencyLabel(e.target.value)} style={select}>
+                      <option value="">Select frequency…</option>
+                      {frequencyLabel && !MED_FREQUENCIES.includes(frequencyLabel as (typeof MED_FREQUENCIES)[number]) && (
+                        <option value={frequencyLabel}>{frequencyLabel} (current)</option>
+                      )}
+                      {MED_FREQUENCIES.map((freq) => <option key={freq} value={freq}>{freq}</option>)}
+                    </select>
                   </Field>
                 </div>
 
