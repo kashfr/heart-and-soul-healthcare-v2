@@ -335,6 +335,9 @@ function StaffTable({
                 </td>
                 <td style={{ ...tdStyle, textAlign: 'right', color: '#94a3b8' }}>
                   <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+                    {/* Edit affordance first (the whole row is clickable to edit),
+                        then the View as action sits at the right edge. */}
+                    {isLockedForSupervisor ? <Lock size={14} /> : <Pencil size={14} />}
                     {/* View as: admin-only, never on self or another admin. Read-only. */}
                     {onViewAs && !isSelf && s.role !== 'admin' && s.active && (
                       <button
@@ -349,7 +352,6 @@ function StaffTable({
                         View as
                       </button>
                     )}
-                    {isLockedForSupervisor ? <Lock size={14} /> : <Pencil size={14} />}
                   </div>
                 </td>
               </tr>
