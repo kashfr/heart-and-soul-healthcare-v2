@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState, type FormEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { useAuth } from '@/components/AuthProvider';
 
@@ -12,6 +12,9 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirect = searchParams.get('redirect') || '/admin';
+  // Set when the /reset-password page couldn't auto-sign-in after a successful
+  // reset (rare). Show a clear "you're all set, just sign in" banner.
+  const justReset = searchParams.get('reset') === '1';
   const { user, loading } = useAuth();
 
   const [mode, setMode] = useState<Mode>('signIn');
@@ -65,21 +68,23 @@ function LoginForm() {
     setError(null);
     const target = email.trim();
     try {
-      await sendPasswordResetEmail(auth, target);
-    } catch (err) {
-      const code = (err as { code?: string }).code || '';
-      // Intentionally treat auth/user-not-found the same as success below —
-      // we don't want to reveal which emails have accounts.
-      if (code === 'auth/invalid-email') {
-        setError('Please enter a valid email address.');
-        setSubmitting(false);
-        return;
-      } else if (code === 'auth/too-many-requests') {
-        setError('Too many requests. Please try again in a few minutes.');
+      // Server route sends our own branded reset email pointing at the
+      // /reset-password page. It always responds OK unless the email is
+      // malformed, so we never reveal which addresses have accounts.
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: target }),
+      });
+      if (res.status === 400) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || 'Please enter a valid email address.');
         setSubmitting(false);
         return;
       }
-      // Fall through to success state even on other errors.
+      // Any other status: fall through to the success screen.
+    } catch {
+      // Network error: still show success to avoid leaking account existence.
     }
     setResetSentTo(target);
     setSubmitting(false);
@@ -92,6 +97,12 @@ function LoginForm() {
           <>
             <h1 style={titleStyle}>Sign in</h1>
             <p style={subtitleStyle}>Heart and Soul Healthcare staff portal</p>
+
+            {justReset && (
+              <div style={successStyle}>
+                ✓ Your password was updated. Please sign in with your new password.
+              </div>
+            )}
 
             <form onSubmit={handleSignIn} style={formStyle}>
               <label style={labelStyle}>
@@ -288,6 +299,17 @@ const errorStyle: React.CSSProperties = {
   padding: '10px 12px',
   borderRadius: 6,
   fontSize: 13,
+};
+
+const successStyle: React.CSSProperties = {
+  background: '#d1fae5',
+  color: '#065f46',
+  border: '1px solid #10b981',
+  padding: '10px 12px',
+  borderRadius: 6,
+  fontSize: 13,
+  fontWeight: 500,
+  marginBottom: 16,
 };
 
 const primaryBtnStyle: React.CSSProperties = {

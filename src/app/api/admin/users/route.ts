@@ -5,6 +5,7 @@ import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
 import type { Role } from '@/lib/auth';
 import { sendStaffInvite } from '@/lib/emails/staffInvite';
+import { toAppResetLink } from '@/lib/resetLink';
 import { formatUSPhone, isValidUSPhone, phoneDigits } from '@/lib/phone';
 
 interface CreateUserBody {
@@ -135,9 +136,10 @@ export async function POST(request: Request) {
     await batch.commit();
   }
 
-  // Generate a password-reset link so the new user can set their own password.
-  // The link opens Firebase's hosted reset page for this project.
-  const resetLink = await adminAuth().generatePasswordResetLink(email);
+  // Generate a password-reset link so the new user can set their own password,
+  // routed through our branded /reset-password page (sets the password and signs
+  // them straight in) rather than Firebase's default hosted page.
+  const resetLink = toAppResetLink(await adminAuth().generatePasswordResetLink(email));
 
   // Send the invitation email automatically via Resend. We return the
   // outcome (and keep the resetLink in the payload) so the caller can fall

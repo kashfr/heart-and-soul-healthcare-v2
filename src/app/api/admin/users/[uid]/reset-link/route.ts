@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
 import { sendStaffInvite, type StaffInviteRole } from '@/lib/emails/staffInvite';
+import { toAppResetLink } from '@/lib/resetLink';
 
 export async function POST(
   request: Request,
@@ -37,7 +38,9 @@ export async function POST(
     );
   }
 
-  const resetLink = await adminAuth().generatePasswordResetLink(email);
+  // Route the link through our own branded /reset-password page (which sets the
+  // password and signs the user straight in) instead of Firebase's default page.
+  const resetLink = toAppResetLink(await adminAuth().generatePasswordResetLink(email));
 
   // Auto-send the fresh link to the user so the admin doesn't have to copy +
   // paste. The resetLink is still returned in the payload as a copy-paste
