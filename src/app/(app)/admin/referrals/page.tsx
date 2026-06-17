@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Search, X, Inbox, Phone, Mail, RefreshCw } from 'lucide-react';
+import { Search, X, Inbox, Phone, Mail, RefreshCw, Printer, Download } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 
 type ReferralSource = 'gapp-website' | 'hs-website';
@@ -49,6 +49,55 @@ function formatDate(iso: string | null): string {
   });
 }
 
+// Build the ordered field rows shown in both the detail view and the print sheet.
+function fieldRows(r: Referral): ReferralDetail[] {
+  return [
+    { label: 'Program', value: r.program },
+    { label: 'County', value: r.county },
+    ...(r.referrerName ? [{ label: 'Referred by', value: r.referrerName }] : []),
+    ...r.details,
+  ];
+}
+
+function csvEscape(value: string): string {
+  const s = (value ?? '').toString();
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function downloadCsv(list: Referral[]) {
+  const headers = [
+    'Name', 'Phone', 'Email', 'County', 'Program', 'Source', 'Status',
+    'Received', 'Referred by', 'Details',
+  ];
+  const rows = list.map((r) =>
+    [
+      r.clientName,
+      r.clientPhone,
+      r.clientEmail,
+      r.county,
+      r.program,
+      SOURCE_LABEL[r.source] ?? r.source,
+      STATUS_LABEL[r.status],
+      r.submittedAt ? new Date(r.submittedAt).toLocaleString() : '',
+      r.referrerName ?? '',
+      r.details.map((d) => `${d.label}: ${d.value}`).join(' | '),
+    ]
+      .map(csvEscape)
+      .join(',')
+  );
+  // Prepend a BOM so Excel reads UTF-8 correctly.
+  const csv = '﻿' + [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `referrals-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 export default function ReferralsPage() {
   const [referrals, setReferrals] = useState<Referral[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,6 +106,8 @@ export default function ReferralsPage() {
   const [q, setQ] = useState('');
   const [selected, setSelected] = useState<Referral | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [printList, setPrintList] = useState<Referral[] | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -80,15 +131,17 @@ export default function ReferralsPage() {
     load();
   }, [load]);
 
-  // Close the detail modal on Escape.
+  // Close the detail modal / print preview on Escape.
   useEffect(() => {
-    if (!selected) return;
+    if (!selected && !printList) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setSelected(null);
+      if (e.key !== 'Escape') return;
+      if (printList) setPrintList(null);
+      else setSelected(null);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selected]);
+  }, [selected, printList]);
 
   const scoped = useMemo(() => {
     if (scope === 'all') return referrals;
@@ -108,12 +161,50 @@ export default function ReferralsPage() {
 
   const counts = useMemo(
     () => ({
-      newCount: referrals.filter((r) => r.status === 'new').length,
       active: referrals.filter((r) => r.status !== 'archived').length,
       archived: referrals.filter((r) => r.status === 'archived').length,
     }),
     [referrals]
   );
+
+  // Selection is always interpreted against the current filtered view.
+  const selectedVisible = useMemo(
+    () => filtered.filter((r) => selectedIds.has(r.id)),
+    [filtered, selectedIds]
+  );
+  const allVisibleSelected =
+    filtered.length > 0 && filtered.every((r) => selectedIds.has(r.id));
+  const someVisibleSelected =
+    filtered.some((r) => selectedIds.has(r.id)) && !allVisibleSelected;
+
+  const toggleOne = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const toggleAllVisible = () =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) filtered.forEach((r) => next.delete(r.id));
+      else filtered.forEach((r) => next.add(r.id));
+      return next;
+    });
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const changeScope = (s: Scope) => {
+    setScope(s);
+    clearSelection();
+  };
+
+  // Print/export act on the selection when there is one, else the whole view.
+  const actionTarget = selectedVisible.length > 0 ? selectedVisible : filtered;
+  const openPrint = (list: Referral[]) => {
+    if (list.length > 0) setPrintList(list);
+  };
 
   const setStatus = async (referral: Referral, status: ReferralStatus) => {
     setSavingId(referral.id);
@@ -158,7 +249,7 @@ export default function ReferralsPage() {
             {(['active', 'archived', 'all'] as Scope[]).map((s) => (
               <button
                 key={s}
-                onClick={() => setScope(s)}
+                onClick={() => changeScope(s)}
                 style={scope === s ? { ...tabStyle, ...tabActiveStyle } : tabStyle}
               >
                 {s === 'active'
@@ -185,6 +276,33 @@ export default function ReferralsPage() {
           </div>
         </div>
 
+        {!loading && !error && filtered.length > 0 && (
+          <div style={actionsBarStyle}>
+            <div style={{ fontSize: 13, color: '#5c6b7a', fontWeight: 600 }}>
+              {selectedVisible.length > 0
+                ? `${selectedVisible.length} selected`
+                : `${filtered.length} referral${filtered.length === 1 ? '' : 's'}`}
+            </div>
+            {selectedVisible.length > 0 && (
+              <button onClick={clearSelection} style={linkBtnStyle}>
+                Clear
+              </button>
+            )}
+            <div style={{ flex: 1 }} />
+            <button
+              onClick={() => openPrint(actionTarget)}
+              style={actionBtnStyle}
+              title="Open a printable call sheet for these referrals"
+            >
+              <Printer size={15} /> Print
+              {selectedVisible.length > 0 ? ` (${selectedVisible.length})` : ' all'}
+            </button>
+            <button onClick={() => downloadCsv(actionTarget)} style={archiveBtnStyle}>
+              <Download size={15} /> Export CSV
+            </button>
+          </div>
+        )}
+
         {loading ? (
           <div style={emptyStyle}>Loading…</div>
         ) : error ? (
@@ -206,6 +324,18 @@ export default function ReferralsPage() {
             <table style={tableStyle}>
               <thead>
                 <tr>
+                  <th style={{ ...thStyle, width: 40 }}>
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = someVisibleSelected;
+                      }}
+                      onChange={toggleAllVisible}
+                      aria-label="Select all referrals"
+                      style={{ cursor: 'pointer' }}
+                    />
+                  </th>
                   <th style={thStyle}>Name</th>
                   <th style={thStyle}>Program</th>
                   <th style={thStyle}>County</th>
@@ -230,6 +360,18 @@ export default function ReferralsPage() {
                     aria-label={`Open referral from ${r.clientName || 'unknown'}`}
                     style={rowStyle}
                   >
+                    <td
+                      style={tdStyle}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(r.id)}
+                        onChange={() => toggleOne(r.id)}
+                        aria-label={`Select referral from ${r.clientName || 'unknown'}`}
+                        style={{ cursor: 'pointer' }}
+                      />
+                    </td>
                     <td style={{ ...tdStyle, fontWeight: 600 }}>{r.clientName || '—'}</td>
                     <td style={tdStyle}>{r.program || '—'}</td>
                     <td style={tdStyle}>{r.county || '—'}</td>
@@ -251,12 +393,12 @@ export default function ReferralsPage() {
       {selected && (
         <div style={modalBackdropStyle} onClick={() => setSelected(null)}>
           <div
-          style={modalStyle}
-          onClick={(e) => e.stopPropagation()}
-          role="dialog"
-          aria-modal="true"
-          aria-label={`Referral from ${selected.clientName || 'unknown'}`}
-        >
+            style={modalStyle}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Referral from ${selected.clientName || 'unknown'}`}
+          >
             <div style={modalHeaderStyle}>
               <div>
                 <div style={{ fontSize: 18, fontWeight: 700, color: '#2c3e50' }}>
@@ -288,12 +430,7 @@ export default function ReferralsPage() {
 
               <table style={detailTableStyle}>
                 <tbody>
-                  <DetailRow label="Program" value={selected.program} />
-                  <DetailRow label="County" value={selected.county} />
-                  {selected.referrerName ? (
-                    <DetailRow label="Referred by" value={selected.referrerName} />
-                  ) : null}
-                  {selected.details.map((d, i) => (
+                  {fieldRows(selected).map((d, i) => (
                     <DetailRow key={i} label={d.label} value={d.value} />
                   ))}
                 </tbody>
@@ -303,6 +440,9 @@ export default function ReferralsPage() {
             <div style={modalFooterStyle}>
               <StatusBadge status={selected.status} />
               <div style={{ flex: 1 }} />
+              <button onClick={() => openPrint([selected])} style={archiveBtnStyle}>
+                <Printer size={15} /> Print
+              </button>
               {selected.status !== 'contacted' && (
                 <button
                   onClick={() => setStatus(selected, 'contacted')}
@@ -333,6 +473,56 @@ export default function ReferralsPage() {
           </div>
         </div>
       )}
+
+      {printList && (
+        <div style={printOverlayStyle}>
+          <div className="referral-print-toolbar" style={printToolbarStyle}>
+            <span style={{ fontWeight: 700 }}>
+              Print preview — {printList.length} referral{printList.length === 1 ? '' : 's'}
+            </span>
+            <span style={{ fontSize: 12, opacity: 0.8 }}>
+              Each referral prints on its own page with a call log.
+            </span>
+            <div style={{ flex: 1 }} />
+            <button onClick={() => window.print()} style={printNowBtnStyle}>
+              <Printer size={15} /> Print
+            </button>
+            <button onClick={() => setPrintList(null)} style={printCloseBtnStyle}>
+              Close
+            </button>
+          </div>
+          <div className="referral-print-root" style={printRootStyle}>
+            {printList.map((r) => (
+              <ReferralPrintSheet key={r.id} referral={r} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @media print {
+          @page { margin: 0.5in; }
+          body * { visibility: hidden !important; }
+          .referral-print-root, .referral-print-root * { visibility: visible !important; }
+          .referral-print-root {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            padding: 0 !important;
+            background: #fff !important;
+          }
+          .referral-print-toolbar { display: none !important; }
+          .referral-print-sheet {
+            box-shadow: none !important;
+            border: none !important;
+            margin: 0 !important;
+            max-width: none !important;
+            page-break-after: always;
+          }
+          .referral-print-sheet:last-child { page-break-after: auto; }
+        }
+      `}</style>
     </div>
   );
 }
@@ -355,6 +545,86 @@ function DetailRow({ label, value }: { label: string; value: string }) {
         {value ? value : <span style={{ color: '#9ca3af' }}>—</span>}
       </td>
     </tr>
+  );
+}
+
+// A printable one-per-page call sheet: contact info, all referral fields, and a
+// blank outreach log for the nurse to fill in by hand.
+function ReferralPrintSheet({ referral }: { referral: Referral }) {
+  return (
+    <div className="referral-print-sheet" style={sheetStyle}>
+      <div style={sheetHeaderStyle}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: '#111' }}>
+            Heart &amp; Soul Healthcare
+          </div>
+          <div style={{ fontSize: 12, color: '#555' }}>Referral Call Sheet</div>
+        </div>
+        <div style={{ textAlign: 'right', fontSize: 12, color: '#555', lineHeight: 1.5 }}>
+          <div>Source: {SOURCE_LABEL[referral.source] ?? referral.source}</div>
+          <div>Received: {formatDate(referral.submittedAt)}</div>
+          <div>Status: {STATUS_LABEL[referral.status]}</div>
+        </div>
+      </div>
+
+      <h2 style={{ fontSize: 22, margin: '14px 0 6px', color: '#111' }}>
+        {referral.clientName || 'Referral'}
+      </h2>
+
+      <div style={contactLineStyle}>
+        <span>
+          <strong>Phone:</strong> {referral.clientPhone || '________________________'}
+        </span>
+        <span>
+          <strong>Email:</strong> {referral.clientEmail || '________________________'}
+        </span>
+      </div>
+
+      <table style={printTableStyle}>
+        <tbody>
+          {fieldRows(referral).map((d, i) => (
+            <tr key={i}>
+              <td style={printLabelCell}>{d.label}</td>
+              <td style={printValueCell}>{d.value || ''}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div style={logTitleStyle}>Outreach Log</div>
+      <table style={printTableStyle}>
+        <thead>
+          <tr>
+            <th style={{ ...logHeadCell, width: 60 }}>Attempt</th>
+            <th style={{ ...logHeadCell, width: 110 }}>Date</th>
+            <th style={{ ...logHeadCell, width: 80 }}>Time</th>
+            <th style={logHeadCell}>Outcome</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[1, 2, 3].map((n) => (
+            <tr key={n}>
+              <td style={logCell}>{n}</td>
+              <td style={logCell} />
+              <td style={logCell} />
+              <td style={logCell}>{'☐'} Reached&nbsp;&nbsp; {'☐'} Voicemail&nbsp;&nbsp; {'☐'} No answer</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div style={{ marginTop: 12, fontSize: 13, color: '#111' }}>
+        <strong>Follow-up date:</strong> ____________________ &nbsp;&nbsp;
+        <strong>Result:</strong> {'☐'} Scheduled&nbsp;&nbsp; {'☐'} Needs info&nbsp;&nbsp; {'☐'} Not interested
+      </div>
+
+      <div style={{ marginTop: 14, fontSize: 13, fontWeight: 700, color: '#111' }}>Notes</div>
+      <div style={{ marginTop: 6 }}>
+        {[0, 1, 2, 3, 4, 5].map((i) => (
+          <div key={i} style={noteLineStyle} />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -445,6 +715,22 @@ const searchClearStyle: React.CSSProperties = {
   color: '#94a3b8',
   cursor: 'pointer',
   display: 'inline-flex',
+};
+const actionsBarStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 10,
+  marginBottom: 12,
+};
+const linkBtnStyle: React.CSSProperties = {
+  background: 'transparent',
+  border: 'none',
+  color: '#1a3a5c',
+  fontSize: 13,
+  fontWeight: 600,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  textDecoration: 'underline',
 };
 const emptyStyle: React.CSSProperties = {
   textAlign: 'center',
@@ -578,8 +864,12 @@ const modalFooterStyle: React.CSSProperties = {
   gap: 10,
   padding: '14px 20px',
   borderTop: '1px solid #e5e7eb',
+  flexWrap: 'wrap',
 };
 const actionBtnStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
   background: '#1a3a5c',
   color: 'white',
   border: 'none',
@@ -591,6 +881,9 @@ const actionBtnStyle: React.CSSProperties = {
   fontFamily: 'inherit',
 };
 const archiveBtnStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
   background: 'white',
   color: '#5c6b7a',
   border: '1px solid #d1d5db',
@@ -600,4 +893,125 @@ const archiveBtnStyle: React.CSSProperties = {
   fontWeight: 600,
   cursor: 'pointer',
   fontFamily: 'inherit',
+};
+
+// --- Print preview overlay + sheet styles ---
+const printOverlayStyle: React.CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  background: '#e9edf1',
+  zIndex: 2000,
+  overflowY: 'auto',
+};
+const printToolbarStyle: React.CSSProperties = {
+  position: 'sticky',
+  top: 0,
+  display: 'flex',
+  alignItems: 'center',
+  gap: 14,
+  padding: '12px 20px',
+  background: '#1f2937',
+  color: 'white',
+  flexWrap: 'wrap',
+};
+const printNowBtnStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  background: '#27ae60',
+  color: 'white',
+  border: 'none',
+  borderRadius: 8,
+  padding: '8px 16px',
+  fontSize: 14,
+  fontWeight: 700,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
+const printCloseBtnStyle: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.14)',
+  color: 'white',
+  border: '1px solid rgba(255,255,255,0.35)',
+  borderRadius: 8,
+  padding: '8px 14px',
+  fontSize: 13,
+  fontWeight: 600,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
+const printRootStyle: React.CSSProperties = {
+  padding: '24px 16px',
+};
+const sheetStyle: React.CSSProperties = {
+  background: 'white',
+  color: '#111',
+  maxWidth: 760,
+  margin: '0 auto 24px',
+  padding: 40,
+  border: '1px solid #d1d5db',
+  borderRadius: 4,
+  boxShadow: '0 2px 10px rgba(0,0,0,0.08)',
+  fontFamily: 'Arial, Helvetica, sans-serif',
+};
+const sheetHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  justifyContent: 'space-between',
+  borderBottom: '2px solid #111',
+  paddingBottom: 10,
+};
+const contactLineStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 36,
+  flexWrap: 'wrap',
+  fontSize: 14,
+  margin: '4px 0 16px',
+  color: '#111',
+};
+const printTableStyle: React.CSSProperties = {
+  width: '100%',
+  borderCollapse: 'collapse',
+  fontSize: 13,
+};
+const printLabelCell: React.CSSProperties = {
+  border: '1px solid #999',
+  padding: '6px 10px',
+  background: '#f3f3f3',
+  fontWeight: 700,
+  width: 190,
+  verticalAlign: 'top',
+  color: '#111',
+};
+const printValueCell: React.CSSProperties = {
+  border: '1px solid #999',
+  padding: '6px 10px',
+  color: '#111',
+  whiteSpace: 'pre-wrap',
+};
+const logTitleStyle: React.CSSProperties = {
+  marginTop: 20,
+  marginBottom: 6,
+  fontSize: 13,
+  fontWeight: 800,
+  color: '#111',
+  textTransform: 'uppercase',
+  letterSpacing: 0.6,
+};
+const logHeadCell: React.CSSProperties = {
+  border: '1px solid #999',
+  padding: '6px 8px',
+  background: '#f3f3f3',
+  fontSize: 12,
+  textAlign: 'left',
+  color: '#111',
+};
+const logCell: React.CSSProperties = {
+  border: '1px solid #999',
+  padding: '12px 8px',
+  fontSize: 12,
+  color: '#111',
+};
+const noteLineStyle: React.CSSProperties = {
+  borderBottom: '1px solid #aaa',
+  height: 26,
 };
