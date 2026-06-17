@@ -31,6 +31,32 @@ const REFERRAL_SOURCE_OPTIONS: Record<string, string> = {
   'other': '95b9966f-50f3-436d-826e-821a2bab4014',           // Other
 };
 
+// Friendly labels for the values the marketing form stores as codes, so the
+// referrals tab shows readable text instead of "gapp" / "physician" / "urgent".
+const PROGRAM_LABELS: Record<string, string> = {
+  'gapp': 'GAPP - Georgia Pediatric Program',
+  'now-comp': 'NOW/COMP Waiver',
+  'icwp': 'ICWP - Independent Care Waiver',
+  'edwp': 'EDWP (CCSP & SOURCE)',
+  'private-pay': 'Private Pay',
+  'other': 'Other / Not Sure',
+};
+const SOURCE_LABELS: Record<string, string> = {
+  'hospital': 'Hospital / Medical Facility',
+  'physician': 'Physician / Healthcare Provider',
+  'case-manager': 'Case Manager / Support Coordinator',
+  'family': 'Family Member',
+  'self': 'Self-Referral',
+  'other': 'Other',
+};
+const URGENCY_LABELS: Record<string, string> = {
+  'standard': 'Standard (1-2 weeks)',
+  'urgent': 'Urgent (within 1 week)',
+  'immediate': 'Immediate (ASAP)',
+};
+const labelFor = (map: Record<string, string>, code: string) =>
+  map[code] ?? code;
+
 // Format phone number for ClickUp (requires +1 XXX-XXX-XXXX format for US numbers)
 function formatPhoneForClickUp(phone: string): string {
   // Strip all non-digit characters
@@ -209,7 +235,7 @@ export async function processReferralSubmission(data: any) {
         clientEmail: client.email ?? '',
         clientPhone: client.phone ?? '',
         county: client.county ?? '',
-        program: program.interest ?? '',
+        program: labelFor(PROGRAM_LABELS, program.interest ?? ''),
         referrerName: referrer.name ?? '',
         details: [
           { label: 'Date of birth', value: client.dob ?? '' },
@@ -223,11 +249,11 @@ export async function processReferralSubmission(data: any) {
           { label: 'Medicaid #', value: program.medicaidNumber ?? '' },
           { label: 'Insurance provider', value: program.insuranceProvider ?? '' },
           { label: 'Insurance policy #', value: program.insuranceNumber ?? '' },
-          { label: 'Referral source', value: referrer.source ?? '' },
+          { label: 'Referral source', value: labelFor(SOURCE_LABELS, referrer.source ?? '') },
           { label: 'Referrer phone', value: referrer.phone ?? '' },
           { label: 'Referrer email', value: referrer.email ?? '' },
           { label: 'Referrer organization', value: referrer.organization ?? '' },
-          { label: 'Urgency', value: details.urgency ?? '' },
+          { label: 'Urgency', value: labelFor(URGENCY_LABELS, details.urgency ?? '') },
           { label: 'Service needs', value: details.serviceNeeds ?? '' },
           { label: 'Additional notes', value: details.additionalNotes ?? '' },
         ],
