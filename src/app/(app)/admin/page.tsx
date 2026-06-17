@@ -56,12 +56,11 @@ const CARDS: Card[] = [
     allow: ['admin', 'supervisor'],
   },
   {
-    href: '/referral',
+    href: '/admin/referrals',
     icon: <FileText size={22} />,
     title: 'Referrals',
-    description: 'Track incoming referral submissions. (Coming soon)',
+    description: 'Track incoming referral submissions from the websites.',
     allow: ['admin'],
-    disabled: true,
   },
 ];
 
