@@ -15,6 +15,10 @@ import { sendReferralNotification } from '@/lib/emails/referralNotification';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+// A referral payload is a few hundred bytes; cap well above that so an oversized
+// body can't be buffered, parsed, or stored.
+const MAX_BODY_BYTES = 16 * 1024;
+
 function secretOk(provided: string | null): boolean {
   const expected = process.env.REFERRAL_SHARED_SECRET;
   if (!expected || !provided) return false;
@@ -77,9 +81,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
   }
 
+  if (Number(req.headers.get('content-length') || 0) > MAX_BODY_BYTES) {
+    return NextResponse.json({ error: 'Payload too large.' }, { status: 413 });
+  }
+
   let payload: IncomingPayload;
   try {
-    payload = await req.json();
+    const raw = await req.text();
+    if (Buffer.byteLength(raw, 'utf8') > MAX_BODY_BYTES) {
+      return NextResponse.json({ error: 'Payload too large.' }, { status: 413 });
+    }
+    payload = JSON.parse(raw);
   } catch {
     return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
   }

@@ -43,10 +43,31 @@ export interface Referral extends ReferralInput {
   submittedAt: string | null;
 }
 
+// Upper bounds on stored text, so a single referral can never bloat a Firestore
+// document or a notification email. Applied to every write, regardless of caller.
+const MAX = {
+  name: 200,
+  email: 320,
+  phone: 40,
+  county: 100,
+  program: 200,
+  referrer: 200,
+  detailLabel: 120,
+  detailValue: 5000,
+};
+
+function clamp(value: string, max: number): string {
+  const s = String(value ?? '');
+  return s.length > max ? s.slice(0, max) : s;
+}
+
 function normalizeDetails(details: ReferralDetail[]): ReferralDetail[] {
   return (details || [])
     .filter((d) => d && d.value != null && String(d.value).trim() !== '')
-    .map((d) => ({ label: String(d.label), value: String(d.value) }));
+    .map((d) => ({
+      label: clamp(d.label, MAX.detailLabel),
+      value: clamp(d.value, MAX.detailValue),
+    }));
 }
 
 // Deterministic, Firestore-safe document id derived from the origin's id, so
@@ -74,12 +95,12 @@ export async function createReferral(
     source: input.source,
     externalId: input.externalId ?? null,
     status: 'new' as ReferralStatus,
-    clientName: input.clientName,
-    clientEmail: input.clientEmail,
-    clientPhone: input.clientPhone,
-    county: input.county ?? '',
-    program: input.program ?? '',
-    referrerName: input.referrerName ?? '',
+    clientName: clamp(input.clientName, MAX.name),
+    clientEmail: clamp(input.clientEmail, MAX.email),
+    clientPhone: clamp(input.clientPhone, MAX.phone),
+    county: clamp(input.county ?? '', MAX.county),
+    program: clamp(input.program ?? '', MAX.program),
+    referrerName: clamp(input.referrerName ?? '', MAX.referrer),
     details: normalizeDetails(input.details),
     submittedAt: FieldValue.serverTimestamp(),
     createdAt: FieldValue.serverTimestamp(),
