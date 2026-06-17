@@ -38,6 +38,8 @@ const STATUS_LABEL: Record<ReferralStatus, string> = {
 };
 
 type Scope = 'active' | 'archived' | 'all';
+type SortKey = 'clientName' | 'program' | 'county' | 'source' | 'submittedAt' | 'status';
+type SortDir = 'asc' | 'desc';
 
 function formatDate(iso: string | null): string {
   if (!iso) return '—';
@@ -108,6 +110,8 @@ export default function ReferralsPage() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [printList, setPrintList] = useState<Referral[] | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>('submittedAt');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -159,6 +163,44 @@ export default function ReferralsPage() {
     });
   }, [scoped, q]);
 
+  const sorted = useMemo(() => {
+    const statusRank: Record<ReferralStatus, number> = { new: 0, contacted: 1, archived: 2 };
+    const arr = [...filtered];
+    arr.sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === 'submittedAt') {
+        cmp =
+          (a.submittedAt ? Date.parse(a.submittedAt) : 0) -
+          (b.submittedAt ? Date.parse(b.submittedAt) : 0);
+      } else if (sortKey === 'status') {
+        cmp = statusRank[a.status] - statusRank[b.status];
+      } else if (sortKey === 'source') {
+        cmp = (SOURCE_LABEL[a.source] ?? a.source).localeCompare(
+          SOURCE_LABEL[b.source] ?? b.source
+        );
+      } else {
+        cmp = String(a[sortKey] ?? '').localeCompare(String(b[sortKey] ?? ''), undefined, {
+          sensitivity: 'base',
+        });
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return arr;
+  }, [filtered, sortKey, sortDir]);
+
+  const setSort = (key: SortKey) => {
+    if (key === sortKey) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir(key === 'submittedAt' ? 'desc' : 'asc');
+    }
+  };
+  const sortIndicator = (key: SortKey) =>
+    sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '';
+  const ariaSort = (key: SortKey): React.AriaAttributes['aria-sort'] =>
+    sortKey === key ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined;
+
   const counts = useMemo(
     () => ({
       active: referrals.filter((r) => r.status !== 'archived').length,
@@ -167,15 +209,15 @@ export default function ReferralsPage() {
     [referrals]
   );
 
-  // Selection is always interpreted against the current filtered view.
+  // Selection + index reflect the current sorted/filtered view.
   const selectedVisible = useMemo(
-    () => filtered.filter((r) => selectedIds.has(r.id)),
-    [filtered, selectedIds]
+    () => sorted.filter((r) => selectedIds.has(r.id)),
+    [sorted, selectedIds]
   );
   const allVisibleSelected =
-    filtered.length > 0 && filtered.every((r) => selectedIds.has(r.id));
+    sorted.length > 0 && sorted.every((r) => selectedIds.has(r.id));
   const someVisibleSelected =
-    filtered.some((r) => selectedIds.has(r.id)) && !allVisibleSelected;
+    sorted.some((r) => selectedIds.has(r.id)) && !allVisibleSelected;
 
   const toggleOne = (id: string) =>
     setSelectedIds((prev) => {
@@ -188,8 +230,8 @@ export default function ReferralsPage() {
   const toggleAllVisible = () =>
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      if (allVisibleSelected) filtered.forEach((r) => next.delete(r.id));
-      else filtered.forEach((r) => next.add(r.id));
+      if (allVisibleSelected) sorted.forEach((r) => next.delete(r.id));
+      else sorted.forEach((r) => next.add(r.id));
       return next;
     });
 
@@ -201,7 +243,7 @@ export default function ReferralsPage() {
   };
 
   // Print/export act on the selection when there is one, else the whole view.
-  const actionTarget = selectedVisible.length > 0 ? selectedVisible : filtered;
+  const actionTarget = selectedVisible.length > 0 ? selectedVisible : sorted;
   const openPrint = (list: Referral[]) => {
     if (list.length > 0) setPrintList(list);
   };
@@ -336,16 +378,29 @@ export default function ReferralsPage() {
                       style={{ cursor: 'pointer' }}
                     />
                   </th>
-                  <th style={thStyle}>Name</th>
-                  <th style={thStyle}>Program</th>
-                  <th style={thStyle}>County</th>
-                  <th style={thStyle}>Source</th>
-                  <th style={thStyle}>Received</th>
-                  <th style={thStyle}>Status</th>
+                  <th style={{ ...thStyle, width: 48, textAlign: 'right' }}>#</th>
+                  <th style={sortThStyle} onClick={() => setSort('clientName')} aria-sort={ariaSort('clientName')}>
+                    Name{sortIndicator('clientName')}
+                  </th>
+                  <th style={sortThStyle} onClick={() => setSort('program')} aria-sort={ariaSort('program')}>
+                    Program{sortIndicator('program')}
+                  </th>
+                  <th style={sortThStyle} onClick={() => setSort('county')} aria-sort={ariaSort('county')}>
+                    County{sortIndicator('county')}
+                  </th>
+                  <th style={sortThStyle} onClick={() => setSort('source')} aria-sort={ariaSort('source')}>
+                    Source{sortIndicator('source')}
+                  </th>
+                  <th style={sortThStyle} onClick={() => setSort('submittedAt')} aria-sort={ariaSort('submittedAt')}>
+                    Received{sortIndicator('submittedAt')}
+                  </th>
+                  <th style={sortThStyle} onClick={() => setSort('status')} aria-sort={ariaSort('status')}>
+                    Status{sortIndicator('status')}
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r) => (
+                {sorted.map((r, i) => (
                   <tr
                     key={r.id}
                     onClick={() => setSelected(r)}
@@ -372,6 +427,7 @@ export default function ReferralsPage() {
                         style={{ cursor: 'pointer' }}
                       />
                     </td>
+                    <td style={indexTdStyle}>{i + 1}</td>
                     <td style={{ ...tdStyle, fontWeight: 600 }}>{r.clientName || '—'}</td>
                     <td style={tdStyle}>{r.program || '—'}</td>
                     <td style={tdStyle}>{r.county || '—'}</td>
@@ -763,10 +819,22 @@ const thStyle: React.CSSProperties = {
   borderBottom: '1px solid #e5e7eb',
   background: '#f9fafb',
 };
+const sortThStyle: React.CSSProperties = {
+  ...thStyle,
+  cursor: 'pointer',
+  userSelect: 'none',
+};
 const tdStyle: React.CSSProperties = {
   padding: '12px 16px',
   borderBottom: '1px solid #f1f5f9',
   color: '#374151',
+};
+const indexTdStyle: React.CSSProperties = {
+  ...tdStyle,
+  width: 48,
+  textAlign: 'right',
+  color: '#94a3b8',
+  fontVariantNumeric: 'tabular-nums',
 };
 const rowStyle: React.CSSProperties = { cursor: 'pointer' };
 const sourceBadge: React.CSSProperties = {
