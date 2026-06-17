@@ -47,7 +47,7 @@ const NAV: NavItem[] = [
   { href: '/admin/users', label: 'Staff & Roles', icon: <UserCog size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/maintenance/link-notes', label: 'Maintenance', icon: <Wrench size={18} />, allow: ['admin'] },
   { href: '/admin/settings', label: 'Settings', icon: <Settings size={18} />, allow: ['admin'] },
-  { href: '/admin/referrals', label: 'Referrals', icon: <FileText size={18} />, allow: ['admin'], disabled: true },
+  { href: '/admin/referrals', label: 'Referrals', icon: <FileText size={18} />, allow: ['admin'] },
 ];
 
 const viewAsBannerStyle: React.CSSProperties = {

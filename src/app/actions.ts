@@ -4,6 +4,7 @@ import { Resend } from 'resend';
 import { GoogleSpreadsheet } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
 import { createClickUpTask } from '@/lib/clickup';
+import { createReferral } from '@/lib/referrals';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -196,6 +197,43 @@ export async function processReferralSubmission(data: any) {
     if (error) {
       console.error('Resend error:', error);
       throw new Error(error.message);
+    }
+
+    // 1.5 Store in the unified referrals collection so it appears in the admin
+    // Referrals tab alongside referrals forwarded from the GAPP site. Non-fatal:
+    // a storage failure must never block the email/Sheets/ClickUp flow.
+    try {
+      await createReferral({
+        source: 'hs-website',
+        clientName: `${client.firstName ?? ''} ${client.lastName ?? ''}`.trim(),
+        clientEmail: client.email ?? '',
+        clientPhone: client.phone ?? '',
+        county: client.county ?? '',
+        program: program.interest ?? '',
+        referrerName: referrer.name ?? '',
+        details: [
+          { label: 'Date of birth', value: client.dob ?? '' },
+          { label: 'Secondary phone', value: client.secondaryPhone ?? '' },
+          {
+            label: 'Address',
+            value: [client.address, client.city, client.state, client.zip]
+              .filter(Boolean)
+              .join(', '),
+          },
+          { label: 'Medicaid #', value: program.medicaidNumber ?? '' },
+          { label: 'Insurance provider', value: program.insuranceProvider ?? '' },
+          { label: 'Insurance policy #', value: program.insuranceNumber ?? '' },
+          { label: 'Referral source', value: referrer.source ?? '' },
+          { label: 'Referrer phone', value: referrer.phone ?? '' },
+          { label: 'Referrer email', value: referrer.email ?? '' },
+          { label: 'Referrer organization', value: referrer.organization ?? '' },
+          { label: 'Urgency', value: details.urgency ?? '' },
+          { label: 'Service needs', value: details.serviceNeeds ?? '' },
+          { label: 'Additional notes', value: details.additionalNotes ?? '' },
+        ],
+      });
+    } catch (storeErr) {
+      console.error('Referral Firestore store failed (non-fatal):', storeErr);
     }
 
     // 2. Add to Google Sheet
