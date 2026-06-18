@@ -19,7 +19,9 @@ const NAVY = '#1a3a5c';
 const pageStyle: React.CSSProperties = {
   maxWidth: 820,
   margin: '0 auto',
-  padding: '48px 24px 72px',
+  // Top padding clears the site's fixed header (~127px tall) so the heading
+  // isn't hidden behind it; the rest is normal page spacing.
+  padding: '160px 24px 72px',
   color: '#2c3e50',
   lineHeight: 1.65,
   fontSize: 16,
