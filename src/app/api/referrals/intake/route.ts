@@ -154,7 +154,7 @@ export async function POST(req: Request) {
         childName: input.clientName,
         seekingPaidCaregiver: r.seekingPaidCaregiver === 'yes',
         // GAPP site has its own callback number, distinct from Heart & Soul's.
-        phone: '(470) 400-8008',
+        phone: '(470) 635-5774',
       }),
     ]);
     emailSent = notif.ok;
