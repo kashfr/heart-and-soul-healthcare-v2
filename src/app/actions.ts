@@ -5,6 +5,7 @@ import { GoogleSpreadsheet } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
 import { createClickUpTask } from '@/lib/clickup';
 import { createReferral } from '@/lib/referrals';
+import { sendReferralConfirmation } from '@/lib/emails/referralConfirmation';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -256,10 +257,44 @@ export async function processReferralSubmission(data: any) {
           { label: 'Urgency', value: labelFor(URGENCY_LABELS, details.urgency ?? '') },
           { label: 'Service needs', value: details.serviceNeeds ?? '' },
           { label: 'Additional notes', value: details.additionalNotes ?? '' },
+          {
+            label: 'Seeking paid caregiver',
+            value:
+              details.seekingPaidCaregiver === 'yes'
+                ? 'Yes'
+                : details.seekingPaidCaregiver === 'no'
+                ? 'No'
+                : '',
+          },
+          ...(details.seekingPaidCaregiver === 'yes'
+            ? [
+                {
+                  label: 'Has Medicaid + medical needs',
+                  value: labelFor(
+                    { yes: 'Yes', no: 'No', unsure: 'Not sure' },
+                    details.paidCaregiverEligibility ?? ''
+                  ),
+                },
+              ]
+            : []),
         ],
       });
     } catch (storeErr) {
       console.error('Referral Firestore store failed (non-fatal):', storeErr);
+    }
+
+    // 1.6 Confirmation auto-responder to the submitter (non-fatal). Goes to the
+    // referrer's email if given, otherwise the client/contact email.
+    try {
+      const childName = `${client.firstName ?? ''} ${client.lastName ?? ''}`.trim();
+      await sendReferralConfirmation({
+        to: referrer.email || client.email,
+        submitterName: referrer.name || childName,
+        childName,
+        seekingPaidCaregiver: details.seekingPaidCaregiver === 'yes',
+      });
+    } catch (confirmErr) {
+      console.error('Referral confirmation email failed (non-fatal):', confirmErr);
     }
 
     // 2. Add to Google Sheet
