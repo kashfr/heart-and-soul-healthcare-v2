@@ -110,6 +110,8 @@ export default function ReferralPage() {
     serviceNeeds: '',
     urgency: 'standard',
     additionalNotes: '',
+    seekingPaidCaregiver: '',
+    paidCaregiverEligibility: '',
   });
 
   const isSelfReferral = formData.referralSource === 'self';
@@ -125,9 +127,13 @@ export default function ReferralPage() {
       if (!formData.clientDOB) missing.push('Date of Birth');
       if (!formData.clientPhone) missing.push('Phone Number');
       if (!formData.clientSecondaryPhone) missing.push('Secondary Phone Number');
+      if (!formData.clientEmail) missing.push('Email Address');
     } else if (step === 2) {
       if (!formData.referralSource) missing.push('Referral Source');
       if (!isSelfReferral && formData.referralSource && !formData.referrerName) missing.push('Referrer Name');
+      if (!formData.seekingPaidCaregiver) missing.push('Paid caregiver question');
+      if (formData.seekingPaidCaregiver === 'yes' && !formData.paidCaregiverEligibility)
+        missing.push('Medicaid and medical needs question');
     }
     return missing;
   };
@@ -192,6 +198,13 @@ export default function ReferralPage() {
         programInterest: value,
         clientCounty: '',
       });
+    } else if (name === 'seekingPaidCaregiver' && value === 'no') {
+      // Switching to "No" clears the eligibility follow-up.
+      setFormData({
+        ...formData,
+        seekingPaidCaregiver: 'no',
+        paidCaregiverEligibility: '',
+      });
     } else {
       setFormData({
         ...formData,
@@ -237,6 +250,8 @@ export default function ReferralPage() {
           serviceNeeds: formData.serviceNeeds,
           urgency: formData.urgency,
           additionalNotes: formData.additionalNotes,
+          seekingPaidCaregiver: formData.seekingPaidCaregiver,
+          paidCaregiverEligibility: formData.paidCaregiverEligibility,
         },
       };
 
@@ -264,7 +279,13 @@ export default function ReferralPage() {
       case 1:
         return formData.programInterest && formData.clientCounty && formData.clientFirstName && formData.clientLastName && formData.clientDOB && formData.clientPhone && formData.clientSecondaryPhone && formData.clientEmail;
       case 2:
-        return formData.referralSource && (isSelfReferral || formData.referrerName);
+        return (
+          formData.referralSource &&
+          (isSelfReferral || formData.referrerName) &&
+          formData.seekingPaidCaregiver &&
+          (formData.seekingPaidCaregiver === 'no' ||
+            formData.paidCaregiverEligibility)
+        );
       default:
         return true;
     }
@@ -279,10 +300,11 @@ export default function ReferralPage() {
     const value = formData[fieldName as keyof typeof formData];
     // Only flag required fields
     const requiredStep1 = ['programInterest', 'clientCounty', 'clientFirstName', 'clientLastName', 'clientDOB', 'clientPhone', 'clientSecondaryPhone', 'clientEmail'];
-    const requiredStep2 = ['referralSource'];
+    const requiredStep2 = ['referralSource', 'seekingPaidCaregiver'];
     if (step === 1 && requiredStep1.includes(fieldName)) return !value;
     if (step === 2 && requiredStep2.includes(fieldName)) return !value;
     if (step === 2 && fieldName === 'referrerName' && !isSelfReferral && formData.referralSource) return !value;
+    if (step === 2 && fieldName === 'paidCaregiverEligibility' && formData.seekingPaidCaregiver === 'yes') return !value;
     return false;
   };
 
@@ -326,6 +348,7 @@ export default function ReferralPage() {
                       referrerEmail: '', referrerOrganization: '', medicaidNumber: '',
                       insuranceProvider: '', insuranceNumber: '', serviceNeeds: '',
                       urgency: 'standard', additionalNotes: '',
+                      seekingPaidCaregiver: '', paidCaregiverEligibility: '',
                     });
                   }}
                 >
@@ -601,10 +624,11 @@ export default function ReferralPage() {
                       type="email"
                       id="clientEmail"
                       name="clientEmail"
-                      className="form-input"
+                      className={`form-input ${isFieldInvalid('clientEmail') ? styles.fieldError : ''}`}
                       placeholder="email@example.com"
                       value={formData.clientEmail}
                       onChange={handleChange}
+                      required
                     />
                   </div>
                   <div className="form-group">
@@ -852,6 +876,69 @@ export default function ReferralPage() {
                       onChange={handleChange}
                     />
                   </div>
+                </div>
+
+                {/* Paid-caregiver screening */}
+                <div className={styles.sectionDivider} />
+                <h3 className={styles.subSectionTitle}>One more question</h3>
+
+                <div className={styles.formGridSingle}>
+                  <div className="form-group">
+                    <label htmlFor="seekingPaidCaregiver" className="form-label">
+                      Are you hoping to be paid to help care for your child? *
+                    </label>
+                    <select
+                      id="seekingPaidCaregiver"
+                      name="seekingPaidCaregiver"
+                      className={`form-select ${isFieldInvalid('seekingPaidCaregiver') ? styles.fieldError : ''}`}
+                      value={formData.seekingPaidCaregiver}
+                      onChange={handleChange}
+                      required
+                    >
+                      <option value="">Select an answer</option>
+                      <option value="no">No</option>
+                      <option value="yes">Yes</option>
+                    </select>
+                  </div>
+
+                  {formData.seekingPaidCaregiver === 'yes' && (
+                    <>
+                      <div className={styles.countyNotice}>
+                        <AlertCircle size={16} />
+                        <p>
+                          Being paid to care for your own child is possible only in
+                          limited cases. Through GAPP&apos;s Family Caregiver Option a
+                          parent can be paid for personal support only (not skilled
+                          nursing or behavioral health aide), and only if your child
+                          qualifies for GAPP (Georgia Medicaid plus medically necessary
+                          care). For autism, Down syndrome, or behavioral needs without
+                          those medical needs, the NOW and COMP waivers apply, where a
+                          parent of a child under 18 generally cannot be paid and there
+                          is a long waiting list. You are welcome to continue, and we
+                          will help you find the right path.
+                        </p>
+                      </div>
+                      <div className="form-group">
+                        <label htmlFor="paidCaregiverEligibility" className="form-label">
+                          Does your child have Georgia Medicaid and complex medical or
+                          nursing needs? *
+                        </label>
+                        <select
+                          id="paidCaregiverEligibility"
+                          name="paidCaregiverEligibility"
+                          className={`form-select ${isFieldInvalid('paidCaregiverEligibility') ? styles.fieldError : ''}`}
+                          value={formData.paidCaregiverEligibility}
+                          onChange={handleChange}
+                          required
+                        >
+                          <option value="">Please select</option>
+                          <option value="yes">Yes</option>
+                          <option value="no">No</option>
+                          <option value="unsure">Not sure</option>
+                        </select>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             )}

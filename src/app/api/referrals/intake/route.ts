@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { timingSafeEqual } from 'node:crypto';
 import { createReferral, type ReferralInput } from '@/lib/referrals';
 import { sendReferralNotification } from '@/lib/emails/referralNotification';
+import { sendReferralConfirmation } from '@/lib/emails/referralConfirmation';
 
 // Public intake for referrals submitted from external sites (the GAPP website).
 // Authenticated with a shared secret (not a user session), since the caller is
@@ -33,6 +34,7 @@ interface IncomingPayload {
   id?: string;
   submittedAt?: string;
   referral?: {
+    submitterName?: string;
     fullName?: string;
     phoneNumber?: string;
     emailAddress?: string;
@@ -44,8 +46,16 @@ interface IncomingPayload {
     diagnosis?: string;
     comments?: string;
     provideLater?: boolean;
+    seekingPaidCaregiver?: '' | 'yes' | 'no';
+    paidCaregiverEligibility?: '' | 'yes' | 'no' | 'unsure';
   };
 }
+
+const ELIGIBILITY_LABEL: Record<string, string> = {
+  yes: 'Yes',
+  no: 'No',
+  unsure: 'Not sure',
+};
 
 // Map the GAPP website's payload into a unified referral.
 function toReferralInput(payload: IncomingPayload): ReferralInput {
@@ -59,6 +69,14 @@ function toReferralInput(payload: IncomingPayload): ReferralInput {
     ? 'Will provide later'
     : '';
 
+  const seeking = r.seekingPaidCaregiver === 'yes';
+  const seekingValue =
+    r.seekingPaidCaregiver === 'yes'
+      ? 'Yes'
+      : r.seekingPaidCaregiver === 'no'
+      ? 'No'
+      : '';
+
   return {
     source: 'gapp-website',
     externalId: payload.id,
@@ -67,11 +85,21 @@ function toReferralInput(payload: IncomingPayload): ReferralInput {
     clientPhone: r.phoneNumber ?? '',
     county: r.county ?? '',
     program: 'GAPP - Georgia Pediatric Program',
+    referrerName: r.submitterName || undefined,
     details: [
       { label: 'Address', value: address },
       { label: "Member's Medicaid ID", value: medicaid },
       { label: 'Diagnosis', value: r.diagnosis ?? '' },
       { label: 'Comments', value: r.comments ?? '' },
+      { label: 'Seeking paid caregiver', value: seekingValue },
+      ...(seeking
+        ? [
+            {
+              label: 'Has Medicaid + medical needs',
+              value: ELIGIBILITY_LABEL[r.paidCaregiverEligibility ?? ''] ?? '',
+            },
+          ]
+        : []),
     ],
   };
 }
@@ -112,11 +140,25 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Could not store referral.' }, { status: 500 });
   }
 
-  // Only notify on first delivery, so a retried POST never re-emails.
+  // Only email on first delivery, so a retried POST never re-emails: one
+  // notification to the team and one confirmation to the submitter.
   let emailSent = false;
+  let confirmationSent = false;
   if (!created.deduped) {
-    const result = await sendReferralNotification(input);
-    emailSent = result.ok;
+    const r = payload.referral ?? {};
+    const [notif, confirm] = await Promise.all([
+      sendReferralNotification(input),
+      sendReferralConfirmation({
+        to: input.clientEmail,
+        submitterName: r.submitterName,
+        childName: input.clientName,
+        seekingPaidCaregiver: r.seekingPaidCaregiver === 'yes',
+        // GAPP site has its own callback number, distinct from Heart & Soul's.
+        phone: '(470) 400-8008',
+      }),
+    ]);
+    emailSent = notif.ok;
+    confirmationSent = confirm.ok;
   }
 
   return NextResponse.json({
@@ -124,5 +166,6 @@ export async function POST(req: Request) {
     id: created.id,
     deduped: created.deduped,
     emailSent,
+    confirmationSent,
   });
 }
