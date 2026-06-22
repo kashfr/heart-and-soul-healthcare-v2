@@ -55,6 +55,7 @@ const ROLE_OPTIONS: { value: Role; label: string; desc: string }[] = [
   { value: 'admin', label: 'Admin', desc: 'Full access to everything, including staff management.' },
   { value: 'supervisor', label: 'Supervisor', desc: 'Review all submissions; cannot manage staff or patients.' },
   { value: 'nurse', label: 'Nurse', desc: 'Submit and view only their own progress notes.' },
+  { value: 'va', label: 'Virtual Assistant', desc: 'Referrals pipeline, sharing, and agencies only. No patients, records, submissions, staff, or settings.' },
 ];
 
 // Clinical credential levels. Independent of portal role — a supervisor can

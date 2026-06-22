@@ -19,7 +19,7 @@ import { getServerSettings } from '../settingsServer';
 const FROM_ADDRESS = 'notifications@heartandsoulhc.org';
 const SIGNIN_URL = 'https://www.heartandsoulhc.org/login';
 
-export type StaffInviteRole = 'admin' | 'supervisor' | 'nurse';
+export type StaffInviteRole = 'admin' | 'supervisor' | 'nurse' | 'va';
 
 export interface StaffInviteParams {
   to: string;
@@ -45,7 +45,10 @@ function escapeHtml(s: string): string {
 }
 
 function roleLabel(role: StaffInviteRole): string {
-  return role === 'admin' ? 'an Admin' : role === 'supervisor' ? 'a Supervisor' : 'a Nurse';
+  if (role === 'admin') return 'an Admin';
+  if (role === 'supervisor') return 'a Supervisor';
+  if (role === 'va') return 'a Virtual Assistant';
+  return 'a Nurse';
 }
 
 export async function sendStaffInvite({

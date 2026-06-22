@@ -60,7 +60,7 @@ const CARDS: Card[] = [
     icon: <FileText size={22} />,
     title: 'Referrals',
     description: 'Track incoming referral submissions from the websites.',
-    allow: ['admin'],
+    allow: ['admin', 'va'],
   },
 ];
 
@@ -68,6 +68,7 @@ const ROLE_KICKER: Record<Role, string> = {
   admin: 'Admin',
   supervisor: 'Supervisor',
   nurse: 'Nurse',
+  va: 'Virtual Assistant',
 };
 
 export default function AdminDashboardPage() {

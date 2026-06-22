@@ -16,7 +16,7 @@ interface CreateUserBody {
   phone?: string;
 }
 
-const VALID_ROLES: Role[] = ['admin', 'supervisor', 'nurse'];
+const VALID_ROLES: Role[] = ['admin', 'supervisor', 'nurse', 'va'];
 
 function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 });
@@ -167,9 +167,10 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  // Staff list is visible to admins + supervisors — they both manage staff.
+  // Staff list is visible to admins + supervisors (who manage staff) and to the
+  // VA read-only, so the referral assignee picker can list staff.
   try {
-    await requireRole(request, ['admin', 'supervisor']);
+    await requireRole(request, ['admin', 'supervisor', 'va']);
   } catch (err) {
     if (err instanceof AdminAuthError) {
       return NextResponse.json({ error: err.message }, { status: err.status });
