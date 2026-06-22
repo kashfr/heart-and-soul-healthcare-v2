@@ -1,7 +1,7 @@
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
 
-export type Role = 'admin' | 'supervisor' | 'nurse';
+export type Role = 'admin' | 'supervisor' | 'nurse' | 'va';
 
 /** A staff member's self-service request to change their login email. Email is
     the auth identity, so changes never happen client-side — the user proposes a

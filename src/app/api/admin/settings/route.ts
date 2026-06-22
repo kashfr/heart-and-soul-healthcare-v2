@@ -25,11 +25,10 @@ import {
 const SETTINGS_DOC_PATH = 'settings/global';
 
 export async function GET(request: Request) {
-  // Any signed-in staff or nurse can read settings — the client hook
-  // needs the values to render UI defaults. requireRole with all
-  // three roles is the simplest gate.
+  // Any signed-in staff member (incl. the VA) can read settings — the client
+  // hook needs the values to render UI defaults (branding, etc.).
   try {
-    await requireRole(request, ['admin', 'supervisor', 'nurse']);
+    await requireRole(request, ['admin', 'supervisor', 'nurse', 'va']);
   } catch (err) {
     if (err instanceof AdminAuthError) {
       return NextResponse.json({ error: err.message }, { status: err.status });

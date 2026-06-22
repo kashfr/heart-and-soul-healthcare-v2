@@ -10,7 +10,7 @@ export default function AppGroupLayout({
   children: React.ReactNode;
 }) {
   return (
-    <AuthGuard allow={['admin', 'supervisor', 'nurse']}>
+    <AuthGuard allow={['admin', 'supervisor', 'nurse', 'va']}>
       {/* SettingsProvider lives inside AuthGuard so the fetch only
           fires for authenticated users (it hits an admin-gated API).
           Wraps AppShell so every screen in the staff portal can read
