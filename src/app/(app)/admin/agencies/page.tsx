@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Search, X, RefreshCw, Plus, Pencil, Trash2, Mail, Phone } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
+import { formatUSPhone } from '@/lib/phone';
 
 interface PartnerAgency {
   id: string;
@@ -200,7 +201,9 @@ function AgencyForm({
 }) {
   const [name, setName] = useState(agency?.name ?? '');
   const [email, setEmail] = useState(agency?.email ?? '');
-  const [phone, setPhone] = useState(agency?.phone ?? '');
+  // Normalize the seeded value so legacy entries (e.g. "+1 (470) 249-1083")
+  // display cleanly on open and persist normalized on save.
+  const [phone, setPhone] = useState(formatUSPhone(agency?.phone ?? ''));
   const [contactName, setContactName] = useState(agency?.contactName ?? '');
   const [notes, setNotes] = useState(agency?.notes ?? '');
   const [saving, setSaving] = useState(false);
@@ -239,7 +242,7 @@ function AgencyForm({
           <Field label="Agency name *"><input value={name} onChange={(e) => setName(e.target.value)} style={inp} autoFocus /></Field>
           <Field label="Email *"><input value={email} onChange={(e) => setEmail(e.target.value)} type="email" style={inp} /></Field>
           <div style={{ display: 'flex', gap: 12 }}>
-            <Field label="Phone"><input value={phone} onChange={(e) => setPhone(e.target.value)} style={inp} /></Field>
+            <Field label="Phone"><input type="tel" value={phone} onChange={(e) => setPhone(formatUSPhone(e.target.value))} placeholder="(XXX) XXX-XXXX" style={inp} /></Field>
             <Field label="Contact person"><input value={contactName} onChange={(e) => setContactName(e.target.value)} style={inp} /></Field>
           </div>
           <Field label="Notes"><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} style={{ ...inp, resize: 'vertical' }} /></Field>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { formatUSPhone } from '@/lib/phone';
 import {
   FileText,
   User,
@@ -208,17 +209,9 @@ export default function ReferralPage() {
     handleSubmit(e);
   };
 
-  // Format phone number as user types: (XXX) XXX-XXXX
-  const formatPhoneNumber = (value: string): string => {
-    const digits = value.replace(/\D/g, '').slice(0, 10);
-    if (digits.length === 0) return '';
-    // Hold the closing paren and the dash until the next digit arrives, so a
-    // backspace can delete the area code and the 6th digit instead of getting
-    // stuck on "(678) " or "(678) 644-".
-    if (digits.length <= 3) return `(${digits}`;
-    if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
-    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
-  };
+  // As-you-type formatter: (XXX) XXX-XXXX, also strips a leading +1.
+  // Canonical helper shared with the portal forms.
+  const formatPhoneNumber = formatUSPhone;
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;

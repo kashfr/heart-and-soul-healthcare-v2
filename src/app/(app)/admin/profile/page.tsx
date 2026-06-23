@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Phone, Mail, Clock, Check } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { authedFetch } from '@/lib/authedFetch';
+import { formatUSPhone } from '@/lib/phone';
 
 export default function MyProfilePage() {
   // Always the REAL signed-in user (never the impersonated nurse): you only
@@ -127,7 +128,7 @@ export default function MyProfilePage() {
           <input
             type="tel"
             value={phone}
-            onChange={(e) => { setPhone(e.target.value); setPhoneMsg(null); setPhoneErr(null); }}
+            onChange={(e) => { setPhone(formatUSPhone(e.target.value)); setPhoneMsg(null); setPhoneErr(null); }}
             placeholder="(555) 123-4567"
             style={inputStyle}
             aria-label="Phone number"

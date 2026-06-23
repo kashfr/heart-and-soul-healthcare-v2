@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Plus, Search, Pencil, Trash2, X, UserPlus } from 'lucide-react';
+import { formatUSPhone } from '@/lib/phone';
 import { arrayUnion, arrayRemove, doc, updateDoc } from 'firebase/firestore';
 import {
   Patient,
@@ -586,7 +587,7 @@ export default function AdminPatientsPage() {
                     <input
                       type="tel"
                       value={clinical.physicianPhone || ''}
-                      onChange={(e) => setClinical((c) => ({ ...c, physicianPhone: e.target.value }))}
+                      onChange={(e) => setClinical((c) => ({ ...c, physicianPhone: formatUSPhone(e.target.value) }))}
                       style={inputStyle}
                       placeholder="(555) 123-4567"
                     />
