@@ -212,10 +212,11 @@ export default function ReferralPage() {
   const formatPhoneNumber = (value: string): string => {
     const digits = value.replace(/\D/g, '').slice(0, 10);
     if (digits.length === 0) return '';
-    if (digits.length < 3) return `(${digits}`;
-    if (digits.length === 3) return `(${digits}) `;
-    if (digits.length < 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
-    if (digits.length === 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}-`;
+    // Hold the closing paren and the dash until the next digit arrives, so a
+    // backspace can delete the area code and the 6th digit instead of getting
+    // stuck on "(678) " or "(678) 644-".
+    if (digits.length <= 3) return `(${digits}`;
+    if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
     return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
   };
 
