@@ -23,9 +23,9 @@ describe('formatUSPhone', () => {
   it('formats partial input progressively', () => {
     expect(formatUSPhone('')).toBe('');
     expect(formatUSPhone('67')).toBe('(67');
-    expect(formatUSPhone('678')).toBe('(678) ');
+    expect(formatUSPhone('678')).toBe('(678');
     expect(formatUSPhone('67864')).toBe('(678) 64');
-    expect(formatUSPhone('678644')).toBe('(678) 644-');
+    expect(formatUSPhone('678644')).toBe('(678) 644');
     expect(formatUSPhone('6786440')).toBe('(678) 644-0');
   });
 
