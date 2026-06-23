@@ -269,10 +269,15 @@ export async function processReferralSubmission(data: any) {
           ...(details.seekingPaidCaregiver === 'yes'
             ? [
                 {
-                  label: 'Has Medicaid + medical needs',
+                  label: 'Primary care need',
                   value: labelFor(
-                    { yes: 'Yes', no: 'No', unsure: 'Not sure' },
-                    details.paidCaregiverEligibility ?? ''
+                    {
+                      personal: 'Hands-on personal care',
+                      nursing: 'Skilled medical / nursing care',
+                      behavioral: 'Behavioral / autism support',
+                      unsure: 'Not sure',
+                    },
+                    details.careNeeds ?? ''
                   ),
                 },
               ]

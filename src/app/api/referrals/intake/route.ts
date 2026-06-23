@@ -46,16 +46,37 @@ interface IncomingPayload {
     diagnosis?: string;
     comments?: string;
     provideLater?: boolean;
+    dob?: string;
+    careNeeds?: '' | 'personal' | 'nursing' | 'behavioral' | 'unsure';
     seekingPaidCaregiver?: '' | 'yes' | 'no';
-    paidCaregiverEligibility?: '' | 'yes' | 'no' | 'unsure';
   };
 }
 
-const ELIGIBILITY_LABEL: Record<string, string> = {
-  yes: 'Yes',
-  no: 'No',
+const CARE_LABEL: Record<string, string> = {
+  personal: 'Hands-on personal care',
+  nursing: 'Skilled medical / nursing care',
+  behavioral: 'Behavioral / autism support',
   unsure: 'Not sure',
 };
+
+// Age label for the staff view, e.g. "2 years" or "8 months". Empty if the date
+// of birth is missing or unparseable.
+function ageLabel(dob?: string): string {
+  if (!dob) return '';
+  const birth = new Date(`${dob}T00:00:00`);
+  if (Number.isNaN(birth.getTime())) return '';
+  const now = new Date();
+  if (birth > now) return '';
+  let months =
+    (now.getFullYear() - birth.getFullYear()) * 12 +
+    (now.getMonth() - birth.getMonth());
+  if (now.getDate() < birth.getDate()) months -= 1;
+  if (months < 0) return '';
+  const years = Math.floor(months / 12);
+  return years < 1
+    ? `${months} month${months === 1 ? '' : 's'}`
+    : `${years} year${years === 1 ? '' : 's'}`;
+}
 
 // Map the GAPP website's payload into a unified referral.
 function toReferralInput(payload: IncomingPayload): ReferralInput {
@@ -69,7 +90,6 @@ function toReferralInput(payload: IncomingPayload): ReferralInput {
     ? 'Will provide later'
     : '';
 
-  const seeking = r.seekingPaidCaregiver === 'yes';
   const seekingValue =
     r.seekingPaidCaregiver === 'yes'
       ? 'Yes'
@@ -87,19 +107,17 @@ function toReferralInput(payload: IncomingPayload): ReferralInput {
     program: 'GAPP - Georgia Pediatric Program',
     referrerName: r.submitterName || undefined,
     details: [
+      { label: 'Date of birth', value: r.dob ?? '' },
+      { label: 'Age', value: ageLabel(r.dob) },
       { label: 'Address', value: address },
       { label: "Member's Medicaid ID", value: medicaid },
       { label: 'Diagnosis', value: r.diagnosis ?? '' },
       { label: 'Comments', value: r.comments ?? '' },
+      {
+        label: 'Primary care need',
+        value: CARE_LABEL[r.careNeeds ?? ''] ?? '',
+      },
       { label: 'Seeking paid caregiver', value: seekingValue },
-      ...(seeking
-        ? [
-            {
-              label: 'Has Medicaid + medical needs',
-              value: ELIGIBILITY_LABEL[r.paidCaregiverEligibility ?? ''] ?? '',
-            },
-          ]
-        : []),
     ],
   };
 }
