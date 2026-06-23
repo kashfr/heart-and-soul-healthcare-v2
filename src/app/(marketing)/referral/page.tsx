@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   FileText,
@@ -77,6 +77,30 @@ const minDOBDate = new Date();
 minDOBDate.setFullYear(minDOBDate.getFullYear() - 120);
 const minDOB = minDOBDate.toISOString().split('T')[0];
 
+// Compute a child's age from an ISO date string (YYYY-MM-DD). Returns null for a
+// missing, unparseable, or future date.
+function ageFromDob(dob: string): { years: number; months: number } | null {
+  if (!dob) return null;
+  const birth = new Date(`${dob}T00:00:00`);
+  if (Number.isNaN(birth.getTime())) return null;
+  const now = new Date();
+  if (birth > now) return null;
+  let months =
+    (now.getFullYear() - birth.getFullYear()) * 12 +
+    (now.getMonth() - birth.getMonth());
+  if (now.getDate() < birth.getDate()) months -= 1;
+  if (months < 0) return null;
+  return { years: Math.floor(months / 12), months: months % 12 };
+}
+
+// Human-readable age for the read-only display, e.g. "2 years" or "8 months".
+function formatAge(dob: string): string {
+  const age = ageFromDob(dob);
+  if (!age) return '';
+  if (age.years < 1) return `${age.months} month${age.months === 1 ? '' : 's'}`;
+  return `${age.years} year${age.years === 1 ? '' : 's'}`;
+}
+
 export default function ReferralPage() {
   const [step, setStep] = useState(1);
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -113,6 +137,17 @@ export default function ReferralPage() {
     seekingPaidCaregiver: '',
     careNeeds: '',
   });
+
+  // Debounce the read-only age so it doesn't recompute on every keystroke as the
+  // user types the date (the native date input fires a change per digit). Recompute
+  // 800ms after the user pauses, and never show an implausible age.
+  const [debouncedClientDOB, setDebouncedClientDOB] = useState('');
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedClientDOB(formData.clientDOB), 800);
+    return () => clearTimeout(id);
+  }, [formData.clientDOB]);
+  const childAge = ageFromDob(debouncedClientDOB);
+  const showChildAge = !!childAge && childAge.years <= 120;
 
   const isSelfReferral = formData.referralSource === 'self';
 
@@ -604,6 +639,12 @@ export default function ReferralPage() {
                       min={minDOB}
                       required
                     />
+                    {showChildAge && (
+                      <p style={{ marginTop: '0.5rem', fontSize: '0.9rem', color: '#374151' }}>
+                        Child&apos;s age:{' '}
+                        <strong>{formatAge(debouncedClientDOB)}</strong>
+                      </p>
+                    )}
                   </div>
                   <div className="form-group">
                     <label htmlFor="clientPhone" className="form-label">Phone Number *</label>
