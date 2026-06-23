@@ -4,7 +4,20 @@ import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
 import { getReferral, logReferralActivity, type ReferralDetail } from './referrals';
 import { rememberAgencyFromShare } from './partnerAgencies';
+import {
+  deriveShareStatus,
+  foldShareSummaries,
+  type ShareStatus,
+  type ShareSummaryRow,
+  type ReferralShareSummary,
+} from './referralShareSummary';
 import type { AuthedCaller } from './adminAuthGuard';
+
+// Re-export the pure share helpers/types so existing importers of this module
+// keep working; the logic itself lives in referralShareSummary.ts (testable,
+// no 'server-only').
+export { deriveShareStatus, foldShareSummaries };
+export type { ShareStatus, ShareSummaryRow, ReferralShareSummary } from './referralShareSummary';
 
 // Agency sharing: hand a referral to an external partner agency via a secure,
 // expiring, revocable link — no partner login. The raw token lives only in the
@@ -17,8 +30,6 @@ const COLLECTION = 'referralShares';
 
 const MAX = { agency: 200, email: 320 };
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-export type ShareStatus = 'active' | 'viewed' | 'expired' | 'revoked';
 
 /**
  * A share as shown to the admin who manages it. Includes the raw `token` so the
@@ -87,19 +98,6 @@ function toIso(ts: unknown): string | null {
 function toMillis(ts: unknown): number | null {
   const t = ts as { toMillis?: () => number } | null | undefined;
   return t && typeof t.toMillis === 'function' ? t.toMillis() : null;
-}
-
-/** Pure status derivation, exported for unit testing. */
-export function deriveShareStatus(
-  revokedAtMs: number | null,
-  expiresAtMs: number | null,
-  viewCount: number,
-  nowMs: number
-): ShareStatus {
-  if (revokedAtMs != null) return 'revoked';
-  if (expiresAtMs != null && nowMs > expiresAtMs) return 'expired';
-  if (viewCount > 0) return 'viewed';
-  return 'active';
 }
 
 function serializeShare(id: string, data: FirebaseFirestore.DocumentData, nowMs: number): ReferralShare {
@@ -316,4 +314,25 @@ export async function resolveSharedReferral(token: string): Promise<ResolveResul
 /** Compose the public share URL from a base origin. */
 export function shareUrl(origin: string, token: string): string {
   return `${origin.replace(/\/$/, '')}/shared/referral/${token}`;
+}
+
+/**
+ * Summarize every share, grouped by referral, for the admin board/table. One
+ * collection read (the share set is small for this org) — avoids an N+1 or the
+ * 30-item `in`-query cap. Returns a map keyed by referralId; referrals with no
+ * shares are simply absent.
+ */
+export async function summarizeSharesByReferral(): Promise<Record<string, ReferralShareSummary>> {
+  const snap = await adminDb().collection(COLLECTION).get();
+  const rows: ShareSummaryRow[] = snap.docs.map((d) => {
+    const data = d.data();
+    return {
+      referralId: data.referralId ?? '',
+      revokedAtMs: toMillis(data.revokedAt),
+      expiresAtMs: toMillis(data.expiresAt),
+      viewCount: typeof data.viewCount === 'number' ? data.viewCount : 0,
+      createdMs: toMillis(data.createdAt),
+    };
+  });
+  return foldShareSummaries(rows, Date.now());
 }

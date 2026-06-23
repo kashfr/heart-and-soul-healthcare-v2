@@ -23,10 +23,12 @@ interface Props {
   onPrint: (referral: Referral) => void;
   onDelete: () => void;
   canDelete: boolean;
+  /** Refetch the board after a share that may have moved this card's stage. */
+  onChanged?: () => void;
 }
 
 export default function ReferralDetail({
-  referral, staff, busy, onClose, onStageChange, onAssign, onPrint, onDelete, canDelete,
+  referral, staff, busy, onClose, onStageChange, onAssign, onPrint, onDelete, canDelete, onChanged,
 }: Props) {
   const [activity, setActivity] = useState<ReferralActivity[]>([]);
   const [activityLoading, setActivityLoading] = useState(true);
@@ -188,7 +190,7 @@ export default function ReferralDetail({
 
           {/* Share with a partner agency */}
           <div style={sectionTitleStyle}>Share with agency</div>
-          <SharePanel referralId={referral.id} />
+          <SharePanel referralId={referral.id} stage={referral.stage} onChanged={onChanged} />
 
           {/* Activity timeline */}
           <div style={sectionTitleStyle}>Activity</div>
@@ -330,13 +332,25 @@ const EXPIRY_OPTIONS = [
   { days: 90, label: '90 days' },
 ];
 
-function SharePanel({ referralId }: { referralId: string }) {
+function SharePanel({
+  referralId,
+  stage,
+  onChanged,
+}: {
+  referralId: string;
+  stage: ReferralStage;
+  onChanged?: () => void;
+}) {
+  // A share is a handoff, so default to moving the card to Referred Out — unless
+  // it's already terminal, where the move is moot.
+  const isTerminal = stage === 'referred_out' || stage === 'closed';
   const [shares, setShares] = useState<ReferralShare[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [agency, setAgency] = useState('');
   const [email, setEmail] = useState('');
   const [expiry, setExpiry] = useState(14);
+  const [move, setMove] = useState(true);
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ link: string; emailSent: boolean } | null>(null);
@@ -399,7 +413,12 @@ function SharePanel({ referralId }: { referralId: string }) {
     try {
       const res = await authedFetch(`/api/admin/referrals/${referralId}/shares`, {
         method: 'POST',
-        body: JSON.stringify({ partnerAgency: agency.trim(), partnerEmail: email.trim(), expiresInDays: expiry }),
+        body: JSON.stringify({
+          partnerAgency: agency.trim(),
+          partnerEmail: email.trim(),
+          expiresInDays: expiry,
+          moveToReferredOut: move && !isTerminal,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
@@ -408,6 +427,8 @@ function SharePanel({ referralId }: { referralId: string }) {
       setEmail('');
       setShowForm(false);
       loadShares();
+      // Refresh the board so the new "Shared" badge and any stage move show up.
+      onChanged?.();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Could not create share.');
     } finally {
@@ -516,6 +537,12 @@ function SharePanel({ referralId }: { referralId: string }) {
               {creating ? 'Sending…' : 'Create & email link'}
             </button>
           </div>
+          {!isTerminal && (
+            <label style={moveCheckRow}>
+              <input type="checkbox" checked={move} onChange={(e) => setMove(e.target.checked)} />
+              Move to Referred Out (mark as handed off)
+            </label>
+          )}
           {formError && <div style={{ color: '#b3261e', fontSize: 12.5 }}>{formError}</div>}
         </div>
       )}
@@ -595,6 +622,9 @@ const shareSubmitBtn: React.CSSProperties = {
 const shareCancelBtn: React.CSSProperties = {
   background: 'transparent', color: '#5c6b7a', border: 'none', fontSize: 13, fontWeight: 600,
   cursor: 'pointer', fontFamily: 'inherit',
+};
+const moveCheckRow: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: '#5c6b7a', cursor: 'pointer',
 };
 const copyBtn: React.CSSProperties = {
   display: 'inline-flex', alignItems: 'center', gap: 5, background: 'white', color: '#1a3a5c',
