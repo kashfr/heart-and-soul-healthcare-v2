@@ -111,10 +111,19 @@ export default function ReferralPage() {
     urgency: 'standard',
     additionalNotes: '',
     seekingPaidCaregiver: '',
-    paidCaregiverEligibility: '',
+    careNeeds: '',
   });
 
   const isSelfReferral = formData.referralSource === 'self';
+
+  // Under GAPP's Family Caregiver Option a parent can be paid for personal care
+  // only, never for behavioral aide. So "GAPP + wants pay + behavioral/autism"
+  // is a dead end: block submission and redirect. Scoped to GAPP so it never
+  // blocks NOW/COMP or other referrals.
+  const isPaidBehavioralBlock =
+    formData.programInterest === 'gapp' &&
+    formData.seekingPaidCaregiver === 'yes' &&
+    formData.careNeeds === 'behavioral';
 
   // Returns list of missing required field labels for the current step
   const getMissingFields = (): string[] => {
@@ -132,8 +141,8 @@ export default function ReferralPage() {
       if (!formData.referralSource) missing.push('Referral Source');
       if (!isSelfReferral && formData.referralSource && !formData.referrerName) missing.push('Referrer Name');
       if (!formData.seekingPaidCaregiver) missing.push('Paid caregiver question');
-      if (formData.seekingPaidCaregiver === 'yes' && !formData.paidCaregiverEligibility)
-        missing.push('Medicaid and medical needs question');
+      if (formData.seekingPaidCaregiver === 'yes' && !formData.careNeeds)
+        missing.push('What your child needs help with');
     }
     return missing;
   };
@@ -149,6 +158,12 @@ export default function ReferralPage() {
   };
 
   const handleAttemptSubmit = (e: React.FormEvent) => {
+    // A GAPP parent seeking pay for behavioral/autism care cannot be submitted;
+    // the redirect panel explains why and points to the ASD Program.
+    if (isPaidBehavioralBlock) {
+      e.preventDefault();
+      return;
+    }
     if (!isStepValid()) {
       e.preventDefault();
       setShowValidation(true);
@@ -199,11 +214,11 @@ export default function ReferralPage() {
         clientCounty: '',
       });
     } else if (name === 'seekingPaidCaregiver' && value === 'no') {
-      // Switching to "No" clears the eligibility follow-up.
+      // Switching to "No" clears the care-need follow-up.
       setFormData({
         ...formData,
         seekingPaidCaregiver: 'no',
-        paidCaregiverEligibility: '',
+        careNeeds: '',
       });
     } else {
       setFormData({
@@ -251,7 +266,7 @@ export default function ReferralPage() {
           urgency: formData.urgency,
           additionalNotes: formData.additionalNotes,
           seekingPaidCaregiver: formData.seekingPaidCaregiver,
-          paidCaregiverEligibility: formData.paidCaregiverEligibility,
+          careNeeds: formData.careNeeds,
         },
       };
 
@@ -283,8 +298,7 @@ export default function ReferralPage() {
           formData.referralSource &&
           (isSelfReferral || formData.referrerName) &&
           formData.seekingPaidCaregiver &&
-          (formData.seekingPaidCaregiver === 'no' ||
-            formData.paidCaregiverEligibility)
+          (formData.seekingPaidCaregiver === 'no' || formData.careNeeds)
         );
       default:
         return true;
@@ -304,7 +318,7 @@ export default function ReferralPage() {
     if (step === 1 && requiredStep1.includes(fieldName)) return !value;
     if (step === 2 && requiredStep2.includes(fieldName)) return !value;
     if (step === 2 && fieldName === 'referrerName' && !isSelfReferral && formData.referralSource) return !value;
-    if (step === 2 && fieldName === 'paidCaregiverEligibility' && formData.seekingPaidCaregiver === 'yes') return !value;
+    if (step === 2 && fieldName === 'careNeeds' && formData.seekingPaidCaregiver === 'yes') return !value;
     return false;
   };
 
@@ -348,7 +362,7 @@ export default function ReferralPage() {
                       referrerEmail: '', referrerOrganization: '', medicaidNumber: '',
                       insuranceProvider: '', insuranceNumber: '', serviceNeeds: '',
                       urgency: 'standard', additionalNotes: '',
-                      seekingPaidCaregiver: '', paidCaregiverEligibility: '',
+                      seekingPaidCaregiver: '', careNeeds: '',
                     });
                   }}
                 >
@@ -903,40 +917,77 @@ export default function ReferralPage() {
 
                   {formData.seekingPaidCaregiver === 'yes' && (
                     <>
-                      <div className={styles.countyNotice}>
-                        <AlertCircle size={16} />
-                        <p>
-                          Being paid to care for your own child is possible only in
-                          limited cases. Through GAPP&apos;s Family Caregiver Option a
-                          parent can be paid for personal support only (not skilled
-                          nursing or behavioral health aide), and only if your child
-                          qualifies for GAPP (Georgia Medicaid plus medically necessary
-                          care). For autism, Down syndrome, or behavioral needs without
-                          those medical needs, the NOW and COMP waivers apply, where a
-                          parent of a child under 18 generally cannot be paid and there
-                          is a long waiting list. You are welcome to continue, and we
-                          will help you find the right path.
-                        </p>
-                      </div>
                       <div className="form-group">
-                        <label htmlFor="paidCaregiverEligibility" className="form-label">
-                          Does your child have Georgia Medicaid and complex medical or
-                          nursing needs? *
+                        <label htmlFor="careNeeds" className="form-label">
+                          What does your child mainly need help with at home? *
                         </label>
                         <select
-                          id="paidCaregiverEligibility"
-                          name="paidCaregiverEligibility"
-                          className={`form-select ${isFieldInvalid('paidCaregiverEligibility') ? styles.fieldError : ''}`}
-                          value={formData.paidCaregiverEligibility}
+                          id="careNeeds"
+                          name="careNeeds"
+                          className={`form-select ${isFieldInvalid('careNeeds') ? styles.fieldError : ''}`}
+                          value={formData.careNeeds}
                           onChange={handleChange}
                           required
                         >
                           <option value="">Please select</option>
-                          <option value="yes">Yes</option>
-                          <option value="no">No</option>
+                          <option value="personal">
+                            Hands-on personal care (feeding, bathing, dressing, getting around)
+                          </option>
+                          <option value="nursing">
+                            Skilled medical or nursing care (feeding tube, trach, ventilator, oxygen, seizures)
+                          </option>
+                          <option value="behavioral">
+                            Behavioral support or autism-related needs
+                          </option>
                           <option value="unsure">Not sure</option>
                         </select>
                       </div>
+
+                      {isPaidBehavioralBlock && (
+                        <div className={styles.countyNotice}>
+                          <AlertCircle size={16} />
+                          <p>
+                            A parent generally cannot be paid to provide behavioral
+                            or autism care. Under GAPP&apos;s Family Caregiver Option,
+                            a parent can be paid for personal care only (help with
+                            feeding, bathing, dressing, and getting around), not for
+                            skilled nursing or behavioral support. For autism, the
+                            program to start with is Georgia Medicaid&apos;s Autism
+                            Spectrum Disorder (ASD) Program, which covers ABA therapy.
+                            For other developmental needs, look into the NOW and COMP
+                            waivers. If your child also needs hands-on personal care
+                            or nursing at home, please call us and we will help.
+                          </p>
+                        </div>
+                      )}
+
+                      {!isPaidBehavioralBlock &&
+                        formData.careNeeds === 'behavioral' && (
+                          <div className={styles.countyNotice}>
+                            <AlertCircle size={16} />
+                            <p>
+                              For autism, Georgia Medicaid&apos;s Autism Spectrum
+                              Disorder (ASD) Program (ABA therapy) is usually the
+                              right place to start. You are welcome to continue and we
+                              will help you find the right path.
+                            </p>
+                          </div>
+                        )}
+
+                      {formData.programInterest === 'gapp' &&
+                        formData.careNeeds === 'personal' && (
+                          <div className={styles.countyNotice}>
+                            <AlertCircle size={16} />
+                            <p>
+                              You may qualify for GAPP&apos;s Family Caregiver Option.
+                              GAPP can pay a legally responsible adult family member
+                              who lives with the child to provide personal care
+                              support. The agency hires you as an employee, and the
+                              paid hours are set by a nurse&apos;s assessment. We will
+                              walk you through it.
+                            </p>
+                          </div>
+                        )}
                     </>
                   )}
                 </div>
@@ -984,9 +1035,9 @@ export default function ReferralPage() {
                   )}
                   <button
                     type="button"
-                    className={`btn btn-gold btn-lg ${isStepValid() ? styles.btnReady : styles.btnFaded}`}
+                    className={`btn btn-gold btn-lg ${isStepValid() && !isPaidBehavioralBlock ? styles.btnReady : styles.btnFaded}`}
                     onClick={handleAttemptSubmit}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || isPaidBehavioralBlock}
                   >
                     <Send size={20} /> {isSubmitting ? 'Submitting...' : 'Submit Referral'}
                   </button>
