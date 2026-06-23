@@ -1,11 +1,19 @@
-// US phone-number helpers shared by the staff/nurse profile forms and their
-// API routes. We store and display numbers in the standard US format
-// `(XXX) XXX-XXXX`. The referral form has its own inline copy of the
-// as-you-type formatter; this module is the canonical version for the portal.
+// US phone-number helpers shared across the portal and the marketing forms.
+// We store and display numbers in the standard US format `(XXX) XXX-XXXX`.
+// This module is the single canonical formatter for every place a user types
+// or pastes a phone number.
 
-/** Strip everything but digits, capped at 10 (US local number, no country code). */
+/**
+ * Reduce any input to its 10-digit US local number. Strips non-digits and a
+ * leading US country code, so a pasted "+1 (470) 249-1083" (or "1-470-…")
+ * normalizes to the 10 local digits instead of keeping the 1 and dropping the
+ * last digit. US area codes never start with 1, so a leading 1 in an 11-digit
+ * string is unambiguously the country code.
+ */
 export function phoneDigits(value: string): string {
-  return value.replace(/\D/g, '').slice(0, 10);
+  let digits = value.replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('1')) digits = digits.slice(1);
+  return digits.slice(0, 10);
 }
 
 /**

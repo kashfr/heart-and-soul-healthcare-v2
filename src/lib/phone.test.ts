@@ -6,8 +6,14 @@ describe('phoneDigits', () => {
     expect(phoneDigits('(678) 644-0337')).toBe('6786440337');
   });
 
-  it('caps at 10 digits', () => {
-    expect(phoneDigits('16786440337')).toBe('1678644033');
+  it('drops a leading US country code', () => {
+    expect(phoneDigits('16786440337')).toBe('6786440337');
+    expect(phoneDigits('+1 (470) 249-1083')).toBe('4702491083');
+    expect(phoneDigits('1-678-644-0337')).toBe('6786440337');
+  });
+
+  it('caps at 10 digits (no country code present)', () => {
+    expect(phoneDigits('6786440337123')).toBe('6786440337');
   });
 
   it('returns empty for no digits', () => {
@@ -34,6 +40,11 @@ describe('formatUSPhone', () => {
     expect(formatUSPhone('(678) 644-0337')).toBe('(678) 644-0337');
   });
 
+  it('strips a leading +1 country code', () => {
+    expect(formatUSPhone('+1 (470) 249-1083')).toBe('(470) 249-1083');
+    expect(formatUSPhone('1-678-644-0337')).toBe('(678) 644-0337');
+  });
+
   it('ignores digits beyond the tenth', () => {
     expect(formatUSPhone('67864403371234')).toBe('(678) 644-0337');
   });
@@ -43,6 +54,10 @@ describe('isValidUSPhone', () => {
   it('accepts exactly 10 digits in any format', () => {
     expect(isValidUSPhone('6786440337')).toBe(true);
     expect(isValidUSPhone('(678) 644-0337')).toBe(true);
+  });
+
+  it('accepts a number with a leading +1 country code', () => {
+    expect(isValidUSPhone('+1 (470) 249-1083')).toBe(true);
   });
 
   it('rejects incomplete or empty numbers', () => {
