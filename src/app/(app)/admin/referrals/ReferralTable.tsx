@@ -8,6 +8,7 @@ import {
   REFERRAL_STAGES, STAGE_ACCENT, STAGE_LABEL, SOURCE_LABEL,
   type Referral, type ReferralStage,
 } from './types';
+import ShareBadge from './ShareBadge';
 
 type SortKey =
   | 'clientName' | 'program' | 'county' | 'source'
@@ -20,6 +21,8 @@ interface Props {
   onPrint: (list: Referral[]) => void;
   onDelete: (ids: string[]) => void;
   canDelete: boolean;
+  /** Refetch the board after a bulk share that may have moved cards' stages. */
+  onChanged?: () => void;
 }
 
 const STAGE_RANK: Record<ReferralStage, number> = REFERRAL_STAGES.reduce(
@@ -27,7 +30,7 @@ const STAGE_RANK: Record<ReferralStage, number> = REFERRAL_STAGES.reduce(
   {} as Record<ReferralStage, number>
 );
 
-export default function ReferralTable({ referrals, onOpen, onPrint, onDelete, canDelete }: Props) {
+export default function ReferralTable({ referrals, onOpen, onPrint, onDelete, canDelete, onChanged }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('submittedAt');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -146,7 +149,7 @@ export default function ReferralTable({ referrals, onOpen, onPrint, onDelete, ca
         <BulkShareModal
           referrals={selectedVisible}
           onClose={() => setShareOpen(false)}
-          onDone={() => { setShareOpen(false); clearSelection(); }}
+          onDone={() => { setShareOpen(false); clearSelection(); onChanged?.(); }}
         />
       )}
 
@@ -179,6 +182,7 @@ export default function ReferralTable({ referrals, onOpen, onPrint, onDelete, ca
               <th style={sortThStyle} onClick={() => setSort('source')} aria-sort={ariaSort('source')}>
                 Source{sortIndicator('source')}
               </th>
+              <th style={thStyle}>Shared</th>
               <th style={sortThStyle} onClick={() => setSort('assigneeName')} aria-sort={ariaSort('assigneeName')}>
                 Assigned{sortIndicator('assigneeName')}
               </th>
@@ -221,6 +225,13 @@ export default function ReferralTable({ referrals, onOpen, onPrint, onDelete, ca
                 <td style={tdStyle}>{r.county || '—'}</td>
                 <td style={tdStyle}>
                   <span style={sourceBadge}>{SOURCE_LABEL[r.source] ?? r.source}</span>
+                </td>
+                <td style={tdStyle}>
+                  {r.shareSummary && r.shareSummary.total > 0 ? (
+                    <ShareBadge summary={r.shareSummary} />
+                  ) : (
+                    <span style={{ color: '#cbd5e1' }}>—</span>
+                  )}
                 </td>
                 <td style={tdStyle}>
                   {r.assigneeName ? (
@@ -267,9 +278,10 @@ function BulkShareModal({
   const [agency, setAgency] = useState('');
   const [email, setEmail] = useState('');
   const [expiry, setExpiry] = useState(14);
+  const [move, setMove] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ createdCount: number; failedCount: number; emailSent: boolean } | null>(null);
+  const [result, setResult] = useState<{ createdCount: number; failedCount: number; movedCount: number; emailSent: boolean } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -310,6 +322,7 @@ function BulkShareModal({
           partnerAgency: agency.trim(),
           partnerEmail: email.trim(),
           expiresInDays: expiry,
+          moveToReferredOut: move,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -317,6 +330,7 @@ function BulkShareModal({
       setResult({
         createdCount: data.createdCount ?? 0,
         failedCount: data.failedCount ?? 0,
+        movedCount: data.movedCount ?? 0,
         emailSent: !!data.emailSent,
       });
     } catch (e) {
@@ -348,6 +362,11 @@ function BulkShareModal({
                 : 'The links were created, but the email could not be sent — you can copy each from its referral.'}
               {result.failedCount > 0 && ` ${result.failedCount} could not be shared.`}
             </div>
+            {result.movedCount > 0 && (
+              <div style={{ fontSize: 13, color: '#5c6b7a', marginTop: 6 }}>
+                Moved {result.movedCount} to Referred Out.
+              </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
               <button onClick={onDone} style={modalPrimaryStyle}>Done</button>
             </div>
@@ -379,6 +398,10 @@ function BulkShareModal({
                 {[7, 14, 30, 90].map((d) => <option key={d} value={d}>{d} days</option>)}
               </select>
             </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#5c6b7a', cursor: 'pointer' }}>
+              <input type="checkbox" checked={move} onChange={(e) => setMove(e.target.checked)} />
+              Move {n === 1 ? 'it' : 'them'} to Referred Out (mark as handed off)
+            </label>
             {error && <div style={{ color: '#b3261e', fontSize: 13 }}>{error}</div>}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 6 }}>
               <button onClick={onClose} style={ghostBtnStyle}>Cancel</button>

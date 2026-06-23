@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
+import { referOutOnShare } from '@/lib/referrals';
 import { createReferralSharesBatch, shareUrl } from '@/lib/referralShares';
 import { sendReferralShareBatchEmail } from '@/lib/emails/referralShare';
 
@@ -25,12 +26,16 @@ export async function POST(request: Request) {
     partnerAgency?: string;
     partnerEmail?: string;
     expiresInDays?: number;
+    moveToReferredOut?: boolean;
   };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
   }
+  // One decision for the whole batch: move every shared card to Referred Out
+  // unless the caller opted out.
+  const shouldMove = body.moveToReferredOut !== false;
 
   const referralIds = Array.isArray(body.referralIds)
     ? body.referralIds.filter((x): x is string => typeof x === 'string')
@@ -60,6 +65,19 @@ export async function POST(request: Request) {
     caller
   );
 
+  // Hand-off: move each successfully-shared card to Referred Out (per-item
+  // non-fatal; anything already terminal is skipped by referOutOnShare).
+  let movedCount = 0;
+  if (shouldMove) {
+    for (const item of created) {
+      try {
+        if (await referOutOnShare(item.referralId, caller)) movedCount++;
+      } catch (err) {
+        console.error('referOutOnShare failed (non-fatal) for', item.referralId, err);
+      }
+    }
+  }
+
   let emailSent = false;
   let emailError: string | undefined;
   if (created.length > 0) {
@@ -79,6 +97,7 @@ export async function POST(request: Request) {
     ok: true,
     createdCount: created.length,
     failedCount: failed.length,
+    movedCount,
     emailSent,
     emailError,
   });

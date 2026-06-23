@@ -11,6 +11,7 @@ export type ReferralStage =
   | 'assessment'
   | 'authorization'
   | 'active'
+  | 'referred_out'
   | 'closed';
 export type ReferralActivityType =
   | 'created'
@@ -21,6 +22,19 @@ export type ReferralActivityType =
   | 'share';
 
 export type ShareStatus = 'active' | 'viewed' | 'expired' | 'revoked';
+
+/**
+ * Per-referral roll-up of its agency shares, attached to each card by the board
+ * GET endpoint. `live` = shares with a still-usable link; `status` is the
+ * aggregate engagement signal. Absent/null when the referral has never been
+ * shared (so the badge doesn't render). Mirrors the server type.
+ */
+export interface ReferralShareSummary {
+  total: number;
+  live: number;
+  status: 'active' | 'viewed' | 'inactive';
+  lastSharedAt: string | null;
+}
 
 export interface ReferralShare {
   id: string;
@@ -62,6 +76,8 @@ export interface Referral {
   details: ReferralDetail[];
   submittedAt: string | null;
   updatedAt: string | null;
+  /** Agency-share roll-up for the "Shared" badge; null when never shared. */
+  shareSummary?: ReferralShareSummary | null;
 }
 
 export interface ReferralActivity {
@@ -87,6 +103,7 @@ export const REFERRAL_STAGES: ReferralStage[] = [
   'assessment',
   'authorization',
   'active',
+  'referred_out',
   'closed',
 ];
 
@@ -96,6 +113,7 @@ export const STAGE_LABEL: Record<ReferralStage, string> = {
   assessment: 'Assessment',
   authorization: 'Authorization',
   active: 'Active',
+  referred_out: 'Referred Out',
   closed: 'Closed',
 };
 
@@ -105,6 +123,7 @@ export const STAGE_DESCRIPTION: Record<ReferralStage, string> = {
   assessment: 'Eligibility / intake assessment',
   authorization: 'Authorization & paperwork pending',
   active: 'Enrolled and receiving services',
+  referred_out: 'Handed off to a partner agency',
   closed: 'Closed out or not a fit',
 };
 
@@ -114,6 +133,7 @@ export const STAGE_ACCENT: Record<ReferralStage, string> = {
   assessment: '#d97706',
   authorization: '#0d9488',
   active: '#16a34a',
+  referred_out: '#0891b2',
   closed: '#64748b',
 };
 
@@ -123,7 +143,8 @@ export const SOURCE_LABEL: Record<ReferralSource, string> = {
 };
 
 export function statusFromStage(stage: ReferralStage): ReferralStatus {
-  if (stage === 'closed') return 'archived';
+  // Both terminal stages collapse to the legacy "archived" status (see server).
+  if (stage === 'closed' || stage === 'referred_out') return 'archived';
   if (stage === 'new') return 'new';
   return 'contacted';
 }

@@ -27,6 +27,7 @@ export default function ReferralsPage() {
   const [view, setView] = useState<View>('board');
   const [q, setQ] = useState('');
   const [assigneeFilter, setAssigneeFilter] = useState<string>('all');
+  const [shareFilter, setShareFilter] = useState<'all' | 'shared' | 'unshared'>('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [printList, setPrintList] = useState<Referral[] | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -123,12 +124,20 @@ export default function ReferralsPage() {
       if (assigneeFilter !== 'all' && assigneeFilter !== 'unassigned' && r.assigneeUid !== assigneeFilter) {
         return false;
       }
+      // "Shared externally" = ever shared with a partner agency (any link, even
+      // if it has since expired or been revoked — it's still part of the set
+      // we've handed out).
+      if (shareFilter !== 'all') {
+        const isShared = (r.shareSummary?.total ?? 0) > 0;
+        if (shareFilter === 'shared' && !isShared) return false;
+        if (shareFilter === 'unshared' && isShared) return false;
+      }
       if (!needle) return true;
       const hay =
         `${r.clientName} ${r.clientEmail} ${r.clientPhone} ${r.county} ${r.program} ${r.referrerName ?? ''}`.toLowerCase();
       return hay.includes(needle);
     });
-  }, [referrals, q, assigneeFilter]);
+  }, [referrals, q, assigneeFilter, shareFilter]);
 
   // --- Mutations (optimistic, with server reconcile) ---
 
@@ -295,6 +304,17 @@ export default function ReferralsPage() {
             ))}
           </select>
 
+          <select
+            value={shareFilter}
+            onChange={(e) => setShareFilter(e.target.value as 'all' | 'shared' | 'unshared')}
+            style={filterSelectStyle}
+            aria-label="Filter by sharing"
+          >
+            <option value="all">All sharing</option>
+            <option value="shared">Shared externally</option>
+            <option value="unshared">Not shared</option>
+          </select>
+
           <div style={searchWrapStyle}>
             <Search size={15} style={{ color: '#94a3b8', flexShrink: 0 }} />
             <input
@@ -333,6 +353,7 @@ export default function ReferralsPage() {
             onPrint={openPrint}
             onDelete={handleDeleteMany}
             canDelete={canDelete}
+            onChanged={load}
           />
         )}
       </div>
@@ -349,6 +370,7 @@ export default function ReferralsPage() {
           onPrint={(r) => openPrint([r])}
           onDelete={() => handleDelete(selected.id)}
           canDelete={canDelete}
+          onChanged={load}
         />
       )}
 

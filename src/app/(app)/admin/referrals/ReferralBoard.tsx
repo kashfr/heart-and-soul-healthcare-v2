@@ -17,6 +17,7 @@ import {
   REFERRAL_STAGES, STAGE_ACCENT, STAGE_DESCRIPTION, STAGE_LABEL, SOURCE_LABEL,
   type Referral, type ReferralStage,
 } from './types';
+import ShareBadge from './ShareBadge';
 
 type Columns = Record<ReferralStage, Referral[]>;
 
@@ -288,7 +289,10 @@ function CardView({ referral, dragging }: { referral: Referral; dragging?: boole
         </span>
       </div>
       <div style={cardFooterStyle}>
-        <span style={cardDateStyle}>{formatRelative(referral.submittedAt)}</span>
+        <span style={cardFooterLeftStyle}>
+          <span style={cardDateStyle}>{formatRelative(referral.submittedAt)}</span>
+          <ShareBadge summary={referral.shareSummary} />
+        </span>
         {referral.assigneeName && (
           <span style={avatarStyle} title={`Assigned to ${referral.assigneeName}`}>
             {initials(referral.assigneeName)}
@@ -458,6 +462,13 @@ const cardFooterStyle: React.CSSProperties = {
   justifyContent: 'space-between',
   gap: 8,
   marginTop: 2,
+};
+const cardFooterLeftStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 8,
+  minWidth: 0,
+  flexWrap: 'wrap',
 };
 const cardDateStyle: React.CSSProperties = {
   fontSize: 11.5,

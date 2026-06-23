@@ -2,7 +2,10 @@ import 'server-only';
 import { createHash } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
+import { isStaleReferredOut, REFERRED_OUT_AUTO_CLOSE_DAYS } from './referralAutoClose';
 import type { AuthedCaller } from './adminAuthGuard';
+
+export { REFERRED_OUT_AUTO_CLOSE_DAYS } from './referralAutoClose';
 
 // Unified referral store. Both intake sources write here:
 //   - 'gapp-website'  -> the Georgia Pediatric Program site's referral form
@@ -32,6 +35,7 @@ export type ReferralStage =
   | 'assessment'
   | 'authorization'
   | 'active'
+  | 'referred_out'
   | 'closed';
 
 export const REFERRAL_STAGES: ReferralStage[] = [
@@ -40,6 +44,7 @@ export const REFERRAL_STAGES: ReferralStage[] = [
   'assessment',
   'authorization',
   'active',
+  'referred_out',
   'closed',
 ];
 
@@ -49,6 +54,7 @@ export const STAGE_LABEL: Record<ReferralStage, string> = {
   assessment: 'Assessment',
   authorization: 'Authorization',
   active: 'Active',
+  referred_out: 'Referred Out',
   closed: 'Closed',
 };
 
@@ -61,7 +67,9 @@ export function stageFromStatus(status: string | undefined): ReferralStage {
 
 /** Derive a legacy status from a stage so old readers stay coherent. */
 export function statusFromStage(stage: ReferralStage): ReferralStatus {
-  if (stage === 'closed') return 'archived';
+  // Both terminal stages map to the legacy "archived" status so older readers
+  // (which only know new/contacted/archived) treat a handed-off referral as done.
+  if (stage === 'closed' || stage === 'referred_out') return 'archived';
   if (stage === 'new') return 'new';
   return 'contacted';
 }
@@ -405,6 +413,16 @@ export async function moveReferral(
     update.stage = change.stage;
     update.status = statusFromStage(change.stage);
   }
+  // Track when a card entered "Referred Out" so the daily sweep can age it, and
+  // clear that clock when it leaves. Only on an actual transition — a reorder
+  // within the column must not reset the countdown.
+  if (change.stage && change.stage !== prevStage) {
+    if (change.stage === 'referred_out') {
+      update.referredOutAt = FieldValue.serverTimestamp();
+    } else if (prevStage === 'referred_out') {
+      update.referredOutAt = null;
+    }
+  }
   await ref.update(update);
 
   if (change.stage && change.stage !== prevStage) {
@@ -417,6 +435,76 @@ export async function moveReferral(
     });
   }
   return true;
+}
+
+export interface AutoCloseResult {
+  /** Referrals currently in the Referred Out stage that were examined. */
+  scanned: number;
+  /** Referrals moved to Closed by this run. */
+  closed: number;
+  ids: string[];
+}
+
+/**
+ * Move referrals that have sat in "Referred Out" for at least `days` days into
+ * "Closed", each with a System-actor audit entry so the change is never a
+ * mystery (and is reversible — Closed only collapses the card, nothing is
+ * deleted). The Referred Out set is small (a terminal stage), so we query by
+ * stage and age-filter in memory — no composite index. Entry time is
+ * `referredOutAt`; cards predating that field fall back to `updatedAt` then
+ * `submittedAt`, so legacy referrals still age out. Driven by the daily cron.
+ */
+export async function autoCloseStaleReferredOut(
+  days: number = REFERRED_OUT_AUTO_CLOSE_DAYS
+): Promise<AutoCloseResult> {
+  const nowMs = Date.now();
+  const snap = await adminDb()
+    .collection(COLLECTION)
+    .where('stage', '==', 'referred_out')
+    .get();
+
+  const ids: string[] = [];
+  for (const doc of snap.docs) {
+    const data = doc.data();
+    const enteredMs =
+      toMillis(data.referredOutAt) ?? toMillis(data.updatedAt) ?? toMillis(data.submittedAt);
+    if (!isStaleReferredOut(enteredMs, nowMs, days)) continue;
+
+    await doc.ref.update({
+      stage: 'closed' as ReferralStage,
+      status: statusFromStage('closed'),
+      referredOutAt: null,
+      statusUpdatedBy: null,
+      statusUpdatedByName: 'System',
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    await logReferralActivity(doc.id, {
+      type: 'stage_change',
+      text: `Auto-closed after ${days} days in ${STAGE_LABEL.referred_out}`,
+      byUid: null,
+      byName: 'System',
+      byRole: 'system',
+    });
+    ids.push(doc.id);
+  }
+
+  return { scanned: snap.size, closed: ids.length, ids };
+}
+
+/**
+ * Move a referral to "Referred Out" because it was just shared with a partner
+ * agency (the share is the handoff). No-op — returns false — if it's already in
+ * a terminal stage (Referred Out or Closed), so re-sharing never un-closes a
+ * card or restamps an existing handoff. The move is logged like any other (via
+ * moveReferral) and credited to the sharing user.
+ */
+export async function referOutOnShare(referralId: string, caller: AuthedCaller): Promise<boolean> {
+  const snap = await adminDb().collection(COLLECTION).doc(referralId).get();
+  if (!snap.exists) return false;
+  const data = snap.data() as FirebaseFirestore.DocumentData;
+  const stage = (data.stage ?? stageFromStatus(data.status)) as ReferralStage;
+  if (stage === 'referred_out' || stage === 'closed') return false;
+  return moveReferral(referralId, { stage: 'referred_out' }, caller);
 }
 
 /**
