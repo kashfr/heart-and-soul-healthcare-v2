@@ -161,12 +161,12 @@ export default function AgenciesPage() {
                     <td style={tdStyle}>
                       <a href={`mailto:${a.email}`} style={linkStyle}><Mail size={13} /> {a.email}</a>
                     </td>
-                    <td style={tdStyle}>
+                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                       {a.phone ? <a href={`tel:${a.phone}`} style={linkStyle}><Phone size={13} /> {formatUSPhone(a.phone)}</a> : <span style={{ color: '#9ca3af' }}>—</span>}
                     </td>
                     <td style={tdStyle}>{a.contactName || <span style={{ color: '#9ca3af' }}>—</span>}</td>
                     <td style={{ ...tdStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{a.shareCount}</td>
-                    <td style={tdStyle}>{formatDate(a.lastSharedAt)}</td>
+                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(a.lastSharedAt)}</td>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                       <button onClick={() => setEditing(a)} style={iconBtnStyle} title="Edit"><Pencil size={15} /></button>
                       <button onClick={() => remove(a)} style={{ ...iconBtnStyle, color: '#b3261e' }} title="Remove"><Trash2 size={15} /></button>
