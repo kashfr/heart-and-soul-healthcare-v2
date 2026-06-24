@@ -162,7 +162,7 @@ export default function AgenciesPage() {
                       <a href={`mailto:${a.email}`} style={linkStyle}><Mail size={13} /> {a.email}</a>
                     </td>
                     <td style={tdStyle}>
-                      {a.phone ? <a href={`tel:${a.phone}`} style={linkStyle}><Phone size={13} /> {a.phone}</a> : <span style={{ color: '#9ca3af' }}>—</span>}
+                      {a.phone ? <a href={`tel:${a.phone}`} style={linkStyle}><Phone size={13} /> {formatUSPhone(a.phone)}</a> : <span style={{ color: '#9ca3af' }}>—</span>}
                     </td>
                     <td style={tdStyle}>{a.contactName || <span style={{ color: '#9ca3af' }}>—</span>}</td>
                     <td style={{ ...tdStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{a.shareCount}</td>
