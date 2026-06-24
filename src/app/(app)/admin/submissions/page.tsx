@@ -997,11 +997,21 @@ export default function SubmissionsPage() {
 
           <div style={{ flex: 1 }} />
 
-          {hasAnyFilter && (
-            <button type="button" onClick={clearAllFilters} style={clearFiltersBtnStyle}>
-              <X size={12} /> Clear all
-            </button>
-          )}
+          {/* Always rendered so its (taller-than-the-checkboxes) box reserves the
+              row height — the row no longer grows when a filter is applied. Just
+              hidden + non-interactive when there's nothing to clear. */}
+          <button
+            type="button"
+            onClick={clearAllFilters}
+            style={{
+              ...clearFiltersBtnStyle,
+              ...(hasAnyFilter ? {} : { visibility: 'hidden', pointerEvents: 'none' }),
+            }}
+            aria-hidden={!hasAnyFilter}
+            tabIndex={hasAnyFilter ? 0 : -1}
+          >
+            <X size={12} /> Clear all
+          </button>
         </div>
 
         {/* Prominent result banner — only shown when a filter is active.
