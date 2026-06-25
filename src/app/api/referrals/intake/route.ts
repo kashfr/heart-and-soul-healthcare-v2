@@ -3,6 +3,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { createReferral, type ReferralInput } from '@/lib/referrals';
 import { sendReferralNotification } from '@/lib/emails/referralNotification';
 import { sendReferralConfirmation } from '@/lib/emails/referralConfirmation';
+import { paidCaregiverDiagnosisFlag } from '@/lib/diagnosisScreening';
 
 // Public intake for referrals submitted from external sites (the GAPP website).
 // Authenticated with a shared secret (not a user session), since the caller is
@@ -96,6 +97,9 @@ function toReferralInput(payload: IncomingPayload): ReferralInput {
       : r.seekingPaidCaregiver === 'no'
       ? 'No'
       : '';
+  // Backstop flag: the GAPP form blocks most paid-caregiver-for-behavioral
+  // requests, but flag any that reach us so staff can triage at a glance.
+  const reviewFlag = paidCaregiverDiagnosisFlag(r.diagnosis, r.seekingPaidCaregiver);
 
   return {
     source: 'gapp-website',
@@ -107,6 +111,7 @@ function toReferralInput(payload: IncomingPayload): ReferralInput {
     program: 'GAPP - Georgia Pediatric Program',
     referrerName: r.submitterName || undefined,
     details: [
+      ...(reviewFlag ? [{ label: '⚠ Review', value: reviewFlag }] : []),
       { label: 'Date of birth', value: r.dob ?? '' },
       { label: 'Age', value: ageLabel(r.dob) },
       { label: 'Address', value: address },
