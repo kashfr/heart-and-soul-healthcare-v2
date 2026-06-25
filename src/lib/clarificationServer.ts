@@ -2,6 +2,8 @@ import 'server-only';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
 import type { AuthedCaller } from './adminAuthGuard';
+import { sendClarificationFlagNotice } from './emails/clarificationFlag';
+import { sendSms } from './sms/sendSms';
 
 /** One entry in the append-only clarification conversation. */
 interface ThreadMessage {
@@ -85,6 +87,56 @@ function fail(
   return { ok: false, noteId, reason, message };
 }
 
+/**
+ * Best-effort email to the note's author that a reviewer has flagged her note
+ * or posted a follow-up. Looks up her email from her user doc. Never throws:
+ * the flag/respond write has already committed, so a mail failure is logged
+ * and swallowed (the in-app gate still catches her on next sign-in).
+ */
+async function notifyNurseOfFlag(params: {
+  authorId: string;
+  clientName: string;
+  dateOfService: string;
+  kind: 'clarification' | 'correction';
+  reviewerName: string;
+  message: string;
+  isFollowUp: boolean;
+}): Promise<void> {
+  try {
+    if (!params.authorId) return;
+    const userSnap = await adminDb().collection('users').doc(params.authorId).get();
+    const u = userSnap.data() || {};
+    const email = String(u.email || '');
+    const phone = String(u.phone || '');
+
+    if (email) {
+      await sendClarificationFlagNotice({
+        to: email,
+        nurseName: String(u.displayName || ''),
+        clientName: params.clientName,
+        dateOfService: params.dateOfService,
+        kind: params.kind,
+        reviewerName: params.reviewerName,
+        message: params.message,
+        isFollowUp: params.isFollowUp,
+      });
+    }
+
+    // PHI-free SMS nudge alongside the email (no client name or clinical
+    // detail, since SMS is unencrypted and not a covered service under Quo's
+    // BAA). Self-gating: no-ops when Quo isn't configured, so this is safe to
+    // ship before the credentials are added.
+    if (phone) {
+      const smsBody = params.isFollowUp
+        ? 'Heart and Soul: a follow-up question was added to a note awaiting your reply. Please sign in: https://www.heartandsoulhc.org/login Reply STOP to opt out.'
+        : `Heart and Soul: one of your notes was flagged for ${params.kind}. Please sign in to respond: https://www.heartandsoulhc.org/login Reply STOP to opt out.`;
+      await sendSms(phone, smsBody);
+    }
+  } catch (err) {
+    console.error('Failed to notify nurse of clarification:', err);
+  }
+}
+
 export async function applyClarification(
   noteId: string,
   caller: AuthedCaller,
@@ -135,6 +187,17 @@ export async function applyClarification(
         flaggedAt: FieldValue.serverTimestamp(),
       },
     });
+    // Email the author so she learns about the flag without having to be in
+    // the portal. Best-effort; the flag is already saved above.
+    await notifyNurseOfFlag({
+      authorId,
+      clientName: String(data.q3_clientName || ''),
+      dateOfService: String(data.q6_dateofService || ''),
+      kind: kind === 'correction' ? 'correction' : 'clarification',
+      reviewerName: name,
+      message: trimmed,
+      isFollowUp: false,
+    });
     return { ok: true, noteId };
   }
 
@@ -170,6 +233,19 @@ export async function applyClarification(
       'clarification.respondedByRole': caller.role,
       'clarification.respondedAt': FieldValue.serverTimestamp(),
     });
+    // A reviewer follow-up (not the nurse's own reply) re-arms the gate, so
+    // email the author there's a new question awaiting her.
+    if (!isAuthor && canReview(caller)) {
+      await notifyNurseOfFlag({
+        authorId,
+        clientName: String(data.q3_clientName || ''),
+        dateOfService: String(data.q6_dateofService || ''),
+        kind: clarification?.kind === 'correction' ? 'correction' : 'clarification',
+        reviewerName: name,
+        message: trimmed,
+        isFollowUp: true,
+      });
+    }
     return { ok: true, noteId };
   }
 
