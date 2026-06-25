@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { formatUSPhone } from '@/lib/phone';
+import { classifyDiagnosis } from '@/lib/diagnosisScreening';
 import {
   FileText,
   User,
@@ -156,10 +157,25 @@ export default function ReferralPage() {
   // only, never for behavioral aide. So "GAPP + wants pay + behavioral/autism"
   // is a dead end: block submission and redirect. Scoped to GAPP so it never
   // blocks NOW/COMP or other referrals.
-  const isPaidBehavioralBlock =
+  const seekingPaidGapp =
     formData.programInterest === 'gapp' &&
-    formData.seekingPaidCaregiver === 'yes' &&
-    formData.careNeeds === 'behavioral';
+    formData.seekingPaidCaregiver === 'yes';
+  // Cross-check the free-text needs/notes too — submitters dodge the radio by
+  // picking "personal care" while describing autism. A behavioral/developmental
+  // description with no physical condition is a paid-parent dead end, same as
+  // selecting the behavioral option.
+  const careNeedsDxClass = classifyDiagnosis(
+    `${formData.serviceNeeds} ${formData.additionalNotes}`
+  );
+  const isPaidBehavioralBlock =
+    seekingPaidGapp &&
+    (formData.careNeeds === 'behavioral' || careNeedsDxClass === 'behavioral');
+  // Blocked by the description, not the option they picked.
+  const blockedByDiagnosis =
+    isPaidBehavioralBlock && formData.careNeeds !== 'behavioral';
+  // Behavioral description + a physical/medical condition: don't block; prompt.
+  const isPaidMixedDx =
+    seekingPaidGapp && !isPaidBehavioralBlock && careNeedsDxClass === 'mixed';
 
   // Returns list of missing required field labels for the current step
   const getMissingFields = (): string[] => {
@@ -934,8 +950,27 @@ export default function ReferralPage() {
                 <div className={styles.formGridSingle}>
                   <div className="form-group">
                     <label htmlFor="seekingPaidCaregiver" className="form-label">
-                      Are you hoping to be paid to help care for your child? *
+                      Are you applying to be your child&apos;s paid caregiver? *
                     </label>
+                    <p
+                      style={{
+                        margin: '0.25rem 0 0.5rem',
+                        fontSize: '0.875rem',
+                        lineHeight: 1.5,
+                        color: '#4b5563',
+                      }}
+                    >
+                      Your child&apos;s GAPP care (nursing or personal care) is the
+                      same whether or not a parent is paid to provide it. Being a paid
+                      family caregiver is a separate, limited option: it covers
+                      personal care only, your child must medically qualify for GAPP,
+                      and it is{' '}
+                      <strong>
+                        not available for autism, behavioral, or developmental needs
+                      </strong>
+                      . If you are unsure, choose No. It will not affect your
+                      child&apos;s application.
+                    </p>
                     <select
                       id="seekingPaidCaregiver"
                       name="seekingPaidCaregiver"
@@ -982,6 +1017,8 @@ export default function ReferralPage() {
                         <div className={styles.countyNotice}>
                           <AlertCircle size={16} />
                           <p>
+                            {blockedByDiagnosis &&
+                              "Based on what you described, your child's needs look developmental or behavioral. "}
                             A parent generally cannot be paid to provide behavioral
                             or autism care. Under GAPP&apos;s Family Caregiver Option,
                             a parent can be paid for personal care only (help with
@@ -992,6 +1029,19 @@ export default function ReferralPage() {
                             For other developmental needs, look into the NOW and COMP
                             waivers. If your child also needs hands-on personal care
                             or nursing at home, please call us and we will help.
+                          </p>
+                        </div>
+                      )}
+
+                      {isPaidMixedDx && (
+                        <div className={styles.countyNotice}>
+                          <AlertCircle size={16} />
+                          <p>
+                            You described a physical or medical condition along with a
+                            developmental or behavioral one. A parent can be paid only
+                            for hands-on care related to the physical or medical
+                            condition, not for autism or behavioral support. We will
+                            confirm what your child qualifies for when we talk.
                           </p>
                         </div>
                       )}
@@ -1010,7 +1060,9 @@ export default function ReferralPage() {
                         )}
 
                       {formData.programInterest === 'gapp' &&
-                        formData.careNeeds === 'personal' && (
+                        formData.careNeeds === 'personal' &&
+                        !isPaidBehavioralBlock &&
+                        !isPaidMixedDx && (
                           <div className={styles.countyNotice}>
                             <AlertCircle size={16} />
                             <p>

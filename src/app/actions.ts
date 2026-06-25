@@ -6,6 +6,7 @@ import { JWT } from 'google-auth-library';
 import { createClickUpTask } from '@/lib/clickup';
 import { createReferral } from '@/lib/referrals';
 import { sendReferralConfirmation } from '@/lib/emails/referralConfirmation';
+import { paidCaregiverDiagnosisFlag } from '@/lib/diagnosisScreening';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -230,6 +231,15 @@ export async function processReferralSubmission(data: any) {
     // Referrals tab alongside referrals forwarded from the GAPP site. Non-fatal:
     // a storage failure must never block the email/Sheets/ClickUp flow.
     try {
+      // Backstop flag (mirrors the GAPP intake): flag a GAPP paid-caregiver
+      // request whose described needs read behavioral/developmental.
+      const reviewFlag =
+        program.interest === 'gapp'
+          ? paidCaregiverDiagnosisFlag(
+              `${details.serviceNeeds ?? ''} ${details.additionalNotes ?? ''}`,
+              details.seekingPaidCaregiver
+            )
+          : null;
       await createReferral({
         source: 'hs-website',
         clientName: `${client.firstName ?? ''} ${client.lastName ?? ''}`.trim(),
@@ -239,6 +249,7 @@ export async function processReferralSubmission(data: any) {
         program: labelFor(PROGRAM_LABELS, program.interest ?? ''),
         referrerName: referrer.name ?? '',
         details: [
+          ...(reviewFlag ? [{ label: '⚠ Review', value: reviewFlag }] : []),
           { label: 'Date of birth', value: client.dob ?? '' },
           { label: 'Secondary phone', value: client.secondaryPhone ?? '' },
           {
