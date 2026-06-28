@@ -330,11 +330,6 @@ export async function resolveSharedReferral(token: string): Promise<ResolveResul
   };
 }
 
-/** Compose the public share URL from a base origin. */
-export function shareUrl(origin: string, token: string): string {
-  return `${origin.replace(/\/$/, '')}/shared/referral/${token}`;
-}
-
 /**
  * Summarize every share, grouped by referral, for the admin board/table. One
  * collection read (the share set is small for this org) — avoids an N+1 or the

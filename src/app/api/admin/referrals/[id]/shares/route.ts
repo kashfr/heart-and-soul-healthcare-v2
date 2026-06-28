@@ -1,11 +1,8 @@
 import { NextResponse } from 'next/server';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
 import { getReferral, referOutOnShare } from '@/lib/referrals';
-import {
-  createReferralShare,
-  listReferralShares,
-  shareUrl,
-} from '@/lib/referralShares';
+import { createReferralShare, listReferralShares } from '@/lib/referralShares';
+import { buildShareUrl } from '@/lib/shareLink';
 import { sendReferralShareEmail } from '@/lib/emails/referralShare';
 
 export const runtime = 'nodejs';
@@ -91,7 +88,6 @@ export async function POST(
   // Default: sharing hands the referral off, so move it to Referred Out unless
   // the caller explicitly opts out (a visibility-only share).
   const shouldMove = body.moveToReferredOut !== false;
-  const origin = new URL(request.url).origin;
 
   // Create one share per agency; a single bad recipient (e.g. invalid email) is
   // collected as a failure rather than sinking the whole request. Manual records
@@ -110,7 +106,7 @@ export async function POST(
         const emailResult = await sendReferralShareEmail({
           to: share.partnerEmail,
           partnerAgency: share.partnerAgency,
-          link: shareUrl(origin, token),
+          link: buildShareUrl(token),
           sharedByName: caller.profile.displayName || undefined,
           clientName: referral.clientName,
           expiresAt: share.expiresAt,
