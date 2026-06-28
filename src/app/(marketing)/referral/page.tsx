@@ -1029,12 +1029,12 @@ export default function ReferralPage() {
                             contact your child&apos;s Medicaid care management
                             organization (CMO) or visit{' '}
                             <a
-                              href="https://dch.georgia.gov/autism-spectrum-disorder"
+                              href="https://medicaid.georgia.gov/programs/all-programs/autism-spectrum-disorder"
                               target="_blank"
                               rel="noopener noreferrer"
                               style={{ color: 'inherit', fontWeight: 600 }}
                             >
-                              dch.georgia.gov/autism-spectrum-disorder
+                              medicaid.georgia.gov/autism-spectrum-disorder
                             </a>
                             , or call Georgia Medicaid (DCH) at{' '}
                             <a
@@ -1073,12 +1073,12 @@ export default function ReferralPage() {
                               right place to start. Contact your child&apos;s Medicaid
                               CMO or visit{' '}
                               <a
-                                href="https://dch.georgia.gov/autism-spectrum-disorder"
+                                href="https://medicaid.georgia.gov/programs/all-programs/autism-spectrum-disorder"
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 style={{ color: 'inherit', fontWeight: 600 }}
                               >
-                                dch.georgia.gov/autism-spectrum-disorder
+                                medicaid.georgia.gov/autism-spectrum-disorder
                               </a>
                               , or call DCH at{' '}
                               <a
