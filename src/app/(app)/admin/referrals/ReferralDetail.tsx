@@ -332,6 +332,9 @@ const EXPIRY_OPTIONS = [
   { days: 90, label: '90 days' },
 ];
 
+// Email check used when staging a multi-agency recipient before it's added.
+const SHARE_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function SharePanel({
   referralId,
   stage,
@@ -347,14 +350,17 @@ function SharePanel({
   const [shares, setShares] = useState<ReferralShare[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  // The agency/email inputs are a "staging" row; Add pushes them into
+  // `recipients` as a chip. A filled staging row is also included on submit, so
+  // a single-agency share still works without clicking Add.
   const [agency, setAgency] = useState('');
   const [email, setEmail] = useState('');
+  const [recipients, setRecipients] = useState<{ name: string; email: string }[]>([]);
   const [expiry, setExpiry] = useState(14);
   const [move, setMove] = useState(true);
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [created, setCreated] = useState<{ link: string; emailSent: boolean } | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [created, setCreated] = useState<{ count: number; emailsSent: number; failed: number } | null>(null);
   const [copiedShareId, setCopiedShareId] = useState<string | null>(null);
   const [agencies, setAgencies] = useState<{ id: string; name: string; email: string }[]>([]);
 
@@ -386,6 +392,25 @@ function SharePanel({
     if (match) setEmail(match.email);
   };
 
+  const addRecipient = () => {
+    const n = agency.trim();
+    const e = email.trim().toLowerCase();
+    if (!n || !SHARE_EMAIL_RE.test(e)) {
+      setFormError('Enter an agency name and a valid email before adding.');
+      return;
+    }
+    if (recipients.some((r) => r.email === e)) {
+      setFormError('That agency is already added.');
+      return;
+    }
+    setRecipients((prev) => [...prev, { name: n, email: e }]);
+    setAgency('');
+    setEmail('');
+    setFormError(null);
+  };
+  const removeRecipient = (idx: number) =>
+    setRecipients((prev) => prev.filter((_, i) => i !== idx));
+
   const loadShares = useCallback(async () => {
     setLoading(true);
     try {
@@ -406,7 +431,19 @@ function SharePanel({
   }, [loadShares]);
 
   const submit = async () => {
-    if (!agency.trim() || !email.trim() || creating) return;
+    if (creating) return;
+    // Include a filled-but-not-yet-added staging row, so a single-agency share
+    // works without clicking Add.
+    let list = recipients;
+    const n = agency.trim();
+    const e = email.trim().toLowerCase();
+    if (n && SHARE_EMAIL_RE.test(e) && !recipients.some((r) => r.email === e)) {
+      list = [...recipients, { name: n, email: e }];
+    }
+    if (list.length === 0) {
+      setFormError('Add at least one agency.');
+      return;
+    }
     setCreating(true);
     setFormError(null);
     setCreated(null);
@@ -414,15 +451,19 @@ function SharePanel({
       const res = await authedFetch(`/api/admin/referrals/${referralId}/shares`, {
         method: 'POST',
         body: JSON.stringify({
-          partnerAgency: agency.trim(),
-          partnerEmail: email.trim(),
+          recipients: list.map((r) => ({ partnerAgency: r.name, partnerEmail: r.email })),
           expiresInDays: expiry,
           moveToReferredOut: move && !isTerminal,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
-      setCreated({ link: data.link, emailSent: !!data.emailSent });
+      setCreated({
+        count: data.createdCount ?? list.length,
+        emailsSent: data.emailsSent ?? 0,
+        failed: data.failedCount ?? 0,
+      });
+      setRecipients([]);
       setAgency('');
       setEmail('');
       setShowForm(false);
@@ -430,7 +471,7 @@ function SharePanel({
       // Refresh the board so the new "Shared" badge and any stage move show up.
       onChanged?.();
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Could not create share.');
+      setFormError(err instanceof Error ? err.message : 'Could not create shares.');
     } finally {
       setCreating(false);
     }
@@ -452,17 +493,6 @@ function SharePanel({
     }
   };
 
-  const copyLink = async () => {
-    if (!created) return;
-    try {
-      await navigator.clipboard.writeText(created.link);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* clipboard may be unavailable; the link is visible to copy manually */
-    }
-  };
-
   // Re-copy an existing share's link anytime (Option 2). Built from the token +
   // current origin so it's correct in any environment.
   const copyShareLink = async (share: ReferralShare) => {
@@ -477,23 +507,29 @@ function SharePanel({
     }
   };
 
+  // Submit-button count: queued chips plus a valid, not-yet-added staging row.
+  const stagedEmail = email.trim().toLowerCase();
+  const stagingValid =
+    agency.trim() !== '' && SHARE_EMAIL_RE.test(stagedEmail) && !recipients.some((r) => r.email === stagedEmail);
+  const sendCount = recipients.length + (stagingValid ? 1 : 0);
+
   return (
     <div style={{ marginBottom: 8 }}>
       {created && (
-        <div style={created.emailSent ? createdBox : createdBoxWarn}>
-          <div style={{ fontWeight: 700, color: created.emailSent ? '#1e7a3d' : '#9a6400', marginBottom: 6 }}>
-            {created.emailSent
-              ? 'Link created and emailed'
-              : '⚠ Link created, but the email could not be sent — copy the link below and send it manually.'}
+        <div style={created.failed === 0 && created.emailsSent === created.count ? createdBox : createdBoxWarn}>
+          <div style={{ fontWeight: 700, color: created.failed === 0 && created.emailsSent === created.count ? '#1e7a3d' : '#9a6400' }}>
+            Shared with {created.count} agenc{created.count === 1 ? 'y' : 'ies'}
+            {created.emailsSent === created.count
+              ? ` · ${created.count === 1 ? 'email sent' : 'emails sent'}`
+              : ` · ${created.emailsSent}/${created.count} emailed`}
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <input readOnly value={created.link} style={{ ...shareInput, flex: 1 }} onFocus={(e) => e.target.select()} />
-            <button onClick={copyLink} style={copyBtn}>
-              {copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'Copied' : 'Copy'}
-            </button>
-          </div>
+          {created.failed > 0 && (
+            <div style={{ fontSize: 12, color: '#9a6400', marginTop: 4 }}>
+              {created.failed} couldn&apos;t be shared — check the email{created.failed === 1 ? '' : 's'} and try again.
+            </div>
+          )}
           <div style={{ fontSize: 11.5, color: '#9ca3af', marginTop: 6 }}>
-            Copy it now — for security, the link can&apos;t be shown again.
+            Each agency&apos;s link is listed below — copy any anytime.
           </div>
         </div>
       )}
@@ -504,26 +540,54 @@ function SharePanel({
         </button>
       ) : (
         <div style={shareFormBox}>
-          <input
-            value={agency}
-            onChange={(e) => onAgencyName(e.target.value)}
-            placeholder="Partner agency name"
-            style={shareInput}
-            list="referral-agency-options"
-            autoComplete="off"
-          />
-          <datalist id="referral-agency-options">
-            {agencies.map((a) => (
-              <option key={a.id} value={a.name} />
-            ))}
-          </datalist>
-          <input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Partner email"
-            type="email"
-            style={shareInput}
-          />
+          {recipients.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {recipients.map((r, i) => (
+                <span key={r.email} style={chipStyle} title={r.email}>
+                  {r.name}
+                  <button
+                    type="button"
+                    onClick={() => removeRecipient(i)}
+                    style={chipRemoveBtn}
+                    aria-label={`Remove ${r.name}`}
+                  >
+                    <X size={12} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+              <input
+                value={agency}
+                onChange={(e) => onAgencyName(e.target.value)}
+                placeholder="Partner agency name"
+                style={shareInput}
+                list="referral-agency-options"
+                autoComplete="off"
+              />
+              <datalist id="referral-agency-options">
+                {agencies.map((a) => (
+                  <option key={a.id} value={a.name} />
+                ))}
+              </datalist>
+              <input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addRecipient(); } }}
+                placeholder="Partner email"
+                type="email"
+                style={shareInput}
+              />
+            </div>
+            <button type="button" onClick={addRecipient} style={addAgencyBtn} title="Add another agency to this share">
+              <Plus size={14} /> Add
+            </button>
+          </div>
+          <div style={{ fontSize: 11.5, color: '#9ca3af' }}>
+            Add as many agencies as you like — each gets its own link and email.
+          </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <span style={{ fontSize: 12.5, color: '#5c6b7a' }}>Expires in</span>
             <select value={expiry} onChange={(e) => setExpiry(Number(e.target.value))} style={shareSelect}>
@@ -532,9 +596,14 @@ function SharePanel({
               ))}
             </select>
             <div style={{ flex: 1 }} />
-            <button onClick={() => { setShowForm(false); setFormError(null); }} style={shareCancelBtn}>Cancel</button>
-            <button onClick={submit} disabled={creating || !agency.trim() || !email.trim()} style={shareSubmitBtn}>
-              {creating ? 'Sending…' : 'Create & email link'}
+            <button
+              onClick={() => { setShowForm(false); setFormError(null); setRecipients([]); setAgency(''); setEmail(''); }}
+              style={shareCancelBtn}
+            >
+              Cancel
+            </button>
+            <button onClick={submit} disabled={creating || sendCount === 0} style={shareSubmitBtn}>
+              {creating ? 'Sending…' : sendCount <= 1 ? 'Create & email link' : `Create & email ${sendCount} links`}
             </button>
           </div>
           {!isTerminal && (
@@ -556,8 +625,14 @@ function SharePanel({
                   {s.partnerAgency}
                 </div>
                 <div style={{ fontSize: 11.5, color: '#9ca3af' }}>
-                  {s.partnerEmail} · {s.viewCount} view{s.viewCount === 1 ? '' : 's'}
-                  {s.lastViewedAt ? ` · last ${formatRelative(s.lastViewedAt)}` : ''}
+                  {s.manual ? (
+                    <>Referred manually{s.partnerEmail ? ` · ${s.partnerEmail}` : ''}</>
+                  ) : (
+                    <>
+                      {s.partnerEmail} · {s.viewCount} view{s.viewCount === 1 ? '' : 's'}
+                      {s.lastViewedAt ? ` · last ${formatRelative(s.lastViewedAt)}` : ''}
+                    </>
+                  )}
                 </div>
               </div>
               <span style={{ ...shareBadge, ...SHARE_STATUS_STYLE[s.status] }}>{s.status}</span>
@@ -626,9 +701,17 @@ const shareCancelBtn: React.CSSProperties = {
 const moveCheckRow: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: '#5c6b7a', cursor: 'pointer',
 };
-const copyBtn: React.CSSProperties = {
+const chipStyle: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', gap: 5, background: '#eef5ff', color: '#1a3a5c',
+  border: '1px solid #d6e4f7', borderRadius: 999, padding: '4px 6px 4px 10px', fontSize: 12.5, fontWeight: 600,
+};
+const chipRemoveBtn: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent',
+  border: 'none', color: '#5c7aa3', cursor: 'pointer', padding: 0,
+};
+const addAgencyBtn: React.CSSProperties = {
   display: 'inline-flex', alignItems: 'center', gap: 5, background: 'white', color: '#1a3a5c',
-  border: '1px solid #d1d5db', borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 600,
+  border: '1px solid #d1d5db', borderRadius: 8, padding: '0 12px', fontSize: 13, fontWeight: 600,
   cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
 };
 const shareRow: React.CSSProperties = {
