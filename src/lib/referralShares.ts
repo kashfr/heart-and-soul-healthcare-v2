@@ -43,6 +43,8 @@ export interface ReferralShare {
   referralId: string;
   partnerAgency: string;
   partnerEmail: string;
+  /** True for a "referred out, no link emailed" manual record. */
+  manual: boolean;
   createdByName: string;
   createdAt: string | null;
   expiresAt: string | null;
@@ -115,6 +117,7 @@ function serializeShare(id: string, data: FirebaseFirestore.DocumentData, nowMs:
     revokedAt: toIso(data.revokedAt),
     viewCount,
     lastViewedAt: toIso(data.lastViewedAt),
+    manual: data.manual ?? false,
     status: deriveShareStatus(revokedAtMs, expiresAtMs, viewCount, nowMs),
     token: data.token ?? null,
   };
@@ -125,6 +128,12 @@ export interface CreateShareInput {
   partnerEmail: string;
   /** Link lifetime in days (default 14). */
   expiresInDays?: number;
+  /**
+   * A manual "referred out" record (handed off by phone/fax/email outside the
+   * portal): email becomes optional and no link is emailed. The share doc + token
+   * are still created so the agency is captured and a link can be copied later.
+   */
+  manual?: boolean;
 }
 
 /**
@@ -139,7 +148,13 @@ export async function createReferralShare(
   const partnerAgency = clamp(input.partnerAgency, MAX.agency);
   const partnerEmail = clamp(input.partnerEmail, MAX.email).toLowerCase();
   if (!partnerAgency) throw new Error('Partner agency name is required.');
-  if (!EMAIL_RE.test(partnerEmail)) throw new Error('A valid partner email is required.');
+  if (input.manual) {
+    if (partnerEmail && !EMAIL_RE.test(partnerEmail)) {
+      throw new Error('Enter a valid email or leave it blank.');
+    }
+  } else if (!EMAIL_RE.test(partnerEmail)) {
+    throw new Error('A valid partner email is required.');
+  }
 
   const referral = await getReferral(referralId);
   if (!referral) throw new Error('Referral not found.');
@@ -150,11 +165,14 @@ export async function createReferralShare(
 
   // Remember the agency in the reusable directory so it autocompletes next time.
   // Best-effort: a directory hiccup must never block the actual share.
+  // Save to the reusable directory only when we have an email to dedupe on.
   let agencyId: string | null = null;
-  try {
-    agencyId = await rememberAgencyFromShare({ name: partnerAgency, email: partnerEmail }, caller);
-  } catch (err) {
-    console.error('rememberAgencyFromShare failed (non-fatal):', err);
+  if (partnerEmail) {
+    try {
+      agencyId = await rememberAgencyFromShare({ name: partnerAgency, email: partnerEmail }, caller);
+    } catch (err) {
+      console.error('rememberAgencyFromShare failed (non-fatal):', err);
+    }
   }
 
   const docData = {
@@ -162,6 +180,7 @@ export async function createReferralShare(
     agencyId,
     partnerAgency,
     partnerEmail,
+    manual: !!input.manual,
     createdBy: caller.uid,
     createdByName: caller.profile.displayName || '',
     createdAt: FieldValue.serverTimestamp(),
@@ -192,7 +211,7 @@ export async function createReferralShare(
 
   await logReferralActivity(referralId, {
     type: 'share',
-    text: `Shared with ${partnerAgency}`,
+    text: input.manual ? `Referred to ${partnerAgency}` : `Shared with ${partnerAgency}`,
     byUid: caller.uid,
     byName: caller.profile.displayName || '',
     byRole: caller.role,

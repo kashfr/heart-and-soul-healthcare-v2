@@ -11,6 +11,8 @@ import { sendReferralShareEmail } from '@/lib/emails/referralShare';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+const MAX_RECIPIENTS = 25;
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -48,42 +50,89 @@ export async function POST(
   let body: {
     partnerAgency?: string;
     partnerEmail?: string;
+    recipients?: { partnerAgency?: string; partnerEmail?: string }[];
     expiresInDays?: number;
     moveToReferredOut?: boolean;
+    manual?: boolean;
   };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
   }
+  // Manual = a "referred out, capture-only" record: email optional, no link emailed.
+  const manual = body.manual === true;
+
+  // Accept a multi-agency `recipients` array, or fall back to the single-agency
+  // body (back-compat). Each recipient gets its own independent link + email.
+  const rawRecipients =
+    Array.isArray(body.recipients) && body.recipients.length > 0
+      ? body.recipients
+      : [{ partnerAgency: body.partnerAgency, partnerEmail: body.partnerEmail }];
+  const recipients = rawRecipients
+    .map((r) => ({ partnerAgency: (r.partnerAgency ?? '').trim(), partnerEmail: (r.partnerEmail ?? '').trim() }))
+    .filter((r) => r.partnerAgency || r.partnerEmail);
+
+  if (recipients.length === 0) {
+    return NextResponse.json({ error: 'Add at least one agency.' }, { status: 400 });
+  }
+  if (recipients.length > MAX_RECIPIENTS) {
+    return NextResponse.json(
+      { error: `Cannot share with more than ${MAX_RECIPIENTS} agencies at once.` },
+      { status: 400 }
+    );
+  }
+
+  const referral = await getReferral(id);
+  if (!referral) {
+    return NextResponse.json({ error: 'Referral not found.' }, { status: 404 });
+  }
+
   // Default: sharing hands the referral off, so move it to Referred Out unless
   // the caller explicitly opts out (a visibility-only share).
   const shouldMove = body.moveToReferredOut !== false;
+  const origin = new URL(request.url).origin;
 
-  let token: string;
-  let share;
-  try {
-    const result = await createReferralShare(
-      id,
-      {
-        partnerAgency: body.partnerAgency ?? '',
-        partnerEmail: body.partnerEmail ?? '',
-        expiresInDays: body.expiresInDays,
-      },
-      caller
-    );
-    token = result.token;
-    share = result.share;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Could not create share.';
-    const status = message === 'Referral not found.' ? 404 : 400;
-    return NextResponse.json({ error: message }, { status });
+  // Create one share per agency; a single bad recipient (e.g. invalid email) is
+  // collected as a failure rather than sinking the whole request. Manual records
+  // skip the email entirely (they're just capturing who it was handed off to).
+  const created: { partnerAgency: string; emailSent: boolean }[] = [];
+  const failed: string[] = [];
+  for (const r of recipients) {
+    try {
+      const { token, share } = await createReferralShare(
+        id,
+        { partnerAgency: r.partnerAgency, partnerEmail: r.partnerEmail, expiresInDays: body.expiresInDays, manual },
+        caller
+      );
+      let emailSent = false;
+      if (!manual && share.partnerEmail) {
+        const emailResult = await sendReferralShareEmail({
+          to: share.partnerEmail,
+          partnerAgency: share.partnerAgency,
+          link: shareUrl(origin, token),
+          sharedByName: caller.profile.displayName || undefined,
+          clientName: referral.clientName,
+          expiresAt: share.expiresAt,
+        });
+        emailSent = emailResult.ok;
+      }
+      created.push({ partnerAgency: share.partnerAgency, emailSent });
+    } catch (err) {
+      console.error('Share failed for', r.partnerEmail, err);
+      failed.push(r.partnerAgency || r.partnerEmail);
+    }
   }
 
-  const link = shareUrl(new URL(request.url).origin, token);
+  if (created.length === 0) {
+    return NextResponse.json(
+      { error: 'Could not create any shares — check the agency emails and try again.' },
+      { status: 400 }
+    );
+  }
 
-  // Hand-off: move the card to Referred Out (non-fatal — the share already
-  // succeeded; a move hiccup shouldn't fail the request).
+  // Hand-off: move the card to Referred Out once, after the shares succeed
+  // (non-fatal — a move hiccup shouldn't fail the request).
   let moved = false;
   if (shouldMove) {
     try {
@@ -93,24 +142,11 @@ export async function POST(
     }
   }
 
-  // Email the partner (non-fatal: the link is also returned for copy/paste).
-  const referral = await getReferral(id);
-  const emailResult = await sendReferralShareEmail({
-    to: share.partnerEmail,
-    partnerAgency: share.partnerAgency,
-    link,
-    sharedByName: caller.profile.displayName || undefined,
-    clientName: referral?.clientName,
-    expiresAt: share.expiresAt,
-  });
-
   return NextResponse.json({
     ok: true,
-    token,
-    link,
-    share,
+    createdCount: created.length,
+    failedCount: failed.length,
+    emailsSent: created.filter((c) => c.emailSent).length,
     moved,
-    emailSent: emailResult.ok,
-    emailError: emailResult.ok ? undefined : emailResult.error,
   });
 }

@@ -8,6 +8,7 @@ import ReferralBoard from './ReferralBoard';
 import ReferralTable from './ReferralTable';
 import ReferralDetail from './ReferralDetail';
 import PrintOverlay from './PrintOverlay';
+import ReferOutModal from './ReferOutModal';
 import {
   statusFromStage,
   type Referral, type ReferralStage, type StaffOption,
@@ -30,6 +31,9 @@ export default function ReferralsPage() {
   const [shareFilter, setShareFilter] = useState<'all' | 'shared' | 'unshared'>('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [printList, setPrintList] = useState<Referral[] | null>(null);
+  // A move into Referred Out that needs an agency captured first (drag or
+  // dropdown). The card doesn't move until the modal is confirmed.
+  const [pendingReferOut, setPendingReferOut] = useState<{ id: string; name: string } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   // Per-referral request sequence. Each mutation bumps the counter and records
@@ -196,14 +200,27 @@ export default function ReferralsPage() {
   );
 
   const handleMove = useCallback(
-    (id: string, stage: ReferralStage, order: number) =>
+    (id: string, stage: ReferralStage, order: number) => {
+      // Gate: a card entering Referred Out with no agency on record must capture
+      // who it was handed off to first. (A card already shared, or already in
+      // Referred Out and just being reordered, moves freely.)
+      if (stage === 'referred_out') {
+        const ref = referrals.find((r) => r.id === id);
+        const entering = !!ref && ref.stage !== 'referred_out';
+        const hasAgency = (ref?.shareSummary?.total ?? 0) > 0;
+        if (entering && !hasAgency) {
+          setPendingReferOut({ id, name: ref?.clientName || 'this referral' });
+          return;
+        }
+      }
       mutate(
         id,
         (r) => ({ ...r, stage, status: statusFromStage(stage), order }),
         { stage, order },
         'Could not move referral.'
-      ),
-    [mutate]
+      );
+    },
+    [mutate, referrals]
   );
 
   const handleAssign = useCallback(
@@ -375,6 +392,15 @@ export default function ReferralsPage() {
       )}
 
       {printList && <PrintOverlay printList={printList} onClose={() => setPrintList(null)} />}
+
+      {pendingReferOut && (
+        <ReferOutModal
+          referralId={pendingReferOut.id}
+          referralName={pendingReferOut.name}
+          onClose={() => setPendingReferOut(null)}
+          onDone={() => { setPendingReferOut(null); load(); }}
+        />
+      )}
 
       <style>{`
         @keyframes referralDrawerIn {

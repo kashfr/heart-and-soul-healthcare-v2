@@ -41,6 +41,8 @@ export interface ReferralShare {
   referralId: string;
   partnerAgency: string;
   partnerEmail: string;
+  /** True for a manual "referred out" record (captured, no link emailed). */
+  manual?: boolean;
   createdByName: string;
   createdAt: string | null;
   expiresAt: string | null;
