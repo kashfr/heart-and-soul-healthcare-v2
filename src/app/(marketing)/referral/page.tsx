@@ -1024,9 +1024,26 @@ export default function ReferralPage() {
                             a parent can be paid for personal care only (help with
                             feeding, bathing, dressing, and getting around), not for
                             skilled nursing or behavioral support. For autism, the
-                            program to start with is Georgia Medicaid&apos;s Autism
-                            Spectrum Disorder (ASD) Program, which covers ABA therapy.
-                            For other developmental needs, look into the NOW and COMP
+                            program is Georgia Medicaid&apos;s Autism Spectrum Disorder
+                            (ASD) Program, which covers ABA therapy. To get started,
+                            contact your child&apos;s Medicaid care management
+                            organization (CMO) or visit{' '}
+                            <a
+                              href="https://dch.georgia.gov/autism-spectrum-disorder"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{ color: 'inherit', fontWeight: 600 }}
+                            >
+                              dch.georgia.gov/autism-spectrum-disorder
+                            </a>
+                            , or call Georgia Medicaid (DCH) at{' '}
+                            <a
+                              href="tel:+14046564507"
+                              style={{ color: 'inherit', fontWeight: 600 }}
+                            >
+                              (404) 656-4507
+                            </a>
+                            . For other developmental needs, look into the NOW and COMP
                             waivers. If your child also needs hands-on personal care
                             or nursing at home, please call us and we will help.
                           </p>
@@ -1053,8 +1070,25 @@ export default function ReferralPage() {
                             <p>
                               For autism, Georgia Medicaid&apos;s Autism Spectrum
                               Disorder (ASD) Program (ABA therapy) is usually the
-                              right place to start. You are welcome to continue and we
-                              will help you find the right path.
+                              right place to start. Contact your child&apos;s Medicaid
+                              CMO or visit{' '}
+                              <a
+                                href="https://dch.georgia.gov/autism-spectrum-disorder"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{ color: 'inherit', fontWeight: 600 }}
+                              >
+                                dch.georgia.gov/autism-spectrum-disorder
+                              </a>
+                              , or call DCH at{' '}
+                              <a
+                                href="tel:+14046564507"
+                                style={{ color: 'inherit', fontWeight: 600 }}
+                              >
+                                (404) 656-4507
+                              </a>
+                              . You are welcome to continue and we will help you find
+                              the right path.
                             </p>
                           </div>
                         )}
