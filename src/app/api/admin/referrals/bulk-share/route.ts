@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
 import { referOutOnShare } from '@/lib/referrals';
-import { createReferralSharesBatch, shareUrl } from '@/lib/referralShares';
+import { createReferralSharesBatch } from '@/lib/referralShares';
+import { buildShareUrl } from '@/lib/shareLink';
 import { sendReferralShareBatchEmail } from '@/lib/emails/referralShare';
 
 export const runtime = 'nodejs';
@@ -81,12 +82,11 @@ export async function POST(request: Request) {
   let emailSent = false;
   let emailError: string | undefined;
   if (created.length > 0) {
-    const origin = new URL(request.url).origin;
     const result = await sendReferralShareBatchEmail({
       to: partnerEmail,
       partnerAgency,
       sharedByName: caller.profile.displayName || undefined,
-      items: created.map((c) => ({ clientName: c.clientName, link: shareUrl(origin, c.token) })),
+      items: created.map((c) => ({ clientName: c.clientName, link: buildShareUrl(c.token) })),
       expiresAt: created[0]?.share.expiresAt ?? null,
     });
     emailSent = result.ok;

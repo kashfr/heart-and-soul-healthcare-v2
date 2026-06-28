@@ -6,6 +6,7 @@ import {
   Inbox, PhoneCall, Send, Share2, Copy, Check, Trash2, Plus,
 } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
+import { buildShareUrl } from '@/lib/shareLink';
 import {
   fieldRows, formatDateTime, formatRelative,
   REFERRAL_STAGES, STAGE_ACCENT, STAGE_LABEL, SOURCE_LABEL,
@@ -497,7 +498,7 @@ function SharePanel({
   // current origin so it's correct in any environment.
   const copyShareLink = async (share: ReferralShare) => {
     if (!share.token) return;
-    const link = `${window.location.origin}/shared/referral/${share.token}`;
+    const link = buildShareUrl(share.token);
     try {
       await navigator.clipboard.writeText(link);
       setCopiedShareId(share.id);
