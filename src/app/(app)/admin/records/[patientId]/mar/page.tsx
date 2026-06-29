@@ -21,6 +21,7 @@ import {
 import { authedFetch } from '@/lib/authedFetch';
 import { triggerDownload } from '@/lib/batchExport';
 import { compareMarOrders, resolveCurrentAdministrations } from '@/lib/marShared';
+import { useEffectiveUser } from '@/components/AuthProvider';
 
 const ADMIN_BY_LABELS: Record<string, string> = {
   nurse: 'Nurse',
@@ -81,6 +82,10 @@ interface GridRow {
 export default function MonthlyMarPage() {
   const params = useParams();
   const patientId = String(params.patientId);
+  // Nurses reach this same grid from the standalone Medications picker; adjust
+  // the back-link and hide the staff-only PDF export for them.
+  const { role } = useEffectiveUser();
+  const isNurse = role === 'nurse';
 
   const [month, setMonth] = useState(currentMonth());
   const [patient, setPatient] = useState<Patient | null>(null);
@@ -232,8 +237,8 @@ export default function MonthlyMarPage() {
     <div style={containerStyle}>
       <div style={wrapStyle}>
         <div style={{ marginBottom: 16 }}>
-          <Link href={`/admin/records/${patientId}`} style={backLinkStyle}>
-            <ArrowLeft size={14} /> Back to medication orders
+          <Link href={isNurse ? '/admin/mar' : `/admin/records/${patientId}`} style={backLinkStyle}>
+            <ArrowLeft size={14} /> {isNurse ? 'Back to Medications' : 'Back to medication orders'}
           </Link>
         </div>
 
@@ -257,9 +262,11 @@ export default function MonthlyMarPage() {
                     {patient.mrn ? ` · Record #${patient.mrn}` : ''}
                   </div>
                 </div>
-                <button type="button" onClick={handleExport} disabled={exporting} style={exportBtnStyle}>
-                  <FileDown size={15} /> {exporting ? 'Exporting…' : 'Export PDF'}
-                </button>
+                {!isNurse && (
+                  <button type="button" onClick={handleExport} disabled={exporting} style={exportBtnStyle}>
+                    <FileDown size={15} /> {exporting ? 'Exporting…' : 'Export PDF'}
+                  </button>
+                )}
               </div>
               <div style={headerGridStyle}>
                 <HeaderField label="Diagnosis" value={patient.diagnosis} />
