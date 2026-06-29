@@ -20,7 +20,7 @@ import {
 } from '@/lib/mar';
 import { authedFetch } from '@/lib/authedFetch';
 import { triggerDownload } from '@/lib/batchExport';
-import { compareMarOrders } from '@/lib/marShared';
+import { compareMarOrders, resolveCurrentAdministrations } from '@/lib/marShared';
 
 const ADMIN_BY_LABELS: Record<string, string> = {
   nurse: 'Nurse',
@@ -145,17 +145,21 @@ export default function MonthlyMarPage() {
     return out;
   }, [orders, monthStart, monthEnd]);
 
+  // Collapse amendment chains: a correction supersedes the original, so each
+  // dose shows its CURRENT value once across the grid and the log.
+  const currentAdmins = useMemo(() => resolveCurrentAdministrations(admins), [admins]);
+
   // Cell lookup: orderId|date|slot -> administrations (PRN can have several).
   const cellMap = useMemo(() => {
     const map = new Map<string, MarAdministration[]>();
-    for (const a of admins) {
+    for (const a of currentAdmins) {
       const k = `${a.orderId}|${a.date}|${a.scheduledTime}`;
       const arr = map.get(k) || [];
       arr.push(a);
       map.set(k, arr);
     }
     return map;
-  }, [admins]);
+  }, [currentAdmins]);
 
   const rowOrderIds = useMemo(() => new Set(rows.map((r) => r.order.id || '')), [rows]);
 
@@ -163,7 +167,7 @@ export default function MonthlyMarPage() {
   // refused doses, non-nurse administrations, and unlisted/unscheduled doses.
   const logEntries = useMemo(
     () =>
-      admins
+      currentAdmins
         .filter(
           (a) =>
             a.scheduledTime === 'PRN' ||
@@ -173,7 +177,7 @@ export default function MonthlyMarPage() {
             !rowOrderIds.has(a.orderId),
         )
         .sort((a, b) => (a.date + (a.actualTime || '')).localeCompare(b.date + (b.actualTime || ''))),
-    [admins, rowOrderIds],
+    [currentAdmins, rowOrderIds],
   );
 
   // Initials legend from the month's administrations.

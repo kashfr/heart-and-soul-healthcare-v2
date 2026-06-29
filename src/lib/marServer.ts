@@ -2,6 +2,7 @@ import 'server-only';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
 import type { AuthedCaller } from './adminAuthGuard';
+import { buildMarAdminFields } from './marShared';
 
 export interface ApplyChangesResult {
   ok: true;
@@ -166,6 +167,123 @@ export async function applyStagedChanges(
   }
 
   return { ok: true, applied, failed };
+}
+
+// ---------------------------------------------------------------------------
+// Amend an administration. Append-only: a correction is a NEW administration doc
+// that supersedes the original via `amends`. The original is never edited (the
+// collection's update/delete rule is `if false`). The amender signs the new doc.
+// ---------------------------------------------------------------------------
+
+export type AmendFailureReason =
+  | 'not-found'
+  | 'forbidden'
+  | 'superseded'
+  | 'bad-status'
+  | 'missing-reason';
+
+export interface AmendResult {
+  ok: boolean;
+  id?: string; // the new (superseding) record's id
+  reason?: AmendFailureReason;
+  message?: string;
+}
+
+const AMENDABLE_STATUS = new Set(['given', 'held', 'refused']);
+
+function initialsFrom(name: string): string {
+  return (name || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((p) => p.charAt(0).toUpperCase())
+    .slice(0, 3)
+    .join('');
+}
+
+/**
+ * Record a correction to an existing administration. Writes a superseding doc
+ * (status/actualTime/reason from the caller, identity = the amender, `amends` =
+ * the original id, `amendmentReason` = why). Reuses buildMarAdminFields so the
+ * same status rules apply (actualTime kept only for given; reason kept for
+ * held/refused and PRN-given). Permission: the documenting nurse may amend her
+ * own entry; an RN / supervisor / admin may amend any.
+ */
+export async function amendMarAdministration(
+  adminId: string,
+  input: { status: string; actualTime?: string; reason?: string; amendmentReason: string },
+  caller: AuthedCaller,
+): Promise<AmendResult> {
+  const col = adminDb().collection('marAdministrations');
+  const origSnap = await col.doc(adminId).get();
+  if (!origSnap.exists) {
+    return { ok: false, reason: 'not-found', message: 'That administration was not found.' };
+  }
+  const orig = origSnap.data() || {};
+
+  const isReviewer =
+    caller.role === 'admin' || caller.role === 'supervisor' || caller.profile.credential === 'RN';
+  const isOwner = String(orig.documentedBy || '') === caller.uid;
+  if (!isReviewer && !isOwner) {
+    return {
+      ok: false,
+      reason: 'forbidden',
+      message: 'Only the documenting nurse or an RN, supervisor, or admin can amend this entry.',
+    };
+  }
+
+  const status = String(input.status || '');
+  if (!AMENDABLE_STATUS.has(status)) {
+    return { ok: false, reason: 'bad-status', message: 'Status must be given, held, or refused.' };
+  }
+  const amendmentReason = String(input.amendmentReason || '').trim();
+  if (!amendmentReason) {
+    return { ok: false, reason: 'missing-reason', message: 'A reason for the correction is required.' };
+  }
+
+  // Don't amend a record that's already been superseded (stale view / double-submit).
+  const already = await col.where('amends', '==', adminId).limit(1).get();
+  if (!already.empty) {
+    return {
+      ok: false,
+      reason: 'superseded',
+      message: 'This entry was already amended. Refresh and amend the current entry.',
+    };
+  }
+
+  const scheduledTime = String(orig.scheduledTime || '');
+  const isPRN = scheduledTime === 'PRN';
+  const amenderName = caller.profile.displayName || caller.email || '';
+  const givenStatus = status === 'given';
+  const base = buildMarAdminFields(
+    {
+      orderId: String(orig.orderId || ''),
+      medName: String(orig.medNameSnapshot || ''),
+      dose: String(orig.doseSnapshot || ''),
+      units: String(orig.unitsSnapshot || ''),
+      route: String(orig.routeSnapshot || ''),
+      scheduledTime,
+      status: status as 'given' | 'held' | 'refused',
+      // Keep who physically gave it only when the corrected status is "given".
+      administeredByType: givenStatus ? String(orig.administeredByType || 'nurse') : 'nurse',
+      administratorName: givenStatus ? String(orig.administratorName || '') : '',
+      actualTime: String(input.actualTime || ''),
+      initials: initialsFrom(amenderName),
+      reason: String(input.reason || ''),
+      isPRN,
+      indication: String(orig.indicationSnapshot || ''),
+    },
+    {
+      patientId: String(orig.patientId || ''),
+      date: String(orig.date || ''),
+      sourceNoteId: String(orig.sourceNoteId || ''),
+      documenter: { uid: caller.uid, name: amenderName, credential: caller.profile.credential || caller.role },
+    },
+  );
+
+  const newRef = col.doc();
+  await newRef.set({ ...base, amends: adminId, amendmentReason, at: FieldValue.serverTimestamp() });
+  return { ok: true, id: newRef.id };
 }
 
 /** Mark an applied change as reviewed (RN acknowledgment; no approval). */

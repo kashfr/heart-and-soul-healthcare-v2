@@ -15,6 +15,7 @@ import {
   type MarChangeRequest,
   type MarAdministration,
 } from '@/lib/mar';
+import { doseTimeStatus, resolveCurrentAdministrations, type DoseTimeStatus } from '@/lib/marShared';
 import MedChart from './MedChart';
 import {
   marAdminState,
@@ -44,6 +45,15 @@ function computeInitials(name: string): string {
   if (parts.length === 0) return '';
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+// Current local time as {minutes since midnight, YYYY-MM-DD}, for the time-aware
+// MAR pill. Isolated so the only Date reads happen at mount + the 60s tick,
+// never in the render body.
+function clockNow(): { nowMinutes: number; todayISO: string } {
+  const d = new Date();
+  const todayISO = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return { nowMinutes: d.getHours() * 60 + d.getMinutes(), todayISO };
 }
 
 interface FormPageFiveProps extends FormPageProps {
@@ -89,6 +99,16 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
   const [dayAdmins, setDayAdmins] = useState<MarAdministration[]>([]);
   const isLpnRn = credential === 'LPN' || credential === 'RN';
   const marPatientName = String(watch('q3_clientName') || '');
+
+  // Live clock for time-aware dose pills (neutral -> amber "Due" -> red "Late").
+  // Ticked once a minute so a pill flips while the screen is open. Time coloring
+  // applies only when the date of service is today (never paints a backdated note).
+  const [clock, setClock] = useState<{ nowMinutes: number; todayISO: string }>(() => clockNow());
+  useEffect(() => {
+    const id = setInterval(() => setClock(clockNow()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const isTodayService = !!marDate && clock.todayISO === marDate;
 
   useEffect(() => {
     if (!marPatientId || !marDate || isEditMode || !isLpnRn) return;
@@ -207,8 +227,12 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
   // (dayAdmins is submitted-only; the current draft isn't submitted yet, so
   // these are always prior/other entries). Matches by order+slot for scheduled
   // meds, and by med name for unlisted one-offs that carry no orderId.
+  // Resolve amend chains so "prior" reflects the CURRENT value of each dose
+  // (a correction supersedes the original) and a superseded record isn't counted.
+  const dayAdminsCurrent = resolveCurrentAdministrations(dayAdmins);
+
   const priorFor = (orderId: string, slot: string, medName: string): MarAdministration | undefined =>
-    dayAdmins.find((a) =>
+    dayAdminsCurrent.find((a) =>
       orderId
         ? a.orderId === orderId && a.scheduledTime === slot
         : (a.medNameSnapshot || '').toLowerCase() === medName.toLowerCase(),
@@ -219,7 +243,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
   // so a nurse can see at a glance how often an as-needed med has been used.
   const prnGivenToday = (orderId: string): number =>
     orderId
-      ? dayAdmins.filter((a) => a.orderId === orderId && a.scheduledTime === 'PRN' && a.status === 'given').length
+      ? dayAdminsCurrent.filter((a) => a.orderId === orderId && a.scheduledTime === 'PRN' && a.status === 'given').length
       : 0;
 
   // Shared renderer for one MAR dose card, used for both scheduled-order rows
@@ -230,7 +254,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
     medName: string;
     doseLabel: string;
     badgeLabel: string;
-    badgeStyle: CSSProperties;
+    scheduledSlot?: string; // raw 'HH:MM' / 'PRN' / 'unscheduled', for time-status
     prior?: MarAdministration;
     onPatch: (patch: Partial<MarAdminRecord>) => void;
     extra?: boolean;
@@ -241,6 +265,19 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
     const status = opts.rec?.status || '';
     const isNurseAdmin = !opts.rec || !opts.rec.administeredByType || opts.rec.administeredByType === 'nurse';
     const indication = (opts.indication || '').trim();
+    // The time pill's color reflects the dose's combined state. A documented
+    // status (this draft, or a prior submitted entry) wins; an undocumented
+    // SCHEDULED dose is colored by how its time compares to now (today only).
+    const documented = status || opts.prior?.status || '';
+    const timeStatus: DoseTimeStatus =
+      !opts.isPRN && !documented
+        ? doseTimeStatus(opts.scheduledSlot || '', clock.nowMinutes, { isToday: isTodayService })
+        : 'none';
+    const pill = marPill(documented, timeStatus, !!opts.isPRN, opts.badgeLabel);
+    // Hard stop: a SCHEDULED slot already documented on an earlier note can't be
+    // re-documented here (no giving the same dose twice). Corrections go through
+    // the chart's amend flow. PRN ("as needed") repeats are expected, never locked.
+    const lockedByPrior = !!opts.prior && !opts.isPRN;
     return (
       <div key={opts.cardKey} style={marCardStyle}>
         <div style={marCardHeadStyle}>
@@ -248,7 +285,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
             <span style={{ fontWeight: 700, color: '#1f2937' }}>{opts.medName}</span>
             <span style={{ color: '#6b7280', marginLeft: 8, fontSize: 13 }}>{opts.doseLabel}</span>
           </div>
-          <span style={opts.badgeStyle}>{opts.badgeLabel}</span>
+          <span style={pill.style} title={pill.title}>{pill.label}</span>
         </div>
 
         {opts.isPRN && indication && (
@@ -268,33 +305,30 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
           </div>
         )}
 
-        <div style={marStatusRowStyle}>
-          {(['given', 'held', 'refused'] as const).map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => {
-                // Real double-dose stop: confirm before recording a second
-                // "given" for a med already documented as given today. PRN
-                // ("as needed") meds are expected to repeat, so don't nag there.
-                if (s === 'given' && status !== 'given' && opts.prior?.status === 'given' && !opts.isPRN) {
-                  const when = opts.prior.actualTime ? ` at ${opts.prior.actualTime}` : '';
-                  const who = opts.prior.documentedByName ? ` by ${opts.prior.documentedByName}` : '';
-                  if (!window.confirm(`${opts.medName} is already documented as given today${when}${who}. Record another dose?`)) return;
-                }
-                opts.onPatch({ status: status === s ? '' : s });
-              }}
-              style={status === s ? marStatusBtnActive[s] : marStatusBtnStyle}
-            >
-              {s === 'given' ? 'Given' : s === 'held' ? 'Held' : 'Refused'}
-            </button>
-          ))}
-          {opts.extra && status && (
-            <button type="button" onClick={() => opts.onPatch({ status: '' })} style={stagedRemoveBtnStyle} title="Remove this dose">
-              Remove
-            </button>
-          )}
-        </div>
+        {lockedByPrior ? (
+          <div style={marLockedRowStyle}>
+            Already documented today. To correct it, open the medication chart and amend the entry — a scheduled
+            dose can&apos;t be recorded twice.
+          </div>
+        ) : (
+          <div style={marStatusRowStyle}>
+            {(['given', 'held', 'refused'] as const).map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => opts.onPatch({ status: status === s ? '' : s })}
+                style={status === s ? marStatusBtnActive[s] : marStatusBtnStyle}
+              >
+                {s === 'given' ? 'Given' : s === 'held' ? 'Held' : 'Refused'}
+              </button>
+            ))}
+            {opts.extra && status && (
+              <button type="button" onClick={() => opts.onPatch({ status: '' })} style={stagedRemoveBtnStyle} title="Remove this dose">
+                Remove
+              </button>
+            )}
+          </div>
+        )}
 
         {status === 'given' && (
           <div style={marDetailGridStyle}>
@@ -354,6 +388,36 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
       </div>
     );
   };
+
+  // Render one scheduled-order or PRN row as a full dose card.
+  const renderScheduledRow = ({ order, slot }: { order: MarOrder; slot: string }) => {
+    const key = marAdminKey(marPatientId, order.id || '', slot);
+    return renderDoseCard({
+      cardKey: key,
+      rec: marAdminState[key],
+      medName: order.medName,
+      doseLabel: `${order.dose}${order.units ? ` ${order.units}` : ''} · ${order.route}`,
+      badgeLabel: slot === 'PRN' ? 'PRN' : slot,
+      scheduledSlot: slot,
+      prior: priorFor(order.id || '', slot, order.medName),
+      onPatch: (patch) => updateMark(order, slot, patch),
+      isPRN: slot === 'PRN',
+      indication: order.indication,
+      prnGivenToday: slot === 'PRN' ? prnGivenToday(order.id || '') : 0,
+    });
+  };
+
+  // Collapse completed scheduled doses so the nurse focuses on what's still due
+  // ("once a dose is given, only the next is front-and-center"). A scheduled slot
+  // is "done" once it's documented on this draft or already recorded on an
+  // earlier note today; PRN rows are always open (as-needed, can repeat).
+  const isDoneScheduled = ({ order, slot }: { order: MarOrder; slot: string }): boolean => {
+    if (slot === 'PRN') return false;
+    if (marAdminState[marAdminKey(marPatientId, order.id || '', slot)]?.status) return true;
+    return !!priorFor(order.id || '', slot, order.medName);
+  };
+  const openRows = marRows.filter((r) => !isDoneScheduled(r));
+  const doneRows = marRows.filter((r) => isDoneScheduled(r));
 
   if (!credential || (credential !== 'LPN' && credential !== 'RN')) {
     return (
@@ -504,24 +568,23 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
             ) : (
               <>
                 <p style={marHintStyle}>
-                  Mark each due dose. Entries are saved when you submit the note and cannot be edited afterward.
+                  Mark each due dose. Completed scheduled doses collapse below. Entries are saved when you submit;
+                  to correct one afterward, amend it in the medication chart.
                 </p>
-                {marRows.map(({ order, slot }) => {
-                  const key = marAdminKey(marPatientId, order.id || '', slot);
-                  return renderDoseCard({
-                    cardKey: key,
-                    rec: marAdminState[key],
-                    medName: order.medName,
-                    doseLabel: `${order.dose}${order.units ? ` ${order.units}` : ''} · ${order.route}`,
-                    badgeLabel: slot === 'PRN' ? 'PRN' : slot,
-                    badgeStyle: slot === 'PRN' ? marPrnBadgeStyle : marSlotBadgeStyle,
-                    prior: priorFor(order.id || '', slot, order.medName),
-                    onPatch: (patch) => updateMark(order, slot, patch),
-                    isPRN: slot === 'PRN',
-                    indication: order.indication,
-                    prnGivenToday: slot === 'PRN' ? prnGivenToday(order.id || '') : 0,
-                  });
-                })}
+                {openRows.map(renderScheduledRow)}
+                {doneRows.length > 0 && (
+                  <div style={marDoneSectionStyle}>
+                    <button type="button" onClick={() => toggleSection('marCompleted')} style={marDoneToggleStyle}>
+                      <span style={{ fontSize: 11 }}>{expandedSections.marCompleted ? '▼' : '▶'}</span>
+                      {doneRows.length} scheduled dose{doneRows.length === 1 ? '' : 's'} documented today
+                    </button>
+                    {expandedSections.marCompleted && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
+                        {doneRows.map(renderScheduledRow)}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {extraMarks.length > 0 && (
                   <>
                     <div style={marExtraHeaderStyle}>
@@ -541,16 +604,13 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
                       const badgeLabel = isUnlisted || !sched || sched === 'unscheduled'
                         ? 'Unscheduled'
                         : sched === 'PRN' ? 'PRN' : sched;
-                      const badgeStyle = badgeLabel === 'Unscheduled' || badgeLabel === 'PRN'
-                        ? marPrnBadgeStyle
-                        : marSlotBadgeStyle;
                       return renderDoseCard({
                         cardKey: rec.key,
                         rec,
                         medName: rec.medName,
                         doseLabel: `${rec.dose}${rec.units ? ` ${rec.units}` : ''} · ${rec.route}`,
                         badgeLabel,
-                        badgeStyle,
+                        scheduledSlot: sched,
                         prior: priorFor(rec.orderId || '', rec.scheduledTime, rec.medName),
                         onPatch: (patch) => patchMarkByKey(rec.key, rec, patch),
                         extra: isUnlisted,
@@ -619,6 +679,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
           patientName={marPatientName}
           initialDate={marDate}
           onClose={() => setChartOpen(false)}
+          documenter={documenter}
         />
       )}
 
@@ -859,3 +920,32 @@ const stagedRowStyle: CSSProperties = { display: 'flex', alignItems: 'center', g
 const stagedTagAddStyle: CSSProperties = { background: '#e8f4e8', color: '#2a7a2a', fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 999, textTransform: 'uppercase', letterSpacing: 0.4, flexShrink: 0 };
 const stagedTagDcStyle: CSSProperties = { background: '#fdeaea', color: '#c0392b', fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 999, textTransform: 'uppercase', letterSpacing: 0.4, flexShrink: 0 };
 const stagedRemoveBtnStyle: CSSProperties = { background: 'transparent', border: 'none', color: '#c0392b', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 };
+const marLockedRowStyle: CSSProperties = { marginTop: 10, background: '#f3f4f6', border: '1px solid #d0d7de', color: '#4b5563', borderRadius: 6, padding: '8px 11px', fontSize: 12.5, lineHeight: 1.45 };
+const marDoneSectionStyle: CSSProperties = { marginTop: 2 };
+const marDoneToggleStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', width: '100%', textAlign: 'left' };
+
+// Time-aware dose pill. A documented status (given/held/refused) shows as a
+// solid color with its label; an undocumented scheduled dose shows the neutral
+// time chip, or an amber "Due" / red "Late" OUTLINE when today's clock passes
+// its time — so the attention states read differently from a solid "Refused".
+const pillBase: CSSProperties = { fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 999, whiteSpace: 'nowrap' };
+const pillGiven: CSSProperties = { ...pillBase, background: '#0e7c4a', color: 'white', border: '1px solid #0e7c4a' };
+const pillHeld: CSSProperties = { ...pillBase, background: '#b56a17', color: 'white', border: '1px solid #b56a17' };
+const pillRefused: CSSProperties = { ...pillBase, background: '#c0392b', color: 'white', border: '1px solid #c0392b' };
+const pillDue: CSSProperties = { ...pillBase, background: '#fff7e6', color: '#8a5a0d', border: '1px solid #e0a93b' };
+const pillLate: CSSProperties = { ...pillBase, background: '#fdeaea', color: '#b3261e', border: '1px solid #e07a72' };
+
+function marPill(
+  documented: string,
+  timeStatus: DoseTimeStatus,
+  isPRN: boolean,
+  label: string,
+): { style: CSSProperties; label: string; title: string } {
+  if (documented === 'given') return { style: pillGiven, label: `${label} ✓`, title: 'Given' };
+  if (documented === 'held') return { style: pillHeld, label: `${label} · Held`, title: 'Held' };
+  if (documented === 'refused') return { style: pillRefused, label: `${label} · Refused`, title: 'Refused' };
+  if (isPRN) return { style: marPrnBadgeStyle, label, title: 'PRN (as needed)' };
+  if (timeStatus === 'late') return { style: pillLate, label: `${label} · Late`, title: 'Late — past due, not yet documented' };
+  if (timeStatus === 'due') return { style: pillDue, label: `${label} · Due`, title: 'Due now' };
+  return { style: marSlotBadgeStyle, label, title: '' };
+}

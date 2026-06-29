@@ -209,6 +209,12 @@ export interface MarAdministration {
   documentedBy: string; // signed-in RN/LPN who recorded it
   documentedByName: string;
   documentedByCredential: string;
+  // Amendment trail. A correction is a NEW administration doc that SUPERSEDES an
+  // earlier one (the original is never edited or deleted): `amends` is the
+  // superseded doc's id and `amendmentReason` records why. The amender signs the
+  // new doc via documentedBy*/`at`, so the chain carries who-changed-what-when.
+  amends?: string;
+  amendmentReason?: string;
   at?: unknown;
 }
 

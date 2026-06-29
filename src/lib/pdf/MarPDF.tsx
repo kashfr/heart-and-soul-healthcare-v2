@@ -32,6 +32,7 @@ export interface MarPdfLogEntry {
   by: string;
   reason: string;
   initials: string;
+  amendment?: string; // correction note (append-only audit trail), if this entry amends another
 }
 
 export interface MarPDFProps {
@@ -330,14 +331,21 @@ export default function MarPDF({
               )}
             </View>
             {log.map((e, i) => (
-              <View key={i} style={s.row} wrap={false}>
-                <Text style={[s.logTd, { width: LOG_W[0] }]}>{e.date}</Text>
-                <Text style={[s.logTd, { width: LOG_W[1] }]}>{e.time}</Text>
-                <Text style={[s.logTd, { width: LOG_W[2] }]}>{e.med}</Text>
-                <Text style={[s.logTd, { width: LOG_W[3] }]}>{e.status}</Text>
-                <Text style={[s.logTd, { width: LOG_W[4] }]}>{e.by}</Text>
-                <Text style={[s.logTd, { width: LOG_W[5] }]}>{e.reason}</Text>
-                <Text style={[s.logTd, { width: LOG_W[6] }]}>{e.initials}</Text>
+              <View key={i} wrap={false}>
+                <View style={s.row}>
+                  <Text style={[s.logTd, { width: LOG_W[0] }]}>{e.date}</Text>
+                  <Text style={[s.logTd, { width: LOG_W[1] }]}>{e.time}</Text>
+                  <Text style={[s.logTd, { width: LOG_W[2] }]}>{e.med}</Text>
+                  <Text style={[s.logTd, { width: LOG_W[3] }]}>{e.status}</Text>
+                  <Text style={[s.logTd, { width: LOG_W[4] }]}>{e.by}</Text>
+                  <Text style={[s.logTd, { width: LOG_W[5] }]}>{e.reason}</Text>
+                  <Text style={[s.logTd, { width: LOG_W[6] }]}>{e.initials}</Text>
+                </View>
+                {e.amendment ? (
+                  <Text style={{ fontSize: 6.5, color: '#6b21a8', paddingLeft: 4, paddingBottom: 2 }}>
+                    {'↳'} {e.amendment}
+                  </Text>
+                ) : null}
               </View>
             ))}
           </View>
