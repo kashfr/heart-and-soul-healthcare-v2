@@ -1,13 +1,15 @@
 'use client';
 
-import { useState, useEffect, use } from 'react';
+import { useState, useEffect, use, useMemo, createContext, useContext } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { CheckCircle2 } from 'lucide-react';
 import {
   getSubmission,
   setSubmissionsArchive,
+  getEditHistory,
   type ProgressNoteFormData,
+  type EditHistoryEntry,
 } from '@/lib/submissions';
 import { needsCosign } from '@/lib/cosignClient';
 import { useSettings } from '@/components/SettingsProvider';
@@ -19,6 +21,11 @@ import RevisionHistory from '@/components/RevisionHistory';
 import CoSignModal from '@/components/CoSignModal';
 import ClarificationPanel from '@/components/ClarificationPanel';
 import type { SubmissionSummary } from '@/lib/submissions';
+import { buildFieldAmendments, type FieldVersion } from '@/lib/revisionFormat';
+
+// Field key -> its prior values (oldest-first) for inline "struck old -> current"
+// rendering. Provided by the page; read by Field / TextBlock / VitalCard.
+const AmendmentContext = createContext<Record<string, FieldVersion[]>>({});
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -66,6 +73,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
   const backParam = searchParams.get('back');
   const backHref = backParam ? `/admin/submissions?${backParam}` : '/admin/submissions';
   const [formData, setFormData] = useState<ProgressNoteFormData | null>(null);
+  const [editHistory, setEditHistory] = useState<EditHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   /** When set, opens the signature modal for this single note. */
@@ -99,6 +107,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
       // null via the catch above and we'd already be on the not-found
       // path. No explicit author check needed here.
       setFormData(data);
+      setEditHistory(await getEditHistory(id).catch(() => []));
     } catch (error) {
       console.error('Failed to load submission:', error);
       setNotFound(true);
@@ -112,6 +121,9 @@ export default function SubmissionDetailPage({ params }: PageProps) {
     loadNote();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, id, isNurse, user]);
+
+  // Per-field prior values for the inline "struck old -> corrected" rendering.
+  const fieldAmendments = useMemo(() => buildFieldAmendments(editHistory), [editHistory]);
 
   /** Download a clean PDF of the note using the same server-side renderer as
       the bulk export (/api/progress-note/pdf → @react-pdf/renderer). The old
@@ -391,6 +403,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
   ];
 
   return (
+    <AmendmentContext.Provider value={fieldAmendments}>
     <div style={containerStyle}>
       <div style={wrapStyle}>
         {/* Actions bar - hidden on print */}
@@ -483,12 +496,12 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           data={data}
         >
           <FieldRow>
-            <Field label="Client Name" value={data.q3_clientName} />
-            <Field label="Date of Birth" value={fmtDate(data.q4_dateofBirth)} />
+            <Field fieldKey="q3_clientName" label="Client Name" value={data.q3_clientName} />
+            <Field fieldKey="q4_dateofBirth" label="Date of Birth" value={fmtDate(data.q4_dateofBirth)} />
           </FieldRow>
           <FieldRow>
-            <Field label="Age" value={data.q5_ageYears} />
-            <Field label="Primary Diagnosis" value={data.q10_primaryDiagnosis} />
+            <Field fieldKey="q5_ageYears" label="Age" value={data.q5_ageYears} />
+            <Field fieldKey="q10_primaryDiagnosis" label="Primary Diagnosis" value={data.q10_primaryDiagnosis} />
           </FieldRow>
           {hasValue(address) && <Field label="Address" value={address} />}
         </ConditionalSection>
@@ -500,11 +513,11 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           data={data}
         >
           <FieldRow>
-            <Field label="Date of Service" value={fmtDate(data.q6_dateofService)} />
-            <Field label="Start Time" value={data.q7_shiftStart} />
-            <Field label="End Time" value={data.q62_shiftEndTime} />
+            <Field fieldKey="q6_dateofService" label="Date of Service" value={fmtDate(data.q6_dateofService)} />
+            <Field fieldKey="q7_shiftStart" label="Start Time" value={data.q7_shiftStart} />
+            <Field fieldKey="q62_shiftEndTime" label="End Time" value={data.q62_shiftEndTime} />
           </FieldRow>
-          {hasValue(data.q9_totalHours) && <Field label="Total Hours" value={data.q9_totalHours} />}
+          {hasValue(data.q9_totalHours) && <Field fieldKey="q9_totalHours" label="Total Hours" value={data.q9_totalHours} />}
         </ConditionalSection>
 
         {/* 3. NURSE / CAREGIVER */}
@@ -514,8 +527,8 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           data={data}
         >
           <FieldRow>
-            <Field label="Name" value={data.q11_nurseName} />
-            <Field label="Credential" value={data.q12_credential} />
+            <Field fieldKey="q11_nurseName" label="Name" value={data.q11_nurseName} />
+            <Field fieldKey="q12_credential" label="Credential" value={data.q12_credential} />
           </FieldRow>
         </ConditionalSection>
 
@@ -533,23 +546,23 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           data={data}
         >
           <FieldRow>
-            {hasValue(data.q13_alertnessLevel) && <Field label="Alertness Level" value={data.q13_alertnessLevel} />}
-            {hasValue(data.q13_orientationLevel) && <Field label="Orientation" value={data.q13_orientationLevel} />}
+            {hasValue(data.q13_alertnessLevel) && <Field fieldKey="q13_alertnessLevel" label="Alertness Level" value={data.q13_alertnessLevel} />}
+            {hasValue(data.q13_orientationLevel) && <Field fieldKey="q13_orientationLevel" label="Orientation" value={data.q13_orientationLevel} />}
           </FieldRow>
-          {hasValue(data.q14_behavior) && <Field label="Behavior" value={data.q14_behavior} />}
+          {hasValue(data.q14_behavior) && <Field fieldKey="q14_behavior" label="Behavior" value={data.q14_behavior} />}
           {hasValue(data.q14_orientationBehaviorNotes) && (
-            <TextBlock label="Orientation & Behavior Notes" value={data.q14_orientationBehaviorNotes} />
+            <TextBlock fieldKey="q14_orientationBehaviorNotes" label="Orientation & Behavior Notes" value={data.q14_orientationBehaviorNotes} />
           )}
           <FieldRow>
-            {hasValue(data.q15_generalAppearance) && <Field label="General Appearance" value={data.q15_generalAppearance} />}
-            {hasValue(data.q15_appearance) && <Field label="Appearance" value={data.q15_appearance} />}
+            {hasValue(data.q15_generalAppearance) && <Field fieldKey="q15_generalAppearance" label="General Appearance" value={data.q15_generalAppearance} />}
+            {hasValue(data.q15_appearance) && <Field fieldKey="q15_appearance" label="Appearance" value={data.q15_appearance} />}
           </FieldRow>
           <FieldRow>
-            {hasValue(data.q15_skinColor) && <Field label="Skin Color" value={data.q15_skinColor} />}
-            {hasValue(data.q15_skinIntegrity) && <Field label="Skin Integrity" value={data.q15_skinIntegrity} />}
+            {hasValue(data.q15_skinColor) && <Field fieldKey="q15_skinColor" label="Skin Color" value={data.q15_skinColor} />}
+            {hasValue(data.q15_skinIntegrity) && <Field fieldKey="q15_skinIntegrity" label="Skin Integrity" value={data.q15_skinIntegrity} />}
           </FieldRow>
           {hasValue(data.q15_appearanceNotes) && (
-            <TextBlock label="Appearance Notes" value={data.q15_appearanceNotes} />
+            <TextBlock fieldKey="q15_appearanceNotes" label="Appearance Notes" value={data.q15_appearanceNotes} />
           )}
         </ConditionalSection>
 
@@ -565,7 +578,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           data={data}
         >
           <div style={vitalsGridStyle}>
-            <VitalCard
+            <VitalCard fieldKey="q16_temperature"
               label="Temperature"
               value={
                 data.q16_temperature
@@ -573,7 +586,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
                   : ''
               }
             />
-            <VitalCard
+            <VitalCard fieldKey="q17_bloodPressure"
               label="Blood Pressure"
               value={
                 (data.q17_bloodPressure
@@ -590,7 +603,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
                   : '')
               }
             />
-            <VitalCard
+            <VitalCard fieldKey="q18_pulse"
               label="Pulse"
               value={
                 data.q18_pulse
@@ -598,14 +611,14 @@ export default function SubmissionDetailPage({ params }: PageProps) {
                   : ''
               }
             />
-            <VitalCard label="Respirations" value={data.q19_respiration} />
-            <VitalCard label="SpO2" value={data.q20_oxygenSaturation} />
-            {hasValue(data.q21_oxygenSource) && <VitalCard label="Oxygen Source" value={data.q21_oxygenSource} />}
+            <VitalCard fieldKey="q19_respiration" label="Respirations" value={data.q19_respiration} />
+            <VitalCard fieldKey="q20_oxygenSaturation" label="SpO2" value={data.q20_oxygenSaturation} />
+            {hasValue(data.q21_oxygenSource) && <VitalCard fieldKey="q21_oxygenSource" label="Oxygen Source" value={data.q21_oxygenSource} />}
           </div>
           {hasValue(data.q16_vitalsNotObtainedReason) && (
             <div style={{ padding: '8px 0' }}>
               {/* Covers whichever vitals are blank in the grid above. */}
-              <TextBlock
+              <TextBlock fieldKey="q16_vitalsNotObtainedReason"
                 label="Vitals Not Obtained"
                 value={`${data.q16_vitalsNotObtainedReason}${
                   data.q16_vitalsNotObtainedNote ? ` — ${data.q16_vitalsNotObtainedNote}` : ''
@@ -615,7 +628,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           )}
           {hasValue(data.q22_additionalObservations) && (
             <div style={{ padding: '8px 0' }}>
-              <TextBlock label="Additional Observations" value={data.q22_additionalObservations} />
+              <TextBlock fieldKey="q22_additionalObservations" label="Additional Observations" value={data.q22_additionalObservations} />
             </div>
           )}
         </ConditionalSection>
@@ -632,16 +645,16 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           ]}
           data={data}
         >
-          {hasValue(data.q23_activityLevel) && <TextBlock label="Activity Level" value={data.q23_activityLevel} />}
+          {hasValue(data.q23_activityLevel) && <TextBlock fieldKey="q23_activityLevel" label="Activity Level" value={data.q23_activityLevel} />}
           <FieldRow>
-            {hasValue(data.q24_scaleUsed) && <Field label="Pain Scale Used" value={data.q24_scaleUsed} />}
-            {hasValue(data.q24_painScore) && <Field label="Pain Score" value={data.q24_painScore} />}
+            {hasValue(data.q24_scaleUsed) && <Field fieldKey="q24_scaleUsed" label="Pain Scale Used" value={data.q24_scaleUsed} />}
+            {hasValue(data.q24_painScore) && <Field fieldKey="q24_painScore" label="Pain Score" value={data.q24_painScore} />}
           </FieldRow>
-          {hasValue(data.q24_verbalComplaints) && <TextBlock label="Verbal Complaints" value={data.q24_verbalComplaints} />}
-          {hasValue(data.q24_nonverbalCues) && <TextBlock label="Non-verbal Cues" value={data.q24_nonverbalCues} />}
-          {hasValue(data.q25_painLocation) && <Field label="Pain Location" value={data.q25_painLocation} />}
-          {hasValue(data.q26_painDescription) && <TextBlock label="Pain Description" value={data.q26_painDescription} />}
-          {hasValue(data.q26_painNotes) && <TextBlock label="Pain Notes" value={data.q26_painNotes} />}
+          {hasValue(data.q24_verbalComplaints) && <TextBlock fieldKey="q24_verbalComplaints" label="Verbal Complaints" value={data.q24_verbalComplaints} />}
+          {hasValue(data.q24_nonverbalCues) && <TextBlock fieldKey="q24_nonverbalCues" label="Non-verbal Cues" value={data.q24_nonverbalCues} />}
+          {hasValue(data.q25_painLocation) && <Field fieldKey="q25_painLocation" label="Pain Location" value={data.q25_painLocation} />}
+          {hasValue(data.q26_painDescription) && <TextBlock fieldKey="q26_painDescription" label="Pain Description" value={data.q26_painDescription} />}
+          {hasValue(data.q26_painNotes) && <TextBlock fieldKey="q26_painNotes" label="Pain Notes" value={data.q26_painNotes} />}
         </ConditionalSection>
 
         {/* 7. SAFETY CHECKLIST */}
@@ -650,11 +663,11 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           keys={['q27_safetyChecklist', 'q27_safetyOther', 'q27_fallsInjuries', 'q27_allSystemsWNL', 'q27_safetyNotes']}
           data={data}
         >
-          {hasValue(data.q27_safetyChecklist) && <TextBlock label="Checklist Items" value={data.q27_safetyChecklist} />}
-          {hasValue(data.q27_safetyOther) && <TextBlock label="Other" value={data.q27_safetyOther} />}
-          {hasValue(data.q27_fallsInjuries) && <TextBlock label="Falls/Injuries" value={data.q27_fallsInjuries} />}
-          {hasValue(data.q27_allSystemsWNL) && <Field label="All Systems WNL" value={data.q27_allSystemsWNL} />}
-          {hasValue(data.q27_safetyNotes) && <TextBlock label="Safety Notes" value={data.q27_safetyNotes} />}
+          {hasValue(data.q27_safetyChecklist) && <TextBlock fieldKey="q27_safetyChecklist" label="Checklist Items" value={data.q27_safetyChecklist} />}
+          {hasValue(data.q27_safetyOther) && <TextBlock fieldKey="q27_safetyOther" label="Other" value={data.q27_safetyOther} />}
+          {hasValue(data.q27_fallsInjuries) && <TextBlock fieldKey="q27_fallsInjuries" label="Falls/Injuries" value={data.q27_fallsInjuries} />}
+          {hasValue(data.q27_allSystemsWNL) && <Field fieldKey="q27_allSystemsWNL" label="All Systems WNL" value={data.q27_allSystemsWNL} />}
+          {hasValue(data.q27_safetyNotes) && <TextBlock fieldKey="q27_safetyNotes" label="Safety Notes" value={data.q27_safetyNotes} />}
         </ConditionalSection>
 
         {/* 8. SYSTEM ASSESSMENTS (LPN/RN only) */}
@@ -712,8 +725,8 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           keys={['q38_personalCare', 'q38_personalCareNotes']}
           data={data}
         >
-          {hasValue(data.q38_personalCare) && <TextBlock label="Personal Care" value={data.q38_personalCare} />}
-          {hasValue(data.q38_personalCareNotes) && <TextBlock label="Notes" value={data.q38_personalCareNotes} />}
+          {hasValue(data.q38_personalCare) && <TextBlock fieldKey="q38_personalCare" label="Personal Care" value={data.q38_personalCare} />}
+          {hasValue(data.q38_personalCareNotes) && <TextBlock fieldKey="q38_personalCareNotes" label="Notes" value={data.q38_personalCareNotes} />}
         </ConditionalSection>
 
         {/* 10. NUTRITION & HYDRATION */}
@@ -726,13 +739,13 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           data={data}
         >
           <FieldRow>
-            {hasValue(data.q38_breakfastPct) && <Field label="Breakfast %" value={data.q38_breakfastPct} />}
-            {hasValue(data.q38_lunchPct) && <Field label="Lunch %" value={data.q38_lunchPct} />}
-            {hasValue(data.q38_dinnerPct) && <Field label="Dinner %" value={data.q38_dinnerPct} />}
+            {hasValue(data.q38_breakfastPct) && <Field fieldKey="q38_breakfastPct" label="Breakfast %" value={data.q38_breakfastPct} />}
+            {hasValue(data.q38_lunchPct) && <Field fieldKey="q38_lunchPct" label="Lunch %" value={data.q38_lunchPct} />}
+            {hasValue(data.q38_dinnerPct) && <Field fieldKey="q38_dinnerPct" label="Dinner %" value={data.q38_dinnerPct} />}
           </FieldRow>
-          {hasValue(data.q38_fluidsEncouraged) && <Field label="Fluids Encouraged" value={data.q38_fluidsEncouraged} />}
-          {hasValue(data.q38_aspirationConcerns) && <TextBlock label="Aspiration Concerns" value={data.q38_aspirationConcerns} />}
-          {hasValue(data.q38_nutritionNotes) && <TextBlock label="Notes" value={data.q38_nutritionNotes} />}
+          {hasValue(data.q38_fluidsEncouraged) && <Field fieldKey="q38_fluidsEncouraged" label="Fluids Encouraged" value={data.q38_fluidsEncouraged} />}
+          {hasValue(data.q38_aspirationConcerns) && <TextBlock fieldKey="q38_aspirationConcerns" label="Aspiration Concerns" value={data.q38_aspirationConcerns} />}
+          {hasValue(data.q38_nutritionNotes) && <TextBlock fieldKey="q38_nutritionNotes" label="Notes" value={data.q38_nutritionNotes} />}
         </ConditionalSection>
 
         {/* 11. HOUSEKEEPING */}
@@ -741,7 +754,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           keys={['q38_housekeeping']}
           data={data}
         >
-          {hasValue(data.q38_housekeeping) && <TextBlock label="Items" value={data.q38_housekeeping} />}
+          {hasValue(data.q38_housekeeping) && <TextBlock fieldKey="q38_housekeeping" label="Items" value={data.q38_housekeeping} />}
         </ConditionalSection>
 
         {/* 12. ABUSE/NEGLECT SCREENING */}
@@ -750,8 +763,8 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           keys={['q38_abuseScreening', 'q38_abuseNotes']}
           data={data}
         >
-          {hasValue(data.q38_abuseScreening) && <Field label="Screening Performed" value={data.q38_abuseScreening} />}
-          {hasValue(data.q38_abuseNotes) && <TextBlock label="Notes" value={data.q38_abuseNotes} />}
+          {hasValue(data.q38_abuseScreening) && <Field fieldKey="q38_abuseScreening" label="Screening Performed" value={data.q38_abuseScreening} />}
+          {hasValue(data.q38_abuseNotes) && <TextBlock fieldKey="q38_abuseNotes" label="Notes" value={data.q38_abuseNotes} />}
         </ConditionalSection>
 
         {/* === GROUP 5: Meds & Interventions === */}
@@ -760,9 +773,9 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         {/* 13. SKILLED NURSING INTERVENTIONS (LPN/RN only) */}
         {isLpnRn && anyHasValue(['q38_interventions', 'q39_interventionDetails', 'q40_skillJustification']) && (
           <Section title="Skilled Nursing Interventions">
-            {hasValue(data.q38_interventions) && <TextBlock label="Interventions" value={data.q38_interventions} />}
-            {hasValue(data.q39_interventionDetails) && <TextBlock label="Details" value={data.q39_interventionDetails} />}
-            {hasValue(data.q40_skillJustification) && <TextBlock label="Justification" value={data.q40_skillJustification} />}
+            {hasValue(data.q38_interventions) && <TextBlock fieldKey="q38_interventions" label="Interventions" value={data.q38_interventions} />}
+            {hasValue(data.q39_interventionDetails) && <TextBlock fieldKey="q39_interventionDetails" label="Details" value={data.q39_interventionDetails} />}
+            {hasValue(data.q40_skillJustification) && <TextBlock fieldKey="q40_skillJustification" label="Justification" value={data.q40_skillJustification} />}
           </Section>
         )}
 
@@ -774,28 +787,28 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           'q43_interventionTime', 'q43_eventInterventionDetails', 'q43_postEventMonitoring',
         ]) && (
           <Section title="Medications">
-            {hasValue(data.q43_scheduledMeds) && <TextBlock label="Scheduled" value={data.q43_scheduledMeds} />}
-            {hasValue(data.q43_prnMeds) && <TextBlock label="PRN" value={data.q43_prnMeds} />}
-            {hasValue(data.q43_medTolerance) && <TextBlock label="Tolerance" value={data.q43_medTolerance} />}
+            {hasValue(data.q43_scheduledMeds) && <TextBlock fieldKey="q43_scheduledMeds" label="Scheduled" value={data.q43_scheduledMeds} />}
+            {hasValue(data.q43_prnMeds) && <TextBlock fieldKey="q43_prnMeds" label="PRN" value={data.q43_prnMeds} />}
+            {hasValue(data.q43_medTolerance) && <TextBlock fieldKey="q43_medTolerance" label="Tolerance" value={data.q43_medTolerance} />}
             {anyHasValue(['q43_reactionMed', 'q43_reactionTime', 'q43_reactionType', 'q43_reactionDescription', 'q43_reactionPhysNotified', 'q43_reactionPhysTime']) && (
               <div style={{ marginTop: 8 }}>
                 <div style={textBlockLabelStyle}>Adverse Reaction:</div>
                 <FieldRow>
-                  {hasValue(data.q43_reactionMed) && <Field label="Medication" value={data.q43_reactionMed} />}
-                  {hasValue(data.q43_reactionTime) && <Field label="Time" value={data.q43_reactionTime} />}
-                  {hasValue(data.q43_reactionType) && <Field label="Type" value={data.q43_reactionType} />}
+                  {hasValue(data.q43_reactionMed) && <Field fieldKey="q43_reactionMed" label="Medication" value={data.q43_reactionMed} />}
+                  {hasValue(data.q43_reactionTime) && <Field fieldKey="q43_reactionTime" label="Time" value={data.q43_reactionTime} />}
+                  {hasValue(data.q43_reactionType) && <Field fieldKey="q43_reactionType" label="Type" value={data.q43_reactionType} />}
                 </FieldRow>
-                {hasValue(data.q43_reactionDescription) && <TextBlock label="Description" value={data.q43_reactionDescription} />}
+                {hasValue(data.q43_reactionDescription) && <TextBlock fieldKey="q43_reactionDescription" label="Description" value={data.q43_reactionDescription} />}
                 <FieldRow>
-                  {hasValue(data.q43_reactionPhysNotified) && <Field label="Physician Notified" value={data.q43_reactionPhysNotified} />}
-                  {hasValue(data.q43_reactionPhysTime) && <Field label="Notification Time" value={data.q43_reactionPhysTime} />}
+                  {hasValue(data.q43_reactionPhysNotified) && <Field fieldKey="q43_reactionPhysNotified" label="Physician Notified" value={data.q43_reactionPhysNotified} />}
+                  {hasValue(data.q43_reactionPhysTime) && <Field fieldKey="q43_reactionPhysTime" label="Notification Time" value={data.q43_reactionPhysTime} />}
                 </FieldRow>
               </div>
             )}
-            {hasValue(data.q43_safetyMeasures) && <TextBlock label="Safety Measures" value={data.q43_safetyMeasures} />}
-            {hasValue(data.q43_interventionTime) && <Field label="Intervention Time" value={data.q43_interventionTime} />}
-            {hasValue(data.q43_eventInterventionDetails) && <TextBlock label="Event Details" value={data.q43_eventInterventionDetails} />}
-            {hasValue(data.q43_postEventMonitoring) && <TextBlock label="Post-Event" value={data.q43_postEventMonitoring} />}
+            {hasValue(data.q43_safetyMeasures) && <TextBlock fieldKey="q43_safetyMeasures" label="Safety Measures" value={data.q43_safetyMeasures} />}
+            {hasValue(data.q43_interventionTime) && <Field fieldKey="q43_interventionTime" label="Intervention Time" value={data.q43_interventionTime} />}
+            {hasValue(data.q43_eventInterventionDetails) && <TextBlock fieldKey="q43_eventInterventionDetails" label="Event Details" value={data.q43_eventInterventionDetails} />}
+            {hasValue(data.q43_postEventMonitoring) && <TextBlock fieldKey="q43_postEventMonitoring" label="Post-Event" value={data.q43_postEventMonitoring} />}
           </Section>
         )}
 
@@ -811,12 +824,12 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           ]}
           data={data}
         >
-          {hasValue(data.q41_educationProvided) && <Field label="Education Provided" value={data.q41_educationProvided} />}
-          {hasValue(data.q41_educationTopics) && <TextBlock label="Topics" value={data.q41_educationTopics} />}
-          {hasValue(data.q41_educationRecipients) && <Field label="Recipients" value={data.q41_educationRecipients} />}
-          {hasValue(data.q41_educationMethod) && <Field label="Method" value={data.q41_educationMethod} />}
-          {hasValue(data.q41_teachback) && <Field label="Teach-back" value={data.q41_teachback} />}
-          {hasValue(data.q41_educationNotes) && <TextBlock label="Notes" value={data.q41_educationNotes} />}
+          {hasValue(data.q41_educationProvided) && <Field fieldKey="q41_educationProvided" label="Education Provided" value={data.q41_educationProvided} />}
+          {hasValue(data.q41_educationTopics) && <TextBlock fieldKey="q41_educationTopics" label="Topics" value={data.q41_educationTopics} />}
+          {hasValue(data.q41_educationRecipients) && <Field fieldKey="q41_educationRecipients" label="Recipients" value={data.q41_educationRecipients} />}
+          {hasValue(data.q41_educationMethod) && <Field fieldKey="q41_educationMethod" label="Method" value={data.q41_educationMethod} />}
+          {hasValue(data.q41_teachback) && <Field fieldKey="q41_teachback" label="Teach-back" value={data.q41_teachback} />}
+          {hasValue(data.q41_educationNotes) && <TextBlock fieldKey="q41_educationNotes" label="Notes" value={data.q41_educationNotes} />}
         </ConditionalSection>
 
         {/* 16. GOALS OF CARE (LPN/RN only) */}
@@ -827,7 +840,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           'q41_overallCarePlan', 'q41_goalsNotes',
         ]) && (
           <Section title="Goals of Care">
-            {hasValue(data.q41_goalsDiscussed) && <Field label="Goals Discussed" value={data.q41_goalsDiscussed} />}
+            {hasValue(data.q41_goalsDiscussed) && <Field fieldKey="q41_goalsDiscussed" label="Goals Discussed" value={data.q41_goalsDiscussed} />}
             {[1, 2, 3].map((n) => {
               const desc = data[`q41_goal${n}Description`];
               const progress = data[`q41_goal${n}Progress`];
@@ -842,8 +855,8 @@ export default function SubmissionDetailPage({ params }: PageProps) {
                 </div>
               );
             })}
-            {hasValue(data.q41_overallCarePlan) && <TextBlock label="Overall Status" value={data.q41_overallCarePlan} />}
-            {hasValue(data.q41_goalsNotes) && <TextBlock label="Notes" value={data.q41_goalsNotes} />}
+            {hasValue(data.q41_overallCarePlan) && <TextBlock fieldKey="q41_overallCarePlan" label="Overall Status" value={data.q41_overallCarePlan} />}
+            {hasValue(data.q41_goalsNotes) && <TextBlock fieldKey="q41_goalsNotes" label="Notes" value={data.q41_goalsNotes} />}
           </Section>
         )}
 
@@ -853,7 +866,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           keys={['q51_communication']}
           data={data}
         >
-          {hasValue(data.q51_communication) && <TextBlock label="Summary" value={data.q51_communication} />}
+          {hasValue(data.q51_communication) && <TextBlock fieldKey="q51_communication" label="Summary" value={data.q51_communication} />}
         </ConditionalSection>
 
         {/* 18. PHYSICIAN NOTIFICATION (LPN/RN only) */}
@@ -863,15 +876,15 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         ]) && (
           <Section title="Physician Notification">
             <FieldRow>
-              {hasValue(data.q52_physicianNotify) && <Field label="Notified" value={data.q52_physicianNotify} />}
-              {hasValue(data.q54_notificationTime) && <Field label="Time" value={data.q54_notificationTime} />}
+              {hasValue(data.q52_physicianNotify) && <Field fieldKey="q52_physicianNotify" label="Notified" value={data.q52_physicianNotify} />}
+              {hasValue(data.q54_notificationTime) && <Field fieldKey="q54_notificationTime" label="Time" value={data.q54_notificationTime} />}
             </FieldRow>
             <FieldRow>
-              {hasValue(data.q53_physicianName) && <Field label="Name" value={data.q53_physicianName} />}
-              {hasValue(data.q52_notifyMethod) && <Field label="Method" value={data.q52_notifyMethod} />}
+              {hasValue(data.q53_physicianName) && <Field fieldKey="q53_physicianName" label="Name" value={data.q53_physicianName} />}
+              {hasValue(data.q52_notifyMethod) && <Field fieldKey="q52_notifyMethod" label="Method" value={data.q52_notifyMethod} />}
             </FieldRow>
-            {hasValue(data.q52_infoReported) && <TextBlock label="Info Reported" value={data.q52_infoReported} />}
-            {hasValue(data.q55_physicianOrders) && <TextBlock label="Response" value={data.q55_physicianOrders} />}
+            {hasValue(data.q52_infoReported) && <TextBlock fieldKey="q52_infoReported" label="Info Reported" value={data.q52_infoReported} />}
+            {hasValue(data.q55_physicianOrders) && <TextBlock fieldKey="q55_physicianOrders" label="Response" value={data.q55_physicianOrders} />}
           </Section>
         )}
 
@@ -886,19 +899,19 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           data={data}
         >
           <FieldRow>
-            {hasValue(data.q52_familyNotified) && <Field label="Notified" value={data.q52_familyNotified} />}
-            {hasValue(data.q52_familyTime) && <Field label="Time" value={data.q52_familyTime} />}
+            {hasValue(data.q52_familyNotified) && <Field fieldKey="q52_familyNotified" label="Notified" value={data.q52_familyNotified} />}
+            {hasValue(data.q52_familyTime) && <Field fieldKey="q52_familyTime" label="Time" value={data.q52_familyTime} />}
           </FieldRow>
           <FieldRow>
-            {hasValue(data.q52_familyContactName) && <Field label="Contact" value={data.q52_familyContactName} />}
-            {hasValue(data.q52_familyRelationship) && <Field label="Relationship" value={data.q52_familyRelationship} />}
+            {hasValue(data.q52_familyContactName) && <Field fieldKey="q52_familyContactName" label="Contact" value={data.q52_familyContactName} />}
+            {hasValue(data.q52_familyRelationship) && <Field fieldKey="q52_familyRelationship" label="Relationship" value={data.q52_familyRelationship} />}
           </FieldRow>
-          {hasValue(data.q52_familyMethod) && <Field label="Method" value={data.q52_familyMethod} />}
+          {hasValue(data.q52_familyMethod) && <Field fieldKey="q52_familyMethod" label="Method" value={data.q52_familyMethod} />}
           <FieldRow>
-            {hasValue(data.q52_familyFollowup) && <Field label="Follow-up" value={data.q52_familyFollowup} />}
-            {hasValue(data.q52_familyFollowupTime) && <Field label="Follow-up Time" value={data.q52_familyFollowupTime} />}
+            {hasValue(data.q52_familyFollowup) && <Field fieldKey="q52_familyFollowup" label="Follow-up" value={data.q52_familyFollowup} />}
+            {hasValue(data.q52_familyFollowupTime) && <Field fieldKey="q52_familyFollowupTime" label="Follow-up Time" value={data.q52_familyFollowupTime} />}
           </FieldRow>
-          {hasValue(data.q52_familyNotes) && <TextBlock label="Notes" value={data.q52_familyNotes} />}
+          {hasValue(data.q52_familyNotes) && <TextBlock fieldKey="q52_familyNotes" label="Notes" value={data.q52_familyNotes} />}
         </ConditionalSection>
 
         {/* 20. AGENCY SUPERVISOR NOTIFICATION */}
@@ -911,12 +924,12 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           data={data}
         >
           <FieldRow>
-            {hasValue(data.q52_supervisorNotified) && <Field label="Notified" value={data.q52_supervisorNotified} />}
-            {hasValue(data.q52_supervisorTime) && <Field label="Time" value={data.q52_supervisorTime} />}
+            {hasValue(data.q52_supervisorNotified) && <Field fieldKey="q52_supervisorNotified" label="Notified" value={data.q52_supervisorNotified} />}
+            {hasValue(data.q52_supervisorTime) && <Field fieldKey="q52_supervisorTime" label="Time" value={data.q52_supervisorTime} />}
           </FieldRow>
-          {hasValue(data.q52_supervisorName) && <Field label="Name" value={data.q52_supervisorName} />}
-          {hasValue(data.q52_supervisorResponse) && <TextBlock label="Response" value={data.q52_supervisorResponse} />}
-          {hasValue(data.q52_incidentReportCompleted) && <Field label="Incident Report" value={data.q52_incidentReportCompleted} />}
+          {hasValue(data.q52_supervisorName) && <Field fieldKey="q52_supervisorName" label="Name" value={data.q52_supervisorName} />}
+          {hasValue(data.q52_supervisorResponse) && <TextBlock fieldKey="q52_supervisorResponse" label="Response" value={data.q52_supervisorResponse} />}
+          {hasValue(data.q52_incidentReportCompleted) && <Field fieldKey="q52_incidentReportCompleted" label="Incident Report" value={data.q52_incidentReportCompleted} />}
         </ConditionalSection>
 
         {/* 21. INCIDENTS */}
@@ -925,8 +938,8 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           keys={['q56_incidents', 'q57_incidentDetails']}
           data={data}
         >
-          {hasValue(data.q56_incidents) && <Field label="Type" value={data.q56_incidents} />}
-          {hasValue(data.q57_incidentDetails) && <TextBlock label="Details" value={data.q57_incidentDetails} />}
+          {hasValue(data.q56_incidents) && <Field fieldKey="q56_incidents" label="Type" value={data.q56_incidents} />}
+          {hasValue(data.q57_incidentDetails) && <TextBlock fieldKey="q57_incidentDetails" label="Details" value={data.q57_incidentDetails} />}
         </ConditionalSection>
 
         {/* === GROUP 7: Summary & Signature === */}
@@ -942,12 +955,12 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           data={data}
         >
           <FieldRow>
-            {hasValue(data.q60_oncomingCaregiver) && <Field label="Oncoming Caregiver" value={data.q60_oncomingCaregiver} />}
-            {hasValue(data.q60_handoffTime) && <Field label="Handoff Time" value={data.q60_handoffTime} />}
+            {hasValue(data.q60_oncomingCaregiver) && <Field fieldKey="q60_oncomingCaregiver" label="Oncoming Caregiver" value={data.q60_oncomingCaregiver} />}
+            {hasValue(data.q60_handoffTime) && <Field fieldKey="q60_handoffTime" label="Handoff Time" value={data.q60_handoffTime} />}
           </FieldRow>
-          {hasValue(data.q60_verbalReport) && <Field label="Verbal Report" value={data.q60_verbalReport} />}
-          {hasValue(data.q60_conditionAtEnd) && <TextBlock label="Condition at End" value={data.q60_conditionAtEnd} />}
-          {hasValue(data.q60_endOfShiftNotes) && <TextBlock label="Notes" value={data.q60_endOfShiftNotes} />}
+          {hasValue(data.q60_verbalReport) && <Field fieldKey="q60_verbalReport" label="Verbal Report" value={data.q60_verbalReport} />}
+          {hasValue(data.q60_conditionAtEnd) && <TextBlock fieldKey="q60_conditionAtEnd" label="Condition at End" value={data.q60_conditionAtEnd} />}
+          {hasValue(data.q60_endOfShiftNotes) && <TextBlock fieldKey="q60_endOfShiftNotes" label="Notes" value={data.q60_endOfShiftNotes} />}
         </ConditionalSection>
 
         {/* 23. FOLLOW-UP */}
@@ -956,8 +969,8 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           keys={['q58_followup', 'q60_nextShiftPlan']}
           data={data}
         >
-          {hasValue(data.q58_followup) && <TextBlock label="Care/Referrals" value={data.q58_followup} />}
-          {hasValue(data.q60_nextShiftPlan) && <TextBlock label="Next Shift Plan" value={data.q60_nextShiftPlan} />}
+          {hasValue(data.q58_followup) && <TextBlock fieldKey="q58_followup" label="Care/Referrals" value={data.q58_followup} />}
+          {hasValue(data.q60_nextShiftPlan) && <TextBlock fieldKey="q60_nextShiftPlan" label="Next Shift Plan" value={data.q60_nextShiftPlan} />}
         </ConditionalSection>
 
         {/* 24. CLINICAL SUMMARY */}
@@ -967,17 +980,20 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           data={data}
         >
           {hasValue(data.q63_clinicalSummary) && (
-            <p style={{ margin: 0, lineHeight: 1.6 }}>{data.q63_clinicalSummary}</p>
+            <>
+              <AmendedVersions fieldKey="q63_clinicalSummary" />
+              <p style={{ margin: 0, lineHeight: 1.6 }}>{data.q63_clinicalSummary}</p>
+            </>
           )}
-          {hasValue(data.q64_carePlanStatus) && <TextBlock label="Care Plan Status" value={data.q64_carePlanStatus} />}
+          {hasValue(data.q64_carePlanStatus) && <TextBlock fieldKey="q64_carePlanStatus" label="Care Plan Status" value={data.q64_carePlanStatus} />}
         </ConditionalSection>
 
         {/* 25. SIGNATURE */}
         <Section title="Signature">
           <FieldRow>
-            <Field label="Printed Name" value={data.q11_nurseName} />
-            <Field label="Credential" value={data.q12_credential} />
-            <Field label="Date Signed" value={fmtDate(data.q62_shiftEndDate)} />
+            <Field fieldKey="q11_nurseName" label="Printed Name" value={data.q11_nurseName} />
+            <Field fieldKey="q12_credential" label="Credential" value={data.q12_credential} />
+            <Field fieldKey="q62_shiftEndDate" label="Date Signed" value={fmtDate(data.q62_shiftEndDate)} />
           </FieldRow>
           {hasValue(data.q61_signature) && (
             <div style={{ marginTop: '12px' }}>
@@ -1085,7 +1101,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
 
         {/* Revision history — staff (any note) or the nurse author of THIS note
             (her own only). Firestore rules enforce the same scoping. */}
-        {(!isNurse || isAuthor) && <RevisionHistory submissionId={id} />}
+        <RevisionHistory entries={editHistory} />
       </div>
 
       {/* Print styles */}
@@ -1189,6 +1205,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         );
       })()}
     </div>
+    </AmendmentContext.Provider>
   );
 }
 
@@ -1234,28 +1251,77 @@ function FieldRow({ children }: { children: React.ReactNode }) {
   return <div style={fieldRowStyle}>{children}</div>;
 }
 
-function Field({ label, value }: { label: string; value: string }) {
+// Renders a field's prior values struck through (tagged with who/when) ABOVE its
+// current value — the in-place amendment convention. Returns null when the field
+// was never changed, so unchanged fields render exactly as before.
+function AmendedVersions({ fieldKey }: { fieldKey?: string }) {
+  const amendments = useContext(AmendmentContext);
+  const versions = (fieldKey && amendments[fieldKey]) || [];
+  if (versions.length === 0) return null;
+  return (
+    <>
+      {versions.map((v, i) => (
+        <span key={i} style={struckLineStyle}>
+          <span style={struckValStyle}>{displayOld(v.oldValue)}</span>
+          <span style={correctedTagStyle}>
+            {' '}— corrected {fmtWhen(v.correctedAt)}
+            {v.correctedBy ? ` by ${v.correctedBy}` : ''}
+          </span>
+        </span>
+      ))}
+    </>
+  );
+}
+
+/** Old value for the struck-through line. Never truncated (the record must stay
+ *  legible); a blank prior shows as "(blank)" so an added field is clear. */
+function displayOld(v: unknown): string {
+  if (v === null || v === undefined || v === '') return '(blank)';
+  if (typeof v === 'string') return v.startsWith('data:image/') ? '(signature image)' : v;
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return String(v);
+  }
+}
+
+function fmtWhen(d: Date | null): string {
+  if (!d) return 'an earlier edit';
+  return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+const struckLineStyle: React.CSSProperties = { display: 'block', marginBottom: 2 };
+const struckValStyle: React.CSSProperties = { textDecoration: 'line-through', color: '#9aa5b1', whiteSpace: 'pre-wrap' };
+const correctedTagStyle: React.CSSProperties = { color: '#9aa5b1', fontSize: 12, fontStyle: 'italic' };
+const fieldValueWrapStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column' };
+
+function Field({ label, value, fieldKey }: { label: string; value: string; fieldKey?: string }) {
   return (
     <div style={fieldStyle}>
       <span style={fieldLabelStyle}>{label}:</span>
-      <span>{value || '--'}</span>
+      <span style={fieldValueWrapStyle}>
+        <AmendedVersions fieldKey={fieldKey} />
+        <span>{value || '--'}</span>
+      </span>
     </div>
   );
 }
 
-function TextBlock({ label, value }: { label: string; value: string }) {
+function TextBlock({ label, value, fieldKey }: { label: string; value: string; fieldKey?: string }) {
   return (
     <div style={textBlockStyle}>
       <div style={textBlockLabelStyle}>{label}:</div>
+      <AmendedVersions fieldKey={fieldKey} />
       <div>{value || '--'}</div>
     </div>
   );
 }
 
-function VitalCard({ label, value }: { label: string; value: string }) {
+function VitalCard({ label, value, fieldKey }: { label: string; value: string; fieldKey?: string }) {
   return (
     <div style={vitalCardStyle}>
       <div style={vitalLabelStyle}>{label}</div>
+      <AmendedVersions fieldKey={fieldKey} />
       <div style={vitalValueStyle}>{value || '--'}</div>
     </div>
   );
