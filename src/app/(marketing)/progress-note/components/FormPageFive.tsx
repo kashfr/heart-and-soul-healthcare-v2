@@ -20,6 +20,7 @@ import {
   marAdminState,
   setMarAdmin,
   getAllMarAdmin,
+  computeExtraMarks,
   marAdminKey,
   marAdminSubscribe,
   marAdminGetSnapshot,
@@ -176,12 +177,17 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
         route: order.route,
         scheduledTime: slot,
         isPRN: slot === 'PRN',
+        indication: order.indication || '',
         status: '',
         administeredByType: 'nurse',
         administratorName: '',
         actualTime: slot === 'PRN' ? '' : slot,
         initials: marDefaultInitials,
         reason: '',
+        // Stamp the note session that created this mark (event-time, so the
+        // lazy id mint doesn't run during render). The submit harvest writes
+        // only marks matching the current session — defense vs the cross-note leak.
+        sessionId: getNoteId ? getNoteId() : '',
       },
       patch,
     );
@@ -195,9 +201,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
   const coveredKeys = new Set(
     marRows.map(({ order, slot }) => marAdminKey(marPatientId, order.id || '', slot)),
   );
-  const extraMarks = marPatientId
-    ? getAllMarAdmin().filter((r) => r.patientId === marPatientId && r.status && !coveredKeys.has(r.key))
-    : [];
+  const extraMarks = computeExtraMarks(getAllMarAdmin(), coveredKeys, marPatientId);
 
   // A dose already on record for this client+date, submitted on an EARLIER note
   // (dayAdmins is submitted-only; the current draft isn't submitted yet, so
@@ -209,6 +213,14 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
         ? a.orderId === orderId && a.scheduledTime === slot
         : (a.medNameSnapshot || '').toLowerCase() === medName.toLowerCase(),
     );
+
+  // How many PRN doses of this order were already GIVEN today on earlier notes
+  // (dayAdmins is submitted-only). Drives the "Nth PRN dose today" repeat count
+  // so a nurse can see at a glance how often an as-needed med has been used.
+  const prnGivenToday = (orderId: string): number =>
+    orderId
+      ? dayAdmins.filter((a) => a.orderId === orderId && a.scheduledTime === 'PRN' && a.status === 'given').length
+      : 0;
 
   // Shared renderer for one MAR dose card, used for both scheduled-order rows
   // and resumed "extra"/unlisted doses. `onPatch` writes to the right store key.
@@ -223,9 +235,12 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
     onPatch: (patch: Partial<MarAdminRecord>) => void;
     extra?: boolean;
     isPRN?: boolean;
+    indication?: string;
+    prnGivenToday?: number;
   }) => {
     const status = opts.rec?.status || '';
     const isNurseAdmin = !opts.rec || !opts.rec.administeredByType || opts.rec.administeredByType === 'nurse';
+    const indication = (opts.indication || '').trim();
     return (
       <div key={opts.cardKey} style={marCardStyle}>
         <div style={marCardHeadStyle}>
@@ -235,6 +250,10 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
           </div>
           <span style={opts.badgeStyle}>{opts.badgeLabel}</span>
         </div>
+
+        {opts.isPRN && indication && (
+          <div style={marIndicationStyle}>Ordered for: {indication}</div>
+        )}
 
         {opts.extra && (
           <div style={marExtraNoteStyle}>One-off dose documented this shift (not a scheduled order).</div>
@@ -300,6 +319,30 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
               </label>
             )}
           </div>
+        )}
+
+        {/* A PRN ("as needed") dose must record WHY it was given this time, shown
+            against the order's standing indication. Scheduled doses don't ask. */}
+        {status === 'given' && opts.isPRN && (
+          <>
+            <div style={marPrnCountStyle}>
+              PRN dose #{(opts.prnGivenToday || 0) + 1} today
+              {indication ? ` · for ${indication}` : ''}
+            </div>
+            <label style={{ ...marFieldStyle, marginTop: 8 }}>
+              <span style={marFieldLabelStyle}>Reason this dose was given *</span>
+              <input
+                type="text"
+                value={opts.rec?.reason || ''}
+                onChange={(e) => opts.onPatch({ reason: e.target.value })}
+                style={!(opts.rec?.reason || '').trim() ? marInputRequiredStyle : marInputStyle}
+                placeholder={indication ? `e.g., ${indication}; rated 6/10` : 'e.g., complained of pain, rated 6/10'}
+              />
+              {!(opts.rec?.reason || '').trim() && (
+                <span style={marRequiredHintStyle}>Required for a PRN dose: note the symptom or reason it was given.</span>
+              )}
+            </label>
+          </>
         )}
 
         {(status === 'held' || status === 'refused') && (
@@ -475,6 +518,8 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
                     prior: priorFor(order.id || '', slot, order.medName),
                     onPatch: (patch) => updateMark(order, slot, patch),
                     isPRN: slot === 'PRN',
+                    indication: order.indication,
+                    prnGivenToday: slot === 'PRN' ? prnGivenToday(order.id || '') : 0,
                   });
                 })}
                 {extraMarks.length > 0 && (
@@ -510,6 +555,8 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
                         onPatch: (patch) => patchMarkByKey(rec.key, rec, patch),
                         extra: isUnlisted,
                         isPRN: rec.isPRN || sched === 'PRN',
+                        indication: rec.indication,
+                        prnGivenToday: rec.orderId ? prnGivenToday(rec.orderId) : 0,
                       });
                     })}
                   </>
@@ -783,6 +830,10 @@ const marDetailGridStyle: CSSProperties = { display: 'grid', gridTemplateColumns
 const marFieldStyle: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 };
 const marFieldLabelStyle: CSSProperties = { fontSize: 12, fontWeight: 600, color: '#5c6b7a' };
 const marInputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', height: 38 };
+const marInputRequiredStyle: CSSProperties = { ...marInputStyle, border: '1px solid #d9a441', background: '#fffdf6' };
+const marRequiredHintStyle: CSSProperties = { fontSize: 11.5, color: '#8a5a0d', lineHeight: 1.4, marginTop: 3 };
+const marIndicationStyle: CSSProperties = { marginTop: 6, fontSize: 12.5, color: '#5c6b7a' };
+const marPrnCountStyle: CSSProperties = { marginTop: 12, fontSize: 12.5, fontWeight: 700, color: '#b56a17' };
 // Same box as the inputs (appearance reset + custom chevron) so the select is
 // exactly the same height; no native OS chrome making it taller.
 const marSelectStyle: CSSProperties = {

@@ -247,6 +247,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose 
                           </span>
                           <div style={byLine}>
                             {admin.status === 'given' ? `By ${givenByLabel(admin)}` : admin.reason ? `Reason: ${admin.reason}` : ''}
+                            {admin.status === 'given' && admin.reason ? ` · for ${admin.reason}` : ''}
                             {admin.administeredByType !== 'nurse' && admin.documentedByName
                               ? ` · documented by ${admin.documentedByName}`
                               : ''}
@@ -305,7 +306,10 @@ export default function MedChart({ patientId, patientName, initialDate, onClose 
                           {a.status === 'given' && a.actualTime ? ` ${a.actualTime}` : ''}
                           {a.initials ? ` · ${a.initials}` : ''}
                         </span>
-                        <div style={byLine}>By {givenByLabel(a)}</div>
+                        <div style={byLine}>
+                          By {givenByLabel(a)}
+                          {a.status === 'given' && a.reason ? ` · for ${a.reason}` : ''}
+                        </div>
                       </div>
                     </div>
                   ))}
