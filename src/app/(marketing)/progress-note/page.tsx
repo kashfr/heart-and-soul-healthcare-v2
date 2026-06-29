@@ -27,6 +27,7 @@ import {
   getAllMarAdmin,
   clearMarAdmin,
   setMarAdmin,
+  selectSubmittableMarks,
   marAdminSubscribe,
   type MarAdminRecord,
 } from './components/marAdminStore';
@@ -452,7 +453,11 @@ function ProgressNotePageInner() {
     if (draft.formValues.q61_signature) {
       setInitialSignature(String(draft.formValues.q61_signature));
     }
-    // Restore radio state (persist to localStorage too so DeselectableRadio sees it)
+    // Restore radio state (persist to localStorage too so DeselectableRadio sees
+    // it). Clear FIRST so resume REPLACES the radio singleton rather than
+    // unioning onto selections left resident from another note in this SPA
+    // session (the same cross-note leak class fixed for the MAR mark store).
+    clearRadioStorage();
     for (const [k, v] of Object.entries(draft.radioState)) {
       setRadio(k, v);
     }
@@ -550,9 +555,11 @@ function ProgressNotePageInner() {
     } catch (err) {
       console.error('Failed to clear old draft:', err);
     }
-    // Start fresh = a clean MAR store too. No navigation/unmount happens here,
-    // so the singleton would otherwise keep marks resident from the prior note.
+    // Start fresh = a clean MAR store AND radio store too. No navigation/unmount
+    // happens here, so the singletons would otherwise keep marks/selections
+    // resident from the prior note (the cross-note leak class).
     clearMarAdmin();
+    clearRadioStorage();
     setPendingDraft(null);
     setResumeDecided(true);
     setDraftHydrated(true);
@@ -1328,22 +1335,29 @@ function ProgressNotePageInner() {
         if (user && profile) {
           const marPid = String(getValues('patientId') || '').trim();
           const marDate = String(submission.q6_dateofService || '');
-          const marRecords = getAllMarAdmin()
-            .filter((r) => r.patientId === marPid && r.status)
-            .map((r) => ({
-              orderId: r.orderId,
-              medName: r.medName,
-              dose: r.dose,
-              units: r.units,
-              route: r.route,
-              scheduledTime: r.scheduledTime,
-              status: r.status as 'given' | 'held' | 'refused',
-              administeredByType: r.administeredByType,
-              administratorName: r.administratorName,
-              actualTime: r.actualTime,
-              initials: r.initials,
-              reason: r.reason,
-            }));
+          // Defense in depth (P4): write only marks belonging to THIS client AND
+          // this note's session, so a dose mark left resident from another note
+          // in the SPA singleton can't ride along (the cross-note leak class).
+          const marRecords = selectSubmittableMarks(getAllMarAdmin(), {
+            patientId: marPid,
+            sessionId: submissionId,
+          }).map((r) => ({
+            patientId: r.patientId,
+            orderId: r.orderId,
+            medName: r.medName,
+            dose: r.dose,
+            units: r.units,
+            route: r.route,
+            scheduledTime: r.scheduledTime,
+            status: r.status as 'given' | 'held' | 'refused',
+            administeredByType: r.administeredByType,
+            administratorName: r.administratorName,
+            actualTime: r.actualTime,
+            initials: r.initials,
+            reason: r.reason,
+            isPRN: r.isPRN,
+            indication: r.indication || '',
+          }));
           if (marPid && marRecords.length > 0) {
             try {
               await writeMarAdministrations(marRecords, {

@@ -17,7 +17,8 @@ function requestSummary(r: MarChangeRequest): string {
   if ((r.type === 'add' || r.type === 'change') && r.proposedMed) {
     const p = r.proposedMed;
     const sched = p.isPRN ? 'PRN' : (p.scheduledTimes || []).join(', ');
-    return `${p.medName} ${p.dose}${p.units ? ` ${p.units}` : ''} · ${p.route}${sched ? ` · ${sched}` : ''}`;
+    const forWhat = p.isPRN && p.indication ? ` · for ${p.indication}` : '';
+    return `${p.medName} ${p.dose}${p.units ? ` ${p.units}` : ''} · ${p.route}${sched ? ` · ${sched}` : ''}${forWhat}`;
   }
   if (r.type === 'discontinue') return r.targetMedName || 'medication';
   return '';

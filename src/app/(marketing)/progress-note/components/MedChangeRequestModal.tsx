@@ -3,7 +3,7 @@
 import { useState, type CSSProperties } from 'react';
 import { X, Plus, Clock } from 'lucide-react';
 import { stageChangeRequest, type MarOrder, type MarDocumenter, type MarChangeRequestType } from '@/lib/mar';
-import { setMarAdmin } from './marAdminStore';
+import { setMarAdmin, unlistedMarAdminKey } from './marAdminStore';
 import { MED_FREQUENCIES } from '@/lib/medFrequencies';
 
 const ROUTES = ['PO (by mouth)', 'SL (sublingual)', 'Topical', 'Inhalation', 'Subcutaneous', 'IM', 'IV', 'Rectal', 'G-tube', 'J-tube', 'NG tube', 'Ophthalmic', 'Otic', 'Nasal'];
@@ -56,6 +56,7 @@ export default function MedChangeRequestModal({
   const [frequencyLabel, setFrequencyLabel] = useState('');
   const [isPRN, setIsPRN] = useState(false);
   const [times, setTimes] = useState<string[]>(['08:00']);
+  const [indication, setIndication] = useState('');
   const [orderingPhysician, setOrderingPhysician] = useState('');
   const [notes, setNotes] = useState('');
 
@@ -91,6 +92,7 @@ export default function MedChangeRequestModal({
       setFrequencyLabel(o.frequencyLabel || '');
       setIsPRN(!!o.isPRN);
       setTimes(o.scheduledTimes && o.scheduledTimes.length > 0 ? [...o.scheduledTimes] : ['08:00']);
+      setIndication(o.indication || '');
       setOrderingPhysician(o.orderingPhysician || '');
       setNotes(o.notes || '');
     }
@@ -124,6 +126,10 @@ export default function MedChangeRequestModal({
         setError('Add at least one scheduled time, or mark the med PRN.');
         return;
       }
+      if (isPRN && !indication.trim()) {
+        setError('Add an indication: PRN doses are documented against what the med is for.');
+        return;
+      }
       if (mode === 'add' && doseGiven && doseByType !== 'nurse' && !doseByName.trim()) {
         setError('Enter who administered the dose.');
         return;
@@ -139,7 +145,7 @@ export default function MedChangeRequestModal({
     try {
       const proposedMed = {
         medName, dose, units, route, frequencyLabel,
-        scheduledTimes: times, isPRN,
+        scheduledTimes: times, isPRN, indication,
         startDate: mode === 'add' ? startDate : effectiveDate,
         orderingPhysician, notes,
       };
@@ -153,20 +159,25 @@ export default function MedChangeRequestModal({
         );
         // Stage the dose she gave into the note's MAR marks; it's written as an
         // append-only administration at submit (so it carries the note's date).
+        // A unique key (not med+time) so two same-time one-offs don't collide,
+        // and the note's session id so the mark can't leak onto another note.
         if (doseGiven) {
-          const key = `${patientId}|unlisted:${medName}:${doseTime || 'x'}|unscheduled`;
+          const noteId = getNoteId();
+          const key = unlistedMarAdminKey(patientId, medName, crypto.randomUUID());
           setMarAdmin(key, {
             patientId,
             orderId: '',
             medName, dose, units, route,
             scheduledTime: 'unscheduled',
-            isPRN: false,
+            isPRN,
+            indication,
             status: 'given',
             administeredByType: doseByType,
             administratorName: doseByName,
             actualTime: doseTime,
             initials: doseInitials,
             reason: '',
+            sessionId: noteId,
           });
         }
         onStaged(`Add ${medName} staged. It applies when you submit the note.`);
@@ -300,6 +311,21 @@ export default function MedChangeRequestModal({
                     <button type="button" onClick={addTime} style={addTimeBtn}><Plus size={13} /> Add time</button>
                   </div>
                 )}
+
+                <Field label={isPRN ? 'Indication (what it’s given for) *' : 'Indication (what it’s for)'}>
+                  <input
+                    type="text"
+                    value={indication}
+                    onChange={(e) => setIndication(e.target.value)}
+                    style={input}
+                    placeholder={isPRN ? 'e.g., Moderate pain (4-6/10)' : 'e.g., Hypertension'}
+                  />
+                  <span style={dateHint}>
+                    {isPRN
+                      ? 'Required for PRN meds: each as-needed dose is documented against this.'
+                      : 'Optional. Snapshotted onto each recorded dose.'}
+                  </span>
+                </Field>
 
                 <div style={grid2}>
                   <Field label={mode === 'add' ? 'Start date' : 'Effective date'}>

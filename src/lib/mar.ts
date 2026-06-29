@@ -12,6 +12,7 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { buildMarAdminFields } from './marShared';
 
 /**
  * MAR standing medication orders. One doc per medication per client in the
@@ -36,6 +37,10 @@ export interface MarOrder {
   frequencyLabel: string; // free text, e.g. "BID", "Every morning"
   scheduledTimes: string[]; // 'HH:MM' 24h slots; empty for PRN
   isPRN: boolean;
+  // Structured "what is this for" (e.g. "Moderate pain", "Fever > 101"). Most
+  // important for PRN orders, where the nurse documents WHY each dose was given
+  // against this standing indication. Snapshotted onto each administration.
+  indication?: string;
   startDate: string; // YYYY-MM-DD
   endDate?: string | null; // null/undefined = ongoing
   orderingPhysician?: string;
@@ -70,6 +75,7 @@ export interface MarOrderInput {
   frequencyLabel: string;
   scheduledTimes: string[];
   isPRN: boolean;
+  indication?: string;
   startDate: string;
   endDate?: string | null;
   orderingPhysician?: string;
@@ -89,6 +95,7 @@ function normalizeInput(input: MarOrderInput) {
       ? []
       : Array.from(new Set(input.scheduledTimes.filter(Boolean))).sort(),
     isPRN: input.isPRN,
+    indication: input.indication?.trim() ?? '',
     startDate: input.startDate,
     endDate: input.endDate ?? null,
     orderingPhysician: input.orderingPhysician?.trim() ?? '',
@@ -189,6 +196,7 @@ export interface MarAdministration {
   doseSnapshot: string;
   unitsSnapshot: string;
   routeSnapshot: string;
+  indicationSnapshot?: string; // the order's "what for" at the time of this dose
   date: string; // YYYY-MM-DD (date of service)
   scheduledTime: string; // 'HH:MM' or 'PRN'
   status: AdminStatus;
@@ -196,7 +204,7 @@ export interface MarAdministration {
   administratorName: string; // who physically gave it, when not the documenting nurse
   actualTime: string;
   initials: string;
-  reason: string; // for held / refused
+  reason: string; // why held / refused, and why-given for a PRN dose
   sourceNoteId: string; // the progress note this was documented on
   documentedBy: string; // signed-in RN/LPN who recorded it
   documentedByName: string;
@@ -206,6 +214,7 @@ export interface MarAdministration {
 
 // The per-row data the submit handler hands to writeMarAdministrations.
 export interface MarAdministrationDraft {
+  patientId: string; // pinned so writeMarAdministrations can re-assert ownership
   orderId: string;
   medName: string;
   dose: string;
@@ -218,6 +227,8 @@ export interface MarAdministrationDraft {
   actualTime: string;
   initials: string;
   reason: string;
+  isPRN: boolean; // a PRN given dose keeps its reason (why it was given)
+  indication: string; // the order's standing indication, snapshotted
 }
 
 export interface MarDocumenter {
@@ -236,32 +247,24 @@ export async function writeMarAdministrations(
   meta: { patientId: string; date: string; sourceNoteId: string; documenter: MarDocumenter },
 ): Promise<void> {
   if (records.length === 0) return;
+  // Defense in depth against the cross-note dose leak: only write records that
+  // belong to THIS note's client. The submit harvest already filters by
+  // patientId (and session id), so in normal operation this drops nothing; it
+  // is a structural backstop so a mark stamped for another client can never
+  // ride along even if an upstream filter regresses. A record with no pinned
+  // patientId (legacy draft) is trusted to meta.patientId.
+  const safe = records.filter((r) => !r.patientId || r.patientId === meta.patientId);
+  if (safe.length !== records.length) {
+    console.error(
+      `writeMarAdministrations: dropped ${records.length - safe.length} dose mark(s) not belonging to client ${meta.patientId}`,
+    );
+  }
+  if (safe.length === 0) return;
   try {
     const batch = writeBatch(db);
     const col = collection(db, 'marAdministrations');
-    for (const r of records) {
-      const isNurse = !r.administeredByType || r.administeredByType === 'nurse';
-      batch.set(doc(col), {
-        patientId: meta.patientId,
-        orderId: r.orderId,
-        medNameSnapshot: r.medName,
-        doseSnapshot: r.dose,
-        unitsSnapshot: r.units,
-        routeSnapshot: r.route,
-        date: meta.date,
-        scheduledTime: r.scheduledTime,
-        status: r.status,
-        administeredByType: r.administeredByType || 'nurse',
-        administratorName: isNurse ? '' : r.administratorName.trim(),
-        actualTime: r.status === 'given' ? r.actualTime : '',
-        initials: r.initials.trim(),
-        reason: r.status === 'given' ? '' : r.reason.trim(),
-        sourceNoteId: meta.sourceNoteId,
-        documentedBy: meta.documenter.uid,
-        documentedByName: meta.documenter.name,
-        documentedByCredential: meta.documenter.credential,
-        at: serverTimestamp(),
-      });
+    for (const r of safe) {
+      batch.set(doc(col), { ...buildMarAdminFields(r, meta), at: serverTimestamp() });
     }
     await batch.commit();
   } catch (error) {
@@ -406,6 +409,7 @@ export interface ProposedMed {
   frequencyLabel: string;
   scheduledTimes: string[];
   isPRN: boolean;
+  indication: string;
   startDate: string;
   orderingPhysician: string;
   notes: string;
@@ -460,6 +464,7 @@ function normalizeProposed(p: ProposedMed): ProposedMed {
     frequencyLabel: p.frequencyLabel.trim(),
     scheduledTimes: p.isPRN ? [] : Array.from(new Set(p.scheduledTimes.filter(Boolean))).sort(),
     isPRN: p.isPRN,
+    indication: p.indication.trim(),
     startDate: p.startDate,
     orderingPhysician: p.orderingPhysician.trim(),
     notes: p.notes.trim(),

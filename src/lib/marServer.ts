@@ -26,6 +26,7 @@ interface ProposedMedShape {
   frequencyLabel?: string;
   scheduledTimes?: string[];
   isPRN?: boolean;
+  indication?: string;
   startDate?: string;
   orderingPhysician?: string;
   notes?: string;
@@ -47,6 +48,7 @@ function orderFromProposed(
     frequencyLabel: String(p.frequencyLabel || ''),
     scheduledTimes: p.isPRN ? [] : Array.isArray(p.scheduledTimes) ? p.scheduledTimes : [],
     isPRN: !!p.isPRN,
+    indication: String(p.indication || ''),
     startDate,
     endDate: null,
     orderingPhysician: String(p.orderingPhysician || ''),

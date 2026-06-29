@@ -29,6 +29,7 @@ interface OrderForm {
   frequencyLabel: string;
   scheduledTimes: string[];
   isPRN: boolean;
+  indication: string;
   startDate: string;
   endDate: string;
   orderingPhysician: string;
@@ -52,6 +53,7 @@ function emptyForm(): OrderForm {
     frequencyLabel: '',
     scheduledTimes: ['08:00'],
     isPRN: false,
+    indication: '',
     startDate: todayISO(),
     endDate: '',
     orderingPhysician: '',
@@ -151,6 +153,7 @@ export default function RecordDetailPage() {
       frequencyLabel: o.frequencyLabel || '',
       scheduledTimes: o.scheduledTimes && o.scheduledTimes.length > 0 ? [...o.scheduledTimes] : ['08:00'],
       isPRN: !!o.isPRN,
+      indication: o.indication || '',
       startDate: o.startDate || todayISO(),
       endDate: o.endDate || '',
       orderingPhysician: o.orderingPhysician || '',
@@ -181,6 +184,10 @@ export default function RecordDetailPage() {
       showToast('Add at least one scheduled time, or mark the order PRN.');
       return;
     }
+    if (form.isPRN && !form.indication.trim()) {
+      showToast('Add an indication: PRN doses are documented against what the med is for.');
+      return;
+    }
     setSubmitting(true);
     try {
       const input = {
@@ -191,6 +198,7 @@ export default function RecordDetailPage() {
         frequencyLabel: form.frequencyLabel,
         scheduledTimes: form.scheduledTimes,
         isPRN: form.isPRN,
+        indication: form.indication,
         startDate: form.startDate,
         endDate: form.endDate || null,
         orderingPhysician: form.orderingPhysician,
@@ -467,6 +475,21 @@ export default function RecordDetailPage() {
                   </button>
                 </div>
               )}
+
+              <Field label={form.isPRN ? 'Indication (what it’s given for) *' : 'Indication (what it’s for)'}>
+                <input
+                  type="text"
+                  value={form.indication}
+                  onChange={(e) => setForm((f) => ({ ...f, indication: e.target.value }))}
+                  style={inputStyle}
+                  placeholder={form.isPRN ? 'e.g., Moderate pain (4-6/10)' : 'e.g., Hypertension'}
+                />
+                <span style={indicationHintStyle}>
+                  {form.isPRN
+                    ? 'Required for PRN meds: the nurse documents why each as-needed dose was given against this.'
+                    : 'Optional. Shown on the chart and snapshotted onto each recorded dose.'}
+                </span>
+              </Field>
 
               <div style={gridTwoStyle}>
                 <Field label="Start date *">
@@ -788,6 +811,7 @@ const modalStyle: React.CSSProperties = { background: 'white', borderRadius: 10,
 const modalHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #f1f3f5' };
 const closeBtnStyle: React.CSSProperties = { background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#7f8c8d' };
 const fieldLabelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: '#5c6b7a' };
+const indicationHintStyle: React.CSSProperties = { fontSize: 11.5, color: '#8a949e', lineHeight: 1.4, marginTop: 2 };
 const inputStyle: React.CSSProperties = { padding: '10px 12px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit' };
 const textareaStyle: React.CSSProperties = { ...inputStyle, minHeight: 60, resize: 'vertical', lineHeight: 1.4 };
 const selectStyle: React.CSSProperties = {
