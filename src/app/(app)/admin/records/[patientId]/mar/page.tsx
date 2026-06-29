@@ -407,16 +407,29 @@ export default function MonthlyMarPage() {
                             ? cellAdmins.map((x) => x.initials || '·').join('/')
                             : a.initials || '✓';
                           const star = a.administeredByType && a.administeredByType !== 'nurse' ? '*' : '';
+                          // A PRN ("as needed") med can be given more than once a day,
+                          // so a documented PRN cell still opens the dose modal to
+                          // record ANOTHER. Scheduled cells open view/amend only — never
+                          // a second scheduled dose.
+                          const prnAddable = slot === 'PRN' && chartable;
                           return (
                             <td
                               key={iso}
                               style={canAdminister ? { ...gridTdStyle, ...style, ...clickableCellStyle } : { ...gridTdStyle, ...style }}
                               title={
-                                canAdminister
-                                  ? `${cellAdmins.map(cellTitle).join(' | ')} — click to view / correct`
-                                  : cellAdmins.map(cellTitle).join(' | ')
+                                !canAdminister
+                                  ? cellAdmins.map(cellTitle).join(' | ')
+                                  : prnAddable
+                                    ? `${cellAdmins.map(cellTitle).join(' | ')} — click to document another PRN dose`
+                                    : `${cellAdmins.map(cellTitle).join(' | ')} — click to view / correct`
                               }
-                              onClick={canAdminister ? () => setChartDay(iso) : undefined}
+                              onClick={
+                                !canAdminister
+                                  ? undefined
+                                  : prnAddable
+                                    ? () => setAdminister({ order, slot, iso })
+                                    : () => setChartDay(iso)
+                              }
                             >
                               {label}{star}
                             </td>
