@@ -265,7 +265,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
             {a.amendmentReason ? ` — ${a.amendmentReason}` : ''}
           </div>
         )}
-        {canAmend(a) && amendFor !== a.id && (
+        {canAmend(a) && amendFor === null && (
           <button type="button" style={amendBtn} onClick={() => openAmend(a)}>
             Correct this entry
           </button>

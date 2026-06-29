@@ -143,7 +143,15 @@ export interface AmendableRecord {
 }
 
 /** The records that are NOT superseded by any other record's `amends` pointer,
- *  i.e. the current/live value of each administration after corrections. */
+ *  i.e. the current/live value of each administration after corrections.
+ *
+ *  INVARIANT: callers must pass COMPLETE chains. An amendment doc inherits the
+ *  original's `date` and `orderId` (see amendMarAdministration), so every member
+ *  of a chain falls in the same date+order and is loaded together by the
+ *  date-range / per-order queries that feed this. If that ever changes (e.g. an
+ *  amendment is allowed to move the date of service), this must walk chains
+ *  transitively instead, or a missing intermediate would un-supersede the
+ *  original and show it as a second live dose. */
 export function resolveCurrentAdministrations<T extends AmendableRecord>(list: T[]): T[] {
   const superseded = new Set<string>();
   for (const r of list) if (r.amends) superseded.add(r.amends);

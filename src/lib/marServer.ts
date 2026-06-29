@@ -241,16 +241,6 @@ export async function amendMarAdministration(
     return { ok: false, reason: 'missing-reason', message: 'A reason for the correction is required.' };
   }
 
-  // Don't amend a record that's already been superseded (stale view / double-submit).
-  const already = await col.where('amends', '==', adminId).limit(1).get();
-  if (!already.empty) {
-    return {
-      ok: false,
-      reason: 'superseded',
-      message: 'This entry was already amended. Refresh and amend the current entry.',
-    };
-  }
-
   const scheduledTime = String(orig.scheduledTime || '');
   const isPRN = scheduledTime === 'PRN';
   const amenderName = caller.profile.displayName || caller.email || '';
@@ -281,8 +271,23 @@ export async function amendMarAdministration(
     },
   );
 
+  // Write the superseding record inside a transaction whose read re-checks that
+  // nothing already amends this entry, so two concurrent corrections of the same
+  // dose can't both commit and fork the chain into two "current" records.
   const newRef = col.doc();
-  await newRef.set({ ...base, amends: adminId, amendmentReason, at: FieldValue.serverTimestamp() });
+  const conflict = await adminDb().runTransaction(async (tx) => {
+    const existing = await tx.get(col.where('amends', '==', adminId).limit(1));
+    if (!existing.empty) return true;
+    tx.set(newRef, { ...base, amends: adminId, amendmentReason, at: FieldValue.serverTimestamp() });
+    return false;
+  });
+  if (conflict) {
+    return {
+      ok: false,
+      reason: 'superseded',
+      message: 'This entry was already amended. Refresh and amend the current entry.',
+    };
+  }
   return { ok: true, id: newRef.id };
 }
 

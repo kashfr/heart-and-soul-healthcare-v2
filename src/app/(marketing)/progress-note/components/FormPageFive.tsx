@@ -246,6 +246,23 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
       ? dayAdminsCurrent.filter((a) => a.orderId === orderId && a.scheduledTime === 'PRN' && a.status === 'given').length
       : 0;
 
+  // Enforce the hard stop at the DATA layer, not just visually. If a scheduled
+  // slot is already documented on an earlier note today, drop any draft mark for
+  // it so it can never be submitted as a duplicate — covering the race where a
+  // dose was marked before dayAdmins loaded and the case of a resumed draft.
+  // PRN and unlisted one-offs (no orderId) repeat legitimately and are left alone.
+  useEffect(() => {
+    for (const rec of getAllMarAdmin()) {
+      if (rec.patientId !== marPatientId) continue;
+      if (!rec.orderId || rec.scheduledTime === 'PRN' || !rec.status) continue;
+      const hasPrior = dayAdminsCurrent.some(
+        (a) => a.orderId === rec.orderId && a.scheduledTime === rec.scheduledTime,
+      );
+      if (hasPrior) setMarAdmin(rec.key, { ...rec, status: '' });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dayAdmins, marPatientId]);
+
   // Shared renderer for one MAR dose card, used for both scheduled-order rows
   // and resumed "extra"/unlisted doses. `onPatch` writes to the right store key.
   const renderDoseCard = (opts: {
@@ -277,7 +294,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
     // Hard stop: a SCHEDULED slot already documented on an earlier note can't be
     // re-documented here (no giving the same dose twice). Corrections go through
     // the chart's amend flow. PRN ("as needed") repeats are expected, never locked.
-    const lockedByPrior = !!opts.prior && !opts.isPRN;
+    const lockedByPrior = !!opts.prior && !opts.isPRN && !opts.extra;
     return (
       <div key={opts.cardKey} style={marCardStyle}>
         <div style={marCardHeadStyle}>
