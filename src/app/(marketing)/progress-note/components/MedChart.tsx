@@ -11,6 +11,8 @@ import {
   type MarOrder,
   type MarAdministration,
 } from '@/lib/mar';
+import { resolveCurrentAdministrations } from '@/lib/marShared';
+import { authedFetch } from '@/lib/authedFetch';
 
 const ADMIN_BY_LABELS: Record<string, string> = {
   nurse: 'Nurse',
@@ -49,9 +51,12 @@ interface Props {
   patientName: string;
   initialDate: string; // usually the note's date of service
   onClose: () => void;
+  // The signed-in nurse, when the chart is opened from a note. Enables the
+  // "correct an entry" (amend) action. Omit for a purely read-only chart.
+  documenter?: { uid: string; name: string; credential: string };
 }
 
-export default function MedChart({ patientId, patientName, initialDate, onClose }: Props) {
+export default function MedChart({ patientId, patientName, initialDate, onClose, documenter }: Props) {
   const today = todayISO();
   const [day, setDay] = useState(initialDate && initialDate <= today ? initialDate : today);
   const [orders, setOrders] = useState<MarOrder[]>([]);
@@ -61,6 +66,16 @@ export default function MedChart({ patientId, patientName, initialDate, onClose 
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [timelines, setTimelines] = useState<Record<string, MarAdministration[]>>({});
   const [timelineLoading, setTimelineLoading] = useState<string | null>(null);
+  // Amend ("correct an entry") state. amendFor is the administration id being
+  // corrected; refreshKey re-pulls the day after a successful amendment.
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [amendFor, setAmendFor] = useState<string | null>(null);
+  const [amendStatus, setAmendStatus] = useState<'given' | 'held' | 'refused'>('given');
+  const [amendTime, setAmendTime] = useState('');
+  const [amendReason, setAmendReason] = useState('');
+  const [amendWhy, setAmendWhy] = useState('');
+  const [amendBusy, setAmendBusy] = useState(false);
+  const [amendError, setAmendError] = useState<string | null>(null);
 
   // Render into a portal on document.body: standard full-screen-overlay hygiene
   // so this fixed sheet can never be clipped or out-stacked by an ancestor's
@@ -112,7 +127,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose 
     return () => {
       cancelled = true;
     };
-  }, [patientId, day]);
+  }, [patientId, day, refreshKey]);
 
   const toggleHistory = async (orderId: string) => {
     if (expandedOrderId === orderId) {
@@ -122,7 +137,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose 
     setExpandedOrderId(orderId);
     if (!timelines[orderId]) {
       setTimelineLoading(orderId);
-      const items = await getAdministrationsForOrder(patientId, orderId);
+      const items = resolveCurrentAdministrations(await getAdministrationsForOrder(patientId, orderId));
       setTimelines((prev) => ({ ...prev, [orderId]: items.slice(0, 14) }));
       setTimelineLoading(null);
     }
@@ -133,10 +148,13 @@ export default function MedChart({ patientId, patientName, initialDate, onClose 
   // Administrations are append-only facts: they ALWAYS display on the day they
   // happened, even if their order's window was later changed around them.
   const dayOrders = useMemo(() => orders.filter((o) => orderAppliesOn(o, day)), [orders, day]);
+  // Collapse amend chains so each dose shows its CURRENT value once (a correction
+  // supersedes the original); the originals remain in dayAdmins for the chain.
+  const dayAdminsCurrent = useMemo(() => resolveCurrentAdministrations(dayAdmins), [dayAdmins]);
   const consumedIds = new Set<string>();
 
   const matchFor = (order: MarOrder, slot: string): MarAdministration | undefined => {
-    const m = dayAdmins.find(
+    const m = dayAdminsCurrent.find(
       (a) => a.orderId === (order.id || '') && a.scheduledTime === slot && !consumedIds.has(a.id || ''),
     );
     if (m?.id) consumedIds.add(m.id);
@@ -148,7 +166,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose 
     const slotRows = slots.map((slot) => ({ slot, admin: matchFor(order, slot) }));
     // PRN meds can have several doses in one day; pick up the extras.
     if (order.isPRN) {
-      for (const a of dayAdmins) {
+      for (const a of dayAdminsCurrent) {
         if (a.orderId === (order.id || '') && a.scheduledTime === 'PRN' && !consumedIds.has(a.id || '')) {
           consumedIds.add(a.id || '');
           slotRows.push({ slot: 'PRN', admin: a });
@@ -158,8 +176,159 @@ export default function MedChart({ patientId, patientName, initialDate, onClose 
     return { order, slotRows };
   });
 
-  const extras = dayAdmins.filter((a) => !consumedIds.has(a.id || ''));
+  const extras = dayAdminsCurrent.filter((a) => !consumedIds.has(a.id || ''));
   const isToday = day === today;
+
+  const statusLabel = (s: string) => (s === 'given' ? 'Given' : s === 'held' ? 'Held' : 'Refused');
+
+  // The documenting nurse may correct her own entry; an RN (clinical reviewer)
+  // may correct any. The server re-checks this; the UI just hides the button.
+  const isReviewer = documenter?.credential === 'RN';
+  const canAmend = (a: MarAdministration): boolean =>
+    !!documenter && !!a.id && (isReviewer || a.documentedBy === documenter.uid);
+
+  const prevOf = (a: MarAdministration): MarAdministration | undefined =>
+    a.amends ? dayAdmins.find((r) => r.id === a.amends) : undefined;
+
+  const openAmend = (a: MarAdministration) => {
+    setAmendFor(a.id || null);
+    setAmendStatus(a.status);
+    setAmendTime(a.status === 'given' ? a.actualTime || '' : '');
+    setAmendReason(a.reason || '');
+    setAmendWhy('');
+    setAmendError(null);
+  };
+
+  const saveAmend = async (a: MarAdministration) => {
+    if (!a.id) return;
+    if (!amendWhy.trim()) {
+      setAmendError('A reason for the correction is required.');
+      return;
+    }
+    setAmendBusy(true);
+    setAmendError(null);
+    try {
+      const res = await authedFetch('/api/mar/amend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adminId: a.id,
+          status: amendStatus,
+          actualTime: amendStatus === 'given' ? amendTime : '',
+          reason: amendReason,
+          amendmentReason: amendWhy.trim(),
+        }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setAmendError(data.error || 'Could not save the correction.');
+        setAmendBusy(false);
+        return;
+      }
+      setAmendFor(null);
+      setAmendBusy(false);
+      setTimelines({}); // drop cached history so it reloads with the correction
+      setRefreshKey((k) => k + 1);
+    } catch {
+      setAmendError('Network error saving the correction.');
+      setAmendBusy(false);
+    }
+  };
+
+  // Shared renderer for a recorded dose's details (status pill, by-line, amended
+  // marker, and the inline correction form). Used by the day rows and extras.
+  const renderAdminDetails = (a: MarAdministration) => {
+    const prev = prevOf(a);
+    const showDoseReason =
+      amendStatus === 'held' || amendStatus === 'refused' || (amendStatus === 'given' && a.scheduledTime === 'PRN');
+    return (
+      <>
+        <span style={statusPill[a.status] || statusPill.given}>
+          {statusLabel(a.status)}
+          {a.status === 'given' && a.actualTime ? ` ${a.actualTime}` : ''}
+          {a.initials ? ` · ${a.initials}` : ''}
+        </span>
+        {a.amends && (
+          <span style={amendedTag} title={a.amendmentReason || ''}>
+            Amended
+          </span>
+        )}
+        <div style={byLine}>
+          {a.status === 'given' ? `By ${givenByLabel(a)}` : a.reason ? `Reason: ${a.reason}` : ''}
+          {a.status === 'given' && a.reason ? ` · for ${a.reason}` : ''}
+          {a.administeredByType !== 'nurse' && a.documentedByName ? ` · documented by ${a.documentedByName}` : ''}
+        </div>
+        {prev && (
+          <div style={amendedNote}>
+            Corrected from &ldquo;{statusLabel(prev.status)}&rdquo;
+            {a.documentedByName ? ` by ${a.documentedByName}` : ''}
+            {a.amendmentReason ? ` — ${a.amendmentReason}` : ''}
+          </div>
+        )}
+        {canAmend(a) && amendFor === null && (
+          <button type="button" style={amendBtn} onClick={() => openAmend(a)}>
+            Correct this entry
+          </button>
+        )}
+        {amendFor === a.id && (
+          <div style={amendBox}>
+            <div style={amendTitle}>Correct this entry</div>
+            <div style={amendStatusRow}>
+              {(['given', 'held', 'refused'] as const).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setAmendStatus(s)}
+                  style={amendStatus === s ? amendStatusActive[s] : amendStatusBtn}
+                >
+                  {statusLabel(s)}
+                </button>
+              ))}
+            </div>
+            {amendStatus === 'given' && (
+              <label style={amendField}>
+                <span style={amendFieldLabel}>Time given</span>
+                <input type="time" value={amendTime} onChange={(e) => setAmendTime(e.target.value)} style={amendInput} />
+              </label>
+            )}
+            {showDoseReason && (
+              <label style={amendField}>
+                <span style={amendFieldLabel}>{amendStatus === 'given' ? 'Reason given (PRN)' : 'Reason'}</span>
+                <input
+                  type="text"
+                  value={amendReason}
+                  onChange={(e) => setAmendReason(e.target.value)}
+                  style={amendInput}
+                  placeholder={
+                    amendStatus === 'refused' ? 'Reason for refusal' : amendStatus === 'held' ? 'Reason held' : 'Why this PRN dose was given'
+                  }
+                />
+              </label>
+            )}
+            <label style={amendField}>
+              <span style={amendFieldLabel}>Reason for this correction *</span>
+              <input
+                type="text"
+                value={amendWhy}
+                onChange={(e) => setAmendWhy(e.target.value)}
+                style={amendInput}
+                placeholder="e.g., marked given by mistake; the dose was actually held"
+              />
+            </label>
+            {amendError && <div style={amendErr}>{amendError}</div>}
+            <div style={amendActions}>
+              <button type="button" style={amendCancel} onClick={() => setAmendFor(null)} disabled={amendBusy}>
+                Cancel
+              </button>
+              <button type="button" style={amendSave} onClick={() => saveAmend(a)} disabled={amendBusy}>
+                {amendBusy ? 'Saving…' : 'Save correction'}
+              </button>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  };
 
   if (!mounted) return null;
 
@@ -175,7 +344,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose 
               <Pill size={18} color="#1a3a5c" />
               <div style={{ minWidth: 0 }}>
                 <div style={titleStyle}>Medication chart</div>
-                <div style={subtitleStyle}>{patientName} · read-only</div>
+                <div style={subtitleStyle}>{patientName}{documenter ? '' : ' · read-only'}</div>
               </div>
             </div>
             <button type="button" onClick={onClose} style={closeBtn} aria-label="Close chart">
@@ -239,20 +408,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose 
                     <div key={`${slot}-${i}`} style={slotRow}>
                       <span style={slot === 'PRN' ? prnBadge : slotBadge}>{slot === 'PRN' ? 'PRN' : slot}</span>
                       {admin ? (
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <span style={statusPill[admin.status] || statusPill.given}>
-                            {admin.status === 'given' ? 'Given' : admin.status === 'held' ? 'Held' : 'Refused'}
-                            {admin.status === 'given' && admin.actualTime ? ` ${admin.actualTime}` : ''}
-                            {admin.initials ? ` · ${admin.initials}` : ''}
-                          </span>
-                          <div style={byLine}>
-                            {admin.status === 'given' ? `By ${givenByLabel(admin)}` : admin.reason ? `Reason: ${admin.reason}` : ''}
-                            {admin.status === 'given' && admin.reason ? ` · for ${admin.reason}` : ''}
-                            {admin.administeredByType !== 'nurse' && admin.documentedByName
-                              ? ` · documented by ${admin.documentedByName}`
-                              : ''}
-                          </div>
-                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>{renderAdminDetails(admin)}</div>
                       ) : (
                         <span style={notDocPill}>{order.isPRN ? 'None documented' : 'Not documented'}</span>
                       )}
@@ -301,15 +457,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose 
                             {a.unitsSnapshot ? ` ${a.unitsSnapshot}` : ''}
                           </span>
                         </div>
-                        <span style={statusPill[a.status] || statusPill.given}>
-                          {a.status === 'given' ? 'Given' : a.status === 'held' ? 'Held' : 'Refused'}
-                          {a.status === 'given' && a.actualTime ? ` ${a.actualTime}` : ''}
-                          {a.initials ? ` · ${a.initials}` : ''}
-                        </span>
-                        <div style={byLine}>
-                          By {givenByLabel(a)}
-                          {a.status === 'given' && a.reason ? ` · for ${a.reason}` : ''}
-                        </div>
+                        {renderAdminDetails(a)}
                       </div>
                     </div>
                   ))}
@@ -358,3 +506,22 @@ const timelineBox: CSSProperties = { marginTop: 8, borderTop: '1px solid #e5e7eb
 const timelineRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: '1px solid #f7f8f9' };
 const timelineDate: CSSProperties = { fontSize: 12.5, color: '#5c6b7a', fontWeight: 600, minWidth: 86 };
 const timelineEmpty: CSSProperties = { fontSize: 13, color: '#7f8c8d', padding: '6px 0' };
+const amendedTag: CSSProperties = { display: 'inline-block', marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#6b21a8', background: '#f3e8ff', border: '1px solid #e0c8f5', padding: '1px 7px', borderRadius: 999, verticalAlign: 'middle' };
+const amendedNote: CSSProperties = { fontSize: 12, color: '#6b21a8', marginTop: 4, lineHeight: 1.4 };
+const amendBtn: CSSProperties = { marginTop: 8, background: 'white', color: '#1a3a5c', border: '1px solid #c8def5', padding: '6px 12px', borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
+const amendBox: CSSProperties = { marginTop: 10, background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 10, padding: 12 };
+const amendTitle: CSSProperties = { fontSize: 13, fontWeight: 700, color: '#1f2937', marginBottom: 8 };
+const amendStatusRow: CSSProperties = { display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 };
+const amendStatusBtn: CSSProperties = { padding: '6px 14px', borderRadius: 6, border: '1px solid #d0d7de', background: 'white', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
+const amendStatusActive: Record<'given' | 'held' | 'refused', CSSProperties> = {
+  given: { ...amendStatusBtn, background: '#0e7c4a', color: 'white', border: '1px solid #0e7c4a' },
+  held: { ...amendStatusBtn, background: '#b56a17', color: 'white', border: '1px solid #b56a17' },
+  refused: { ...amendStatusBtn, background: '#c0392b', color: 'white', border: '1px solid #c0392b' },
+};
+const amendField: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 };
+const amendFieldLabel: CSSProperties = { fontSize: 12, fontWeight: 600, color: '#5c6b7a' };
+const amendInput: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box' };
+const amendErr: CSSProperties = { fontSize: 12.5, color: '#c0392b', marginBottom: 8 };
+const amendActions: CSSProperties = { display: 'flex', gap: 8, justifyContent: 'flex-end' };
+const amendCancel: CSSProperties = { background: 'white', color: '#374151', border: '1px solid #d0d7de', padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
+const amendSave: CSSProperties = { background: '#1a3a5c', color: 'white', border: '1px solid #1a3a5c', padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };

@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { buildMarAdminFields, compareMarOrders, type MarAdminFieldInput, type MarAdminFieldMeta } from './marShared';
+import {
+  amendmentChain,
+  buildMarAdminFields,
+  compareMarOrders,
+  doseTimeStatus,
+  parseHHMM,
+  resolveCurrentAdministrations,
+  type MarAdminFieldInput,
+  type MarAdminFieldMeta,
+} from './marShared';
 
 const meta: MarAdminFieldMeta = {
   patientId: 'pat-1',
@@ -87,5 +96,85 @@ describe('compareMarOrders', () => {
     ];
     const sorted = [...rows].sort(compareMarOrders).map((r) => r.id);
     expect(sorted).toEqual(['c', 'a', 'b']);
+  });
+});
+
+describe('parseHHMM', () => {
+  it('parses valid 24h times to minutes since midnight', () => {
+    expect(parseHHMM('08:00')).toBe(480);
+    expect(parseHHMM('8:00')).toBe(480);
+    expect(parseHHMM('00:00')).toBe(0);
+    expect(parseHHMM('23:59')).toBe(1439);
+  });
+  it('rejects out-of-range, non-time, and empty values', () => {
+    expect(parseHHMM('24:00')).toBeNull();
+    expect(parseHHMM('08:60')).toBeNull();
+    expect(parseHHMM('PRN')).toBeNull();
+    expect(parseHHMM('')).toBeNull();
+    expect(parseHHMM('unscheduled')).toBeNull();
+  });
+});
+
+describe('doseTimeStatus', () => {
+  it('is "none" for a non-today date no matter the clock (never paints a backdated note)', () => {
+    expect(doseTimeStatus('08:00', 9 * 60, { isToday: false })).toBe('none');
+    expect(doseTimeStatus('08:00', 23 * 60, { isToday: false })).toBe('none');
+  });
+  it('is "none" for PRN / unparseable times', () => {
+    expect(doseTimeStatus('PRN', 600, { isToday: true })).toBe('none');
+    expect(doseTimeStatus('', 600, { isToday: true })).toBe('none');
+  });
+  it('is "future" before the scheduled time', () => {
+    expect(doseTimeStatus('08:00', 8 * 60 - 1, { isToday: true })).toBe('future');
+  });
+  it('is "due" from the scheduled time through the grace window (default 60m)', () => {
+    expect(doseTimeStatus('08:00', 8 * 60, { isToday: true })).toBe('due'); // exactly due
+    expect(doseTimeStatus('08:00', 9 * 60, { isToday: true })).toBe('due'); // +60m, edge
+  });
+  it('is "late" past the grace window', () => {
+    expect(doseTimeStatus('08:00', 9 * 60 + 1, { isToday: true })).toBe('late'); // +61m
+  });
+  it('respects a custom grace window', () => {
+    expect(doseTimeStatus('08:00', 8 * 60 + 20, { isToday: true, graceMin: 15 })).toBe('late');
+    expect(doseTimeStatus('08:00', 8 * 60 + 10, { isToday: true, graceMin: 15 })).toBe('due');
+  });
+});
+
+describe('resolveCurrentAdministrations / amendmentChain', () => {
+  // a (original) -> b (amends a) -> c (amends b); plus standalone d.
+  const list = [
+    { id: 'a', amends: undefined, status: 'given' },
+    { id: 'b', amends: 'a', status: 'held' },
+    { id: 'c', amends: 'b', status: 'refused' },
+    { id: 'd', amends: undefined, status: 'given' },
+  ];
+
+  it('keeps only the live (non-superseded) record of each chain', () => {
+    const current = resolveCurrentAdministrations(list).map((r) => r.id).sort();
+    expect(current).toEqual(['c', 'd']);
+  });
+
+  it('returns standalone records untouched when nothing is amended', () => {
+    const flat = [{ id: 'x' }, { id: 'y' }];
+    expect(resolveCurrentAdministrations(flat).map((r) => r.id)).toEqual(['x', 'y']);
+  });
+
+  it('walks the full chain oldest-first for the audit trail', () => {
+    const c = list.find((r) => r.id === 'c')!;
+    expect(amendmentChain(c, list).map((r) => r.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('a record with no amendments is its own one-item chain', () => {
+    const d = list.find((r) => r.id === 'd')!;
+    expect(amendmentChain(d, list).map((r) => r.id)).toEqual(['d']);
+  });
+
+  it('is cycle-safe if pointers ever loop', () => {
+    const looped = [
+      { id: 'p', amends: 'q' },
+      { id: 'q', amends: 'p' },
+    ];
+    const p = looped[0];
+    expect(() => amendmentChain(p, looped)).not.toThrow();
   });
 });

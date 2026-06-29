@@ -4,7 +4,7 @@ import { renderToBuffer, type DocumentProps } from '@react-pdf/renderer';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { getServerSettings } from '@/lib/settingsServer';
-import { compareMarOrders } from '@/lib/marShared';
+import { compareMarOrders, resolveCurrentAdministrations } from '@/lib/marShared';
 import MarPDF, {
   type MarPdfCell,
   type MarPdfRow,
@@ -56,6 +56,9 @@ interface OrderDoc {
 }
 
 interface AdminDoc {
+  id: string;
+  amends: string;
+  amendmentReason: string;
   orderId: string;
   medNameSnapshot: string;
   doseSnapshot: string;
@@ -90,6 +93,10 @@ function adminBy(a: AdminDoc): string {
     return a.administratorName ? `${label} · ${a.administratorName}` : label;
   }
   return a.documentedByName || 'Nurse';
+}
+
+function statusWord(s: string): string {
+  return s === 'given' ? 'Given' : s === 'held' ? 'Held' : s === 'refused' ? 'Refused' : s;
 }
 
 export async function POST(request: Request) {
@@ -161,6 +168,9 @@ export async function POST(request: Request) {
     const admins: AdminDoc[] = adminsSnap.docs.map((d) => {
       const a = d.data() || {};
       return {
+        id: d.id,
+        amends: String(a.amends || ''),
+        amendmentReason: String(a.amendmentReason || ''),
         orderId: String(a.orderId || ''),
         medNameSnapshot: String(a.medNameSnapshot || ''),
         doseSnapshot: String(a.doseSnapshot || ''),
@@ -178,9 +188,15 @@ export async function POST(request: Request) {
       };
     });
 
+    // Collapse amendment chains: a correction supersedes the original, so the
+    // grid + log show the CURRENT value once. Originals stay in adminsById so an
+    // amended entry can report what it was corrected FROM.
+    const adminsById = new Map(admins.map((a) => [a.id, a]));
+    const adminsCurrent = resolveCurrentAdministrations(admins);
+
     // Cell lookup, mirroring the web grid: orderId|date|slot.
     const cellMap = new Map<string, AdminDoc[]>();
-    for (const a of admins) {
+    for (const a of adminsCurrent) {
       const k = `${a.orderId}|${a.date}|${a.scheduledTime}`;
       const arr = cellMap.get(k) || [];
       arr.push(a);
@@ -234,27 +250,35 @@ export async function POST(request: Request) {
     }
 
     const rowOrderIds = new Set(monthOrders.map((o) => o.id));
-    const log: MarPdfLogEntry[] = admins
+    const log: MarPdfLogEntry[] = adminsCurrent
       .filter(
         (a) =>
           a.scheduledTime === 'PRN' ||
           a.scheduledTime === 'unscheduled' ||
           a.status !== 'given' ||
           (a.administeredByType && a.administeredByType !== 'nurse') ||
-          !rowOrderIds.has(a.orderId),
+          !rowOrderIds.has(a.orderId) ||
+          !!a.amends, // corrections always appear in the audit log
       )
       .sort((a, b) => (a.date + a.actualTime).localeCompare(b.date + b.actualTime))
-      .map((a) => ({
-        date: shortDate(a.date),
-        time: a.actualTime || '-',
-        med: [a.medNameSnapshot, [a.doseSnapshot, a.unitsSnapshot].filter(Boolean).join(' ')]
-          .filter(Boolean)
-          .join(' '),
-        status: a.status,
-        by: adminBy(a),
-        reason: a.reason || '-',
-        initials: a.initials || '-',
-      }));
+      .map((a) => {
+        const prev = a.amends ? adminsById.get(a.amends) : undefined;
+        const amendment = a.amends
+          ? `Correction${prev ? ` of the "${statusWord(prev.status)}" entry` : ''}: ${a.amendmentReason || 'no reason given'}`
+          : undefined;
+        return {
+          date: shortDate(a.date),
+          time: a.actualTime || '-',
+          med: [a.medNameSnapshot, [a.doseSnapshot, a.unitsSnapshot].filter(Boolean).join(' ')]
+            .filter(Boolean)
+            .join(' '),
+          status: a.status,
+          by: adminBy(a),
+          reason: a.reason || '-',
+          initials: a.initials || '-',
+          amendment,
+        };
+      });
 
     const legendMap = new Map<string, string>();
     for (const a of admins) {

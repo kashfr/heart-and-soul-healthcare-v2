@@ -90,3 +90,88 @@ export function buildMarAdminFields(r: MarAdminFieldInput, meta: MarAdminFieldMe
     documentedByCredential: meta.documenter.credential,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Time-aware live status (the in-progress MAR colors the dose pill by this).
+// ---------------------------------------------------------------------------
+
+/**
+ * Time-relative status of a still-UNDOCUMENTED scheduled dose, for the live MAR.
+ *  - 'none'   : not time-relevant (PRN, unparseable time, or not today's date —
+ *               we never paint a backdated/future-dated note red).
+ *  - 'future' : the scheduled time hasn't arrived yet (neutral).
+ *  - 'due'    : within `graceMin` after the scheduled time (amber: coming up / due now).
+ *  - 'late'   : more than `graceMin` past the scheduled time (red: needs attention).
+ * Pure (no Date): the caller passes `nowMinutes` (minutes since local midnight)
+ * so it stays unit-testable and free of render-time clock reads.
+ */
+export type DoseTimeStatus = 'none' | 'future' | 'due' | 'late';
+
+export function parseHHMM(time: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec((time || '').trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
+export function doseTimeStatus(
+  scheduledTime: string,
+  nowMinutes: number,
+  opts: { graceMin?: number; isToday: boolean },
+): DoseTimeStatus {
+  if (!opts.isToday) return 'none';
+  const due = parseHHMM(scheduledTime);
+  if (due === null) return 'none';
+  const grace = opts.graceMin ?? 60;
+  if (nowMinutes < due) return 'future';
+  if (nowMinutes <= due + grace) return 'due';
+  return 'late';
+}
+
+// ---------------------------------------------------------------------------
+// Amendment chains. A correction is a new doc that supersedes an earlier one via
+// an `amends` pointer (pointer-based, so PRN doses that share a slot key still
+// resolve correctly). These helpers collapse a flat list to its live records and
+// expose the audit chain. Structural type keeps this module Firebase-free.
+// ---------------------------------------------------------------------------
+
+export interface AmendableRecord {
+  id?: string;
+  amends?: string;
+}
+
+/** The records that are NOT superseded by any other record's `amends` pointer,
+ *  i.e. the current/live value of each administration after corrections.
+ *
+ *  INVARIANT: callers must pass COMPLETE chains. An amendment doc inherits the
+ *  original's `date` and `orderId` (see amendMarAdministration), so every member
+ *  of a chain falls in the same date+order and is loaded together by the
+ *  date-range / per-order queries that feed this. If that ever changes (e.g. an
+ *  amendment is allowed to move the date of service), this must walk chains
+ *  transitively instead, or a missing intermediate would un-supersede the
+ *  original and show it as a second live dose. */
+export function resolveCurrentAdministrations<T extends AmendableRecord>(list: T[]): T[] {
+  const superseded = new Set<string>();
+  for (const r of list) if (r.amends) superseded.add(r.amends);
+  return list.filter((r) => !(r.id && superseded.has(r.id)));
+}
+
+/** The full amendment chain for a current record, oldest original first through
+ *  to the current record last, by walking `amends` pointers. Cycle-safe. */
+export function amendmentChain<T extends AmendableRecord>(current: T, list: T[]): T[] {
+  const byId = new Map<string, T>();
+  for (const r of list) if (r.id) byId.set(r.id, r);
+  const chain: T[] = [current];
+  const seen = new Set<string>();
+  let cur: T | undefined = current;
+  while (cur && cur.amends && !seen.has(cur.amends)) {
+    seen.add(cur.amends);
+    const prev = byId.get(cur.amends);
+    if (!prev) break;
+    chain.unshift(prev);
+    cur = prev;
+  }
+  return chain;
+}
