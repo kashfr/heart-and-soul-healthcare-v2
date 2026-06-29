@@ -1,68 +1,70 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { History, ChevronDown, ChevronRight, Info } from 'lucide-react';
-import { getEditHistory, type EditHistoryEntry } from '@/lib/submissions';
-import { prettyFieldName, prettyValue } from '@/lib/revisionFormat';
+import { useState } from 'react';
+import { History, ChevronDown, ChevronRight } from 'lucide-react';
+import { buildAmendmentWhyLog } from '@/lib/revisionFormat';
+import type { EditHistoryEntry } from '@/lib/submissions';
 import type { Role } from '@/lib/auth';
 
-export default function RevisionHistory({ submissionId }: { submissionId: string }) {
-  const [entries, setEntries] = useState<EditHistoryEntry[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+/**
+ * Compact "why" log for a note's amendments. The WHAT (old value -> new value,
+ * per field) now renders inline in the note body, struck through with the
+ * corrected value beneath it — so this no longer repeats a field-by-field
+ * from/to table. It lists one line per amendment EVENT: who, their role, when,
+ * and the stated reason. Shown to everyone who can view the note (the change is
+ * part of the record). Entries are passed in from the page (single fetch).
+ */
+export default function RevisionHistory({ entries }: { entries: EditHistoryEntry[] }) {
   const [collapsed, setCollapsed] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const rows = await getEditHistory(submissionId);
-        setEntries(rows);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load history.');
-      }
-    })();
-  }, [submissionId]);
-
-  if (entries === null && !error) {
-    return (
-      <div style={wrapStyle}>
-        <div style={headerRowStyle}>
-          <History size={16} color="#5c6b7a" />
-          <strong style={titleStyle}>Amendment history</strong>
-          <span style={countStyle}>loading…</span>
-        </div>
-      </div>
-    );
-  }
+  const log = buildAmendmentWhyLog(entries);
+  // "Amendments" = events that changed a field or carried a reason (archive/
+  // restore action markers aren't amendments to the clinical content).
+  const count = entries.filter(
+    (e) => Object.keys(e.changes || {}).length > 0 || (e.reason || '').trim(),
+  ).length;
 
   return (
     <div style={wrapStyle} className="no-print">
-      <button
-        onClick={() => setCollapsed((c) => !c)}
-        style={headerBtnStyle}
-        aria-expanded={!collapsed}
-      >
+      <button onClick={() => setCollapsed((c) => !c)} style={headerBtnStyle} aria-expanded={!collapsed}>
         {collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
         <History size={16} color="#5c6b7a" />
         <strong style={titleStyle}>Amendment history</strong>
         <span style={countStyle}>
-          {entries && entries.length === 0 ? 'No amendments' : `${entries?.length ?? 0} amendment${entries?.length === 1 ? '' : 's'}`}
+          {count === 0 ? 'No amendments' : `${count} amendment${count === 1 ? '' : 's'}`}
         </span>
       </button>
 
       {!collapsed && (
         <div style={bodyStyle}>
-          {error && <div style={errorStyle}>{error}</div>}
-          {entries && entries.length === 0 && !error && (
-            <div style={emptyStyle}>
-              This note has not been amended since it was submitted.
-            </div>
-          )}
-          {entries && entries.length > 0 && (
-            <ol style={listStyle}>
-              {entries.map((e) => (
-                <RevisionEntry key={e.id} entry={e} />
-              ))}
-            </ol>
+          {count === 0 ? (
+            <div style={emptyStyle}>This note has not been amended since it was submitted.</div>
+          ) : (
+            <>
+              <p style={noteStyle}>
+                Each field&apos;s change is shown in place above, struck through with the corrected value and a
+                timestamp. This log records the stated reason for each amendment.
+              </p>
+              <ol style={listStyle}>
+                {log.length === 0 ? (
+                  <li style={emptyReasonStyle}>No reasons were recorded.</li>
+                ) : (
+                  log.map((e, i) => (
+                    <li key={i} style={entryStyle}>
+                      <div style={entryHeaderStyle}>
+                        <span style={{ fontWeight: 600 }}>{e.editedByName || 'Unknown editor'}</span>
+                        {e.editedByRole && (
+                          <span style={roleBadgeStyle(e.editedByRole as Role)}>{e.editedByRole}</span>
+                        )}
+                        <span style={{ color: '#7f8c8d', fontSize: 12 }}>
+                          · {e.editedAt ? e.editedAt.toLocaleString() : '—'}
+                        </span>
+                      </div>
+                      <div style={reasonStyle}>{e.reason}</div>
+                    </li>
+                  ))
+                )}
+              </ol>
+            </>
           )}
         </div>
       )}
@@ -70,90 +72,18 @@ export default function RevisionHistory({ submissionId }: { submissionId: string
   );
 }
 
-function RevisionEntry({ entry }: { entry: EditHistoryEntry }) {
-  const changedKeys = Object.keys(entry.changes);
-  const [open, setOpen] = useState(false);
-  const when = entry.editedAt ? entry.editedAt.toLocaleString() : '—';
-  return (
-    <li style={entryStyle}>
-      <button onClick={() => setOpen((o) => !o)} style={entryHeaderStyle}>
-        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        <span style={{ fontWeight: 600 }}>
-          {entry.editedByName || entry.editedBy || 'Unknown editor'}
-        </span>
-        <span style={roleBadgeStyle(entry.editedByRole)}>{entry.editedByRole}</span>
-        <span style={{ color: '#7f8c8d', fontSize: 12 }}>· {when}</span>
-        <span style={{ marginLeft: 'auto', color: '#5c6b7a', fontSize: 12 }}>
-          {changedKeys.length} field{changedKeys.length === 1 ? '' : 's'} changed
-        </span>
-      </button>
-
-      {entry.reason && (
-        <div style={reasonStyle}>
-          <span>
-            <strong>Reason for amendment:</strong> {entry.reason}
-          </span>
-        </div>
-      )}
-
-      {entry.correctionNote && (
-        <div style={correctionNoteStyle}>
-          <Info size={14} style={{ flexShrink: 0, marginTop: 1 }} />
-          <span>
-            <strong>Correction note:</strong> {entry.correctionNote}
-          </span>
-        </div>
-      )}
-
-      {open && (
-        <div style={diffWrapStyle}>
-          {changedKeys.length === 0 ? (
-            <div style={{ fontSize: 13, color: '#7f8c8d' }}>No field-level changes recorded.</div>
-          ) : (
-            <table style={diffTableStyle}>
-              <thead>
-                <tr>
-                  <th style={diffThStyle}>Field</th>
-                  <th style={diffThStyle}>From</th>
-                  <th style={diffThStyle}>To</th>
-                </tr>
-              </thead>
-              <tbody>
-                {changedKeys.map((k) => (
-                  <tr key={k}>
-                    <td style={diffTdFieldStyle}>{prettyFieldName(k)}</td>
-                    <td style={diffTdFromStyle}>{prettyValue(entry.changes[k].from)}</td>
-                    <td style={diffTdToStyle}>{prettyValue(entry.changes[k].to)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
-    </li>
-  );
-}
-
 const wrapStyle: React.CSSProperties = { border: '1px solid #e5e7eb', borderRadius: 8, background: 'white', marginTop: 20 };
-const headerRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px' };
 const headerBtnStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', width: '100%', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', color: '#2c3e50' };
 const titleStyle: React.CSSProperties = { fontSize: 14, color: '#2c3e50' };
 const countStyle: React.CSSProperties = { marginLeft: 'auto', fontSize: 12, color: '#7f8c8d' };
 const bodyStyle: React.CSSProperties = { padding: '0 14px 14px' };
+const noteStyle: React.CSSProperties = { margin: '0 0 10px', fontSize: 12.5, color: '#7f8c8d', lineHeight: 1.5 };
 const emptyStyle: React.CSSProperties = { padding: '16px', background: '#f8fafc', borderRadius: 6, color: '#7f8c8d', fontSize: 13, textAlign: 'center' };
-const errorStyle: React.CSSProperties = { padding: '10px 12px', background: '#fdecea', color: '#b3261e', borderRadius: 6, fontSize: 13, marginBottom: 10 };
 const listStyle: React.CSSProperties = { listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 };
-const entryStyle: React.CSSProperties = { border: '1px solid #e5e7eb', borderRadius: 6, background: '#fafbfc' };
-const entryHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 12px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', fontSize: 13, color: '#2c3e50' };
-const reasonStyle: React.CSSProperties = { margin: '0 12px 10px', padding: '8px 10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, color: '#334155', fontSize: 12.5, lineHeight: 1.45 };
-const correctionNoteStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 8, margin: '0 12px 10px', padding: '8px 10px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 6, color: '#1e40af', fontSize: 12.5, lineHeight: 1.45 };
-const diffWrapStyle: React.CSSProperties = { padding: '0 12px 12px' };
-const diffTableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
-const diffThStyle: React.CSSProperties = { textAlign: 'left', padding: '6px 8px', borderBottom: '1px solid #e5e7eb', color: '#5c6b7a', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 };
-const diffTdFieldStyle: React.CSSProperties = { padding: '6px 8px', borderBottom: '1px solid #f1f3f5', fontWeight: 600, color: '#2c3e50', width: '22%' };
-const diffTdFromStyle: React.CSSProperties = { padding: '6px 8px', borderBottom: '1px solid #f1f3f5', color: '#a33', background: '#fdecea', verticalAlign: 'top', whiteSpace: 'pre-wrap' };
-const diffTdToStyle: React.CSSProperties = { padding: '6px 8px', borderBottom: '1px solid #f1f3f5', color: '#2a7a2a', background: '#e8f4e8', verticalAlign: 'top', whiteSpace: 'pre-wrap' };
+const entryStyle: React.CSSProperties = { border: '1px solid #e5e7eb', borderRadius: 6, background: '#fafbfc', padding: '10px 12px' };
+const entryHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#2c3e50' };
+const reasonStyle: React.CSSProperties = { marginTop: 6, color: '#334155', fontSize: 12.5, lineHeight: 1.45 };
+const emptyReasonStyle: React.CSSProperties = { ...entryStyle, color: '#7f8c8d', fontSize: 13 };
 
 function roleBadgeStyle(role: Role | null): React.CSSProperties {
   const map: Record<string, { bg: string; fg: string }> = {
