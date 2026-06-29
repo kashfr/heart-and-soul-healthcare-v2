@@ -75,7 +75,7 @@ export default function MedicationsPickerPage() {
         <ul style={listStyle}>
           {filtered.map((p) => (
             <li key={p.id}>
-              <Link href={`/admin/records/${p.id}/mar`} style={rowStyle}>
+              <Link href={`/admin/mar/${p.id}`} style={rowStyle}>
                 <div style={{ minWidth: 0 }}>
                   <div style={nameStyle}>{p.name}</div>
                   <div style={metaStyle}>
