@@ -7,6 +7,7 @@ import {
   setDoc,
   doc,
   query,
+  where,
   orderBy,
   runTransaction,
   Query,
@@ -58,6 +59,24 @@ export async function getPatients(): Promise<Patient[]> {
     })) as Patient[];
   } catch (error) {
     console.error('Error fetching patients:', error);
+    return [];
+  }
+}
+
+/**
+ * Patients a nurse is assigned to (her uid is in assignedNurseIds), for the
+ * standalone Medications / MAR picker. array-contains only (no orderBy) so it
+ * needs no composite index; sorted by name client-side.
+ */
+export async function getPatientsForNurse(nurseUid: string): Promise<Patient[]> {
+  try {
+    const patientsRef = collection(db, 'patients');
+    const q = query(patientsRef, where('assignedNurseIds', 'array-contains', nurseUid));
+    const snapshot = await getDocs(q);
+    const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Patient[];
+    return list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  } catch (error) {
+    console.error('Error fetching nurse patients:', error);
     return [];
   }
 }

@@ -11,6 +11,7 @@ import {
   UserCog,
   FileText,
   Pill,
+  Tablets,
   Wrench,
   Settings,
   Handshake,
@@ -41,6 +42,9 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { href: '/admin', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
+  // Always-on MAR for nurses: their standalone way into the same grid supervisors
+  // see via Records. Nurse-only here (staff reach the MAR through Records).
+  { href: '/admin/mar', label: 'Medications', icon: <Tablets size={18} />, allow: ['nurse'] },
   { href: '/admin/patients', label: 'Patients', icon: <Users size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/records', label: 'Records', icon: <Pill size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/submissions', label: 'Submissions', icon: <ClipboardList size={18} /> },
