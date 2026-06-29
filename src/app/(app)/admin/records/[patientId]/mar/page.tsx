@@ -21,7 +21,9 @@ import {
 import { authedFetch } from '@/lib/authedFetch';
 import { triggerDownload } from '@/lib/batchExport';
 import { compareMarOrders, resolveCurrentAdministrations } from '@/lib/marShared';
-import { useEffectiveUser } from '@/components/AuthProvider';
+import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
+import AdministerDoseModal from './AdministerDoseModal';
+import MedChart from '@/app/(marketing)/progress-note/components/MedChart';
 
 const ADMIN_BY_LABELS: Record<string, string> = {
   nurse: 'Nurse',
@@ -86,6 +88,25 @@ export default function MonthlyMarPage() {
   // the back-link and hide the staff-only PDF export for them.
   const { role } = useEffectiveUser();
   const isNurse = role === 'nurse';
+  // Charting a dose is an RN/LPN action; admins/supervisors stay read-only here
+  // so they can't change a record by accident. Uses the REAL signed-in user (not
+  // view-as), since the create rule requires documentedBy == auth uid.
+  const { user, profile } = useAuth();
+  const canAdminister =
+    profile?.role === 'nurse' && (profile?.credential === 'RN' || profile?.credential === 'LPN');
+  const documenter = {
+    uid: user?.uid || '',
+    name: profile?.displayName || '',
+    credential: profile?.credential || '',
+  };
+  const myInitials = (profile?.displayName || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((p) => p[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
 
   const [month, setMonth] = useState(currentMonth());
   const [patient, setPatient] = useState<Patient | null>(null);
@@ -96,11 +117,19 @@ export default function MonthlyMarPage() {
   const [monthLoading, setMonthLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  // Click-to-administer state: the open-dose modal (empty cell) or the day chart
+  // to view/amend (documented cell). Nurses only; see canAdminister.
+  const [administer, setAdminister] = useState<{ order: MarOrder; slot: string; iso: string } | null>(null);
+  const [chartDay, setChartDay] = useState<string | null>(null);
 
   const days = daysInMonth(month);
   const monthStart = dayISO(month, 1);
   const monthEnd = dayISO(month, days);
   const isCurrentMonth = month === currentMonth();
+
+  const refreshAdmins = async () => {
+    setAdmins(await getAdministrationsForRange(patientId, monthStart, monthEnd));
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -348,13 +377,24 @@ export default function MonthlyMarPage() {
                           // discontinued order still shades the days it ran).
                           const applies = orderAppliesOn({ ...order, status: 'active' }, iso);
                           const cellAdmins = cellMap.get(`${order.id}|${iso}|${slot}`) || [];
+                          // Nurses can document an OPEN dose for today or a past day
+                          // (late entry), never the future. A documented cell instead
+                          // opens the day chart to view / amend (no second dose).
+                          const chartable = canAdminister && applies && iso <= todayISO();
                           if (cellAdmins.length === 0) {
                             const emptyStyle = !applies
                               ? { ...gridTdStyle, ...inactiveCellStyle }
                               : iso === todayISO()
                                 ? { ...gridTdStyle, ...todayEmptyCellStyle }
                                 : gridTdStyle;
-                            return <td key={iso} style={emptyStyle} />;
+                            return (
+                              <td
+                                key={iso}
+                                style={chartable ? { ...emptyStyle, ...clickableCellStyle } : emptyStyle}
+                                onClick={chartable ? () => setAdminister({ order, slot, iso }) : undefined}
+                                title={chartable ? 'Document this dose' : undefined}
+                              />
+                            );
                           }
                           const a = cellAdmins[0];
                           const style =
@@ -368,7 +408,16 @@ export default function MonthlyMarPage() {
                             : a.initials || '✓';
                           const star = a.administeredByType && a.administeredByType !== 'nurse' ? '*' : '';
                           return (
-                            <td key={iso} style={{ ...gridTdStyle, ...style }} title={cellAdmins.map(cellTitle).join(' | ')}>
+                            <td
+                              key={iso}
+                              style={canAdminister ? { ...gridTdStyle, ...style, ...clickableCellStyle } : { ...gridTdStyle, ...style }}
+                              title={
+                                canAdminister
+                                  ? `${cellAdmins.map(cellTitle).join(' | ')} — click to view / correct`
+                                  : cellAdmins.map(cellTitle).join(' | ')
+                              }
+                              onClick={canAdminister ? () => setChartDay(iso) : undefined}
+                            >
                               {label}{star}
                             </td>
                           );
@@ -465,9 +514,42 @@ export default function MonthlyMarPage() {
       </div>
 
       {toast && <div style={toastStyle}>{toast}</div>}
+
+      {administer && (
+        <AdministerDoseModal
+          patientId={patientId}
+          order={administer.order}
+          slot={administer.slot}
+          dateISO={administer.iso}
+          todayISO={todayISO()}
+          documenter={documenter}
+          defaultInitials={myInitials}
+          onClose={() => setAdminister(null)}
+          onSaved={() => {
+            setToast('Dose documented.');
+            setTimeout(() => setToast(null), 3000);
+            void refreshAdmins();
+          }}
+        />
+      )}
+
+      {chartDay && patient && (
+        <MedChart
+          patientId={patientId}
+          patientName={patient.name}
+          initialDate={chartDay}
+          documenter={documenter}
+          onClose={() => {
+            setChartDay(null);
+            void refreshAdmins();
+          }}
+        />
+      )}
     </div>
   );
 }
+
+const clickableCellStyle: React.CSSProperties = { cursor: 'pointer' };
 
 function HeaderField({ label, value, highlight }: { label: string; value?: string | null; highlight?: boolean }) {
   return (
