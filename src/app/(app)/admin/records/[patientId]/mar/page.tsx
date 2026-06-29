@@ -121,6 +121,10 @@ export default function MonthlyMarPage() {
   // to view/amend (documented cell). Nurses only; see canAdminister.
   const [administer, setAdminister] = useState<{ order: MarOrder; slot: string; iso: string } | null>(null);
   const [chartDay, setChartDay] = useState<string | null>(null);
+  // Narrow screens render a 3-day window instead of the full month (a month-wide
+  // grid is unusable on a phone). Tracked in JS because we limit the rendered
+  // day columns, not just hide them.
+  const [isMobile, setIsMobile] = useState(false);
 
   const days = daysInMonth(month);
   const monthStart = dayISO(month, 1);
@@ -130,6 +134,23 @@ export default function MonthlyMarPage() {
   const refreshAdmins = async () => {
     setAdmins(await getAdministrationsForRange(patientId, monthStart, monthEnd));
   };
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 640);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  // Day columns to render: the whole month on desktop; on a phone a 3-day window
+  // centered on today (clamped to the month; day-1 anchor when viewing another
+  // month) so the grid fits without horizontal scrolling.
+  const visibleDays = useMemo<number[]>(() => {
+    if (!isMobile) return Array.from({ length: days }, (_, i) => i + 1);
+    const anchor = isCurrentMonth ? Number(todayISO().slice(8, 10)) : 1;
+    const start = Math.min(Math.max(anchor - 1, 1), Math.max(1, days - 2));
+    return [start, start + 1, start + 2].filter((d) => d <= days);
+  }, [isMobile, days, isCurrentMonth]);
 
   useEffect(() => {
     let cancelled = false;
@@ -341,14 +362,14 @@ export default function MonthlyMarPage() {
                     <tr>
                       <th style={{ ...gridThStyle, ...medColHeadStyle, textAlign: 'left' }}>Medication</th>
                       <th style={{ ...gridThStyle, minWidth: 52 }}>Time</th>
-                      {Array.from({ length: days }, (_, i) => {
-                        const iso = dayISO(month, i + 1);
+                      {visibleDays.map((dnum) => {
+                        const iso = dayISO(month, dnum);
                         const isToday = iso === todayISO();
                         return (
-                          <th key={i + 1} style={isToday ? { ...gridThStyle, ...todayThStyle } : gridThStyle}>
-                            <div>{i + 1}</div>
+                          <th key={dnum} style={isToday ? { ...gridThStyle, ...todayThStyle } : gridThStyle}>
+                            <div>{dnum}</div>
                             <div style={isToday ? { ...dowStyle, color: '#8a5a0d' } : dowStyle}>
-                              {weekdayLetter(month, i + 1)}
+                              {weekdayLetter(month, dnum)}
                             </div>
                           </th>
                         );
@@ -371,8 +392,8 @@ export default function MonthlyMarPage() {
                         <td style={{ ...gridTdStyle, ...timeColStyle, color: slot === 'PRN' ? '#b56a17' : '#1a3a5c' }}>
                           {slot}
                         </td>
-                        {Array.from({ length: days }, (_, i) => {
-                          const iso = dayISO(month, i + 1);
+                        {visibleDays.map((dnum) => {
+                          const iso = dayISO(month, dnum);
                           // Window check only (status forced 'active' so a
                           // discontinued order still shades the days it ran).
                           const applies = orderAppliesOn({ ...order, status: 'active' }, iso);
