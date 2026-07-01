@@ -1,8 +1,19 @@
 import 'server-only';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, type DocumentData, type DocumentReference } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
 import type { AuthedCaller } from './adminAuthGuard';
 import { buildMarAdminFields } from './marShared';
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+/** Return `value` if it is an ISO YYYY-MM-DD date string, else `fallback`. Both
+ *  the note flow and the standalone flow route their dates through here (via
+ *  applyChangeInBatch), so a crafted change request can't store a garbage date
+ *  on a real order and silently mis-schedule a med (dates are compared as raw
+ *  strings by orderAppliesOn / orderOverlapsRange). */
+function isoOr(value: unknown, fallback: string): string {
+  const s = String(value || '');
+  return ISO_DATE_RE.test(s) ? s : fallback;
+}
 
 export interface ApplyChangesResult {
   ok: true;
@@ -64,6 +75,106 @@ function orderFromProposed(
 }
 
 /**
+ * Apply ONE medication change in a single atomic batch and stamp its change
+ * request applied + reviewStatus 'pending' (RN acknowledgment; there is NO
+ * approval gate). Shared by the note flow (applyStagedChanges) and the
+ * standalone MAR (applyStandaloneChange) so both behave identically:
+ *   - add: create a new active order.
+ *   - change: discontinue the target (effective date) AND create the new order,
+ *     linked via supersedes / supersededBy.
+ *   - discontinue: stop the target effective the given date.
+ * Adding OR changing a med also trips `patient.requiresMar = true`, so the MAR
+ * becomes visible to everyone the instant a med exists — whichever surface (or
+ * role) created it.
+ *
+ * Returns false (caller counts it "failed" and leaves the request un-applied)
+ * when the change can't be applied: unknown type, or a change/discontinue whose
+ * target order is missing OR belongs to a different patient (a guard so a
+ * client can't act on another client's order by id).
+ */
+async function applyChangeInBatch(
+  reqRef: DocumentReference,
+  data: DocumentData,
+  caller: AuthedCaller,
+  today: string,
+): Promise<boolean> {
+  const reviewStamp = { status: 'applied', reviewStatus: 'pending', appliedAt: FieldValue.serverTimestamp() };
+  const patientId = String(data.patientId || '');
+  const patientRef = patientId ? adminDb().collection('patients').doc(patientId) : null;
+  const batch = adminDb().batch();
+
+  if (data.type === 'add') {
+    const orderRef = adminDb().collection('marOrders').doc();
+    const p = (data.proposedMed || {}) as ProposedMedShape;
+    batch.set(
+      orderRef,
+      orderFromProposed(patientId, p, isoOr(p.startDate, today), caller, { fromChangeRequestId: reqRef.id }),
+    );
+    if (patientRef) batch.set(patientRef, { requiresMar: true }, { merge: true });
+    batch.update(reqRef, { ...reviewStamp, createdOrderId: orderRef.id });
+  } else if (data.type === 'change') {
+    const oldId = String(data.targetOrderId || '');
+    if (!oldId) return false;
+    const oldRef = adminDb().collection('marOrders').doc(oldId);
+    const oldSnap = await oldRef.get();
+    const old = oldSnap.data() || {};
+    // Must exist, belong to THIS patient, and still be active — changing a
+    // discontinued order would resurrect a stopped med.
+    if (!oldSnap.exists || String(old.patientId || '') !== patientId || String(old.status || '') !== 'active') {
+      return false;
+    }
+    const effective = isoOr(data.effectiveDate, today);
+    const p = (data.proposedMed || {}) as ProposedMedShape;
+    const newRef = adminDb().collection('marOrders').doc();
+    // The new order starts the day the old one ends (the change's effective
+    // date), so the regimens hand off cleanly with no overlap or gap.
+    batch.set(
+      newRef,
+      orderFromProposed(patientId, p, effective, caller, {
+        fromChangeRequestId: reqRef.id,
+        supersedesOrderId: oldId,
+      }),
+    );
+    batch.update(oldRef, {
+      status: 'discontinued',
+      endDate: effective,
+      discontinuedAt: FieldValue.serverTimestamp(),
+      discontinuedBy: caller.uid,
+      discontinuedByName: caller.profile.displayName || '',
+      discontinueReason: `Changed per physician order: ${String(data.reason || '').trim()}`.trim(),
+      supersededByOrderId: newRef.id,
+    });
+    if (patientRef) batch.set(patientRef, { requiresMar: true }, { merge: true });
+    batch.update(reqRef, { ...reviewStamp, createdOrderId: newRef.id });
+  } else if (data.type === 'discontinue') {
+    const orderId = String(data.targetOrderId || '');
+    if (!orderId) return false;
+    const orderRef = adminDb().collection('marOrders').doc(orderId);
+    const orderSnap = await orderRef.get();
+    const ord = orderSnap.data() || {};
+    // Must exist, belong to THIS patient, and still be active — no re-stopping an
+    // already-discontinued order.
+    if (!orderSnap.exists || String(ord.patientId || '') !== patientId || String(ord.status || '') !== 'active') {
+      return false;
+    }
+    batch.update(orderRef, {
+      status: 'discontinued',
+      endDate: isoOr(data.effectiveDate, today),
+      discontinuedAt: FieldValue.serverTimestamp(),
+      discontinuedBy: caller.uid,
+      discontinuedByName: caller.profile.displayName || '',
+      discontinueReason: String(data.reason || '').trim(),
+    });
+    batch.update(reqRef, reviewStamp);
+  } else {
+    return false;
+  }
+
+  await batch.commit();
+  return true;
+}
+
+/**
  * Apply every change still STAGED on a note, in one batch. Called from the
  * apply-changes route when the nurse submits her note. There is NO approval
  * gate: maintaining the MAR per physician orders is within the nurse's scope,
@@ -93,80 +204,140 @@ export async function applyStagedChanges(
   let failed = 0;
 
   for (const d of staged) {
-    const data = d.data() || {};
-    const reqRef = d.ref;
-    const reviewStamp = { status: 'applied', reviewStatus: 'pending', appliedAt: FieldValue.serverTimestamp() };
     try {
-      const batch = adminDb().batch();
-      const patientId = String(data.patientId || '');
-
-      if (data.type === 'add') {
-        const orderRef = adminDb().collection('marOrders').doc();
-        const p = (data.proposedMed || {}) as ProposedMedShape;
-        batch.set(
-          orderRef,
-          orderFromProposed(patientId, p, String(p.startDate || today), caller, { fromChangeRequestId: reqRef.id }),
-        );
-        batch.update(reqRef, { ...reviewStamp, createdOrderId: orderRef.id });
-      } else if (data.type === 'change') {
-        const oldId = String(data.targetOrderId || '');
-        const oldRef = adminDb().collection('marOrders').doc(oldId);
-        const oldSnap = await oldRef.get();
-        if (!oldId || !oldSnap.exists) {
-          failed += 1;
-          continue;
-        }
-        const effective = String(data.effectiveDate || today);
-        const p = (data.proposedMed || {}) as ProposedMedShape;
-        const newRef = adminDb().collection('marOrders').doc();
-        batch.set(
-          newRef,
-          orderFromProposed(patientId, p, String(p.startDate || effective), caller, {
-            fromChangeRequestId: reqRef.id,
-            supersedesOrderId: oldId,
-          }),
-        );
-        batch.update(oldRef, {
-          status: 'discontinued',
-          endDate: effective,
-          discontinuedAt: FieldValue.serverTimestamp(),
-          discontinuedBy: caller.uid,
-          discontinuedByName: caller.profile.displayName || '',
-          discontinueReason: `Changed per physician order: ${String(data.reason || '').trim()}`.trim(),
-          supersededByOrderId: newRef.id,
-        });
-        batch.update(reqRef, { ...reviewStamp, createdOrderId: newRef.id });
-      } else if (data.type === 'discontinue') {
-        const orderId = String(data.targetOrderId || '');
-        const orderRef = adminDb().collection('marOrders').doc(orderId);
-        const orderSnap = await orderRef.get();
-        if (!orderId || !orderSnap.exists) {
-          failed += 1;
-          continue;
-        }
-        batch.update(orderRef, {
-          status: 'discontinued',
-          endDate: String(data.effectiveDate || today),
-          discontinuedAt: FieldValue.serverTimestamp(),
-          discontinuedBy: caller.uid,
-          discontinuedByName: caller.profile.displayName || '',
-          discontinueReason: String(data.reason || '').trim(),
-        });
-        batch.update(reqRef, reviewStamp);
-      } else {
-        failed += 1;
-        continue;
-      }
-
-      await batch.commit();
-      applied += 1;
+      const ok = await applyChangeInBatch(d.ref, d.data() || {}, caller, today);
+      if (ok) applied += 1;
+      else failed += 1;
     } catch (err) {
-      console.error('Failed to apply staged MAR change', reqRef.id, err);
+      console.error('Failed to apply staged MAR change', d.ref.id, err);
       failed += 1;
     }
   }
 
   return { ok: true, applied, failed };
+}
+
+// ---------------------------------------------------------------------------
+// Standalone MAR med management. Same scope + acknowledgment model as the note
+// flow (add/change/discontinue is within an RN/LPN's scope; a supervisor may
+// also do it; nothing waits for approval), but made straight from the MAR grid
+// with no progress note. The change is applied immediately and recorded for the
+// RN to acknowledge afterward (reviewStatus 'pending' → shows in the existing
+// pending-review queue). All writes go through the Admin SDK, so the staff-only
+// marOrders/patients create-update rules and the note-required marChangeRequests
+// create rule don't apply here.
+// ---------------------------------------------------------------------------
+
+export interface StandaloneChangeInput {
+  patientId: string;
+  patientName: string;
+  type: 'add' | 'change' | 'discontinue';
+  proposedMed?: ProposedMedShape;
+  targetOrderId?: string;
+  targetMedName?: string;
+  effectiveDate?: string;
+  reason: string;
+  clientRequestId?: string; // stable per-submission id for idempotency
+}
+
+export type StandaloneChangeFailure = 'apply-failed' | 'error' | 'duplicate';
+
+export interface StandaloneChangeResult {
+  ok: boolean;
+  reqId?: string;
+  createdOrderId?: string;
+  reason?: StandaloneChangeFailure;
+  message?: string;
+}
+
+/** Coerce a client-supplied proposed med to a clean, undefined-free shape for
+ *  storage on the change-request doc (Firestore rejects undefined). The ORDER
+ *  itself is still built by orderFromProposed, which coerces independently. */
+function cleanProposed(p: ProposedMedShape) {
+  return {
+    medName: String(p.medName || '').trim(),
+    dose: String(p.dose || '').trim(),
+    units: String(p.units || '').trim(),
+    route: String(p.route || '').trim(),
+    frequencyLabel: String(p.frequencyLabel || '').trim(),
+    scheduledTimes: p.isPRN ? [] : Array.isArray(p.scheduledTimes) ? p.scheduledTimes.filter(Boolean) : [],
+    isPRN: !!p.isPRN,
+    indication: String(p.indication || '').trim(),
+    startDate: String(p.startDate || ''),
+    orderingPhysician: String(p.orderingPhysician || '').trim(),
+    notes: String(p.notes || '').trim(),
+  };
+}
+
+export async function applyStandaloneChange(
+  input: StandaloneChangeInput,
+  caller: AuthedCaller,
+  today: string,
+): Promise<StandaloneChangeResult> {
+  const col = adminDb().collection('marChangeRequests');
+  // Idempotency: when the client supplies a stable per-submission id, key the
+  // request doc on it and create it transactionally, so a double-click or a
+  // network retry can't mint two orders. Falls back to an auto id otherwise.
+  const reqRef = input.clientRequestId ? col.doc(input.clientRequestId) : col.doc();
+  const payload: Record<string, unknown> = {
+    patientId: input.patientId,
+    patientName: String(input.patientName || ''),
+    type: input.type,
+    reason: String(input.reason || '').trim(),
+    doseRecorded: false,
+    sourceNoteId: '', // standalone: not tied to a progress note
+    source: 'standalone-mar',
+    status: 'staged', // flipped to 'applied' by applyChangeInBatch
+    performedBy: caller.uid,
+    performedByName: caller.profile.displayName || '',
+    performedByCredential: caller.profile.credential || caller.role,
+    stagedAt: FieldValue.serverTimestamp(),
+  };
+  if ((input.type === 'add' || input.type === 'change') && input.proposedMed) {
+    payload.proposedMed = cleanProposed(input.proposedMed);
+  }
+  if (input.type === 'change' || input.type === 'discontinue') {
+    payload.targetOrderId = input.targetOrderId || '';
+    payload.targetMedName = input.targetMedName || '';
+    payload.effectiveDate = input.effectiveDate || '';
+  }
+
+  const created = await adminDb().runTransaction(async (tx) => {
+    const snap = await tx.get(reqRef);
+    if (snap.exists) return false;
+    tx.set(reqRef, payload);
+    return true;
+  });
+  if (!created) {
+    return { ok: false, reason: 'duplicate', message: 'This change was already submitted.' };
+  }
+  try {
+    const ok = await applyChangeInBatch(reqRef, { ...payload }, caller, today);
+    if (!ok) {
+      // Nothing was written (bad target / unknown type). Drop the staged stub so
+      // it doesn't dangle as an un-applied, note-less record.
+      await reqRef.delete().catch(() => {});
+      return {
+        ok: false,
+        reason: 'apply-failed',
+        message: 'Could not apply the change — the medication may no longer exist on this client.',
+      };
+    }
+  } catch (err) {
+    console.error('applyStandaloneChange failed', reqRef.id, err);
+    // The batch may have COMMITTED server-side even though we saw an error (a
+    // lost ack). Only clean up if nothing was applied; if the order was created,
+    // treat it as success so we never orphan a live med with no review record.
+    const after = await reqRef.get().catch(() => null);
+    const applied = after && after.exists ? after.data() || {} : null;
+    if (applied && applied.status === 'applied') {
+      return { ok: true, reqId: reqRef.id, createdOrderId: String(applied.createdOrderId || '') };
+    }
+    await reqRef.delete().catch(() => {});
+    return { ok: false, reason: 'error', message: 'Failed to apply the change. Please try again.' };
+  }
+  const fresh = await reqRef.get();
+  return { ok: true, reqId: reqRef.id, createdOrderId: String((fresh.data() || {}).createdOrderId || '') };
 }
 
 // ---------------------------------------------------------------------------
