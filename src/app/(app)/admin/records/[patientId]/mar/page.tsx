@@ -95,11 +95,13 @@ export default function MonthlyMarPage() {
   const { user, profile } = useAuth();
   const canAdminister =
     profile?.role === 'nurse' && (profile?.credential === 'RN' || profile?.credential === 'LPN');
-  // Adding / changing / discontinuing a med is within an RN/LPN's scope, and a
-  // supervisor may do it too; the med goes live immediately and the supervisor
-  // acknowledges it afterward. Admins stay out (they manage orders under Records)
-  // so they can't alter a MAR here by accident. Uses the REAL signed-in user.
+  // Adding / changing / discontinuing a med is within an RN/LPN's scope, and
+  // supervisors + admins may do it too; the med goes live immediately and the
+  // supervisor acknowledges it afterward. Admins get the button for visibility
+  // (parity with what supervisors see); the server permits staff anyway. Uses
+  // the REAL signed-in user.
   const canManageMeds =
+    profile?.role === 'admin' ||
     profile?.role === 'supervisor' ||
     (profile?.role === 'nurse' && (profile?.credential === 'RN' || profile?.credential === 'LPN'));
   const documenter = {

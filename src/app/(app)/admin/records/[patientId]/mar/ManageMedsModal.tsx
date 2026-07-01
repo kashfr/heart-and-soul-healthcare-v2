@@ -9,6 +9,9 @@ import type { MarOrder, MarChangeRequestType } from '@/lib/mar';
 
 const ROUTES = ['PO (by mouth)', 'SL (sublingual)', 'Topical', 'Inhalation', 'Subcutaneous', 'IM', 'IV', 'Rectal', 'G-tube', 'J-tube', 'NG tube', 'Ophthalmic', 'Otic', 'Nasal'];
 const UNITS = ['mg', 'mcg', 'g', 'mL', 'units', 'mEq', 'tablet(s)', 'capsule(s)', 'puff(s)', 'drop(s)', 'patch(es)', 'spray(s)', '%'];
+// PRN is chosen from the Frequency dropdown (this exact MED_FREQUENCIES label),
+// which drives the PRN behavior — there is no separate PRN checkbox.
+const PRN_FREQUENCY = 'As needed (PRN)';
 
 function todayISO(): string {
   const d = new Date();
@@ -47,7 +50,6 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
   const [units, setUnits] = useState('');
   const [route, setRoute] = useState('');
   const [frequencyLabel, setFrequencyLabel] = useState('');
-  const [isPRN, setIsPRN] = useState(false);
   const [times, setTimes] = useState<string[]>(['08:00']);
   const [indication, setIndication] = useState('');
   const [orderingPhysician, setOrderingPhysician] = useState('');
@@ -57,6 +59,10 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
   const [targetOrderId, setTargetOrderId] = useState('');
   const [effectiveDate, setEffectiveDate] = useState(todayISO());
   const [reason, setReason] = useState('');
+
+  // PRN is driven by the Frequency selection (single source of truth): selecting
+  // "As needed (PRN)" hides the scheduled times and requires an indication.
+  const isPRN = frequencyLabel === PRN_FREQUENCY;
 
   const setTimeAt = (i: number, v: string) => setTimes((t) => t.map((x, idx) => (idx === i ? v : x)));
   const addTime = () => setTimes((t) => [...t, '']);
@@ -72,8 +78,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
       setDose(o.dose || '');
       setUnits(o.units || '');
       setRoute(o.route || '');
-      setFrequencyLabel(o.frequencyLabel || '');
-      setIsPRN(!!o.isPRN);
+      setFrequencyLabel(o.isPRN ? PRN_FREQUENCY : o.frequencyLabel || '');
       setTimes(o.scheduledTimes && o.scheduledTimes.length > 0 ? [...o.scheduledTimes] : ['08:00']);
       setIndication(o.indication || '');
       setOrderingPhysician(o.orderingPhysician || '');
@@ -243,11 +248,6 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
                   </Field>
                 </div>
 
-                <label style={checkRow}>
-                  <input type="checkbox" checked={isPRN} onChange={(e) => setIsPRN(e.target.checked)} />
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#2c3e50' }}>PRN (as needed); no fixed schedule</span>
-                </label>
-
                 {!isPRN && (
                   <div style={{ marginBottom: 12 }}>
                     <div style={fieldLabel}>Scheduled times</div>
@@ -352,7 +352,6 @@ const select: CSSProperties = {
 };
 const textarea: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', minHeight: 60, resize: 'vertical', lineHeight: 1.4 };
 const grid2: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 };
-const checkRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, cursor: 'pointer' };
 const removeTimeBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', color: '#c44', border: 'none', padding: 4, borderRadius: 4, cursor: 'pointer' };
 const addTimeBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, background: 'white', color: '#0e7c4a', border: '1px dashed #0e7c4a', padding: '7px 12px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', marginTop: 8 };
 const errorBox: CSSProperties = { background: '#fef2f2', border: '1px solid #fecaca', color: '#b3261e', borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: 10 };
