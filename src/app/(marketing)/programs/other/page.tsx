@@ -72,23 +72,19 @@ const programs = [
 export default function OtherProgramsPage() {
   return (
     <div className={styles.otherPage}>
-      {/* Hero Section */}
+      {/* Page Header */}
       <section className={styles.hero}>
-        <div className={styles.heroBackground}>
-          <div className={styles.placeholderImage}>
-            <span className={styles.placeholderText}>PARTNERS</span>
-          </div>
-          <div className={styles.heroOverlay} />
-        </div>
         <div className="container">
           <div className={styles.heroContent}>
-            <div className={styles.heroIcon}>
-              <HandHeart size={48} />
+            <div className={styles.heroTop}>
+              <div className={styles.heroIcon}>
+                <HandHeart size={26} />
+              </div>
+              <span className={styles.heroLabel}>Additional Services</span>
             </div>
-            <span className={styles.heroLabel}>Additional Services</span>
             <h1>Other Programs & Partnerships</h1>
             <p className={styles.heroSubtitle}>
-              Beyond our waiver programs, we offer additional services and partnerships 
+              Beyond our waiver programs, we offer additional services and partnerships
               to ensure everyone has access to quality home health care.
             </p>
           </div>

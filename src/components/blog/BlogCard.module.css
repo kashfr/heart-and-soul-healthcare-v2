@@ -52,7 +52,7 @@
 }
 
 .imageFallback.primary {
-  background: linear-gradient(135deg, #2d4a7a, #1a2b4a);
+  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-dark));
 }
 
 .fallbackText {
@@ -92,7 +92,7 @@
 }
 
 .categoryBadge.primary {
-  background: #1a2b4a;
+  background: var(--color-accent-dark);
   color: var(--color-white);
 }
 
