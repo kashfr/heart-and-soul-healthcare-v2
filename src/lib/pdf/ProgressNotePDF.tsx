@@ -1,4 +1,4 @@
-import React, { createContext, useContext } from 'react';
+import React from 'react';
 import {
   Document,
   Page,
@@ -629,8 +629,14 @@ function SectionBreakable({ title, children }: { title: string; children: React.
 }
 
 // Per-field amendment history for the in-place "struck old -> corrected" render,
-// mirroring the on-screen note. Provided by the PDF route; empty for previews.
-const AmendmentContext = createContext<Record<string, PdfFieldVersion[]>>({});
+// mirroring the on-screen note. Set once at the top of ProgressNotePDF's render
+// (see below) and read by AmendedVersions. A render-scoped MODULE variable, not
+// React Context, because this component is rendered server-side (imported by the
+// PDF API route) where createContext is disallowed. Safe: react-pdf renders each
+// document synchronously within one renderToBuffer call, so one request's render
+// completes before another's begins (Node is single-threaded) and each rendered
+// tree captures its own values before any await.
+let currentFieldAmendments: Record<string, PdfFieldVersion[]> = {};
 
 /**
  * Renders a field's superseded values struck through, each tagged with when and
@@ -639,8 +645,7 @@ const AmendmentContext = createContext<Record<string, PdfFieldVersion[]>>({});
  * "(corrected ...)" rather than an em dash, per printed-document style.
  */
 function AmendedVersions({ fieldKey }: { fieldKey?: string }) {
-  const amendments = useContext(AmendmentContext);
-  const versions = (fieldKey && amendments[fieldKey]) || [];
+  const versions = (fieldKey && currentFieldAmendments[fieldKey]) || [];
   if (versions.length === 0) return null;
   return (
     <>
@@ -848,9 +853,12 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
 
   const { alerts: abnormalVitals, cells: vitalCells, ageGroupLabel } = checkVitals(data, vitalsOverride);
 
+  // Set the render-scoped amendment index before the tree renders (children read
+  // it synchronously during this same render).
+  currentFieldAmendments = fieldAmendments || {};
+
   return (
     <Document>
-      <AmendmentContext.Provider value={fieldAmendments || {}}>
       <Page size="LETTER" style={s.page}>
         <View style={s.header} fixed>
           <Text style={s.companyName}>{orgName}</Text>
@@ -1407,7 +1415,6 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
           fixed
         />
       </Page>
-      </AmendmentContext.Provider>
     </Document>
   );
 }
