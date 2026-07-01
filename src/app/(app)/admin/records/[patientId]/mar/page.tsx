@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, ChevronLeft, ChevronRight, FileDown, Pill } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, FileDown, Pill, PlusCircle } from 'lucide-react';
 import {
   getPatient,
   getPatientClinical,
@@ -23,6 +23,7 @@ import { triggerDownload } from '@/lib/batchExport';
 import { compareMarOrders, resolveCurrentAdministrations } from '@/lib/marShared';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import AdministerDoseModal from './AdministerDoseModal';
+import ManageMedsModal from './ManageMedsModal';
 import MedChart from '@/app/(marketing)/progress-note/components/MedChart';
 
 const ADMIN_BY_LABELS: Record<string, string> = {
@@ -94,6 +95,13 @@ export default function MonthlyMarPage() {
   const { user, profile } = useAuth();
   const canAdminister =
     profile?.role === 'nurse' && (profile?.credential === 'RN' || profile?.credential === 'LPN');
+  // Adding / changing / discontinuing a med is within an RN/LPN's scope, and a
+  // supervisor may do it too; the med goes live immediately and the supervisor
+  // acknowledges it afterward. Admins stay out (they manage orders under Records)
+  // so they can't alter a MAR here by accident. Uses the REAL signed-in user.
+  const canManageMeds =
+    profile?.role === 'supervisor' ||
+    (profile?.role === 'nurse' && (profile?.credential === 'RN' || profile?.credential === 'LPN'));
   const documenter = {
     uid: user?.uid || '',
     name: profile?.displayName || '',
@@ -121,6 +129,8 @@ export default function MonthlyMarPage() {
   // to view/amend (documented cell). Nurses only; see canAdminister.
   const [administer, setAdminister] = useState<{ order: MarOrder; slot: string; iso: string } | null>(null);
   const [chartDay, setChartDay] = useState<string | null>(null);
+  // The add / change / discontinue medication modal (applies immediately).
+  const [manageMeds, setManageMeds] = useState(false);
   // Narrow screens render a 3-day window instead of the full month (a month-wide
   // grid is unusable on a phone). Tracked in JS because we limit the rendered
   // day columns, not just hide them.
@@ -133,6 +143,10 @@ export default function MonthlyMarPage() {
 
   const refreshAdmins = async () => {
     setAdmins(await getAdministrationsForRange(patientId, monthStart, monthEnd));
+  };
+
+  const refreshOrders = async () => {
+    setOrders(await getMarOrders(patientId));
   };
 
   useEffect(() => {
@@ -315,6 +329,11 @@ export default function MonthlyMarPage() {
                 {!isNurse && (
                   <button type="button" onClick={handleExport} disabled={exporting} style={exportBtnStyle}>
                     <FileDown size={15} /> {exporting ? 'Exporting…' : 'Export PDF'}
+                  </button>
+                )}
+                {canManageMeds && (
+                  <button type="button" onClick={() => setManageMeds(true)} style={manageBtnStyle}>
+                    <PlusCircle size={15} /> Manage medications
                   </button>
                 )}
               </div>
@@ -579,11 +598,41 @@ export default function MonthlyMarPage() {
           }}
         />
       )}
+
+      {manageMeds && patient && (
+        <ManageMedsModal
+          patientId={patientId}
+          patientName={patient.name}
+          activeOrders={orders.filter((o) => o.status === 'active')}
+          onClose={() => setManageMeds(false)}
+          onSaved={(summary) => {
+            setToast(summary);
+            setTimeout(() => setToast(null), 4000);
+            void refreshOrders();
+          }}
+        />
+      )}
     </div>
   );
 }
 
 const clickableCellStyle: React.CSSProperties = { cursor: 'pointer' };
+
+const manageBtnStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  background: '#0e7c4a',
+  color: 'white',
+  border: 'none',
+  padding: '9px 14px',
+  borderRadius: 8,
+  fontSize: 13.5,
+  fontWeight: 700,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  whiteSpace: 'nowrap',
+};
 
 function HeaderField({ label, value, highlight }: { label: string; value?: string | null; highlight?: boolean }) {
   return (
