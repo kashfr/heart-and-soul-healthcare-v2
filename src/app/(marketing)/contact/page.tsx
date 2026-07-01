@@ -101,14 +101,8 @@ export default function ContactPage() {
 
   return (
     <div className={styles.contactPage}>
-      {/* Hero Section */}
+      {/* Page Header */}
       <section className={styles.hero}>
-        <div className={styles.heroBackground}>
-          <div className={styles.placeholderImage}>
-            <span className={styles.placeholderText}>CONTACT</span>
-          </div>
-          <div className={styles.heroOverlay} />
-        </div>
         <div className="container">
           <div className={styles.heroContent}>
             <span className={styles.heroLabel}>Get In Touch</span>

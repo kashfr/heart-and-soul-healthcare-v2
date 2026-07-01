@@ -62,14 +62,8 @@ const credentials = [
 export default function AboutPage() {
   return (
     <div className={styles.aboutPage}>
-      {/* Hero Section */}
+      {/* Page Header */}
       <section className={styles.hero}>
-        <div className={styles.heroBackground}>
-          <div className={styles.placeholderImage}>
-            <span className={styles.placeholderText}>ABOUT</span>
-          </div>
-          <div className={styles.heroOverlay} />
-        </div>
         <div className="container">
           <div className={styles.heroContent}>
             <span className={styles.heroLabel}>Our Story</span>
@@ -184,7 +178,7 @@ export default function AboutPage() {
       </section>
 
       {/* Credentials */}
-      <section className={`section bg-primary ${styles.credentialsSection}`}>
+      <section className={`section ${styles.credentialsSection}`}>
         <div className="container">
           <div className={styles.credentialsGrid}>
             <ScrollReveal direction="left" className={styles.credentialsContent}>
@@ -208,30 +202,45 @@ export default function AboutPage() {
         </div>
       </section>
 
-      {/* Team Section */}
-      <section className={`section ${styles.teamSection}`}>
+      {/* Our People */}
+      <section className={`section ${styles.peopleSection}`}>
         <div className="container">
           <ScrollReveal direction="up">
-            <div className="section-header">
-              <span className={styles.sectionLabel}>Our People</span>
-              <h2>Meet Our Team</h2>
-              <p>
-                Our dedicated team of healthcare professionals brings expertise,
-                compassion, and commitment to every client interaction.
-              </p>
+            <div className={styles.peopleCard}>
+              <div className={styles.peopleText}>
+                <span className={styles.sectionLabel}>Our People</span>
+                <h2>A Care Team Built Around You</h2>
+                <p>
+                  We don&apos;t believe in one-size-fits-all care. For every family
+                  we serve, we assemble a dedicated team of skilled nurses,
+                  trained caregivers, and care coordinators matched to your
+                  loved one&apos;s needs, schedule, and personality.
+                </p>
+                <p className={styles.peopleGrowing}>
+                  Our team is growing. If you&apos;re a healthcare professional who
+                  leads with heart, <Link href="/contact">we&apos;d love to meet you</Link>.
+                </p>
+              </div>
+              <ul className={styles.peopleHighlights}>
+                <li>
+                  <Award size={20} />
+                  <span>Licensed, credentialed professionals</span>
+                </li>
+                <li>
+                  <Shield size={20} />
+                  <span>Background-checked and fully trained</span>
+                </li>
+                <li>
+                  <Users size={20} />
+                  <span>Matched to your family&apos;s needs</span>
+                </li>
+                <li>
+                  <Clock size={20} />
+                  <span>Consistent caregivers you&apos;ll know by name</span>
+                </li>
+              </ul>
             </div>
           </ScrollReveal>
-          <StaggerContainer className={styles.teamGrid} staggerDelay={0.1}>
-            {[1, 2, 3, 4].map((_, index) => (
-              <StaggerItem key={index} className={styles.teamCard}>
-                <div className={styles.teamImagePlaceholder}>
-                  <Users size={32} />
-                </div>
-                <h4>Team Member</h4>
-                <span className={styles.teamRole}>Position Title</span>
-              </StaggerItem>
-            ))}
-          </StaggerContainer>
         </div>
       </section>
 

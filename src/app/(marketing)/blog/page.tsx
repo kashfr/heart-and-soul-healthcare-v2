@@ -35,17 +35,16 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
 
   return (
     <div className={styles.blogPage}>
-      {/* Hero */}
+      {/* Page Header */}
       <section className={styles.hero}>
-        <div className={styles.heroBackground}>
-          <div className={styles.heroOverlay} />
-        </div>
         <div className="container">
           <div className={styles.heroContent}>
-            <div className={styles.heroIcon}>
-              <BookOpen size={48} />
+            <div className={styles.heroTop}>
+              <div className={styles.heroIcon}>
+                <BookOpen size={26} />
+              </div>
+              <span className={styles.heroLabel}>Resources & Insights</span>
             </div>
-            <span className={styles.heroLabel}>Resources & Insights</span>
             <h1>Blog</h1>
             <p className={styles.heroSubtitle}>
               Guides, tips, and insights to help caregivers and families navigate

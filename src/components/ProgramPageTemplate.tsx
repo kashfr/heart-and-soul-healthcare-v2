@@ -57,30 +57,18 @@ export default function ProgramPageTemplate({
 }: ProgramPageTemplateProps) {
   return (
     <div className={styles.programPage}>
-      {/* Hero Section */}
+      {/* Page Header */}
       <section className={`${styles.hero} ${styles[accentColor]}`}>
-        <div className={styles.heroBackground}>
-          <div className={styles.placeholderImage}>
-            <span className={styles.placeholderText}>{programName}</span>
-          </div>
-          <div className={styles.heroOverlay} />
-        </div>
         <div className="container">
           <div className={styles.heroContent}>
-            <div className={styles.heroIcon}>
-              <Icon size={48} />
+            <div className={styles.heroTop}>
+              <div className={styles.heroIcon}>
+                <Icon size={26} />
+              </div>
+              <span className={styles.heroLabel}>{programName}</span>
             </div>
-            <span className={styles.heroLabel}>{programName}</span>
             <h1>{fullTitle}</h1>
             <p className={styles.heroSubtitle}>{subtitle}</p>
-            <div className={styles.heroActions}>
-              <Link href="/referral" className="btn btn-gold btn-lg">
-                Make a Referral <ArrowRight size={20} />
-              </Link>
-              <Link href="/contact" className="btn btn-secondary-light btn-lg">
-                <Phone size={20} /> Contact Us
-              </Link>
-            </div>
           </div>
         </div>
       </section>

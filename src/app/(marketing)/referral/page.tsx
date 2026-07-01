@@ -374,12 +374,6 @@ export default function ReferralPage() {
     return (
       <div className={styles.referralPage}>
         <section className={styles.hero}>
-          <div className={styles.heroBackground}>
-            <div className={styles.placeholderImage}>
-              <span className={styles.placeholderText}>REFERRAL</span>
-            </div>
-            <div className={styles.heroOverlay} />
-          </div>
           <div className="container">
             <div className={styles.heroContent}>
               <div className={styles.successIcon}>
@@ -423,14 +417,8 @@ export default function ReferralPage() {
 
   return (
     <div className={styles.referralPage}>
-      {/* Hero Section */}
+      {/* Page Header */}
       <section className={styles.hero}>
-        <div className={styles.heroBackground}>
-          <div className={styles.placeholderImage}>
-            <span className={styles.placeholderText}>REFERRAL</span>
-          </div>
-          <div className={styles.heroOverlay} />
-        </div>
         <div className="container">
           <div className={styles.heroContent}>
             <span className={styles.heroLabel}>Start the Process</span>
