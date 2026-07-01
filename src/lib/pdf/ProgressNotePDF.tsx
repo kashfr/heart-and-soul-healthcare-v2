@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { createContext, useContext } from 'react';
 import {
   Document,
   Page,
@@ -43,6 +43,12 @@ export interface ProgressNotePDFProps {
    * unsaved previews, which have no history.
    */
   editHistory?: PdfAuditEntry[];
+  /**
+   * Per-field prior values (keyed by qXX field key) for the in-place
+   * "struck old value, corrected value" rendering in the note body. Built by the
+   * PDF route from the same edit history. Omitted for unsaved previews.
+   */
+  fieldAmendments?: Record<string, PdfFieldVersion[]>;
 }
 
 export interface PdfAuditEntry {
@@ -52,7 +58,17 @@ export interface PdfAuditEntry {
   reason?: string;
   correctionNote?: string;
   action?: string; // e.g. 'staff:archive'
-  changes: { field: string; from: string; to: string }[];
+}
+
+/**
+ * One superseded value of a field, pre-formatted by the PDF route for the
+ * in-place amendment rendering: the struck-through prior value with when/who
+ * corrected it. Oldest-first. Mirrors the on-screen inline convention.
+ */
+export interface PdfFieldVersion {
+  oldValue: string; // display string ('(blank)' for empty); never truncated
+  correctedAt: string; // pre-formatted timestamp
+  correctedBy: string;
 }
 
 // Legacy export kept so any lingering imports don't break.
@@ -189,7 +205,22 @@ const s = StyleSheet.create({
   fieldValue: {
     fontSize: 10,
     color: '#1a1a1a',
+  },
+  fieldValueWrap: {
     flex: 1,
+    flexDirection: 'column',
+  },
+  amendPrior: {
+    marginBottom: 1,
+  },
+  amendStrike: {
+    fontSize: 9,
+    color: '#9aa5b1',
+    textDecoration: 'line-through',
+  },
+  amendTag: {
+    fontSize: 8,
+    color: '#9aa5b1',
   },
   textBlock: {
     paddingVertical: 3,
@@ -530,6 +561,7 @@ function checkVitals(data: ProgressNoteFormData, overrides?: VitalRangesOverride
     cells: [
       {
         label: 'Temperature',
+        fieldKey: 'q16_temperature',
         value: data.q16_temperature
           ? `${data.q16_temperature}${data.q16_temperatureRoute ? ` (${data.q16_temperatureRoute})` : ''}`
           : '--',
@@ -537,6 +569,7 @@ function checkVitals(data: ProgressNoteFormData, overrides?: VitalRangesOverride
       },
       {
         label: 'Blood Pressure',
+        fieldKey: 'q17_bloodPressure',
         value:
           (data.q17_bloodPressure
             ? `${data.q17_bloodPressure}${bpMethodSite ? ` (${bpMethodSite})` : ''}`
@@ -551,13 +584,14 @@ function checkVitals(data: ProgressNoteFormData, overrides?: VitalRangesOverride
       },
       {
         label: 'Pulse',
+        fieldKey: 'q18_pulse',
         value: data.q18_pulse
           ? `${data.q18_pulse}${data.q18_pulseSite ? ` (${data.q18_pulseSite})` : ''}`
           : '--',
         abnormal: pulseAbnormal,
       },
-      { label: 'Respirations', value: data.q19_respiration || '--', abnormal: respAbnormal },
-      { label: 'SpO2', value: data.q20_oxygenSaturation || '--', abnormal: spo2Abnormal },
+      { label: 'Respirations', fieldKey: 'q19_respiration', value: data.q19_respiration || '--', abnormal: respAbnormal },
+      { label: 'SpO2', fieldKey: 'q20_oxygenSaturation', value: data.q20_oxygenSaturation || '--', abnormal: spo2Abnormal },
     ],
   };
 }
@@ -594,11 +628,42 @@ function SectionBreakable({ title, children }: { title: string; children: React.
   );
 }
 
-function Field({ label, value }: { label: string; value: string | undefined }) {
+// Per-field amendment history for the in-place "struck old -> corrected" render,
+// mirroring the on-screen note. Provided by the PDF route; empty for previews.
+const AmendmentContext = createContext<Record<string, PdfFieldVersion[]>>({});
+
+/**
+ * Renders a field's superseded values struck through, each tagged with when and
+ * by whom it was corrected, ABOVE the current value. Returns null when the field
+ * was never amended, so unchanged fields render exactly as before. Uses
+ * "(corrected ...)" rather than an em dash, per printed-document style.
+ */
+function AmendedVersions({ fieldKey }: { fieldKey?: string }) {
+  const amendments = useContext(AmendmentContext);
+  const versions = (fieldKey && amendments[fieldKey]) || [];
+  if (versions.length === 0) return null;
+  return (
+    <>
+      {versions.map((v, i) => (
+        <Text key={i} style={s.amendPrior}>
+          <Text style={s.amendStrike}>{v.oldValue}</Text>
+          <Text style={s.amendTag}>
+            {`  (corrected ${v.correctedAt}${v.correctedBy ? ` by ${v.correctedBy}` : ''})`}
+          </Text>
+        </Text>
+      ))}
+    </>
+  );
+}
+
+function Field({ label, value, fieldKey }: { label: string; value: string | undefined; fieldKey?: string }) {
   return (
     <View style={s.fieldRow}>
       <Text style={s.fieldLabel}>{label}:</Text>
-      <Text style={s.fieldValue}>{hasValue(value) ? value : '--'}</Text>
+      <View style={s.fieldValueWrap}>
+        <AmendedVersions fieldKey={fieldKey} />
+        <Text style={s.fieldValue}>{hasValue(value) ? value : '--'}</Text>
+      </View>
     </View>
   );
 }
@@ -611,21 +676,25 @@ function FieldCol({ children }: { children: React.ReactNode }) {
   return <View style={s.fieldGridItem}>{children}</View>;
 }
 
-function TextBlock({ label, value }: { label: string; value: string | undefined }) {
+function TextBlock({ label, value, fieldKey }: { label: string; value: string | undefined; fieldKey?: string }) {
   return (
     <View style={s.textBlock}>
       <Text style={s.textBlockLabel}>{label}:</Text>
+      <AmendedVersions fieldKey={fieldKey} />
       <Text style={s.textBlockValue}>{hasValue(value) ? value : '--'}</Text>
     </View>
   );
 }
 
-function SystemField({ label, value }: { label: string; value: string | undefined }) {
+function SystemField({ label, value, fieldKey }: { label: string; value: string | undefined; fieldKey?: string }) {
   if (!hasValue(value)) return null;
   return (
     <View style={s.systemFieldRow}>
       <Text style={s.systemFieldLabel}>{label}:</Text>
-      <Text style={s.systemFieldValue}>{value}</Text>
+      <View style={s.fieldValueWrap}>
+        <AmendedVersions fieldKey={fieldKey} />
+        <Text style={s.systemFieldValue}>{value}</Text>
+      </View>
     </View>
   );
 }
@@ -767,7 +836,7 @@ function auditActionLabel(action: string): string {
   return map[action] || action;
 }
 
-export default function ProgressNotePDF({ data, vitalsOverride, branding, editHistory }: ProgressNotePDFProps) {
+export default function ProgressNotePDF({ data, vitalsOverride, branding, editHistory, fieldAmendments }: ProgressNotePDFProps) {
   const orgName = branding?.orgName || 'Heart and Soul Healthcare';
   const tagline = branding?.tagline ?? 'Compassionate Care, Professional Excellence';
   const credential = data.q12_credential || '';
@@ -781,6 +850,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
 
   return (
     <Document>
+      <AmendmentContext.Provider value={fieldAmendments || {}}>
       <Page size="LETTER" style={s.page}>
         <View style={s.header} fixed>
           <Text style={s.companyName}>{orgName}</Text>
@@ -808,12 +878,12 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         {anyHasValue(data, ['q3_clientName', 'q4_dateofBirth', 'q5_ageYears', 'q10_primaryDiagnosis', 'q200_addr_line1']) && (
           <Section title="Client Information">
             <FieldRow>
-              <FieldCol><Field label="Client Name" value={data.q3_clientName} /></FieldCol>
-              <FieldCol><Field label="Date of Birth" value={fmtDate(data.q4_dateofBirth)} /></FieldCol>
+              <FieldCol><Field fieldKey="q3_clientName" label="Client Name" value={data.q3_clientName} /></FieldCol>
+              <FieldCol><Field fieldKey="q4_dateofBirth" label="Date of Birth" value={fmtDate(data.q4_dateofBirth)} /></FieldCol>
             </FieldRow>
             <FieldRow>
-              <FieldCol><Field label="Age" value={data.q5_ageYears} /></FieldCol>
-              <FieldCol><Field label="Primary Diagnosis" value={data.q10_primaryDiagnosis} /></FieldCol>
+              <FieldCol><Field fieldKey="q5_ageYears" label="Age" value={data.q5_ageYears} /></FieldCol>
+              <FieldCol><Field fieldKey="q10_primaryDiagnosis" label="Primary Diagnosis" value={data.q10_primaryDiagnosis} /></FieldCol>
             </FieldRow>
             {hasValue(address) && <Field label="Address" value={address} />}
           </Section>
@@ -823,11 +893,11 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         {anyHasValue(data, ['q6_dateofService', 'q7_shiftStart', 'q62_shiftEndTime', 'q9_totalHours']) && (
           <Section title="Shift Information">
             <FieldRow>
-              <FieldCol><Field label="Date of Service" value={fmtDate(data.q6_dateofService)} /></FieldCol>
-              <FieldCol><Field label="Start Time" value={data.q7_shiftStart} /></FieldCol>
-              <FieldCol><Field label="End Time" value={data.q62_shiftEndTime} /></FieldCol>
+              <FieldCol><Field fieldKey="q6_dateofService" label="Date of Service" value={fmtDate(data.q6_dateofService)} /></FieldCol>
+              <FieldCol><Field fieldKey="q7_shiftStart" label="Start Time" value={data.q7_shiftStart} /></FieldCol>
+              <FieldCol><Field fieldKey="q62_shiftEndTime" label="End Time" value={data.q62_shiftEndTime} /></FieldCol>
             </FieldRow>
-            {hasValue(data.q9_totalHours) && <Field label="Total Hours" value={data.q9_totalHours} />}
+            {hasValue(data.q9_totalHours) && <Field fieldKey="q9_totalHours" label="Total Hours" value={data.q9_totalHours} />}
           </Section>
         )}
 
@@ -835,8 +905,8 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         {anyHasValue(data, ['q11_nurseName', 'q12_credential']) && (
           <Section title="Nurse / Caregiver">
             <FieldRow>
-              <FieldCol><Field label="Name" value={data.q11_nurseName} /></FieldCol>
-              <FieldCol><Field label="Credential" value={data.q12_credential} /></FieldCol>
+              <FieldCol><Field fieldKey="q11_nurseName" label="Name" value={data.q11_nurseName} /></FieldCol>
+              <FieldCol><Field fieldKey="q12_credential" label="Credential" value={data.q12_credential} /></FieldCol>
             </FieldRow>
           </Section>
         )}
@@ -852,22 +922,22 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         ]) && (
           <Section title="Client Status">
             <FieldRow>
-              {hasValue(data.q13_alertnessLevel) && <FieldCol><Field label="Alertness Level" value={data.q13_alertnessLevel} /></FieldCol>}
-              {hasValue(data.q13_orientationLevel) && <FieldCol><Field label="Orientation" value={data.q13_orientationLevel} /></FieldCol>}
+              {hasValue(data.q13_alertnessLevel) && <FieldCol><Field fieldKey="q13_alertnessLevel" label="Alertness Level" value={data.q13_alertnessLevel} /></FieldCol>}
+              {hasValue(data.q13_orientationLevel) && <FieldCol><Field fieldKey="q13_orientationLevel" label="Orientation" value={data.q13_orientationLevel} /></FieldCol>}
             </FieldRow>
-            {hasValue(data.q14_behavior) && <Field label="Behavior" value={data.q14_behavior} />}
+            {hasValue(data.q14_behavior) && <Field fieldKey="q14_behavior" label="Behavior" value={data.q14_behavior} />}
             {hasValue(data.q14_orientationBehaviorNotes) && (
-              <TextBlock label="Orientation & Behavior Notes" value={data.q14_orientationBehaviorNotes} />
+              <TextBlock fieldKey="q14_orientationBehaviorNotes" label="Orientation & Behavior Notes" value={data.q14_orientationBehaviorNotes} />
             )}
             <FieldRow>
-              {hasValue(data.q15_generalAppearance) && <FieldCol><Field label="General Appearance" value={data.q15_generalAppearance} /></FieldCol>}
-              {hasValue(data.q15_appearance) && <FieldCol><Field label="Appearance" value={data.q15_appearance} /></FieldCol>}
+              {hasValue(data.q15_generalAppearance) && <FieldCol><Field fieldKey="q15_generalAppearance" label="General Appearance" value={data.q15_generalAppearance} /></FieldCol>}
+              {hasValue(data.q15_appearance) && <FieldCol><Field fieldKey="q15_appearance" label="Appearance" value={data.q15_appearance} /></FieldCol>}
             </FieldRow>
             <FieldRow>
-              {hasValue(data.q15_skinColor) && <FieldCol><Field label="Skin Color" value={data.q15_skinColor} /></FieldCol>}
-              {hasValue(data.q15_skinIntegrity) && <FieldCol><Field label="Skin Integrity" value={data.q15_skinIntegrity} /></FieldCol>}
+              {hasValue(data.q15_skinColor) && <FieldCol><Field fieldKey="q15_skinColor" label="Skin Color" value={data.q15_skinColor} /></FieldCol>}
+              {hasValue(data.q15_skinIntegrity) && <FieldCol><Field fieldKey="q15_skinIntegrity" label="Skin Integrity" value={data.q15_skinIntegrity} /></FieldCol>}
             </FieldRow>
-            {hasValue(data.q15_appearanceNotes) && <TextBlock label="Appearance Notes" value={data.q15_appearanceNotes} />}
+            {hasValue(data.q15_appearanceNotes) && <TextBlock fieldKey="q15_appearanceNotes" label="Appearance Notes" value={data.q15_appearanceNotes} />}
           </Section>
         )}
 
@@ -886,12 +956,14 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
               {vitalCells.map((v) => (
                 <View key={v.label} style={v.abnormal ? s.vitalCellAlert : s.vitalCell}>
                   <Text style={s.vitalLabel}>{v.label}</Text>
+                  <AmendedVersions fieldKey={v.fieldKey} />
                   <Text style={v.abnormal ? s.vitalValueAlert : s.vitalValue}>{v.value}</Text>
                 </View>
               ))}
               {hasValue(data.q21_oxygenSource) && (
                 <View style={s.vitalCell}>
                   <Text style={s.vitalLabel}>Oxygen Source</Text>
+                  <AmendedVersions fieldKey="q21_oxygenSource" />
                   <Text style={s.vitalValue}>{data.q21_oxygenSource}</Text>
                 </View>
               )}
@@ -901,7 +973,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
                 {hasValue(data.q16_vitalsNotObtainedReason) && (
                   // Covers whichever vitals are blank ("--") in the grid
                   // above. (Printed deliverable: parentheses, no em dashes.)
-                  <TextBlock
+                  <TextBlock fieldKey="q16_vitalsNotObtainedReason"
                     label="Vitals Not Obtained"
                     value={`${data.q16_vitalsNotObtainedReason}${
                       data.q16_vitalsNotObtainedNote ? ` (${data.q16_vitalsNotObtainedNote})` : ''
@@ -909,7 +981,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
                   />
                 )}
                 {hasValue(data.q22_additionalObservations) && (
-                  <TextBlock label="Additional Observations" value={data.q22_additionalObservations} />
+                  <TextBlock fieldKey="q22_additionalObservations" label="Additional Observations" value={data.q22_additionalObservations} />
                 )}
               </View>
             )}
@@ -925,27 +997,27 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
           'q24_nonverbalCues', 'q25_painLocation', 'q26_painDescription', 'q26_painNotes',
         ]) && (
           <Section title="Observations">
-            {hasValue(data.q23_activityLevel) && <TextBlock label="Activity Level" value={data.q23_activityLevel} />}
+            {hasValue(data.q23_activityLevel) && <TextBlock fieldKey="q23_activityLevel" label="Activity Level" value={data.q23_activityLevel} />}
             <FieldRow>
-              {hasValue(data.q24_scaleUsed) && <FieldCol><Field label="Pain Scale Used" value={data.q24_scaleUsed} /></FieldCol>}
-              {hasValue(data.q24_painScore) && <FieldCol><Field label="Pain Score" value={data.q24_painScore} /></FieldCol>}
+              {hasValue(data.q24_scaleUsed) && <FieldCol><Field fieldKey="q24_scaleUsed" label="Pain Scale Used" value={data.q24_scaleUsed} /></FieldCol>}
+              {hasValue(data.q24_painScore) && <FieldCol><Field fieldKey="q24_painScore" label="Pain Score" value={data.q24_painScore} /></FieldCol>}
             </FieldRow>
-            {hasValue(data.q24_verbalComplaints) && <TextBlock label="Verbal Complaints" value={data.q24_verbalComplaints} />}
-            {hasValue(data.q24_nonverbalCues) && <TextBlock label="Non-verbal Cues" value={data.q24_nonverbalCues} />}
-            {hasValue(data.q25_painLocation) && <Field label="Pain Location" value={data.q25_painLocation} />}
-            {hasValue(data.q26_painDescription) && <TextBlock label="Pain Description" value={data.q26_painDescription} />}
-            {hasValue(data.q26_painNotes) && <TextBlock label="Pain Notes" value={data.q26_painNotes} />}
+            {hasValue(data.q24_verbalComplaints) && <TextBlock fieldKey="q24_verbalComplaints" label="Verbal Complaints" value={data.q24_verbalComplaints} />}
+            {hasValue(data.q24_nonverbalCues) && <TextBlock fieldKey="q24_nonverbalCues" label="Non-verbal Cues" value={data.q24_nonverbalCues} />}
+            {hasValue(data.q25_painLocation) && <Field fieldKey="q25_painLocation" label="Pain Location" value={data.q25_painLocation} />}
+            {hasValue(data.q26_painDescription) && <TextBlock fieldKey="q26_painDescription" label="Pain Description" value={data.q26_painDescription} />}
+            {hasValue(data.q26_painNotes) && <TextBlock fieldKey="q26_painNotes" label="Pain Notes" value={data.q26_painNotes} />}
           </Section>
         )}
 
         {/* 7. Safety Checklist */}
         {anyHasValue(data, ['q27_safetyChecklist', 'q27_safetyOther', 'q27_fallsInjuries', 'q27_allSystemsWNL', 'q27_safetyNotes']) && (
           <Section title="Safety Checklist">
-            {hasValue(data.q27_safetyChecklist) && <TextBlock label="Checklist Items" value={data.q27_safetyChecklist} />}
-            {hasValue(data.q27_safetyOther) && <TextBlock label="Other" value={data.q27_safetyOther} />}
-            {hasValue(data.q27_fallsInjuries) && <TextBlock label="Falls / Injuries" value={data.q27_fallsInjuries} />}
-            {hasValue(data.q27_allSystemsWNL) && <Field label="All Systems WNL" value={data.q27_allSystemsWNL} />}
-            {hasValue(data.q27_safetyNotes) && <TextBlock label="Safety Notes" value={data.q27_safetyNotes} />}
+            {hasValue(data.q27_safetyChecklist) && <TextBlock fieldKey="q27_safetyChecklist" label="Checklist Items" value={data.q27_safetyChecklist} />}
+            {hasValue(data.q27_safetyOther) && <TextBlock fieldKey="q27_safetyOther" label="Other" value={data.q27_safetyOther} />}
+            {hasValue(data.q27_fallsInjuries) && <TextBlock fieldKey="q27_fallsInjuries" label="Falls / Injuries" value={data.q27_fallsInjuries} />}
+            {hasValue(data.q27_allSystemsWNL) && <Field fieldKey="q27_allSystemsWNL" label="All Systems WNL" value={data.q27_allSystemsWNL} />}
+            {hasValue(data.q27_safetyNotes) && <TextBlock fieldKey="q27_safetyNotes" label="Safety Notes" value={data.q27_safetyNotes} />}
           </Section>
         )}
 
@@ -967,7 +1039,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
                     )}
                   </View>
                   {sys.fields.map((f) => (
-                    <SystemField key={f.key} label={f.label} value={data[f.key]} />
+                    <SystemField key={f.key} fieldKey={f.key} label={f.label} value={data[f.key]} />
                   ))}
                 </View>
               );
@@ -981,8 +1053,8 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         {/* 9. Personal Care / ADLs */}
         {anyHasValue(data, ['q38_personalCare', 'q38_personalCareNotes']) && (
           <Section title="Personal Care / ADLs">
-            {hasValue(data.q38_personalCare) && <TextBlock label="Personal Care" value={data.q38_personalCare} />}
-            {hasValue(data.q38_personalCareNotes) && <TextBlock label="Notes" value={data.q38_personalCareNotes} />}
+            {hasValue(data.q38_personalCare) && <TextBlock fieldKey="q38_personalCare" label="Personal Care" value={data.q38_personalCare} />}
+            {hasValue(data.q38_personalCareNotes) && <TextBlock fieldKey="q38_personalCareNotes" label="Notes" value={data.q38_personalCareNotes} />}
           </Section>
         )}
 
@@ -993,28 +1065,28 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         ]) && (
           <Section title="Nutrition & Hydration">
             <FieldRow>
-              {hasValue(data.q38_breakfastPct) && <FieldCol><Field label="Breakfast %" value={data.q38_breakfastPct} /></FieldCol>}
-              {hasValue(data.q38_lunchPct) && <FieldCol><Field label="Lunch %" value={data.q38_lunchPct} /></FieldCol>}
-              {hasValue(data.q38_dinnerPct) && <FieldCol><Field label="Dinner %" value={data.q38_dinnerPct} /></FieldCol>}
+              {hasValue(data.q38_breakfastPct) && <FieldCol><Field fieldKey="q38_breakfastPct" label="Breakfast %" value={data.q38_breakfastPct} /></FieldCol>}
+              {hasValue(data.q38_lunchPct) && <FieldCol><Field fieldKey="q38_lunchPct" label="Lunch %" value={data.q38_lunchPct} /></FieldCol>}
+              {hasValue(data.q38_dinnerPct) && <FieldCol><Field fieldKey="q38_dinnerPct" label="Dinner %" value={data.q38_dinnerPct} /></FieldCol>}
             </FieldRow>
-            {hasValue(data.q38_fluidsEncouraged) && <Field label="Fluids Encouraged" value={data.q38_fluidsEncouraged} />}
-            {hasValue(data.q38_aspirationConcerns) && <TextBlock label="Aspiration Concerns" value={data.q38_aspirationConcerns} />}
-            {hasValue(data.q38_nutritionNotes) && <TextBlock label="Notes" value={data.q38_nutritionNotes} />}
+            {hasValue(data.q38_fluidsEncouraged) && <Field fieldKey="q38_fluidsEncouraged" label="Fluids Encouraged" value={data.q38_fluidsEncouraged} />}
+            {hasValue(data.q38_aspirationConcerns) && <TextBlock fieldKey="q38_aspirationConcerns" label="Aspiration Concerns" value={data.q38_aspirationConcerns} />}
+            {hasValue(data.q38_nutritionNotes) && <TextBlock fieldKey="q38_nutritionNotes" label="Notes" value={data.q38_nutritionNotes} />}
           </Section>
         )}
 
         {/* 11. Housekeeping */}
         {hasValue(data.q38_housekeeping) && (
           <Section title="Housekeeping">
-            <TextBlock label="Items" value={data.q38_housekeeping} />
+            <TextBlock fieldKey="q38_housekeeping" label="Items" value={data.q38_housekeeping} />
           </Section>
         )}
 
         {/* 12. Abuse / Neglect Screening */}
         {anyHasValue(data, ['q38_abuseScreening', 'q38_abuseNotes']) && (
           <Section title="Abuse / Neglect Screening">
-            {hasValue(data.q38_abuseScreening) && <Field label="Screening Performed" value={data.q38_abuseScreening} />}
-            {hasValue(data.q38_abuseNotes) && <TextBlock label="Notes" value={data.q38_abuseNotes} />}
+            {hasValue(data.q38_abuseScreening) && <Field fieldKey="q38_abuseScreening" label="Screening Performed" value={data.q38_abuseScreening} />}
+            {hasValue(data.q38_abuseNotes) && <TextBlock fieldKey="q38_abuseNotes" label="Notes" value={data.q38_abuseNotes} />}
           </Section>
         )}
 
@@ -1024,9 +1096,9 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         {/* 13. Skilled Nursing Interventions (LPN/RN only) */}
         {isLpnRn && anyHasValue(data, ['q38_interventions', 'q39_interventionDetails', 'q40_skillJustification']) && (
           <SectionBreakable title="Skilled Nursing Interventions">
-            {hasValue(data.q38_interventions) && <TextBlock label="Interventions" value={data.q38_interventions} />}
-            {hasValue(data.q39_interventionDetails) && <TextBlock label="Details" value={data.q39_interventionDetails} />}
-            {hasValue(data.q40_skillJustification) && <TextBlock label="Justification" value={data.q40_skillJustification} />}
+            {hasValue(data.q38_interventions) && <TextBlock fieldKey="q38_interventions" label="Interventions" value={data.q38_interventions} />}
+            {hasValue(data.q39_interventionDetails) && <TextBlock fieldKey="q39_interventionDetails" label="Details" value={data.q39_interventionDetails} />}
+            {hasValue(data.q40_skillJustification) && <TextBlock fieldKey="q40_skillJustification" label="Justification" value={data.q40_skillJustification} />}
           </SectionBreakable>
         )}
 
@@ -1038,28 +1110,28 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
           'q43_interventionTime', 'q43_eventInterventionDetails', 'q43_postEventMonitoring',
         ]) && (
           <SectionBreakable title="Medications">
-            {hasValue(data.q43_scheduledMeds) && <TextBlock label="Scheduled" value={data.q43_scheduledMeds} />}
-            {hasValue(data.q43_prnMeds) && <TextBlock label="PRN" value={data.q43_prnMeds} />}
-            {hasValue(data.q43_medTolerance) && <TextBlock label="Tolerance" value={data.q43_medTolerance} />}
+            {hasValue(data.q43_scheduledMeds) && <TextBlock fieldKey="q43_scheduledMeds" label="Scheduled" value={data.q43_scheduledMeds} />}
+            {hasValue(data.q43_prnMeds) && <TextBlock fieldKey="q43_prnMeds" label="PRN" value={data.q43_prnMeds} />}
+            {hasValue(data.q43_medTolerance) && <TextBlock fieldKey="q43_medTolerance" label="Tolerance" value={data.q43_medTolerance} />}
             {anyHasValue(data, ['q43_reactionMed', 'q43_reactionTime', 'q43_reactionType', 'q43_reactionDescription', 'q43_reactionPhysNotified', 'q43_reactionPhysTime']) && (
               <View>
                 <Text style={s.subBlockLabel}>Adverse Reaction:</Text>
                 <FieldRow>
-                  {hasValue(data.q43_reactionMed) && <FieldCol><Field label="Medication" value={data.q43_reactionMed} /></FieldCol>}
-                  {hasValue(data.q43_reactionTime) && <FieldCol><Field label="Time" value={data.q43_reactionTime} /></FieldCol>}
-                  {hasValue(data.q43_reactionType) && <FieldCol><Field label="Type" value={data.q43_reactionType} /></FieldCol>}
+                  {hasValue(data.q43_reactionMed) && <FieldCol><Field fieldKey="q43_reactionMed" label="Medication" value={data.q43_reactionMed} /></FieldCol>}
+                  {hasValue(data.q43_reactionTime) && <FieldCol><Field fieldKey="q43_reactionTime" label="Time" value={data.q43_reactionTime} /></FieldCol>}
+                  {hasValue(data.q43_reactionType) && <FieldCol><Field fieldKey="q43_reactionType" label="Type" value={data.q43_reactionType} /></FieldCol>}
                 </FieldRow>
-                {hasValue(data.q43_reactionDescription) && <TextBlock label="Description" value={data.q43_reactionDescription} />}
+                {hasValue(data.q43_reactionDescription) && <TextBlock fieldKey="q43_reactionDescription" label="Description" value={data.q43_reactionDescription} />}
                 <FieldRow>
-                  {hasValue(data.q43_reactionPhysNotified) && <FieldCol><Field label="Physician Notified" value={data.q43_reactionPhysNotified} /></FieldCol>}
-                  {hasValue(data.q43_reactionPhysTime) && <FieldCol><Field label="Notification Time" value={data.q43_reactionPhysTime} /></FieldCol>}
+                  {hasValue(data.q43_reactionPhysNotified) && <FieldCol><Field fieldKey="q43_reactionPhysNotified" label="Physician Notified" value={data.q43_reactionPhysNotified} /></FieldCol>}
+                  {hasValue(data.q43_reactionPhysTime) && <FieldCol><Field fieldKey="q43_reactionPhysTime" label="Notification Time" value={data.q43_reactionPhysTime} /></FieldCol>}
                 </FieldRow>
               </View>
             )}
-            {hasValue(data.q43_safetyMeasures) && <TextBlock label="Safety Measures" value={data.q43_safetyMeasures} />}
-            {hasValue(data.q43_interventionTime) && <Field label="Intervention Time" value={data.q43_interventionTime} />}
-            {hasValue(data.q43_eventInterventionDetails) && <TextBlock label="Event Details" value={data.q43_eventInterventionDetails} />}
-            {hasValue(data.q43_postEventMonitoring) && <TextBlock label="Post-Event" value={data.q43_postEventMonitoring} />}
+            {hasValue(data.q43_safetyMeasures) && <TextBlock fieldKey="q43_safetyMeasures" label="Safety Measures" value={data.q43_safetyMeasures} />}
+            {hasValue(data.q43_interventionTime) && <Field fieldKey="q43_interventionTime" label="Intervention Time" value={data.q43_interventionTime} />}
+            {hasValue(data.q43_eventInterventionDetails) && <TextBlock fieldKey="q43_eventInterventionDetails" label="Event Details" value={data.q43_eventInterventionDetails} />}
+            {hasValue(data.q43_postEventMonitoring) && <TextBlock fieldKey="q43_postEventMonitoring" label="Post-Event" value={data.q43_postEventMonitoring} />}
           </SectionBreakable>
         )}
 
@@ -1072,12 +1144,12 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
           'q41_educationMethod', 'q41_teachback', 'q41_educationNotes',
         ]) && (
           <Section title="Education">
-            {hasValue(data.q41_educationProvided) && <Field label="Education Provided" value={data.q41_educationProvided} />}
-            {hasValue(data.q41_educationTopics) && <TextBlock label="Topics" value={data.q41_educationTopics} />}
-            {hasValue(data.q41_educationRecipients) && <Field label="Recipients" value={data.q41_educationRecipients} />}
-            {hasValue(data.q41_educationMethod) && <Field label="Method" value={data.q41_educationMethod} />}
-            {hasValue(data.q41_teachback) && <Field label="Teach-back" value={data.q41_teachback} />}
-            {hasValue(data.q41_educationNotes) && <TextBlock label="Notes" value={data.q41_educationNotes} />}
+            {hasValue(data.q41_educationProvided) && <Field fieldKey="q41_educationProvided" label="Education Provided" value={data.q41_educationProvided} />}
+            {hasValue(data.q41_educationTopics) && <TextBlock fieldKey="q41_educationTopics" label="Topics" value={data.q41_educationTopics} />}
+            {hasValue(data.q41_educationRecipients) && <Field fieldKey="q41_educationRecipients" label="Recipients" value={data.q41_educationRecipients} />}
+            {hasValue(data.q41_educationMethod) && <Field fieldKey="q41_educationMethod" label="Method" value={data.q41_educationMethod} />}
+            {hasValue(data.q41_teachback) && <Field fieldKey="q41_teachback" label="Teach-back" value={data.q41_teachback} />}
+            {hasValue(data.q41_educationNotes) && <TextBlock fieldKey="q41_educationNotes" label="Notes" value={data.q41_educationNotes} />}
           </Section>
         )}
 
@@ -1089,7 +1161,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
           'q41_overallCarePlan', 'q41_goalsNotes',
         ]) && (
           <SectionBreakable title="Goals of Care">
-            {hasValue(data.q41_goalsDiscussed) && <Field label="Goals Discussed" value={data.q41_goalsDiscussed} />}
+            {hasValue(data.q41_goalsDiscussed) && <Field fieldKey="q41_goalsDiscussed" label="Goals Discussed" value={data.q41_goalsDiscussed} />}
             {[1, 2, 3].map((n) => {
               const desc = data[`q41_goal${n}Description`];
               const progress = data[`q41_goal${n}Progress`];
@@ -1104,15 +1176,15 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
                 </View>
               );
             })}
-            {hasValue(data.q41_overallCarePlan) && <TextBlock label="Overall Status" value={data.q41_overallCarePlan} />}
-            {hasValue(data.q41_goalsNotes) && <TextBlock label="Notes" value={data.q41_goalsNotes} />}
+            {hasValue(data.q41_overallCarePlan) && <TextBlock fieldKey="q41_overallCarePlan" label="Overall Status" value={data.q41_overallCarePlan} />}
+            {hasValue(data.q41_goalsNotes) && <TextBlock fieldKey="q41_goalsNotes" label="Notes" value={data.q41_goalsNotes} />}
           </SectionBreakable>
         )}
 
         {/* 17. Communication */}
         {hasValue(data.q51_communication) && (
           <Section title="Communication">
-            <TextBlock label="Summary" value={data.q51_communication} />
+            <TextBlock fieldKey="q51_communication" label="Summary" value={data.q51_communication} />
           </Section>
         )}
 
@@ -1123,15 +1195,15 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         ]) && (
           <SectionBreakable title="Physician Notification">
             <FieldRow>
-              {hasValue(data.q52_physicianNotify) && <FieldCol><Field label="Notified" value={data.q52_physicianNotify} /></FieldCol>}
-              {hasValue(data.q54_notificationTime) && <FieldCol><Field label="Time" value={data.q54_notificationTime} /></FieldCol>}
+              {hasValue(data.q52_physicianNotify) && <FieldCol><Field fieldKey="q52_physicianNotify" label="Notified" value={data.q52_physicianNotify} /></FieldCol>}
+              {hasValue(data.q54_notificationTime) && <FieldCol><Field fieldKey="q54_notificationTime" label="Time" value={data.q54_notificationTime} /></FieldCol>}
             </FieldRow>
             <FieldRow>
-              {hasValue(data.q53_physicianName) && <FieldCol><Field label="Name" value={data.q53_physicianName} /></FieldCol>}
-              {hasValue(data.q52_notifyMethod) && <FieldCol><Field label="Method" value={data.q52_notifyMethod} /></FieldCol>}
+              {hasValue(data.q53_physicianName) && <FieldCol><Field fieldKey="q53_physicianName" label="Name" value={data.q53_physicianName} /></FieldCol>}
+              {hasValue(data.q52_notifyMethod) && <FieldCol><Field fieldKey="q52_notifyMethod" label="Method" value={data.q52_notifyMethod} /></FieldCol>}
             </FieldRow>
-            {hasValue(data.q52_infoReported) && <TextBlock label="Info Reported" value={data.q52_infoReported} />}
-            {hasValue(data.q55_physicianOrders) && <TextBlock label="Response" value={data.q55_physicianOrders} />}
+            {hasValue(data.q52_infoReported) && <TextBlock fieldKey="q52_infoReported" label="Info Reported" value={data.q52_infoReported} />}
+            {hasValue(data.q55_physicianOrders) && <TextBlock fieldKey="q55_physicianOrders" label="Response" value={data.q55_physicianOrders} />}
           </SectionBreakable>
         )}
 
@@ -1143,19 +1215,19 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         ]) && (
           <SectionBreakable title="Family / Guardian Notification">
             <FieldRow>
-              {hasValue(data.q52_familyNotified) && <FieldCol><Field label="Notified" value={data.q52_familyNotified} /></FieldCol>}
-              {hasValue(data.q52_familyTime) && <FieldCol><Field label="Time" value={data.q52_familyTime} /></FieldCol>}
+              {hasValue(data.q52_familyNotified) && <FieldCol><Field fieldKey="q52_familyNotified" label="Notified" value={data.q52_familyNotified} /></FieldCol>}
+              {hasValue(data.q52_familyTime) && <FieldCol><Field fieldKey="q52_familyTime" label="Time" value={data.q52_familyTime} /></FieldCol>}
             </FieldRow>
             <FieldRow>
-              {hasValue(data.q52_familyContactName) && <FieldCol><Field label="Contact" value={data.q52_familyContactName} /></FieldCol>}
-              {hasValue(data.q52_familyRelationship) && <FieldCol><Field label="Relationship" value={data.q52_familyRelationship} /></FieldCol>}
+              {hasValue(data.q52_familyContactName) && <FieldCol><Field fieldKey="q52_familyContactName" label="Contact" value={data.q52_familyContactName} /></FieldCol>}
+              {hasValue(data.q52_familyRelationship) && <FieldCol><Field fieldKey="q52_familyRelationship" label="Relationship" value={data.q52_familyRelationship} /></FieldCol>}
             </FieldRow>
-            {hasValue(data.q52_familyMethod) && <Field label="Method" value={data.q52_familyMethod} />}
+            {hasValue(data.q52_familyMethod) && <Field fieldKey="q52_familyMethod" label="Method" value={data.q52_familyMethod} />}
             <FieldRow>
-              {hasValue(data.q52_familyFollowup) && <FieldCol><Field label="Follow-up" value={data.q52_familyFollowup} /></FieldCol>}
-              {hasValue(data.q52_familyFollowupTime) && <FieldCol><Field label="Follow-up Time" value={data.q52_familyFollowupTime} /></FieldCol>}
+              {hasValue(data.q52_familyFollowup) && <FieldCol><Field fieldKey="q52_familyFollowup" label="Follow-up" value={data.q52_familyFollowup} /></FieldCol>}
+              {hasValue(data.q52_familyFollowupTime) && <FieldCol><Field fieldKey="q52_familyFollowupTime" label="Follow-up Time" value={data.q52_familyFollowupTime} /></FieldCol>}
             </FieldRow>
-            {hasValue(data.q52_familyNotes) && <TextBlock label="Notes" value={data.q52_familyNotes} />}
+            {hasValue(data.q52_familyNotes) && <TextBlock fieldKey="q52_familyNotes" label="Notes" value={data.q52_familyNotes} />}
           </SectionBreakable>
         )}
 
@@ -1166,20 +1238,20 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         ]) && (
           <SectionBreakable title="Agency Supervisor Notification">
             <FieldRow>
-              {hasValue(data.q52_supervisorNotified) && <FieldCol><Field label="Notified" value={data.q52_supervisorNotified} /></FieldCol>}
-              {hasValue(data.q52_supervisorTime) && <FieldCol><Field label="Time" value={data.q52_supervisorTime} /></FieldCol>}
+              {hasValue(data.q52_supervisorNotified) && <FieldCol><Field fieldKey="q52_supervisorNotified" label="Notified" value={data.q52_supervisorNotified} /></FieldCol>}
+              {hasValue(data.q52_supervisorTime) && <FieldCol><Field fieldKey="q52_supervisorTime" label="Time" value={data.q52_supervisorTime} /></FieldCol>}
             </FieldRow>
-            {hasValue(data.q52_supervisorName) && <Field label="Name" value={data.q52_supervisorName} />}
-            {hasValue(data.q52_supervisorResponse) && <TextBlock label="Response" value={data.q52_supervisorResponse} />}
-            {hasValue(data.q52_incidentReportCompleted) && <Field label="Incident Report" value={data.q52_incidentReportCompleted} />}
+            {hasValue(data.q52_supervisorName) && <Field fieldKey="q52_supervisorName" label="Name" value={data.q52_supervisorName} />}
+            {hasValue(data.q52_supervisorResponse) && <TextBlock fieldKey="q52_supervisorResponse" label="Response" value={data.q52_supervisorResponse} />}
+            {hasValue(data.q52_incidentReportCompleted) && <Field fieldKey="q52_incidentReportCompleted" label="Incident Report" value={data.q52_incidentReportCompleted} />}
           </SectionBreakable>
         )}
 
         {/* 21. Incidents */}
         {anyHasValue(data, ['q56_incidents', 'q57_incidentDetails']) && (
           <Section title="Incidents">
-            {hasValue(data.q56_incidents) && <Field label="Type" value={data.q56_incidents} />}
-            {hasValue(data.q57_incidentDetails) && <TextBlock label="Details" value={data.q57_incidentDetails} />}
+            {hasValue(data.q56_incidents) && <Field fieldKey="q56_incidents" label="Type" value={data.q56_incidents} />}
+            {hasValue(data.q57_incidentDetails) && <TextBlock fieldKey="q57_incidentDetails" label="Details" value={data.q57_incidentDetails} />}
           </Section>
         )}
 
@@ -1193,20 +1265,20 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         ]) && (
           <SectionBreakable title="End-of-Shift Handoff">
             <FieldRow>
-              {hasValue(data.q60_oncomingCaregiver) && <FieldCol><Field label="Oncoming Caregiver" value={data.q60_oncomingCaregiver} /></FieldCol>}
-              {hasValue(data.q60_handoffTime) && <FieldCol><Field label="Handoff Time" value={data.q60_handoffTime} /></FieldCol>}
+              {hasValue(data.q60_oncomingCaregiver) && <FieldCol><Field fieldKey="q60_oncomingCaregiver" label="Oncoming Caregiver" value={data.q60_oncomingCaregiver} /></FieldCol>}
+              {hasValue(data.q60_handoffTime) && <FieldCol><Field fieldKey="q60_handoffTime" label="Handoff Time" value={data.q60_handoffTime} /></FieldCol>}
             </FieldRow>
-            {hasValue(data.q60_verbalReport) && <Field label="Verbal Report" value={data.q60_verbalReport} />}
-            {hasValue(data.q60_conditionAtEnd) && <TextBlock label="Condition at End" value={data.q60_conditionAtEnd} />}
-            {hasValue(data.q60_endOfShiftNotes) && <TextBlock label="Notes" value={data.q60_endOfShiftNotes} />}
+            {hasValue(data.q60_verbalReport) && <Field fieldKey="q60_verbalReport" label="Verbal Report" value={data.q60_verbalReport} />}
+            {hasValue(data.q60_conditionAtEnd) && <TextBlock fieldKey="q60_conditionAtEnd" label="Condition at End" value={data.q60_conditionAtEnd} />}
+            {hasValue(data.q60_endOfShiftNotes) && <TextBlock fieldKey="q60_endOfShiftNotes" label="Notes" value={data.q60_endOfShiftNotes} />}
           </SectionBreakable>
         )}
 
         {/* 23. Follow-Up */}
         {anyHasValue(data, ['q58_followup', 'q60_nextShiftPlan']) && (
           <Section title="Follow-Up">
-            {hasValue(data.q58_followup) && <TextBlock label="Care / Referrals" value={data.q58_followup} />}
-            {hasValue(data.q60_nextShiftPlan) && <TextBlock label="Next Shift Plan" value={data.q60_nextShiftPlan} />}
+            {hasValue(data.q58_followup) && <TextBlock fieldKey="q58_followup" label="Care / Referrals" value={data.q58_followup} />}
+            {hasValue(data.q60_nextShiftPlan) && <TextBlock fieldKey="q60_nextShiftPlan" label="Next Shift Plan" value={data.q60_nextShiftPlan} />}
           </Section>
         )}
 
@@ -1214,9 +1286,12 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         {anyHasValue(data, ['q63_clinicalSummary', 'q64_carePlanStatus']) && (
           <Section title="Clinical Summary">
             {hasValue(data.q63_clinicalSummary) && (
-              <Text style={s.textBlockValue}>{data.q63_clinicalSummary}</Text>
+              <View>
+                <AmendedVersions fieldKey="q63_clinicalSummary" />
+                <Text style={s.textBlockValue}>{data.q63_clinicalSummary}</Text>
+              </View>
             )}
-            {hasValue(data.q64_carePlanStatus) && <TextBlock label="Care Plan Status" value={data.q64_carePlanStatus} />}
+            {hasValue(data.q64_carePlanStatus) && <TextBlock fieldKey="q64_carePlanStatus" label="Care Plan Status" value={data.q64_carePlanStatus} />}
           </Section>
         )}
 
@@ -1224,9 +1299,9 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         <Section title="Signature">
           <View style={s.signatureGrid}>
             <View style={{ flex: 1 }}>
-              <Field label="Printed Name" value={data.q11_nurseName} />
-              <Field label="Credential" value={data.q12_credential} />
-              <Field label="Date Signed" value={fmtDate(data.q62_shiftEndDate)} />
+              <Field fieldKey="q11_nurseName" label="Printed Name" value={data.q11_nurseName} />
+              <Field fieldKey="q12_credential" label="Credential" value={data.q12_credential} />
+              <Field fieldKey="q62_shiftEndDate" label="Date Signed" value={fmtDate(data.q62_shiftEndDate)} />
             </View>
             <View style={{ flex: 1 }}>
               {hasValue(data.q61_signature) ? (
@@ -1281,8 +1356,9 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         {editHistory && editHistory.length > 0 && (
           <SectionBreakable title="Amendments & Audit Trail">
             <Text style={s.auditIntro}>
-              Changes recorded after this note was first submitted. Captured automatically; original
-              entries are never deleted.
+              Each corrected field is shown in place in the note above, struck through with the
+              corrected value. This section lists who amended the note and why. Original entries are
+              never deleted.
             </Text>
             {editHistory.map((e, i) => (
               <View key={i} style={s.auditEntry}>
@@ -1311,24 +1387,8 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
                     {e.correctionNote}
                   </Text>
                 ) : null}
-                {e.changes.length > 0 ? (
-                  <View style={s.auditTable}>
-                    <View style={s.auditRowHead}>
-                      <Text style={s.auditColField}>Field</Text>
-                      <Text style={s.auditColVal}>From</Text>
-                      <Text style={s.auditColVal}>To</Text>
-                    </View>
-                    {e.changes.map((c, j) => (
-                      <View key={j} style={s.auditRow}>
-                        <Text style={s.auditColField}>{c.field}</Text>
-                        <Text style={s.auditColFrom}>{c.from}</Text>
-                        <Text style={s.auditColTo}>{c.to}</Text>
-                      </View>
-                    ))}
-                  </View>
-                ) : e.action ? null : (
-                  <Text style={s.auditMeta}>No field-level changes recorded.</Text>
-                )}
+                {/* Field-level changes now render in place in the note body,
+                    struck through with the corrected value; no from/to table here. */}
               </View>
             ))}
           </SectionBreakable>
@@ -1347,6 +1407,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
           fixed
         />
       </Page>
+      </AmendmentContext.Provider>
     </Document>
   );
 }
