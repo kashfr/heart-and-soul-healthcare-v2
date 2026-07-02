@@ -1357,6 +1357,7 @@ function ProgressNotePageInner() {
             reason: r.reason,
             isPRN: r.isPRN,
             indication: r.indication || '',
+            outcome: r.outcome || '',
           }));
           if (marPid && marRecords.length > 0) {
             try {

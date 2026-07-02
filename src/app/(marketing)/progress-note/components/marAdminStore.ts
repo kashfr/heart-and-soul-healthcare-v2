@@ -37,6 +37,7 @@ export interface MarAdminRecord {
   actualTime: string;
   initials: string;
   reason: string;
+  outcome?: string; // PRN effectiveness/result (required at submit for a given PRN)
   sessionId?: string; // the note session (submissionId) that created this mark
 }
 

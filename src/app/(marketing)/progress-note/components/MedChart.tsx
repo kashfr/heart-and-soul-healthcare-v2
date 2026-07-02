@@ -73,6 +73,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
   const [amendStatus, setAmendStatus] = useState<'given' | 'held' | 'refused'>('given');
   const [amendTime, setAmendTime] = useState('');
   const [amendReason, setAmendReason] = useState('');
+  const [amendOutcome, setAmendOutcome] = useState('');
   const [amendWhy, setAmendWhy] = useState('');
   const [amendBusy, setAmendBusy] = useState(false);
   const [amendError, setAmendError] = useState<string | null>(null);
@@ -195,6 +196,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
     setAmendStatus(a.status);
     setAmendTime(a.status === 'given' ? a.actualTime || '' : '');
     setAmendReason(a.reason || '');
+    setAmendOutcome(a.outcome || '');
     setAmendWhy('');
     setAmendError(null);
   };
@@ -216,6 +218,10 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
           status: amendStatus,
           actualTime: amendStatus === 'given' ? amendTime : '',
           reason: amendReason,
+          // The outcome (PRN result) is editable only while the corrected status
+          // is a given PRN; otherwise it's omitted so the server carries the
+          // stored value forward (and blanks it for non-given, as always).
+          ...(amendStatus === 'given' && a.scheduledTime === 'PRN' ? { outcome: amendOutcome } : {}),
           amendmentReason: amendWhy.trim(),
         }),
       });
@@ -258,6 +264,16 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
           {a.status === 'given' && a.reason ? ` · for ${a.reason}` : ''}
           {a.administeredByType !== 'nurse' && a.documentedByName ? ` · documented by ${a.documentedByName}` : ''}
         </div>
+        {a.status === 'given' && a.scheduledTime === 'PRN' && (
+          (a.outcome || '').trim() ? (
+            <div style={outcomeLine}>
+              Result: {a.outcome}
+              {a.outcomeByName ? ` (recorded by ${a.outcomeByName})` : ''}
+            </div>
+          ) : (
+            <span style={outcomePendingChip}>Result pending</span>
+          )
+        )}
         {prev && (
           <div style={amendedNote}>
             Corrected from &ldquo;{statusLabel(prev.status)}&rdquo;
@@ -302,6 +318,18 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
                   placeholder={
                     amendStatus === 'refused' ? 'Reason for refusal' : amendStatus === 'held' ? 'Reason held' : 'Why this PRN dose was given'
                   }
+                />
+              </label>
+            )}
+            {amendStatus === 'given' && a.scheduledTime === 'PRN' && (
+              <label style={amendField}>
+                <span style={amendFieldLabel}>Outcome / result</span>
+                <input
+                  type="text"
+                  value={amendOutcome}
+                  onChange={(e) => setAmendOutcome(e.target.value)}
+                  style={amendInput}
+                  placeholder="e.g., pain decreased from 6/10 to 2/10 within 45 min"
                 />
               </label>
             )}
@@ -508,6 +536,18 @@ const timelineDate: CSSProperties = { fontSize: 12.5, color: '#5c6b7a', fontWeig
 const timelineEmpty: CSSProperties = { fontSize: 13, color: '#7f8c8d', padding: '6px 0' };
 const amendedTag: CSSProperties = { display: 'inline-block', marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#6b21a8', background: '#f3e8ff', border: '1px solid #e0c8f5', padding: '1px 7px', borderRadius: 999, verticalAlign: 'middle' };
 const amendedNote: CSSProperties = { fontSize: 12, color: '#6b21a8', marginTop: 4, lineHeight: 1.4 };
+const outcomeLine: CSSProperties = { fontSize: 12, color: '#2a7a2a', marginTop: 4, lineHeight: 1.4 };
+const outcomePendingChip: CSSProperties = {
+  display: 'inline-block',
+  marginTop: 4,
+  padding: '1px 8px',
+  borderRadius: 999,
+  background: '#fff7e6',
+  border: '1px solid #f5d9a8',
+  color: '#8a5a0d',
+  fontSize: 11,
+  fontWeight: 700,
+};
 const amendBtn: CSSProperties = { marginTop: 8, background: 'white', color: '#1a3a5c', border: '1px solid #c8def5', padding: '6px 12px', borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const amendBox: CSSProperties = { marginTop: 10, background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 10, padding: 12 };
 const amendTitle: CSSProperties = { fontSize: 13, fontWeight: 700, color: '#1f2937', marginBottom: 8 };

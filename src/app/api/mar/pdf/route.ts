@@ -71,6 +71,7 @@ interface AdminDoc {
   actualTime: string;
   initials: string;
   reason: string;
+  outcome: string;
   documentedByName: string;
   documentedByCredential: string;
 }
@@ -183,6 +184,7 @@ export async function POST(request: Request) {
         actualTime: String(a.actualTime || ''),
         initials: String(a.initials || ''),
         reason: String(a.reason || ''),
+        outcome: String(a.outcome || ''),
         documentedByName: String(a.documentedByName || ''),
         documentedByCredential: String(a.documentedByCredential || ''),
       };
@@ -275,6 +277,13 @@ export async function POST(request: Request) {
           status: a.status,
           by: adminBy(a),
           reason: a.reason || '-',
+          // A given PRN dose is complete only once its result is recorded; the
+          // export says so explicitly rather than printing a silent blank.
+          result: a.outcome.trim()
+            ? a.outcome
+            : a.status === 'given' && a.scheduledTime === 'PRN'
+              ? 'Result pending'
+              : '-',
           initials: a.initials || '-',
           amendment,
         };

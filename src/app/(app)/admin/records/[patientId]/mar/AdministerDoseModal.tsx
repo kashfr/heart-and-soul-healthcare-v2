@@ -62,6 +62,7 @@ export default function AdministerDoseModal({
   const [administeredByType, setAdministeredByType] = useState('nurse');
   const [administratorName, setAdministratorName] = useState('');
   const [reason, setReason] = useState('');
+  const [outcome, setOutcome] = useState('');
   const [initials, setInitials] = useState(defaultInitials);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -120,6 +121,7 @@ export default function AdministerDoseModal({
             reason,
             isPRN,
             indication,
+            outcome,
           },
         ],
         { patientId, date: dateISO, sourceNoteId: '', documenter },
@@ -231,6 +233,26 @@ export default function AdministerDoseModal({
           </label>
         )}
 
+        {/* PRN effectiveness follow-up. The result is usually observed 30-60
+            minutes after the dose, so it's OPTIONAL here — an unrecorded result
+            shows as "Result pending" on the grid until it's filled in. */}
+        {status === 'given' && isPRN && (
+          <label style={{ ...field, marginTop: 12 }}>
+            <span style={fieldLabel}>Outcome / result (if already known)</span>
+            <input
+              type="text"
+              value={outcome}
+              onChange={(e) => setOutcome(e.target.value)}
+              style={input}
+              placeholder="e.g., pain decreased from 6/10 to 2/10 within 45 min"
+            />
+            <span style={outcomeHint}>
+              Recheck 30-60 min after the dose. If you leave this blank, the dose shows as &quot;Result
+              pending&quot; on the MAR until the result is recorded.
+            </span>
+          </label>
+        )}
+
         {error && <div style={errBox}>{error}</div>}
 
         <div style={actions}>
@@ -267,6 +289,7 @@ const grid2: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, 
 const field: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 };
 const fieldLabel: CSSProperties = { fontSize: 12, fontWeight: 600, color: '#5c6b7a' };
 const input: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', height: 38 };
+const outcomeHint: CSSProperties = { fontSize: 11.5, color: '#8a949e', lineHeight: 1.4, marginTop: 2 };
 const errBox: CSSProperties = { marginTop: 12, background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '8px 11px', fontSize: 13 };
 const actions: CSSProperties = { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 };
 const cancelBtn: CSSProperties = { background: 'white', color: '#374151', border: '1px solid #d0d7de', padding: '9px 16px', borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };

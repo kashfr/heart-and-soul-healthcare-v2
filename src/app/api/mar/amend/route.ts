@@ -47,6 +47,9 @@ export async function POST(request: Request) {
       status: String(body?.status || ''),
       actualTime: String(body?.actualTime || ''),
       reason: String(body?.reason || ''),
+      // Only override the stored outcome when the client sends one; otherwise
+      // the amendment carries the existing outcome forward.
+      ...(body?.outcome !== undefined ? { outcome: String(body.outcome) } : {}),
       amendmentReason: String(body?.amendmentReason || ''),
     },
     caller,

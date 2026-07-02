@@ -384,6 +384,8 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
               <span style={marFieldLabelStyle}>Reason this dose was given *</span>
               <input
                 type="text"
+                required
+                aria-label={`Reason ${opts.medName} PRN dose was given`}
                 value={opts.rec?.reason || ''}
                 onChange={(e) => opts.onPatch({ reason: e.target.value })}
                 style={!(opts.rec?.reason || '').trim() ? marInputRequiredStyle : marInputStyle}
@@ -393,13 +395,48 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
                 <span style={marRequiredHintStyle}>Required for a PRN dose: note the symptom or reason it was given.</span>
               )}
             </label>
+            {/* The effectiveness follow-up: a PRN dose isn't fully documented
+                until the RESULT is recorded (why given -> given -> what
+                happened). Checked 30-60 min after the dose, so it's required by
+                the time the note is submitted, not the moment the dose is
+                marked. */}
+            <label style={{ ...marFieldStyle, marginTop: 8 }}>
+              <span style={marFieldLabelStyle}>Outcome / result *</span>
+              <input
+                type="text"
+                required
+                aria-label={`Outcome of ${opts.medName} PRN dose`}
+                value={opts.rec?.outcome || ''}
+                onChange={(e) => opts.onPatch({ outcome: e.target.value })}
+                style={!(opts.rec?.outcome || '').trim() ? marInputRequiredStyle : marInputStyle}
+                placeholder="e.g., pain decreased from 6/10 to 2/10 within 45 min"
+              />
+              {!(opts.rec?.outcome || '').trim() && (
+                <span style={marRequiredHintStyle}>
+                  Required for a PRN dose: record the result (recheck 30-60 min after the dose).
+                </span>
+              )}
+            </label>
           </>
         )}
 
         {(status === 'held' || status === 'refused') && (
           <label style={{ ...marFieldStyle, marginTop: 10 }}>
-            <span style={marFieldLabelStyle}>Reason</span>
-            <input type="text" value={opts.rec?.reason || ''} onChange={(e) => opts.onPatch({ reason: e.target.value })} style={marInputStyle} placeholder={status === 'refused' ? 'Reason for refusal' : 'Reason held / omitted'} />
+            <span style={marFieldLabelStyle}>Reason *</span>
+            <input
+              type="text"
+              required
+              aria-label={`Reason ${opts.medName} dose was ${status}`}
+              value={opts.rec?.reason || ''}
+              onChange={(e) => opts.onPatch({ reason: e.target.value })}
+              style={!(opts.rec?.reason || '').trim() ? marInputRequiredStyle : marInputStyle}
+              placeholder={status === 'refused' ? 'Reason for refusal' : 'Reason held / omitted'}
+            />
+            {!(opts.rec?.reason || '').trim() && (
+              <span style={marRequiredHintStyle}>
+                Required: a {status} dose must document why (e.g., hold parameter met, client refused).
+              </span>
+            )}
           </label>
         )}
       </div>

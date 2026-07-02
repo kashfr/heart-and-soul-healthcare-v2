@@ -31,6 +31,9 @@ export interface MarPdfLogEntry {
   status: string;
   by: string;
   reason: string;
+  // PRN effectiveness follow-up: the recorded outcome, "Result pending" for a
+  // given PRN dose not yet completed, or '-' where a result doesn't apply.
+  result: string;
   initials: string;
   amendment?: string; // correction note (append-only audit trail), if this entry amends another
 }
@@ -186,7 +189,7 @@ const CELL_FG: Record<MarCellStatus, string> = {
 };
 
 // Log-table column widths (landscape usable width ≈ 748pt).
-const LOG_W = [60, 36, 170, 46, 150, 206, 40];
+const LOG_W = [56, 34, 140, 44, 116, 150, 128, 36];
 
 export default function MarPDF({
   orgName,
@@ -324,7 +327,7 @@ export default function MarPDF({
         ) : (
           <View>
             <View style={s.row}>
-              {['Date', 'Time', 'Medication', 'Status', 'Administered by', 'Reason / note', 'Initials'].map(
+              {['Date', 'Time', 'Medication', 'Status', 'Administered by', 'Reason / note', 'Result', 'Initials'].map(
                 (h, i) => (
                   <Text key={h} style={[s.logTh, { width: LOG_W[i] }]}>{h}</Text>
                 ),
@@ -339,7 +342,8 @@ export default function MarPDF({
                   <Text style={[s.logTd, { width: LOG_W[3] }]}>{e.status}</Text>
                   <Text style={[s.logTd, { width: LOG_W[4] }]}>{e.by}</Text>
                   <Text style={[s.logTd, { width: LOG_W[5] }]}>{e.reason}</Text>
-                  <Text style={[s.logTd, { width: LOG_W[6] }]}>{e.initials}</Text>
+                  <Text style={[s.logTd, { width: LOG_W[6] }]}>{e.result}</Text>
+                  <Text style={[s.logTd, { width: LOG_W[7] }]}>{e.initials}</Text>
                 </View>
                 {e.amendment ? (
                   <Text style={{ fontSize: 6.5, color: '#6b21a8', paddingLeft: 4, paddingBottom: 2 }}>
