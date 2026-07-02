@@ -84,6 +84,10 @@ export function buildMarAdminFields(r: MarAdminFieldInput, meta: MarAdminFieldMe
     indicationSnapshot: (r.indication || '').trim(),
     date: meta.date,
     scheduledTime: r.scheduledTime,
+    // Persisted so later flows (amend rebuilds, displays) can tell an
+    // as-needed dose from a scheduled one without re-deriving it from the slot
+    // — an unscheduled one-off PRN dose has scheduledTime 'unscheduled'.
+    isPRN,
     status: r.status,
     administeredByType: r.administeredByType || 'nurse',
     administratorName: isNurse ? '' : r.administratorName.trim(),

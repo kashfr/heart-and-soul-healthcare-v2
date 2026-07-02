@@ -413,7 +413,11 @@ export async function amendMarAdministration(
   }
 
   const scheduledTime = String(orig.scheduledTime || '');
-  const isPRN = scheduledTime === 'PRN';
+  // PRN-ness must survive the rebuild or buildMarAdminFields blanks the dose's
+  // why-given reason and outcome. New docs persist isPRN; 'unscheduled' one-offs
+  // (including legacy docs from before isPRN was stored) are treated as PRN-ish
+  // so a correction never strips what Page 5 required the nurse to record.
+  const isPRN = scheduledTime === 'PRN' || scheduledTime === 'unscheduled' || orig.isPRN === true;
   const amenderName = caller.profile.displayName || caller.email || '';
   const givenStatus = status === 'given';
   const base = buildMarAdminFields(
@@ -445,17 +449,57 @@ export async function amendMarAdministration(
     },
   );
 
-  // Write the superseding record inside a transaction whose read re-checks that
-  // nothing already amends this entry, so two concurrent corrections of the same
-  // dose can't both commit and fork the chain into two "current" records.
+  // Write the superseding record inside a transaction that re-checks (1) nothing
+  // already amends this entry — two concurrent corrections can't fork the chain —
+  // and (2) the ORIGINAL doc's CURRENT outcome. The outcome can be completed via
+  // /api/mar/outcome while an amend form sits open, so the pre-transaction read
+  // above may be stale; carrying outcome from the fresh in-transaction read means
+  // an overlapping correction can never silently drop a just-recorded result.
   const newRef = col.doc();
-  const conflict = await adminDb().runTransaction(async (tx) => {
-    const existing = await tx.get(col.where('amends', '==', adminId).limit(1));
-    if (!existing.empty) return true;
-    tx.set(newRef, { ...base, amends: adminId, amendmentReason, at: FieldValue.serverTimestamp() });
-    return false;
+  const failure = await adminDb().runTransaction(async (tx): Promise<AmendFailureReason | null> => {
+    const [fresh, existing] = await Promise.all([
+      tx.get(col.doc(adminId)),
+      tx.get(col.where('amends', '==', adminId).limit(1)),
+    ]);
+    if (!fresh.exists) return 'not-found';
+    if (!existing.empty) return 'superseded';
+
+    const freshData = fresh.data() || {};
+    const freshOutcome = String(freshData.outcome || '').trim();
+    const sentOutcome = input.outcome !== undefined ? String(input.outcome).trim() : undefined;
+    // Effective outcome: an explicit non-empty edit wins; otherwise keep the
+    // freshest stored value. A stale EMPTY submission never erases a recorded
+    // result (erasing isn't a supported flow — a wrong result gets amended to a
+    // corrected one, not to nothing).
+    const effective = sentOutcome ? sentOutcome : freshOutcome;
+    const kept = base.status === 'given' && isPRN ? effective : '';
+
+    // Attribution: unchanged text keeps the original recorder's stamp; new or
+    // edited text is attributed to the amender.
+    const attribution = !kept
+      ? { outcomeBy: '', outcomeByName: '', outcomeAt: null }
+      : kept === freshOutcome
+        ? {
+            outcomeBy: String(freshData.outcomeBy || ''),
+            outcomeByName: String(freshData.outcomeByName || ''),
+            outcomeAt: freshData.outcomeAt ?? null,
+          }
+        : { outcomeBy: caller.uid, outcomeByName: amenderName, outcomeAt: FieldValue.serverTimestamp() };
+
+    tx.set(newRef, {
+      ...base,
+      outcome: kept,
+      ...attribution,
+      amends: adminId,
+      amendmentReason,
+      at: FieldValue.serverTimestamp(),
+    });
+    return null;
   });
-  if (conflict) {
+  if (failure === 'not-found') {
+    return { ok: false, reason: 'not-found', message: 'That administration was not found.' };
+  }
+  if (failure === 'superseded') {
     return {
       ok: false,
       reason: 'superseded',

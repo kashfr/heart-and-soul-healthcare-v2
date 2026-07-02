@@ -463,11 +463,18 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
 
   // Collapse completed scheduled doses so the nurse focuses on what's still due
   // ("once a dose is given, only the next is front-and-center"). A scheduled slot
-  // is "done" once it's documented on this draft or already recorded on an
-  // earlier note today; PRN rows are always open (as-needed, can repeat).
+  // is "done" once it's COMPLETELY documented on this draft or already recorded
+  // on an earlier note today; PRN rows are always open (as-needed, can repeat).
+  // A held/refused mark without its required reason is NOT done — collapsing it
+  // would unmount the required input before the nurse could type, hiding it from
+  // the submit validation scan (and from her).
   const isDoneScheduled = ({ order, slot }: { order: MarOrder; slot: string }): boolean => {
     if (slot === 'PRN') return false;
-    if (marAdminState[marAdminKey(marPatientId, order.id || '', slot)]?.status) return true;
+    const rec = marAdminState[marAdminKey(marPatientId, order.id || '', slot)];
+    if (rec?.status) {
+      if ((rec.status === 'held' || rec.status === 'refused') && !(rec.reason || '').trim()) return false;
+      return true;
+    }
     return !!priorFor(order.id || '', slot, order.medName);
   };
   const openRows = marRows.filter((r) => !isDoneScheduled(r));

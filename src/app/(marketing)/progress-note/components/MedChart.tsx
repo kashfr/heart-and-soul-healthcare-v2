@@ -74,6 +74,10 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
   const [amendTime, setAmendTime] = useState('');
   const [amendReason, setAmendReason] = useState('');
   const [amendOutcome, setAmendOutcome] = useState('');
+  // Baseline the outcome loaded into the form, so we only SEND it when the
+  // amender actually edited it — an untouched (possibly stale) value must not
+  // overwrite a result recorded concurrently via /api/mar/outcome.
+  const [amendOutcomeOrig, setAmendOutcomeOrig] = useState('');
   const [amendWhy, setAmendWhy] = useState('');
   const [amendBusy, setAmendBusy] = useState(false);
   const [amendError, setAmendError] = useState<string | null>(null);
@@ -197,6 +201,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
     setAmendTime(a.status === 'given' ? a.actualTime || '' : '');
     setAmendReason(a.reason || '');
     setAmendOutcome(a.outcome || '');
+    setAmendOutcomeOrig(a.outcome || '');
     setAmendWhy('');
     setAmendError(null);
   };
@@ -218,10 +223,15 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
           status: amendStatus,
           actualTime: amendStatus === 'given' ? amendTime : '',
           reason: amendReason,
-          // The outcome (PRN result) is editable only while the corrected status
-          // is a given PRN; otherwise it's omitted so the server carries the
-          // stored value forward (and blanks it for non-given, as always).
-          ...(amendStatus === 'given' && a.scheduledTime === 'PRN' ? { outcome: amendOutcome } : {}),
+          // Send the outcome only when the amender actually CHANGED it in a
+          // given-PRN correction; otherwise omit it so the server carries the
+          // freshest stored value forward (and blanks it for non-given). PRN-ish
+          // covers unscheduled one-off doses documented as PRN.
+          ...(amendStatus === 'given' &&
+          (a.scheduledTime === 'PRN' || a.scheduledTime === 'unscheduled') &&
+          amendOutcome !== amendOutcomeOrig
+            ? { outcome: amendOutcome }
+            : {}),
           amendmentReason: amendWhy.trim(),
         }),
       });
@@ -264,16 +274,16 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
           {a.status === 'given' && a.reason ? ` · for ${a.reason}` : ''}
           {a.administeredByType !== 'nurse' && a.documentedByName ? ` · documented by ${a.documentedByName}` : ''}
         </div>
-        {a.status === 'given' && a.scheduledTime === 'PRN' && (
-          (a.outcome || '').trim() ? (
-            <div style={outcomeLine}>
-              Result: {a.outcome}
-              {a.outcomeByName ? ` (recorded by ${a.outcomeByName})` : ''}
-            </div>
-          ) : (
-            <span style={outcomePendingChip}>Result pending</span>
-          )
-        )}
+        {/* Result line whenever a given dose HAS one (matches the grid + PDF);
+            the pending nag stays scoped to true PRN slots. */}
+        {a.status === 'given' && (a.outcome || '').trim() ? (
+          <div style={outcomeLine}>
+            Result: {a.outcome}
+            {a.outcomeByName ? ` (recorded by ${a.outcomeByName})` : ''}
+          </div>
+        ) : a.status === 'given' && a.scheduledTime === 'PRN' ? (
+          <span style={outcomePendingChip}>Result pending</span>
+        ) : null}
         {prev && (
           <div style={amendedNote}>
             Corrected from &ldquo;{statusLabel(prev.status)}&rdquo;
@@ -321,7 +331,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
                 />
               </label>
             )}
-            {amendStatus === 'given' && a.scheduledTime === 'PRN' && (
+            {amendStatus === 'given' && (a.scheduledTime === 'PRN' || a.scheduledTime === 'unscheduled') && (
               <label style={amendField}>
                 <span style={amendFieldLabel}>Outcome / result</span>
                 <input
