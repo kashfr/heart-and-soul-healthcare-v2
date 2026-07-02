@@ -384,6 +384,8 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
               <span style={marFieldLabelStyle}>Reason this dose was given *</span>
               <input
                 type="text"
+                required
+                aria-label={`Reason ${opts.medName} PRN dose was given`}
                 value={opts.rec?.reason || ''}
                 onChange={(e) => opts.onPatch({ reason: e.target.value })}
                 style={!(opts.rec?.reason || '').trim() ? marInputRequiredStyle : marInputStyle}
@@ -393,13 +395,48 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
                 <span style={marRequiredHintStyle}>Required for a PRN dose: note the symptom or reason it was given.</span>
               )}
             </label>
+            {/* The effectiveness follow-up: a PRN dose isn't fully documented
+                until the RESULT is recorded (why given -> given -> what
+                happened). Checked 30-60 min after the dose, so it's required by
+                the time the note is submitted, not the moment the dose is
+                marked. */}
+            <label style={{ ...marFieldStyle, marginTop: 8 }}>
+              <span style={marFieldLabelStyle}>Outcome / result *</span>
+              <input
+                type="text"
+                required
+                aria-label={`Outcome of ${opts.medName} PRN dose`}
+                value={opts.rec?.outcome || ''}
+                onChange={(e) => opts.onPatch({ outcome: e.target.value })}
+                style={!(opts.rec?.outcome || '').trim() ? marInputRequiredStyle : marInputStyle}
+                placeholder="e.g., pain decreased from 6/10 to 2/10 within 45 min"
+              />
+              {!(opts.rec?.outcome || '').trim() && (
+                <span style={marRequiredHintStyle}>
+                  Required for a PRN dose: record the result (recheck 30-60 min after the dose).
+                </span>
+              )}
+            </label>
           </>
         )}
 
         {(status === 'held' || status === 'refused') && (
           <label style={{ ...marFieldStyle, marginTop: 10 }}>
-            <span style={marFieldLabelStyle}>Reason</span>
-            <input type="text" value={opts.rec?.reason || ''} onChange={(e) => opts.onPatch({ reason: e.target.value })} style={marInputStyle} placeholder={status === 'refused' ? 'Reason for refusal' : 'Reason held / omitted'} />
+            <span style={marFieldLabelStyle}>Reason *</span>
+            <input
+              type="text"
+              required
+              aria-label={`Reason ${opts.medName} dose was ${status}`}
+              value={opts.rec?.reason || ''}
+              onChange={(e) => opts.onPatch({ reason: e.target.value })}
+              style={!(opts.rec?.reason || '').trim() ? marInputRequiredStyle : marInputStyle}
+              placeholder={status === 'refused' ? 'Reason for refusal' : 'Reason held / omitted'}
+            />
+            {!(opts.rec?.reason || '').trim() && (
+              <span style={marRequiredHintStyle}>
+                Required: a {status} dose must document why (e.g., hold parameter met, client refused).
+              </span>
+            )}
           </label>
         )}
       </div>
@@ -426,11 +463,18 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
 
   // Collapse completed scheduled doses so the nurse focuses on what's still due
   // ("once a dose is given, only the next is front-and-center"). A scheduled slot
-  // is "done" once it's documented on this draft or already recorded on an
-  // earlier note today; PRN rows are always open (as-needed, can repeat).
+  // is "done" once it's COMPLETELY documented on this draft or already recorded
+  // on an earlier note today; PRN rows are always open (as-needed, can repeat).
+  // A held/refused mark without its required reason is NOT done — collapsing it
+  // would unmount the required input before the nurse could type, hiding it from
+  // the submit validation scan (and from her).
   const isDoneScheduled = ({ order, slot }: { order: MarOrder; slot: string }): boolean => {
     if (slot === 'PRN') return false;
-    if (marAdminState[marAdminKey(marPatientId, order.id || '', slot)]?.status) return true;
+    const rec = marAdminState[marAdminKey(marPatientId, order.id || '', slot)];
+    if (rec?.status) {
+      if ((rec.status === 'held' || rec.status === 'refused') && !(rec.reason || '').trim()) return false;
+      return true;
+    }
     return !!priorFor(order.id || '', slot, order.medName);
   };
   const openRows = marRows.filter((r) => !isDoneScheduled(r));

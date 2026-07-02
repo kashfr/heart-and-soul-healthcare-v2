@@ -382,7 +382,7 @@ function initialsFrom(name: string): string {
  */
 export async function amendMarAdministration(
   adminId: string,
-  input: { status: string; actualTime?: string; reason?: string; amendmentReason: string },
+  input: { status: string; actualTime?: string; reason?: string; outcome?: string; amendmentReason: string },
   caller: AuthedCaller,
 ): Promise<AmendResult> {
   const col = adminDb().collection('marAdministrations');
@@ -413,7 +413,11 @@ export async function amendMarAdministration(
   }
 
   const scheduledTime = String(orig.scheduledTime || '');
-  const isPRN = scheduledTime === 'PRN';
+  // PRN-ness must survive the rebuild or buildMarAdminFields blanks the dose's
+  // why-given reason and outcome. New docs persist isPRN; 'unscheduled' one-offs
+  // (including legacy docs from before isPRN was stored) are treated as PRN-ish
+  // so a correction never strips what Page 5 required the nurse to record.
+  const isPRN = scheduledTime === 'PRN' || scheduledTime === 'unscheduled' || orig.isPRN === true;
   const amenderName = caller.profile.displayName || caller.email || '';
   const givenStatus = status === 'given';
   const base = buildMarAdminFields(
@@ -431,6 +435,9 @@ export async function amendMarAdministration(
       actualTime: String(input.actualTime || ''),
       initials: initialsFrom(amenderName),
       reason: String(input.reason || ''),
+      // A correction carries the outcome forward unless the amender edits it,
+      // so amending a dose's time can never silently drop its recorded result.
+      outcome: input.outcome !== undefined ? String(input.outcome) : String(orig.outcome || ''),
       isPRN,
       indication: String(orig.indicationSnapshot || ''),
     },
@@ -442,17 +449,57 @@ export async function amendMarAdministration(
     },
   );
 
-  // Write the superseding record inside a transaction whose read re-checks that
-  // nothing already amends this entry, so two concurrent corrections of the same
-  // dose can't both commit and fork the chain into two "current" records.
+  // Write the superseding record inside a transaction that re-checks (1) nothing
+  // already amends this entry — two concurrent corrections can't fork the chain —
+  // and (2) the ORIGINAL doc's CURRENT outcome. The outcome can be completed via
+  // /api/mar/outcome while an amend form sits open, so the pre-transaction read
+  // above may be stale; carrying outcome from the fresh in-transaction read means
+  // an overlapping correction can never silently drop a just-recorded result.
   const newRef = col.doc();
-  const conflict = await adminDb().runTransaction(async (tx) => {
-    const existing = await tx.get(col.where('amends', '==', adminId).limit(1));
-    if (!existing.empty) return true;
-    tx.set(newRef, { ...base, amends: adminId, amendmentReason, at: FieldValue.serverTimestamp() });
-    return false;
+  const failure = await adminDb().runTransaction(async (tx): Promise<AmendFailureReason | null> => {
+    const [fresh, existing] = await Promise.all([
+      tx.get(col.doc(adminId)),
+      tx.get(col.where('amends', '==', adminId).limit(1)),
+    ]);
+    if (!fresh.exists) return 'not-found';
+    if (!existing.empty) return 'superseded';
+
+    const freshData = fresh.data() || {};
+    const freshOutcome = String(freshData.outcome || '').trim();
+    const sentOutcome = input.outcome !== undefined ? String(input.outcome).trim() : undefined;
+    // Effective outcome: an explicit non-empty edit wins; otherwise keep the
+    // freshest stored value. A stale EMPTY submission never erases a recorded
+    // result (erasing isn't a supported flow — a wrong result gets amended to a
+    // corrected one, not to nothing).
+    const effective = sentOutcome ? sentOutcome : freshOutcome;
+    const kept = base.status === 'given' && isPRN ? effective : '';
+
+    // Attribution: unchanged text keeps the original recorder's stamp; new or
+    // edited text is attributed to the amender.
+    const attribution = !kept
+      ? { outcomeBy: '', outcomeByName: '', outcomeAt: null }
+      : kept === freshOutcome
+        ? {
+            outcomeBy: String(freshData.outcomeBy || ''),
+            outcomeByName: String(freshData.outcomeByName || ''),
+            outcomeAt: freshData.outcomeAt ?? null,
+          }
+        : { outcomeBy: caller.uid, outcomeByName: amenderName, outcomeAt: FieldValue.serverTimestamp() };
+
+    tx.set(newRef, {
+      ...base,
+      outcome: kept,
+      ...attribution,
+      amends: adminId,
+      amendmentReason,
+      at: FieldValue.serverTimestamp(),
+    });
+    return null;
   });
-  if (conflict) {
+  if (failure === 'not-found') {
+    return { ok: false, reason: 'not-found', message: 'That administration was not found.' };
+  }
+  if (failure === 'superseded') {
     return {
       ok: false,
       reason: 'superseded',
@@ -460,6 +507,109 @@ export async function amendMarAdministration(
     };
   }
   return { ok: true, id: newRef.id };
+}
+
+// ---------------------------------------------------------------------------
+// PRN outcome (effectiveness follow-up). A given PRN dose is complete only when
+// the result is documented — why given -> given -> what happened. The result is
+// often observed 30-60 minutes after the dose, so grid-charted doses record it
+// AFTER the fact via this write-once completion: it fills the empty `outcome`
+// on the ORIGINAL doc (with outcomeBy/At stamps) rather than superseding it,
+// because nothing is being corrected. Once set, changes go through the amend
+// flow like any other correction. Admin SDK only — the client update rule
+// stays `false`.
+// ---------------------------------------------------------------------------
+
+export type OutcomeFailureReason =
+  | 'not-found'
+  | 'forbidden'
+  | 'bad-status'
+  | 'superseded'
+  | 'already-recorded'
+  | 'missing-outcome';
+
+export interface OutcomeResult {
+  ok: boolean;
+  reason?: OutcomeFailureReason;
+  message?: string;
+}
+
+/**
+ * Record the result of a given PRN dose. Permission mirrors the amend flow: the
+ * documenting nurse may complete her own entry; an RN / supervisor / admin may
+ * complete any. Write-once: fails with 'already-recorded' when an outcome
+ * already exists (use the amend flow to change one).
+ */
+export async function recordPrnOutcome(
+  adminId: string,
+  outcomeInput: string,
+  caller: AuthedCaller,
+): Promise<OutcomeResult> {
+  const outcome = String(outcomeInput || '').trim();
+  if (!outcome) {
+    return { ok: false, reason: 'missing-outcome', message: 'Describe the result of the dose.' };
+  }
+
+  const col = adminDb().collection('marAdministrations');
+  const ref = col.doc(adminId);
+  const snap = await ref.get();
+  if (!snap.exists) {
+    return { ok: false, reason: 'not-found', message: 'That administration was not found.' };
+  }
+  const orig = snap.data() || {};
+
+  const isReviewer =
+    caller.role === 'admin' || caller.role === 'supervisor' || caller.profile.credential === 'RN';
+  const isOwner = String(orig.documentedBy || '') === caller.uid;
+  if (!isReviewer && !isOwner) {
+    return {
+      ok: false,
+      reason: 'forbidden',
+      message: 'Only the documenting nurse or an RN, supervisor, or admin can record the result.',
+    };
+  }
+
+  if (orig.status !== 'given' || String(orig.scheduledTime || '') !== 'PRN') {
+    return { ok: false, reason: 'bad-status', message: 'Results are recorded on given PRN doses.' };
+  }
+
+  // Transactional re-checks: still un-amended and still without an outcome, so a
+  // concurrent amend or a double-submit can't produce two competing results.
+  const failure = await adminDb().runTransaction(async (tx): Promise<OutcomeFailureReason | null> => {
+    const [fresh, amended] = await Promise.all([
+      tx.get(ref),
+      tx.get(col.where('amends', '==', adminId).limit(1)),
+    ]);
+    if (!fresh.exists) return 'not-found';
+    if (!amended.empty) return 'superseded';
+    if (String((fresh.data() || {}).outcome || '').trim()) return 'already-recorded';
+    tx.update(ref, {
+      outcome,
+      outcomeBy: caller.uid,
+      outcomeByName: caller.profile.displayName || caller.email || '',
+      outcomeAt: FieldValue.serverTimestamp(),
+    });
+    return null;
+  });
+
+  if (failure === 'superseded') {
+    return {
+      ok: false,
+      reason: 'superseded',
+      message: 'This entry was amended. Record the result on the current entry.',
+    };
+  }
+  if (failure === 'already-recorded') {
+    return {
+      ok: false,
+      reason: 'already-recorded',
+      message: 'A result is already recorded. Use the amend flow to change it.',
+    };
+  }
+  if (failure === 'not-found') {
+    return { ok: false, reason: 'not-found', message: 'That administration was not found.' };
+  }
+  return { ok: true };
 }
 
 /** Mark an applied change as reviewed (RN acknowledgment; no approval). */

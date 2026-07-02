@@ -205,6 +205,15 @@ export interface MarAdministration {
   actualTime: string;
   initials: string;
   reason: string; // why held / refused, and why-given for a PRN dose
+  // PRN effectiveness follow-up ("what happened" after the dose): the third leg
+  // of the why-given -> given -> result loop. Empty until recorded. Write-once
+  // via /api/mar/outcome when charted from the grid (corrections go through the
+  // amend flow); outcomeBy/At stamp who recorded it and when, since that can be
+  // a later visit than the dose itself.
+  outcome?: string;
+  outcomeBy?: string;
+  outcomeByName?: string;
+  outcomeAt?: unknown;
   sourceNoteId: string; // the progress note this was documented on
   documentedBy: string; // signed-in RN/LPN who recorded it
   documentedByName: string;
@@ -235,6 +244,7 @@ export interface MarAdministrationDraft {
   reason: string;
   isPRN: boolean; // a PRN given dose keeps its reason (why it was given)
   indication: string; // the order's standing indication, snapshotted
+  outcome?: string; // PRN effectiveness/result, when known at write time
 }
 
 export interface MarDocumenter {

@@ -85,6 +85,35 @@ describe('buildMarAdminFields', () => {
     expect(fam.administeredByType).toBe('family');
     expect(fam.administratorName).toBe('Jane Doe');
   });
+
+  it('keeps the outcome (trimmed) only for a GIVEN PRN dose', () => {
+    const prn = buildMarAdminFields(
+      input({ scheduledTime: 'PRN', isPRN: true, reason: 'pain 6/10', outcome: '  pain 2/10 after 45 min ' }),
+      meta,
+    );
+    expect(prn.outcome).toBe('pain 2/10 after 45 min');
+  });
+
+  it('blanks the outcome for scheduled given, held, and refused doses', () => {
+    expect(buildMarAdminFields(input({ outcome: 'x' }), meta).outcome).toBe('');
+    expect(
+      buildMarAdminFields(
+        input({ scheduledTime: 'PRN', isPRN: true, status: 'held', reason: 'asleep', outcome: 'x' }),
+        meta,
+      ).outcome,
+    ).toBe('');
+    expect(
+      buildMarAdminFields(
+        input({ scheduledTime: 'PRN', isPRN: true, status: 'refused', reason: 'declined', outcome: 'x' }),
+        meta,
+      ).outcome,
+    ).toBe('');
+  });
+
+  it('a given PRN dose with no outcome yet stores an empty string (result pending), never undefined', () => {
+    const f = buildMarAdminFields(input({ scheduledTime: 'PRN', isPRN: true, reason: 'pain' }), meta);
+    expect(f.outcome).toBe('');
+  });
 });
 
 describe('compareMarOrders', () => {

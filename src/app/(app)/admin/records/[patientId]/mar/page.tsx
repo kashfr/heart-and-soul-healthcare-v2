@@ -24,6 +24,7 @@ import { compareMarOrders, resolveCurrentAdministrations } from '@/lib/marShared
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import AdministerDoseModal from './AdministerDoseModal';
 import ManageMedsModal from './ManageMedsModal';
+import RecordOutcomeModal from './RecordOutcomeModal';
 import MedChart from '@/app/(marketing)/progress-note/components/MedChart';
 
 const ADMIN_BY_LABELS: Record<string, string> = {
@@ -133,6 +134,8 @@ export default function MonthlyMarPage() {
   const [chartDay, setChartDay] = useState<string | null>(null);
   // The add / change / discontinue medication modal (applies immediately).
   const [manageMeds, setManageMeds] = useState(false);
+  // A given PRN dose whose result is being recorded after the fact.
+  const [outcomeFor, setOutcomeFor] = useState<MarAdministration | null>(null);
   // Narrow screens render a 3-day window instead of the full month (a month-wide
   // grid is unusable on a phone). Tracked in JS because we limit the rendered
   // day columns, not just hide them.
@@ -296,8 +299,13 @@ export default function MonthlyMarPage() {
       `By ${who}`,
     ];
     if (a.reason) bits.push(`Reason: ${a.reason}`);
+    if (a.outcome) bits.push(`Result: ${a.outcome}`);
     return bits.join(' · ');
   };
+
+  // A given PRN dose is complete only once its result is documented.
+  const resultPending = (a: MarAdministration): boolean =>
+    a.status === 'given' && a.scheduledTime === 'PRN' && !(a.outcome || '').trim();
 
   return (
     <div style={containerStyle}>
@@ -524,6 +532,7 @@ export default function MonthlyMarPage() {
                         <th style={logThStyle}>Status</th>
                         <th style={logThStyle}>Administered by</th>
                         <th style={logThStyle}>Reason / note</th>
+                        <th style={logThStyle}>Result</th>
                         <th style={logThStyle}>Initials</th>
                       </tr>
                     </thead>
@@ -556,6 +565,26 @@ export default function MonthlyMarPage() {
                               : a.documentedByName || 'Nurse'}
                           </td>
                           <td style={logTdStyle}>{a.reason || '-'}</td>
+                          <td style={logTdStyle}>
+                            {(a.outcome || '').trim() ? (
+                              a.outcome
+                            ) : resultPending(a) ? (
+                              canAdminister ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setOutcomeFor(a)}
+                                  style={resultPendingBtnStyle}
+                                  title="Record what happened after this PRN dose"
+                                >
+                                  Result pending — record
+                                </button>
+                              ) : (
+                                <span style={resultPendingChipStyle}>Result pending</span>
+                              )
+                            ) : (
+                              '-'
+                            )}
+                          </td>
                           <td style={logTdStyle}>{a.initials || '-'}</td>
                         </tr>
                       ))}
@@ -601,6 +630,18 @@ export default function MonthlyMarPage() {
         />
       )}
 
+      {outcomeFor && (
+        <RecordOutcomeModal
+          admin={outcomeFor}
+          onClose={() => setOutcomeFor(null)}
+          onSaved={() => {
+            setToast('Result recorded.');
+            setTimeout(() => setToast(null), 3000);
+            void refreshAdmins();
+          }}
+        />
+      )}
+
       {manageMeds && patient && (
         <ManageMedsModal
           patientId={patientId}
@@ -619,6 +660,24 @@ export default function MonthlyMarPage() {
 }
 
 const clickableCellStyle: React.CSSProperties = { cursor: 'pointer' };
+
+const resultPendingChipStyle: React.CSSProperties = {
+  display: 'inline-block',
+  padding: '2px 8px',
+  borderRadius: 999,
+  background: '#fff7e6',
+  border: '1px solid #f5d9a8',
+  color: '#8a5a0d',
+  fontSize: 11.5,
+  fontWeight: 700,
+  whiteSpace: 'nowrap',
+};
+
+const resultPendingBtnStyle: React.CSSProperties = {
+  ...resultPendingChipStyle,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
 
 const manageBtnStyle: React.CSSProperties = {
   display: 'inline-flex',

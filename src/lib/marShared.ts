@@ -44,6 +44,9 @@ export interface MarAdminFieldInput {
   reason: string;
   isPRN?: boolean;
   indication?: string;
+  // The PRN effectiveness follow-up ("what happened"): pain 6/10 to 2/10, fever
+  // down, etc. Meaningful only for a GIVEN PRN dose; blanked otherwise.
+  outcome?: string;
 }
 
 export interface MarAdminFieldMeta {
@@ -63,6 +66,9 @@ export interface MarAdminFieldMeta {
  *    why-given note for a PRN ("as needed") dose; only a SCHEDULED given dose
  *    carries no reason. (Earlier this blanked the reason for every 'given',
  *    which silently dropped a PRN dose's clinical indication.)
+ *  - outcome (the PRN effectiveness follow-up) is kept only for a GIVEN PRN
+ *    dose — the "why given -> given -> what happened" loop. It may be empty at
+ *    write time (recorded later via /api/mar/outcome for grid-charted doses).
  *  - the order's standing indication is snapshotted onto the record.
  */
 export function buildMarAdminFields(r: MarAdminFieldInput, meta: MarAdminFieldMeta) {
@@ -78,12 +84,17 @@ export function buildMarAdminFields(r: MarAdminFieldInput, meta: MarAdminFieldMe
     indicationSnapshot: (r.indication || '').trim(),
     date: meta.date,
     scheduledTime: r.scheduledTime,
+    // Persisted so later flows (amend rebuilds, displays) can tell an
+    // as-needed dose from a scheduled one without re-deriving it from the slot
+    // — an unscheduled one-off PRN dose has scheduledTime 'unscheduled'.
+    isPRN,
     status: r.status,
     administeredByType: r.administeredByType || 'nurse',
     administratorName: isNurse ? '' : r.administratorName.trim(),
     actualTime: r.status === 'given' ? r.actualTime : '',
     initials: r.initials.trim(),
     reason: r.status === 'given' && !isPRN ? '' : r.reason.trim(),
+    outcome: r.status === 'given' && isPRN ? (r.outcome || '').trim() : '',
     sourceNoteId: meta.sourceNoteId,
     documentedBy: meta.documenter.uid,
     documentedByName: meta.documenter.name,

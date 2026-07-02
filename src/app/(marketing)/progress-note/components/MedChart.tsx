@@ -73,6 +73,11 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
   const [amendStatus, setAmendStatus] = useState<'given' | 'held' | 'refused'>('given');
   const [amendTime, setAmendTime] = useState('');
   const [amendReason, setAmendReason] = useState('');
+  const [amendOutcome, setAmendOutcome] = useState('');
+  // Baseline the outcome loaded into the form, so we only SEND it when the
+  // amender actually edited it — an untouched (possibly stale) value must not
+  // overwrite a result recorded concurrently via /api/mar/outcome.
+  const [amendOutcomeOrig, setAmendOutcomeOrig] = useState('');
   const [amendWhy, setAmendWhy] = useState('');
   const [amendBusy, setAmendBusy] = useState(false);
   const [amendError, setAmendError] = useState<string | null>(null);
@@ -195,6 +200,8 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
     setAmendStatus(a.status);
     setAmendTime(a.status === 'given' ? a.actualTime || '' : '');
     setAmendReason(a.reason || '');
+    setAmendOutcome(a.outcome || '');
+    setAmendOutcomeOrig(a.outcome || '');
     setAmendWhy('');
     setAmendError(null);
   };
@@ -216,6 +223,15 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
           status: amendStatus,
           actualTime: amendStatus === 'given' ? amendTime : '',
           reason: amendReason,
+          // Send the outcome only when the amender actually CHANGED it in a
+          // given-PRN correction; otherwise omit it so the server carries the
+          // freshest stored value forward (and blanks it for non-given). PRN-ish
+          // covers unscheduled one-off doses documented as PRN.
+          ...(amendStatus === 'given' &&
+          (a.scheduledTime === 'PRN' || a.scheduledTime === 'unscheduled') &&
+          amendOutcome !== amendOutcomeOrig
+            ? { outcome: amendOutcome }
+            : {}),
           amendmentReason: amendWhy.trim(),
         }),
       });
@@ -258,6 +274,16 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
           {a.status === 'given' && a.reason ? ` · for ${a.reason}` : ''}
           {a.administeredByType !== 'nurse' && a.documentedByName ? ` · documented by ${a.documentedByName}` : ''}
         </div>
+        {/* Result line whenever a given dose HAS one (matches the grid + PDF);
+            the pending nag stays scoped to true PRN slots. */}
+        {a.status === 'given' && (a.outcome || '').trim() ? (
+          <div style={outcomeLine}>
+            Result: {a.outcome}
+            {a.outcomeByName ? ` (recorded by ${a.outcomeByName})` : ''}
+          </div>
+        ) : a.status === 'given' && a.scheduledTime === 'PRN' ? (
+          <span style={outcomePendingChip}>Result pending</span>
+        ) : null}
         {prev && (
           <div style={amendedNote}>
             Corrected from &ldquo;{statusLabel(prev.status)}&rdquo;
@@ -302,6 +328,18 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
                   placeholder={
                     amendStatus === 'refused' ? 'Reason for refusal' : amendStatus === 'held' ? 'Reason held' : 'Why this PRN dose was given'
                   }
+                />
+              </label>
+            )}
+            {amendStatus === 'given' && (a.scheduledTime === 'PRN' || a.scheduledTime === 'unscheduled') && (
+              <label style={amendField}>
+                <span style={amendFieldLabel}>Outcome / result</span>
+                <input
+                  type="text"
+                  value={amendOutcome}
+                  onChange={(e) => setAmendOutcome(e.target.value)}
+                  style={amendInput}
+                  placeholder="e.g., pain decreased from 6/10 to 2/10 within 45 min"
                 />
               </label>
             )}
@@ -508,6 +546,18 @@ const timelineDate: CSSProperties = { fontSize: 12.5, color: '#5c6b7a', fontWeig
 const timelineEmpty: CSSProperties = { fontSize: 13, color: '#7f8c8d', padding: '6px 0' };
 const amendedTag: CSSProperties = { display: 'inline-block', marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#6b21a8', background: '#f3e8ff', border: '1px solid #e0c8f5', padding: '1px 7px', borderRadius: 999, verticalAlign: 'middle' };
 const amendedNote: CSSProperties = { fontSize: 12, color: '#6b21a8', marginTop: 4, lineHeight: 1.4 };
+const outcomeLine: CSSProperties = { fontSize: 12, color: '#2a7a2a', marginTop: 4, lineHeight: 1.4 };
+const outcomePendingChip: CSSProperties = {
+  display: 'inline-block',
+  marginTop: 4,
+  padding: '1px 8px',
+  borderRadius: 999,
+  background: '#fff7e6',
+  border: '1px solid #f5d9a8',
+  color: '#8a5a0d',
+  fontSize: 11,
+  fontWeight: 700,
+};
 const amendBtn: CSSProperties = { marginTop: 8, background: 'white', color: '#1a3a5c', border: '1px solid #c8def5', padding: '6px 12px', borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const amendBox: CSSProperties = { marginTop: 10, background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 10, padding: 12 };
 const amendTitle: CSSProperties = { fontSize: 13, fontWeight: 700, color: '#1f2937', marginBottom: 8 };

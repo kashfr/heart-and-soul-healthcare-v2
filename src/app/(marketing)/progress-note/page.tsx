@@ -1108,6 +1108,43 @@ function ProgressNotePageInner() {
       }
     }
 
+    // MAR dose marks: enforced from the STORE, not the DOM, because a marked
+    // card can be collapsed/unmounted (the completed-doses section) or resumed
+    // from a draft without ever mounting — the required-input scan can't see
+    // those. A held/refused dose must say why; a given PRN ("as needed") dose
+    // must record why it was given and what happened (the effectiveness
+    // follow-up). Same mark selection the submit write uses, so anything this
+    // passes is exactly what gets written.
+    if (activePages.includes(5)) {
+      const marPid = String(getValues('patientId') || '').trim();
+      const incomplete: string[] = [];
+      if (marPid) {
+        for (const m of selectSubmittableMarks(getAllMarAdmin(), {
+          patientId: marPid,
+          sessionId: submissionIdRef.current,
+        })) {
+          const med = m.medName || 'a medication';
+          const isPrnMark = m.isPRN || m.scheduledTime === 'PRN';
+          if ((m.status === 'held' || m.status === 'refused') && !(m.reason || '').trim()) {
+            incomplete.push(`${med}: reason it was ${m.status}`);
+          } else if (m.status === 'given' && isPrnMark) {
+            if (!(m.reason || '').trim()) incomplete.push(`${med}: reason the PRN dose was given`);
+            if (!(m.outcome || '').trim()) incomplete.push(`${med}: outcome / result of the PRN dose`);
+          }
+        }
+      }
+      if (incomplete.length > 0) {
+        setCurrentPage(5);
+        window.scrollTo(0, 0);
+        alert(
+          `Please complete the medication documentation before submitting:\n\n${incomplete
+            .map((m) => `• ${m}`)
+            .join('\n')}\n\n(Expand "scheduled doses documented today" on the Medications page if a dose is collapsed.)`
+        );
+        return;
+      }
+    }
+
     // Validate signature first (stored via react-hook-form setValue)
     const signatureValue = getValues('q61_signature');
     if (!signatureValue || signatureValue.trim() === '') {
@@ -1357,6 +1394,7 @@ function ProgressNotePageInner() {
             reason: r.reason,
             isPRN: r.isPRN,
             indication: r.indication || '',
+            outcome: r.outcome || '',
           }));
           if (marPid && marRecords.length > 0) {
             try {
