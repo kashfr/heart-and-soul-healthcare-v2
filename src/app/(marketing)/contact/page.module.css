@@ -1,5 +1,5 @@
 .contactPage {
-  padding-top: 120px;
+  padding-top: var(--header-offset);
 }
 
 /* Page Header (slim hero) */
@@ -265,10 +265,6 @@
 }
 
 @media (max-width: 768px) {
-  .contactPage {
-    padding-top: 80px;
-  }
-
   .infoGrid {
     grid-template-columns: 1fr;
     max-width: 400px;

@@ -1,5 +1,5 @@
 .postPage {
-  padding-top: 120px;
+  padding-top: var(--header-offset);
 }
 
 /* Breadcrumb */
@@ -158,10 +158,6 @@
 }
 
 @media (max-width: 768px) {
-  .postPage {
-    padding-top: 80px;
-  }
-
   .postMeta {
     flex-direction: column;
     align-items: center;
