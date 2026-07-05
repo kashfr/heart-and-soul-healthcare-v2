@@ -1,5 +1,5 @@
 .aboutPage {
-  padding-top: 120px;
+  padding-top: var(--header-offset);
 }
 
 /* Page Header (slim hero) */
@@ -369,10 +369,6 @@
 }
 
 @media (max-width: 768px) {
-  .aboutPage {
-    padding-top: 80px;
-  }
-
   .valuesGrid {
     grid-template-columns: 1fr;
   }

@@ -1,5 +1,5 @@
 .referralPage {
-  padding-top: 120px;
+  padding-top: var(--header-offset);
 }
 
 /* Page Header (slim hero) */
@@ -519,10 +519,6 @@
 }
 
 @media (max-width: 768px) {
-  .referralPage {
-    padding-top: 80px;
-  }
-
   .trustGrid {
     flex-direction: column;
     align-items: center;

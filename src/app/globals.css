@@ -87,6 +87,9 @@
   /* Container */
   --container-max: 1280px;
   --container-padding: var(--space-6);
+
+  /* Space reserved for the fixed header (top bar + nav row) */
+  --header-offset: 120px;
 }
 
 /* Reset and Base Styles */
@@ -100,6 +103,7 @@
 
 html {
   scroll-behavior: smooth;
+  scroll-padding-top: var(--header-offset);
 }
 
 body {
@@ -461,6 +465,7 @@ button {
     --text-4xl: 1.75rem;
     --text-3xl: 1.375rem;
     --container-padding: var(--space-4);
+    --header-offset: 140px;
   }
 
   .section {
@@ -472,6 +477,7 @@ button {
   :root {
     --text-5xl: 1.75rem;
     --text-4xl: 1.5rem;
+    --header-offset: 150px;
   }
 }
 

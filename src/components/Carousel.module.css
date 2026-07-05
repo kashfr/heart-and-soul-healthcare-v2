@@ -6,7 +6,7 @@
   max-height: 800px;
   overflow: hidden;
   background-color: var(--color-gray-50);
-  padding-top: 120px;
+  padding-top: var(--header-offset);
 }
 
 .slidesContainer {
@@ -232,7 +232,6 @@
     min-height: auto;
     max-height: none;
     padding-bottom: var(--space-8);
-    padding-top: 140px;
   }
 
   .splitLayout {

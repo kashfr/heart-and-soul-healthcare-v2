@@ -1,5 +1,5 @@
 .otherPage {
-  padding-top: 120px;
+  padding-top: var(--header-offset);
 }
 
 /* Page Header (slim hero) */
@@ -214,10 +214,6 @@
 }
 
 @media (max-width: 768px) {
-  .otherPage {
-    padding-top: 80px;
-  }
-
   .heroContent {
     padding: var(--space-8) 0 var(--space-10);
   }
