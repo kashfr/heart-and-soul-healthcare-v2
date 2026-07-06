@@ -19,6 +19,7 @@ import { hasAnyAbnormalVital, type VitalRangesOverride } from './vitalRanges';
 import { hasCriticalVital } from './criticalVitals';
 import { normalizeName } from './levenshtein';
 import { noteIsActiveDuplicate } from './duplicateMatch';
+import { normalizeDateISO, sortNotesDesc, type DashboardNote } from './clientDashboardShared';
 
 /**
  * All form fields from the 7-page progress note form.
@@ -801,3 +802,48 @@ function formatDateUS(dateStr: string): string {
 // toProgressNoteData removed: ProgressNotePDF now reads raw form data
 // directly, so we don't need a pre-transform step. Batch export and the PDF
 // API route both pass ProgressNoteFormData straight to the renderer.
+
+/**
+ * All ACTIVE notes for one client, slimmed to the fields the client dashboard
+ * computes from (vitals, hours, timeliness, adverse reactions, care team,
+ * address fallback). Archived notes are excluded — they're corrections-of-record
+ * and would skew visit counts. A single equality query, so the care-team read
+ * rule covers nurses; sorted newest-first by date of service client-side.
+ */
+export async function getNotesForPatient(patientId: string): Promise<DashboardNote[]> {
+  try {
+    const q = query(collection(db, 'progressNotes'), where('patientId', '==', patientId));
+    const snap = await getDocs(q);
+    const notes: DashboardNote[] = [];
+    for (const d of snap.docs) {
+      const data = d.data();
+      if ((data.status as string) === 'archived' || data.archivedAt) continue;
+      const submittedAt = data.submittedAt as Timestamp | null;
+      notes.push({
+        id: d.id,
+        dateISO: normalizeDateISO((data.q6_dateofService as string) || ''),
+        submittedAt: submittedAt && typeof submittedAt.toDate === 'function' ? submittedAt.toDate() : null,
+        nurseId: (data.nurseId as string) || '',
+        nurseName: (data.q11_nurseName as string) || '',
+        credential: (data.q12_credential as string) || '',
+        totalHours: (data.q9_totalHours as string) || '',
+        temperature: (data.q16_temperature as string) || '',
+        bloodPressure: (data.q17_bloodPressure as string) || '',
+        pulse: (data.q18_pulse as string) || '',
+        respiration: (data.q19_respiration as string) || '',
+        oxygenSaturation: (data.q20_oxygenSaturation as string) || '',
+        painScore: (data.q24_painScore as string) || '',
+        medTolerance: (data.q43_medTolerance as string) || '',
+        physNotified: (data.q43_reactionPhysNotified as string) || '',
+        addrLine1: (data.q200_addr_line1 as string) || '',
+        city: (data.q200_city as string) || '',
+        state: (data.q200_state as string) || '',
+        postal: (data.q200_postal as string) || '',
+      });
+    }
+    return sortNotesDesc(notes);
+  } catch (error) {
+    console.error('Error fetching notes for patient:', error);
+    return [];
+  }
+}

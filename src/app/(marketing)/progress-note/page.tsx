@@ -31,6 +31,7 @@ import {
   marAdminSubscribe,
   type MarAdminRecord,
 } from './components/marAdminStore';
+import { isAdverseTolerance } from '@/lib/clientDashboardShared';
 import FormPageSix from './components/FormPageSix';
 import FormPageSeven from './components/FormPageSeven';
 
@@ -1073,11 +1074,12 @@ function ProgressNotePageInner() {
     // We enforce it here rather than via the DOM `required` scan because the
     // box is collapsible (display:none when collapsed hides the inputs from the
     // scan), and the reaction-type checkbox group + Physician Notified radio
-    // aren't native-required elements.
-    const ADVERSE_VALUE = 'Adverse reaction / intolerance — document below';
+    // aren't native-required elements. Prefix-matched via isAdverseTolerance:
+    // an exact match against one punctuation variant of the radio label went
+    // dead when the label changed (em dash -> semicolon, 2026-06-10).
     if (
       activePages.includes(5) &&
-      String(radioState['q43_medTolerance'] || '') === ADVERSE_VALUE
+      isAdverseTolerance(String(radioState['q43_medTolerance'] || ''))
     ) {
       const reactionMed = String(getValues('q43_reactionMed') || '').trim();
       const reactionDesc = String(getValues('q43_reactionDescription') || '').trim();

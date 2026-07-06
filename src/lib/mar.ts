@@ -57,6 +57,11 @@ export interface MarOrder {
   discontinuedBy?: string;
   discontinuedByName?: string;
   discontinueReason?: string;
+  // Med-change linkage, written by the apply flow: a change discontinues the
+  // old order (supersededByOrderId -> its replacement) and creates a new one
+  // (supersedesOrderId -> what it replaced) on the same effective date.
+  supersedesOrderId?: string;
+  supersededByOrderId?: string;
 }
 
 // Who is performing the write (stamped onto the doc for the audit trail).
