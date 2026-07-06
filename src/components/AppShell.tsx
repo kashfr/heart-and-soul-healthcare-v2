@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
+  HeartPulse,
   Users,
   ClipboardList,
   FileClock,
@@ -42,6 +43,9 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { href: '/admin', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
+  // Per-client dashboards for the whole care team: nurses see their assigned
+  // clients, staff see all. The client picker routes to /admin/clients/[id].
+  { href: '/admin/clients', label: 'Clients', icon: <HeartPulse size={18} />, allow: ['admin', 'supervisor', 'nurse'] },
   // Always-on MAR for nurses: their standalone way into the same grid supervisors
   // see via Records. Nurse-only here (staff reach the MAR through Records).
   { href: '/admin/mar', label: 'Medications', icon: <Tablets size={18} />, allow: ['nurse'] },
