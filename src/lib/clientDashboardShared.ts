@@ -356,6 +356,7 @@ export function vitalSeries(notes: DashboardNote[]): VitalPoint[] {
     if (
       p.temp !== undefined ||
       p.sys !== undefined ||
+      p.dia !== undefined ||
       p.pulse !== undefined ||
       p.resp !== undefined ||
       p.spo2 !== undefined ||

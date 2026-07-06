@@ -106,17 +106,20 @@ export default function ClientCharts({ notes, admins, dob, vitalsOverride }: Pro
             { low: ranges.diastolic.low, high: ranges.diastolic.high },
           ],
           unit: 'mmHg',
+          cap: undefined as number | undefined,
         };
       case 'pulse':
-        return { lines: [{ key: 'pulse', name: 'Pulse', color: NAVY }], bands: [{ low: ranges.pulse.low, high: ranges.pulse.high }], unit: 'bpm' };
+        return { lines: [{ key: 'pulse', name: 'Pulse', color: NAVY }], bands: [{ low: ranges.pulse.low, high: ranges.pulse.high }], unit: 'bpm', cap: undefined as number | undefined };
       case 'spo2':
-        return { lines: [{ key: 'spo2', name: 'SpO2', color: NAVY }], bands: [{ low: ranges.oxygenSaturation.low, high: ranges.oxygenSaturation.high }], unit: '%' };
+        // Hard axis cap: an SpO2 axis reading past 100% would display an
+        // impossible value range above the normal band.
+        return { lines: [{ key: 'spo2', name: 'SpO2', color: NAVY }], bands: [{ low: ranges.oxygenSaturation.low, high: ranges.oxygenSaturation.high }], unit: '%', cap: 100 as number | undefined };
       case 'temp':
-        return { lines: [{ key: 'temp', name: 'Temperature', color: NAVY }], bands: [{ low: ranges.temperature.low, high: ranges.temperature.high }], unit: '°F' };
+        return { lines: [{ key: 'temp', name: 'Temperature', color: NAVY }], bands: [{ low: ranges.temperature.low, high: ranges.temperature.high }], unit: '°F', cap: undefined as number | undefined };
       case 'resp':
-        return { lines: [{ key: 'resp', name: 'Respirations', color: NAVY }], bands: [{ low: ranges.respiration.low, high: ranges.respiration.high }], unit: '/min' };
+        return { lines: [{ key: 'resp', name: 'Respirations', color: NAVY }], bands: [{ low: ranges.respiration.low, high: ranges.respiration.high }], unit: '/min', cap: undefined as number | undefined };
       case 'pain':
-        return { lines: [{ key: 'pain', name: 'Pain score', color: AMBER }], bands: [], unit: '/10' };
+        return { lines: [{ key: 'pain', name: 'Pain score', color: AMBER }], bands: [], unit: '/10', cap: 10 as number | undefined };
     }
   }, [metric, ranges]);
 
@@ -156,10 +159,20 @@ export default function ClientCharts({ notes, admins, dob, vitalsOverride }: Pro
                   tick={{ fontSize: 11 }}
                   domain={[
                     (dataMin: number) => Math.floor(Math.min(dataMin, bandLow ?? dataMin) * 0.97),
-                    (dataMax: number) => Math.ceil(Math.max(dataMax, bandHigh ?? dataMax) * 1.03),
+                    (dataMax: number) => {
+                      const padded = Math.ceil(Math.max(dataMax, bandHigh ?? dataMax) * 1.03);
+                      return cfg.cap !== undefined ? Math.min(cfg.cap, padded) : padded;
+                    },
                   ]}
                 />
-                <Tooltip formatter={(v) => [`${v} ${cfg.unit}`, undefined]} labelStyle={{ fontSize: 12 }} itemStyle={{ fontSize: 12 }} />
+                {/* Pass the series name through, or recharts drops the label and a
+                    BP tooltip shows two unlabeled rows (systolic vs diastolic
+                    distinguishable only by color). Single-line charts stay name-less. */}
+                <Tooltip
+                  formatter={(v, name) => [`${v} ${cfg.unit}`, cfg.lines.length > 1 ? name : undefined]}
+                  labelStyle={{ fontSize: 12 }}
+                  itemStyle={{ fontSize: 12 }}
+                />
                 {cfg.lines.length > 1 && <Legend wrapperStyle={{ fontSize: 12 }} />}
                 {cfg.bands.map((b, i) => (
                   <ReferenceArea key={i} y1={b.low} y2={b.high} fill={BAND_FILL} fillOpacity={0.08} stroke={BAND_FILL} strokeOpacity={0.18} />
@@ -170,7 +183,12 @@ export default function ClientCharts({ notes, admins, dob, vitalsOverride }: Pro
               </LineChart>
             </ResponsiveContainer>
             {cfg.bands.length > 0 && (
-              <div style={bandNoteStyle}>Shaded band = normal range for this client&apos;s age group{vitalsOverride ? ' (agency thresholds applied)' : ''}.</div>
+              <div style={bandNoteStyle}>
+                Shaded band = normal range for this client&apos;s age group
+                {/* Default settings ship an EMPTY override object — truthiness
+                    alone would claim agency thresholds on every install. */}
+                {vitalsOverride && Object.keys(vitalsOverride).length > 0 ? ' (agency thresholds applied)' : ''}.
+              </div>
             )}
           </>
         )}

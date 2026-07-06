@@ -316,6 +316,13 @@ describe('vitalSeries', () => {
     expect(pts[0].temp).toBeUndefined(); // 9.86 out of bounds
     expect(pts[0].pulse).toBe(72);
   });
+
+  it('keeps a note whose ONLY plausible vital is the diastolic half of a BP reading', () => {
+    const pts = vitalSeries([note({ id: 'a', dateISO: '2026-07-01', bloodPressure: '300/80' })]);
+    expect(pts).toHaveLength(1);
+    expect(pts[0].sys).toBeUndefined();
+    expect(pts[0].dia).toBe(80);
+  });
 });
 
 describe('weeklyMedBuckets', () => {
