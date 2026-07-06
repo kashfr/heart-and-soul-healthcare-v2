@@ -17,16 +17,19 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { AuthGuard } from '@/components/AuthGuard';
-import { useEffectiveUser } from '@/components/AuthProvider';
+import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
 import { getPatient, getPatientClinical, type Patient, type PatientClinical } from '@/lib/patients';
 import { getMarOrders, getAdministrationsForRange, type MarOrder, type MarAdministration } from '@/lib/mar';
 import { getNotesForPatient } from '@/lib/submissions';
+import { getPatientDocuments, type PatientDocument } from '@/lib/patientDocuments';
+import DocumentsSection from './DocumentsSection';
 import {
   adverseEvents,
   ageYears,
   careTeamFromNotes,
   currentAdmins,
+  documentCurrency,
   largestGapDays,
   marComplianceStats,
   notesInWindow,
@@ -41,6 +44,12 @@ const ClientCharts = dynamic(() => import('./ClientCharts'), {
   ssr: false,
   loading: () => <div style={{ padding: '24px 0', color: '#7f8c8d', fontSize: 13, textAlign: 'center' }}>Loading charts…</div>,
 });
+
+// Survey-readiness baselines for document currency. Georgia intervals vary by
+// service line, so these are STARTING points the compliance nurse will tune:
+// RN supervisory visits monthly, plan of care per 60-day cert period.
+const SUPERVISORY_MAX_DAYS = 30;
+const POC_MAX_DAYS = 60;
 
 function todayISO(): string {
   const d = new Date();
@@ -90,13 +99,26 @@ function ClientDashboardInner() {
   const { uid, role } = useEffectiveUser();
   const isNurse = role === 'nurse';
   const { settings } = useSettings();
+  // Writes (upload/archive) always act as the REAL signed-in user — the
+  // Firestore create rule pins uploadedBy to auth.uid, so a view-as session
+  // can't forge authorship.
+  const { user, profile } = useAuth();
+  const realRole = profile?.role || '';
+  const realStaff = realRole === 'admin' || realRole === 'supervisor';
 
   const [patient, setPatient] = useState<Patient | null>(null);
   const [clinical, setClinical] = useState<PatientClinical | null>(null);
   const [orders, setOrders] = useState<MarOrder[]>([]);
   const [admins, setAdmins] = useState<MarAdministration[]>([]);
   const [notes, setNotes] = useState<DashboardNote[]>([]);
+  const [documents, setDocuments] = useState<PatientDocument[]>([]);
   const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3200);
+  };
 
   const today = todayISO();
   const start90 = shiftISO(today, -89);
@@ -112,13 +134,15 @@ function ClientDashboardInner() {
     setOrders([]);
     setAdmins([]);
     setNotes([]);
+    setDocuments([]);
     (async () => {
-      const [p, c, o, a, n] = await Promise.all([
+      const [p, c, o, a, n, docs] = await Promise.all([
         getPatient(patientId),
         getPatientClinical(patientId),
         getMarOrders(patientId),
         getAdministrationsForRange(patientId, start90, today),
         getNotesForPatient(patientId),
+        getPatientDocuments(patientId),
       ]);
       if (cancelled) return;
       setPatient(p);
@@ -126,6 +150,7 @@ function ClientDashboardInner() {
       setOrders(o);
       setAdmins(a);
       setNotes(n);
+      setDocuments(docs);
       setLoading(false);
     })();
     return () => {
@@ -151,6 +176,23 @@ function ClientDashboardInner() {
   const gap = useMemo(() => largestGapDays(notes, start90, today), [notes, start90, today]);
   const adverse = useMemo(() => adverseEvents(notes90), [notes90]);
   const team = useMemo(() => careTeamFromNotes(notes), [notes]);
+
+  // Document-driven currency tiles (baseline intervals; tune with the
+  // compliance nurse). Keyed on the docDate the uploader entered.
+  const supCurrency = useMemo(
+    () => documentCurrency(documents, 'Supervisory Visit', SUPERVISORY_MAX_DAYS, today),
+    [documents, today],
+  );
+  const pocCurrency = useMemo(
+    () => documentCurrency(documents, 'Plan of Care (485)', POC_MAX_DAYS, today),
+    [documents, today],
+  );
+
+  // Upload rights: staff, or a nurse on THIS client's care team (real user —
+  // the create rules verify the same thing server-side).
+  const canUploadDocs =
+    realStaff ||
+    (realRole === 'nurse' && !!user?.uid && (patient?.assignedNurseIds || []).includes(user.uid));
 
   const address = useMemo(() => {
     const fromProfile = [patient?.street, patient?.city, patient?.state, patient?.zip].filter(Boolean).join(', ');
@@ -369,20 +411,58 @@ function ClientDashboardInner() {
                 }
               />
               <ReadinessCard
-                signal="none"
+                signal={supCurrency.status}
                 title="Supervisory visits"
-                value="Not tracked yet"
-                detail="Activates with document uploads / scheduled visits"
+                value={
+                  supCurrency.status === 'none'
+                    ? 'No visit form on file'
+                    : `Last visit ${supCurrency.daysSince}d ago`
+                }
+                detail={
+                  supCurrency.status === 'none'
+                    ? 'Upload supervisory visit forms to track (30-day baseline)'
+                    : `${fmtDate(supCurrency.newestDateISO)} · due every ${SUPERVISORY_MAX_DAYS}d (baseline)`
+                }
                 icon={<CalendarClock size={14} />}
               />
               <ReadinessCard
-                signal="none"
+                signal={pocCurrency.status}
                 title="Plan of care currency"
-                value="Not tracked yet"
-                detail="Activates with document uploads"
+                value={
+                  pocCurrency.status === 'none'
+                    ? 'No plan of care on file'
+                    : `Current plan ${pocCurrency.daysSince}d old`
+                }
+                detail={
+                  pocCurrency.status === 'none'
+                    ? 'Upload the plan of care (485) to track (60-day baseline)'
+                    : `${fmtDate(pocCurrency.newestDateISO)} · ${POC_MAX_DAYS}d cert period (baseline)`
+                }
                 icon={<FolderOpen size={14} />}
               />
             </div>
+          </section>
+
+          {/* Documents */}
+          <section style={sectionCardStyle}>
+            <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
+              <FolderOpen size={16} /> Documents
+            </div>
+            <DocumentsSection
+              patientId={patientId}
+              documents={documents}
+              canUpload={canUploadDocs}
+              isStaff={realStaff}
+              uploader={{
+                uid: user?.uid || '',
+                name: profile?.displayName || user?.email || '',
+                role: realRole,
+              }}
+              onChanged={() => {
+                void getPatientDocuments(patientId).then(setDocuments);
+              }}
+              onToast={showToast}
+            />
           </section>
 
           {/* Recent activity */}
@@ -410,6 +490,8 @@ function ClientDashboardInner() {
           </section>
         </>
       )}
+
+      {toast && <div style={toastStyle}>{toast}</div>}
     </div>
   );
 }
@@ -517,6 +599,20 @@ const emptyInlineStyle: React.CSSProperties = { padding: '18px 0 6px', color: '#
 const activityListStyle: React.CSSProperties = { listStyle: 'none', margin: '12px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 8 };
 const activityRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13.5, color: '#2c3e50', lineHeight: 1.4 };
 const activityWhenStyle: React.CSSProperties = { fontSize: 12, color: '#8a949e', whiteSpace: 'nowrap' };
+const toastStyle: React.CSSProperties = {
+  position: 'fixed',
+  bottom: 24,
+  left: '50%',
+  transform: 'translateX(-50%)',
+  background: '#1f2937',
+  color: 'white',
+  padding: '10px 18px',
+  borderRadius: 8,
+  fontSize: 13.5,
+  fontWeight: 600,
+  boxShadow: '0 6px 24px rgba(0,0,0,0.25)',
+  zIndex: 3300,
+};
 
 function activityIconStyle(kind: 'note' | 'med' | 'dose'): React.CSSProperties {
   const palette =

@@ -5,6 +5,7 @@ import {
   ageYears,
   careTeamFromNotes,
   daysBetweenISO,
+  documentCurrency,
   largestGapDays,
   marComplianceStats,
   normalizeDateISO,
@@ -342,5 +343,44 @@ describe('weeklyMedBuckets', () => {
     expect(weeks[2].held).toBe(1);
     expect(weeks[1].refused).toBe(1);
     expect(weeks[0].given + weeks[0].held + weeks[0].refused).toBe(0);
+  });
+});
+
+describe('documentCurrency', () => {
+  const docs = [
+    { id: 'a', category: 'Supervisory Visit', docDate: '2026-06-20', archived: false },
+    { id: 'b', category: 'Supervisory Visit', docDate: '2026-05-01', archived: false },
+    { id: 'c', category: 'Plan of Care (485)', docDate: '2026-05-10', archived: false },
+  ];
+
+  it('grades the NEWEST non-archived document in the category', () => {
+    // newest supervisory = 6/20; 14 days before 7/4 → good at 30d
+    const c = documentCurrency(docs, 'Supervisory Visit', 30, '2026-07-04');
+    expect(c.status).toBe('good');
+    expect(c.daysSince).toBe(14);
+    expect(c.newestDateISO).toBe('2026-06-20');
+  });
+
+  it('warns inside the 25% grace window and goes bad beyond it', () => {
+    // POC 5/10 → 55d at 7/4: good at 60d; warn at 61-75; bad past 75
+    expect(documentCurrency(docs, 'Plan of Care (485)', 60, '2026-07-04').status).toBe('good');
+    expect(documentCurrency(docs, 'Plan of Care (485)', 60, '2026-07-15').status).toBe('warn');
+    expect(documentCurrency(docs, 'Plan of Care (485)', 60, '2026-08-01').status).toBe('bad');
+  });
+
+  it('ignores archived documents and returns none when nothing qualifies', () => {
+    const archivedOnly = [{ id: 'x', category: 'Supervisory Visit', docDate: '2026-06-20', archived: true }];
+    expect(documentCurrency(archivedOnly, 'Supervisory Visit', 30, '2026-07-04').status).toBe('none');
+    expect(documentCurrency([], 'Plan of Care (485)', 60, '2026-07-04').status).toBe('none');
+    expect(documentCurrency(docs, 'Initial Assessment', 30, '2026-07-04').daysSince).toBeNull();
+  });
+
+  it('clamps a future-dated document to 0 days and skips junk dates', () => {
+    const future = [{ id: 'f', category: 'Plan of Care (485)', docDate: '2026-08-01', archived: false }];
+    const c = documentCurrency(future, 'Plan of Care (485)', 60, '2026-07-04');
+    expect(c.status).toBe('good');
+    expect(c.daysSince).toBe(0);
+    const junk = [{ id: 'j', category: 'Plan of Care (485)', docDate: 'soon', archived: false }];
+    expect(documentCurrency(junk, 'Plan of Care (485)', 60, '2026-07-04').status).toBe('none');
   });
 });

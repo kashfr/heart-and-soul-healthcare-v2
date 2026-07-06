@@ -1,0 +1,46 @@
+rules_version = '2';
+
+// Client-document files. Mirrors the Firestore care-team scoping via
+// cross-service firestore.get() lookups (users/{uid} for role+active,
+// patients/{patientId} for assignedNurseIds) — at most 2 distinct reads per
+// evaluation, within the cross-service call limit. Files are IMMUTABLE once
+// uploaded: no overwrite, no delete (archiving happens on the Firestore
+// metadata doc; the file stays for the compliance record).
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function userDoc() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isActiveStaff() {
+      return request.auth != null
+        && userDoc().get('active', false) == true
+        && userDoc().get('role', '') in ['admin', 'supervisor'];
+    }
+
+    function isAssignedNurse(patientId) {
+      return request.auth != null
+        && userDoc().get('active', false) == true
+        && userDoc().get('role', '') == 'nurse'
+        && firestore.get(/databases/(default)/documents/patients/$(patientId))
+             .data.get('assignedNurseIds', []).hasAny([request.auth.uid]);
+    }
+
+    match /patients/{patientId}/documents/{docId}/{fileName} {
+      allow read: if isActiveStaff() || isAssignedNurse(patientId);
+      allow create: if (isActiveStaff() || isAssignedNurse(patientId))
+        && request.resource.size < 20 * 1024 * 1024
+        && request.resource.contentType.matches(
+             'application/pdf|image/jpeg|image/png|image/heic|application/msword|application/vnd\\.openxmlformats-officedocument\\.wordprocessingml\\.document'
+           );
+      allow update: if false; // files are immutable; corrections = new upload
+      allow delete: if false; // archive-only, on the metadata doc
+    }
+
+    // Default deny for everything else in the bucket.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
