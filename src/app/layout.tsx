@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
-import Script from "next/script";
 import { AuthProvider } from "@/components/AuthProvider";
 import { ImpersonationProvider } from "@/components/ImpersonationProvider";
+import SiteAnalytics from "@/components/SiteAnalytics";
 import "./globals.css";
-
-const GA_MEASUREMENT_ID = "G-26HBSM36Q3";
 
 const siteUrl = "https://www.heartandsoulhc.org";
 
@@ -80,25 +78,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        <Script
-          src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}
-          strategy="afterInteractive"
-        />
-        <Script id="google-analytics" strategy="afterInteractive">
-          {`
-            window.dataLayer = window.dataLayer || [];
-            function gtag(){dataLayer.push(arguments);}
-            gtag('js', new Date());
-            gtag('config', '${GA_MEASUREMENT_ID}');
-          `}
-        </Script>
-      </head>
       <body suppressHydrationWarning>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
         />
+        {/* Google Analytics, scoped to public marketing pages only — it must
+            never load on PHI routes (GA is not a HIPAA-covered service). */}
+        <SiteAnalytics />
         <ImpersonationProvider>
           <AuthProvider>{children}</AuthProvider>
         </ImpersonationProvider>
