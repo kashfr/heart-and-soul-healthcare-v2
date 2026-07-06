@@ -8,7 +8,7 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
+import { getBlob, ref, uploadBytesResumable } from 'firebase/storage';
 import { db, storage } from './firebase';
 
 /**
@@ -151,9 +151,17 @@ export async function getPatientDocuments(patientId: string): Promise<PatientDoc
   }
 }
 
-/** Short-lived download URL for viewing a document (opens in a new tab). */
+/**
+ * Object URL for viewing a document in a new tab. Fetches the bytes UNDER the
+ * storage security rules (getBlob) instead of getDownloadURL — the latter
+ * mints a long-lived token URL that anyone holding the link could fetch, which
+ * is the wrong default for PHI. The returned blob: URL lives only in this
+ * browser session; callers may revoke it when done.
+ */
 export async function getDocumentUrl(d: PatientDocument): Promise<string> {
-  return getDownloadURL(ref(storage, d.storagePath));
+  const blob = await getBlob(ref(storage, d.storagePath));
+  // Re-type so the browser renders (e.g. PDF viewer) instead of downloading.
+  return URL.createObjectURL(new Blob([blob], { type: d.contentType || blob.type }));
 }
 
 /** Archive or restore a document (staff-only per rules). The FILE is never
