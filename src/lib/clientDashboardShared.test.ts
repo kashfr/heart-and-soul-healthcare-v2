@@ -12,7 +12,9 @@ import {
   shiftISO,
   sortNotesDesc,
   timelinessStats,
+  vitalSeries,
   weeklyBuckets,
+  weeklyMedBuckets,
   type DashboardNote,
   type DashAdmin,
   type DashOrder,
@@ -284,5 +286,54 @@ describe('weeklyBuckets / notesInWindow / sortNotesDesc', () => {
     const ns = [note({ id: 'a', dateISO: '2026-06-01' }), note({ id: 'b', dateISO: '2026-07-01' })];
     expect(notesInWindow(ns, '2026-06-15', '2026-07-15')).toHaveLength(1);
     expect(sortNotesDesc(ns)[0].id).toBe('b');
+  });
+});
+
+describe('vitalSeries', () => {
+  it('parses vitals, splits BP, and sorts oldest first', () => {
+    const pts = vitalSeries([
+      note({ id: 'b', dateISO: '2026-07-02', bloodPressure: '118/76', pulse: '72', oxygenSaturation: '98' }),
+      note({ id: 'a', dateISO: '2026-07-01', temperature: '98.6', painScore: '6' }),
+    ]);
+    expect(pts.map((p) => p.dateISO)).toEqual(['2026-07-01', '2026-07-02']);
+    expect(pts[0].temp).toBeCloseTo(98.6);
+    expect(pts[0].pain).toBe(6);
+    expect(pts[1].sys).toBe(118);
+    expect(pts[1].dia).toBe(76);
+    expect(pts[1].pulse).toBe(72);
+    expect(pts[1].spo2).toBe(98);
+  });
+
+  it('drops implausible values (typos) instead of charting them, and skips vital-less notes', () => {
+    const pts = vitalSeries([
+      note({ id: 'a', dateISO: '2026-07-01', bloodPressure: '980/60', temperature: '9.86', pulse: '72' }),
+      note({ id: 'b', dateISO: '2026-07-02' }), // no vitals at all
+      note({ id: 'c', dateISO: '', pulse: '80' }), // no date
+    ]);
+    expect(pts).toHaveLength(1);
+    expect(pts[0].sys).toBeUndefined(); // 980 out of bounds — dropped
+    expect(pts[0].dia).toBe(60); // the plausible half of the pair is kept
+    expect(pts[0].temp).toBeUndefined(); // 9.86 out of bounds
+    expect(pts[0].pulse).toBe(72);
+  });
+});
+
+describe('weeklyMedBuckets', () => {
+  it('buckets current administrations by week and resolves amendment chains', () => {
+    const admins: DashAdmin[] = [
+      { id: 'a1', orderId: 'o', date: '2026-06-29', scheduledTime: '08:00', status: 'given' },
+      { id: 'a2', orderId: 'o', date: '2026-06-30', scheduledTime: '08:00', status: 'given' },
+      // amended: original given, corrected to held — must count ONCE as held
+      { id: 'a3', orderId: 'o', date: '2026-07-01', scheduledTime: '08:00', status: 'given' },
+      { id: 'a4', amends: 'a3', orderId: 'o', date: '2026-07-01', scheduledTime: '08:00', status: 'held' },
+      { id: 'a5', orderId: 'o', date: '2026-06-22', scheduledTime: 'PRN', status: 'refused' },
+    ];
+    const weeks = weeklyMedBuckets(admins, 3, '2026-07-04');
+    expect(weeks).toHaveLength(3);
+    expect(weeks[2].weekStartISO).toBe('2026-06-29');
+    expect(weeks[2].given).toBe(2);
+    expect(weeks[2].held).toBe(1);
+    expect(weeks[1].refused).toBe(1);
+    expect(weeks[0].given + weeks[0].held + weeks[0].refused).toBe(0);
   });
 });

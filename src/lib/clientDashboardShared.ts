@@ -317,6 +317,87 @@ export function marComplianceStats(
 }
 
 // ---------------------------------------------------------------------------
+// Chart series (phase 2). Parsed, bounds-guarded points so a typo ("980/60",
+// "9.86") can't blow out a chart's axis; unparseable values are dropped, not
+// zeroed.
+// ---------------------------------------------------------------------------
+
+export interface VitalPoint {
+  dateISO: string;
+  temp?: number;
+  sys?: number;
+  dia?: number;
+  pulse?: number;
+  resp?: number;
+  spo2?: number;
+  pain?: number;
+}
+
+function inBounds(v: number, low: number, high: number): number | undefined {
+  return !isNaN(v) && v >= low && v <= high ? v : undefined;
+}
+
+/** One point per note carrying at least one plausible vital, oldest first. */
+export function vitalSeries(notes: DashboardNote[]): VitalPoint[] {
+  const points: VitalPoint[] = [];
+  for (const n of notes) {
+    if (!n.dateISO) continue;
+    const p: VitalPoint = { dateISO: n.dateISO };
+    p.temp = inBounds(parseFloat(n.temperature), 90, 110);
+    const bp = /^\s*(\d{2,3})\s*\/\s*(\d{2,3})\s*$/.exec(n.bloodPressure || '');
+    if (bp) {
+      p.sys = inBounds(Number(bp[1]), 50, 260);
+      p.dia = inBounds(Number(bp[2]), 20, 160);
+    }
+    p.pulse = inBounds(parseFloat(n.pulse), 20, 260);
+    p.resp = inBounds(parseFloat(n.respiration), 4, 80);
+    p.spo2 = inBounds(parseFloat(n.oxygenSaturation), 50, 100);
+    p.pain = inBounds(parseFloat(n.painScore), 0, 10);
+    if (
+      p.temp !== undefined ||
+      p.sys !== undefined ||
+      p.pulse !== undefined ||
+      p.resp !== undefined ||
+      p.spo2 !== undefined ||
+      p.pain !== undefined
+    ) {
+      points.push(p);
+    }
+  }
+  return points.sort((a, b) => a.dateISO.localeCompare(b.dateISO));
+}
+
+export interface MedWeekBucket {
+  weekStartISO: string;
+  given: number;
+  held: number;
+  refused: number;
+}
+
+/** Administrations per ISO week (current records only, scheduled + PRN),
+ *  trailing `weeks` weeks including empty ones — the med-administration chart. */
+export function weeklyMedBuckets(admins: DashAdmin[], weeks: number, todayISO: string): MedWeekBucket[] {
+  const thisMonday = mondayOf(todayISO);
+  const buckets: MedWeekBucket[] = [];
+  const index = new Map<string, MedWeekBucket>();
+  for (let i = weeks - 1; i >= 0; i -= 1) {
+    const weekStartISO = shiftISO(thisMonday, -7 * i);
+    const b = { weekStartISO, given: 0, held: 0, refused: 0 };
+    buckets.push(b);
+    index.set(weekStartISO, b);
+  }
+  for (const a of currentAdmins(admins)) {
+    if (!a.date) continue;
+    const b = index.get(mondayOf(a.date));
+    if (!b) continue;
+    if (a.status === 'given') b.given += 1;
+    else if (a.status === 'held') b.held += 1;
+    else if (a.status === 'refused') b.refused += 1;
+  }
+  return buckets;
+}
+
+// ---------------------------------------------------------------------------
 // Weekly buckets (visits + hours) — powers the tiles now and charts later.
 // ---------------------------------------------------------------------------
 
