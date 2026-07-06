@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import {
   ArrowLeft,
@@ -13,9 +14,11 @@ import {
   AlertTriangle,
   CalendarClock,
   FolderOpen,
+  TrendingUp,
 } from 'lucide-react';
 import { AuthGuard } from '@/components/AuthGuard';
 import { useEffectiveUser } from '@/components/AuthProvider';
+import { useSettings } from '@/components/SettingsProvider';
 import { getPatient, getPatientClinical, type Patient, type PatientClinical } from '@/lib/patients';
 import { getMarOrders, getAdministrationsForRange, type MarOrder, type MarAdministration } from '@/lib/mar';
 import { getNotesForPatient } from '@/lib/submissions';
@@ -31,6 +34,13 @@ import {
   timelinessStats,
   type DashboardNote,
 } from '@/lib/clientDashboardShared';
+
+// Charts are heavy (recharts) and browser-only; load them after the shell so
+// the dashboard paints fast and SSR never touches the chart lib.
+const ClientCharts = dynamic(() => import('./ClientCharts'), {
+  ssr: false,
+  loading: () => <div style={{ padding: '24px 0', color: '#7f8c8d', fontSize: 13, textAlign: 'center' }}>Loading charts…</div>,
+});
 
 function todayISO(): string {
   const d = new Date();
@@ -79,6 +89,7 @@ function ClientDashboardInner() {
   const patientId = String(params.patientId);
   const { uid, role } = useEffectiveUser();
   const isNurse = role === 'nurse';
+  const { settings } = useSettings();
 
   const [patient, setPatient] = useState<Patient | null>(null);
   const [clinical, setClinical] = useState<PatientClinical | null>(null);
@@ -296,6 +307,19 @@ function ClientDashboardInner() {
               sub={mar30.expected === 0 ? 'No scheduled doses due' : `${mar30.given}/${mar30.expected} scheduled doses given`}
             />
           </div>
+
+          {/* Trends & charts */}
+          <section style={sectionCardStyle}>
+            <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
+              <TrendingUp size={16} /> Trends
+            </div>
+            <ClientCharts
+              notes={notes}
+              admins={admins}
+              dob={patient.dob}
+              vitalsOverride={settings.vitals.rangesByAgeGroup}
+            />
+          </section>
 
           {/* Survey readiness */}
           <section style={sectionCardStyle}>
