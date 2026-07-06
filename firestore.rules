@@ -368,6 +368,14 @@ service cloud.firestore {
         && incomingData().archived == false
         && incomingData().category is string && incomingData().category.size() > 0
         && incomingData().fileName is string && incomingData().fileName.size() > 0
+        // Keep metadata contentType honest (defense in depth: the viewer also
+        // renders only from the storage object's rules-enforced type, so a
+        // forged text/html here could never execute in the app origin).
+        && incomingData().contentType in [
+             'application/pdf', 'image/jpeg', 'image/png', 'image/heic',
+             'application/msword',
+             'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+           ]
         && incomingData().storagePath ==
              'patients/' + incomingData().patientId + '/documents/' + docId + '/' + incomingData().fileName;
       // Staff may archive/restore and fix labeling; identity, file pointer,

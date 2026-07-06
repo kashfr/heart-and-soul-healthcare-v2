@@ -72,6 +72,24 @@ function sanitizeFileName(name: string): string {
   return cleaned || 'document';
 }
 
+// Extension fallback for browsers that report an empty File.type (Windows/
+// Android commonly do for .heic). Only allowlisted types are inferable.
+const EXT_CONTENT_TYPES: Record<string, string> = {
+  pdf: 'application/pdf',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  heic: 'image/heic',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+};
+
+function resolveContentType(file: File): string {
+  if (file.type) return file.type;
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  return EXT_CONTENT_TYPES[ext] || '';
+}
+
 /**
  * Upload one file + write its metadata doc. The Storage path embeds the
  * pre-allocated metadata doc id (the create rule pins storagePath to it, so
@@ -92,8 +110,11 @@ export async function uploadPatientDocument(
   onProgress?: (pct: number) => void,
 ): Promise<string> {
   const { patientId, file, category, title, docDate, uploader } = params;
-  if (!ALLOWED_DOC_TYPES[file.type]) {
-    throw new Error('That file type is not supported. Upload a PDF, image, or Word document.');
+  const contentType = resolveContentType(file);
+  if (!ALLOWED_DOC_TYPES[contentType]) {
+    throw new Error(
+      `That file type is not supported${file.name.includes('.') ? ` (.${file.name.split('.').pop()})` : ''}. Upload a PDF, image, or Word document.`,
+    );
   }
   if (file.size >= MAX_DOC_BYTES) {
     throw new Error('That file is too large (20 MB max).');
@@ -103,7 +124,7 @@ export async function uploadPatientDocument(
   const fileName = sanitizeFileName(file.name);
   const storagePath = `patients/${patientId}/documents/${docRef.id}/${fileName}`;
 
-  const task = uploadBytesResumable(ref(storage, storagePath), file, { contentType: file.type });
+  const task = uploadBytesResumable(ref(storage, storagePath), file, { contentType });
   await new Promise<void>((resolve, reject) => {
     task.on(
       'state_changed',
@@ -119,7 +140,7 @@ export async function uploadPatientDocument(
     title: (title || '').trim() || fileName,
     fileName,
     storagePath,
-    contentType: file.type,
+    contentType,
     size: file.size,
     docDate,
     uploadedBy: uploader.uid,
@@ -157,11 +178,18 @@ export async function getPatientDocuments(patientId: string): Promise<PatientDoc
  * mints a long-lived token URL that anyone holding the link could fetch, which
  * is the wrong default for PHI. The returned blob: URL lives only in this
  * browser session; callers may revoke it when done.
+ *
+ * SECURITY: the render type comes from the STORAGE object (blob.type — the
+ * rules-enforced, immutable contentType set at upload) clamped to the
+ * allowlist, NEVER from the Firestore metadata field. A blob: URL runs in the
+ * app's origin, so rendering a forged metadata type like text/html would be
+ * stored XSS; anything off the allowlist falls back to a non-executing
+ * download (application/octet-stream).
  */
 export async function getDocumentUrl(d: PatientDocument): Promise<string> {
   const blob = await getBlob(ref(storage, d.storagePath));
-  // Re-type so the browser renders (e.g. PDF viewer) instead of downloading.
-  return URL.createObjectURL(new Blob([blob], { type: d.contentType || blob.type }));
+  const safeType = ALLOWED_DOC_TYPES[blob.type] ? blob.type : 'application/octet-stream';
+  return URL.createObjectURL(new Blob([blob], { type: safeType }));
 }
 
 /** Archive or restore a document (staff-only per rules). The FILE is never

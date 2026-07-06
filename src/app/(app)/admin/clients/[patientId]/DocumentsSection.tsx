@@ -75,10 +75,21 @@ export default function DocumentsSection({
   }, [documents]);
 
   const view = async (d: PatientDocument) => {
+    // Open the tab SYNCHRONOUSLY inside the click gesture — after the awaited
+    // fetch, browsers treat window.open as an unsolicited popup and silently
+    // block it. (No 'noopener' feature flag: that makes window.open return
+    // null; we sever the link manually instead.)
+    const w = window.open('', '_blank');
+    if (!w) {
+      onToast('Your browser blocked the document tab. Allow popups for this site to view documents.');
+      return;
+    }
+    w.opener = null;
     try {
       const url = await getDocumentUrl(d);
-      window.open(url, '_blank', 'noopener');
+      w.location.href = url;
     } catch {
+      w.close();
       onToast('Could not open the document. Please try again.');
     }
   };

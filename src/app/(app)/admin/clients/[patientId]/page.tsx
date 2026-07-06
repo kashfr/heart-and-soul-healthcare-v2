@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
@@ -114,10 +114,15 @@ function ClientDashboardInner() {
   const [documents, setDocuments] = useState<PatientDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Tracks the patient currently on screen so a slow refetch for a previous
+  // client can never land its documents under this one's URL.
+  const patientIdRef = useRef(patientId);
 
   const showToast = (msg: string) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast(msg);
-    setTimeout(() => setToast(null), 3200);
+    toastTimer.current = setTimeout(() => setToast(null), 3200);
   };
 
   const today = todayISO();
@@ -126,6 +131,7 @@ function ClientDashboardInner() {
 
   useEffect(() => {
     let cancelled = false;
+    patientIdRef.current = patientId;
     // Reset before fetching so navigating between clients can't show client
     // A's PHI under client B's URL while B's data loads.
     setLoading(true);
@@ -459,7 +465,9 @@ function ClientDashboardInner() {
                 role: realRole,
               }}
               onChanged={() => {
-                void getPatientDocuments(patientId).then(setDocuments);
+                void getPatientDocuments(patientId).then((docs) => {
+                  if (patientIdRef.current === patientId) setDocuments(docs);
+                });
               }}
               onToast={showToast}
             />
