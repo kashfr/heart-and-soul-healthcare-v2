@@ -94,6 +94,16 @@ export function notesInWindow(notes: DashboardNote[], startISO: string, endISO: 
 /** Documentation timeliness: a note documented on its date of service is
  *  "same-day"; submitted after it is a late entry (late documentation is a
  *  classic survey finding). Notes with no parseable pair are skipped. */
+/** The agency operates in Georgia; timeliness must not flip when a viewer's
+ *  machine is in another timezone, so the submission DAY is always derived in
+ *  the agency's zone. */
+const AGENCY_TZ = 'America/New_York';
+
+/** YYYY-MM-DD of a Date in the agency timezone (en-CA locale renders ISO). */
+export function agencyDayISO(d: Date): string {
+  return d.toLocaleDateString('en-CA', { timeZone: AGENCY_TZ });
+}
+
 export function timelinessStats(notes: DashboardNote[]): {
   total: number;
   sameDay: number;
@@ -104,8 +114,7 @@ export function timelinessStats(notes: DashboardNote[]): {
   let late = 0;
   for (const n of notes) {
     if (!n.dateISO || !n.submittedAt) continue;
-    const sub = n.submittedAt;
-    const subISO = `${sub.getFullYear()}-${String(sub.getMonth() + 1).padStart(2, '0')}-${String(sub.getDate()).padStart(2, '0')}`;
+    const subISO = agencyDayISO(n.submittedAt);
     if (subISO <= n.dateISO) sameDay += 1;
     else late += 1;
   }
@@ -115,8 +124,10 @@ export function timelinessStats(notes: DashboardNote[]): {
 
 /** Continuity of care: the largest gap (in days) between consecutive service
  *  dates within the window, INCLUDING the tail gap from the last visit to
- *  today — an unexplained service gap is a survey citation. Null when fewer
- *  than one visit falls in the window. */
+ *  today AND — when the client had visits before the window — the head gap
+ *  from the window start to the first in-window visit, so a hiatus straddling
+ *  the boundary can't hide. (A client with no prior history isn't penalized
+ *  for days before care started.) Null when no visit falls in the window. */
 export function largestGapDays(
   notes: DashboardNote[],
   windowStartISO: string,
@@ -126,7 +137,8 @@ export function largestGapDays(
     new Set(notes.map((n) => n.dateISO).filter((d) => d && d >= windowStartISO && d <= todayISO)),
   ).sort();
   if (dates.length === 0) return null;
-  let largest = 0;
+  const hasPriorHistory = notes.some((n) => n.dateISO && n.dateISO < windowStartISO);
+  let largest = hasPriorHistory ? daysBetweenISO(windowStartISO, dates[0]) : 0;
   for (let i = 1; i < dates.length; i += 1) {
     largest = Math.max(largest, daysBetweenISO(dates[i - 1], dates[i]));
   }
@@ -134,7 +146,16 @@ export function largestGapDays(
   return largest;
 }
 
-export const ADVERSE_TOLERANCE_VALUE = 'Adverse reaction / intolerance — document below';
+/**
+ * Whether a q43 medication-tolerance value reports an adverse reaction. Prefix
+ * match, NOT string equality: the stored radio label has shifted punctuation
+ * over time ("… intolerance; document below" today, an em-dash variant before
+ * 2026-06-10), and an exact match against one variant silently misses the
+ * other — a false-green adverse-reaction signal on a survey card.
+ */
+export function isAdverseTolerance(value: string | undefined): boolean {
+  return (value || '').startsWith('Adverse reaction / intolerance');
+}
 
 export interface AdverseEvent {
   dateISO: string;
@@ -146,7 +167,7 @@ export interface AdverseEvent {
  *  first — surveyors check both the event and whether the physician was told. */
 export function adverseEvents(notes: DashboardNote[]): AdverseEvent[] {
   return sortNotesDesc(notes)
-    .filter((n) => n.medTolerance === ADVERSE_TOLERANCE_VALUE)
+    .filter((n) => isAdverseTolerance(n.medTolerance))
     .map((n) => ({ dateISO: n.dateISO, nurseName: n.nurseName, physNotified: n.physNotified }));
 }
 
@@ -175,6 +196,10 @@ export interface DashOrder {
   scheduledTimes?: string[];
   startDate?: string;
   endDate?: string | null;
+  // Med-change linkage (a change = discontinue old + start new on the same
+  // effective date); used to avoid double-counting the handoff day.
+  supersedesOrderId?: string;
+  supersededByOrderId?: string;
 }
 
 export interface DashAdmin {
@@ -193,11 +218,19 @@ function orderAppliesOnLite(o: DashOrder, date: string): boolean {
   return true;
 }
 
-/** Live (non-superseded) records — local mirror of resolveCurrentAdministrations. */
-function currentAdmins<T extends { id?: string; amends?: string }>(list: T[]): T[] {
+/** Live (non-superseded) records — local mirror of resolveCurrentAdministrations.
+ *  Exported so callers (e.g. the activity feed) never render a corrected record
+ *  alongside its correction. */
+export function currentAdmins<T extends { id?: string; amends?: string }>(list: T[]): T[] {
   const superseded = new Set<string>();
   for (const r of list) if (r.amends) superseded.add(r.amends);
   return list.filter((r) => !(r.id && superseded.has(r.id)));
+}
+
+/** A dose is PRN-ish when charted against the PRN slot OR as an unscheduled
+ *  one-off (documented via the note's med-change flow with isPRN semantics). */
+function isPrnSlot(scheduledTime: string): boolean {
+  return scheduledTime === 'PRN' || scheduledTime === 'unscheduled';
 }
 
 export interface MarComplianceStats {
@@ -241,9 +274,21 @@ export function marComplianceStats(
       if (o.isPRN || !o.scheduledTimes || o.scheduledTimes.length === 0) continue;
       for (let d = startISO; d <= end; d = shiftISO(d, 1)) {
         if (!orderAppliesOnLite(o, d)) continue;
+        // Med-change handoff: the discontinued order ends the same day its
+        // replacement starts, so both "apply" that day. The NEW regimen owns
+        // the handoff day — skip the superseded order's slots there, or every
+        // change would leave one permanently-undocumented phantom dose.
+        if (o.supersededByOrderId && o.endDate === d) continue;
         for (const slot of o.scheduledTimes) {
           expected += 1;
-          const hit = byKey.get(`${o.id}|${d}|${slot}`);
+          // A dose charted on the handoff day may be keyed to the OLD order
+          // (given before the change was entered); accept it for the new
+          // order's same slot so it isn't counted as missed.
+          const hit =
+            byKey.get(`${o.id}|${d}|${slot}`) ||
+            (o.supersedesOrderId && o.startDate === d
+              ? byKey.get(`${o.supersedesOrderId}|${d}|${slot}`)
+              : undefined);
           if (!hit) continue;
           if (hit.status === 'given') given += 1;
           else if (hit.status === 'held') held += 1;
@@ -254,7 +299,7 @@ export function marComplianceStats(
   }
 
   const prn = current.filter(
-    (a) => a.scheduledTime === 'PRN' && a.status === 'given' && a.date >= startISO && a.date <= end,
+    (a) => isPrnSlot(a.scheduledTime) && a.status === 'given' && a.date >= startISO && a.date <= end,
   );
   const prnPendingResult = prn.filter((a) => !(a.outcome || '').trim()).length;
 

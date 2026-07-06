@@ -23,6 +23,7 @@ import {
   adverseEvents,
   ageYears,
   careTeamFromNotes,
+  currentAdmins,
   largestGapDays,
   marComplianceStats,
   notesInWindow,
@@ -76,7 +77,7 @@ function tsToDate(v: unknown): Date | null {
 function ClientDashboardInner() {
   const params = useParams();
   const patientId = String(params.patientId);
-  const { role } = useEffectiveUser();
+  const { uid, role } = useEffectiveUser();
   const isNurse = role === 'nurse';
 
   const [patient, setPatient] = useState<Patient | null>(null);
@@ -92,6 +93,14 @@ function ClientDashboardInner() {
 
   useEffect(() => {
     let cancelled = false;
+    // Reset before fetching so navigating between clients can't show client
+    // A's PHI under client B's URL while B's data loads.
+    setLoading(true);
+    setPatient(null);
+    setClinical(null);
+    setOrders([]);
+    setAdmins([]);
+    setNotes([]);
     (async () => {
       const [p, c, o, a, n] = await Promise.all([
         getPatient(patientId),
@@ -141,10 +150,15 @@ function ClientDashboardInner() {
 
   const activity = useMemo<ActivityItem[]>(() => {
     const items: ActivityItem[] = [];
-    for (const n of notes.slice(0, 15)) {
-      if (!n.submittedAt) continue;
+    // Rank note candidates by WHEN THEY WERE SUBMITTED, not date of service —
+    // a backdated note submitted today belongs at the top of recent activity.
+    const bySubmitted = notes
+      .filter((n) => n.submittedAt)
+      .sort((a, b) => (b.submittedAt?.getTime() || 0) - (a.submittedAt?.getTime() || 0))
+      .slice(0, 15);
+    for (const n of bySubmitted) {
       items.push({
-        when: n.submittedAt,
+        when: n.submittedAt as Date,
         kind: 'note',
         text: `Progress note for ${fmtDate(n.dateISO)} by ${n.nurseName || 'a nurse'}${n.credential ? `, ${n.credential}` : ''}`,
       });
@@ -159,7 +173,8 @@ function ClientDashboardInner() {
         items.push({ when: dced, kind: 'med', text: `Medication discontinued: ${o.medName}${o.discontinuedByName ? ` (by ${o.discontinuedByName})` : ''}` });
       }
     }
-    for (const a of admins) {
+    // Amendment-resolved, so a corrected record never shows beside its correction.
+    for (const a of currentAdmins(admins)) {
       if (a.status === 'held' || a.status === 'refused') {
         const when = tsToDate(a.at);
         if (when) {
@@ -194,6 +209,16 @@ function ClientDashboardInner() {
         <div style={emptyCardStyle}>Loading dashboard…</div>
       ) : !patient ? (
         <div style={emptyCardStyle}>Client not found.</div>
+      ) : isNurse && !(patient.assignedNurseIds || []).includes(uid || '') ? (
+        // Not on this client's care team: her data reads would all be denied by
+        // Firestore rules and return empty, which would render as affirmative
+        // "all clear" compliance cards — misinformation, not privacy. Say the
+        // truth instead.
+        <div style={emptyCardStyle}>
+          You&apos;re not on {patient.name ? `${patient.name}'s` : 'this client&apos;s'} care team, so their
+          record isn&apos;t available to you. If this client was recently assigned to you, ask your
+          supervisor to add you to the care team.
+        </div>
       ) : (
         <>
           {/* Identity header */}

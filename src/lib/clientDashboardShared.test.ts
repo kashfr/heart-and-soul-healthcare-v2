@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ADVERSE_TOLERANCE_VALUE,
   adverseEvents,
+  isAdverseTolerance,
   ageYears,
   careTeamFromNotes,
   daysBetweenISO,
@@ -76,12 +76,22 @@ describe('timelinessStats', () => {
     expect(t.late).toBe(1);
     expect(t.pctSameDay).toBe(50);
   });
-  it('a note submitted before its (backdated) service date counts as timely, and empties yield null', () => {
+  it('a note submitted before its (pre-charted) service date counts as timely, and empties yield null', () => {
     expect(timelinessStats([]).pctSameDay).toBeNull();
     const t = timelinessStats([
       note({ dateISO: '2026-07-05', submittedAt: new Date('2026-07-04T10:00:00') }),
     ]);
     expect(t.sameDay).toBe(1);
+  });
+
+  it('classifies by the AGENCY timezone, not the viewer clock (late-evening ET submission)', () => {
+    // 2026-07-02T03:30Z is 11:30 PM ET on 7/1 — same-day for a 7/1 service
+    // date, even when this test runs on a UTC machine.
+    const t = timelinessStats([
+      note({ dateISO: '2026-07-01', submittedAt: new Date('2026-07-02T03:30:00Z') }),
+    ]);
+    expect(t.sameDay).toBe(1);
+    expect(t.late).toBe(0);
   });
 });
 
@@ -99,14 +109,46 @@ describe('largestGapDays', () => {
     expect(largestGapDays([note({ dateISO: '2026-06-01' })], '2026-05-15', '2026-06-30')).toBe(29);
     expect(largestGapDays([], '2026-05-15', '2026-06-30')).toBeNull();
   });
+
+  it('counts the HEAD gap when the client has history before the window (boundary-straddling hiatus)', () => {
+    const notes = [
+      note({ id: 'old', dateISO: '2026-04-01' }), // prior history, outside window
+      note({ id: 'a', dateISO: '2026-06-25' }),
+      note({ id: 'b', dateISO: '2026-06-28' }),
+    ];
+    // window 5/15..6/30: head gap 5/15 -> 6/25 = 41d dominates (tail = 2, mid = 3)
+    expect(largestGapDays(notes, '2026-05-15', '2026-06-30')).toBe(41);
+  });
+
+  it('does NOT penalize a brand-new client for days before care started', () => {
+    const notes = [note({ id: 'a', dateISO: '2026-06-25' }), note({ id: 'b', dateISO: '2026-06-28' })];
+    expect(largestGapDays(notes, '2026-05-15', '2026-06-30')).toBe(3);
+  });
 });
 
 describe('adverseEvents / careTeamFromNotes', () => {
-  it('picks only adverse-tolerance notes, newest first', () => {
+  it('matches BOTH stored punctuation variants of the adverse-tolerance label', () => {
+    // The literal strings the form has stored over time — do not "clean up" to
+    // a shared constant, or this test can no longer catch a drifting label.
+    const semicolonVariant = 'Adverse reaction / intolerance; document below'; // current (FormPageFive)
+    const emDashVariant = 'Adverse reaction / intolerance — document below'; // pre-2026-06-10 notes
+    expect(isAdverseTolerance(semicolonVariant)).toBe(true);
+    expect(isAdverseTolerance(emDashVariant)).toBe(true);
+    expect(isAdverseTolerance('No issues observed')).toBe(false);
+    expect(isAdverseTolerance('')).toBe(false);
     const evts = adverseEvents([
-      note({ id: 'a', dateISO: '2026-06-01', medTolerance: ADVERSE_TOLERANCE_VALUE, physNotified: 'Yes' }),
+      note({ id: 'a', dateISO: '2026-06-01', medTolerance: emDashVariant, physNotified: 'Yes' }),
+      note({ id: 'c', dateISO: '2026-06-15', medTolerance: semicolonVariant, physNotified: 'No' }),
+    ]);
+    expect(evts).toHaveLength(2);
+  });
+
+  it('picks only adverse-tolerance notes, newest first', () => {
+    const v = 'Adverse reaction / intolerance; document below';
+    const evts = adverseEvents([
+      note({ id: 'a', dateISO: '2026-06-01', medTolerance: v, physNotified: 'Yes' }),
       note({ id: 'b', dateISO: '2026-06-10' }),
-      note({ id: 'c', dateISO: '2026-06-15', medTolerance: ADVERSE_TOLERANCE_VALUE, physNotified: 'No' }),
+      note({ id: 'c', dateISO: '2026-06-15', medTolerance: v, physNotified: 'No' }),
     ]);
     expect(evts.map((e) => e.dateISO)).toEqual(['2026-06-15', '2026-06-01']);
   });
@@ -158,6 +200,49 @@ describe('marComplianceStats', () => {
     );
     expect(s2.expected).toBe(0);
     expect(s2.pctGiven).toBeNull();
+  });
+
+  it('a med change does not double-count the handoff day (old endDate == new startDate)', () => {
+    const changed: DashOrder[] = [
+      {
+        id: 'old',
+        status: 'discontinued',
+        scheduledTimes: ['08:00'],
+        startDate: '2026-06-01',
+        endDate: '2026-07-01',
+        supersededByOrderId: 'new',
+      },
+      { id: 'new', status: 'active', scheduledTimes: ['08:00'], startDate: '2026-07-01', supersedesOrderId: 'old' },
+    ];
+    // 7/1 (handoff) + 7/2: exactly one 08:00 dose per day = 2 expected, not 3
+    const s = marComplianceStats(changed, [], '2026-07-01', '2026-07-02', '2026-07-02');
+    expect(s.expected).toBe(2);
+    // A dose charted on the handoff day against the OLD order still counts.
+    const s2 = marComplianceStats(
+      changed,
+      [{ id: 'h1', orderId: 'old', date: '2026-07-01', scheduledTime: '08:00', status: 'given' }],
+      '2026-07-01',
+      '2026-07-01',
+      '2026-07-01',
+    );
+    expect(s2.expected).toBe(1);
+    expect(s2.given).toBe(1);
+    expect(s2.undocumented).toBe(0);
+  });
+
+  it('counts unscheduled one-off PRN doses in the PRN tallies', () => {
+    const s = marComplianceStats(
+      [],
+      [
+        { id: 'u1', orderId: '', date: '2026-07-01', scheduledTime: 'unscheduled', status: 'given', outcome: '' },
+        { id: 'u2', orderId: '', date: '2026-07-01', scheduledTime: 'unscheduled', status: 'given', outcome: 'relieved' },
+      ],
+      '2026-07-01',
+      '2026-07-02',
+      '2026-07-02',
+    );
+    expect(s.prnGiven).toBe(2);
+    expect(s.prnPendingResult).toBe(1);
   });
 
   it('an amended record counts once at its corrected value', () => {
