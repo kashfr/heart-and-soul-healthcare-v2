@@ -386,6 +386,33 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Scheduled client visits (shift + RN supervisory). The day-to-day schedule
+    // is maintained by admin + supervisors only; the care team (assigned
+    // nurses) can READ it for the dashboard's Upcoming visits. Visits are never
+    // deleted — cancellation is a status change, so the schedule keeps its
+    // history. Create pins the author and starts life 'scheduled'; updates
+    // can't rewrite ownership or move the visit to another client.
+    match /patientVisits/{visitId} {
+      allow read: if isStaff()
+        || (isNurse()
+            && resource.data.get('patientId', null) != null
+            && get(/databases/$(database)/documents/patients/$(resource.data.patientId))
+                 .data.get('assignedNurseIds', []).hasAny([request.auth.uid]));
+      allow create: if isStaff()
+        && incomingData().patientId is string && incomingData().patientId.size() > 0
+        && incomingData().date is string && incomingData().date.size() == 10
+        && incomingData().type in ['shift', 'supervisory']
+        && incomingData().status == 'scheduled'
+        && incomingData().createdBy == request.auth.uid
+        && incomingData().createdAt == request.time;
+      allow update: if isStaff()
+        && incomingData().patientId == resource.data.patientId
+        && incomingData().get('createdBy', null) == resource.data.get('createdBy', null)
+        && incomingData().get('createdAt', null) == resource.data.get('createdAt', null)
+        && incomingData().get('status', '') in ['scheduled', 'completed', 'cancelled'];
+      allow delete: if false;
+    }
+
     // Default deny
     match /{document=**} {
       allow read, write: if false;

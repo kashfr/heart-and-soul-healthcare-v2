@@ -23,14 +23,19 @@ import { getPatient, getPatientClinical, type Patient, type PatientClinical } fr
 import { getMarOrders, getAdministrationsForRange, type MarOrder, type MarAdministration } from '@/lib/mar';
 import { getNotesForPatient } from '@/lib/submissions';
 import { getPatientDocuments, type PatientDocument } from '@/lib/patientDocuments';
+import { getVisitsForPatient, type PatientVisit } from '@/lib/patientVisits';
 import DocumentsSection from './DocumentsSection';
+import VisitsSection from './VisitsSection';
 import {
   adverseEvents,
   ageYears,
+  bestCurrency,
   careTeamFromNotes,
   currentAdmins,
+  dateCurrency,
   documentCurrency,
   largestGapDays,
+  latestCompletedVisitISO,
   marComplianceStats,
   notesInWindow,
   shiftISO,
@@ -112,6 +117,7 @@ function ClientDashboardInner() {
   const [admins, setAdmins] = useState<MarAdministration[]>([]);
   const [notes, setNotes] = useState<DashboardNote[]>([]);
   const [documents, setDocuments] = useState<PatientDocument[]>([]);
+  const [visits, setVisits] = useState<PatientVisit[]>([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -141,14 +147,16 @@ function ClientDashboardInner() {
     setAdmins([]);
     setNotes([]);
     setDocuments([]);
+    setVisits([]);
     (async () => {
-      const [p, c, o, a, n, docs] = await Promise.all([
+      const [p, c, o, a, n, docs, vis] = await Promise.all([
         getPatient(patientId),
         getPatientClinical(patientId),
         getMarOrders(patientId),
         getAdministrationsForRange(patientId, start90, today),
         getNotesForPatient(patientId),
         getPatientDocuments(patientId),
+        getVisitsForPatient(patientId),
       ]);
       if (cancelled) return;
       setPatient(p);
@@ -157,6 +165,7 @@ function ClientDashboardInner() {
       setAdmins(a);
       setNotes(n);
       setDocuments(docs);
+      setVisits(vis);
       setLoading(false);
     })();
     return () => {
@@ -183,11 +192,17 @@ function ClientDashboardInner() {
   const adverse = useMemo(() => adverseEvents(notes90), [notes90]);
   const team = useMemo(() => careTeamFromNotes(notes), [notes]);
 
-  // Document-driven currency tiles (baseline intervals; tune with the
-  // compliance nurse). Keyed on the docDate the uploader entered.
+  // Currency tiles (baseline intervals; tune with the compliance nurse).
+  // Supervisory currency counts BOTH evidence sources: uploaded visit forms
+  // (docDate) and visits marked completed on the schedule — whichever is
+  // fresher wins.
   const supCurrency = useMemo(
-    () => documentCurrency(documents, 'Supervisory Visit', SUPERVISORY_MAX_DAYS, today),
-    [documents, today],
+    () =>
+      bestCurrency(
+        documentCurrency(documents, 'Supervisory Visit', SUPERVISORY_MAX_DAYS, today),
+        dateCurrency(latestCompletedVisitISO(visits, 'supervisory'), SUPERVISORY_MAX_DAYS, today),
+      ),
+    [documents, visits, today],
   );
   const pocCurrency = useMemo(
     () => documentCurrency(documents, 'Plan of Care (485)', POC_MAX_DAYS, today),
@@ -356,6 +371,26 @@ function ClientDashboardInner() {
             />
           </div>
 
+          {/* Upcoming visits */}
+          <section style={sectionCardStyle}>
+            <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
+              <CalendarClock size={16} /> Upcoming visits
+            </div>
+            <VisitsSection
+              patientId={patientId}
+              visits={visits}
+              isStaff={realStaff}
+              actor={{ uid: user?.uid || '', name: profile?.displayName || user?.email || '' }}
+              careTeam={team}
+              onChanged={() => {
+                void getVisitsForPatient(patientId).then((vis) => {
+                  if (patientIdRef.current === patientId) setVisits(vis);
+                });
+              }}
+              onToast={showToast}
+            />
+          </section>
+
           {/* Trends & charts */}
           <section style={sectionCardStyle}>
             <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
@@ -426,7 +461,7 @@ function ClientDashboardInner() {
                 }
                 detail={
                   supCurrency.status === 'none'
-                    ? 'Upload supervisory visit forms to track (30-day baseline)'
+                    ? 'Schedule + complete visits, or upload visit forms, to track (30-day baseline)'
                     : `${fmtDate(supCurrency.newestDateISO)} · due every ${SUPERVISORY_MAX_DAYS}d (baseline)`
                 }
                 icon={<CalendarClock size={14} />}
