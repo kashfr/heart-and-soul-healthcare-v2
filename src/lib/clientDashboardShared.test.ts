@@ -11,6 +11,8 @@ import {
   largestGapDays,
   latestCompletedVisitISO,
   overdueVisits,
+  recentResolvedVisits,
+  scheduledBeyond,
   upcomingVisits,
   marComplianceStats,
   normalizeDateISO,
@@ -415,8 +417,21 @@ describe('visits (phase 4)', () => {
   });
 
   it('latestCompletedVisitISO: newest COMPLETED of the type (cancelled ignored)', () => {
-    expect(latestCompletedVisitISO(visits, 'supervisory')).toBe('2026-06-25');
-    expect(latestCompletedVisitISO(visits, 'shift')).toBe('');
+    expect(latestCompletedVisitISO(visits, 'supervisory', '2026-07-07')).toBe('2026-06-25');
+    expect(latestCompletedVisitISO(visits, 'shift', '2026-07-07')).toBe('');
+  });
+
+  it('latestCompletedVisitISO ignores FUTURE-dated completions (a visit that has not happened is not evidence)', () => {
+    const withFuture = [...visits, { id: 'z', date: '2026-08-01', type: 'supervisory', status: 'completed' }];
+    expect(latestCompletedVisitISO(withFuture, 'supervisory', '2026-07-07')).toBe('2026-06-25');
+    expect(latestCompletedVisitISO(withFuture, 'supervisory', '2026-08-01')).toBe('2026-08-01');
+  });
+
+  it('recentResolvedVisits: completed+cancelled newest first, capped; scheduledBeyond counts overflow', () => {
+    expect(recentResolvedVisits(visits, 5).map((v) => v.id)).toEqual(['f', 'g', 'e']);
+    expect(recentResolvedVisits(visits, 2).map((v) => v.id)).toEqual(['f', 'g']);
+    expect(scheduledBeyond(visits, '2026-07-07', 2)).toBe(1); // 3 upcoming, cap 2
+    expect(scheduledBeyond(visits, '2026-07-07', 5)).toBe(0);
   });
 
   it('dateCurrency + bestCurrency: fresher evidence wins; none loses to anything', () => {

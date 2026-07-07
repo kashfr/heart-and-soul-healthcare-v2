@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState, type CSSProperties } from 'react';
-import { CalendarClock, CalendarPlus, Check, X } from 'lucide-react';
+import { CalendarClock, CalendarPlus, Check, History, Undo2, X } from 'lucide-react';
 import {
   addVisit,
   setVisitStatus,
@@ -9,7 +9,7 @@ import {
   type VisitActor,
   type VisitType,
 } from '@/lib/patientVisits';
-import { overdueVisits, upcomingVisits } from '@/lib/clientDashboardShared';
+import { overdueVisits, recentResolvedVisits, scheduledBeyond, upcomingVisits } from '@/lib/clientDashboardShared';
 
 function todayISO(): string {
   const d = new Date();
@@ -51,11 +51,14 @@ interface Props {
  */
 export default function VisitsSection({ patientId, visits, isStaff, actor, careTeam, onChanged, onToast }: Props) {
   const [addOpen, setAddOpen] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const today = todayISO();
 
   const upcoming = useMemo(() => upcomingVisits(visits, today, 5), [visits, today]);
+  const moreScheduled = useMemo(() => scheduledBeyond(visits, today, 5), [visits, today]);
   const overdue = useMemo(() => overdueVisits(visits, today), [visits, today]);
+  const resolved = useMemo(() => recentResolvedVisits(visits, 5), [visits]);
 
   const mark = async (v: PatientVisit, status: 'completed' | 'cancelled' | 'scheduled') => {
     if (!v.id) return;
@@ -133,7 +136,56 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
         <>
           {overdue.length > 0 && <div style={groupLabelStyle}>Upcoming</div>}
           <ul style={listStyle}>{upcoming.map((v) => renderVisit(v, false))}</ul>
+          {moreScheduled > 0 && (
+            <div style={moreLineStyle}>
+              …and {moreScheduled} more scheduled visit{moreScheduled === 1 ? '' : 's'} after these.
+            </div>
+          )}
         </>
+      )}
+
+      {/* Recently completed/cancelled — visible history so a mis-clicked Done or
+          Cancel never silently vanishes; staff can restore it to the schedule. */}
+      {resolved.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <button type="button" onClick={() => setShowHistory((s) => !s)} style={historyToggleStyle}>
+            <History size={13} /> {showHistory ? 'Hide' : 'Show'} recent history ({resolved.length})
+          </button>
+          {showHistory && (
+            <ul style={{ ...listStyle, marginTop: 8 }}>
+              {resolved.map((v) => (
+                <li key={v.id} style={{ ...rowStyle, opacity: 0.75 }}>
+                  <div style={dateBadgeStyle(false)}>
+                    <span style={{ fontSize: 11, fontWeight: 700 }}>{fmtDate(v.date)}</span>
+                    {v.startTime && <span style={{ fontSize: 10.5 }}>{fmtTime(v.startTime)}</span>}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={v.type === 'supervisory' ? supChipStyle : shiftChipStyle}>
+                        {v.type === 'supervisory' ? 'Supervisory visit' : 'Shift'}
+                      </span>
+                      <span style={v.status === 'completed' ? doneChipStyle : cancelledChipStyle}>
+                        {v.status === 'completed' ? 'Completed' : 'Cancelled'}
+                      </span>
+                      {v.nurseName && <span style={{ fontSize: 13, color: '#2c3e50', fontWeight: 600 }}>{v.nurseName}</span>}
+                    </div>
+                  </div>
+                  {isStaff && (
+                    <button
+                      type="button"
+                      onClick={() => mark(v, 'scheduled')}
+                      disabled={busyId === v.id}
+                      style={actionBtnStyle}
+                      title="Put this visit back on the schedule"
+                    >
+                      <Undo2 size={13} /> Restore
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
 
       {addOpen && (
@@ -286,6 +338,10 @@ const supChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px
 const shiftChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#e8eef4', color: NAVY, fontSize: 10.5, fontWeight: 700 };
 const overdueChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#fdeaea', color: '#b3261e', fontSize: 10.5, fontWeight: 700 };
 const notesStyle: CSSProperties = { fontSize: 12.5, color: '#7f8c8d', marginTop: 3 };
+const moreLineStyle: CSSProperties = { fontSize: 12, color: '#8a949e', marginTop: 8, paddingLeft: 4 };
+const historyToggleStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, background: 'transparent', border: 'none', color: '#5c6b7a', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', padding: 0 };
+const doneChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#e8f4e8', color: '#1e5c1e', fontSize: 10.5, fontWeight: 700 };
+const cancelledChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#f1f5f9', color: '#64748b', fontSize: 10.5, fontWeight: 700 };
 const actionBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'white', color: '#2c3e50', border: '1px solid #d0d7de', padding: '6px 10px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
 const emptyStyle: CSSProperties = { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px 14px', color: '#7f8c8d', fontSize: 13, textAlign: 'center', background: '#f8fafc', borderRadius: 8 };
 const backdropStyle: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 3200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '10vh 16px', overflowY: 'auto' };

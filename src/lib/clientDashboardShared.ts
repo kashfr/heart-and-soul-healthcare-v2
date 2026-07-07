@@ -399,13 +399,40 @@ export function overdueVisits<T extends DashVisit>(visits: T[], todayISO: string
 
 /** Newest COMPLETED visit date of a type ('' when none) — completed
  *  supervisory visits count toward supervisory-visit currency alongside
- *  uploaded visit forms. */
-export function latestCompletedVisitISO(visits: DashVisit[], type: string): string {
+ *  uploaded visit forms. FUTURE-dated completions are ignored: a visit that
+ *  hasn't happened yet must not read as compliance evidence (the clamp in
+ *  dateCurrency exists for forward-dated plans of care, not visits). */
+export function latestCompletedVisitISO(visits: DashVisit[], type: string, todayISO: string): string {
   const dates = visits
-    .filter((v) => v.status === 'completed' && v.type === type && /^\d{4}-\d{2}-\d{2}$/.test(v.date || ''))
+    .filter(
+      (v) =>
+        v.status === 'completed' &&
+        v.type === type &&
+        /^\d{4}-\d{2}-\d{2}$/.test(v.date || '') &&
+        v.date <= todayISO,
+    )
     .map((v) => v.date)
     .sort();
   return dates.length ? dates[dates.length - 1] : '';
+}
+
+/** Recently resolved (completed or cancelled) visits, newest first — rendered
+ *  as history so a mis-clicked Done/Cancel is visible and restorable rather
+ *  than silently vanishing. */
+export function recentResolvedVisits<T extends DashVisit>(visits: T[], limit: number): T[] {
+  return visits
+    .filter((v) => (v.status === 'completed' || v.status === 'cancelled') && /^\d{4}-\d{2}-\d{2}$/.test(v.date || ''))
+    .sort((a, b) => b.date.localeCompare(a.date) || (b.startTime || '').localeCompare(a.startTime || ''))
+    .slice(0, Math.max(0, limit));
+}
+
+/** How many scheduled future visits exist beyond a rendered cap (for the
+ *  "and N more" line, so a 6th visit doesn't look like a failed save). */
+export function scheduledBeyond(visits: DashVisit[], todayISO: string, cap: number): number {
+  const total = visits.filter(
+    (v) => v.status === 'scheduled' && /^\d{4}-\d{2}-\d{2}$/.test(v.date || '') && v.date >= todayISO,
+  ).length;
+  return Math.max(0, total - cap);
 }
 
 /** The fresher of two currency readings (a 'none' loses to anything). */

@@ -405,10 +405,15 @@ service cloud.firestore {
         && incomingData().status == 'scheduled'
         && incomingData().createdBy == request.auth.uid
         && incomingData().createdAt == request.time;
+      // Schedule maintenance only: the author/ownership fields are immutable
+      // (not in the allowed-keys list), and the fields that drive compliance
+      // math are re-validated on every edit.
       allow update: if isStaff()
-        && incomingData().patientId == resource.data.patientId
-        && incomingData().get('createdBy', null) == resource.data.get('createdBy', null)
-        && incomingData().get('createdAt', null) == resource.data.get('createdAt', null)
+        && incomingData().diff(resource.data).affectedKeys()
+             .hasOnly(['date', 'startTime', 'endTime', 'type', 'nurseId', 'nurseName', 'notes',
+                       'status', 'updatedBy', 'updatedByName', 'updatedAt'])
+        && incomingData().date is string && incomingData().date.size() == 10
+        && incomingData().type in ['shift', 'supervisory']
         && incomingData().get('status', '') in ['scheduled', 'completed', 'cancelled'];
       allow delete: if false;
     }

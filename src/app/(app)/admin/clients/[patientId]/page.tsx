@@ -200,7 +200,7 @@ function ClientDashboardInner() {
     () =>
       bestCurrency(
         documentCurrency(documents, 'Supervisory Visit', SUPERVISORY_MAX_DAYS, today),
-        dateCurrency(latestCompletedVisitISO(visits, 'supervisory'), SUPERVISORY_MAX_DAYS, today),
+        dateCurrency(latestCompletedVisitISO(visits, 'supervisory', today), SUPERVISORY_MAX_DAYS, today),
       ),
     [documents, visits, today],
   );
