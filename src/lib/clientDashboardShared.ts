@@ -336,12 +336,22 @@ export interface DocumentCurrency {
 }
 
 /**
- * Currency of the newest non-archived document in a category against a
- * required interval: 'good' within maxAgeDays, 'warn' up to 25% past it,
- * 'bad' beyond, 'none' when no dated document exists. A future-dated document
- * (e.g. a plan of care for a cert period starting next week) clamps to 0 days
- * rather than reporting a negative age.
+ * Grade a "newest evidence" date against a required interval: 'good' within
+ * maxAgeDays, 'warn' up to 25% past it, 'bad' beyond, 'none' when there is no
+ * dated evidence. A future date (e.g. a plan of care for a cert period starting
+ * next week) clamps to 0 days rather than reporting a negative age.
  */
+export function dateCurrency(newestISO: string, maxAgeDays: number, todayISO: string): DocumentCurrency {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(newestISO || '')) {
+    return { status: 'none', daysSince: null, newestDateISO: '' };
+  }
+  const daysSince = Math.max(0, daysBetweenISO(newestISO, todayISO));
+  const status: DocumentCurrency['status'] =
+    daysSince <= maxAgeDays ? 'good' : daysSince <= Math.round(maxAgeDays * 1.25) ? 'warn' : 'bad';
+  return { status, daysSince, newestDateISO: newestISO };
+}
+
+/** Currency of the newest non-archived document in a category. */
 export function documentCurrency(
   docs: DashDocument[],
   category: string,
@@ -353,11 +363,83 @@ export function documentCurrency(
     .map((d) => d.docDate)
     .sort();
   if (dates.length === 0) return { status: 'none', daysSince: null, newestDateISO: '' };
-  const newest = dates[dates.length - 1];
-  const daysSince = Math.max(0, daysBetweenISO(newest, todayISO));
-  const status: DocumentCurrency['status'] =
-    daysSince <= maxAgeDays ? 'good' : daysSince <= Math.round(maxAgeDays * 1.25) ? 'warn' : 'bad';
-  return { status, daysSince, newestDateISO: newest };
+  return dateCurrency(dates[dates.length - 1], maxAgeDays, todayISO);
+}
+
+// ---------------------------------------------------------------------------
+// Scheduled visits (phase 4). Structural type mirrors PatientVisit without
+// importing the Firebase-backed module.
+// ---------------------------------------------------------------------------
+
+export interface DashVisit {
+  id?: string;
+  date: string; // YYYY-MM-DD
+  startTime?: string;
+  type: string; // 'shift' | 'supervisory'
+  status: string; // 'scheduled' | 'completed' | 'cancelled'
+  nurseName?: string;
+  notes?: string;
+}
+
+/** The next scheduled visits from today forward, soonest first. */
+export function upcomingVisits<T extends DashVisit>(visits: T[], todayISO: string, limit: number): T[] {
+  return visits
+    .filter((v) => v.status === 'scheduled' && /^\d{4}-\d{2}-\d{2}$/.test(v.date || '') && v.date >= todayISO)
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.startTime || '').localeCompare(b.startTime || ''))
+    .slice(0, Math.max(0, limit));
+}
+
+/** Scheduled visits whose date has passed without being completed or
+ *  cancelled — the schedule needs attention (mark completed, or cancel). */
+export function overdueVisits<T extends DashVisit>(visits: T[], todayISO: string): T[] {
+  return visits
+    .filter((v) => v.status === 'scheduled' && /^\d{4}-\d{2}-\d{2}$/.test(v.date || '') && v.date < todayISO)
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Newest COMPLETED visit date of a type ('' when none) — completed
+ *  supervisory visits count toward supervisory-visit currency alongside
+ *  uploaded visit forms. FUTURE-dated completions are ignored: a visit that
+ *  hasn't happened yet must not read as compliance evidence (the clamp in
+ *  dateCurrency exists for forward-dated plans of care, not visits). */
+export function latestCompletedVisitISO(visits: DashVisit[], type: string, todayISO: string): string {
+  const dates = visits
+    .filter(
+      (v) =>
+        v.status === 'completed' &&
+        v.type === type &&
+        /^\d{4}-\d{2}-\d{2}$/.test(v.date || '') &&
+        v.date <= todayISO,
+    )
+    .map((v) => v.date)
+    .sort();
+  return dates.length ? dates[dates.length - 1] : '';
+}
+
+/** Recently resolved (completed or cancelled) visits, newest first — rendered
+ *  as history so a mis-clicked Done/Cancel is visible and restorable rather
+ *  than silently vanishing. */
+export function recentResolvedVisits<T extends DashVisit>(visits: T[], limit: number): T[] {
+  return visits
+    .filter((v) => (v.status === 'completed' || v.status === 'cancelled') && /^\d{4}-\d{2}-\d{2}$/.test(v.date || ''))
+    .sort((a, b) => b.date.localeCompare(a.date) || (b.startTime || '').localeCompare(a.startTime || ''))
+    .slice(0, Math.max(0, limit));
+}
+
+/** How many scheduled future visits exist beyond a rendered cap (for the
+ *  "and N more" line, so a 6th visit doesn't look like a failed save). */
+export function scheduledBeyond(visits: DashVisit[], todayISO: string, cap: number): number {
+  const total = visits.filter(
+    (v) => v.status === 'scheduled' && /^\d{4}-\d{2}-\d{2}$/.test(v.date || '') && v.date >= todayISO,
+  ).length;
+  return Math.max(0, total - cap);
+}
+
+/** The fresher of two currency readings (a 'none' loses to anything). */
+export function bestCurrency(a: DocumentCurrency, b: DocumentCurrency): DocumentCurrency {
+  if (a.status === 'none') return b;
+  if (b.status === 'none') return a;
+  return (a.daysSince ?? Infinity) <= (b.daysSince ?? Infinity) ? a : b;
 }
 
 // ---------------------------------------------------------------------------

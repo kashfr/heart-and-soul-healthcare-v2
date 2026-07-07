@@ -4,9 +4,16 @@ import {
   isAdverseTolerance,
   ageYears,
   careTeamFromNotes,
+  bestCurrency,
+  dateCurrency,
   daysBetweenISO,
   documentCurrency,
   largestGapDays,
+  latestCompletedVisitISO,
+  overdueVisits,
+  recentResolvedVisits,
+  scheduledBeyond,
+  upcomingVisits,
   marComplianceStats,
   normalizeDateISO,
   notesInWindow,
@@ -382,5 +389,60 @@ describe('documentCurrency', () => {
     expect(c.daysSince).toBe(0);
     const junk = [{ id: 'j', category: 'Plan of Care (485)', docDate: 'soon', archived: false }];
     expect(documentCurrency(junk, 'Plan of Care (485)', 60, '2026-07-04').status).toBe('none');
+  });
+});
+
+describe('visits (phase 4)', () => {
+  const visits = [
+    { id: 'a', date: '2026-07-10', startTime: '09:00', type: 'shift', status: 'scheduled' },
+    { id: 'b', date: '2026-07-08', startTime: '14:00', type: 'supervisory', status: 'scheduled' },
+    { id: 'c', date: '2026-07-08', startTime: '08:00', type: 'shift', status: 'scheduled' },
+    { id: 'd', date: '2026-07-01', type: 'shift', status: 'scheduled' }, // past, never completed
+    { id: 'e', date: '2026-06-20', type: 'supervisory', status: 'completed' },
+    { id: 'f', date: '2026-06-28', type: 'supervisory', status: 'cancelled' },
+    { id: 'g', date: '2026-06-25', type: 'supervisory', status: 'completed' },
+  ];
+
+  it('upcomingVisits: scheduled, today-or-later, soonest first (time breaks ties), limited', () => {
+    const up = upcomingVisits(visits, '2026-07-07', 5);
+    expect(up.map((v) => v.id)).toEqual(['c', 'b', 'a']);
+    expect(upcomingVisits(visits, '2026-07-07', 2).map((v) => v.id)).toEqual(['c', 'b']);
+    // a visit dated today still counts as upcoming
+    expect(upcomingVisits(visits, '2026-07-10', 5).map((v) => v.id)).toEqual(['a']);
+  });
+
+  it('overdueVisits: scheduled visits whose date passed without completion', () => {
+    expect(overdueVisits(visits, '2026-07-07').map((v) => v.id)).toEqual(['d']);
+    expect(overdueVisits(visits, '2026-07-01')).toHaveLength(0); // not overdue on its own day
+  });
+
+  it('latestCompletedVisitISO: newest COMPLETED of the type (cancelled ignored)', () => {
+    expect(latestCompletedVisitISO(visits, 'supervisory', '2026-07-07')).toBe('2026-06-25');
+    expect(latestCompletedVisitISO(visits, 'shift', '2026-07-07')).toBe('');
+  });
+
+  it('latestCompletedVisitISO ignores FUTURE-dated completions (a visit that has not happened is not evidence)', () => {
+    const withFuture = [...visits, { id: 'z', date: '2026-08-01', type: 'supervisory', status: 'completed' }];
+    expect(latestCompletedVisitISO(withFuture, 'supervisory', '2026-07-07')).toBe('2026-06-25');
+    expect(latestCompletedVisitISO(withFuture, 'supervisory', '2026-08-01')).toBe('2026-08-01');
+  });
+
+  it('recentResolvedVisits: completed+cancelled newest first, capped; scheduledBeyond counts overflow', () => {
+    expect(recentResolvedVisits(visits, 5).map((v) => v.id)).toEqual(['f', 'g', 'e']);
+    expect(recentResolvedVisits(visits, 2).map((v) => v.id)).toEqual(['f', 'g']);
+    expect(scheduledBeyond(visits, '2026-07-07', 2)).toBe(1); // 3 upcoming, cap 2
+    expect(scheduledBeyond(visits, '2026-07-07', 5)).toBe(0);
+  });
+
+  it('dateCurrency + bestCurrency: fresher evidence wins; none loses to anything', () => {
+    const fromVisit = dateCurrency('2026-06-25', 30, '2026-07-07'); // 12d → good
+    const fromDoc = dateCurrency('2026-05-20', 30, '2026-07-07'); // 48d → bad
+    expect(fromVisit.status).toBe('good');
+    expect(fromDoc.status).toBe('bad');
+    expect(bestCurrency(fromDoc, fromVisit).newestDateISO).toBe('2026-06-25');
+    const none = dateCurrency('', 30, '2026-07-07');
+    expect(none.status).toBe('none');
+    expect(bestCurrency(none, fromDoc).status).toBe('bad');
+    expect(bestCurrency(none, none).status).toBe('none');
   });
 });
