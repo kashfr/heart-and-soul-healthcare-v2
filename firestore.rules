@@ -344,6 +344,48 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // Client documents — METADATA for uploaded files (plans of care, initial
+    // assessments, supervisory visit forms, physician orders, scans). The files
+    // themselves live in Cloud Storage under patients/{patientId}/documents/
+    // (see storage.rules, which mirrors this scoping). Staff and the client's
+    // assigned nurses can read and upload; only staff can archive (soft delete);
+    // documents are NEVER hard-deleted — the compliance record is append-only.
+    // Create pins the uploader identity and the storagePath to THIS doc's id
+    // under THIS patient, so metadata can't point at another client's file.
+    match /patientDocuments/{docId} {
+      allow read: if isStaff()
+        || (isNurse()
+            && resource.data.get('patientId', null) != null
+            && get(/databases/$(database)/documents/patients/$(resource.data.patientId))
+                 .data.get('assignedNurseIds', []).hasAny([request.auth.uid]));
+      allow create: if (isStaff()
+            || (isNurse()
+                && get(/databases/$(database)/documents/patients/$(incomingData().patientId))
+                     .data.get('assignedNurseIds', []).hasAny([request.auth.uid])))
+        && incomingData().patientId is string && incomingData().patientId.size() > 0
+        && incomingData().uploadedBy == request.auth.uid
+        && incomingData().uploadedAt == request.time
+        && incomingData().archived == false
+        && incomingData().category is string && incomingData().category.size() > 0
+        && incomingData().fileName is string && incomingData().fileName.size() > 0
+        // Keep metadata contentType honest (defense in depth: the viewer also
+        // renders only from the storage object's rules-enforced type, so a
+        // forged text/html here could never execute in the app origin).
+        && incomingData().contentType in [
+             'application/pdf', 'image/jpeg', 'image/png', 'image/heic',
+             'application/msword',
+             'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+           ]
+        && incomingData().storagePath ==
+             'patients/' + incomingData().patientId + '/documents/' + docId + '/' + incomingData().fileName;
+      // Staff may archive/restore and fix labeling; identity, file pointer,
+      // and ownership fields are immutable.
+      allow update: if isStaff()
+        && incomingData().diff(resource.data).affectedKeys()
+             .hasOnly(['archived', 'archivedBy', 'archivedByName', 'archivedAt', 'title', 'category', 'docDate']);
+      allow delete: if false;
+    }
+
     // Default deny
     match /{document=**} {
       allow read, write: if false;

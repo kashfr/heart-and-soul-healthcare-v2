@@ -317,6 +317,50 @@ export function marComplianceStats(
 }
 
 // ---------------------------------------------------------------------------
+// Document currency (phase 3). How fresh is the newest document of a category
+// (plan of care, supervisory visit)? Structural type mirrors PatientDocument
+// without importing the Firebase-backed module.
+// ---------------------------------------------------------------------------
+
+export interface DashDocument {
+  id?: string;
+  category: string;
+  docDate: string; // YYYY-MM-DD (the date ON the document)
+  archived?: boolean;
+}
+
+export interface DocumentCurrency {
+  status: 'good' | 'warn' | 'bad' | 'none';
+  daysSince: number | null;
+  newestDateISO: string;
+}
+
+/**
+ * Currency of the newest non-archived document in a category against a
+ * required interval: 'good' within maxAgeDays, 'warn' up to 25% past it,
+ * 'bad' beyond, 'none' when no dated document exists. A future-dated document
+ * (e.g. a plan of care for a cert period starting next week) clamps to 0 days
+ * rather than reporting a negative age.
+ */
+export function documentCurrency(
+  docs: DashDocument[],
+  category: string,
+  maxAgeDays: number,
+  todayISO: string,
+): DocumentCurrency {
+  const dates = docs
+    .filter((d) => !d.archived && d.category === category && /^\d{4}-\d{2}-\d{2}$/.test(d.docDate || ''))
+    .map((d) => d.docDate)
+    .sort();
+  if (dates.length === 0) return { status: 'none', daysSince: null, newestDateISO: '' };
+  const newest = dates[dates.length - 1];
+  const daysSince = Math.max(0, daysBetweenISO(newest, todayISO));
+  const status: DocumentCurrency['status'] =
+    daysSince <= maxAgeDays ? 'good' : daysSince <= Math.round(maxAgeDays * 1.25) ? 'warn' : 'bad';
+  return { status, daysSince, newestDateISO: newest };
+}
+
+// ---------------------------------------------------------------------------
 // Chart series (phase 2). Parsed, bounds-guarded points so a typo ("980/60",
 // "9.86") can't blow out a chart's axis; unparseable values are dropped, not
 // zeroed.
