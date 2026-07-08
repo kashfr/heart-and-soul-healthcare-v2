@@ -5,7 +5,8 @@ import { Archive, ArchiveRestore, ExternalLink, FileText, FileUp, Image as Image
 import {
   ALLOWED_DOC_TYPES,
   DOC_CATEGORIES,
-  getDocumentUrl,
+  getDocumentBlob,
+  renderDocumentInWindow,
   setDocumentArchived,
   uploadPatientDocument,
   type DocCategory,
@@ -86,8 +87,12 @@ export default function DocumentsSection({
     }
     w.opener = null;
     try {
-      const url = await getDocumentUrl(d);
-      w.location.href = url;
+      const content = await getDocumentBlob(d);
+      // Build the viewer INSIDE the popup rather than navigating it — Safari
+      // silently refuses to navigate an about:blank popup to a blob: URL
+      // (blank tab, no error), while writing into the same-origin popup
+      // document renders in every engine.
+      renderDocumentInWindow(w, content, d);
     } catch {
       w.close();
       onToast('Could not open the document. Please try again.');
