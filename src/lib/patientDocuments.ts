@@ -173,11 +173,10 @@ export async function getPatientDocuments(patientId: string): Promise<PatientDoc
 }
 
 /**
- * Object URL for viewing a document in a new tab. Fetches the bytes UNDER the
- * storage security rules (getBlob) instead of getDownloadURL — the latter
- * mints a long-lived token URL that anyone holding the link could fetch, which
- * is the wrong default for PHI. The returned blob: URL lives only in this
- * browser session; callers may revoke it when done.
+ * Fetch a document's bytes for viewing. Fetches UNDER the storage security
+ * rules (getBlob) instead of getDownloadURL — the latter mints a long-lived
+ * token URL that anyone holding the link could fetch, which is the wrong
+ * default for PHI.
  *
  * SECURITY: the render type comes from the STORAGE object (blob.type — the
  * rules-enforced, immutable contentType set at upload) clamped to the
@@ -186,10 +185,132 @@ export async function getPatientDocuments(patientId: string): Promise<PatientDoc
  * stored XSS; anything off the allowlist falls back to a non-executing
  * download (application/octet-stream).
  */
-export async function getDocumentUrl(d: PatientDocument): Promise<string> {
-  const blob = await getBlob(ref(storage, d.storagePath));
-  const safeType = ALLOWED_DOC_TYPES[blob.type] ? blob.type : 'application/octet-stream';
-  return URL.createObjectURL(new Blob([blob], { type: safeType }));
+export async function getDocumentBlob(
+  d: PatientDocument,
+): Promise<{ blob: Blob; type: string }> {
+  const raw = await getBlob(ref(storage, d.storagePath));
+  const safeType = ALLOWED_DOC_TYPES[raw.type] ? raw.type : 'application/octet-stream';
+  return { blob: new Blob([raw], { type: safeType }), type: safeType };
+}
+
+/** iPhone/iPad WebKit (every iOS browser is a WebKit shell). iPadOS reports a
+ *  desktop-Mac UA, so a touch-capable "Mac" counts too. */
+function isIOSWebKit(w: Window): boolean {
+  const nav = w.navigator;
+  return /iPad|iPhone|iPod/.test(nav.userAgent)
+    || (/Macintosh/.test(nav.userAgent) && nav.maxTouchPoints > 1);
+}
+
+/**
+ * Render a fetched document INSIDE an already-open popup window.
+ *
+ * Why not just `w.location.href = blobUrl`: Safari/WebKit silently refuses to
+ * navigate an about:blank popup to a blob: URL — the tab stays blank with no
+ * error (Chrome allows it). Building the viewer into the popup's own document
+ * works in every engine. Everything is constructed with DOM APIs (no HTML
+ * string interpolation), so file names/titles stay inert text — no XSS
+ * surface on top of the blob: URL, which we minted ourselves.
+ *
+ * The object URL is minted in the POPUP's realm (w.URL), so its lifetime is
+ * tied to the popup document: closing the tab auto-revokes it (no per-view
+ * memory pinned in the long-lived portal tab), and the URL keeps working even
+ * if the portal tab later reloads (download links would otherwise go dead).
+ *
+ * Known tradeoff: reloading the popup re-creates a blank about:blank document
+ * — the viewer doesn't survive a refresh; re-click View instead.
+ */
+export function renderDocumentInWindow(
+  w: Window,
+  content: { blob: Blob; type: string },
+  d: Pick<PatientDocument, 'title' | 'fileName'>,
+): void {
+  if (w.closed) return; // user closed the tab while the bytes were in flight
+  const doc = w.document;
+  const name = d.fileName || 'document';
+  const url = ((w as Window & { URL?: typeof URL }).URL ?? URL).createObjectURL(content.blob);
+  doc.title = d.title || name;
+
+  // Without a viewport meta, iOS lays the popup out at the legacy 980px
+  // viewport — the fallback links would render microscopically small.
+  const meta = doc.createElement('meta');
+  meta.name = 'viewport';
+  meta.content = 'width=device-width, initial-scale=1';
+  doc.head.appendChild(meta);
+
+  doc.documentElement.style.height = '100%';
+  doc.body.style.cssText =
+    'margin:0;height:100%;background:#3a3f44;font:15px system-ui,sans-serif';
+
+  const link = (text: string, opts: { download?: boolean } = {}) => {
+    const a = doc.createElement('a');
+    a.href = url;
+    if (opts.download) a.download = name;
+    a.textContent = text;
+    a.style.cssText = 'color:#fff;display:inline-block;padding:10px 14px';
+    return a;
+  };
+
+  // Centered launcher used whenever inline rendering isn't trustworthy.
+  const launcher = (...links: HTMLAnchorElement[]) => {
+    const wrap = doc.createElement('div');
+    wrap.style.cssText = 'padding:48px 16px;text-align:center';
+    const label = doc.createElement('div');
+    label.textContent = doc.title;
+    label.style.cssText = 'color:#c8cdd2;margin-bottom:16px;word-break:break-word';
+    wrap.appendChild(label);
+    for (const a of links) {
+      a.style.cssText += ';font-size:17px;font-weight:600';
+      wrap.appendChild(a);
+      wrap.appendChild(doc.createElement('br'));
+    }
+    doc.body.appendChild(wrap);
+  };
+
+  if (content.type === 'application/pdf') {
+    if (isIOSWebKit(w)) {
+      // iOS WebKit renders an iframe-embedded PDF as a static image of page 1
+      // ONLY — silent truncation of multi-page clinical documents. Top-level
+      // navigation via a real link tap paginates correctly, so iOS gets a
+      // launcher instead of an inline frame.
+      launcher(link(`Open ${name}`), link('Download a copy', { download: true }));
+      return;
+    }
+    // Desktop: slim header with an always-available escape hatch — "Open"
+    // shows the raw PDF top-level (also the path that restores Cmd+P
+    // printing, which the wrapper page breaks), "Download" saves it.
+    const bar = doc.createElement('div');
+    bar.style.cssText =
+      'position:fixed;top:0;left:0;right:0;height:38px;display:flex;align-items:center;background:#22262a;color:#fff;z-index:1';
+    const ttl = doc.createElement('span');
+    ttl.textContent = doc.title;
+    ttl.style.cssText =
+      'flex:1;padding:0 12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+    bar.appendChild(ttl);
+    bar.appendChild(link('Open'));
+    bar.appendChild(link('Download', { download: true }));
+    const frame = doc.createElement('iframe');
+    frame.src = url;
+    frame.title = doc.title;
+    frame.style.cssText =
+      'border:0;position:fixed;top:38px;left:0;right:0;bottom:0;width:100%;height:calc(100% - 38px)';
+    doc.body.appendChild(bar);
+    doc.body.appendChild(frame);
+  } else if (content.type.startsWith('image/')) {
+    const img = doc.createElement('img');
+    img.src = url;
+    img.alt = name;
+    img.style.cssText = 'display:block;margin:0 auto;max-width:100%';
+    // HEIC renders natively in Safari but not Chrome — if the image can't
+    // decode, fall back to offering the file instead of a broken glyph.
+    img.onerror = () => {
+      img.remove();
+      launcher(link(`Download ${name}`, { download: true }));
+    };
+    doc.body.appendChild(img);
+  } else {
+    // Word docs and anything else browsers can't render inline.
+    launcher(link(`Download ${name}`, { download: true }));
+  }
 }
 
 /** Archive or restore a document (staff-only per rules). The FILE is never
