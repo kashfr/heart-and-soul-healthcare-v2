@@ -7,10 +7,14 @@ interface DeselectableRadioProps extends Omit<React.InputHTMLAttributes<HTMLInpu
   value: string;
 }
 
-// Restore radio state from localStorage on init
-const RADIO_STORAGE_KEY = 'progress-note-radio-draft';
-const savedRadioState = typeof window !== 'undefined' ? localStorage.getItem(RADIO_STORAGE_KEY) : null;
-const radioState: Record<string, string> = savedRadioState ? JSON.parse(savedRadioState) : {};
+// In-memory only. Radio state used to persist to localStorage, but that layer
+// silently rehydrated a prior session's answers into a "new" note — and the
+// key wasn't scoped to the signed-in user, so on a shared browser one nurse's
+// PHI could prefill another's form. Cross-session resume now flows solely
+// through the Firestore draft (explicit resume banner); this store lives and
+// dies with the page.
+const RADIO_STORAGE_KEY = 'progress-note-radio-draft'; // legacy key — scrubbed, never read
+const radioState: Record<string, string> = {};
 
 // Per-name listener sets — each radio only subscribes to changes on its own name
 const nameListeners = new Map<string, Set<() => void>>();
@@ -52,10 +56,6 @@ function setRadio(name: string, value: string | null) {
     delete radioState[name];
   } else {
     radioState[name] = value;
-  }
-  // Persist to localStorage
-  if (typeof window !== 'undefined') {
-    localStorage.setItem(RADIO_STORAGE_KEY, JSON.stringify(radioState));
   }
   // Notify only listeners for this specific name
   nameListeners.get(name)?.forEach(cb => cb());
