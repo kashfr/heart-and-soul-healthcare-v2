@@ -101,3 +101,38 @@ export async function getVisitsForPatient(patientId: string): Promise<PatientVis
     return [];
   }
 }
+
+export interface AssigneeOption {
+  uid: string;
+  name: string;
+  credential: string;
+}
+
+/**
+ * Active RN supervisors — the assignee pool for SUPERVISORY visits. A
+ * supervisory visit is performed by a supervisor, not the client's case
+ * nurse, so the schedule modal must not offer the care team for it. Queried
+ * live from users (role 'supervisor', active) so new supervisors appear
+ * without a code change. The users read rule is staff-only for other
+ * profiles, matching the staff-only schedule-maintenance gate on the caller.
+ */
+export async function getActiveSupervisors(): Promise<AssigneeOption[]> {
+  try {
+    const q = query(
+      collection(db, 'users'),
+      where('role', '==', 'supervisor'),
+      where('active', '==', true),
+    );
+    const snap = await getDocs(q);
+    return snap.docs
+      .map((d) => {
+        const u = d.data() as { displayName?: string; credential?: string };
+        return { uid: d.id, name: u.displayName || '', credential: u.credential || '' };
+      })
+      .filter((s) => s.name)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  } catch (error) {
+    console.error('Error fetching supervisors:', error);
+    return [];
+  }
+}

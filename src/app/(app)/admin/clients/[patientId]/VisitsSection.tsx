@@ -1,10 +1,12 @@
 'use client';
 
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { CalendarClock, CalendarPlus, Check, History, Undo2, X } from 'lucide-react';
 import {
   addVisit,
+  getActiveSupervisors,
   setVisitStatus,
+  type AssigneeOption,
   type PatientVisit,
   type VisitActor,
   type VisitType,
@@ -226,6 +228,22 @@ function AddVisitModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // A supervisory visit is performed by an RN supervisor, not the client's
+  // case nurse — so the assignee pool swaps with the visit type. Supervisors
+  // load once per modal open (staff-only view, matching the users read rule).
+  const [supervisors, setSupervisors] = useState<AssigneeOption[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getActiveSupervisors().then((s) => {
+      if (!cancelled) setSupervisors(s);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const supervisory = type === 'supervisory';
+  const assignPool: AssigneeOption[] = supervisory ? (supervisors ?? []) : careTeam;
+
   const save = async () => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       setError('Pick the visit date.');
@@ -233,7 +251,7 @@ function AddVisitModal({
     }
     setBusy(true);
     setError(null);
-    const teamPick = careTeam.find((m) => m.uid === nurseUid);
+    const pick = assignPool.find((m) => m.uid === nurseUid);
     try {
       await addVisit(
         {
@@ -241,8 +259,8 @@ function AddVisitModal({
           date,
           startTime,
           type,
-          nurseId: teamPick?.uid || '',
-          nurseName: teamPick ? `${teamPick.name}${teamPick.credential ? `, ${teamPick.credential}` : ''}` : nurseFree.trim(),
+          nurseId: pick?.uid || '',
+          nurseName: pick ? `${pick.name}${pick.credential ? `, ${pick.credential}` : ''}` : nurseFree.trim(),
           notes,
         },
         actor,
@@ -273,7 +291,16 @@ function AddVisitModal({
 
         <label style={fieldStyle}>
           <span style={fieldLabelStyle}>Visit type</span>
-          <select value={type} onChange={(e) => setType(e.target.value as VisitType)} style={inputStyle}>
+          <select
+            value={type}
+            onChange={(e) => {
+              setType(e.target.value as VisitType);
+              // The pools don't overlap (case nurses vs supervisors), so a
+              // selection can't survive a type switch.
+              setNurseUid('');
+            }}
+            style={inputStyle}
+          >
             <option value="shift">Shift (regular nursing visit)</option>
             <option value="supervisory">Supervisory visit (RN supervision)</option>
           </select>
@@ -281,10 +308,12 @@ function AddVisitModal({
 
         <div style={grid2Style}>
           <label style={fieldStyle}>
-            <span style={fieldLabelStyle}>Nurse (care team)</span>
+            <span style={fieldLabelStyle}>{supervisory ? 'Supervisor (RN)' : 'Nurse (care team)'}</span>
             <select value={nurseUid} onChange={(e) => setNurseUid(e.target.value)} style={inputStyle}>
-              <option value="">Not assigned yet…</option>
-              {careTeam.map((m) => (
+              <option value="">
+                {supervisory && supervisors === null ? 'Loading supervisors…' : 'Not assigned yet…'}
+              </option>
+              {assignPool.map((m) => (
                 <option key={m.uid} value={m.uid}>
                   {m.name}
                   {m.credential ? `, ${m.credential}` : ''}
@@ -300,7 +329,7 @@ function AddVisitModal({
                 value={nurseFree}
                 onChange={(e) => setNurseFree(e.target.value)}
                 style={inputStyle}
-                placeholder="e.g., new hire not on the team yet"
+                placeholder={supervisory ? 'e.g., contracted RN not in the portal' : 'e.g., new hire not on the team yet'}
               />
             </label>
           )}
