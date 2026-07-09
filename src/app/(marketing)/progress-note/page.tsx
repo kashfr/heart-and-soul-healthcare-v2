@@ -99,22 +99,21 @@ function ProgressNotePageInner() {
   // nurse's note). Bailing on editId from render zero closes that window.
   const isEditMode = !!editId;
   const [editLoaded, setEditLoaded] = useState(false);
-  const savedDraft = typeof window !== 'undefined' ? localStorage.getItem('progress-note-draft') : null;
-  const savedParsed = savedDraft ? JSON.parse(savedDraft) : {};
-  const [initialClientName, setInitialClientName] = useState(savedParsed.q3_clientName || '');
+  // A new note starts BLANK. The form used to seed itself from localStorage
+  // here (client name, credential, page, values below) — a silent prefill
+  // that resurrected abandoned notes and, because the keys weren't scoped to
+  // the signed-in user, could leak one nurse's PHI into another's session on
+  // a shared browser. Cross-session resume now happens ONLY via the Firestore
+  // draft and its explicit resume banner (hydrateFromDraft).
+  const [initialClientName, setInitialClientName] = useState('');
   const [initialSignature, setInitialSignature] = useState('');
   const [initialTotalHours, setInitialTotalHours] = useState('');
 
-  const savedPage = typeof window !== 'undefined' ? parseInt(localStorage.getItem('progress-note-page') || '1', 10) : 1;
-  const [currentPage, setCurrentPageState] = useState(savedPage);
+  const [currentPage, setCurrentPageState] = useState(1);
   const setCurrentPage = (page: number) => {
     setCurrentPageState(page);
-    // Don't persist page number in edit mode — it would leak into new-form sessions
-    if (!isEditMode) {
-      localStorage.setItem('progress-note-page', String(page));
-    }
   };
-  const [credential, setCredential] = useState<CredentialTier>((savedParsed.q12_credential as CredentialTier) || '');
+  const [credential, setCredential] = useState<CredentialTier>('');
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [firebaseLoaded, setFirebaseLoaded] = useState(false);
@@ -212,12 +211,16 @@ function ProgressNotePageInner() {
   const AUTOSAVE_DEBOUNCE_MS = 3000;
   const AUTOSAVE_MIN_INTERVAL_MS = 10000;
 
+  // Legacy device-draft keys. The form no longer READS any of these — a new
+  // note starts blank and resume flows through the Firestore draft banner —
+  // but existing devices still hold PHI under them from before this fix, so
+  // they're scrubbed on mount below (and on submit/discard, as before).
   const STORAGE_KEY = 'progress-note-draft';
-  const savedData = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
-  const defaultValues = savedData ? JSON.parse(savedData) : {};
+  const CHECKBOX_STORAGE_KEY = 'progress-note-checkbox-draft';
 
-  // Ensure date of service defaults to today if not already saved
-  if (!defaultValues.q6_dateofService) {
+  const defaultValues: Record<string, string> = {};
+  {
+    // Date of service defaults to today; everything else starts blank.
     const now = new Date();
     defaultValues.q6_dateofService = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   }
@@ -228,61 +231,24 @@ function ProgressNotePageInner() {
   });
   const { errors } = formState;
 
-  const CHECKBOX_STORAGE_KEY = 'progress-note-checkbox-draft';
-
-  // Auto-save react-hook-form values to localStorage
+  // One-time scrub of the legacy localStorage draft layer. It used to silently
+  // rehydrate a previous session's note (unscoped to the signed-in user — a
+  // cross-account PHI hazard on shared browsers). Clearing here purges stale
+  // PHI from every device on its next visit to the form.
   useEffect(() => {
-    const subscription = watch((values) => {
-      if (!isEditMode) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(values));
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, [watch, isEditMode]);
+    localStorage.removeItem('progress-note-draft');
+    localStorage.removeItem('progress-note-checkbox-draft');
+    localStorage.removeItem('progress-note-page');
+    localStorage.removeItem('progress-note-radio-draft');
+  }, []);
 
-  // Auto-save checkbox states to localStorage
-  useEffect(() => {
-    const form = formRef.current;
-    if (!form || isEditMode) return;
-
-    const saveCheckboxes = () => {
-      const checkboxData: Record<string, string[]> = {};
-      form.querySelectorAll('input[type="checkbox"]').forEach((el) => {
-        const cb = el as HTMLInputElement;
-        if (!cb.name) return; // skip nameless UI toggles (e.g. the med-request modal's PRN / dose checkboxes); Firestore rejects an empty field name
-        if (!checkboxData[cb.name]) checkboxData[cb.name] = [];
-        if (cb.checked) checkboxData[cb.name].push(cb.value);
-      });
-      localStorage.setItem(CHECKBOX_STORAGE_KEY, JSON.stringify(checkboxData));
-    };
-
-    form.addEventListener('change', saveCheckboxes);
-    return () => form.removeEventListener('change', saveCheckboxes);
-  }, [isEditMode, firebaseLoaded]);
-
-  // Restore checkbox states from localStorage on mount, then mark form as ready
+  // The form is ready as soon as auth resolves — there is no device-draft
+  // restore step anymore (the Firestore resume path hydrates via
+  // hydrateFromDraft after the nurse explicitly chooses to resume).
   useEffect(() => {
     if (!firebaseLoaded) return;
-
-    const savedCheckboxes = localStorage.getItem(CHECKBOX_STORAGE_KEY);
-    if (!savedCheckboxes || !formRef.current || isEditMode) {
-      setFormReady(true);
-      return;
-    }
-
-    const checkboxData = JSON.parse(savedCheckboxes) as Record<string, string[]>;
-    // Delay to ensure DOM is rendered, then restore and reveal
-    setTimeout(() => {
-      for (const [name, values] of Object.entries(checkboxData)) {
-        const checkboxes = formRef.current?.querySelectorAll(`input[type="checkbox"][name="${name}"]`);
-        checkboxes?.forEach((el) => {
-          const cb = el as HTMLInputElement;
-          cb.checked = values.includes(cb.value);
-        });
-      }
-      setFormReady(true);
-    }, 300);
-  }, [firebaseLoaded, isEditMode]);
+    setFormReady(true);
+  }, [firebaseLoaded]);
 
   const activePages = getActivePages(credential);
   const totalActivePages = activePages.length;
