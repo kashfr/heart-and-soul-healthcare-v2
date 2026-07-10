@@ -5,6 +5,7 @@ import { CalendarClock, CalendarPlus, Check, History, Undo2, X } from 'lucide-re
 import {
   addVisit,
   getActiveSupervisors,
+  notifyVisitAssignee,
   setVisitStatus,
   type AssigneeOption,
   type PatientVisit,
@@ -67,9 +68,22 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
     setBusyId(v.id);
     try {
       await setVisitStatus(v.id, status, actor);
-      onToast(
-        status === 'completed' ? 'Visit marked completed.' : status === 'cancelled' ? 'Visit cancelled.' : 'Visit restored.',
-      );
+      const base =
+        status === 'completed' ? 'Visit marked completed.' : status === 'cancelled' ? 'Visit cancelled.' : 'Visit restored.';
+      // Cancelling or restoring an assigned visit notifies the assignee
+      // (text + email, PHI-free). Completion doesn't — she was there.
+      if (status !== 'completed' && v.nurseId) {
+        const n = await notifyVisitAssignee(v.id, status === 'cancelled' ? 'cancelled' : 'restored');
+        onToast(
+          n.smsOk || n.emailOk
+            ? `${base} ${v.nurseName || 'The assignee'} was notified${n.smsOk && n.emailOk ? ' by text and email' : n.smsOk ? ' by text' : ' by email'}.`
+            : n.skipped
+              ? base
+              : `${base} The notification could not be sent — let ${v.nurseName || 'the assignee'} know directly.`,
+        );
+      } else {
+        onToast(base);
+      }
       onChanged();
     } catch {
       onToast('Could not update the visit. Please try again.');
@@ -196,9 +210,21 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
           actor={actor}
           careTeam={careTeam}
           onClose={() => setAddOpen(false)}
-          onAdded={() => {
-            onToast('Visit scheduled.');
+          onAdded={async ({ visitId, assigneeUid, assigneeName }) => {
             onChanged();
+            if (!assigneeUid) {
+              onToast('Visit scheduled.');
+              return;
+            }
+            // Assigned to a portal account: text + email them (PHI-free).
+            const n = await notifyVisitAssignee(visitId, 'assigned');
+            onToast(
+              n.smsOk || n.emailOk
+                ? `Visit scheduled — ${assigneeName} was notified${n.smsOk && n.emailOk ? ' by text and email' : n.smsOk ? ' by text' : ' by email'}.`
+                : n.skipped
+                  ? 'Visit scheduled.'
+                  : `Visit scheduled, but the notification could not be sent — let ${assigneeName} know directly.`,
+            );
           }}
         />
       )}
@@ -217,7 +243,7 @@ function AddVisitModal({
   actor: VisitActor;
   careTeam: Array<{ uid: string; name: string; credential: string }>;
   onClose: () => void;
-  onAdded: () => void;
+  onAdded: (added: { visitId: string; assigneeUid: string; assigneeName: string }) => void;
 }) {
   const [date, setDate] = useState(todayISO());
   const [startTime, setStartTime] = useState('');
@@ -253,7 +279,7 @@ function AddVisitModal({
     setError(null);
     const pick = assignPool.find((m) => m.uid === nurseUid);
     try {
-      await addVisit(
+      const visitId = await addVisit(
         {
           patientId,
           date,
@@ -265,7 +291,7 @@ function AddVisitModal({
         },
         actor,
       );
-      onAdded();
+      onAdded({ visitId, assigneeUid: pick?.uid || '', assigneeName: pick?.name || '' });
       onClose();
     } catch {
       setError('Could not schedule the visit. Please try again.');
@@ -331,6 +357,11 @@ function AddVisitModal({
                 style={inputStyle}
                 placeholder={supervisory ? 'e.g., contracted RN not in the portal' : 'e.g., new hire not on the team yet'}
               />
+              {nurseFree.trim() !== '' && (
+                <span style={{ fontSize: 12, color: '#8a6d1a', marginTop: 4 }}>
+                  Typed-in assignees don&apos;t get text/email notifications (no portal account) — reach out to them directly.
+                </span>
+              )}
             </label>
           )}
         </div>
