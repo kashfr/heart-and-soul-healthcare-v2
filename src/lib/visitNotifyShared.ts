@@ -8,7 +8,7 @@
  * login; the messages link there.
  */
 
-export type VisitNotifyEvent = 'assigned' | 'cancelled' | 'restored';
+export type VisitNotifyEvent = 'assigned' | 'cancelled' | 'restored' | 'reminder';
 
 export interface VisitNotifyFacts {
   date: string; // YYYY-MM-DD
@@ -57,6 +57,8 @@ export function visitSmsBody(event: VisitNotifyEvent, facts: VisitNotifyFacts): 
       return `Heart & Soul Healthcare: your ${what} on ${when} was cancelled. Questions? Check the portal: ${PORTAL_LOGIN_URL}`;
     case 'restored':
       return `Heart & Soul Healthcare: your ${what} on ${when} is back on the schedule. Sign in for client details: ${PORTAL_LOGIN_URL}`;
+    case 'reminder':
+      return `Heart & Soul Healthcare reminder: you have a ${what} today, ${when}. Sign in for client details: ${PORTAL_LOGIN_URL}`;
   }
 }
 
@@ -69,6 +71,8 @@ export function visitEmailSubject(event: VisitNotifyEvent, facts: VisitNotifyFac
       return `Visit cancelled: ${when}`;
     case 'restored':
       return `Visit back on the schedule: ${when}`;
+    case 'reminder':
+      return `Visit reminder for today: ${when}`;
   }
 }
 
@@ -86,6 +90,8 @@ export function visitEmailBody(
       ? `A ${what} was assigned to you for ${when}.`
       : event === 'cancelled'
         ? `Your ${what} on ${when} was cancelled.`
-        : `Your ${what} on ${when} is back on the schedule.`;
+        : event === 'reminder'
+          ? `A reminder: you have a ${what} today, ${when}.`
+          : `Your ${what} on ${when} is back on the schedule.`;
   return `${greeting}\n\n${line}\n\nFor the client's name and details, sign in to the staff portal (client information is never included in email or text): ${PORTAL_LOGIN_URL}\n\nHeart and Soul Healthcare`;
 }

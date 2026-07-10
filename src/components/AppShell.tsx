@@ -25,6 +25,7 @@ import { useEffectiveUser } from './AuthProvider';
 import { useViewAs } from './ImpersonationProvider';
 import { useSettings } from './SettingsProvider';
 import UserMenu from './UserMenu';
+import NotificationsBell from './NotificationsBell';
 import ClarificationGate from './ClarificationGate';
 import type { Role } from '@/lib/auth';
 import { subscribePendingDupCount } from '@/lib/drafts';
@@ -329,6 +330,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </button>
           <div className="app-shell-title">{currentTitle}</div>
           <div style={{ flex: 1 }} />
+          <NotificationsBell />
           <UserMenu />
         </header>
 

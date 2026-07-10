@@ -40,6 +40,14 @@ describe('visitSmsBody', () => {
     expect(body).toContain(PORTAL_LOGIN_URL);
   });
 
+  it('covers the day-of reminder', () => {
+    const body = visitSmsBody('reminder', SHIFT);
+    expect(body).toContain('reminder');
+    expect(body).toContain('today, Fri, Jul 10 at 10:00 AM');
+    expect(visitEmailSubject('reminder', SHIFT)).toBe('Visit reminder for today: Fri, Jul 10');
+    expect(visitEmailBody('reminder', SHIFT, 'Steve')).toContain('A reminder: you have a shift visit today');
+  });
+
   it('covers cancellation and restore with the supervisory label', () => {
     expect(visitSmsBody('cancelled', SUP_NO_TIME)).toContain('supervisory visit');
     expect(visitSmsBody('cancelled', SUP_NO_TIME)).toContain('was cancelled');
