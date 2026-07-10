@@ -26,6 +26,10 @@ import {
   type DashboardNote,
   type DashAdmin,
   type DashOrder,
+  groupVisitsByDate,
+  monthGridDays,
+  monthTitle,
+  shiftMonth,
 } from './clientDashboardShared';
 
 function note(overrides: Partial<DashboardNote> = {}): DashboardNote {
@@ -444,5 +448,44 @@ describe('visits (phase 4)', () => {
     expect(none.status).toBe('none');
     expect(bestCurrency(none, fromDoc).status).toBe('bad');
     expect(bestCurrency(none, none).status).toBe('none');
+  });
+});
+
+describe('monthGridDays / monthTitle / shiftMonth', () => {
+  it('builds a Sunday-first 42-cell grid for July 2026', () => {
+    const grid = monthGridDays(2026, 6); // July 2026 starts on a Wednesday
+    expect(grid).toHaveLength(42);
+    expect(grid[0].iso).toBe('2026-06-28'); // the Sunday before
+    expect(grid[0].inMonth).toBe(false);
+    expect(grid[3].iso).toBe('2026-07-01');
+    expect(grid[3].inMonth).toBe(true);
+    expect(grid.filter((d) => d.inMonth)).toHaveLength(31);
+  });
+
+  it('handles a month that starts on Sunday without a leading foreign week', () => {
+    const grid = monthGridDays(2026, 2); // March 2026 starts on a Sunday
+    expect(grid[0].iso).toBe('2026-03-01');
+    expect(grid[0].inMonth).toBe(true);
+  });
+
+  it('titles and shifts months across year boundaries', () => {
+    expect(monthTitle(2026, 6)).toBe('July 2026');
+    expect(shiftMonth(2026, 11, 1)).toEqual({ year: 2027, month0: 0 });
+    expect(shiftMonth(2026, 0, -1)).toEqual({ year: 2025, month0: 11 });
+  });
+});
+
+describe('groupVisitsByDate', () => {
+  it('groups by date and orders each day by start time, untimed last', () => {
+    const visits = [
+      { date: '2026-07-10', startTime: '14:00', type: 'shift', status: 'scheduled' },
+      { date: '2026-07-10', type: 'supervisory', status: 'scheduled' },
+      { date: '2026-07-10', startTime: '08:00', type: 'shift', status: 'completed' },
+      { date: '2026-07-11', startTime: '09:00', type: 'shift', status: 'scheduled' },
+      { date: '', type: 'shift', status: 'scheduled' },
+    ];
+    const map = groupVisitsByDate(visits);
+    expect([...map.keys()].sort()).toEqual(['2026-07-10', '2026-07-11']);
+    expect(map.get('2026-07-10')!.map((v) => v.startTime || 'none')).toEqual(['08:00', '14:00', 'none']);
   });
 });

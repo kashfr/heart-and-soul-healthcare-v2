@@ -13,6 +13,7 @@ import {
   type VisitType,
 } from '@/lib/patientVisits';
 import { overdueVisits, recentResolvedVisits, scheduledBeyond, upcomingVisits } from '@/lib/clientDashboardShared';
+import VisitsCalendar from './VisitsCalendar';
 
 function todayISO(): string {
   const d = new Date();
@@ -54,8 +55,10 @@ interface Props {
  */
 export default function VisitsSection({ patientId, visits, isStaff, actor, careTeam, onChanged, onToast }: Props) {
   const [addOpen, setAddOpen] = useState(false);
+  const [addDate, setAddDate] = useState<string | null>(null); // day preset when adding from the calendar grid
   const [showHistory, setShowHistory] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [view, setView] = useState<'calendar' | 'list'>('calendar');
   const today = todayISO();
 
   const upcoming = useMemo(() => upcomingVisits(visits, today, 5), [visits, today]);
@@ -129,8 +132,24 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
             ? 'Schedule shift and supervisory visits; mark them completed as they happen.'
             : 'Your scheduled visits for this client. The office maintains the schedule.'}
         </span>
+        <div style={viewToggleStyle} role="group" aria-label="Schedule view">
+          <button
+            type="button"
+            onClick={() => setView('calendar')}
+            style={{ ...viewPillStyle, ...(view === 'calendar' ? viewPillActiveStyle : null) }}
+          >
+            Calendar
+          </button>
+          <button
+            type="button"
+            onClick={() => setView('list')}
+            style={{ ...viewPillStyle, ...(view === 'list' ? viewPillActiveStyle : null) }}
+          >
+            List
+          </button>
+        </div>
         {isStaff && (
-          <button type="button" onClick={() => setAddOpen(true)} style={addBtnStyle}>
+          <button type="button" onClick={() => { setAddDate(null); setAddOpen(true); }} style={addBtnStyle}>
             <CalendarPlus size={15} /> Add visit
           </button>
         )}
@@ -143,7 +162,19 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
         </>
       )}
 
-      {upcoming.length === 0 ? (
+      {view === 'calendar' ? (
+        <VisitsCalendar
+          visits={visits}
+          today={today}
+          isStaff={isStaff}
+          busyId={busyId}
+          onMark={mark}
+          onAddOn={(dateISO) => {
+            setAddDate(dateISO);
+            setAddOpen(true);
+          }}
+        />
+      ) : upcoming.length === 0 ? (
         <div style={emptyStyle}>
           <CalendarClock size={16} style={{ marginBottom: 4 }} />
           <div>No upcoming visits scheduled{isStaff ? ' — add the next shift or supervisory visit.' : '.'}</div>
@@ -161,8 +192,9 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
       )}
 
       {/* Recently completed/cancelled — visible history so a mis-clicked Done or
-          Cancel never silently vanishes; staff can restore it to the schedule. */}
-      {resolved.length > 0 && (
+          Cancel never silently vanishes; staff can restore it to the schedule.
+          (List view only — the calendar shows resolved visits in place.) */}
+      {view === 'list' && resolved.length > 0 && (
         <div style={{ marginTop: 12 }}>
           <button type="button" onClick={() => setShowHistory((s) => !s)} style={historyToggleStyle}>
             <History size={13} /> {showHistory ? 'Hide' : 'Show'} recent history ({resolved.length})
@@ -209,6 +241,7 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
           patientId={patientId}
           actor={actor}
           careTeam={careTeam}
+          initialDate={addDate || undefined}
           onClose={() => setAddOpen(false)}
           onAdded={async ({ visitId, assigneeUid, assigneeName }) => {
             onChanged();
@@ -236,16 +269,18 @@ function AddVisitModal({
   patientId,
   actor,
   careTeam,
+  initialDate,
   onClose,
   onAdded,
 }: {
   patientId: string;
   actor: VisitActor;
   careTeam: Array<{ uid: string; name: string; credential: string }>;
+  initialDate?: string; // preset when opened from a calendar day
   onClose: () => void;
   onAdded: (added: { visitId: string; assigneeUid: string; assigneeName: string }) => void;
 }) {
-  const [date, setDate] = useState(todayISO());
+  const [date, setDate] = useState(initialDate || todayISO());
   const [startTime, setStartTime] = useState('');
   const [type, setType] = useState<VisitType>('shift');
   const [nurseUid, setNurseUid] = useState('');
@@ -391,8 +426,11 @@ const toolbarStyle: CSSProperties = { display: 'flex', alignItems: 'center', jus
 const hintStyle: CSSProperties = { fontSize: 12.5, color: '#7f8c8d', flex: 1, minWidth: 200 };
 const addBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: NAVY, color: 'white', border: 'none', padding: '7px 13px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
 const groupLabelStyle: CSSProperties = { fontSize: 11.5, fontWeight: 700, color: '#8a949e', textTransform: 'uppercase', letterSpacing: 0.4, margin: '10px 0 6px' };
+const viewToggleStyle: CSSProperties = { display: 'inline-flex', background: '#eef2f6', borderRadius: 8, padding: 2, gap: 2 };
+const viewPillStyle: CSSProperties = { background: 'transparent', border: 'none', padding: '5px 12px', borderRadius: 6, fontSize: 12.5, fontWeight: 600, color: '#5c6b7a', cursor: 'pointer', fontFamily: 'inherit' };
+const viewPillActiveStyle: CSSProperties = { background: 'white', color: NAVY, boxShadow: '0 1px 2px rgba(0,0,0,0.08)' };
 const listStyle: CSSProperties = { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 };
-const rowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 10 };
+const rowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'white', borderWidth: 1, borderStyle: 'solid', borderColor: '#e5e7eb', borderRadius: 10 };
 const overdueRowStyle: CSSProperties = { background: '#fff7e6', borderColor: '#f5d9a8' };
 const supChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#e0e7ff', color: '#3730a3', fontSize: 10.5, fontWeight: 700 };
 const shiftChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#e8eef4', color: NAVY, fontSize: 10.5, fontWeight: 700 };

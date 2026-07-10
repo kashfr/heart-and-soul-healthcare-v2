@@ -564,3 +564,52 @@ export function weeklyBuckets(notes: DashboardNote[], weeks: number, todayISO: s
   }
   return buckets;
 }
+
+// --- Visit calendar (client dashboard) ---
+
+export interface CalendarDay {
+  iso: string; // YYYY-MM-DD
+  inMonth: boolean;
+}
+
+/**
+ * The 42 cells (6 fixed weeks, Sunday-first) of a month-view calendar.
+ * Built from explicit Y/M/D components — never Date-parsing an ISO string —
+ * so the grid is immune to timezone drift. month0 is 0-based (JS convention).
+ */
+export function monthGridDays(year: number, month0: number): CalendarDay[] {
+  const firstDow = new Date(year, month0, 1).getDay();
+  const days: CalendarDay[] = [];
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(year, month0, 1 - firstDow + i);
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    days.push({ iso, inMonth: d.getMonth() === month0 });
+  }
+  return days;
+}
+
+/** 'July 2026' title for a month view. */
+export function monthTitle(year: number, month0: number): string {
+  return new Date(year, month0, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
+
+/** Shift a (year, month0) pair by delta months, normalizing across years. */
+export function shiftMonth(year: number, month0: number, delta: number): { year: number; month0: number } {
+  const d = new Date(year, month0 + delta, 1);
+  return { year: d.getFullYear(), month0: d.getMonth() };
+}
+
+/** Visits grouped by date, each day's list ordered by start time (untimed last). */
+export function groupVisitsByDate<T extends DashVisit>(visits: T[]): Map<string, T[]> {
+  const map = new Map<string, T[]>();
+  for (const v of visits) {
+    if (!v.date) continue;
+    const list = map.get(v.date) || [];
+    list.push(v);
+    map.set(v.date, list);
+  }
+  for (const list of map.values()) {
+    list.sort((a, b) => (a.startTime || '99:99').localeCompare(b.startTime || '99:99'));
+  }
+  return map;
+}
