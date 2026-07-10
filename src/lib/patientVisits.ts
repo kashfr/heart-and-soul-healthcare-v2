@@ -9,6 +9,10 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { authedFetch } from './authedFetch';
+import type { VisitNotifyEvent } from './visitNotifyShared';
+
+export type { VisitNotifyEvent };
 
 /**
  * Scheduled client visits (phase 4). The day-to-day schedule is maintained by
@@ -42,6 +46,42 @@ export interface PatientVisit {
 export interface VisitActor {
   uid: string;
   name: string;
+}
+
+export interface VisitNotifyResult {
+  smsOk: boolean;
+  emailOk: boolean;
+  skipped: boolean;
+}
+
+/**
+ * Best-effort SMS + email to the visit's assignee after a scheduling event
+ * (assigned / cancelled / restored). Fired AFTER the Firestore write succeeds
+ * — the schedule is the source of truth; a failed notification only changes
+ * the toast, never the visit. Returns what actually landed so the UI can be
+ * honest about it. PHI-free bodies are composed server-side.
+ */
+export async function notifyVisitAssignee(
+  visitId: string,
+  event: VisitNotifyEvent,
+): Promise<VisitNotifyResult> {
+  try {
+    const res = await authedFetch('/api/visits/notify', {
+      method: 'POST',
+      body: JSON.stringify({ visitId, event }),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      smsOk?: boolean;
+      emailOk?: boolean;
+      skipped?: boolean;
+    };
+    if (!res.ok) return { smsOk: false, emailOk: false, skipped: false };
+    if (data.skipped) return { smsOk: false, emailOk: false, skipped: true };
+    return { smsOk: !!data.smsOk, emailOk: !!data.emailOk, skipped: false };
+  } catch (error) {
+    console.error('Visit notification failed:', error);
+    return { smsOk: false, emailOk: false, skipped: false };
+  }
 }
 
 export interface VisitInput {
