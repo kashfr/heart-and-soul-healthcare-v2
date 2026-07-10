@@ -785,9 +785,51 @@ const tileLabelStyle: React.CSSProperties = { fontSize: 11.5, fontWeight: 700, c
 const tileValueStyle: React.CSSProperties = { fontSize: 24, fontWeight: 800, color: '#1f2937', marginTop: 4, lineHeight: 1.1 };
 const tileSubStyle: React.CSSProperties = { fontSize: 12.5, color: '#7f8c8d', marginTop: 3 };
 const sectionCardStyle: React.CSSProperties = { background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: 18, marginBottom: 14 };
-const tabBarStyle: React.CSSProperties = { display: 'flex', gap: 2, borderBottom: '2px solid #e5e7eb', margin: '2px 0 14px', overflowX: 'auto' };
-const tabBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', borderBottom: '2px solid transparent', marginBottom: -2, padding: '9px 14px', fontSize: 13.5, fontWeight: 600, color: '#5c6b7a', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
-const tabBtnActiveStyle: React.CSSProperties = { color: '#1a3a5c', borderBottomColor: '#1a3a5c' };
+// Folder-style tabs: the active tab is a raised white card that fuses with
+// the page below (its bottom border goes white over the bar's rule line);
+// inactive tabs sit muted behind it. Every border property is LONGHAND in
+// both states — mixing a border shorthand with a longhand override makes
+// React drop/re-add properties across rerenders (dev warning + real styling
+// bugs), so the keys stay constant and only their values change.
+const TAB_EDGE = '#d0d7de';
+const tabBarStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-end', gap: 4, margin: '4px 0 16px', overflowX: 'auto', borderBottomWidth: 1, borderBottomStyle: 'solid', borderBottomColor: TAB_EDGE, paddingTop: 2 };
+const tabBtnStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  background: '#e8edf2',
+  color: '#5c6b7a',
+  padding: '9px 16px',
+  fontSize: 13.5,
+  fontWeight: 600,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  whiteSpace: 'nowrap',
+  borderTopLeftRadius: 10,
+  borderTopRightRadius: 10,
+  marginBottom: -1,
+  borderTopWidth: 1,
+  borderTopStyle: 'solid',
+  borderTopColor: TAB_EDGE,
+  borderLeftWidth: 1,
+  borderLeftStyle: 'solid',
+  borderLeftColor: TAB_EDGE,
+  borderRightWidth: 1,
+  borderRightStyle: 'solid',
+  borderRightColor: TAB_EDGE,
+  borderBottomWidth: 1,
+  borderBottomStyle: 'solid',
+  borderBottomColor: TAB_EDGE,
+};
+const tabBtnActiveStyle: React.CSSProperties = {
+  background: 'white',
+  color: '#1a3a5c',
+  fontWeight: 700,
+  borderTopColor: '#1a3a5c',
+  borderTopWidth: 3,
+  paddingTop: 7,
+  borderBottomColor: 'white',
+};
 const tabBadgeStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 17, height: 17, padding: '0 4px', borderRadius: 999, background: '#b3261e', color: 'white', fontSize: 10.5, fontWeight: 700 };
 const alertStripStyle: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 };
 const alertItemStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fdeaea', color: '#b3261e', border: '1px solid #f3c1bd', borderRadius: 999, padding: '6px 13px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
