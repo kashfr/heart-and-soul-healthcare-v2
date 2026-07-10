@@ -4,7 +4,8 @@ import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { sendSms } from '@/lib/sms/sendSms';
 import { sendVisitNotice } from '@/lib/emails/visitNotice';
-import { visitSmsBody, type VisitNotifyEvent, type VisitNotifyFacts } from '@/lib/visitNotifyShared';
+import { visitSmsBody, whenPhrase, type VisitNotifyEvent, type VisitNotifyFacts } from '@/lib/visitNotifyShared';
+import { createPortalNotification } from '@/lib/notificationsServer';
 
 const EVENTS: VisitNotifyEvent[] = ['assigned', 'cancelled', 'restored'];
 
@@ -88,6 +89,19 @@ export async function POST(request: Request) {
     type: visit.type === 'supervisory' ? 'supervisory' : 'shift',
   };
 
+  // In-portal bell text lives behind the login, so it may name the client —
+  // the detail the PHI-free SMS/email deliberately omit.
+  const patientSnap = await db.collection('patients').doc(String((visit as { patientId?: string }).patientId || '')).get().catch(() => null);
+  const clientName = patientSnap?.exists ? String((patientSnap.data() as { name?: string }).name || '') : '';
+  const when = whenPhrase(facts);
+  const what = facts.type === 'supervisory' ? 'Supervisory visit' : 'Shift visit';
+  const bellText =
+    event === 'assigned'
+      ? `${what} assigned to you${clientName ? ` for ${clientName}` : ''}: ${when}`
+      : event === 'cancelled'
+        ? `${what}${clientName ? ` for ${clientName}` : ''} on ${when} was cancelled`
+        : `${what}${clientName ? ` for ${clientName}` : ''} on ${when} is back on the schedule`;
+
   const [sms, email] = await Promise.all([
     sendSms(assignee.phone || '', visitSmsBody(event, facts)),
     sendVisitNotice({
@@ -95,6 +109,12 @@ export async function POST(request: Request) {
       recipientName: assignee.displayName || '',
       event,
       facts,
+    }),
+    createPortalNotification(db, {
+      userId: assigneeUid,
+      kind: `visit-${event}`,
+      text: bellText,
+      href: `/admin/clients/${String((visit as { patientId?: string }).patientId || '')}?tab=schedule`,
     }),
   ]);
 
