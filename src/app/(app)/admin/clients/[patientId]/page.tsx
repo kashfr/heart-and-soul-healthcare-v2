@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import { useParams } from 'next/navigation';
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowLeft,
   MapPin,
@@ -38,10 +38,30 @@ import {
   latestCompletedVisitISO,
   marComplianceStats,
   notesInWindow,
+  overdueVisits,
   shiftISO,
   timelinessStats,
+  upcomingVisits,
   type DashboardNote,
 } from '@/lib/clientDashboardShared';
+
+// The dashboard grew to seven full sections; tabs keep each audience's view
+// to one screen. The identity header stays above the tabs (context never
+// scrolls away); Overview is the triage view — alerts, stat tiles, the next
+// visits, and recent activity. The active tab lives in the URL (?tab=) so
+// views are shareable/deep-linkable.
+const TABS = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'schedule', label: 'Schedule' },
+  { key: 'trends', label: 'Trends' },
+  { key: 'readiness', label: 'Survey readiness' },
+  { key: 'documents', label: 'Documents' },
+] as const;
+type TabKey = (typeof TABS)[number]['key'];
+
+function isTabKey(v: string | null): v is TabKey {
+  return TABS.some((t) => t.key === v);
+}
 
 // Charts are heavy (recharts) and browser-only; load them after the shell so
 // the dashboard paints fast and SSR never touches the chart lib.
@@ -64,6 +84,14 @@ function todayISO(): string {
 function fmtDate(iso: string): string {
   if (!iso) return '';
   return new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function fmtTime(hhmm?: string): string {
+  if (!hhmm || !/^\d{1,2}:\d{2}$/.test(hhmm)) return '';
+  const [h, m] = hhmm.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
 function initialsOf(name: string): string {
@@ -101,6 +129,14 @@ function tsToDate(v: unknown): Date | null {
 function ClientDashboardInner() {
   const params = useParams();
   const patientId = String(params.patientId);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const tab: TabKey = isTabKey(tabParam) ? tabParam : 'overview';
+  const setTab = (next: TabKey) => {
+    router.replace(next === 'overview' ? pathname : `${pathname}?tab=${next}`, { scroll: false });
+  };
   const { uid, role } = useEffectiveUser();
   const isNurse = role === 'nurse';
   const { settings } = useSettings();
@@ -271,6 +307,54 @@ function ClientDashboardInner() {
   const adverseSignal: Signal =
     adverse.length === 0 ? 'good' : adverse.every((e) => e.physNotified === 'Yes') ? 'warn' : 'bad';
 
+  // Overview tab derivations: the alert strip surfaces every red condition
+  // from anywhere on the dashboard with a jump to where it lives, and the
+  // Survey-readiness tab label wears the count of red signals so problems
+  // are visible from every tab.
+  const overdueList = useMemo(() => overdueVisits(visits, today), [visits, today]);
+  const nextVisits = useMemo(() => upcomingVisits(visits, today, 3), [visits, today]);
+  const alerts: Array<{ text: string; go: () => void }> = [];
+  if (overdueList.length > 0) {
+    alerts.push({
+      text: `${overdueList.length} visit${overdueList.length === 1 ? '' : 's'} past date, not completed`,
+      go: () => setTab('schedule'),
+    });
+  }
+  if (mar30.undocumented > 0) {
+    alerts.push({
+      text: `${mar30.undocumented} scheduled dose${mar30.undocumented === 1 ? '' : 's'} undocumented (30d)`,
+      go: () => router.push(marHref),
+    });
+  }
+  if (mar30.prnPendingResult > 0) {
+    alerts.push({
+      text: `${mar30.prnPendingResult} PRN result${mar30.prnPendingResult === 1 ? '' : 's'} pending`,
+      go: () => router.push(marHref),
+    });
+  }
+  if (adverseSignal === 'bad') {
+    alerts.push({ text: 'Adverse reaction without physician notification', go: () => setTab('readiness') });
+  }
+  if (supCurrency.status === 'bad') {
+    alerts.push({ text: 'Supervisory visit overdue', go: () => setTab('schedule') });
+  } else if (supCurrency.status === 'none') {
+    alerts.push({ text: 'No supervisory visit on record', go: () => setTab('schedule') });
+  }
+  if (pocCurrency.status === 'bad') {
+    alerts.push({ text: 'Plan of care out of date', go: () => setTab('documents') });
+  } else if (pocCurrency.status === 'none') {
+    alerts.push({ text: 'No plan of care on file', go: () => setTab('documents') });
+  }
+  const readinessBadge = [
+    timelinessSignal,
+    gapSignal,
+    doseSignal,
+    prnSignal,
+    adverseSignal,
+    supCurrency.status,
+    pocCurrency.status,
+  ].filter((s) => s === 'bad').length;
+
   return (
     <div style={containerStyle}>
       <div style={{ marginBottom: 14 }}>
@@ -351,6 +435,39 @@ function ClientDashboardInner() {
             )}
           </header>
 
+          {/* Tab bar */}
+          <div style={tabBarStyle} role="tablist" aria-label="Dashboard sections">
+            {TABS.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.key}
+                onClick={() => setTab(t.key)}
+                style={{ ...tabBtnStyle, ...(tab === t.key ? tabBtnActiveStyle : null) }}
+              >
+                {t.label}
+                {t.key === 'readiness' && readinessBadge > 0 && <span style={tabBadgeStyle}>{readinessBadge}</span>}
+              </button>
+            ))}
+          </div>
+
+          {tab === 'overview' && (
+            <>
+              {/* Alert strip: every red condition anywhere on the dashboard,
+                  each jumping to where it lives. */}
+              {alerts.length > 0 ? (
+                <div style={alertStripStyle}>
+                  {alerts.map((a, i) => (
+                    <button key={i} type="button" onClick={a.go} style={alertItemStyle}>
+                      <AlertTriangle size={13} style={{ flexShrink: 0 }} /> {a.text}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div style={allClearStyle}>Nothing needs attention right now.</div>
+              )}
+
           {/* Stat tiles */}
           <div style={tileGridStyle}>
             <StatTile
@@ -371,10 +488,38 @@ function ClientDashboardInner() {
             />
           </div>
 
-          {/* Upcoming visits */}
+              {/* Next visits, compact — the full calendar lives on Schedule */}
+              <section style={sectionCardStyle}>
+                <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
+                  <CalendarClock size={16} /> Next visits
+                </div>
+                {nextVisits.length === 0 ? (
+                  <div style={emptyInlineStyle}>No upcoming visits scheduled.</div>
+                ) : (
+                  <ul style={miniVisitListStyle}>
+                    {nextVisits.map((v) => (
+                      <li key={v.id} style={miniVisitRowStyle}>
+                        <span style={{ fontWeight: 700, color: '#1a3a5c', minWidth: 96, flexShrink: 0 }}>{fmtDate(v.date)}</span>
+                        <span style={{ color: '#2c3e50', minWidth: 0 }}>
+                          {v.type === 'supervisory' ? 'Supervisory visit' : 'Shift'}
+                          {v.startTime ? ` · ${fmtTime(v.startTime)}` : ''}
+                          {v.nurseName ? ` · ${v.nurseName}` : ''}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <button type="button" onClick={() => setTab('schedule')} style={jumpLinkStyle}>
+                  Full schedule
+                </button>
+              </section>
+            </>
+          )}
+
+          {tab === 'schedule' && (
           <section style={sectionCardStyle}>
             <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
-              <CalendarClock size={16} /> Upcoming visits
+              <CalendarClock size={16} /> Schedule
             </div>
             <VisitsSection
               patientId={patientId}
@@ -390,8 +535,10 @@ function ClientDashboardInner() {
               onToast={showToast}
             />
           </section>
+          )}
 
-          {/* Trends & charts */}
+          {/* Trends & charts (recharts chunk loads only when this tab opens) */}
+          {tab === 'trends' && (
           <section style={sectionCardStyle}>
             <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
               <TrendingUp size={16} /> Trends
@@ -403,8 +550,10 @@ function ClientDashboardInner() {
               vitalsOverride={settings.vitals.rangesByAgeGroup}
             />
           </section>
+          )}
 
           {/* Survey readiness */}
+          {tab === 'readiness' && (
           <section style={sectionCardStyle}>
             <div style={sectionTitleStyle}>
               <Activity size={16} /> Survey readiness · baseline
@@ -483,8 +632,10 @@ function ClientDashboardInner() {
               />
             </div>
           </section>
+          )}
 
           {/* Documents */}
+          {tab === 'documents' && (
           <section style={sectionCardStyle}>
             <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
               <FolderOpen size={16} /> Documents
@@ -507,8 +658,10 @@ function ClientDashboardInner() {
               onToast={showToast}
             />
           </section>
+          )}
 
-          {/* Recent activity */}
+          {/* Recent activity (Overview: renders below Next visits) */}
+          {tab === 'overview' && (
           <section style={sectionCardStyle}>
             <div style={sectionTitleStyle}>
               <ClipboardList size={16} /> Recent activity
@@ -531,6 +684,7 @@ function ClientDashboardInner() {
               </ul>
             )}
           </section>
+          )}
         </>
       )}
 
@@ -631,6 +785,58 @@ const tileLabelStyle: React.CSSProperties = { fontSize: 11.5, fontWeight: 700, c
 const tileValueStyle: React.CSSProperties = { fontSize: 24, fontWeight: 800, color: '#1f2937', marginTop: 4, lineHeight: 1.1 };
 const tileSubStyle: React.CSSProperties = { fontSize: 12.5, color: '#7f8c8d', marginTop: 3 };
 const sectionCardStyle: React.CSSProperties = { background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: 18, marginBottom: 14 };
+// Folder-style tabs: the active tab is a raised white card that fuses with
+// the page below (its bottom border goes white over the bar's rule line);
+// inactive tabs sit muted behind it. Every border property is LONGHAND in
+// both states — mixing a border shorthand with a longhand override makes
+// React drop/re-add properties across rerenders (dev warning + real styling
+// bugs), so the keys stay constant and only their values change.
+const TAB_EDGE = '#d0d7de';
+const tabBarStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-end', gap: 4, margin: '4px 0 16px', overflowX: 'auto', borderBottomWidth: 1, borderBottomStyle: 'solid', borderBottomColor: TAB_EDGE, paddingTop: 2 };
+const tabBtnStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  background: '#e8edf2',
+  color: '#5c6b7a',
+  padding: '9px 16px',
+  fontSize: 13.5,
+  fontWeight: 600,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  whiteSpace: 'nowrap',
+  borderTopLeftRadius: 10,
+  borderTopRightRadius: 10,
+  marginBottom: -1,
+  borderTopWidth: 1,
+  borderTopStyle: 'solid',
+  borderTopColor: TAB_EDGE,
+  borderLeftWidth: 1,
+  borderLeftStyle: 'solid',
+  borderLeftColor: TAB_EDGE,
+  borderRightWidth: 1,
+  borderRightStyle: 'solid',
+  borderRightColor: TAB_EDGE,
+  borderBottomWidth: 1,
+  borderBottomStyle: 'solid',
+  borderBottomColor: TAB_EDGE,
+};
+const tabBtnActiveStyle: React.CSSProperties = {
+  background: 'white',
+  color: '#1a3a5c',
+  fontWeight: 700,
+  borderTopColor: '#1a3a5c',
+  borderTopWidth: 3,
+  paddingTop: 7,
+  borderBottomColor: 'white',
+};
+const tabBadgeStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 17, height: 17, padding: '0 4px', borderRadius: 999, background: '#b3261e', color: 'white', fontSize: 10.5, fontWeight: 700 };
+const alertStripStyle: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 };
+const alertItemStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fdeaea', color: '#b3261e', border: '1px solid #f3c1bd', borderRadius: 999, padding: '6px 13px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
+const allClearStyle: React.CSSProperties = { background: '#e8f4e8', color: '#1e5c1e', borderRadius: 8, padding: '8px 13px', fontSize: 12.5, fontWeight: 600, marginBottom: 14 };
+const miniVisitListStyle: React.CSSProperties = { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 6 };
+const miniVisitRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'baseline', gap: 10, padding: '7px 10px', background: '#f8fafc', borderRadius: 8, fontSize: 13 };
+const jumpLinkStyle: React.CSSProperties = { background: 'transparent', border: 'none', color: '#1a3a5c', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', padding: '8px 2px 0', textDecoration: 'underline' };
 const sectionTitleStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 700, color: NAVY };
 const sectionSubStyle: React.CSSProperties = { fontSize: 12.5, color: '#7f8c8d', margin: '6px 0 12px', lineHeight: 1.5 };
 const readinessGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 10 };
