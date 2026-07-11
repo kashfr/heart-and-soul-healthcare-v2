@@ -158,7 +158,7 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
       {overdue.length > 0 && (
         <>
           <div style={groupLabelStyle}>Needs attention</div>
-          <ul style={listStyle}>{overdue.map((v) => renderVisit(v, true))}</ul>
+          <ul style={{ ...listStyle, marginBottom: 18 }}>{overdue.map((v) => renderVisit(v, true))}</ul>
         </>
       )}
 
@@ -360,7 +360,7 @@ function AddVisitModal({
               // selection can't survive a type switch.
               setNurseUid('');
             }}
-            style={inputStyle}
+            style={selectStyle}
           >
             <option value="shift">Shift (regular nursing visit)</option>
             <option value="supervisory">Supervisory visit (RN supervision)</option>
@@ -370,7 +370,7 @@ function AddVisitModal({
         <div style={grid2Style}>
           <label style={fieldStyle}>
             <span style={fieldLabelStyle}>{supervisory ? 'Supervisor (RN)' : 'Nurse (care team)'}</span>
-            <select value={nurseUid} onChange={(e) => setNurseUid(e.target.value)} style={inputStyle}>
+            <select value={nurseUid} onChange={(e) => setNurseUid(e.target.value)} style={selectStyle}>
               <option value="">
                 {supervisory && supervisors === null ? 'Loading supervisors…' : 'Not assigned yet…'}
               </option>
@@ -448,6 +448,12 @@ const sheetTitleStyle: CSSProperties = { fontWeight: 700, fontSize: 17, color: '
 const fieldStyle: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12, minWidth: 0 };
 const fieldLabelStyle: CSSProperties = { fontSize: 12, fontWeight: 600, color: '#5c6b7a' };
 const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', height: 38 };
+const selectStyle: CSSProperties = {
+  ...inputStyle,
+  appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 34, cursor: 'pointer',
+  background: "white url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\") no-repeat right 11px center",
+  backgroundSize: '13px',
+};
 const grid2Style: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 };
 const errBoxStyle: CSSProperties = { background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '8px 11px', fontSize: 13, marginBottom: 10 };
 const actionsStyle: CSSProperties = { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 };
