@@ -32,6 +32,12 @@ steps:
       '.',
     ]
 
+  # Push BEFORE the deploy step: Cloud Build only pushes the images: list
+  # after ALL steps finish, so without this the deploy step reaches for an
+  # image that isn't in the registry yet (exactly how build 49112186 failed).
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '--all-tags', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}']
+
   # Deploy the freshly built image. Only --image is passed, so the service
   # keeps its existing configuration (region, secrets, scaling) from the
   # initial gcloud run deploy — CI never has to restate the secret mappings.
