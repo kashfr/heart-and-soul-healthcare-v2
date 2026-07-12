@@ -8,7 +8,12 @@
  * login; the messages link there.
  */
 
-export type VisitNotifyEvent = 'assigned' | 'cancelled' | 'restored' | 'reminder';
+export type VisitNotifyEvent =
+  | 'assigned'
+  | 'cancelled'
+  | 'restored'
+  | 'reminder' // day-of nudge (sent the morning of the visit)
+  | 'reminder_tomorrow'; // evening-before reminder (sent ~6 PM the prior day)
 
 export interface VisitNotifyFacts {
   date: string; // YYYY-MM-DD
@@ -41,6 +46,28 @@ export function visitTypeLabel(type: VisitNotifyFacts['type']): string {
   return type === 'supervisory' ? 'supervisory visit' : 'shift visit';
 }
 
+/** 'HH:MM' 24h → minutes past midnight, or null when unset/unparseable. */
+export function startTimeMinutes(hhmm?: string): number | null {
+  if (!hhmm || !/^\d{1,2}:\d{2}$/.test(hhmm)) return null;
+  const [h, m] = hhmm.split(':').map(Number);
+  if (h > 23 || m > 59) return null;
+  return h * 60 + m;
+}
+
+/**
+ * Early shifts get their useful reminder the EVENING BEFORE; a 7 AM day-of
+ * text for a 5:00 or 7:30 start would land after (or minutes before) the
+ * shift began. The day-of nudge therefore only goes to visits starting at
+ * or after this cutoff. Visits with no/unparseable start time skip the
+ * nudge too — they were covered by the evening-before reminder.
+ */
+export const MORNING_NUDGE_CUTOFF_MINUTES = 9 * 60 + 30; // 9:30 AM
+
+export function needsMorningNudge(startTime?: string): boolean {
+  const mins = startTimeMinutes(startTime);
+  return mins !== null && mins >= MORNING_NUDGE_CUTOFF_MINUTES;
+}
+
 /** 'Thu, Jul 10 at 10:00 AM' (time omitted when not set). */
 export function whenPhrase(facts: VisitNotifyFacts): string {
   const t = friendlyTime(facts.startTime);
@@ -59,6 +86,8 @@ export function visitSmsBody(event: VisitNotifyEvent, facts: VisitNotifyFacts): 
       return `Heart & Soul Healthcare: your ${what} on ${when} is back on the schedule. Sign in for client details: ${PORTAL_LOGIN_URL}`;
     case 'reminder':
       return `Heart & Soul Healthcare reminder: you have a ${what} today, ${when}. Sign in for client details: ${PORTAL_LOGIN_URL}`;
+    case 'reminder_tomorrow':
+      return `Heart & Soul Healthcare reminder: you have a ${what} tomorrow, ${when}. Sign in for client details: ${PORTAL_LOGIN_URL}`;
   }
 }
 
@@ -73,6 +102,8 @@ export function visitEmailSubject(event: VisitNotifyEvent, facts: VisitNotifyFac
       return `Visit back on the schedule: ${when}`;
     case 'reminder':
       return `Visit reminder for today: ${when}`;
+    case 'reminder_tomorrow':
+      return `Visit reminder for tomorrow: ${when}`;
   }
 }
 
@@ -92,6 +123,8 @@ export function visitEmailBody(
         ? `Your ${what} on ${when} was cancelled.`
         : event === 'reminder'
           ? `A reminder: you have a ${what} today, ${when}.`
-          : `Your ${what} on ${when} is back on the schedule.`;
+          : event === 'reminder_tomorrow'
+            ? `A reminder: you have a ${what} tomorrow, ${when}.`
+            : `Your ${what} on ${when} is back on the schedule.`;
   return `${greeting}\n\n${line}\n\nFor the client's name and details, sign in to the staff portal (client information is never included in email or text): ${PORTAL_LOGIN_URL}\n\nHeart and Soul Healthcare`;
 }

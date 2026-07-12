@@ -6,7 +6,11 @@
       "schedule": "0 7 * * *"
     },
     {
-      "path": "/api/cron/visit-reminders",
+      "path": "/api/cron/visit-reminders?window=evening",
+      "schedule": "0 22 * * *"
+    },
+    {
+      "path": "/api/cron/visit-reminders?window=morning",
       "schedule": "0 11 * * *"
     }
   ]
