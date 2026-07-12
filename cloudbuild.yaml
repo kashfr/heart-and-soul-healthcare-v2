@@ -1,0 +1,41 @@
+# Cloud Build: build + push the portal image to Artifact Registry.
+# Substitution defaults below are the PUBLIC client-side Firebase config
+# (compiled into the browser bundle — the same values are visible in the
+# site's JS today). Real secrets never appear here; they reach the container
+# only at runtime via Secret Manager on the Cloud Run service.
+substitutions:
+  _NEXT_PUBLIC_FIREBASE_API_KEY: 'AIzaSyC9w8Bt2v89xTT8NQBQxvUpltgqZRxbda0'
+  _NEXT_PUBLIC_FIREBASE_APP_ID: '1:7166948307:web:58806bebd4fa7b1879b526'
+  _NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: 'heart-and-soul-hc.firebaseapp.com'
+  _NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: '7166948307'
+  _NEXT_PUBLIC_FIREBASE_PROJECT_ID: 'heart-and-soul-hc'
+  _NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: 'heart-and-soul-hc.firebasestorage.app'
+  _NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: 'AIzaSyCa-3mD_SYjotMScwC8Dd0ydG8jj30fpfc'
+  _REGION: 'us-east1'
+  _REPO: 'portal'
+  _SERVICE: 'hs-portal'
+  _TAG: 'manual' # overridden with the commit SHA by the CI trigger
+
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'build',
+      '--build-arg', 'NEXT_PUBLIC_FIREBASE_API_KEY=${_NEXT_PUBLIC_FIREBASE_API_KEY}',
+      '--build-arg', 'NEXT_PUBLIC_FIREBASE_APP_ID=${_NEXT_PUBLIC_FIREBASE_APP_ID}',
+      '--build-arg', 'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${_NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN}',
+      '--build-arg', 'NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${_NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID}',
+      '--build-arg', 'NEXT_PUBLIC_FIREBASE_PROJECT_ID=${_NEXT_PUBLIC_FIREBASE_PROJECT_ID}',
+      '--build-arg', 'NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${_NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}',
+      '--build-arg', 'NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=${_NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}',
+      '-t', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:${_TAG}',
+      '-t', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest',
+      '.',
+    ]
+
+images:
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:${_TAG}'
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
