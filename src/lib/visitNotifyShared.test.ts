@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MORNING_NUDGE_CUTOFF_MINUTES,
   PORTAL_LOGIN_URL,
   friendlyDate,
   friendlyTime,
+  needsMorningNudge,
+  startTimeMinutes,
   visitEmailBody,
   visitEmailSubject,
   visitSmsBody,
@@ -48,6 +51,17 @@ describe('visitSmsBody', () => {
     expect(visitEmailBody('reminder', SHIFT, 'Steve')).toContain('A reminder: you have a shift visit today');
   });
 
+  it('covers the evening-before reminder with "tomorrow" copy', () => {
+    const body = visitSmsBody('reminder_tomorrow', SHIFT);
+    expect(body).toContain('tomorrow, Fri, Jul 10 at 10:00 AM');
+    expect(body).not.toContain('today');
+    expect(body).toContain(PORTAL_LOGIN_URL);
+    expect(visitEmailSubject('reminder_tomorrow', SHIFT)).toBe('Visit reminder for tomorrow: Fri, Jul 10');
+    expect(visitEmailBody('reminder_tomorrow', SHIFT, 'Steve')).toContain(
+      'A reminder: you have a shift visit tomorrow',
+    );
+  });
+
   it('covers cancellation and restore with the supervisory label', () => {
     expect(visitSmsBody('cancelled', SUP_NO_TIME)).toContain('supervisory visit');
     expect(visitSmsBody('cancelled', SUP_NO_TIME)).toContain('was cancelled');
@@ -55,9 +69,39 @@ describe('visitSmsBody', () => {
   });
 
   it('stays comfortably inside a single SMS segment budget', () => {
-    for (const event of ['assigned', 'cancelled', 'restored'] as const) {
+    for (const event of ['assigned', 'cancelled', 'restored', 'reminder', 'reminder_tomorrow'] as const) {
       expect(visitSmsBody(event, SHIFT).length).toBeLessThan(300);
     }
+  });
+});
+
+describe('morning-nudge cutoff', () => {
+  it('parses 24h start times to minutes, rejecting garbage', () => {
+    expect(startTimeMinutes('05:00')).toBe(300);
+    expect(startTimeMinutes('7:30')).toBe(450);
+    expect(startTimeMinutes('09:30')).toBe(570);
+    expect(startTimeMinutes('13:05')).toBe(785);
+    expect(startTimeMinutes(undefined)).toBeNull();
+    expect(startTimeMinutes('')).toBeNull();
+    expect(startTimeMinutes('nonsense')).toBeNull();
+    expect(startTimeMinutes('25:00')).toBeNull();
+    expect(startTimeMinutes('10:75')).toBeNull();
+  });
+
+  it('nudges 9:30 AM and later; earlier starts were covered the evening before', () => {
+    expect(MORNING_NUDGE_CUTOFF_MINUTES).toBe(570);
+    expect(needsMorningNudge('05:00')).toBe(false); // 5 AM start — pre-shift by 7 AM cron
+    expect(needsMorningNudge('07:30')).toBe(false); // the 7:30 nurse this exists for
+    expect(needsMorningNudge('09:29')).toBe(false);
+    expect(needsMorningNudge('09:30')).toBe(true); // boundary: nudge
+    expect(needsMorningNudge('10:00')).toBe(true);
+    expect(needsMorningNudge('14:00')).toBe(true);
+  });
+
+  it('skips the nudge when the start time is missing or unparseable', () => {
+    expect(needsMorningNudge(undefined)).toBe(false);
+    expect(needsMorningNudge('')).toBe(false);
+    expect(needsMorningNudge('later')).toBe(false);
   });
 });
 
@@ -97,8 +141,12 @@ describe('PHI-free by construction', () => {
       visitSmsBody('assigned', SHIFT),
       visitSmsBody('cancelled', SHIFT),
       visitSmsBody('restored', SHIFT),
+      visitSmsBody('reminder', SHIFT),
+      visitSmsBody('reminder_tomorrow', SHIFT),
       visitEmailSubject('assigned', SHIFT),
+      visitEmailSubject('reminder_tomorrow', SHIFT),
       visitEmailBody('assigned', SHIFT, 'Steve'),
+      visitEmailBody('reminder_tomorrow', SHIFT, 'Steve'),
     ].join(' ');
     // No street-address-like or medical-record-like fragments can appear —
     // the fixed copy plus date/time/type simply doesn't contain them.
