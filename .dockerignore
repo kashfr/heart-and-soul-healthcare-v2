@@ -1,0 +1,10 @@
+.next
+node_modules
+.git
+.env.local
+.env*.local
+*.log
+.DS_Store
+.claude
+.vercel
+README.md
