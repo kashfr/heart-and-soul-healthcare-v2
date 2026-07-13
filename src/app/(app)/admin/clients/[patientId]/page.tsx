@@ -398,14 +398,13 @@ function ClientDashboardInner() {
                 )}
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <Link href={`/progress-note?patient=${patientId}`} style={secondaryActionStyle}>
+                  <FileText size={15} /> New progress note
+                </Link>
                 <Link href={marHref} style={primaryActionStyle}>
                   <Pill size={15} /> Open MAR
                 </Link>
-                {isNurse ? (
-                  <Link href="/progress-note" style={secondaryActionStyle}>
-                    <FileText size={15} /> New progress note
-                  </Link>
-                ) : (
+                {!isNurse && (
                   <Link href={`/admin/records/${patientId}`} style={secondaryActionStyle}>
                     <ClipboardList size={15} /> Manage record
                   </Link>

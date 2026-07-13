@@ -126,6 +126,16 @@ export async function POST(request: Request) {
     );
   }
 
+  // Only NURSES join the care team. Admins and supervisors can author
+  // notes too (e.g. from the client-dashboard "New progress note" button),
+  // but adding them to assignedNurseIds would pollute the care-team UI and
+  // every nurse-targeted query keyed on that list. They already see all
+  // patients, so there is nothing to grant. The auto-link pass above still
+  // ran for them — that part is role-independent.
+  if (caller.role !== 'nurse') {
+    return NextResponse.json({ added: false, reason: 'not-a-nurse', patientId, autoLinked });
+  }
+
   // arrayUnion is a no-op if the uid is already present, so this is
   // safe to call repeatedly (e.g. for every shift a nurse logs).
   await patientRef.update({

@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { Check, AlertTriangle, Loader2 } from 'lucide-react';
 import { getPatients, type Patient } from '@/lib/patients';
+import { computeAgeString } from '@/lib/age';
 import { findNameCandidates, type RosterPatientLite, type MatchCandidate } from '@/lib/levenshtein';
 import { saveSubmission, getSubmission, updateSubmission, submissionExists, findDuplicateSubmission, computeSubmissionChanges, type ProgressNoteFormData, type DuplicateMatch } from '@/lib/submissions';
 import { saveDraft, loadDraft, deleteDraft, clearDuplicateRequest, subscribeOwnDupRequest, type NoteDraft, type DuplicateRequest } from '@/lib/drafts';
@@ -201,6 +202,15 @@ function ProgressNotePageInner() {
   const [resumeDecided, setResumeDecided] = useState(false); // banner dismissed / acted on
   const [draftHydrated, setDraftHydrated] = useState(false); // autosave gate — don't save before we've loaded
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Deep-link prefill (?patient=) fires at most once, and never after a draft
+  // has been hydrated — hydrateFromDraft latches this so a slow roster fetch
+  // can't graft the deep-linked client's identity onto a resumed draft.
+  const prefillDoneRef = useRef(false);
+  // Flips on the first USER-driven form event (watch type 'change'). The
+  // debounced autosave is gated on it so a prefill-only visit the user
+  // immediately abandons never mints a junk Firestore draft (which would
+  // then drive the resume banner on their next real note).
+  const userTypedRef = useRef(false);
   const lastSaveAttemptRef = useRef<number>(0);
   // Latches true the moment a submit succeeds. After that, autosave must never
   // run again: the post-submit reset() fires the form's watch() subscription,
@@ -406,6 +416,7 @@ function ProgressNotePageInner() {
 
   // Apply a loaded Firestore draft into the form (RHF + radios + checkboxes + page).
   const hydrateFromDraft = useCallback((draft: NoteDraft) => {
+    prefillDoneRef.current = true; // resumed draft wins over any ?patient= deep link
     reset(draft.formValues as FormValues);
     // Carry the draft's reserved submission id so a resume-then-submit
     // (or a retry after reload) overwrites the same note rather than
@@ -492,12 +503,26 @@ function ProgressNotePageInner() {
     return () => { cancelled = true; };
   }, [firebaseLoaded, user, isEditMode, draftHydrated, autoResume, hydrateFromDraft, router, searchParams]);
 
-  // Autosave on form value changes.
+  // Autosave on form value changes. Programmatic writes (deep-link prefill,
+  // reset) arrive with type undefined; only real user input has type
+  // 'change' — nothing autosaves until the user has actually touched the
+  // form. (Page-change saves below are already user-driven by definition.)
   useEffect(() => {
     if (isEditMode) return;
-    const sub = watch(() => scheduleAutosave());
+    const sub = watch((_, info) => {
+      if (info.type === 'change') userTypedRef.current = true;
+      if (userTypedRef.current) scheduleAutosave();
+    });
     return () => sub.unsubscribe();
   }, [watch, isEditMode, scheduleAutosave]);
+
+  // A pending debounced autosave must not outlive the page — backing out
+  // within the 3s debounce window otherwise still writes the draft.
+  useEffect(() => {
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    };
+  }, []);
 
   // Autosave on page change (hard save, bypasses debounce).
   useEffect(() => {
@@ -595,6 +620,43 @@ function ProgressNotePageInner() {
 
     loadPatients();
   }, []);
+
+  // Deep-link prefill: /progress-note?patient=<id> (the "New progress note"
+  // button on a client's dashboard) starts the note pre-scoped to that
+  // client, filled from CANONICAL roster values — the same fields the
+  // "Use roster patient" confirm path sets, including the patientId link
+  // that drives the MAR section and duplicate checks. Deliberately narrow:
+  // never in edit mode, never during an auto-resumed draft, at most once
+  // (hydrateFromDraft latches the ref, so a resumed draft always wins), and
+  // only while the client name is still blank. The id is ONLY a lookup key
+  // into the fetched roster — never written raw; an unknown id no-ops to a
+  // blank form. (The roster itself is org-wide for signed-in staff — the
+  // same list the Page-1 search exposes; nurse scoping to care-team clients
+  // happens at the dashboard, which won't render the button otherwise.)
+  // Unlike the old localStorage rehydration this is explicit and URL-driven.
+  const prefillPatientId = searchParams.get('patient');
+  useEffect(() => {
+    if (prefillDoneRef.current) return;
+    if (!prefillPatientId || isEditMode || autoResume) return;
+    if (patients.length === 0) return;
+    if (String(getValues('q3_clientName') || '').trim()) return;
+    const target = patients.find((p) => p.id === prefillPatientId);
+    if (!target) return;
+    prefillDoneRef.current = true;
+    setValue('q3_clientName', target.name);
+    setValue('q4_dateofBirth', target.dob);
+    // Age does NOT derive automatically — FormPageOne recalcs only on manual
+    // DOB/date-of-service input events, and with patientId set those fields
+    // are read-only. Compute it here like the roster confirm modal does.
+    setValue('q5_ageYears', computeAgeString(target.dob, String(getValues('q6_dateofService') || '') || undefined));
+    setValue('q10_primaryDiagnosis', target.diagnosis || '');
+    setValue('q200_addr_line1', target.street || '');
+    setValue('q200_city', target.city || '');
+    setValue('q200_state', target.state || '');
+    setValue('q200_postal', target.zip || '');
+    setValue('patientId', target.id || '');
+    setInitialClientName(target.name);
+  }, [prefillPatientId, patients, isEditMode, autoResume, getValues, setValue]);
 
   // Load submission data when editing
   useEffect(() => {
