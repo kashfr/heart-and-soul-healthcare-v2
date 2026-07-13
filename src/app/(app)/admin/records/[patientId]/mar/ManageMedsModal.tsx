@@ -4,14 +4,15 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Plus, Clock } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
-import { MED_FREQUENCIES } from '@/lib/medFrequencies';
+import { MED_FREQUENCIES, PRN_FREQUENCY } from '@/lib/medFrequencies';
+import { looksLikeUnknownPhysician, physicianAttributionPending } from '@/lib/marShared';
 import type { MarOrder, MarChangeRequestType } from '@/lib/mar';
 
 const ROUTES = ['PO (by mouth)', 'SL (sublingual)', 'Topical', 'Inhalation', 'Subcutaneous', 'IM', 'IV', 'Rectal', 'G-tube', 'J-tube', 'NG tube', 'Ophthalmic', 'Otic', 'Nasal'];
 const UNITS = ['mg', 'mcg', 'g', 'mL', 'units', 'mEq', 'tablet(s)', 'capsule(s)', 'puff(s)', 'drop(s)', 'patch(es)', 'spray(s)', '%'];
-// PRN is chosen from the Frequency dropdown (this exact MED_FREQUENCIES label),
-// which drives the PRN behavior — there is no separate PRN checkbox.
-const PRN_FREQUENCY = 'As needed (PRN)';
+// PRN is chosen from the Frequency dropdown (the shared PRN_FREQUENCY label
+// from medFrequencies) — the single PRN control all three med-entry forms use;
+// there is no separate PRN checkbox.
 
 function todayISO(): string {
   const d = new Date();
@@ -53,6 +54,9 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
   const [times, setTimes] = useState<string[]>(['08:00']);
   const [indication, setIndication] = useState('');
   const [orderingPhysician, setOrderingPhysician] = useState('');
+  // Honest escape hatch: the nurse can flag the physician as unknown at entry
+  // time instead of typing junk like "N/A"; the RN fills the name in later.
+  const [physicianUnknown, setPhysicianUnknown] = useState(false);
   const [notes, setNotes] = useState('');
 
   const [startDate, setStartDate] = useState(todayISO());
@@ -82,6 +86,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
       setTimes(o.scheduledTimes && o.scheduledTimes.length > 0 ? [...o.scheduledTimes] : ['08:00']);
       setIndication(o.indication || '');
       setOrderingPhysician(o.orderingPhysician || '');
+      setPhysicianUnknown(o.physicianPending === true);
       setNotes(o.notes || '');
     }
   };
@@ -101,12 +106,16 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
         setError('Medication, dose, units, and route are required.');
         return;
       }
-      if (!orderingPhysician.trim()) {
-        setError('Ordering physician is required; this change reflects a physician order.');
+      if (!physicianUnknown && looksLikeUnknownPhysician(orderingPhysician)) {
+        setError(
+          orderingPhysician.trim()
+            ? 'Enter the ordering physician\'s actual name (placeholders like "N/A" don\'t document the order). If you don\'t know it right now, check the box below to flag it for follow-up.'
+            : 'Ordering physician is required; this change reflects a physician order. If you don\'t know it right now, check the box below to flag it for follow-up.',
+        );
         return;
       }
       if (!isPRN && times.filter(Boolean).length === 0) {
-        setError('Add at least one scheduled time, or mark the med PRN.');
+        setError('Add at least one scheduled time, or choose the "As needed (PRN)" frequency.');
         return;
       }
       if (isPRN && !indication.trim()) {
@@ -131,7 +140,9 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
       body.proposedMed = {
         medName, dose, units, route, frequencyLabel,
         scheduledTimes: times.filter(Boolean),
-        isPRN, indication, orderingPhysician, notes,
+        isPRN, indication, orderingPhysician,
+        physicianPending: physicianUnknown && looksLikeUnknownPhysician(orderingPhysician),
+        notes,
         startDate: mode === 'add' ? startDate : effectiveDate,
       };
     }
@@ -203,7 +214,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
                   <option value="">Select a medication…</option>
                   {activeOrders.map((o) => (
                     <option key={o.id} value={o.id}>
-                      {o.medName} {o.dose}{o.units ? ` ${o.units}` : ''}{o.isPRN ? ' (PRN)' : o.scheduledTimes?.length ? ` (${o.scheduledTimes.join(', ')})` : ''}
+                      {o.medName} {o.dose}{o.units ? ` ${o.units}` : ''}{o.isPRN ? ' (PRN)' : o.scheduledTimes?.length ? ` (${o.scheduledTimes.join(', ')})` : ''}{physicianAttributionPending(o) ? ' · physician needed' : ''}
                     </option>
                   ))}
                 </select>
@@ -290,6 +301,19 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
                     <input type="text" value={orderingPhysician} onChange={(e) => setOrderingPhysician(e.target.value)} style={input} placeholder="Dr. ..." />
                   </Field>
                 </div>
+
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: -4, marginBottom: 12, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={physicianUnknown}
+                    onChange={(e) => setPhysicianUnknown(e.target.checked)}
+                    style={{ marginTop: 2 }}
+                  />
+                  <span style={{ fontSize: 12.5, color: '#5c6b7a', lineHeight: 1.4 }}>
+                    I don&apos;t know the ordering physician right now. Flag this order for follow-up
+                    so it can be updated with the physician&apos;s name.
+                  </span>
+                </label>
 
                 <Field label="Notes">
                   <textarea value={notes} onChange={(e) => setNotes(e.target.value)} style={textarea} placeholder="Special instructions, hold parameters, etc." />

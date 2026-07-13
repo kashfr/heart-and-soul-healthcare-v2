@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
+import { looksLikeUnknownPhysician } from '@/lib/marShared';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { applyStandaloneChange, type StandaloneChangeInput } from '@/lib/marServer';
 
@@ -85,6 +86,7 @@ export async function POST(request: Request) {
   // payload can't create a junk order).
   const rawProposed = (body?.proposedMed || {}) as Record<string, unknown>;
   const isPRN = !!rawProposed.isPRN;
+  const physicianFlaggedUnknown = rawProposed.physicianPending === true;
   const scheduledTimes = Array.isArray(rawProposed.scheduledTimes)
     ? (rawProposed.scheduledTimes as unknown[]).map((t) => String(t)).filter(Boolean)
     : [];
@@ -99,15 +101,22 @@ export async function POST(request: Request) {
     if (!medName || !dose || !units || !route) {
       return NextResponse.json({ error: 'Medication, dose, units, and route are required.' }, { status: 400 });
     }
-    if (!orderingPhysician) {
+    // Mirror of the form rule: a REAL name is required, but the author may
+    // instead explicitly flag the physician as unknown (physicianPending) —
+    // that stores an honest follow-up flag rather than junk like "N/A".
+    // Server-side junk rejection also blocks crafted payloads.
+    if (!physicianFlaggedUnknown && looksLikeUnknownPhysician(orderingPhysician)) {
       return NextResponse.json(
-        { error: 'Ordering physician is required; this change reflects a physician order.' },
+        {
+          error:
+            'Ordering physician is required (a real name, not a placeholder); this change reflects a physician order. If unknown right now, flag it for follow-up instead.',
+        },
         { status: 400 },
       );
     }
     if (!isPRN && scheduledTimes.length === 0) {
       return NextResponse.json(
-        { error: 'Add at least one scheduled time, or mark the med PRN.' },
+        { error: 'Add at least one scheduled time, or choose the "As needed (PRN)" frequency.' },
         { status: 400 },
       );
     }
@@ -145,6 +154,9 @@ export async function POST(request: Request) {
             indication: String(rawProposed.indication || ''),
             startDate: ISO_DATE_RE.test(String(rawProposed.startDate || '')) ? String(rawProposed.startDate) : today,
             orderingPhysician: String(rawProposed.orderingPhysician || ''),
+            physicianPending:
+              physicianFlaggedUnknown &&
+              looksLikeUnknownPhysician(String(rawProposed.orderingPhysician || '')),
             notes: String(rawProposed.notes || ''),
           }
         : undefined,

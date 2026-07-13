@@ -18,6 +18,7 @@ import {
   type MarOrder,
   type MarAdministration,
 } from '@/lib/mar';
+import { physicianAttributionPending } from '@/lib/marShared';
 import { authedFetch } from '@/lib/authedFetch';
 import { triggerDownload } from '@/lib/batchExport';
 import { compareMarOrders, resolveCurrentAdministrations } from '@/lib/marShared';
@@ -412,6 +413,11 @@ export default function MonthlyMarPage() {
                           <div style={{ fontWeight: 600, color: '#1f2937' }}>
                             {order.medName}
                             {order.status === 'discontinued' && <span style={dcChipStyle}>D/C</span>}
+                            {order.status !== 'discontinued' && physicianAttributionPending(order) && (
+                              <span style={physicianNeededChipStyle} title="No ordering physician on this order yet; update it via Manage meds.">
+                                Physician needed
+                              </span>
+                            )}
                           </div>
                           <div style={{ fontSize: 11, color: '#6b7280' }}>
                             {order.dose}{order.units ? ` ${order.units}` : ''} · {order.route}
@@ -734,6 +740,7 @@ const gridTdStyle: React.CSSProperties = { border: '1px solid #dde3ea', padding:
 // Label columns get a light navy tint so the day grid reads as its own zone.
 const medColStyle: React.CSSProperties = { minWidth: 190, maxWidth: 240, whiteSpace: 'normal', background: '#f4f7fa' };
 const timeColStyle: React.CSSProperties = { background: '#f4f7fa', fontWeight: 700 };
+const physicianNeededChipStyle: React.CSSProperties = { display: 'inline-block', marginLeft: 6, padding: '1px 7px', borderRadius: 999, background: '#fff3e0', color: '#b45309', fontSize: 10, fontWeight: 700, verticalAlign: 'middle' };
 const dcChipStyle: React.CSSProperties = { marginLeft: 6, fontSize: 9, fontWeight: 700, background: '#fdeaea', color: '#c0392b', padding: '1px 5px', borderRadius: 999, letterSpacing: 0.4, verticalAlign: 'middle' };
 // Diagonal hatch = "order not active that day" (the paper-MAR N/A convention) -
 // unmistakably different from a plain white "due but not documented" cell.

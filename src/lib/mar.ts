@@ -44,6 +44,11 @@ export interface MarOrder {
   startDate: string; // YYYY-MM-DD
   endDate?: string | null; // null/undefined = ongoing
   orderingPhysician?: string;
+  // Author explicitly flagged the ordering physician as unknown at entry time
+  // (follow-up queue: the RN fills the real name in later, clearing this).
+  // Display code should use physicianAttributionPending() from marShared,
+  // which also treats legacy junk values ("N/A") as pending.
+  physicianPending?: boolean;
   notes?: string;
   status: MarOrderStatus;
   createdAt?: unknown;
@@ -84,6 +89,7 @@ export interface MarOrderInput {
   startDate: string;
   endDate?: string | null;
   orderingPhysician?: string;
+  physicianPending?: boolean;
   notes?: string;
 }
 
@@ -104,6 +110,7 @@ function normalizeInput(input: MarOrderInput) {
     startDate: input.startDate,
     endDate: input.endDate ?? null,
     orderingPhysician: input.orderingPhysician?.trim() ?? '',
+    physicianPending: input.physicianPending === true,
     notes: input.notes?.trim() ?? '',
   };
 }
@@ -433,6 +440,7 @@ export interface ProposedMed {
   indication: string;
   startDate: string;
   orderingPhysician: string;
+  physicianPending: boolean;
   notes: string;
 }
 
@@ -488,6 +496,7 @@ function normalizeProposed(p: ProposedMed): ProposedMed {
     indication: p.indication.trim(),
     startDate: p.startDate,
     orderingPhysician: p.orderingPhysician.trim(),
+    physicianPending: p.physicianPending === true,
     notes: p.notes.trim(),
   };
 }
