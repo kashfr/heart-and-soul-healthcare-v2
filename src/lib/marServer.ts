@@ -40,6 +40,7 @@ interface ProposedMedShape {
   isPRN?: boolean;
   indication?: string;
   startDate?: string;
+  orderSignedDate?: string;
   orderingPhysician?: string;
   physicianPending?: boolean;
   notes?: string;
@@ -64,6 +65,7 @@ function orderFromProposed(
     indication: String(p.indication || ''),
     startDate,
     endDate: null,
+    orderSignedDate: String(p.orderSignedDate || ''),
     orderingPhysician: String(p.orderingPhysician || ''),
     physicianPending: p.physicianPending === true,
     notes: String(p.notes || ''),
@@ -266,6 +268,7 @@ function cleanProposed(p: ProposedMedShape) {
     isPRN: !!p.isPRN,
     indication: String(p.indication || '').trim(),
     startDate: String(p.startDate || ''),
+    orderSignedDate: String(p.orderSignedDate || '').trim(),
     orderingPhysician: String(p.orderingPhysician || '').trim(),
     physicianPending: p.physicianPending === true,
     notes: String(p.notes || '').trim(),
@@ -385,7 +388,7 @@ function initialsFrom(name: string): string {
  */
 export async function amendMarAdministration(
   adminId: string,
-  input: { status: string; actualTime?: string; reason?: string; outcome?: string; amendmentReason: string },
+  input: { status: string; actualTime?: string; reason?: string; outcome?: string; prescriberNotified?: boolean; amendmentReason: string },
   caller: AuthedCaller,
 ): Promise<AmendResult> {
   const col = adminDb().collection('marAdministrations');
@@ -441,6 +444,13 @@ export async function amendMarAdministration(
       // A correction carries the outcome forward unless the amender edits it,
       // so amending a dose's time can never silently drop its recorded result.
       outcome: input.outcome !== undefined ? String(input.outcome) : String(orig.outcome || ''),
+      // Same carry-forward for the prescriber-notified attestation (D.4.d):
+      // an amendment can ADD it (nurse reached the doctor after documenting)
+      // but never silently drops it.
+      prescriberNotified:
+        input.prescriberNotified !== undefined
+          ? input.prescriberNotified === true
+          : orig.prescriberNotified === true,
       isPRN,
       indication: String(orig.indicationSnapshot || ''),
     },

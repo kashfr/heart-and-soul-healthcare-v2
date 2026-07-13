@@ -153,6 +153,14 @@ export async function POST(request: Request) {
             isPRN,
             indication: String(rawProposed.indication || ''),
             startDate: ISO_DATE_RE.test(String(rawProposed.startDate || '')) ? String(rawProposed.startDate) : today,
+            // Shape-valid AND not in the future (a typo year would suppress
+            // the staleness flag for over a year); bad values fall back to ''
+            // = the start date.
+            orderSignedDate:
+              ISO_DATE_RE.test(String(rawProposed.orderSignedDate || '')) &&
+              String(rawProposed.orderSignedDate) <= today
+                ? String(rawProposed.orderSignedDate)
+                : '',
             orderingPhysician: String(rawProposed.orderingPhysician || ''),
             physicianPending:
               physicianFlaggedUnknown &&

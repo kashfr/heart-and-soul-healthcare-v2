@@ -62,6 +62,11 @@ export default function AdministerDoseModal({
   const [administeredByType, setAdministeredByType] = useState('nurse');
   const [administratorName, setAdministratorName] = useState('');
   const [reason, setReason] = useState('');
+  // D.4.d: the manual requires timely prescriber notification for refused /
+  // not-given doses, and this attestation is the proof. Optional at capture
+  // (the nurse may reach the doctor later; the readiness tile tracks the gap
+  // and the amend flow records a late notification).
+  const [prescriberNotified, setPrescriberNotified] = useState(false);
   const [outcome, setOutcome] = useState('');
   const [initials, setInitials] = useState(defaultInitials);
   const [busy, setBusy] = useState(false);
@@ -122,6 +127,7 @@ export default function AdministerDoseModal({
             isPRN,
             indication,
             outcome,
+            prescriberNotified,
           },
         ],
         { patientId, date: dateISO, sourceNoteId: '', documenter },
@@ -230,6 +236,21 @@ export default function AdministerDoseModal({
                       : 'e.g., complained of pain, rated 6/10'
               }
             />
+          </label>
+        )}
+
+        {(status === 'held' || status === 'refused') && (
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 10, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={prescriberNotified}
+              onChange={(e) => setPrescriberNotified(e.target.checked)}
+              style={{ marginTop: 2 }}
+            />
+            <span style={{ fontSize: 12.5, color: '#5c6b7a', lineHeight: 1.4 }}>
+              I notified the prescriber{status === 'refused' ? ' of this refusal' : ' that this dose was not given'}.
+              (You can record this later with a correction if you reach them after documenting.)
+            </span>
           </label>
         )}
 

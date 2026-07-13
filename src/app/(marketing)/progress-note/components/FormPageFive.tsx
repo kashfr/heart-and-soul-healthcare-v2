@@ -439,6 +439,25 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
             )}
           </label>
         )}
+
+        {(status === 'held' || status === 'refused') && (
+          // D.4.d proof trail: the manual requires timely prescriber
+          // notification for doses not received; this attestation is the
+          // evidence. Optional here (the nurse may reach the doctor later; an
+          // amendment can record it afterwards, and the dashboard readiness
+          // tile tracks refusals still missing it).
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 8, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={opts.rec?.prescriberNotified === true}
+              onChange={(e) => opts.onPatch({ prescriberNotified: e.target.checked })}
+              style={{ marginTop: 2 }}
+            />
+            <span style={{ fontSize: 12, color: '#5c6b7a', lineHeight: 1.4 }}>
+              I notified the prescriber{status === 'refused' ? ' of this refusal' : ' that this dose was not given'}.
+            </span>
+          </label>
+        )}
       </div>
     );
   };

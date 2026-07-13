@@ -1425,6 +1425,7 @@ function ProgressNotePageInner() {
             isPRN: r.isPRN,
             indication: r.indication || '',
             outcome: r.outcome || '',
+            prescriberNotified: r.prescriberNotified === true,
           }));
           if (marPid && marRecords.length > 0) {
             try {

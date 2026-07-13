@@ -78,6 +78,7 @@ interface AdminDoc {
   actualTime: string;
   initials: string;
   reason: string;
+  prescriberNotified: boolean | null;
   outcome: string;
   documentedByName: string;
   documentedByCredential: string;
@@ -193,6 +194,11 @@ export async function POST(request: Request) {
         actualTime: String(a.actualTime || ''),
         initials: String(a.initials || ''),
         reason: String(a.reason || ''),
+        // Tri-state: docs from before the attestation feature existed have no
+        // field at all — printing "(prescriber not yet notified)" on them
+        // would stamp a false negative assertion onto historical months.
+        prescriberNotified:
+          typeof a.prescriberNotified === 'boolean' ? a.prescriberNotified : null,
         outcome: String(a.outcome || ''),
         documentedByName: String(a.documentedByName || ''),
         documentedByCredential: String(a.documentedByCredential || ''),
@@ -300,7 +306,16 @@ export async function POST(request: Request) {
             .join(' '),
           status: a.status,
           by: adminBy(a),
-          reason: a.reason || '-',
+          // D.4.d: the printed record shows whether the prescriber was told.
+          // Positive attestation prints on any held/refused dose; the NEGATIVE
+          // prints only on refusals (holds are often physician-directed, and
+          // legacy docs without the field print nothing at all).
+          reason:
+            (a.status === 'held' || a.status === 'refused') && a.prescriberNotified === true
+              ? `${a.reason || '-'} (prescriber notified)`
+              : a.status === 'refused' && a.prescriberNotified === false
+                ? `${a.reason || '-'} (prescriber not yet notified)`
+                : a.reason || '-',
           // A given PRN dose is complete only once its result is recorded; the
           // export says so explicitly rather than printing a silent blank.
           result: a.outcome.trim()
