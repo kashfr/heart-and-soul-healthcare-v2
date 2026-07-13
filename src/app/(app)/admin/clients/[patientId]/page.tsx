@@ -27,6 +27,7 @@ import { getVisitsForPatient, type PatientVisit } from '@/lib/patientVisits';
 import DocumentsSection from './DocumentsSection';
 import VisitsSection from './VisitsSection';
 import QuickNotesSection from './QuickNotesSection';
+import { physicianAttributionPending } from '@/lib/marShared';
 import {
   adverseEvents,
   ageYears,
@@ -219,6 +220,10 @@ function ClientDashboardInner() {
   const visitsThisMonth = notes.filter((n) => n.dateISO.startsWith(today.slice(0, 7))).length;
   const activeOrders = orders.filter((o) => o.status === 'active');
   const prnCount = activeOrders.filter((o) => o.isPRN).length;
+  // DBHDD D.1: every administered med needs a current signed physician order.
+  // Orders whose author flagged the physician unknown (or legacy junk values
+  // like "N/A") stay counted here until someone fills the real name in.
+  const physicianPendingCount = activeOrders.filter((o) => physicianAttributionPending(o)).length;
 
   const mar30 = useMemo(
     () => marComplianceStats(orders, admins, start30, today, today),
@@ -307,6 +312,8 @@ function ClientDashboardInner() {
   const doseSignal: Signal = mar30.expected === 0 ? 'none' : mar30.undocumented === 0 ? 'good' : 'bad';
   const adverseSignal: Signal =
     adverse.length === 0 ? 'good' : adverse.every((e) => e.physNotified === 'Yes') ? 'warn' : 'bad';
+  const physicianSignal: Signal =
+    activeOrders.length === 0 ? 'none' : physicianPendingCount === 0 ? 'good' : 'bad';
 
   // Overview tab derivations: the alert strip surfaces every red condition
   // from anywhere on the dashboard with a jump to where it lives, and the
@@ -333,6 +340,12 @@ function ClientDashboardInner() {
       go: () => router.push(marHref),
     });
   }
+  if (physicianPendingCount > 0) {
+    alerts.push({
+      text: `${physicianPendingCount} medication order${physicianPendingCount === 1 ? '' : 's'} missing ordering physician`,
+      go: () => router.push(marHref),
+    });
+  }
   if (adverseSignal === 'bad') {
     alerts.push({ text: 'Adverse reaction without physician notification', go: () => setTab('readiness') });
   }
@@ -351,6 +364,7 @@ function ClientDashboardInner() {
     gapSignal,
     doseSignal,
     prnSignal,
+    physicianSignal,
     adverseSignal,
     supCurrency.status,
     pocCurrency.status,
@@ -598,6 +612,25 @@ function ClientDashboardInner() {
                 value={mar30.prnGiven === 0 ? 'No PRN doses' : mar30.prnPendingResult === 0 ? 'All results recorded' : `${mar30.prnPendingResult} result${mar30.prnPendingResult === 1 ? '' : 's'} pending`}
                 detail={mar30.prnGiven > 0 ? `${mar30.prnGiven} PRN dose${mar30.prnGiven === 1 ? '' : 's'} given` : 'Nothing to follow up'}
                 href={mar30.prnPendingResult > 0 ? marHref : undefined}
+              />
+              <ReadinessCard
+                signal={physicianSignal}
+                title="Physician attribution"
+                value={
+                  activeOrders.length === 0
+                    ? 'No active medications'
+                    : physicianPendingCount === 0
+                      ? 'All orders attributed'
+                      : `${physicianPendingCount} order${physicianPendingCount === 1 ? '' : 's'} missing physician`
+                }
+                detail={
+                  physicianPendingCount > 0
+                    ? 'Edit each flagged order to add the ordering physician (DBHDD D.1: every med needs a current physician order)'
+                    : activeOrders.length > 0
+                      ? 'Every active order names its ordering physician'
+                      : ''
+                }
+                href={physicianPendingCount > 0 ? marHref : undefined}
               />
               <ReadinessCard
                 signal={adverseSignal}

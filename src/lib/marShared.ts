@@ -190,3 +190,38 @@ export function amendmentChain<T extends AmendableRecord>(current: T, list: T[])
   }
   return chain;
 }
+
+/**
+ * Physician attribution (DBHDD FY27 manual D.1: every administered med needs a
+ * current signed physician order). The forms REQUIRE an ordering physician,
+ * but a required free-text field invites junk ("N/A") when the nurse genuinely
+ * doesn't know at entry time — so instead of accepting junk, the forms offer
+ * an explicit "unknown, flag for follow-up" checkbox (physicianPending). These
+ * helpers power both the form-side junk rejection and the display-side badges,
+ * and deliberately treat LEGACY junk values as pending so pre-existing "N/A"
+ * orders surface for follow-up without a data migration.
+ */
+const UNKNOWN_PHYSICIAN_TOKENS = new Set([
+  'na', 'none', 'unknown', 'unk', 'tbd', 'tba', 'pending', 'notavailable',
+  'notapplicable', 'dontknow', 'donotknow', 'idk', 'x', 'xx', 'xxx',
+]);
+
+/** True when a typed ordering-physician value is a non-answer ("N/A", "?",
+ *  "none", "tbd", …) rather than a name. Empty/whitespace counts. */
+export function looksLikeUnknownPhysician(value: string | undefined | null): boolean {
+  // Unicode-aware: keep LETTERS from any script so non-Latin names
+  // (e.g. Korean or Cyrillic) don't strip to '' and misread as junk.
+  const cleaned = (value || '').toLowerCase().replace(/[^\p{L}]/gu, '');
+  return cleaned.length === 0 || UNKNOWN_PHYSICIAN_TOKENS.has(cleaned);
+}
+
+/** True when this order still needs real physician attribution: either the
+ *  author explicitly flagged it (physicianPending) or the stored value is
+ *  legacy junk/blank. Drives the amber "Physician needed" badges and the
+ *  survey-readiness count. */
+export function physicianAttributionPending(order: {
+  physicianPending?: boolean;
+  orderingPhysician?: string;
+}): boolean {
+  return order.physicianPending === true || looksLikeUnknownPhysician(order.orderingPhysician);
+}

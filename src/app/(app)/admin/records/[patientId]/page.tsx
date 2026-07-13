@@ -19,7 +19,8 @@ import {
   type MarOrder,
   type MarActor,
 } from '@/lib/mar';
-import { MED_FREQUENCIES } from '@/lib/medFrequencies';
+import { MED_FREQUENCIES, PRN_FREQUENCY } from '@/lib/medFrequencies';
+import { looksLikeUnknownPhysician, physicianAttributionPending } from '@/lib/marShared';
 
 interface OrderForm {
   medName: string;
@@ -33,6 +34,7 @@ interface OrderForm {
   startDate: string;
   endDate: string;
   orderingPhysician: string;
+  physicianUnknown: boolean;
   notes: string;
 }
 
@@ -57,6 +59,7 @@ function emptyForm(): OrderForm {
     startDate: todayISO(),
     endDate: '',
     orderingPhysician: '',
+    physicianUnknown: false,
     notes: '',
   };
 }
@@ -150,13 +153,16 @@ export default function RecordDetailPage() {
       dose: o.dose || '',
       units: o.units || '',
       route: o.route || '',
-      frequencyLabel: o.frequencyLabel || '',
+      frequencyLabel: o.isPRN ? PRN_FREQUENCY : o.frequencyLabel || '',
       scheduledTimes: o.scheduledTimes && o.scheduledTimes.length > 0 ? [...o.scheduledTimes] : ['08:00'],
-      isPRN: !!o.isPRN,
+      // Legacy rows could hold the PRN frequency label with isPRN false (the
+      // old independent checkbox); trust the label so a re-save heals them.
+      isPRN: !!o.isPRN || o.frequencyLabel === PRN_FREQUENCY,
       indication: o.indication || '',
       startDate: o.startDate || todayISO(),
       endDate: o.endDate || '',
       orderingPhysician: o.orderingPhysician || '',
+      physicianUnknown: o.physicianPending === true,
       notes: o.notes || '',
     });
     setEditingId(o.id || null);
@@ -181,11 +187,19 @@ export default function RecordDetailPage() {
       return;
     }
     if (!form.isPRN && form.scheduledTimes.filter(Boolean).length === 0) {
-      showToast('Add at least one scheduled time, or mark the order PRN.');
+      showToast('Add at least one scheduled time, or choose the "As needed (PRN)" frequency.');
       return;
     }
     if (form.isPRN && !form.indication.trim()) {
       showToast('Add an indication: PRN doses are documented against what the med is for.');
+      return;
+    }
+    if (!form.physicianUnknown && looksLikeUnknownPhysician(form.orderingPhysician)) {
+      showToast(
+        form.orderingPhysician.trim()
+          ? 'Enter the ordering physician\'s actual name (placeholders like "N/A" don\'t document the order), or check "unknown right now" to flag it for follow-up.'
+          : 'Ordering physician is required; the order reflects a physician\'s prescription. If unknown right now, check the box to flag it for follow-up.',
+      );
       return;
     }
     setSubmitting(true);
@@ -202,6 +216,7 @@ export default function RecordDetailPage() {
         startDate: form.startDate,
         endDate: form.endDate || null,
         orderingPhysician: form.orderingPhysician,
+        physicianPending: form.physicianUnknown && looksLikeUnknownPhysician(form.orderingPhysician),
         notes: form.notes,
       };
       if (editingId) {
@@ -414,7 +429,15 @@ export default function RecordDetailPage() {
                 <Field label="Frequency">
                   <select
                     value={form.frequencyLabel}
-                    onChange={(e) => setForm((f) => ({ ...f, frequencyLabel: e.target.value }))}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        frequencyLabel: e.target.value,
+                        // Single PRN control (PR #77): the "As needed (PRN)"
+                        // frequency IS the PRN switch; no separate checkbox.
+                        isPRN: e.target.value === PRN_FREQUENCY,
+                      }))
+                    }
                     style={selectStyle}
                   >
                     <option value="">Select frequency…</option>
@@ -432,17 +455,6 @@ export default function RecordDetailPage() {
                   </select>
                 </Field>
               </div>
-
-              <label style={prnRowStyle}>
-                <input
-                  type="checkbox"
-                  checked={form.isPRN}
-                  onChange={(e) => setForm((f) => ({ ...f, isPRN: e.target.checked }))}
-                />
-                <span style={{ fontSize: 13, fontWeight: 600, color: '#2c3e50' }}>
-                  PRN (as needed); no fixed schedule
-                </span>
-              </label>
 
               {!form.isPRN && (
                 <div style={{ marginBottom: 12 }}>
@@ -512,7 +524,7 @@ export default function RecordDetailPage() {
                 </Field>
               </div>
 
-              <Field label="Ordering physician">
+              <Field label="Ordering physician *">
                 <input
                   type="text"
                   value={form.orderingPhysician}
@@ -521,6 +533,19 @@ export default function RecordDetailPage() {
                   placeholder="Dr. Jane Smith"
                 />
               </Field>
+
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: -4, marginBottom: 12, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={form.physicianUnknown}
+                  onChange={(e) => setForm((f) => ({ ...f, physicianUnknown: e.target.checked }))}
+                  style={{ marginTop: 2 }}
+                />
+                <span style={{ fontSize: 12.5, color: '#5c6b7a', lineHeight: 1.4 }}>
+                  I don&apos;t know the ordering physician right now. Flag this order for follow-up
+                  so it can be updated with the physician&apos;s name.
+                </span>
+              </label>
 
               <Field label="Notes">
                 <textarea
@@ -617,7 +642,16 @@ export default function RecordDetailPage() {
                   label="End date"
                   value={viewOrder.endDate ? formatDate(viewOrder.endDate) : viewOrder.status === 'discontinued' ? '-' : 'Ongoing'}
                 />
-                <DetailRow label="Ordering physician" value={viewOrder.orderingPhysician} />
+                <DetailRow
+                  label="Ordering physician"
+                  value={
+                    physicianAttributionPending(viewOrder)
+                      ? viewOrder.orderingPhysician?.trim()
+                        ? `${viewOrder.orderingPhysician} (flagged: needs the actual physician name)`
+                        : 'Needed (flagged for follow-up)'
+                      : viewOrder.orderingPhysician
+                  }
+                />
               </div>
 
               {viewOrder.notes && (
@@ -726,6 +760,11 @@ function OrderTable({
                   <div style={{ fontWeight: 600, color: '#2c3e50' }}>{o.medName}</div>
                   {o.frequencyLabel && <div style={subTextStyle}>{o.frequencyLabel}</div>}
                   {o.isPRN && <span style={prnBadgeStyle}>PRN</span>}
+                  {!discontinued && physicianAttributionPending(o) && (
+                    <span style={physicianNeededBadgeStyle} title="No ordering physician on this order yet; edit the order to add the name.">
+                      Physician needed
+                    </span>
+                  )}
                 </td>
                 <td style={tdStyle}>{o.dose}{o.units ? ` ${o.units}` : ''}</td>
                 <td style={tdStyle}>{o.route}</td>
@@ -797,6 +836,7 @@ const thStyle: React.CSSProperties = { textAlign: 'left', padding: '11px 14px', 
 const tdStyle: React.CSSProperties = { padding: '11px 14px', borderBottom: '1px solid #f1f3f5', color: '#2c3e50', verticalAlign: 'top' };
 const altRowStyle: React.CSSProperties = { background: '#fafbfc' };
 const subTextStyle: React.CSSProperties = { fontSize: 12, color: '#7f8c8d', marginTop: 2 };
+const physicianNeededBadgeStyle: React.CSSProperties = { display: 'inline-block', marginLeft: 6, padding: '1px 8px', borderRadius: 999, background: '#fff3e0', color: '#b45309', fontSize: 10.5, fontWeight: 700 };
 const prnBadgeStyle: React.CSSProperties = { display: 'inline-block', marginTop: 4, background: '#fef3e2', color: '#b56a17', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4 };
 const dcBadgeStyle: React.CSSProperties = { display: 'inline-block', background: '#fdecea', color: '#b3261e', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999, letterSpacing: 0.4, textTransform: 'uppercase' };
 const detailGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 14 };
@@ -826,7 +866,6 @@ const selectStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 const gridTwoStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 };
-const prnRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, cursor: 'pointer' };
 const removeTimeBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', color: '#c44', border: 'none', padding: 4, borderRadius: 4, cursor: 'pointer' };
 const addTimeBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, background: 'white', color: '#0e7c4a', border: '1px dashed #0e7c4a', padding: '7px 12px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', marginTop: 8 };
 const toastStyle: React.CSSProperties = { position: 'fixed', bottom: 20, right: 20, background: '#2c3e50', color: 'white', padding: '10px 16px', borderRadius: 8, fontSize: 13, boxShadow: '0 8px 20px rgba(0,0,0,0.2)', zIndex: 1100 };

@@ -41,6 +41,7 @@ interface ProposedMedShape {
   indication?: string;
   startDate?: string;
   orderingPhysician?: string;
+  physicianPending?: boolean;
   notes?: string;
 }
 
@@ -64,6 +65,7 @@ function orderFromProposed(
     startDate,
     endDate: null,
     orderingPhysician: String(p.orderingPhysician || ''),
+    physicianPending: p.physicianPending === true,
     notes: String(p.notes || ''),
     status: 'active',
     createdAt: FieldValue.serverTimestamp(),
@@ -265,6 +267,7 @@ function cleanProposed(p: ProposedMedShape) {
     indication: String(p.indication || '').trim(),
     startDate: String(p.startDate || ''),
     orderingPhysician: String(p.orderingPhysician || '').trim(),
+    physicianPending: p.physicianPending === true,
     notes: String(p.notes || '').trim(),
   };
 }

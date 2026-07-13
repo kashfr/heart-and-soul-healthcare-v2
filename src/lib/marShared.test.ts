@@ -4,6 +4,8 @@ import {
   buildMarAdminFields,
   compareMarOrders,
   doseTimeStatus,
+  looksLikeUnknownPhysician,
+  physicianAttributionPending,
   parseHHMM,
   resolveCurrentAdministrations,
   type MarAdminFieldInput,
@@ -205,5 +207,46 @@ describe('resolveCurrentAdministrations / amendmentChain', () => {
     ];
     const p = looped[0];
     expect(() => amendmentChain(p, looped)).not.toThrow();
+  });
+});
+
+describe('physician attribution', () => {
+  it('flags junk non-answers, tolerant of punctuation and case', () => {
+    for (const junk of ['', '  ', 'N/A', 'n/a', 'NA', 'None', 'none.', 'UNKNOWN', 'unk', '?', '???', 'TBD', 't.b.d.', 'not available', 'Not Applicable', "don't know", 'x', 'XXX', 'pending']) {
+      expect(looksLikeUnknownPhysician(junk), `"${junk}" should be junk`).toBe(true);
+    }
+  });
+
+  it('accepts real names, including short and punctuated ones', () => {
+    for (const name of ['Dr. Ali', 'Dr. Barnwell', 'Kendra Freeman', 'Emanuel mordi', 'Dr. X. Nunez', 'Wu']) {
+      expect(looksLikeUnknownPhysician(name), `"${name}" should be accepted`).toBe(false);
+    }
+  });
+
+  it('token-collision boundaries: prefixed short surnames pass; bare tokens are the documented tradeoff', () => {
+    // "Na" and "Ng" are real surnames. With a Dr. prefix (how physicians are
+    // recorded here) the strip yields 'drna'/'drng', which are accepted.
+    expect(looksLikeUnknownPhysician('Dr. Na')).toBe(false);
+    expect(looksLikeUnknownPhysician('Dr. Ng')).toBe(false);
+    expect(looksLikeUnknownPhysician('Pending, Dr. Sarah')).toBe(false);
+    // BARE 'na'/'unk' collide with the junk tokens: the form guides the user
+    // to add the Dr. prefix. Documented false positive, entry-time only.
+    expect(looksLikeUnknownPhysician('Na')).toBe(true);
+    expect(looksLikeUnknownPhysician('unk')).toBe(true);
+  });
+
+  it('non-Latin-script names survive the strip (Unicode letters kept)', () => {
+    expect(looksLikeUnknownPhysician('\uae40\uc601\uc218')).toBe(false); // Korean
+    expect(looksLikeUnknownPhysician('\u0418\u0432\u0430\u043d\u043e\u0432')).toBe(false); // Cyrillic
+    expect(looksLikeUnknownPhysician('N\u00fa\u00f1ez')).toBe(false); // accented Latin
+  });
+
+  it('pending when explicitly flagged OR when the stored value is legacy junk', () => {
+    expect(physicianAttributionPending({ physicianPending: true, orderingPhysician: 'Dr. Ali' })).toBe(true);
+    expect(physicianAttributionPending({ orderingPhysician: 'N/A' })).toBe(true);
+    expect(physicianAttributionPending({ orderingPhysician: '' })).toBe(true);
+    expect(physicianAttributionPending({})).toBe(true);
+    expect(physicianAttributionPending({ orderingPhysician: 'Dr. Barnwell' })).toBe(false);
+    expect(physicianAttributionPending({ physicianPending: false, orderingPhysician: 'Dr. Ali' })).toBe(false);
   });
 });

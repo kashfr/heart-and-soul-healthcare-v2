@@ -30,3 +30,10 @@ export const MED_FREQUENCIES = [
   'As needed (PRN)',
   'Continuous',
 ] as const;
+
+/**
+ * The MED_FREQUENCIES entry that means "as needed": selecting it IS how a
+ * med becomes PRN (single control — PR #77 removed the redundant checkbox).
+ * All three med-entry forms derive isPRN from this label.
+ */
+export const PRN_FREQUENCY = 'As needed (PRN)';

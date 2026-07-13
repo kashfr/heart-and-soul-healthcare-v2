@@ -4,7 +4,8 @@ import { useState, type CSSProperties } from 'react';
 import { X, Plus, Clock } from 'lucide-react';
 import { stageChangeRequest, type MarOrder, type MarDocumenter, type MarChangeRequestType } from '@/lib/mar';
 import { setMarAdmin, unlistedMarAdminKey } from './marAdminStore';
-import { MED_FREQUENCIES } from '@/lib/medFrequencies';
+import { MED_FREQUENCIES, PRN_FREQUENCY } from '@/lib/medFrequencies';
+import { looksLikeUnknownPhysician } from '@/lib/marShared';
 
 const ROUTES = ['PO (by mouth)', 'SL (sublingual)', 'Topical', 'Inhalation', 'Subcutaneous', 'IM', 'IV', 'Rectal', 'G-tube', 'J-tube', 'NG tube', 'Ophthalmic', 'Otic', 'Nasal'];
 const UNITS = ['mg', 'mcg', 'g', 'mL', 'units', 'mEq', 'tablet(s)', 'capsule(s)', 'puff(s)', 'drop(s)', 'patch(es)', 'spray(s)', '%'];
@@ -54,10 +55,15 @@ export default function MedChangeRequestModal({
   const [units, setUnits] = useState('');
   const [route, setRoute] = useState('');
   const [frequencyLabel, setFrequencyLabel] = useState('');
-  const [isPRN, setIsPRN] = useState(false);
+  // Single PRN control (PR #77): choosing the "As needed (PRN)" frequency IS
+  // marking the med PRN; no separate checkbox to disagree with the dropdown.
+  const isPRN = frequencyLabel === PRN_FREQUENCY;
   const [times, setTimes] = useState<string[]>(['08:00']);
   const [indication, setIndication] = useState('');
   const [orderingPhysician, setOrderingPhysician] = useState('');
+  // Honest escape hatch: flag the physician as unknown instead of typing "N/A";
+  // the order is badged for follow-up until the RN fills the real name in.
+  const [physicianUnknown, setPhysicianUnknown] = useState(false);
   const [notes, setNotes] = useState('');
 
   // Add-only: start date
@@ -89,11 +95,11 @@ export default function MedChangeRequestModal({
       setDose(o.dose || '');
       setUnits(o.units || '');
       setRoute(o.route || '');
-      setFrequencyLabel(o.frequencyLabel || '');
-      setIsPRN(!!o.isPRN);
+      setFrequencyLabel(o.isPRN ? PRN_FREQUENCY : o.frequencyLabel || '');
       setTimes(o.scheduledTimes && o.scheduledTimes.length > 0 ? [...o.scheduledTimes] : ['08:00']);
       setIndication(o.indication || '');
       setOrderingPhysician(o.orderingPhysician || '');
+      setPhysicianUnknown(o.physicianPending === true);
       setNotes(o.notes || '');
     }
   };
@@ -118,12 +124,16 @@ export default function MedChangeRequestModal({
         setError('Medication, dose, units, and route are required.');
         return;
       }
-      if (!orderingPhysician.trim()) {
-        setError('Ordering physician is required; this change reflects a physician order.');
+      if (!physicianUnknown && looksLikeUnknownPhysician(orderingPhysician)) {
+        setError(
+          orderingPhysician.trim()
+            ? 'Enter the ordering physician\'s actual name (placeholders like "N/A" don\'t document the order). If you don\'t know it right now, check the box below to flag it for follow-up.'
+            : 'Ordering physician is required; this change reflects a physician order. If you don\'t know it right now, check the box below to flag it for follow-up.',
+        );
         return;
       }
       if (!isPRN && times.filter(Boolean).length === 0) {
-        setError('Add at least one scheduled time, or mark the med PRN.');
+        setError('Add at least one scheduled time, or choose the "As needed (PRN)" frequency.');
         return;
       }
       if (isPRN && !indication.trim()) {
@@ -147,7 +157,9 @@ export default function MedChangeRequestModal({
         medName, dose, units, route, frequencyLabel,
         scheduledTimes: times, isPRN, indication,
         startDate: mode === 'add' ? startDate : effectiveDate,
-        orderingPhysician, notes,
+        orderingPhysician,
+        physicianPending: physicianUnknown && looksLikeUnknownPhysician(orderingPhysician),
+        notes,
       };
       const target = activeOrders.find((o) => o.id === targetOrderId);
 
@@ -289,11 +301,6 @@ export default function MedChangeRequestModal({
                   </Field>
                 </div>
 
-                <label style={checkRow}>
-                  <input type="checkbox" checked={isPRN} onChange={(e) => setIsPRN(e.target.checked)} />
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#2c3e50' }}>PRN (as needed); no fixed schedule</span>
-                </label>
-
                 {!isPRN && (
                   <div style={{ marginBottom: 12 }}>
                     <div style={fieldLabel}>Scheduled times</div>
@@ -341,6 +348,19 @@ export default function MedChangeRequestModal({
                     <input type="text" value={orderingPhysician} onChange={(e) => setOrderingPhysician(e.target.value)} style={input} placeholder="Dr. ..." />
                   </Field>
                 </div>
+
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: -4, marginBottom: 12, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={physicianUnknown}
+                    onChange={(e) => setPhysicianUnknown(e.target.checked)}
+                    style={{ marginTop: 2 }}
+                  />
+                  <span style={{ fontSize: 12.5, color: '#5c6b7a', lineHeight: 1.4 }}>
+                    I don&apos;t know the ordering physician right now. Flag this order for follow-up
+                    so it can be updated with the physician&apos;s name.
+                  </span>
+                </label>
 
                 <Field label="Notes">
                   <textarea value={notes} onChange={(e) => setNotes(e.target.value)} style={textarea} placeholder="Special instructions, hold parameters, etc." />
