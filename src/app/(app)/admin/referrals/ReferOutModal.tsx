@@ -3,6 +3,9 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
+import type { GappServiceKey } from '@/lib/georgia';
+import { matchAgencies, topSuggestions } from '@/lib/agencyMatch';
+import MatchSuggestions from './MatchSuggestions';
 
 // Required capture when a referral is dragged into "Referred Out" without ever
 // being shared. We record which agency it was handed off to (a manual share
@@ -11,15 +14,21 @@ import { authedFetch } from '@/lib/authedFetch';
 export default function ReferOutModal({
   referralId,
   referralName,
+  county,
+  service,
   onClose,
   onDone,
 }: {
   referralId: string;
   referralName: string;
+  county: string;
+  service: GappServiceKey | null;
   onClose: () => void;
   onDone: () => void;
 }) {
-  const [agencies, setAgencies] = useState<{ id: string; name: string; email: string }[]>([]);
+  const [agencies, setAgencies] = useState<
+    { id: string; name: string; email: string; counties: string[]; services: string[] }[]
+  >([]);
   const [agency, setAgency] = useState('');
   const [email, setEmail] = useState('');
   const [saving, setSaving] = useState(false);
@@ -34,9 +43,12 @@ export default function ReferOutModal({
         const data = await res.json();
         if (!cancelled) {
           setAgencies(
-            (data.agencies ?? []).map((a: { id: string; name: string; email: string }) => ({
-              id: a.id, name: a.name, email: a.email,
-            }))
+            (data.agencies ?? []).map(
+              (a: { id: string; name: string; email: string; counties?: string[]; services?: string[] }) => ({
+                id: a.id, name: a.name, email: a.email,
+                counties: a.counties ?? [], services: a.services ?? [],
+              })
+            )
           );
         }
       } catch {
@@ -45,6 +57,9 @@ export default function ReferOutModal({
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // Smart-match: rank the directory against this referral's county + care need.
+  const suggestions = topSuggestions(matchAgencies({ county, service }, agencies));
 
   const onAgencyName = (value: string) => {
     setAgency(value);
@@ -91,6 +106,11 @@ export default function ReferOutModal({
             You&apos;re moving <strong>{referralName}</strong> to Referred Out without a share link.
             Record which agency it was handed off to so it&apos;s captured.
           </div>
+
+          <MatchSuggestions
+            matches={suggestions}
+            onPick={(a) => { setAgency(a.name); setEmail(a.email); setError(null); }}
+          />
 
           <input
             value={agency}

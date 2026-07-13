@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Search, X, RefreshCw, Plus, Pencil, Trash2, Mail, Phone } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { formatUSPhone } from '@/lib/phone';
+import { GA_COUNTIES, GAPP_SERVICES, SERVICE_SHORT, normalizeCounty, type GappServiceKey } from '@/lib/georgia';
 
 interface PartnerAgency {
   id: string;
@@ -12,6 +13,8 @@ interface PartnerAgency {
   phone: string;
   contactName: string;
   notes: string;
+  counties: string[];
+  services: GappServiceKey[];
   shareCount: number;
   lastSharedAt: string | null;
   createdAt: string | null;
@@ -58,7 +61,9 @@ export default function AgenciesPage() {
     const needle = q.trim().toLowerCase();
     if (!needle) return agencies;
     return agencies.filter((a) =>
-      `${a.name} ${a.email} ${a.contactName} ${a.phone}`.toLowerCase().includes(needle)
+      `${a.name} ${a.email} ${a.contactName} ${a.phone} ${(a.counties ?? []).join(' ')}`
+        .toLowerCase()
+        .includes(needle)
     );
   }, [agencies, q]);
 
@@ -156,6 +161,7 @@ export default function AgenciesPage() {
                   <tr key={a.id} style={{ verticalAlign: 'top' }}>
                     <td style={{ ...tdStyle, fontWeight: 600, color: '#2c3e50' }}>
                       {a.name}
+                      <ServesLine agency={a} />
                       {a.notes && <div style={notesStyle}>{a.notes}</div>}
                     </td>
                     <td style={tdStyle}>
@@ -190,6 +196,31 @@ export default function AgenciesPage() {
   );
 }
 
+// Compact "what this agency serves" line under the name: service badges +
+// county summary. A subtle nudge shows when nothing is on file yet, since the
+// smart-match can only rank agencies whose coverage we know.
+function ServesLine({ agency }: { agency: PartnerAgency }) {
+  const counties = agency.counties ?? [];
+  const services = agency.services ?? [];
+  if (counties.length === 0 && services.length === 0) {
+    return <div style={{ fontWeight: 400, fontSize: 12, color: '#b45309', marginTop: 3 }}>No service area on file</div>;
+  }
+  const countyText =
+    counties.length === 0
+      ? ''
+      : counties.length <= 3
+      ? counties.join(', ')
+      : `${counties.slice(0, 3).join(', ')} +${counties.length - 3}`;
+  return (
+    <div style={servesLineStyle} title={counties.join(', ')}>
+      {services.map((s) => (
+        <span key={s} style={serviceBadgeStyle}>{SERVICE_SHORT[s]}</span>
+      ))}
+      {countyText && <span style={{ fontWeight: 400 }}>{countyText}</span>}
+    </div>
+  );
+}
+
 function AgencyForm({
   agency,
   onClose,
@@ -206,15 +237,36 @@ function AgencyForm({
   const [phone, setPhone] = useState(formatUSPhone(agency?.phone ?? ''));
   const [contactName, setContactName] = useState(agency?.contactName ?? '');
   const [notes, setNotes] = useState(agency?.notes ?? '');
+  const [counties, setCounties] = useState<string[]>(agency?.counties ?? []);
+  const [countyInput, setCountyInput] = useState('');
+  const [services, setServices] = useState<string[]>(agency?.services ?? []);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  const addCounty = () => {
+    const c = normalizeCounty(countyInput);
+    if (!c) {
+      if (countyInput.trim()) setErr(`"${countyInput.trim()}" isn't a Georgia county.`);
+      return;
+    }
+    setCounties((prev) => (prev.includes(c) ? prev : [...prev, c].sort()));
+    setCountyInput('');
+    setErr(null);
+  };
+  const removeCounty = (c: string) => setCounties((prev) => prev.filter((x) => x !== c));
+  const toggleService = (key: GappServiceKey) =>
+    setServices((prev) => (prev.includes(key) ? prev.filter((s) => s !== key) : [...prev, key]));
 
   const submit = async () => {
     if (!name.trim() || !email.trim() || saving) return;
     setSaving(true);
     setErr(null);
     try {
-      const body = { name: name.trim(), email: email.trim(), phone: phone.trim(), contactName: contactName.trim(), notes: notes.trim() };
+      const body = {
+        name: name.trim(), email: email.trim(), phone: phone.trim(),
+        contactName: contactName.trim(), notes: notes.trim(),
+        counties, services,
+      };
       const res = await authedFetch(
         agency ? `/api/admin/agencies/${agency.id}` : '/api/admin/agencies',
         { method: agency ? 'PATCH' : 'POST', body: JSON.stringify(body) }
@@ -245,6 +297,61 @@ function AgencyForm({
             <Field label="Phone"><input type="tel" value={phone} onChange={(e) => setPhone(formatUSPhone(e.target.value))} placeholder="(XXX) XXX-XXXX" style={inp} /></Field>
             <Field label="Contact person"><input value={contactName} onChange={(e) => setContactName(e.target.value)} style={inp} /></Field>
           </div>
+
+          <Field label="Services offered (GAPP)">
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, paddingTop: 2 }}>
+              {GAPP_SERVICES.map((s) => (
+                <label key={s.key} style={serviceCheckStyle}>
+                  <input
+                    type="checkbox"
+                    checked={services.includes(s.key)}
+                    onChange={() => toggleService(s.key)}
+                  />
+                  {s.label}
+                </label>
+              ))}
+            </div>
+          </Field>
+
+          <Field label="Service area (Georgia counties)">
+            {counties.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                {counties.map((c) => (
+                  <span key={c} style={countyChipStyle}>
+                    {c}
+                    <button
+                      type="button"
+                      onClick={() => removeCounty(c)}
+                      style={chipRemoveStyle}
+                      aria-label={`Remove ${c}`}
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                value={countyInput}
+                onChange={(e) => setCountyInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCounty(); } }}
+                placeholder="Type a county, e.g. DeKalb"
+                style={{ ...inp, flex: 1 }}
+                list="ga-county-options"
+                autoComplete="off"
+              />
+              <datalist id="ga-county-options">
+                {GA_COUNTIES.filter((c) => !counties.includes(c)).map((c) => (
+                  <option key={c} value={c} />
+                ))}
+              </datalist>
+              <button type="button" onClick={addCounty} style={ghostBtnStyle}>
+                <Plus size={14} /> Add
+              </button>
+            </div>
+          </Field>
+
           <Field label="Notes"><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} style={{ ...inp, resize: 'vertical' }} /></Field>
           {err && <div style={{ color: '#b3261e', fontSize: 13 }}>{err}</div>}
         </div>
@@ -289,6 +396,26 @@ const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collap
 const thStyle: React.CSSProperties = { textAlign: 'left', padding: '12px 16px', fontSize: 12, fontWeight: 700, color: '#5c6b7a', textTransform: 'uppercase', letterSpacing: 0.4, borderBottom: '1px solid #e5e7eb', background: '#f9fafb' };
 const tdStyle: React.CSSProperties = { padding: '12px 16px', borderBottom: '1px solid #f1f5f9', color: '#374151' };
 const notesStyle: React.CSSProperties = { fontWeight: 400, fontSize: 12.5, color: '#7f8c8d', marginTop: 3, whiteSpace: 'pre-wrap' };
+const servesLineStyle: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6,
+  marginTop: 4, fontSize: 12, color: '#5c6b7a',
+};
+const serviceBadgeStyle: React.CSSProperties = {
+  background: '#e7f6ec', color: '#1e7a3d', padding: '1px 7px', borderRadius: 999,
+  fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap',
+};
+const serviceCheckStyle: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, color: '#374151',
+  cursor: 'pointer', fontWeight: 400,
+};
+const countyChipStyle: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', gap: 5, background: '#eef5ff', color: '#1a3a5c',
+  border: '1px solid #d6e4f7', borderRadius: 999, padding: '3px 6px 3px 10px', fontSize: 12.5, fontWeight: 600,
+};
+const chipRemoveStyle: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent',
+  border: 'none', color: '#5c7aa3', cursor: 'pointer', padding: 0,
+};
 const linkStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, color: '#1a3a5c', textDecoration: 'none' };
 const iconBtnStyle: React.CSSProperties = { background: 'transparent', border: 'none', color: '#5c6b7a', cursor: 'pointer', padding: 6, display: 'inline-flex' };
 const backdropStyle: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 };

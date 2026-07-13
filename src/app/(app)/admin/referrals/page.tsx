@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Search, X, RefreshCw, LayoutGrid, List } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { useAuth } from '@/components/AuthProvider';
+import { serviceFromCareNeed, type GappServiceKey } from '@/lib/georgia';
 import ReferralBoard from './ReferralBoard';
 import ReferralTable from './ReferralTable';
 import ReferralDetail from './ReferralDetail';
@@ -33,7 +34,12 @@ export default function ReferralsPage() {
   const [printList, setPrintList] = useState<Referral[] | null>(null);
   // A move into Referred Out that needs an agency captured first (drag or
   // dropdown). The card doesn't move until the modal is confirmed.
-  const [pendingReferOut, setPendingReferOut] = useState<{ id: string; name: string } | null>(null);
+  const [pendingReferOut, setPendingReferOut] = useState<{
+    id: string;
+    name: string;
+    county: string;
+    service: GappServiceKey | null;
+  } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   // Per-referral request sequence. Each mutation bumps the counter and records
@@ -209,7 +215,14 @@ export default function ReferralsPage() {
         const entering = !!ref && ref.stage !== 'referred_out';
         const hasAgency = (ref?.shareSummary?.total ?? 0) > 0;
         if (entering && !hasAgency) {
-          setPendingReferOut({ id, name: ref?.clientName || 'this referral' });
+          setPendingReferOut({
+            id,
+            name: ref?.clientName || 'this referral',
+            county: ref?.county ?? '',
+            service: serviceFromCareNeed(
+              ref?.details.find((d) => d.label === 'Primary care need')?.value
+            ),
+          });
           return;
         }
       }
@@ -397,6 +410,8 @@ export default function ReferralsPage() {
         <ReferOutModal
           referralId={pendingReferOut.id}
           referralName={pendingReferOut.name}
+          county={pendingReferOut.county}
+          service={pendingReferOut.service}
           onClose={() => setPendingReferOut(null)}
           onDone={() => { setPendingReferOut(null); load(); }}
         />

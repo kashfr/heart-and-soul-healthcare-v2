@@ -1,6 +1,7 @@
 import 'server-only';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
+import { normalizeCounty, SERVICE_KEYS, type GappServiceKey } from './georgia';
 import type { AuthedCaller } from './adminAuthGuard';
 
 // Reusable directory of partner agencies we share referrals with. One record per
@@ -20,6 +21,10 @@ export interface PartnerAgency {
   phone: string;
   contactName: string;
   notes: string;
+  /** Georgia counties this agency serves (canonical names from GA_COUNTIES). */
+  counties: string[];
+  /** GAPP service lines offered (keys from SERVICE_KEYS). */
+  services: GappServiceKey[];
   shareCount: number;
   lastSharedAt: string | null;
   createdAt: string | null;
@@ -32,6 +37,26 @@ export interface PartnerAgencyInput {
   phone?: string;
   contactName?: string;
   notes?: string;
+  counties?: string[];
+  services?: string[];
+}
+
+/** Normalize + dedupe a county list against the canonical 159; drops unknowns. */
+function sanitizeCounties(value: string[] | undefined): string[] {
+  if (!Array.isArray(value)) return [];
+  const out = new Set<string>();
+  for (const v of value) {
+    const c = normalizeCounty(v);
+    if (c) out.add(c);
+  }
+  return [...out].sort();
+}
+
+/** Keep only known GAPP service keys, deduped, in canonical order. */
+function sanitizeServices(value: string[] | undefined): GappServiceKey[] {
+  if (!Array.isArray(value)) return [];
+  const set = new Set(value.map((v) => String(v ?? '').trim().toLowerCase()));
+  return SERVICE_KEYS.filter((k) => set.has(k));
 }
 
 function clamp(value: string | undefined, max: number): string {
@@ -54,6 +79,8 @@ function serialize(id: string, data: FirebaseFirestore.DocumentData): PartnerAge
     phone: data.phone ?? '',
     contactName: data.contactName ?? '',
     notes: data.notes ?? '',
+    counties: sanitizeCounties(data.counties),
+    services: sanitizeServices(data.services),
     shareCount: typeof data.shareCount === 'number' ? data.shareCount : 0,
     lastSharedAt: toIso(data.lastSharedAt),
     createdAt: toIso(data.createdAt),
@@ -106,6 +133,8 @@ export async function createPartnerAgency(
     phone: clamp(input.phone, MAX.phone),
     contactName: clamp(input.contactName, MAX.contact),
     notes: clamp(input.notes, MAX.notes),
+    counties: sanitizeCounties(input.counties),
+    services: sanitizeServices(input.services),
     shareCount: 0,
     lastSharedAt: null,
     archived: false,
@@ -149,6 +178,8 @@ export async function updatePartnerAgency(
   if (patch.phone !== undefined) update.phone = clamp(patch.phone, MAX.phone);
   if (patch.contactName !== undefined) update.contactName = clamp(patch.contactName, MAX.contact);
   if (patch.notes !== undefined) update.notes = clamp(patch.notes, MAX.notes);
+  if (patch.counties !== undefined) update.counties = sanitizeCounties(patch.counties);
+  if (patch.services !== undefined) update.services = sanitizeServices(patch.services);
 
   await ref.update(update);
   const fresh = await ref.get();

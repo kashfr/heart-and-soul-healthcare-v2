@@ -21,7 +21,10 @@ export async function PATCH(
     throw err;
   }
 
-  let body: { name?: string; email?: string; phone?: string; contactName?: string; notes?: string };
+  let body: {
+    name?: string; email?: string; phone?: string; contactName?: string; notes?: string;
+    counties?: string[]; services?: string[];
+  };
   try {
     body = await request.json();
   } catch {
