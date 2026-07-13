@@ -26,6 +26,7 @@ import { getPatientDocuments, type PatientDocument } from '@/lib/patientDocument
 import { getVisitsForPatient, type PatientVisit } from '@/lib/patientVisits';
 import DocumentsSection from './DocumentsSection';
 import VisitsSection from './VisitsSection';
+import QuickNotesSection from './QuickNotesSection';
 import {
   adverseEvents,
   ageYears,
@@ -512,6 +513,17 @@ function ClientDashboardInner() {
                   Full schedule
                 </button>
               </section>
+
+              {/* Quick notes — the lightweight jot-it-down sibling of the
+                  progress note (author/time auto-captured, immutable). Keyed
+                  by patient so NOTHING (esp. an open modal with typed text)
+                  survives a navigation to a different client's chart. */}
+              <QuickNotesSection
+                key={patientId}
+                patientId={patientId}
+                actor={{ uid: user?.uid || '', name: profile?.displayName || user?.email || '' }}
+                onToast={showToast}
+              />
             </>
           )}
 
