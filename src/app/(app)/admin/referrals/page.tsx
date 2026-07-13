@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Search, X, RefreshCw, LayoutGrid, List } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { useAuth } from '@/components/AuthProvider';
+import { useSettings } from '@/components/SettingsProvider';
 import { serviceFromCareNeed, type GappServiceKey } from '@/lib/georgia';
+import { assessReferralFit } from '@/lib/referralFit';
 import ReferralBoard from './ReferralBoard';
 import ReferralTable from './ReferralTable';
 import ReferralDetail from './ReferralDetail';
@@ -30,6 +32,9 @@ export default function ReferralsPage() {
   const [q, setQ] = useState('');
   const [assigneeFilter, setAssigneeFilter] = useState<string>('all');
   const [shareFilter, setShareFilter] = useState<'all' | 'shared' | 'unshared'>('all');
+  const [fitFilter, setFitFilter] = useState<'all' | 'good' | 'partial' | 'none'>('all');
+  // The org's own intake profile drives the per-card fit badge and this filter.
+  const { settings } = useSettings();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [printList, setPrintList] = useState<Referral[] | null>(null);
   // A move into Referred Out that needs an agency captured first (drag or
@@ -142,12 +147,25 @@ export default function ReferralsPage() {
         if (shareFilter === 'shared' && !isShared) return false;
         if (shareFilter === 'unshared' && isShared) return false;
       }
+      // Fit against the org's own intake profile (same logic as the card badge).
+      if (fitFilter !== 'all') {
+        const fit = assessReferralFit(
+          {
+            county: r.county,
+            service: serviceFromCareNeed(
+              r.details.find((d) => d.label === 'Primary care need')?.value
+            ),
+          },
+          settings.intake
+        );
+        if ((fit?.level ?? null) !== fitFilter) return false;
+      }
       if (!needle) return true;
       const hay =
         `${r.clientName} ${r.clientEmail} ${r.clientPhone} ${r.county} ${r.program} ${r.referrerName ?? ''}`.toLowerCase();
       return hay.includes(needle);
     });
-  }, [referrals, q, assigneeFilter, shareFilter]);
+  }, [referrals, q, assigneeFilter, shareFilter, fitFilter, settings.intake]);
 
   // --- Mutations (optimistic, with server reconcile) ---
 
@@ -343,6 +361,18 @@ export default function ReferralsPage() {
             <option value="all">All sharing</option>
             <option value="shared">Shared externally</option>
             <option value="unshared">Not shared</option>
+          </select>
+
+          <select
+            value={fitFilter}
+            onChange={(e) => setFitFilter(e.target.value as 'all' | 'good' | 'partial' | 'none')}
+            style={filterSelectStyle}
+            aria-label="Filter by intake fit"
+          >
+            <option value="all">All fits</option>
+            <option value="good">Good fit</option>
+            <option value="partial">Possible fit</option>
+            <option value="none">Not a fit</option>
           </select>
 
           <div style={searchWrapStyle}>

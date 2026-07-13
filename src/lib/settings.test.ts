@@ -267,3 +267,46 @@ describe('validateSettings — branding + emails', () => {
     ).toThrow(SettingsValidationError);
   });
 });
+
+describe('intake settings (org service profile)', () => {
+  it('defaults to the 20-county skilled-nursing profile', () => {
+    const merged = mergeWithDefaults({});
+    expect(merged.intake.counties).toHaveLength(20);
+    expect(merged.intake.counties).toContain('Fulton');
+    expect(merged.intake.counties).toContain('Spalding');
+    expect(merged.intake.services).toEqual(['nursing']);
+  });
+
+  it('normalizes and dedupes saved counties, dropping unknowns', () => {
+    const merged = mergeWithDefaults({
+      intake: { counties: ['fulton', 'Fulton County', 'Narnia'], services: ['nursing'] },
+    });
+    expect(merged.intake.counties).toEqual(['Fulton']);
+  });
+
+  it('respects an explicitly-saved empty list (no fallback to defaults)', () => {
+    const merged = mergeWithDefaults({ intake: { counties: [], services: [] } });
+    expect(merged.intake.counties).toEqual([]);
+    expect(merged.intake.services).toEqual([]);
+  });
+
+  it('rejects a non-Georgia county on save', () => {
+    expect(() =>
+      validateSettings({ intake: { counties: ['Los Angeles'], services: [] } as never }),
+    ).toThrow(SettingsValidationError);
+  });
+
+  it('rejects an unknown service key on save', () => {
+    expect(() =>
+      validateSettings({ intake: { counties: [], services: ['hospice'] } as never }),
+    ).toThrow(SettingsValidationError);
+  });
+
+  it('accepts and keeps a valid profile', () => {
+    const merged = validateSettings({
+      intake: { counties: ['Cobb', 'DeKalb'], services: ['nursing', 'pss'] },
+    });
+    expect(merged.intake.counties).toEqual(['Cobb', 'DeKalb']);
+    expect(merged.intake.services).toEqual(['nursing', 'pss']);
+  });
+});
