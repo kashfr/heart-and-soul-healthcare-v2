@@ -16,7 +16,11 @@ export interface MarOrderSortable {
  * regimens in a month (a dose change = discontinued order + new order): the
  * old line lists first and its replacement directly below, like the
  * line-through-and-rewrite convention on a paper MAR. The web grid and the
- * PDF MUST use the same comparator or their rows diverge.
+ * PDF both use this comparator for intra-group order; the PDF additionally
+ * groups non-PRN before PRN (DBHDD FY27 manual D.6.a/D.6.b requires the
+ * printed MAR to keep routine and PRN meds in separate portions). The screen
+ * keeps the flat alphabetical order for now; if it ever adopts the grouping,
+ * reuse the PDF's isPRN-then-compareMarOrders sort.
  */
 export function compareMarOrders(a: MarOrderSortable, b: MarOrderSortable): number {
   return (
