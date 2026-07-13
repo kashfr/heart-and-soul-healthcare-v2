@@ -41,6 +41,11 @@ function shortDate(iso: string): string {
   return new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+function truncate(s: string, max: number): string | undefined {
+  if (!s) return undefined;
+  return s.length <= max ? s : `${s.slice(0, max - 1).trimEnd()}…`;
+}
+
 interface OrderDoc {
   id: string;
   medName: string;
@@ -50,6 +55,8 @@ interface OrderDoc {
   frequencyLabel: string;
   scheduledTimes: string[];
   isPRN: boolean;
+  indication: string; // standing purpose — printed on PRN rows (manual D.6.b.ii.d)
+  notes: string; // special instructions — printed on the MAR row (manual D.6.a.ii.e)
   startDate: string;
   endDate: string | null;
   status: string;
@@ -160,6 +167,8 @@ export async function POST(request: Request) {
         frequencyLabel: String(o.frequencyLabel || ''),
         scheduledTimes: Array.isArray(o.scheduledTimes) ? o.scheduledTimes.map(String) : [],
         isPRN: !!o.isPRN,
+        indication: String(o.indication || ''),
+        notes: String(o.notes || ''),
         startDate: String(o.startDate || ''),
         endDate: o.endDate ? String(o.endDate) : null,
         status: String(o.status || 'active'),
@@ -205,9 +214,12 @@ export async function POST(request: Request) {
       cellMap.set(k, arr);
     }
 
+    // Routine meds are one discrete portion of the MAR; PRN / as-needed meds
+    // follow in their own labeled portion (DBHDD FY27 manual D.6.a / D.6.b) —
+    // so sort non-PRN before PRN, alphabetical within each.
     const monthOrders = orders
       .filter((o) => windowOverlaps(o, start, end))
-      .sort(compareMarOrders);
+      .sort((a, b) => Number(a.isPRN) - Number(b.isPRN) || compareMarOrders(a, b));
 
     const rows: MarPdfRow[] = [];
     for (const o of monthOrders) {
@@ -245,7 +257,19 @@ export async function POST(request: Request) {
           ]
             .filter(Boolean)
             .join(' · '),
+          // Special instructions + (for PRN) the standing purpose, replicated
+          // from the order onto the MAR (manual D.6.a.ii.e / D.6.b.ii.d).
+          // Capped: rows render wrap={false}, so an unbounded free-text note
+          // would silently clip on the printed record. The full text always
+          // lives on the order itself.
+          medLine3: truncate(
+            [o.isPRN && o.indication ? `For: ${o.indication}` : '', o.notes]
+              .filter(Boolean)
+              .join(' · '),
+            220,
+          ),
           slot,
+          isPRN: o.isPRN,
           cells,
         });
       }

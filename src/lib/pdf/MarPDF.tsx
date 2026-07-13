@@ -1,3 +1,4 @@
+import React from 'react';
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 
 /**
@@ -20,7 +21,15 @@ export interface MarPdfCell {
 export interface MarPdfRow {
   medLine1: string; // medication name
   medLine2: string; // dose/units · route · frequency (+ D/C)
+  // Special instructions from the order ("take with meals") and, for PRN
+  // rows, the standing purpose ("For: moderate pain"). DBHDD FY27 manual
+  // D.6.a.ii.e (special instructions on the MAR) and D.6.b.ii.d (purpose
+  // of periodic/PRN medications on the MAR). Kept to a bounded length by
+  // the route: rows are wrap={false}, so an unbounded line would silently
+  // clip on a survey document.
+  medLine3?: string;
   slot: string; // 'HH:MM' or 'PRN'
+  isPRN: boolean; // PRN rows render in their own labeled section (D.6.b)
   cells: MarPdfCell[]; // one per day of the month
 }
 
@@ -118,6 +127,19 @@ const s = StyleSheet.create({
   dayText: { fontSize: 6 },
   medName: { fontSize: 7.5, fontFamily: 'Helvetica-Bold' },
   medMeta: { fontSize: 6, color: '#5c6b7a', marginTop: 1 },
+  // Special instructions / PRN purpose (manual D.6.a.ii.e, D.6.b.ii.d).
+  medInstructions: { fontSize: 6, color: '#2c3e50', marginTop: 1, fontFamily: 'Helvetica-Oblique' },
+  // Full-width section banner separating the routine portion of the grid
+  // from the PRN / as-needed portion (manual D.6.a / D.6.b).
+  sectionRow: {
+    backgroundColor: LIGHT,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#b9c6d2',
+    borderBottomStyle: 'solid',
+    paddingVertical: 2,
+    paddingHorizontal: 4,
+  },
+  sectionRowText: { fontSize: 6.5, fontFamily: 'Helvetica-Bold', color: NAVY, letterSpacing: 0.4 },
   // True circle for the usual 2-character initials: fixed equal width/height
   // with radius = half, so the shape can't stretch into an oval.
   circled: {
@@ -262,10 +284,27 @@ export default function MarPDF({
             ))}
           </View>
           {rows.map((row, ri) => (
-            <View key={ri} style={s.row} wrap={false}>
+            <React.Fragment key={ri}>
+              {/* Section breaks: routine meds are one discrete portion of the
+                  MAR; PRN / as-needed meds follow in their own labeled
+                  portion (DBHDD FY27 manual D.6.a / D.6.b). */}
+              {ri === 0 && !row.isPRN && (
+                <View style={s.sectionRow} wrap={false} minPresenceAhead={24}>
+                  <Text style={s.sectionRowText}>SCHEDULED (ROUTINE) MEDICATIONS</Text>
+                </View>
+              )}
+              {row.isPRN && (ri === 0 || !rows[ri - 1].isPRN) && (
+                <View style={s.sectionRow} wrap={false} minPresenceAhead={24}>
+                  <Text style={s.sectionRowText}>
+                    PRN / AS-NEEDED MEDICATIONS: each use is documented in the log below with reason and result
+                  </Text>
+                </View>
+              )}
+              <View style={s.row} wrap={false}>
               <View style={s.medCell}>
                 <Text style={s.medName}>{row.medLine1}</Text>
                 <Text style={s.medMeta}>{row.medLine2}</Text>
+                {row.medLine3 ? <Text style={s.medInstructions}>{row.medLine3}</Text> : null}
               </View>
               <Text style={s.timeCell}>{row.slot}</Text>
               {row.cells.map((cell, ci) => (
@@ -295,14 +334,18 @@ export default function MarPDF({
                   ) : null}
                 </View>
               ))}
-            </View>
+              </View>
+            </React.Fragment>
           ))}
         </View>
 
         <Text style={s.legendNote}>
           A. Initials in a box = medication given. B. Circled = held or refused; see the log below for the
           reason. C. * = administered by family / responsible party / proxy (documented by the nurse; see
-          log). D. Gray = order not active that day. PRN doses: reason and result are recorded in the log.
+          log). D. Gray = order not active that day (before the order start, or after its end/discontinuation).
+          E. Reasons a dose is held, refused, or otherwise not received are documented per dose in the log
+          below (examples: refused, hospital, NPO (nothing by mouth), home visit, day service). PRN doses:
+          reason and result are recorded in the log.
         </Text>
 
         {/* Initial / signature legend */}
