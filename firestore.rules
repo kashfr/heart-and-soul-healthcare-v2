@@ -418,6 +418,39 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Quick notes: lightweight, free-text care-team jottings about a client
+    // (post-shift recollections, physician remarks, concerns). Deliberately
+    // NOT a progress note — one required field (text), author/time captured
+    // automatically. IMMUTABLE once written (update/delete denied): mistakes
+    // are corrected by adding a follow-up note, which keeps these defensible
+    // as part of the record without an amendment system. Staff read all;
+    // nurses read/create only for clients on their care team.
+    match /quickNotes/{noteId} {
+      allow read: if isStaff()
+        || (isNurse()
+            && resource.data.get('patientId', null) != null
+            && get(/databases/$(database)/documents/patients/$(resource.data.patientId))
+                 .data.get('assignedNurseIds', []).hasAny([request.auth.uid]));
+      allow create: if (isStaff()
+              || (isNurse()
+                  && get(/databases/$(database)/documents/patients/$(incomingData().patientId))
+                       .data.get('assignedNurseIds', []).hasAny([request.auth.uid])))
+        && incomingData().keys().hasOnly(['patientId', 'authorId', 'authorName', 'text', 'category', 'aboutDate', 'createdAt'])
+        && incomingData().patientId is string && incomingData().patientId.size() > 0
+        && incomingData().authorId == request.auth.uid
+        && incomingData().authorName is string
+        && incomingData().authorName.size() > 0 && incomingData().authorName.size() <= 120
+        && incomingData().text is string
+        && incomingData().text.size() > 0 && incomingData().text.size() <= 4000
+        && incomingData().category in ['observation', 'physician', 'concern', 'followup', 'other']
+        && (incomingData().get('aboutDate', '') == ''
+            || (incomingData().aboutDate is string
+                && incomingData().aboutDate.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')))
+        && incomingData().createdAt == request.time;
+      allow update: if false;
+      allow delete: if false;
+    }
+
     // In-portal notifications (the bell). Written ONLY server-side (Admin
     // SDK: visit assign/cancel/restore + the day-of reminder cron), so client
     // create/delete are denied. A user reads only her own and may flip ONLY
