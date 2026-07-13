@@ -7,6 +7,9 @@ import {
 } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { buildShareUrl } from '@/lib/shareLink';
+import { serviceFromCareNeed, type GappServiceKey } from '@/lib/georgia';
+import { matchAgencies, topSuggestions } from '@/lib/agencyMatch';
+import MatchSuggestions from './MatchSuggestions';
 import {
   fieldRows, formatDateTime, formatRelative,
   REFERRAL_STAGES, STAGE_ACCENT, STAGE_LABEL, SOURCE_LABEL,
@@ -191,7 +194,15 @@ export default function ReferralDetail({
 
           {/* Share with a partner agency */}
           <div style={sectionTitleStyle}>Share with agency</div>
-          <SharePanel referralId={referral.id} stage={referral.stage} onChanged={onChanged} />
+          <SharePanel
+            referralId={referral.id}
+            stage={referral.stage}
+            county={referral.county}
+            service={serviceFromCareNeed(
+              referral.details.find((d) => d.label === 'Primary care need')?.value
+            )}
+            onChanged={onChanged}
+          />
 
           {/* Activity timeline */}
           <div style={sectionTitleStyle}>Activity</div>
@@ -339,10 +350,14 @@ const SHARE_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 function SharePanel({
   referralId,
   stage,
+  county,
+  service,
   onChanged,
 }: {
   referralId: string;
   stage: ReferralStage;
+  county: string;
+  service: GappServiceKey | null;
   onChanged?: () => void;
 }) {
   // A share is a handoff, so default to moving the card to Referred Out — unless
@@ -363,9 +378,12 @@ function SharePanel({
   const [formError, setFormError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ count: number; emailsSent: number; failed: number } | null>(null);
   const [copiedShareId, setCopiedShareId] = useState<string | null>(null);
-  const [agencies, setAgencies] = useState<{ id: string; name: string; email: string }[]>([]);
+  const [agencies, setAgencies] = useState<
+    { id: string; name: string; email: string; counties: string[]; services: string[] }[]
+  >([]);
 
-  // Saved partner agencies power the name autocomplete + email auto-fill.
+  // Saved partner agencies power the name autocomplete, email auto-fill, and
+  // the smart-match suggestions (county + service fit).
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -375,9 +393,12 @@ function SharePanel({
         const data = await res.json();
         if (!cancelled) {
           setAgencies(
-            (data.agencies ?? []).map((a: { id: string; name: string; email: string }) => ({
-              id: a.id, name: a.name, email: a.email,
-            }))
+            (data.agencies ?? []).map(
+              (a: { id: string; name: string; email: string; counties?: string[]; services?: string[] }) => ({
+                id: a.id, name: a.name, email: a.email,
+                counties: a.counties ?? [], services: a.services ?? [],
+              })
+            )
           );
         }
       } catch {
@@ -386,6 +407,16 @@ function SharePanel({
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // Top smart-match suggestions for this referral, excluding agencies already
+  // queued as recipients or already holding a share on this referral.
+  const takenEmails = new Set([
+    ...recipients.map((r) => r.email),
+    ...shares.map((s) => s.partnerEmail),
+  ]);
+  const suggestions = topSuggestions(
+    matchAgencies({ county, service }, agencies.filter((a) => !takenEmails.has(a.email)))
+  );
 
   const onAgencyName = (value: string) => {
     setAgency(value);
@@ -541,6 +572,16 @@ function SharePanel({
         </button>
       ) : (
         <div style={shareFormBox}>
+          <MatchSuggestions
+            matches={suggestions}
+            onPick={(a) =>
+              setRecipients((prev) =>
+                prev.some((r) => r.email === a.email.toLowerCase())
+                  ? prev
+                  : [...prev, { name: a.name, email: a.email.toLowerCase() }]
+              )
+            }
+          />
           {recipients.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {recipients.map((r, i) => (

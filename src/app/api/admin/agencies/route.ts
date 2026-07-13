@@ -30,7 +30,10 @@ export async function POST(request: Request) {
     throw err;
   }
 
-  let body: { name?: string; email?: string; phone?: string; contactName?: string; notes?: string };
+  let body: {
+    name?: string; email?: string; phone?: string; contactName?: string; notes?: string;
+    counties?: string[]; services?: string[];
+  };
   try {
     body = await request.json();
   } catch {
@@ -45,6 +48,8 @@ export async function POST(request: Request) {
         phone: body.phone,
         contactName: body.contactName,
         notes: body.notes,
+        counties: body.counties,
+        services: body.services,
       },
       caller
     );

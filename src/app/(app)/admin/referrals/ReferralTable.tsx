@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Printer, Download, Trash2, Share2, X, Check } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
+import { serviceFromCareNeed } from '@/lib/georgia';
+import { matchAgenciesBulk, topSuggestions } from '@/lib/agencyMatch';
+import MatchSuggestions from './MatchSuggestions';
 import {
   downloadCsv, formatDate, initials,
   REFERRAL_STAGES, STAGE_ACCENT, STAGE_LABEL, SOURCE_LABEL,
@@ -274,7 +277,9 @@ function BulkShareModal({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const [agencies, setAgencies] = useState<{ id: string; name: string; email: string }[]>([]);
+  const [agencies, setAgencies] = useState<
+    { id: string; name: string; email: string; counties: string[]; services: string[] }[]
+  >([]);
   const [agency, setAgency] = useState('');
   const [email, setEmail] = useState('');
   const [expiry, setExpiry] = useState(14);
@@ -292,9 +297,12 @@ function BulkShareModal({
         const data = await res.json();
         if (!cancelled) {
           setAgencies(
-            (data.agencies ?? []).map((a: { id: string; name: string; email: string }) => ({
-              id: a.id, name: a.name, email: a.email,
-            }))
+            (data.agencies ?? []).map(
+              (a: { id: string; name: string; email: string; counties?: string[]; services?: string[] }) => ({
+                id: a.id, name: a.name, email: a.email,
+                counties: a.counties ?? [], services: a.services ?? [],
+              })
+            )
           );
         }
       } catch {
@@ -309,6 +317,20 @@ function BulkShareModal({
     const match = agencies.find((a) => a.name.toLowerCase() === value.trim().toLowerCase());
     if (match) setEmail(match.email);
   };
+
+  // Smart-match across the whole batch: rank agencies by how many of the
+  // selected referrals' counties they cover + the care needs they offer.
+  const suggestions = topSuggestions(
+    matchAgenciesBulk(
+      referrals.map((r) => ({
+        county: r.county,
+        service: serviceFromCareNeed(
+          r.details.find((d) => d.label === 'Primary care need')?.value
+        ),
+      })),
+      agencies
+    )
+  );
 
   const submit = async () => {
     if (!agency.trim() || !email.trim() || sending) return;
@@ -373,6 +395,10 @@ function BulkShareModal({
           </div>
         ) : (
           <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <MatchSuggestions
+              matches={suggestions}
+              onPick={(a) => { setAgency(a.name); setEmail(a.email); setError(null); }}
+            />
             <input
               value={agency}
               onChange={(e) => onAgencyName(e.target.value)}
