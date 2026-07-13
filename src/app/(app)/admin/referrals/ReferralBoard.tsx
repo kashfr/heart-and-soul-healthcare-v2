@@ -18,6 +18,7 @@ import {
   type Referral, type ReferralStage,
 } from './types';
 import ShareBadge from './ShareBadge';
+import FitBadge from './FitBadge';
 
 type Columns = Record<ReferralStage, Referral[]>;
 
@@ -291,6 +292,7 @@ function CardView({ referral, dragging }: { referral: Referral; dragging?: boole
       <div style={cardFooterStyle}>
         <span style={cardFooterLeftStyle}>
           <span style={cardDateStyle}>{formatRelative(referral.submittedAt)}</span>
+          <FitBadge referral={referral} />
           <ShareBadge summary={referral.shareSummary} />
         </span>
         {referral.assigneeName && (

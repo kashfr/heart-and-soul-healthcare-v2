@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Save, RotateCcw, Plus, X } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
 import { authedFetch } from '@/lib/authedFetch';
@@ -22,6 +22,7 @@ import {
   type VitalRangePair,
 } from '@/lib/settings';
 import { getDefaultVitalRange } from '@/lib/vitalRanges';
+import { GA_COUNTIES, GAPP_SERVICES, normalizeCounty, type GappServiceKey } from '@/lib/georgia';
 
 /**
  * /admin/settings — admin-only org-wide configuration.
@@ -39,6 +40,8 @@ export default function AdminSettingsPage() {
   const [draft, setDraft] = useState<AppSettings>(settings);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  // Staging input for the intake service-area county picker.
+  const [countyInput, setCountyInput] = useState('');
 
   // Keep the draft in sync with the live settings until the user
   // starts editing. Once they make a change, the dirty draft "wins"
@@ -163,6 +166,41 @@ export default function AdminSettingsPage() {
         ...prev.emails,
         subjects: { ...prev.emails.subjects, [key]: value },
       },
+    }));
+  };
+
+  const toggleIntakeService = (key: GappServiceKey) => {
+    setDirty(true);
+    setDraft((prev) => {
+      const set = new Set(prev.intake.services);
+      if (set.has(key)) set.delete(key);
+      else set.add(key);
+      // Preserve canonical order so the saved doc stays diff-friendly.
+      const ordered = GAPP_SERVICES.map((s) => s.key).filter((k) => set.has(k));
+      return { ...prev, intake: { ...prev.intake, services: ordered } };
+    });
+  };
+
+  const addIntakeCounty = () => {
+    const c = normalizeCounty(countyInput);
+    if (!c) {
+      if (countyInput.trim()) showToast('err', `"${countyInput.trim()}" isn't a Georgia county.`);
+      return;
+    }
+    setDirty(true);
+    setDraft((prev) =>
+      prev.intake.counties.includes(c)
+        ? prev
+        : { ...prev, intake: { ...prev.intake, counties: [...prev.intake.counties, c].sort() } }
+    );
+    setCountyInput('');
+  };
+
+  const removeIntakeCounty = (c: string) => {
+    setDirty(true);
+    setDraft((prev) => ({
+      ...prev,
+      intake: { ...prev.intake, counties: prev.intake.counties.filter((x) => x !== c) },
     }));
   };
 
@@ -618,6 +656,89 @@ export default function AdminSettingsPage() {
                 style={inputStyle}
               />
             </Field>
+          </div>
+        </section>
+
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Referral intake</h2>
+          <p style={sectionSubStyle}>
+            What Heart &amp; Soul itself accepts: the GAPP services you offer and the
+            Georgia counties you serve. Every card on the Referrals board is judged
+            against this profile (Good fit / Possible fit / Not a fit), which drives
+            the fit filter and, later, the refer-out workflow. Update it here whenever
+            you add a service line or expand coverage.
+          </p>
+
+          <h3 style={{ fontSize: 14, color: '#2c3e50', margin: '14px 0 6px' }}>Services you offer</h3>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
+            {GAPP_SERVICES.map((s) => (
+              <label
+                key={s.key}
+                style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13.5, color: '#374151', cursor: 'pointer' }}
+              >
+                <input
+                  type="checkbox"
+                  checked={draft.intake.services.includes(s.key)}
+                  onChange={() => toggleIntakeService(s.key)}
+                />
+                {s.label}
+              </label>
+            ))}
+          </div>
+
+          <h3 style={{ fontSize: 14, color: '#2c3e50', margin: '18px 0 6px' }}>
+            Counties you serve ({draft.intake.counties.length})
+          </h3>
+          {draft.intake.counties.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+              {draft.intake.counties.map((c) => (
+                <span
+                  key={c}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5, background: '#eef5ff',
+                    color: '#1a3a5c', border: '1px solid #d6e4f7', borderRadius: 999,
+                    padding: '3px 6px 3px 10px', fontSize: 12.5, fontWeight: 600,
+                  }}
+                >
+                  {c}
+                  <button
+                    type="button"
+                    onClick={() => removeIntakeCounty(c)}
+                    style={{ display: 'inline-flex', background: 'transparent', border: 'none', color: '#5c7aa3', cursor: 'pointer', padding: 0 }}
+                    aria-label={`Remove ${c}`}
+                  >
+                    <X size={12} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8, maxWidth: 420 }}>
+            <input
+              value={countyInput}
+              onChange={(e) => setCountyInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addIntakeCounty(); } }}
+              placeholder="Add a county, e.g. Cherokee"
+              style={{ ...inputStyle, flex: 1 }}
+              list="intake-county-options"
+              autoComplete="off"
+            />
+            <datalist id="intake-county-options">
+              {GA_COUNTIES.filter((c) => !draft.intake.counties.includes(c)).map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+            <button
+              type="button"
+              onClick={addIntakeCounty}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5, background: 'white',
+                color: '#1a3a5c', border: '1px solid #d1d5db', borderRadius: 8, padding: '0 12px',
+                fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+              }}
+            >
+              <Plus size={14} /> Add
+            </button>
           </div>
         </section>
 

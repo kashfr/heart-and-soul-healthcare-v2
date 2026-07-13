@@ -23,6 +23,22 @@
  */
 export const RN_COSIGN_SESSION_KEY = 'rn-cosign-default-applied';
 
+// georgia.ts is pure data (no Firebase), so importing it preserves this
+// module's unit-testability.
+import { normalizeCounty, SERVICE_KEYS, type GappServiceKey } from './georgia';
+
+/**
+ * Heart & Soul's OWN intake profile: the counties and GAPP services the agency
+ * itself accepts. Drives the per-referral fit indicator on the Referrals board
+ * (good fit / possible fit / not a fit) — the first rung of the triage ladder
+ * before partner smart-match and the Appendix P handoff. Editable in
+ * /admin/settings; services are the same three GAPP lines partner agencies use.
+ */
+export interface IntakeSettings {
+  counties: string[];
+  services: GappServiceKey[];
+}
+
 export type SubmissionsSortKey =
   | 'submittedAt'
   | 'dateOfService'
@@ -209,6 +225,7 @@ export interface AppSettings {
   criticalVitals: CriticalVitalsSettings;
   branding: BrandingSettings;
   emails: EmailsSettings;
+  intake: IntakeSettings;
 }
 
 /**
@@ -250,6 +267,17 @@ export const DEFAULT_SETTINGS: AppSettings = {
       staffInviteResend: 'Your Heart and Soul Healthcare password reset link',
       emailChanged: 'Your Heart and Soul Healthcare account email was changed',
     },
+  },
+  intake: {
+    // H&S's service area as of July 2026 — the same 20 counties the public
+    // referral form advertises (primary + extended). Skilled nursing only for
+    // now; more services get checked on in /admin/settings when offered.
+    counties: [
+      'Barrow', 'Bartow', 'Carroll', 'Cherokee', 'Clayton', 'Cobb', 'Coweta',
+      'DeKalb', 'Douglas', 'Fayette', 'Forsyth', 'Fulton', 'Gilmer', 'Gwinnett',
+      'Henry', 'Newton', 'Paulding', 'Pickens', 'Rockdale', 'Spalding',
+    ],
+    services: ['nursing'],
   },
 };
 
@@ -307,7 +335,22 @@ export function mergeWithDefaults(partial: unknown): AppSettings {
     },
     branding: mergeBranding(p.branding),
     emails: mergeEmails(p.emails),
+    intake: mergeIntake(p.intake),
   };
+}
+
+function mergeIntake(input: unknown): IntakeSettings {
+  const src = (input ?? {}) as Partial<IntakeSettings>;
+  // An explicitly-saved empty array is respected (it means "nothing right
+  // now"); a missing field falls back to the defaults. Entries are normalized
+  // against the canonical lists so garbage can't reach the fit logic.
+  const counties = Array.isArray(src.counties)
+    ? [...new Set(src.counties.map((c) => normalizeCounty(c)).filter((c): c is string => c !== null))].sort()
+    : [...DEFAULT_SETTINGS.intake.counties];
+  const services = Array.isArray(src.services)
+    ? SERVICE_KEYS.filter((k) => (src.services as string[]).includes(k))
+    : [...DEFAULT_SETTINGS.intake.services];
+  return { counties, services };
 }
 
 function mergeBranding(input: unknown): BrandingSettings {
@@ -548,6 +591,36 @@ export function validateSettings(payload: unknown): AppSettings {
         'branding.fromEmailDisplay',
         'fromEmailDisplay is too long (max 80 chars).',
       );
+    }
+  }
+
+  if (p.intake !== undefined) {
+    const i = p.intake as Partial<IntakeSettings>;
+    if (i.counties !== undefined) {
+      if (!Array.isArray(i.counties)) {
+        throw new SettingsValidationError('intake.counties', 'counties must be an array.');
+      }
+      for (const c of i.counties) {
+        if (typeof c !== 'string' || normalizeCounty(c) === null) {
+          throw new SettingsValidationError(
+            'intake.counties',
+            `"${String(c)}" is not a Georgia county.`,
+          );
+        }
+      }
+    }
+    if (i.services !== undefined) {
+      if (!Array.isArray(i.services)) {
+        throw new SettingsValidationError('intake.services', 'services must be an array.');
+      }
+      for (const s of i.services) {
+        if (!SERVICE_KEYS.includes(s as GappServiceKey)) {
+          throw new SettingsValidationError(
+            'intake.services',
+            `Invalid service "${String(s)}". Allowed: ${SERVICE_KEYS.join(', ')}.`,
+          );
+        }
+      }
     }
   }
 

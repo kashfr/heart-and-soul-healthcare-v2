@@ -10,6 +10,7 @@ import { buildShareUrl } from '@/lib/shareLink';
 import { serviceFromCareNeed, type GappServiceKey } from '@/lib/georgia';
 import { matchAgencies, topSuggestions } from '@/lib/agencyMatch';
 import MatchSuggestions from './MatchSuggestions';
+import FitBadge from './FitBadge';
 import {
   fieldRows, formatDateTime, formatRelative,
   REFERRAL_STAGES, STAGE_ACCENT, STAGE_LABEL, SOURCE_LABEL,
@@ -102,6 +103,8 @@ export default function ReferralDetail({
             <div style={nameStyle}>{referral.clientName || 'Referral'}</div>
             <div style={subStyle}>
               <span style={sourceBadge}>{SOURCE_LABEL[referral.source] ?? referral.source}</span>
+              {' '}
+              <FitBadge referral={referral} />
               {' · '}
               Received {formatDateTime(referral.submittedAt) || '—'}
             </div>
