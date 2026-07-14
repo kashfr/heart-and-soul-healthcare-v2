@@ -27,7 +27,7 @@ import { getVisitsForPatient, type PatientVisit } from '@/lib/patientVisits';
 import DocumentsSection from './DocumentsSection';
 import VisitsSection from './VisitsSection';
 import QuickNotesSection from './QuickNotesSection';
-import { physicianAttributionPending } from '@/lib/marShared';
+import { physicianAttributionPending, physicianOrderStale } from '@/lib/marShared';
 import {
   adverseEvents,
   ageYears,
@@ -224,6 +224,8 @@ function ClientDashboardInner() {
   // Orders whose author flagged the physician unknown (or legacy junk values
   // like "N/A") stay counted here until someone fills the real name in.
   const physicianPendingCount = activeOrders.filter((o) => physicianAttributionPending(o)).length;
+  // D.1 second half: the signed order itself must be dated within 12 months.
+  const staleOrderCount = activeOrders.filter((o) => physicianOrderStale(o, today)).length;
 
   const mar30 = useMemo(
     () => marComplianceStats(orders, admins, start30, today, today),
@@ -314,6 +316,12 @@ function ClientDashboardInner() {
     adverse.length === 0 ? 'good' : adverse.every((e) => e.physNotified === 'Yes') ? 'warn' : 'bad';
   const physicianSignal: Signal =
     activeOrders.length === 0 ? 'none' : physicianPendingCount === 0 ? 'good' : 'bad';
+  const orderCurrencySignal: Signal =
+    activeOrders.length === 0 ? 'none' : staleOrderCount === 0 ? 'good' : 'bad';
+  // Warn (not bad): the attestation checkbox is new, so historical refusals
+  // all read as un-notified; treat as follow-up work, not a red alarm.
+  const notifySignal: Signal =
+    mar30.refusedTotal === 0 ? 'none' : mar30.refusedNoNotify === 0 ? 'good' : 'warn';
 
   // Overview tab derivations: the alert strip surfaces every red condition
   // from anywhere on the dashboard with a jump to where it lives, and the
@@ -346,6 +354,12 @@ function ClientDashboardInner() {
       go: () => router.push(marHref),
     });
   }
+  if (staleOrderCount > 0) {
+    alerts.push({
+      text: `${staleOrderCount} medication order${staleOrderCount === 1 ? '' : 's'} older than 12 months (renewal needed)`,
+      go: () => router.push(marHref),
+    });
+  }
   if (adverseSignal === 'bad') {
     alerts.push({ text: 'Adverse reaction without physician notification', go: () => setTab('readiness') });
   }
@@ -365,6 +379,7 @@ function ClientDashboardInner() {
     doseSignal,
     prnSignal,
     physicianSignal,
+    orderCurrencySignal,
     adverseSignal,
     supCurrency.status,
     pocCurrency.status,
@@ -631,6 +646,44 @@ function ClientDashboardInner() {
                       : ''
                 }
                 href={physicianPendingCount > 0 ? marHref : undefined}
+              />
+              <ReadinessCard
+                signal={orderCurrencySignal}
+                title="Physician order currency"
+                value={
+                  activeOrders.length === 0
+                    ? 'No active medications'
+                    : staleOrderCount === 0
+                      ? 'All orders within 12 months'
+                      : `${staleOrderCount} order${staleOrderCount === 1 ? '' : 's'} need renewal`
+                }
+                detail={
+                  staleOrderCount > 0
+                    ? 'DBHDD D.1: a signed physician order dated within the past year must back every med. Get the renewal, then update "Physician order signed on" for each flagged med.'
+                    : activeOrders.length > 0
+                      ? 'Every active order has a signed date within the past year'
+                      : ''
+                }
+                href={staleOrderCount > 0 ? marHref : undefined}
+              />
+              <ReadinessCard
+                signal={notifySignal}
+                title="Prescriber notification (30d)"
+                value={
+                  mar30.refusedTotal === 0
+                    ? 'No refused doses'
+                    : mar30.refusedNoNotify === 0
+                      ? 'Prescriber notified on all refusals'
+                      : `${mar30.refusedNoNotify} refusal${mar30.refusedNoNotify === 1 ? '' : 's'} without notification`
+                }
+                detail={
+                  mar30.refusedNoNotify > 0
+                    ? 'DBHDD D.4.d: the prescriber must be told about refused doses. Nurses attest via the checkbox when documenting, or add it later with a correction.'
+                    : mar30.refusedTotal > 0
+                      ? 'Every refusal documents that the prescriber was told'
+                      : 'Nothing to report'
+                }
+                href={mar30.refusedNoNotify > 0 ? marHref : undefined}
               />
               <ReadinessCard
                 signal={adverseSignal}

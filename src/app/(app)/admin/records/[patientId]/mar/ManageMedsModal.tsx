@@ -54,6 +54,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
   const [times, setTimes] = useState<string[]>(['08:00']);
   const [indication, setIndication] = useState('');
   const [orderingPhysician, setOrderingPhysician] = useState('');
+  const [orderSignedDate, setOrderSignedDate] = useState('');
   // Honest escape hatch: the nurse can flag the physician as unknown at entry
   // time instead of typing junk like "N/A"; the RN fills the name in later.
   const [physicianUnknown, setPhysicianUnknown] = useState(false);
@@ -86,6 +87,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
       setTimes(o.scheduledTimes && o.scheduledTimes.length > 0 ? [...o.scheduledTimes] : ['08:00']);
       setIndication(o.indication || '');
       setOrderingPhysician(o.orderingPhysician || '');
+      setOrderSignedDate(o.orderSignedDate || '');
       setPhysicianUnknown(o.physicianPending === true);
       setNotes(o.notes || '');
     }
@@ -104,6 +106,10 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
       }
       if (!medName.trim() || !dose.trim() || !units.trim() || !route.trim()) {
         setError('Medication, dose, units, and route are required.');
+        return;
+      }
+      if (orderSignedDate && orderSignedDate > todayISO()) {
+        setError('"Physician order signed on" cannot be a future date.');
         return;
       }
       if (!physicianUnknown && looksLikeUnknownPhysician(orderingPhysician)) {
@@ -140,7 +146,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
       body.proposedMed = {
         medName, dose, units, route, frequencyLabel,
         scheduledTimes: times.filter(Boolean),
-        isPRN, indication, orderingPhysician,
+        isPRN, indication, orderingPhysician, orderSignedDate,
         physicianPending: physicianUnknown && looksLikeUnknownPhysician(orderingPhysician),
         notes,
         startDate: mode === 'add' ? startDate : effectiveDate,
@@ -301,6 +307,11 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
                     <input type="text" value={orderingPhysician} onChange={(e) => setOrderingPhysician(e.target.value)} style={input} placeholder="Dr. ..." />
                   </Field>
                 </div>
+
+                <Field label="Physician order signed on">
+                  <input type="date" value={orderSignedDate} onChange={(e) => setOrderSignedDate(e.target.value)} style={{ ...input, maxWidth: 200 }} />
+                  <span style={dateHint}>Blank = the start/effective date. Update when the annual renewal comes in; orders older than 12 months are flagged.</span>
+                </Field>
 
                 <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: -4, marginBottom: 12, cursor: 'pointer' }}>
                   <input

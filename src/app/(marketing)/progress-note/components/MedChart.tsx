@@ -78,6 +78,11 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
   // amender actually edited it — an untouched (possibly stale) value must not
   // overwrite a result recorded concurrently via /api/mar/outcome.
   const [amendOutcomeOrig, setAmendOutcomeOrig] = useState('');
+  // D.4.d attestation on held/refused corrections. Seeded from the record so
+  // a nurse who reaches the prescriber AFTER documenting can add it here (the
+  // capture checkboxes promise exactly that).
+  const [amendNotified, setAmendNotified] = useState(false);
+  const [amendNotifiedOrig, setAmendNotifiedOrig] = useState(false);
   const [amendWhy, setAmendWhy] = useState('');
   const [amendBusy, setAmendBusy] = useState(false);
   const [amendError, setAmendError] = useState<string | null>(null);
@@ -202,6 +207,8 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
     setAmendReason(a.reason || '');
     setAmendOutcome(a.outcome || '');
     setAmendOutcomeOrig(a.outcome || '');
+    setAmendNotified(a.prescriberNotified === true);
+    setAmendNotifiedOrig(a.prescriberNotified === true);
     setAmendWhy('');
     setAmendError(null);
   };
@@ -231,6 +238,11 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
           (a.scheduledTime === 'PRN' || a.scheduledTime === 'unscheduled') &&
           amendOutcome !== amendOutcomeOrig
             ? { outcome: amendOutcome }
+            : {}),
+          // Same only-when-changed pattern as outcome: the server carries the
+          // stored attestation forward unless the amender actually flips it.
+          ...((amendStatus === 'held' || amendStatus === 'refused') && amendNotified !== amendNotifiedOrig
+            ? { prescriberNotified: amendNotified }
             : {}),
           amendmentReason: amendWhy.trim(),
         }),
@@ -341,6 +353,19 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
                   style={amendInput}
                   placeholder="e.g., pain decreased from 6/10 to 2/10 within 45 min"
                 />
+              </label>
+            )}
+            {(amendStatus === 'held' || amendStatus === 'refused') && (
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', margin: '6px 0' }}>
+                <input
+                  type="checkbox"
+                  checked={amendNotified}
+                  onChange={(e) => setAmendNotified(e.target.checked)}
+                  style={{ marginTop: 2 }}
+                />
+                <span style={{ fontSize: 12, color: '#5c6b7a', lineHeight: 1.4 }}>
+                  Prescriber has been notified{amendStatus === 'refused' ? ' of this refusal' : ' that this dose was not given'}.
+                </span>
               </label>
             )}
             <label style={amendField}>

@@ -50,6 +50,12 @@ export async function POST(request: Request) {
       // Only override the stored outcome when the client sends one; otherwise
       // the amendment carries the existing outcome forward.
       ...(body?.outcome !== undefined ? { outcome: String(body.outcome) } : {}),
+      // Same pattern for the prescriber-notified attestation (D.4.d): an
+      // amendment can add it ("reached Dr. Ali at 2pm") without resending
+      // everything; omitted = carry the original forward.
+      ...(body?.prescriberNotified !== undefined
+        ? { prescriberNotified: body.prescriberNotified === true }
+        : {}),
       amendmentReason: String(body?.amendmentReason || ''),
     },
     caller,

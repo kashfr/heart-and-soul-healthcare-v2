@@ -5,7 +5,9 @@ import {
   compareMarOrders,
   doseTimeStatus,
   looksLikeUnknownPhysician,
+  orderSignedAgeDays,
   physicianAttributionPending,
+  physicianOrderStale,
   parseHHMM,
   resolveCurrentAdministrations,
   type MarAdminFieldInput,
@@ -248,5 +250,53 @@ describe('physician attribution', () => {
     expect(physicianAttributionPending({})).toBe(true);
     expect(physicianAttributionPending({ orderingPhysician: 'Dr. Barnwell' })).toBe(false);
     expect(physicianAttributionPending({ physicianPending: false, orderingPhysician: 'Dr. Ali' })).toBe(false);
+  });
+});
+
+describe('physician-order currency', () => {
+  it('ages from orderSignedDate when present, else startDate', () => {
+    expect(orderSignedAgeDays({ orderSignedDate: '2026-07-01', startDate: '2020-01-01' }, '2026-07-13')).toBe(12);
+    expect(orderSignedAgeDays({ startDate: '2026-06-13' }, '2026-07-13')).toBe(30);
+    expect(orderSignedAgeDays({}, '2026-07-13')).toBeNull();
+    expect(orderSignedAgeDays({ startDate: 'garbage' }, '2026-07-13')).toBeNull();
+  });
+
+  it('stale past 365 days, or when undatable; a renewal refreshes it', () => {
+    expect(physicianOrderStale({ startDate: '2025-06-07' }, '2026-07-13')).toBe(true); // 401d
+    expect(physicianOrderStale({ startDate: '2025-08-01' }, '2026-07-13')).toBe(false); // 346d
+    expect(physicianOrderStale({ startDate: '2025-06-07', orderSignedDate: '2026-05-01' }, '2026-07-13')).toBe(false);
+    expect(physicianOrderStale({}, '2026-07-13')).toBe(true);
+    // boundary: exactly 365 is still current
+    expect(physicianOrderStale({ startDate: '2025-07-13' }, '2026-07-13')).toBe(false);
+  });
+});
+
+describe('buildMarAdminFields: prescriber-notified attestation', () => {
+  const meta: MarAdminFieldMeta = {
+    patientId: 'p1',
+    date: '2026-07-13',
+    sourceNoteId: '',
+    documenter: { uid: 'u1', name: 'Sam Jones', credential: 'RN' },
+  };
+  const base: MarAdminFieldInput = {
+    orderId: 'o1', medName: 'Keppra', dose: '500', units: 'mg', route: 'PO',
+    scheduledTime: '08:00', status: 'refused', administeredByType: 'nurse',
+    administratorName: '', actualTime: '', initials: 'SJ', reason: 'Client refused',
+  };
+
+  it('persists the attestation on held/refused doses', () => {
+    expect(buildMarAdminFields({ ...base, prescriberNotified: true }, meta).prescriberNotified).toBe(true);
+    expect(buildMarAdminFields({ ...base, status: 'held', prescriberNotified: true }, meta).prescriberNotified).toBe(true);
+    expect(buildMarAdminFields(base, meta).prescriberNotified).toBe(false);
+  });
+
+  it('forces FALSE on given doses — the load-bearing line for refused-to-given amendments', () => {
+    // amendMarAdministration passes the original attestation through even when
+    // the corrected status is 'given'; this is what guarantees it gets dropped.
+    const rebuilt = buildMarAdminFields(
+      { ...base, status: 'given', actualTime: '08:05', reason: '', prescriberNotified: true },
+      meta,
+    );
+    expect(rebuilt.prescriberNotified).toBe(false);
   });
 });

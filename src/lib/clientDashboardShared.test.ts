@@ -489,3 +489,53 @@ describe('groupVisitsByDate', () => {
     expect(map.get('2026-07-10')!.map((v) => v.startTime || 'none')).toEqual(['08:00', '14:00', 'none']);
   });
 });
+
+describe('marComplianceStats: prescriber notification (D.4.d)', () => {
+  const order: DashOrder = {
+    id: 'o1',
+    startDate: '2026-07-01',
+    endDate: null,
+    isPRN: false,
+    scheduledTimes: ['08:00'],
+    status: 'active',
+  };
+  const prnOrder: DashOrder = {
+    id: 'o2',
+    startDate: '2026-07-01',
+    endDate: null,
+    isPRN: true,
+    scheduledTimes: [],
+    status: 'active',
+  };
+
+  it('counts PRN refusals in refusedTotal/refusedNoNotify even though the grid skips PRN orders', () => {
+    const admins: DashAdmin[] = [
+      { id: 'a1', orderId: 'o2', date: '2026-07-05', scheduledTime: 'PRN', status: 'refused' },
+    ];
+    const s = marComplianceStats([order, prnOrder], admins, '2026-07-01', '2026-07-10', '2026-07-10');
+    expect(s.refused).toBe(0); // grid-scoped count skips PRN — the old gate bug
+    expect(s.refusedTotal).toBe(1);
+    expect(s.refusedNoNotify).toBe(1);
+  });
+
+  it('an amended refusal chain counts once, using the CURRENT record attestation', () => {
+    const admins: DashAdmin[] = [
+      { id: 'a1', orderId: 'o1', date: '2026-07-05', scheduledTime: '08:00', status: 'refused' },
+      { id: 'a2', amends: 'a1', orderId: 'o1', date: '2026-07-05', scheduledTime: '08:00', status: 'refused', prescriberNotified: true },
+    ];
+    const s = marComplianceStats([order], admins, '2026-07-01', '2026-07-10', '2026-07-10');
+    expect(s.refusedTotal).toBe(1);
+    expect(s.refusedNoNotify).toBe(0); // the correction attests notification
+  });
+
+  it('window boundaries match the other stats (inclusive start/end)', () => {
+    const admins: DashAdmin[] = [
+      { id: 'a1', orderId: 'o1', date: '2026-06-30', scheduledTime: '08:00', status: 'refused' }, // before window
+      { id: 'a2', orderId: 'o1', date: '2026-07-01', scheduledTime: '08:00', status: 'refused' }, // first day
+      { id: 'a3', orderId: 'o1', date: '2026-07-10', scheduledTime: '08:00', status: 'refused', prescriberNotified: true }, // last day
+    ];
+    const s = marComplianceStats([order], admins, '2026-07-01', '2026-07-10', '2026-07-10');
+    expect(s.refusedTotal).toBe(2);
+    expect(s.refusedNoNotify).toBe(1);
+  });
+});

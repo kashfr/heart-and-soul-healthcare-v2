@@ -51,6 +51,11 @@ export interface MarAdminFieldInput {
   // The PRN effectiveness follow-up ("what happened"): pain 6/10 to 2/10, fever
   // down, etc. Meaningful only for a GIVEN PRN dose; blanked otherwise.
   outcome?: string;
+  // D.4.d proof trail: the documenter attests she notified the prescriber of
+  // this refusal/hold at documentation time. Meaningful only for held/refused
+  // doses; forced false otherwise. (Notified later? The existing amend flow
+  // records it as an appended correction.)
+  prescriberNotified?: boolean;
 }
 
 export interface MarAdminFieldMeta {
@@ -99,6 +104,7 @@ export function buildMarAdminFields(r: MarAdminFieldInput, meta: MarAdminFieldMe
     initials: r.initials.trim(),
     reason: r.status === 'given' && !isPRN ? '' : r.reason.trim(),
     outcome: r.status === 'given' && isPRN ? (r.outcome || '').trim() : '',
+    prescriberNotified: r.status !== 'given' && r.prescriberNotified === true,
     sourceNoteId: meta.sourceNoteId,
     documentedBy: meta.documenter.uid,
     documentedByName: meta.documenter.name,
@@ -224,4 +230,36 @@ export function physicianAttributionPending(order: {
   orderingPhysician?: string;
 }): boolean {
   return order.physicianPending === true || looksLikeUnknownPhysician(order.orderingPhysician);
+}
+
+/**
+ * Physician-order currency (DBHDD FY27 manual D.1: a current physician order,
+ * dated and signed within the past YEAR, must back every administered med).
+ * The order's `orderSignedDate` records the date on the most recent signed
+ * order; older orders without it fall back to startDate (the form has always
+ * said "use the date on the physician's order"). When a renewal comes in, the
+ * RN updates orderSignedDate; the readiness tile stops counting it.
+ */
+export const PHYSICIAN_ORDER_MAX_AGE_DAYS = 365;
+
+/** Days since the order was last signed (per orderSignedDate, falling back to
+ *  startDate), or null when neither date parses. */
+export function orderSignedAgeDays(
+  order: { orderSignedDate?: string; startDate?: string },
+  todayISO: string,
+): number | null {
+  const signed = (order.orderSignedDate || '').trim() || (order.startDate || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(signed) || !/^\d{4}-\d{2}-\d{2}$/.test(todayISO)) return null;
+  const ms = Date.parse(todayISO + 'T12:00:00Z') - Date.parse(signed + 'T12:00:00Z');
+  return Math.floor(ms / 86400000);
+}
+
+/** True when the backing physician order is older than the 12-month window
+ *  (or undatable) and needs a renewed signed order on file. */
+export function physicianOrderStale(
+  order: { orderSignedDate?: string; startDate?: string },
+  todayISO: string,
+): boolean {
+  const age = orderSignedAgeDays(order, todayISO);
+  return age === null || age > PHYSICIAN_ORDER_MAX_AGE_DAYS;
 }

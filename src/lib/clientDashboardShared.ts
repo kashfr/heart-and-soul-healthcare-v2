@@ -210,6 +210,7 @@ export interface DashAdmin {
   scheduledTime: string;
   status: string; // given | held | refused
   outcome?: string;
+  prescriberNotified?: boolean;
 }
 
 function orderAppliesOnLite(o: DashOrder, date: string): boolean {
@@ -242,6 +243,15 @@ export interface MarComplianceStats {
   pctGiven: number | null; // given / expected; null when nothing was due
   prnGiven: number; // PRN doses given in the window
   prnPendingResult: number; // given PRN doses missing their outcome
+  // D.4.d: refused doses whose documentation does not (yet) attest that the
+  // prescriber was notified. Refusals are the manual's explicit case; holds
+  // are often physician-directed (NPO per order), so they don't count here.
+  // refusedTotal is the SAME population's denominator (every current refusal
+  // in the window, PRN and unscheduled included) — the grid-scoped `refused`
+  // count skips PRN orders, so gating the readiness card on it would hide a
+  // client whose only refusal was a PRN dose.
+  refusedNoNotify: number;
+  refusedTotal: number;
 }
 
 /**
@@ -302,6 +312,10 @@ export function marComplianceStats(
     (a) => isPrnSlot(a.scheduledTime) && a.status === 'given' && a.date >= startISO && a.date <= end,
   );
   const prnPendingResult = prn.filter((a) => !(a.outcome || '').trim()).length;
+  const refusedInWindow = current.filter(
+    (a) => a.status === 'refused' && a.date >= startISO && a.date <= end,
+  );
+  const refusedNoNotify = refusedInWindow.filter((a) => a.prescriberNotified !== true).length;
 
   const documented = given + held + refused;
   return {
@@ -313,6 +327,8 @@ export function marComplianceStats(
     pctGiven: expected === 0 ? null : Math.round((given / expected) * 100),
     prnGiven: prn.length,
     prnPendingResult,
+    refusedNoNotify,
+    refusedTotal: refusedInWindow.length,
   };
 }
 

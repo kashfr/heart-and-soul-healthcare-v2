@@ -570,7 +570,19 @@ export default function MonthlyMarPage() {
                               ? `${ADMIN_BY_LABELS[a.administeredByType] || 'Other'}${a.administratorName ? ` · ${a.administratorName}` : ''}`
                               : a.documentedByName || 'Nurse'}
                           </td>
-                          <td style={logTdStyle}>{a.reason || '-'}</td>
+                          <td style={logTdStyle}>
+                            {a.reason || '-'}
+                            {(a.status === 'held' || a.status === 'refused') && a.prescriberNotified === true && (
+                              <span style={{ display: 'block', fontSize: 10.5, color: '#1e5c1e', fontWeight: 600 }}>
+                                Prescriber notified
+                              </span>
+                            )}
+                            {a.status === 'refused' && a.prescriberNotified === false && (
+                              <span style={{ display: 'block', fontSize: 10.5, color: '#b45309', fontWeight: 600 }}>
+                                Prescriber not yet notified
+                              </span>
+                            )}
+                          </td>
                           <td style={logTdStyle}>
                             {(a.outcome || '').trim() ? (
                               a.outcome

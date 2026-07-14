@@ -33,6 +33,7 @@ interface OrderForm {
   indication: string;
   startDate: string;
   endDate: string;
+  orderSignedDate: string;
   orderingPhysician: string;
   physicianUnknown: boolean;
   notes: string;
@@ -58,6 +59,7 @@ function emptyForm(): OrderForm {
     indication: '',
     startDate: todayISO(),
     endDate: '',
+    orderSignedDate: '',
     orderingPhysician: '',
     physicianUnknown: false,
     notes: '',
@@ -161,6 +163,7 @@ export default function RecordDetailPage() {
       indication: o.indication || '',
       startDate: o.startDate || todayISO(),
       endDate: o.endDate || '',
+      orderSignedDate: o.orderSignedDate || '',
       orderingPhysician: o.orderingPhysician || '',
       physicianUnknown: o.physicianPending === true,
       notes: o.notes || '',
@@ -194,6 +197,10 @@ export default function RecordDetailPage() {
       showToast('Add an indication: PRN doses are documented against what the med is for.');
       return;
     }
+    if (form.orderSignedDate && form.orderSignedDate > todayISO()) {
+      showToast('"Physician order signed on" cannot be a future date.');
+      return;
+    }
     if (!form.physicianUnknown && looksLikeUnknownPhysician(form.orderingPhysician)) {
       showToast(
         form.orderingPhysician.trim()
@@ -215,6 +222,7 @@ export default function RecordDetailPage() {
         indication: form.indication,
         startDate: form.startDate,
         endDate: form.endDate || null,
+        orderSignedDate: form.orderSignedDate,
         orderingPhysician: form.orderingPhysician,
         physicianPending: form.physicianUnknown && looksLikeUnknownPhysician(form.orderingPhysician),
         notes: form.notes,
@@ -524,15 +532,29 @@ export default function RecordDetailPage() {
                 </Field>
               </div>
 
-              <Field label="Ordering physician *">
-                <input
-                  type="text"
-                  value={form.orderingPhysician}
-                  onChange={(e) => setForm((f) => ({ ...f, orderingPhysician: e.target.value }))}
-                  style={inputStyle}
-                  placeholder="Dr. Jane Smith"
-                />
-              </Field>
+              <div style={gridTwoStyle}>
+                <Field label="Ordering physician *">
+                  <input
+                    type="text"
+                    value={form.orderingPhysician}
+                    onChange={(e) => setForm((f) => ({ ...f, orderingPhysician: e.target.value }))}
+                    style={inputStyle}
+                    placeholder="Dr. Jane Smith"
+                  />
+                </Field>
+                <Field label="Physician order signed on">
+                  <input
+                    type="date"
+                    value={form.orderSignedDate}
+                    onChange={(e) => setForm((f) => ({ ...f, orderSignedDate: e.target.value }))}
+                    style={inputStyle}
+                  />
+                  <span style={indicationHintStyle}>
+                    Date on the current signed order. Blank = the start date. Update when the
+                    annual renewal comes in; orders older than 12 months are flagged.
+                  </span>
+                </Field>
+              </div>
 
               <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: -4, marginBottom: 12, cursor: 'pointer' }}>
                 <input

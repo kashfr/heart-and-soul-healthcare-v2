@@ -38,6 +38,7 @@ export interface MarAdminRecord {
   initials: string;
   reason: string;
   outcome?: string; // PRN effectiveness/result (required at submit for a given PRN)
+  prescriberNotified?: boolean; // held/refused: documenter notified the prescriber
   sessionId?: string; // the note session (submissionId) that created this mark
 }
 

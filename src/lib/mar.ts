@@ -43,6 +43,10 @@ export interface MarOrder {
   indication?: string;
   startDate: string; // YYYY-MM-DD
   endDate?: string | null; // null/undefined = ongoing
+  // Date on the most recent SIGNED physician order backing this med (D.1
+  // requires one dated within the past year). '' = fall back to startDate.
+  // Updated by the RN when a renewal comes in; drives the currency tile.
+  orderSignedDate?: string;
   orderingPhysician?: string;
   // Author explicitly flagged the ordering physician as unknown at entry time
   // (follow-up queue: the RN fills the real name in later, clearing this).
@@ -88,6 +92,7 @@ export interface MarOrderInput {
   indication?: string;
   startDate: string;
   endDate?: string | null;
+  orderSignedDate?: string;
   orderingPhysician?: string;
   physicianPending?: boolean;
   notes?: string;
@@ -109,6 +114,7 @@ function normalizeInput(input: MarOrderInput) {
     indication: input.indication?.trim() ?? '',
     startDate: input.startDate,
     endDate: input.endDate ?? null,
+    orderSignedDate: input.orderSignedDate?.trim() ?? '',
     orderingPhysician: input.orderingPhysician?.trim() ?? '',
     physicianPending: input.physicianPending === true,
     notes: input.notes?.trim() ?? '',
@@ -226,6 +232,10 @@ export interface MarAdministration {
   outcomeBy?: string;
   outcomeByName?: string;
   outcomeAt?: unknown;
+  // D.4.d proof trail: the documenter attested (at documentation time) that
+  // the prescriber was notified of this held/refused dose. Absent/false on
+  // given doses. A later notification is recorded via the amend flow.
+  prescriberNotified?: boolean;
   sourceNoteId: string; // the progress note this was documented on
   documentedBy: string; // signed-in RN/LPN who recorded it
   documentedByName: string;
@@ -257,6 +267,7 @@ export interface MarAdministrationDraft {
   isPRN: boolean; // a PRN given dose keeps its reason (why it was given)
   indication: string; // the order's standing indication, snapshotted
   outcome?: string; // PRN effectiveness/result, when known at write time
+  prescriberNotified?: boolean; // held/refused: documenter notified the prescriber
 }
 
 export interface MarDocumenter {
@@ -439,6 +450,7 @@ export interface ProposedMed {
   isPRN: boolean;
   indication: string;
   startDate: string;
+  orderSignedDate: string;
   orderingPhysician: string;
   physicianPending: boolean;
   notes: string;
@@ -495,6 +507,7 @@ function normalizeProposed(p: ProposedMed): ProposedMed {
     isPRN: p.isPRN,
     indication: p.indication.trim(),
     startDate: p.startDate,
+    orderSignedDate: p.orderSignedDate?.trim() ?? '',
     orderingPhysician: p.orderingPhysician.trim(),
     physicianPending: p.physicianPending === true,
     notes: p.notes.trim(),
