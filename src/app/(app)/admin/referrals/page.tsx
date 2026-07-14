@@ -44,6 +44,7 @@ export default function ReferralsPage() {
     name: string;
     county: string;
     service: GappServiceKey | null;
+    clientEmail: string;
   } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -231,7 +232,10 @@ export default function ReferralsPage() {
       if (stage === 'referred_out') {
         const ref = referrals.find((r) => r.id === id);
         const entering = !!ref && ref.stage !== 'referred_out';
-        const hasAgency = (ref?.shareSummary?.total ?? 0) > 0;
+        // Satisfied by an agency share OR a provider-list send — both are
+        // recorded handoffs.
+        const hasAgency =
+          (ref?.shareSummary?.total ?? 0) > 0 || !!ref?.providerListSentAt;
         if (entering && !hasAgency) {
           setPendingReferOut({
             id,
@@ -240,6 +244,7 @@ export default function ReferralsPage() {
             service: serviceFromCareNeed(
               ref?.details.find((d) => d.label === 'Primary care need')?.value
             ),
+            clientEmail: ref?.clientEmail ?? '',
           });
           return;
         }
@@ -442,6 +447,7 @@ export default function ReferralsPage() {
           referralName={pendingReferOut.name}
           county={pendingReferOut.county}
           service={pendingReferOut.service}
+          clientEmail={pendingReferOut.clientEmail}
           onClose={() => setPendingReferOut(null)}
           onDone={() => { setPendingReferOut(null); load(); }}
         />

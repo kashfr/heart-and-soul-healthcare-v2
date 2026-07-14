@@ -197,6 +197,16 @@ export default function ReferralDetail({
 
           {/* Share with a partner agency */}
           <div style={sectionTitleStyle}>Share with agency</div>
+          {referral.providerListSentAt && (
+            <div style={providerListNoteStyle}>
+              GAPP provider list{' '}
+              {referral.providerListSentTo
+                ? `emailed to ${referral.providerListSentTo}`
+                : 'given to the family (no email on file)'}
+              {' · '}
+              {formatDateTime(referral.providerListSentAt)}
+            </div>
+          )}
           <SharePanel
             referralId={referral.id}
             stage={referral.stage}
@@ -745,6 +755,10 @@ const shareCancelBtn: React.CSSProperties = {
 };
 const moveCheckRow: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: '#5c6b7a', cursor: 'pointer',
+};
+const providerListNoteStyle: React.CSSProperties = {
+  background: '#f5f3ff', border: '1px solid #e2dbf7', color: '#6d28d9', borderRadius: 8,
+  padding: '8px 10px', fontSize: 12.5, marginBottom: 8,
 };
 const chipStyle: React.CSSProperties = {
   display: 'inline-flex', alignItems: 'center', gap: 5, background: '#eef5ff', color: '#1a3a5c',

@@ -12,6 +12,7 @@ import {
   type Referral, type ReferralStage,
 } from './types';
 import ShareBadge from './ShareBadge';
+import ProviderListBadge from './ProviderListBadge';
 
 type SortKey =
   | 'clientName' | 'program' | 'county' | 'source'
@@ -230,8 +231,11 @@ export default function ReferralTable({ referrals, onOpen, onPrint, onDelete, ca
                   <span style={sourceBadge}>{SOURCE_LABEL[r.source] ?? r.source}</span>
                 </td>
                 <td style={tdStyle}>
-                  {r.shareSummary && r.shareSummary.total > 0 ? (
-                    <ShareBadge summary={r.shareSummary} />
+                  {(r.shareSummary && r.shareSummary.total > 0) || r.providerListSentAt ? (
+                    <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>
+                      <ShareBadge summary={r.shareSummary} />
+                      <ProviderListBadge referral={r} />
+                    </span>
                   ) : (
                     <span style={{ color: '#cbd5e1' }}>—</span>
                   )}

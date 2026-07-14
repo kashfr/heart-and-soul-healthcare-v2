@@ -80,6 +80,10 @@ export interface Referral {
   updatedAt: string | null;
   /** Agency-share roll-up for the "Shared" badge; null when never shared. */
   shareSummary?: ReferralShareSummary | null;
+  /** When the GAPP provider list (Appendix P) was sent to the family; null if never. */
+  providerListSentAt?: string | null;
+  /** Family email the list went to; empty string for the no-email-on-file path. */
+  providerListSentTo?: string | null;
 }
 
 export interface ReferralActivity {
