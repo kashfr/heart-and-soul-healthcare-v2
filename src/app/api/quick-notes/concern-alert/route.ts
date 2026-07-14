@@ -103,7 +103,9 @@ export async function POST(request: Request) {
           userId: d.id,
           kind: 'quick-note-concern',
           text,
-          href: `/admin/clients/${patientId}`,
+          // Deep link straight to the note (?qn=): the bell recipient lands
+          // on the client dashboard with the concern note already open.
+          href: `/admin/clients/${patientId}?qn=${noteId}`,
           createdAt: FieldValue.serverTimestamp(),
           readAt: null,
         });
