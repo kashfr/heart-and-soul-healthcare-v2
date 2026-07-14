@@ -129,6 +129,10 @@ export interface Referral extends ReferralInput {
   /** Who last changed the stage/assignment (audit). Null on never-touched docs. */
   statusUpdatedBy: string | null;
   statusUpdatedByName: string | null;
+  /** When the GAPP provider list (Appendix P) was sent to the family; null if never. */
+  providerListSentAt: string | null;
+  /** Family email the list went to; empty string for the no-email-on-file path. */
+  providerListSentTo: string | null;
   submittedAt: string | null;
   updatedAt: string | null;
 }
@@ -254,6 +258,8 @@ function toReferral(id: string, data: FirebaseFirestore.DocumentData): Referral 
     assigneeName: data.assigneeName ?? null,
     statusUpdatedBy: data.statusUpdatedBy ?? null,
     statusUpdatedByName: data.statusUpdatedByName ?? null,
+    providerListSentAt: toIso(data.providerListSentAt),
+    providerListSentTo: data.providerListSentTo ?? null,
     clientName: data.clientName ?? '',
     clientEmail: data.clientEmail ?? '',
     clientPhone: data.clientPhone ?? '',
@@ -505,6 +511,42 @@ export async function referOutOnShare(referralId: string, caller: AuthedCaller):
   const stage = (data.stage ?? stageFromStatus(data.status)) as ReferralStage;
   if (stage === 'referred_out' || stage === 'closed') return false;
   return moveReferral(referralId, { stage: 'referred_out' }, caller);
+}
+
+/**
+ * Record that the family was given the GAPP provider list (Appendix P) because
+ * no partner agency matched: stamp the referral, log the activity, and move the
+ * card to Referred Out (unless already terminal). The email itself is sent by
+ * the route BEFORE this runs — a failed send must not leave a "sent" record.
+ * `email` is '' for the no-email-on-file path (staff copied the link instead).
+ */
+export async function recordProviderListSent(
+  referralId: string,
+  email: string,
+  caller: AuthedCaller
+): Promise<{ ok: boolean; moved: boolean }> {
+  const ref = adminDb().collection(COLLECTION).doc(referralId);
+  const snap = await ref.get();
+  if (!snap.exists) return { ok: false, moved: false };
+
+  await ref.update({
+    providerListSentAt: FieldValue.serverTimestamp(),
+    providerListSentTo: clamp(email, MAX.email),
+    providerListSentBy: caller.uid,
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  await logReferralActivity(referralId, {
+    type: 'share',
+    text: email
+      ? `GAPP provider list emailed to family (${email})`
+      : 'GAPP provider list given to family (no email on file)',
+    byUid: caller.uid,
+    byName: caller.profile.displayName || '',
+    byRole: caller.role,
+  });
+
+  const moved = await referOutOnShare(referralId, caller);
+  return { ok: true, moved };
 }
 
 /**

@@ -11,3 +11,11 @@ export const SHARE_SITE_URL = 'https://www.heartandsoulhc.org';
 export function buildShareUrl(token: string): string {
   return `${SHARE_SITE_URL}/shared/referral/${token}`;
 }
+
+/**
+ * The hosted GAPP Appendix P (official list of Medicaid-approved GAPP
+ * providers), served from public/docs/. Hosted-and-linked rather than emailed
+ * as an attachment so a DCH revision means swapping one file — every link ever
+ * sent then serves the current list. Public state information; no PHI.
+ */
+export const PROVIDER_LIST_URL = `${SHARE_SITE_URL}/docs/gapp-provider-list.pdf`;
