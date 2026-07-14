@@ -1,6 +1,8 @@
 import {
   addDoc,
   collection,
+  doc,
+  getDoc,
   getDocs,
   limit,
   orderBy,
@@ -105,4 +107,24 @@ export async function getQuickNotesForPatient(
   );
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<QuickNote, 'id'>) }));
+}
+
+/** One note by id, for deep links (the concern bell links straight to the
+ *  note). Returns null when missing, unreadable, or belonging to a different
+ *  client than the page it was requested from (defense against a stale or
+ *  hand-edited link opening another chart's note in this client's context). */
+export async function getQuickNote(
+  noteId: string,
+  expectedPatientId: string,
+): Promise<QuickNote | null> {
+  try {
+    const snap = await getDoc(doc(db, 'quickNotes', noteId));
+    if (!snap.exists()) return null;
+    const data = snap.data() as Omit<QuickNote, 'id'>;
+    if (data.patientId !== expectedPatientId) return null;
+    return { id: snap.id, ...data };
+  } catch (err) {
+    console.error('Quick note load failed:', err);
+    return null;
+  }
 }
