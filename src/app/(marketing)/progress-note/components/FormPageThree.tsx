@@ -1,11 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import type { FormPageProps } from '../types';
 import styles from '../page.module.css';
-import DeselectableRadio from './DeselectableRadio';
+import DeselectableRadio, { radioState, radioSubscribe, radioGetSnapshot } from './DeselectableRadio';
 import FieldError from './FieldError';
 import { rangeValidator } from '../validators';
+
+const getGlobalSnapshotStr = () => String(radioGetSnapshot());
 
 interface FormPageThreeProps extends FormPageProps {
   credential?: string;
@@ -13,6 +15,11 @@ interface FormPageThreeProps extends FormPageProps {
 
 export default function FormPageThree({ formRef, register, watch, setValue, control, credential, errors }: FormPageThreeProps) {
   const showSystemAssessments = credential === 'LPN' || credential === 'RN';
+  // Subscribe to radio state so the tube care & feeding block reveals when
+  // "Feeding Tube Present" flips to Yes (same pattern as FormPageFour's
+  // aspiration-concerns conditional).
+  useSyncExternalStore(radioSubscribe, getGlobalSnapshotStr, getGlobalSnapshotStr);
+  const feedingTubePresent = radioState['q33_gtubePresent'] === 'Yes';
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     activity: false,
     pain: false,
@@ -949,11 +956,13 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
               </div>
             </div>
 
-            {/* G-Tube / PEG Tube subsection */}
-            <div className={styles.subsec}>G-Tube / PEG Tube</div>
+            {/* Feeding Tube subsection — assessment plus (when present) the
+                care & feeding tasks performed this shift. Field names keep the
+                historical q33_gtube* prefix so older notes render unchanged. */}
+            <div className={styles.subsec}>Feeding Tube (G-Tube / GJ / J / NG)</div>
             <div className={styles.row}>
               <div className={styles.f}>
-                <label className={styles.label}>G-Tube Present?</label>
+                <label className={styles.label}>Feeding Tube Present?</label>
                 <div className={styles.radioRow}>
                   <label>
                     <DeselectableRadio name="q33_gtubePresent" value="Yes" />
@@ -989,6 +998,175 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                 <textarea className={styles.textarea} id="q33_gtubeSiteNotes" {...register('q33_gtubeSiteNotes')} rows={2} />
               </div>
             </div>
+
+            {feedingTubePresent && (
+              <>
+                <div className={styles.row}>
+                  <div className={styles.f}>
+                    <label className={styles.label} htmlFor="q33_tubeType">Tube Type</label>
+                    <select className={styles.select} id="q33_tubeType" {...register('q33_tubeType')}>
+                      <option value="">Select...</option>
+                      <option value="G-tube (PEG)">G-tube (PEG)</option>
+                      <option value="G-tube low-profile button (MIC-KEY / Mini)">G-tube low-profile button (MIC-KEY / Mini)</option>
+                      <option value="GJ-tube">GJ-tube</option>
+                      <option value="J-tube">J-tube</option>
+                      <option value="NG-tube">NG-tube</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className={styles.subsec}>Tube Care Performed This Shift</div>
+                <div className={styles.checkRow}>
+                  <label>
+                    <input type="checkbox" name="q33_tubeCare" value="Site cleaned and dried" />
+                    Site cleaned and dried
+                  </label>
+                  <label>
+                    <input type="checkbox" name="q33_tubeCare" value="Dressing / split gauze changed" />
+                    Dressing / split gauze changed
+                  </label>
+                  <label>
+                    <input type="checkbox" name="q33_tubeCare" value="Securement / external length checked" />
+                    Securement / external length checked
+                  </label>
+                  <label>
+                    <input type="checkbox" name="q33_tubeCare" value="Tube rotated (G-tube only — never GJ/J)" />
+                    Tube rotated (G-tube only — never GJ/J)
+                  </label>
+                </div>
+                <div className={styles.checkRow}>
+                  <label>
+                    <input type="checkbox" name="q33_tubeCare" value="Tube flushed with water" />
+                    Tube flushed with water
+                  </label>
+                  <label>
+                    <input type="checkbox" name="q33_tubeCare" value="Medications given via tube" />
+                    Medications given via tube
+                  </label>
+                  <label>
+                    <input type="checkbox" name="q33_tubeCare" value="Tube vented / burped" />
+                    Tube vented / burped
+                  </label>
+                  <label>
+                    <input type="checkbox" name="q33_tubeCare" value="Emergency kit / spare tube verified" />
+                    Emergency kit / spare tube verified
+                  </label>
+                </div>
+
+                <div className={styles.subsec}>Tube Feeding This Shift</div>
+                <div className={styles.row}>
+                  <div className={styles.f}>
+                    <label className={styles.label}>Feeding Given?</label>
+                    <div className={styles.radioRow}>
+                      <label>
+                        <DeselectableRadio name="q33_feedingGiven" value="Yes" />
+                        Yes
+                      </label>
+                      <label>
+                        <DeselectableRadio name="q33_feedingGiven" value="No" />
+                        No
+                      </label>
+                    </div>
+                  </div>
+                  <div className={styles.f}>
+                    <label className={styles.label} htmlFor="q33_feedingMethod">Feeding Method</label>
+                    <select className={styles.select} id="q33_feedingMethod" {...register('q33_feedingMethod')}>
+                      <option value="">Select...</option>
+                      <option value="Continuous (pump)">Continuous (pump)</option>
+                      <option value="Bolus (syringe)">Bolus (syringe)</option>
+                      <option value="Gravity">Gravity</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                </div>
+                <div className={styles.row}>
+                  <div className={styles.f}>
+                    <label className={styles.label} htmlFor="q33_formula">Formula / Feed</label>
+                    <input
+                      className={styles.input}
+                      type="text"
+                      id="q33_formula"
+                      {...register('q33_formula')}
+                      placeholder="e.g. PediaSure 1.0, breast milk"
+                    />
+                  </div>
+                  <div className={styles.f}>
+                    <label className={styles.label} htmlFor="q33_feedVolume">Volume / Rate</label>
+                    <input
+                      className={styles.input}
+                      type="text"
+                      id="q33_feedVolume"
+                      {...register('q33_feedVolume')}
+                      placeholder="e.g. 240 mL bolus or 45 mL/hr"
+                    />
+                  </div>
+                  <div className={styles.f}>
+                    <label className={styles.label} htmlFor="q33_flushVolume">Water Flush (mL)</label>
+                    <input
+                      className={styles.input}
+                      type="text"
+                      id="q33_flushVolume"
+                      {...register('q33_flushVolume')}
+                      placeholder="e.g. 30 mL before/after"
+                    />
+                  </div>
+                </div>
+                <div className={styles.row}>
+                  <div className={styles.f}>
+                    <label className={styles.label}>HOB Elevated ≥30° During/After Feeding?</label>
+                    <div className={styles.radioRow}>
+                      <label>
+                        <DeselectableRadio name="q33_hobElevated" value="Yes" />
+                        Yes
+                      </label>
+                      <label>
+                        <DeselectableRadio name="q33_hobElevated" value="No" />
+                        No
+                      </label>
+                      <label>
+                        <DeselectableRadio name="q33_hobElevated" value="N/A" />
+                        N/A
+                      </label>
+                    </div>
+                  </div>
+                  <div className={styles.f}>
+                    <label className={styles.label} htmlFor="q33_residualVolume">Gastric Residual (mL, if ordered)</label>
+                    <input
+                      className={styles.input}
+                      type="text"
+                      id="q33_residualVolume"
+                      {...register('q33_residualVolume')}
+                      placeholder="G-tubes only — not checked on J-tubes"
+                    />
+                  </div>
+                  <div className={styles.f}>
+                    <label className={styles.label} htmlFor="q33_feedTolerance">Feeding Tolerance</label>
+                    <select className={styles.select} id="q33_feedTolerance" {...register('q33_feedTolerance')}>
+                      <option value="">Select...</option>
+                      <option value="Tolerated well">Tolerated well</option>
+                      <option value="Vomiting / retching">Vomiting / retching</option>
+                      <option value="Abdominal distension">Abdominal distension</option>
+                      <option value="Coughing / gagging">Coughing / gagging</option>
+                      <option value="Loose stools / intolerance">Loose stools / intolerance</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                </div>
+                <div className={styles.row}>
+                  <div className={styles.f} style={{ flex: '1 1 100%' }}>
+                    <label className={styles.label} htmlFor="q33_tubeFeedingNotes">Tube Care / Feeding Notes</label>
+                    <textarea
+                      className={styles.textarea}
+                      id="q33_tubeFeedingNotes"
+                      {...register('q33_tubeFeedingNotes')}
+                      rows={2}
+                      placeholder="Feeding schedule details, site care specifics, tolerance concerns..."
+                    />
+                  </div>
+                </div>
+              </>
+            )}
 
             <div className={styles.row}>
               <div className={styles.f} style={{ flex: '1 1 100%' }}>

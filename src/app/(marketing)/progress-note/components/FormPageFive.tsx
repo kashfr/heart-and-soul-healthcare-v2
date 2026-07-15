@@ -575,6 +575,60 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
         </div>
         <div className={styles.checkRow}>
           <label>
+            <input type="checkbox" name="q38_interventions" value="G-tube / J-tube feeding" />
+            G-tube / J-tube feeding
+          </label>
+          <label>
+            <input type="checkbox" name="q38_interventions" value="Feeding tube site care" />
+            Feeding tube site care
+          </label>
+          <label>
+            <input type="checkbox" name="q38_interventions" value="NG tube feeding" />
+            NG tube feeding
+          </label>
+          <label>
+            <input type="checkbox" name="q38_interventions" value="Aspiration precautions" />
+            Aspiration precautions
+          </label>
+        </div>
+        <div className={styles.checkRow}>
+          <label>
+            <input type="checkbox" name="q38_interventions" value="Ventilator management" />
+            Ventilator management
+          </label>
+          <label>
+            <input type="checkbox" name="q38_interventions" value="Chest physiotherapy (CPT / Vest)" />
+            Chest physiotherapy (CPT / Vest)
+          </label>
+          <label>
+            <input type="checkbox" name="q38_interventions" value="Cough assist" />
+            Cough assist
+          </label>
+          <label>
+            <input type="checkbox" name="q38_interventions" value="Pulse oximetry / apnea monitoring" />
+            Pulse oximetry / apnea monitoring
+          </label>
+        </div>
+        <div className={styles.checkRow}>
+          <label>
+            <input type="checkbox" name="q38_interventions" value="Seizure precautions / monitoring" />
+            Seizure precautions / monitoring
+          </label>
+          <label>
+            <input type="checkbox" name="q38_interventions" value="Straight catheterization" />
+            Straight catheterization
+          </label>
+          <label>
+            <input type="checkbox" name="q38_interventions" value="Perineal care" />
+            Perineal care
+          </label>
+          <label>
+            <input type="checkbox" name="q38_interventions" value="Bowel program" />
+            Bowel program
+          </label>
+        </div>
+        <div className={styles.checkRow}>
+          <label>
             <input type="checkbox" name="q38_interventions" value="Assessment and evaluation" />
             Assessment and evaluation
           </label>
