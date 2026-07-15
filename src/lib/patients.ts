@@ -32,6 +32,13 @@ export interface Patient {
    * roster indicator. Lives on the directory doc (not sensitive PHI).
    */
   requiresMar?: boolean;
+  /**
+   * Whether this client has a feeding tube (G-tube / GJ / J / NG). Drives the
+   * progress-note prompt that pre-opens the GI assessment and reminds the
+   * nurse to chart tube care & feedings. Directory-doc flag like requiresMar
+   * (gates UI surfaces; not the sensitive clinical sub-record).
+   */
+  hasFeedingTube?: boolean;
   createdAt?: unknown;
   /**
    * Care team — list of nurse uids who can read all progressNotes for
