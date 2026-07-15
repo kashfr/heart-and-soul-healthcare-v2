@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState, useEffect, useRef, Suspense } from 'react';
+import { useCallback, useMemo, useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { Check, AlertTriangle, Loader2 } from 'lucide-react';
@@ -240,6 +240,18 @@ function ProgressNotePageInner() {
     mode: 'onBlur', // Surface validation errors when the field loses focus, not only on submit
   });
   const { errors } = formState;
+
+  // Roster-driven feeding-tube prompt: when the typed/selected client matches
+  // a roster patient flagged hasFeedingTube, Page 3 pre-opens the GI section
+  // and shows a tube-care charting reminder. Name-normalized match, same rule
+  // the pre-submit patient confirm uses.
+  const watchedClientName = watch('q3_clientName');
+  const clientHasFeedingTube = useMemo(() => {
+    const typed = normalizeName(String(watchedClientName || ''));
+    if (!typed) return false;
+    const match = patients.find((p) => normalizeName(p.name) === typed);
+    return !!match?.hasFeedingTube;
+  }, [watchedClientName, patients]);
 
   // One-time scrub of the legacy localStorage draft layer. It used to silently
   // rehydrate a previous session's note (unscoped to the signed-in user — a
@@ -1872,7 +1884,7 @@ function ProgressNotePageInner() {
       <form ref={formRef} onSubmit={handleSubmit} className={styles.form} noValidate>
         <div style={pageStyle(1)}><FormPageOne formRef={ref} register={register} watch={watch} setValue={setValue} control={control} onCredentialChange={handleCredentialChange} patients={patients} initialClientName={initialClientName} lockIdentity={isNurse && !isEditMode} /></div>
         <div style={pageStyle(2)}><FormPageTwo formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} ageStr={watch('q5_ageYears')} dob={watch('q4_dateofBirth')} errors={errors} /></div>
-        <div style={pageStyle(3)}><FormPageThree formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} errors={errors} /></div>
+        <div style={pageStyle(3)}><FormPageThree formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} clientHasFeedingTube={clientHasFeedingTube} errors={errors} /></div>
         <div style={pageStyle(4)}><FormPageFour formRef={ref} register={register} watch={watch} setValue={setValue} control={control} errors={errors} /></div>
         <div style={pageStyle(5)}><FormPageFive formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} isEditMode={isEditMode} documenter={user && profile ? { uid: user.uid, name: profile.displayName || user.email || '', credential: profile.credential || '' } : undefined} getNoteId={ensureSubmissionId} /></div>
         <div style={pageStyle(6)}><FormPageSix formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} errors={errors} /></div>

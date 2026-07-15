@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { FormPageProps } from '../types';
 import styles from '../page.module.css';
 import DeselectableRadio, { radioState, radioSubscribe, radioGetSnapshot } from './DeselectableRadio';
@@ -11,9 +11,12 @@ const getGlobalSnapshotStr = () => String(radioGetSnapshot());
 
 interface FormPageThreeProps extends FormPageProps {
   credential?: string;
+  /** True when the selected roster client is flagged as having a feeding
+   *  tube — auto-expands the GI section and shows the charting reminder. */
+  clientHasFeedingTube?: boolean;
 }
 
-export default function FormPageThree({ formRef, register, watch, setValue, control, credential, errors }: FormPageThreeProps) {
+export default function FormPageThree({ formRef, register, watch, setValue, control, credential, clientHasFeedingTube, errors }: FormPageThreeProps) {
   const showSystemAssessments = credential === 'LPN' || credential === 'RN';
   // Subscribe to radio state so the tube care & feeding block reveals when
   // "Feeding Tube Present" flips to Yes (same pattern as FormPageFour's
@@ -49,6 +52,15 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
       [section]: !prev[section],
     }));
   };
+
+  // Pre-open the GI section for tube-fed clients so the feeding-tube fields
+  // are visible without hunting through collapsed assessments. Runs when the
+  // flag flips true (roster loads async); the nurse can still collapse it.
+  useEffect(() => {
+    if (clientHasFeedingTube) {
+      setExpandedSections((prev) => ({ ...prev, gi: true }));
+    }
+  }, [clientHasFeedingTube]);
 
   return (
     <div>
@@ -864,9 +876,25 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
           <span className={styles.toggleArrow}>
             {expandedSections.gi ? '▼' : '▶'}
           </span>
-          <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Gastrointestinal</div>
+          <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Gastrointestinal (incl. feeding tube)</div>
         </div>
         <div style={{ display: expandedSections.gi ? 'block' : 'none' }}>
+            {clientHasFeedingTube && (
+              <div
+                style={{
+                  background: '#eef4fb',
+                  border: '1px solid #c8def5',
+                  borderRadius: 6,
+                  padding: '10px 12px',
+                  margin: '8px 0 12px',
+                  fontSize: 13,
+                  color: '#1a3a5c',
+                  fontWeight: 600,
+                }}
+              >
+                This client has a feeding tube — remember to document tube care and feedings in the Feeding Tube section below.
+              </div>
+            )}
             <div className={styles.row}>
               <div className={styles.f}>
                 <label className={styles.label}>Status</label>
@@ -977,6 +1005,9 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                     N/A
                   </label>
                 </div>
+                <p style={{ fontSize: '12px', color: '#888', marginTop: '4px', fontStyle: 'italic' }}>
+                  Select &quot;Yes&quot; to chart tube care and feedings for this shift.
+                </p>
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="q33_gtubeSiteAppearance">Insertion Site Appearance</label>
