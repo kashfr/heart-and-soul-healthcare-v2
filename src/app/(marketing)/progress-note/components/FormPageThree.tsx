@@ -14,15 +14,26 @@ interface FormPageThreeProps extends FormPageProps {
   /** True when the selected roster client is flagged as having a feeding
    *  tube — auto-expands the GI section and shows the charting reminder. */
   clientHasFeedingTube?: boolean;
+  /** Increment to force the GI section open (submit-gate "take me there"). */
+  giExpandSignal?: number;
 }
 
-export default function FormPageThree({ formRef, register, watch, setValue, control, credential, clientHasFeedingTube, errors }: FormPageThreeProps) {
+export default function FormPageThree({ formRef, register, watch, setValue, control, credential, clientHasFeedingTube, giExpandSignal, errors }: FormPageThreeProps) {
   const showSystemAssessments = credential === 'LPN' || credential === 'RN';
   // Subscribe to radio state so the tube care & feeding block reveals when
   // "Feeding Tube Present" flips to Yes (same pattern as FormPageFour's
   // aspiration-concerns conditional).
   useSyncExternalStore(radioSubscribe, getGlobalSnapshotStr, getGlobalSnapshotStr);
   const feedingTubePresent = radioState['q33_gtubePresent'] === 'Yes';
+  const feedingGivenYes = radioState['q33_feedingGiven'] === 'Yes';
+
+  // Tube-doc required-field cues. Red only while EMPTY — the highlight
+  // clearing is the nurse's feedback that the field is satisfied. The submit
+  // gate in page.tsx is the enforcement layer (the form is noValidate and the
+  // DOM scan skips collapsed sections); these cues are the guidance layer.
+  const tubeReqStyle = { border: '2px solid #c62828', background: '#fff5f5' };
+  const tubeReqRadioStyle = { ...tubeReqStyle, borderRadius: 6, padding: '4px 8px' };
+  const isBlank = (field: string) => !String(watch(field) || '').trim();
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     activity: false,
     pain: false,
@@ -61,6 +72,14 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
       setExpandedSections((prev) => ({ ...prev, gi: true }));
     }
   }, [clientHasFeedingTube]);
+
+  // Submit gate escort: page.tsx bumps this counter when tube documentation
+  // is incomplete so the GI section is open by the time we scroll to it.
+  useEffect(() => {
+    if (giExpandSignal) {
+      setExpandedSections((prev) => ({ ...prev, gi: true }));
+    }
+  }, [giExpandSignal]);
 
   return (
     <div>
@@ -991,7 +1010,7 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
             <div className={styles.row}>
               <div className={styles.f}>
                 <label className={styles.label}>Feeding Tube Present?</label>
-                <div className={styles.radioRow}>
+                <div className={styles.radioRow} id="q33_gtubePresentRow">
                   <label>
                     <DeselectableRadio name="q33_gtubePresent" value="Yes" />
                     Yes
@@ -1010,8 +1029,14 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                 </p>
               </div>
               <div className={styles.f}>
-                <label className={styles.label} htmlFor="q33_gtubeSiteAppearance">Insertion Site Appearance</label>
-                <select className={styles.select} id="q33_gtubeSiteAppearance" {...register('q33_gtubeSiteAppearance')}>
+                <label className={styles.label} htmlFor="q33_gtubeSiteAppearance">Insertion Site Appearance {feedingTubePresent && '*'}</label>
+                <select
+                  className={styles.select}
+                  id="q33_gtubeSiteAppearance"
+                  {...register('q33_gtubeSiteAppearance')}
+                  required={feedingTubePresent}
+                  style={feedingTubePresent && isBlank('q33_gtubeSiteAppearance') ? tubeReqStyle : undefined}
+                >
                   <option value="">Select...</option>
                   <option value="WNL — Clean dry intact">WNL — Clean dry intact</option>
                   <option value="Redness / Irritation">Redness / Irritation</option>
@@ -1034,8 +1059,14 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
               <>
                 <div className={styles.row}>
                   <div className={styles.f}>
-                    <label className={styles.label} htmlFor="q33_tubeType">Tube Type</label>
-                    <select className={styles.select} id="q33_tubeType" {...register('q33_tubeType')}>
+                    <label className={styles.label} htmlFor="q33_tubeType">Tube Type *</label>
+                    <select
+                      className={styles.select}
+                      id="q33_tubeType"
+                      {...register('q33_tubeType')}
+                      required
+                      style={isBlank('q33_tubeType') ? tubeReqStyle : undefined}
+                    >
                       <option value="">Select...</option>
                       <option value="G-tube (PEG)">G-tube (PEG)</option>
                       <option value="G-tube low-profile button (MIC-KEY / Mini)">G-tube low-profile button (MIC-KEY / Mini)</option>
@@ -1088,8 +1119,12 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                 <div className={styles.subsec}>Tube Feeding This Shift</div>
                 <div className={styles.row}>
                   <div className={styles.f}>
-                    <label className={styles.label}>Feeding Given?</label>
-                    <div className={styles.radioRow}>
+                    <label className={styles.label}>Feeding Given? *</label>
+                    <div
+                      className={styles.radioRow}
+                      id="q33_feedingGivenRow"
+                      style={!radioState['q33_feedingGiven'] ? tubeReqRadioStyle : undefined}
+                    >
                       <label>
                         <DeselectableRadio name="q33_feedingGiven" value="Yes" />
                         Yes
@@ -1099,10 +1134,19 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                         No
                       </label>
                     </div>
+                    <p style={{ fontSize: '12px', color: '#888', marginTop: '4px', fontStyle: 'italic' }}>
+                      Answer even if no feeding — &quot;No&quot; documents a no-feed shift.
+                    </p>
                   </div>
                   <div className={styles.f}>
-                    <label className={styles.label} htmlFor="q33_feedingMethod">Feeding Method</label>
-                    <select className={styles.select} id="q33_feedingMethod" {...register('q33_feedingMethod')}>
+                    <label className={styles.label} htmlFor="q33_feedingMethod">Feeding Method {feedingGivenYes && '*'}</label>
+                    <select
+                      className={styles.select}
+                      id="q33_feedingMethod"
+                      {...register('q33_feedingMethod')}
+                      required={feedingGivenYes}
+                      style={feedingGivenYes && isBlank('q33_feedingMethod') ? tubeReqStyle : undefined}
+                    >
                       <option value="">Select...</option>
                       <option value="Continuous (pump)">Continuous (pump)</option>
                       <option value="Bolus (syringe)">Bolus (syringe)</option>
@@ -1123,30 +1167,75 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                     />
                   </div>
                   <div className={styles.f}>
-                    <label className={styles.label} htmlFor="q33_feedVolume">Volume / Rate</label>
-                    <input
-                      className={styles.input}
-                      type="text"
+                    <label className={styles.label} htmlFor="q33_feedVolume">Volume / Rate {feedingGivenYes && '*'}</label>
+                    {/* Tap-to-pick instead of free typing (nurse hand-holding).
+                        Common bolus volumes and pump rates; anything unusual
+                        goes to "Other" + the notes box. */}
+                    <select
+                      className={styles.select}
                       id="q33_feedVolume"
                       {...register('q33_feedVolume')}
-                      placeholder="e.g. 240 mL bolus or 45 mL/hr"
-                    />
+                      required={feedingGivenYes}
+                      style={feedingGivenYes && isBlank('q33_feedVolume') ? tubeReqStyle : undefined}
+                    >
+                      <option value="">Select...</option>
+                      <optgroup label="Bolus / gravity volume">
+                        <option value="30 mL">30 mL</option>
+                        <option value="60 mL">60 mL</option>
+                        <option value="90 mL">90 mL</option>
+                        <option value="120 mL">120 mL</option>
+                        <option value="150 mL">150 mL</option>
+                        <option value="180 mL">180 mL</option>
+                        <option value="210 mL">210 mL</option>
+                        <option value="240 mL">240 mL</option>
+                        <option value="300 mL">300 mL</option>
+                        <option value="360 mL">360 mL</option>
+                        <option value="480 mL">480 mL</option>
+                      </optgroup>
+                      <optgroup label="Continuous rate">
+                        <option value="10 mL/hr">10 mL/hr</option>
+                        <option value="15 mL/hr">15 mL/hr</option>
+                        <option value="20 mL/hr">20 mL/hr</option>
+                        <option value="25 mL/hr">25 mL/hr</option>
+                        <option value="30 mL/hr">30 mL/hr</option>
+                        <option value="35 mL/hr">35 mL/hr</option>
+                        <option value="40 mL/hr">40 mL/hr</option>
+                        <option value="45 mL/hr">45 mL/hr</option>
+                        <option value="50 mL/hr">50 mL/hr</option>
+                        <option value="60 mL/hr">60 mL/hr</option>
+                        <option value="75 mL/hr">75 mL/hr</option>
+                        <option value="90 mL/hr">90 mL/hr</option>
+                        <option value="100 mL/hr">100 mL/hr</option>
+                        <option value="120 mL/hr">120 mL/hr</option>
+                      </optgroup>
+                      <option value="Other (see notes)">Other (see notes)</option>
+                    </select>
                   </div>
                   <div className={styles.f}>
                     <label className={styles.label} htmlFor="q33_flushVolume">Water Flush (mL)</label>
-                    <input
-                      className={styles.input}
-                      type="text"
-                      id="q33_flushVolume"
-                      {...register('q33_flushVolume')}
-                      placeholder="e.g. 30 mL before/after"
-                    />
+                    <select className={styles.select} id="q33_flushVolume" {...register('q33_flushVolume')}>
+                      <option value="">Select...</option>
+                      <option value="5 mL">5 mL</option>
+                      <option value="10 mL">10 mL</option>
+                      <option value="15 mL">15 mL</option>
+                      <option value="20 mL">20 mL</option>
+                      <option value="30 mL">30 mL</option>
+                      <option value="40 mL">40 mL</option>
+                      <option value="50 mL">50 mL</option>
+                      <option value="60 mL">60 mL</option>
+                      <option value="No flush this shift">No flush this shift</option>
+                      <option value="Other (see notes)">Other (see notes)</option>
+                    </select>
                   </div>
                 </div>
                 <div className={styles.row}>
                   <div className={styles.f}>
-                    <label className={styles.label}>HOB Elevated ≥30° During/After Feeding?</label>
-                    <div className={styles.radioRow}>
+                    <label className={styles.label}>HOB Elevated ≥30° During/After Feeding? {feedingGivenYes && '*'}</label>
+                    <div
+                      className={styles.radioRow}
+                      id="q33_hobElevatedRow"
+                      style={feedingGivenYes && !radioState['q33_hobElevated'] ? tubeReqRadioStyle : undefined}
+                    >
                       <label>
                         <DeselectableRadio name="q33_hobElevated" value="Yes" />
                         Yes
@@ -1162,14 +1251,18 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                     </div>
                   </div>
                   <div className={styles.f}>
-                    <label className={styles.label} htmlFor="q33_residualVolume">Gastric Residual (mL, if ordered)</label>
-                    <input
-                      className={styles.input}
-                      type="text"
-                      id="q33_residualVolume"
-                      {...register('q33_residualVolume')}
-                      placeholder="G-tubes only — not checked on J-tubes"
-                    />
+                    <label className={styles.label} htmlFor="q33_residualVolume">Gastric Residual (if ordered)</label>
+                    <select className={styles.select} id="q33_residualVolume" {...register('q33_residualVolume')}>
+                      <option value="">Select...</option>
+                      <option value="Not ordered / not checked">Not ordered / not checked</option>
+                      <option value="N/A — J-tube (never checked)">N/A — J-tube (never checked)</option>
+                      <option value="None / minimal">None / minimal</option>
+                      <option value="Under 10 mL">Under 10 mL</option>
+                      <option value="10–25 mL">10–25 mL</option>
+                      <option value="26–50 mL">26–50 mL</option>
+                      <option value="51–100 mL">51–100 mL</option>
+                      <option value="Over 100 mL (per orders — notify if required)">Over 100 mL (per orders — notify if required)</option>
+                    </select>
                   </div>
                   <div className={styles.f}>
                     <label className={styles.label} htmlFor="q33_feedTolerance">Feeding Tolerance</label>
