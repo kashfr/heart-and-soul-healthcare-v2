@@ -245,6 +245,9 @@ function ProgressNotePageInner() {
   // a roster patient flagged hasFeedingTube, Page 3 pre-opens the GI section
   // and shows a tube-care charting reminder. Name-normalized match, same rule
   // the pre-submit patient confirm uses.
+  // Bumped by the tube-doc submit gate so FormPageThree force-opens the GI
+  // section before we scroll the nurse to the missing field.
+  const [giExpandSignal, setGiExpandSignal] = useState(0);
   const watchedClientName = watch('q3_clientName');
   const clientHasFeedingTube = useMemo(() => {
     const typed = normalizeName(String(watchedClientName || ''));
@@ -1109,6 +1112,67 @@ function ProgressNotePageInner() {
       return;
     }
 
+    // Feeding-tube documentation gate. The tube block lives in a collapsible
+    // GI section, so the DOM required-field scan above skips it when collapsed,
+    // and the Feeding Given / HOB answers are DeselectableRadios the scan can't
+    // see — enforce here from any tab (BP-check pattern). Tube present → type,
+    // site appearance, and a Yes/No feeding answer are required; feeding given
+    // → method, volume/rate, and HOB positioning too. "No" answers are always
+    // accepted — the gate demands an answer, never a feed. New notes only:
+    // historical notes predate these fields and editing one must not force
+    // data invention.
+    if (!isEditMode && (credential === 'LPN' || credential === 'RN')) {
+      const tubePresent = String(radioState['q33_gtubePresent'] || '').trim();
+      const tubeFeedingGiven = String(radioState['q33_feedingGiven'] || '').trim();
+      const tubeMissing: { label: string; targetId: string }[] = [];
+      if (clientHasFeedingTube && !tubePresent) {
+        tubeMissing.push({
+          label: 'Feeding Tube Present? — this client is flagged as having a feeding tube',
+          targetId: 'q33_gtubePresentRow',
+        });
+      }
+      if (tubePresent === 'Yes') {
+        if (!String(getValues('q33_tubeType') || '').trim()) {
+          tubeMissing.push({ label: 'Tube Type', targetId: 'q33_tubeType' });
+        }
+        if (!String(getValues('q33_gtubeSiteAppearance') || '').trim()) {
+          tubeMissing.push({ label: 'Insertion Site Appearance', targetId: 'q33_gtubeSiteAppearance' });
+        }
+        if (!tubeFeedingGiven) {
+          tubeMissing.push({ label: 'Feeding Given? (answer "No" to document a no-feed shift)', targetId: 'q33_feedingGivenRow' });
+        }
+        if (tubeFeedingGiven === 'Yes') {
+          if (!String(getValues('q33_feedingMethod') || '').trim()) {
+            tubeMissing.push({ label: 'Feeding Method', targetId: 'q33_feedingMethod' });
+          }
+          if (!String(getValues('q33_feedVolume') || '').trim()) {
+            tubeMissing.push({ label: 'Volume / Rate', targetId: 'q33_feedVolume' });
+          }
+          if (!String(radioState['q33_hobElevated'] || '').trim()) {
+            tubeMissing.push({ label: 'HOB Elevated ≥30° During/After Feeding?', targetId: 'q33_hobElevatedRow' });
+          }
+        }
+      }
+      if (tubeMissing.length > 0) {
+        setCurrentPage(3);
+        setGiExpandSignal((n) => n + 1);
+        const firstTubeTarget = tubeMissing[0].targetId;
+        setTimeout(() => {
+          const el = formRef.current?.querySelector(`#${firstTubeTarget}`) as HTMLElement | null;
+          el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          if (el && (el.tagName === 'SELECT' || el.tagName === 'INPUT')) {
+            (el as HTMLInputElement).focus();
+          }
+        }, 150);
+        const tubeList = tubeMissing.map((m) => `• ${m.label}`).join('\n');
+        alert(
+          `The feeding tube documentation isn't complete:\n\n${tubeList}\n\n` +
+          `We've opened the Feeding Tube section on the Observations tab and taken you to the first one — the fields that still need an answer are outlined in red.`
+        );
+        return;
+      }
+    }
+
     // Adverse drug reaction: when the nurse reports one via the Medication
     // Tolerance radio (page 5, LPN/RN only), the detail box becomes required.
     // We enforce it here rather than via the DOM `required` scan because the
@@ -1884,7 +1948,7 @@ function ProgressNotePageInner() {
       <form ref={formRef} onSubmit={handleSubmit} className={styles.form} noValidate>
         <div style={pageStyle(1)}><FormPageOne formRef={ref} register={register} watch={watch} setValue={setValue} control={control} onCredentialChange={handleCredentialChange} patients={patients} initialClientName={initialClientName} lockIdentity={isNurse && !isEditMode} /></div>
         <div style={pageStyle(2)}><FormPageTwo formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} ageStr={watch('q5_ageYears')} dob={watch('q4_dateofBirth')} errors={errors} /></div>
-        <div style={pageStyle(3)}><FormPageThree formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} clientHasFeedingTube={clientHasFeedingTube} errors={errors} /></div>
+        <div style={pageStyle(3)}><FormPageThree formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} clientHasFeedingTube={clientHasFeedingTube} giExpandSignal={giExpandSignal} errors={errors} /></div>
         <div style={pageStyle(4)}><FormPageFour formRef={ref} register={register} watch={watch} setValue={setValue} control={control} errors={errors} /></div>
         <div style={pageStyle(5)}><FormPageFive formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} isEditMode={isEditMode} documenter={user && profile ? { uid: user.uid, name: profile.displayName || user.email || '', credential: profile.credential || '' } : undefined} getNoteId={ensureSubmissionId} /></div>
         <div style={pageStyle(6)}><FormPageSix formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} errors={errors} /></div>

@@ -14,15 +14,26 @@ interface FormPageThreeProps extends FormPageProps {
   /** True when the selected roster client is flagged as having a feeding
    *  tube — auto-expands the GI section and shows the charting reminder. */
   clientHasFeedingTube?: boolean;
+  /** Increment to force the GI section open (submit-gate "take me there"). */
+  giExpandSignal?: number;
 }
 
-export default function FormPageThree({ formRef, register, watch, setValue, control, credential, clientHasFeedingTube, errors }: FormPageThreeProps) {
+export default function FormPageThree({ formRef, register, watch, setValue, control, credential, clientHasFeedingTube, giExpandSignal, errors }: FormPageThreeProps) {
   const showSystemAssessments = credential === 'LPN' || credential === 'RN';
   // Subscribe to radio state so the tube care & feeding block reveals when
   // "Feeding Tube Present" flips to Yes (same pattern as FormPageFour's
   // aspiration-concerns conditional).
   useSyncExternalStore(radioSubscribe, getGlobalSnapshotStr, getGlobalSnapshotStr);
   const feedingTubePresent = radioState['q33_gtubePresent'] === 'Yes';
+  const feedingGivenYes = radioState['q33_feedingGiven'] === 'Yes';
+
+  // Tube-doc required-field cues. Red only while EMPTY — the highlight
+  // clearing is the nurse's feedback that the field is satisfied. The submit
+  // gate in page.tsx is the enforcement layer (the form is noValidate and the
+  // DOM scan skips collapsed sections); these cues are the guidance layer.
+  const tubeReqStyle = { border: '2px solid #c62828', background: '#fff5f5' };
+  const tubeReqRadioStyle = { ...tubeReqStyle, borderRadius: 6, padding: '4px 8px' };
+  const isBlank = (field: string) => !String(watch(field) || '').trim();
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     activity: false,
     pain: false,
@@ -61,6 +72,14 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
       setExpandedSections((prev) => ({ ...prev, gi: true }));
     }
   }, [clientHasFeedingTube]);
+
+  // Submit gate escort: page.tsx bumps this counter when tube documentation
+  // is incomplete so the GI section is open by the time we scroll to it.
+  useEffect(() => {
+    if (giExpandSignal) {
+      setExpandedSections((prev) => ({ ...prev, gi: true }));
+    }
+  }, [giExpandSignal]);
 
   return (
     <div>
@@ -991,7 +1010,7 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
             <div className={styles.row}>
               <div className={styles.f}>
                 <label className={styles.label}>Feeding Tube Present?</label>
-                <div className={styles.radioRow}>
+                <div className={styles.radioRow} id="q33_gtubePresentRow">
                   <label>
                     <DeselectableRadio name="q33_gtubePresent" value="Yes" />
                     Yes
@@ -1010,8 +1029,14 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                 </p>
               </div>
               <div className={styles.f}>
-                <label className={styles.label} htmlFor="q33_gtubeSiteAppearance">Insertion Site Appearance</label>
-                <select className={styles.select} id="q33_gtubeSiteAppearance" {...register('q33_gtubeSiteAppearance')}>
+                <label className={styles.label} htmlFor="q33_gtubeSiteAppearance">Insertion Site Appearance {feedingTubePresent && '*'}</label>
+                <select
+                  className={styles.select}
+                  id="q33_gtubeSiteAppearance"
+                  {...register('q33_gtubeSiteAppearance')}
+                  required={feedingTubePresent}
+                  style={feedingTubePresent && isBlank('q33_gtubeSiteAppearance') ? tubeReqStyle : undefined}
+                >
                   <option value="">Select...</option>
                   <option value="WNL — Clean dry intact">WNL — Clean dry intact</option>
                   <option value="Redness / Irritation">Redness / Irritation</option>
@@ -1034,8 +1059,14 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
               <>
                 <div className={styles.row}>
                   <div className={styles.f}>
-                    <label className={styles.label} htmlFor="q33_tubeType">Tube Type</label>
-                    <select className={styles.select} id="q33_tubeType" {...register('q33_tubeType')}>
+                    <label className={styles.label} htmlFor="q33_tubeType">Tube Type *</label>
+                    <select
+                      className={styles.select}
+                      id="q33_tubeType"
+                      {...register('q33_tubeType')}
+                      required
+                      style={isBlank('q33_tubeType') ? tubeReqStyle : undefined}
+                    >
                       <option value="">Select...</option>
                       <option value="G-tube (PEG)">G-tube (PEG)</option>
                       <option value="G-tube low-profile button (MIC-KEY / Mini)">G-tube low-profile button (MIC-KEY / Mini)</option>
@@ -1088,8 +1119,12 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                 <div className={styles.subsec}>Tube Feeding This Shift</div>
                 <div className={styles.row}>
                   <div className={styles.f}>
-                    <label className={styles.label}>Feeding Given?</label>
-                    <div className={styles.radioRow}>
+                    <label className={styles.label}>Feeding Given? *</label>
+                    <div
+                      className={styles.radioRow}
+                      id="q33_feedingGivenRow"
+                      style={!radioState['q33_feedingGiven'] ? tubeReqRadioStyle : undefined}
+                    >
                       <label>
                         <DeselectableRadio name="q33_feedingGiven" value="Yes" />
                         Yes
@@ -1099,10 +1134,19 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                         No
                       </label>
                     </div>
+                    <p style={{ fontSize: '12px', color: '#888', marginTop: '4px', fontStyle: 'italic' }}>
+                      Answer even if no feeding — &quot;No&quot; documents a no-feed shift.
+                    </p>
                   </div>
                   <div className={styles.f}>
-                    <label className={styles.label} htmlFor="q33_feedingMethod">Feeding Method</label>
-                    <select className={styles.select} id="q33_feedingMethod" {...register('q33_feedingMethod')}>
+                    <label className={styles.label} htmlFor="q33_feedingMethod">Feeding Method {feedingGivenYes && '*'}</label>
+                    <select
+                      className={styles.select}
+                      id="q33_feedingMethod"
+                      {...register('q33_feedingMethod')}
+                      required={feedingGivenYes}
+                      style={feedingGivenYes && isBlank('q33_feedingMethod') ? tubeReqStyle : undefined}
+                    >
                       <option value="">Select...</option>
                       <option value="Continuous (pump)">Continuous (pump)</option>
                       <option value="Bolus (syringe)">Bolus (syringe)</option>
@@ -1123,12 +1167,14 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                     />
                   </div>
                   <div className={styles.f}>
-                    <label className={styles.label} htmlFor="q33_feedVolume">Volume / Rate</label>
+                    <label className={styles.label} htmlFor="q33_feedVolume">Volume / Rate {feedingGivenYes && '*'}</label>
                     <input
                       className={styles.input}
                       type="text"
                       id="q33_feedVolume"
                       {...register('q33_feedVolume')}
+                      required={feedingGivenYes}
+                      style={feedingGivenYes && isBlank('q33_feedVolume') ? tubeReqStyle : undefined}
                       placeholder="e.g. 240 mL bolus or 45 mL/hr"
                     />
                   </div>
@@ -1145,8 +1191,12 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                 </div>
                 <div className={styles.row}>
                   <div className={styles.f}>
-                    <label className={styles.label}>HOB Elevated ≥30° During/After Feeding?</label>
-                    <div className={styles.radioRow}>
+                    <label className={styles.label}>HOB Elevated ≥30° During/After Feeding? {feedingGivenYes && '*'}</label>
+                    <div
+                      className={styles.radioRow}
+                      id="q33_hobElevatedRow"
+                      style={feedingGivenYes && !radioState['q33_hobElevated'] ? tubeReqRadioStyle : undefined}
+                    >
                       <label>
                         <DeselectableRadio name="q33_hobElevated" value="Yes" />
                         Yes
