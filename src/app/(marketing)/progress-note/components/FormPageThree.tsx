@@ -1168,25 +1168,64 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                   </div>
                   <div className={styles.f}>
                     <label className={styles.label} htmlFor="q33_feedVolume">Volume / Rate {feedingGivenYes && '*'}</label>
-                    <input
-                      className={styles.input}
-                      type="text"
+                    {/* Tap-to-pick instead of free typing (nurse hand-holding).
+                        Common bolus volumes and pump rates; anything unusual
+                        goes to "Other" + the notes box. */}
+                    <select
+                      className={styles.select}
                       id="q33_feedVolume"
                       {...register('q33_feedVolume')}
                       required={feedingGivenYes}
                       style={feedingGivenYes && isBlank('q33_feedVolume') ? tubeReqStyle : undefined}
-                      placeholder="e.g. 240 mL bolus or 45 mL/hr"
-                    />
+                    >
+                      <option value="">Select...</option>
+                      <optgroup label="Bolus / gravity volume">
+                        <option value="30 mL">30 mL</option>
+                        <option value="60 mL">60 mL</option>
+                        <option value="90 mL">90 mL</option>
+                        <option value="120 mL">120 mL</option>
+                        <option value="150 mL">150 mL</option>
+                        <option value="180 mL">180 mL</option>
+                        <option value="210 mL">210 mL</option>
+                        <option value="240 mL">240 mL</option>
+                        <option value="300 mL">300 mL</option>
+                        <option value="360 mL">360 mL</option>
+                        <option value="480 mL">480 mL</option>
+                      </optgroup>
+                      <optgroup label="Continuous rate">
+                        <option value="10 mL/hr">10 mL/hr</option>
+                        <option value="15 mL/hr">15 mL/hr</option>
+                        <option value="20 mL/hr">20 mL/hr</option>
+                        <option value="25 mL/hr">25 mL/hr</option>
+                        <option value="30 mL/hr">30 mL/hr</option>
+                        <option value="35 mL/hr">35 mL/hr</option>
+                        <option value="40 mL/hr">40 mL/hr</option>
+                        <option value="45 mL/hr">45 mL/hr</option>
+                        <option value="50 mL/hr">50 mL/hr</option>
+                        <option value="60 mL/hr">60 mL/hr</option>
+                        <option value="75 mL/hr">75 mL/hr</option>
+                        <option value="90 mL/hr">90 mL/hr</option>
+                        <option value="100 mL/hr">100 mL/hr</option>
+                        <option value="120 mL/hr">120 mL/hr</option>
+                      </optgroup>
+                      <option value="Other (see notes)">Other (see notes)</option>
+                    </select>
                   </div>
                   <div className={styles.f}>
                     <label className={styles.label} htmlFor="q33_flushVolume">Water Flush (mL)</label>
-                    <input
-                      className={styles.input}
-                      type="text"
-                      id="q33_flushVolume"
-                      {...register('q33_flushVolume')}
-                      placeholder="e.g. 30 mL before/after"
-                    />
+                    <select className={styles.select} id="q33_flushVolume" {...register('q33_flushVolume')}>
+                      <option value="">Select...</option>
+                      <option value="5 mL">5 mL</option>
+                      <option value="10 mL">10 mL</option>
+                      <option value="15 mL">15 mL</option>
+                      <option value="20 mL">20 mL</option>
+                      <option value="30 mL">30 mL</option>
+                      <option value="40 mL">40 mL</option>
+                      <option value="50 mL">50 mL</option>
+                      <option value="60 mL">60 mL</option>
+                      <option value="No flush this shift">No flush this shift</option>
+                      <option value="Other (see notes)">Other (see notes)</option>
+                    </select>
                   </div>
                 </div>
                 <div className={styles.row}>
@@ -1212,14 +1251,18 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                     </div>
                   </div>
                   <div className={styles.f}>
-                    <label className={styles.label} htmlFor="q33_residualVolume">Gastric Residual (mL, if ordered)</label>
-                    <input
-                      className={styles.input}
-                      type="text"
-                      id="q33_residualVolume"
-                      {...register('q33_residualVolume')}
-                      placeholder="G-tubes only — not checked on J-tubes"
-                    />
+                    <label className={styles.label} htmlFor="q33_residualVolume">Gastric Residual (if ordered)</label>
+                    <select className={styles.select} id="q33_residualVolume" {...register('q33_residualVolume')}>
+                      <option value="">Select...</option>
+                      <option value="Not ordered / not checked">Not ordered / not checked</option>
+                      <option value="N/A — J-tube (never checked)">N/A — J-tube (never checked)</option>
+                      <option value="None / minimal">None / minimal</option>
+                      <option value="Under 10 mL">Under 10 mL</option>
+                      <option value="10–25 mL">10–25 mL</option>
+                      <option value="26–50 mL">26–50 mL</option>
+                      <option value="51–100 mL">51–100 mL</option>
+                      <option value="Over 100 mL (per orders — notify if required)">Over 100 mL (per orders — notify if required)</option>
+                    </select>
                   </div>
                   <div className={styles.f}>
                     <label className={styles.label} htmlFor="q33_feedTolerance">Feeding Tolerance</label>
