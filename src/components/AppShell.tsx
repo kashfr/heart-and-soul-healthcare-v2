@@ -8,6 +8,7 @@ import {
   HeartPulse,
   Users,
   ClipboardList,
+  ListChecks,
   FileClock,
   UserCog,
   FileText,
@@ -52,6 +53,9 @@ const NAV: NavItem[] = [
   { href: '/admin/mar', label: 'Medications', icon: <Tablets size={18} />, allow: ['nurse'] },
   { href: '/admin/patients', label: 'Patients', icon: <Users size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/records', label: 'Records', icon: <Pill size={18} />, allow: ['admin', 'supervisor'] },
+  // Per-client plan-of-care task lists (Option C): staff build the list, the
+  // RN supervisor approves it, progress notes chart against it (phase 2).
+  { href: '/admin/care-plan', label: 'Care Plans', icon: <ListChecks size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/submissions', label: 'Submissions', icon: <ClipboardList size={18} /> },
   { href: '/admin/in-progress', label: 'In Progress', icon: <FileClock size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/users', label: 'Staff & Roles', icon: <UserCog size={18} />, allow: ['admin', 'supervisor'] },
