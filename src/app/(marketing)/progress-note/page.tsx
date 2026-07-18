@@ -11,6 +11,7 @@ import { saveSubmission, getSubmission, updateSubmission, submissionExists, find
 import { saveDraft, loadDraft, deleteDraft, clearDuplicateRequest, subscribeOwnDupRequest, type NoteDraft, type DuplicateRequest } from '@/lib/drafts';
 import { getCriticalFindings, summarizeFindings, type CriticalFinding } from '@/lib/criticalVitals';
 import { isBpRoutinelyRequired } from '@/lib/vitalRanges';
+import { unansweredCareTasks } from '@/lib/careTaskCharting';
 import { normalizeName } from '@/lib/levenshtein';
 import { authedFetch } from '@/lib/authedFetch';
 import { useAuth } from '@/components/AuthProvider';
@@ -1173,6 +1174,34 @@ function ProgressNotePageInner() {
       }
     }
 
+    // Care plan task gate. Every task presented from the client's approved
+    // plan needs an answer — 'N/A' always satisfies, so this demands an
+    // answer, never a claim of care. Statuses live in the radio store (the
+    // DOM required-scan can't see DeselectableRadios), so merge store over
+    // values before checking. New notes only, same as the tube gate.
+    if (!isEditMode) {
+      const gateData: Record<string, unknown> = { ...(getValues() as Record<string, unknown>) };
+      for (const [k, v] of Object.entries(radioState)) {
+        if (v) gateData[k] = v;
+      }
+      const unansweredTasks = unansweredCareTasks(gateData);
+      if (unansweredTasks.length > 0) {
+        setCurrentPage(4);
+        const firstTaskId = unansweredTasks[0].id;
+        setTimeout(() => {
+          const el = formRef.current?.querySelector(`#careTaskRow_${firstTaskId}`) as HTMLElement | null;
+          el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 150);
+        const taskList = unansweredTasks.slice(0, 6).map((t) => `• ${t.name}`).join('\n');
+        const more = unansweredTasks.length > 6 ? `\n…and ${unansweredTasks.length - 6} more` : '';
+        alert(
+          `${unansweredTasks.length === 1 ? 'A care plan task still needs' : 'Some care plan tasks still need'} an answer:\n\n${taskList}${more}\n\n` +
+          `We've taken you to the Care Plan Tasks section — answer each task (“N/A” is fine when it doesn't apply today).`
+        );
+        return;
+      }
+    }
+
     // Adverse drug reaction: when the nurse reports one via the Medication
     // Tolerance radio (page 5, LPN/RN only), the detail box becomes required.
     // We enforce it here rather than via the DOM `required` scan because the
@@ -1949,7 +1978,7 @@ function ProgressNotePageInner() {
         <div style={pageStyle(1)}><FormPageOne formRef={ref} register={register} watch={watch} setValue={setValue} control={control} onCredentialChange={handleCredentialChange} patients={patients} initialClientName={initialClientName} lockIdentity={isNurse && !isEditMode} /></div>
         <div style={pageStyle(2)}><FormPageTwo formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} ageStr={watch('q5_ageYears')} dob={watch('q4_dateofBirth')} errors={errors} /></div>
         <div style={pageStyle(3)}><FormPageThree formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} clientHasFeedingTube={clientHasFeedingTube} giExpandSignal={giExpandSignal} errors={errors} /></div>
-        <div style={pageStyle(4)}><FormPageFour formRef={ref} register={register} watch={watch} setValue={setValue} control={control} errors={errors} /></div>
+        <div style={pageStyle(4)}><FormPageFour formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} editMode={isEditMode} errors={errors} /></div>
         <div style={pageStyle(5)}><FormPageFive formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} isEditMode={isEditMode} documenter={user && profile ? { uid: user.uid, name: profile.displayName || user.email || '', credential: profile.credential || '' } : undefined} getNoteId={ensureSubmissionId} /></div>
         <div style={pageStyle(6)}><FormPageSix formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} errors={errors} /></div>
         <div style={pageStyle(7)}><FormPageSeven formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} initialSignature={initialSignature} initialTotalHours={initialTotalHours} /></div>

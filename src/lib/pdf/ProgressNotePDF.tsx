@@ -8,6 +8,7 @@ import {
   StyleSheet,
 } from '@react-pdf/renderer';
 import { getVitalRanges, getAgeGroupLabel, type VitalRangesOverride } from '@/lib/vitalRanges';
+import { parseCareTaskCharting } from '@/lib/careTaskCharting';
 
 /**
  * Raw form data stored on a progress-note document. Every field is a string
@@ -1068,6 +1069,26 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
 
         {/* === GROUP 4: Personal Care & Nutrition === */}
         <GroupHeader title="Personal Care & Nutrition" />
+
+        {/* 8b. Care Plan Tasks — plan-of-care charting. Renders from the
+            careTasksMeta snapshot stored on the note, so it prints exactly
+            what the nurse was shown, regardless of later plan edits. */}
+        {(() => {
+          const careTaskEntries = parseCareTaskCharting(data as unknown as Record<string, unknown>);
+          if (careTaskEntries.length === 0) return null;
+          return (
+            <Section title="Care Plan Tasks">
+              {careTaskEntries.map((e) => (
+                <Field
+                  key={e.id}
+                  fieldKey={`careTask_${e.id}`}
+                  label={`${e.name} (${e.frequency})`}
+                  value={`${e.status || 'Not answered'}${e.note ? ` (${e.note})` : ''}`}
+                />
+              ))}
+            </Section>
+          );
+        })()}
 
         {/* 9. Personal Care / ADLs */}
         {anyHasValue(data, ['q38_personalCare', 'q38_personalCareNotes']) && (
