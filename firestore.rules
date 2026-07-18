@@ -137,6 +137,31 @@ service cloud.firestore {
       allow delete: if isStaff();
     }
 
+    // Care tasks — a client's plan-of-care task list (mirrors marOrders).
+    // One doc per task per client, linked by patientId. Assigned/edited by
+    // admin+supervisor; a nurse on the client's care team can READ the list
+    // so her progress note can render the client's tasks. Removing a task is
+    // a DISCONTINUE (status flip), never a lossy edit, so notes documented
+    // against a task keep their referent. The RN approval stamp is a plain
+    // update (approvedBy/At) and rides the same staff-only update rule.
+    match /careTasks/{taskId} {
+      allow read: if isStaff()
+        || (isNurse()
+            && resource.data.get('patientId', null) != null
+            && get(/databases/$(database)/documents/patients/$(resource.data.patientId))
+                 .data.get('assignedNurseIds', []).hasAny([request.auth.uid]));
+      allow create: if isStaff()
+        && incomingData().patientId is string && incomingData().patientId.size() > 0
+        && incomingData().createdBy == request.auth.uid
+        && incomingData().createdAt == request.time
+        && incomingData().status == 'active';
+      allow update: if isStaff()
+        && incomingData().patientId == resource.data.patientId
+        && incomingData().get('createdBy', null) == resource.data.get('createdBy', null)
+        && incomingData().get('createdAt', null) == resource.data.get('createdAt', null);
+      allow delete: if isStaff();
+    }
+
     // MAR — administration events (append-only). One doc per dose a nurse
     // records as given/held/refused against an order. The compliance backbone:
     // entries can NEVER be edited or deleted, so a correction is a new entry.
