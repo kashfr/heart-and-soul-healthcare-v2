@@ -195,6 +195,15 @@ export default function CarePlanEditorPage() {
       await approveCareTasks(pending.map((t) => t.id!).filter(Boolean), actor);
     });
 
+  // Per-task approval: the RN can accept the tasks she agrees with and leave
+  // the one she wants reworded as pending — approval granularity matches her
+  // judgment, never all-or-nothing.
+  const handleApproveOne = (t: CareTask) =>
+    withBusy(async () => {
+      if (!actor || !t.id) return;
+      await approveCareTasks([t.id], actor);
+    });
+
   const pickedCount = Object.values(picked).filter(Boolean).length + (customName.trim() ? 1 : 0);
 
   return (
@@ -216,7 +225,7 @@ export default function CarePlanEditorPage() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {pending.length > 0 && (
             <button type="button" style={approveBtnStyle} onClick={handleApprove} disabled={busy} title="Stamps your name, role, and the time on each pending task. Intended for the RN supervisor.">
-              <ShieldCheck size={15} /> Approve pending ({pending.length})
+              <ShieldCheck size={15} /> Approve all pending ({pending.length})
             </button>
           )}
           <button type="button" style={addBtnStyle} onClick={() => setAddOpen(true)} disabled={busy}>
@@ -262,6 +271,11 @@ export default function CarePlanEditorPage() {
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    {!t.approvedAt && (
+                      <button type="button" style={approveOneBtnStyle} onClick={() => handleApproveOne(t)} disabled={busy} title="Approve this task (stamps your name, role, and the time)">
+                        <ShieldCheck size={13} /> Approve
+                      </button>
+                    )}
                     <button type="button" style={iconBtnStyle} onClick={() => openEdit(t)} disabled={busy} title="Edit frequency / instructions">
                       <Pencil size={14} />
                     </button>
@@ -458,6 +472,7 @@ const anyChipStyle: React.CSSProperties = { fontSize: 10.5, fontWeight: 700, pad
 const approvedChipStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 600, color: GREEN };
 const pendingChipStyle: React.CSSProperties = { display: 'inline-block', fontSize: 11.5, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#fdf3e7', color: '#b45309', border: '1px solid #f0d9b8' };
 const iconBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, background: 'white', border: '1px solid #d0d7de', borderRadius: 7, color: '#374151', cursor: 'pointer' };
+const approveOneBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, height: 30, padding: '0 10px', background: 'white', border: `1px solid ${NAVY}`, borderRadius: 7, color: NAVY, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' };
 const iconBtnDangerStyle: React.CSSProperties = { ...iconBtnStyle, color: '#c62828', borderColor: '#f5c6c6' };
 const dcSummaryStyle: React.CSSProperties = { cursor: 'pointer', fontSize: 13.5, color: '#64748b', marginBottom: 8 };
 const backdropStyle: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 16 };
