@@ -16,6 +16,7 @@ import { useSettings } from '@/components/SettingsProvider';
 import { pdfFilenameFor, triggerDownload } from '@/lib/batchExport';
 import { authedFetch } from '@/lib/authedFetch';
 import { getVitalRanges, getAgeGroupLabel } from '@/lib/vitalRanges';
+import { parseCareTaskCharting } from '@/lib/careTaskCharting';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import RevisionHistory from '@/components/RevisionHistory';
 import CoSignModal from '@/components/CoSignModal';
@@ -729,6 +730,24 @@ export default function SubmissionDetailPage({ params }: PageProps) {
 
         {/* === GROUP 4: Personal Care & Nutrition === */}
         <GroupHeader title="Personal Care & Nutrition" />
+
+        {/* 8b. CARE PLAN TASKS — rendered from the note's stored snapshot */}
+        {(() => {
+          const careTaskEntries = parseCareTaskCharting(data as unknown as Record<string, unknown>);
+          if (careTaskEntries.length === 0) return null;
+          return (
+            <Section title="Care Plan Tasks">
+              {careTaskEntries.map((e) => (
+                <Field
+                  key={e.id}
+                  fieldKey={`careTask_${e.id}`}
+                  label={`${e.name} (${e.frequency})`}
+                  value={`${e.status || 'Not answered'}${e.note ? ` (${e.note})` : ''}`}
+                />
+              ))}
+            </Section>
+          );
+        })()}
 
         {/* 9. PERSONAL CARE / ADLs */}
         <ConditionalSection
