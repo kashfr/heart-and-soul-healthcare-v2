@@ -3,6 +3,7 @@ import {
   amendmentChain,
   buildMarAdminFields,
   compareMarOrders,
+  computeRequiredDoseGaps,
   doseTimeStatus,
   looksLikeUnknownPhysician,
   orderSignedAgeDays,
@@ -298,5 +299,106 @@ describe('buildMarAdminFields: prescriber-notified attestation', () => {
       meta,
     );
     expect(rebuilt.prescriberNotified).toBe(false);
+  });
+});
+
+describe('computeRequiredDoseGaps', () => {
+  const row = (orderId: string, slot: string, medName = 'Keppra', isPRN = false) => ({
+    orderId,
+    medName,
+    slot,
+    isPRN,
+  });
+  const base = {
+    markedSlots: [] as Array<{ orderId: string; slot: string }>,
+    priorSlots: [] as Array<{ orderId: string; slot: string }>,
+    shiftStart: '08:00',
+    shiftEnd: '16:00',
+    shiftEndsNextDay: false,
+  };
+
+  it('requires only doses inside the shift window', () => {
+    const gaps = computeRequiredDoseGaps({
+      ...base,
+      rows: [row('o1', '07:00'), row('o1', '09:00'), row('o1', '20:00')],
+    });
+    expect(gaps.map((g) => g.slot)).toEqual(['09:00']);
+  });
+
+  it('window is inclusive at both ends', () => {
+    const gaps = computeRequiredDoseGaps({
+      ...base,
+      rows: [row('o1', '08:00'), row('o1', '16:00')],
+    });
+    expect(gaps.map((g) => g.slot)).toEqual(['08:00', '16:00']);
+  });
+
+  it('skips doses already marked in this note and doses documented by an earlier note today', () => {
+    const gaps = computeRequiredDoseGaps({
+      ...base,
+      rows: [row('o1', '09:00'), row('o1', '12:00'), row('o2', '12:00')],
+      markedSlots: [{ orderId: 'o1', slot: '09:00' }],
+      priorSlots: [{ orderId: 'o1', slot: '12:00' }],
+    });
+    // same slot on a DIFFERENT order is still owed
+    expect(gaps).toEqual([{ orderId: 'o2', medName: 'Keppra', slot: '12:00' }]);
+  });
+
+  it('never requires PRN rows', () => {
+    const gaps = computeRequiredDoseGaps({
+      ...base,
+      rows: [row('o1', 'PRN', 'Tylenol', true), row('o2', 'PRN', 'Tylenol')],
+    });
+    expect(gaps).toEqual([]);
+  });
+
+  it('falls back to the whole day when the shift start is blank or unparseable', () => {
+    for (const shiftStart of ['', 'soon']) {
+      const gaps = computeRequiredDoseGaps({
+        ...base,
+        shiftStart,
+        rows: [row('o1', '06:00'), row('o1', '22:00')],
+      });
+      expect(gaps.map((g) => g.slot)).toEqual(['06:00', '22:00']);
+    }
+  });
+
+  it('missing shift end leaves the rest of the day in scope (nurse may not have clocked out)', () => {
+    const gaps = computeRequiredDoseGaps({
+      ...base,
+      shiftEnd: '',
+      rows: [row('o1', '07:00'), row('o1', '20:00')],
+    });
+    expect(gaps.map((g) => g.slot)).toEqual(['20:00']);
+  });
+
+  it('overnight shift (explicit next-day end date) drops the upper bound', () => {
+    const gaps = computeRequiredDoseGaps({
+      ...base,
+      shiftStart: '19:00',
+      shiftEnd: '07:00',
+      shiftEndsNextDay: true,
+      rows: [row('o1', '08:00'), row('o1', '21:00'), row('o1', '23:00')],
+    });
+    expect(gaps.map((g) => g.slot)).toEqual(['21:00', '23:00']);
+  });
+
+  it('infers overnight when the end time is before the start time', () => {
+    const gaps = computeRequiredDoseGaps({
+      ...base,
+      shiftStart: '22:00',
+      shiftEnd: '06:00',
+      shiftEndsNextDay: false,
+      rows: [row('o1', '21:00'), row('o1', '23:00')],
+    });
+    expect(gaps.map((g) => g.slot)).toEqual(['23:00']);
+  });
+
+  it('a slot with an unparseable time cannot be window-scoped, so it stays owed', () => {
+    const gaps = computeRequiredDoseGaps({
+      ...base,
+      rows: [row('o1', 'bedtime')],
+    });
+    expect(gaps.map((g) => g.slot)).toEqual(['bedtime']);
   });
 });

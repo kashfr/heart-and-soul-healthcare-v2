@@ -263,3 +263,55 @@ export function physicianOrderStale(
   const age = orderSignedAgeDays(order, todayISO);
   return age === null || age > PHYSICIAN_ORDER_MAX_AGE_DAYS;
 }
+
+// ---------------------------------------------------------------------------
+// Requires-MAR submit gate (progress note).
+// ---------------------------------------------------------------------------
+
+/** A scheduled dose the nurse must document before the note can be submitted. */
+export interface RequiredDoseGap {
+  orderId: string;
+  medName: string;
+  slot: string; // 'HH:MM'
+}
+
+/**
+ * The scheduled doses a nurse still owes documentation for, for a client
+ * flagged `requiresMar`. A dose is owed when it is a non-PRN slot on the date
+ * of service, is not already marked in this note, was not already documented by
+ * an earlier note today (priorSlots), and falls inside the nurse's shift window
+ * (shiftStart..shiftEnd). Window rules:
+ *  - no parseable shiftStart → the whole day is in scope (the nurse hasn't
+ *    told us her window, so we can't safely exclude anything);
+ *  - shift crossing midnight (explicit next-day end date, or end < start) →
+ *    no upper bound on the date-of-service day;
+ *  - a slot with an unparseable time can't be window-scoped, so it's owed.
+ * Pure (no Date reads) for unit testing.
+ */
+export function computeRequiredDoseGaps(opts: {
+  rows: Array<{ orderId: string; medName: string; slot: string; isPRN: boolean }>;
+  markedSlots: Array<{ orderId: string; slot: string }>;
+  priorSlots: Array<{ orderId: string; slot: string }>;
+  shiftStart: string; // 'HH:MM' or ''
+  shiftEnd: string; // 'HH:MM' or ''
+  shiftEndsNextDay: boolean;
+}): RequiredDoseGap[] {
+  const slotKey = (m: { orderId: string; slot: string }) => `${m.orderId}|${m.slot}`;
+  const marked = new Set(opts.markedSlots.map(slotKey));
+  const prior = new Set(opts.priorSlots.map(slotKey));
+  const start = parseHHMM(opts.shiftStart);
+  const end = parseHHMM(opts.shiftEnd);
+  const overnight = opts.shiftEndsNextDay || (start !== null && end !== null && end < start);
+  const gaps: RequiredDoseGap[] = [];
+  for (const r of opts.rows) {
+    if (r.isPRN || r.slot === 'PRN') continue;
+    if (marked.has(slotKey(r)) || prior.has(slotKey(r))) continue;
+    const t = parseHHMM(r.slot);
+    if (t !== null && start !== null) {
+      if (t < start) continue; // due before the nurse arrived
+      if (!overnight && end !== null && t > end) continue; // due after she left
+    }
+    gaps.push({ orderId: r.orderId, medName: r.medName, slot: r.slot });
+  }
+  return gaps;
+}

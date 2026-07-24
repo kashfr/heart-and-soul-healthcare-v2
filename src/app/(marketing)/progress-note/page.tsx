@@ -24,7 +24,15 @@ import FormPageTwo from './components/FormPageTwo';
 import FormPageThree from './components/FormPageThree';
 import FormPageFour from './components/FormPageFour';
 import FormPageFive from './components/FormPageFive';
-import { writeMarAdministrations, deleteStagedChangesForNote } from '@/lib/mar';
+import {
+  writeMarAdministrations,
+  deleteStagedChangesForNote,
+  getMarOrdersStrict,
+  getAdministrationsForDayStrict,
+  getStagedChangesForNote,
+  orderAppliesOn,
+} from '@/lib/mar';
+import { computeRequiredDoseGaps, resolveCurrentAdministrations } from '@/lib/marShared';
 import {
   getAllMarAdmin,
   clearMarAdmin,
@@ -255,6 +263,18 @@ function ProgressNotePageInner() {
     if (!typed) return false;
     const match = patients.find((p) => normalizeName(p.name) === typed);
     return !!match?.hasFeedingTube;
+  }, [watchedClientName, patients]);
+
+  // Roster-driven MAR requirement: when the client is flagged requiresMar,
+  // Page 5 escalates its "no meds on file" hint to a hard warning and submit is
+  // gated (see the requires-MAR gate in handleSubmit): meds must be on file
+  // (or staged on this note) and every scheduled dose due during the shift
+  // must be marked given/held/refused.
+  const clientRequiresMar = useMemo(() => {
+    const typed = normalizeName(String(watchedClientName || ''));
+    if (!typed) return false;
+    const match = patients.find((p) => normalizeName(p.name) === typed);
+    return !!match?.requiresMar;
   }, [watchedClientName, patients]);
 
   // One-time scrub of the legacy localStorage draft layer. It used to silently
@@ -1280,6 +1300,77 @@ function ProgressNotePageInner() {
       }
     }
 
+    // Requires-MAR hard stop. For roster clients flagged requiresMar, an
+    // LPN/RN note can't be submitted unless (a) medication orders are on file
+    // (or this note stages an add), and (b) every scheduled dose due during
+    // the shift window is marked given/held/refused. Data is re-fetched here
+    // rather than read from Page 5's component state so the gate is
+    // authoritative even if the nurse never opened the Medications tab. A
+    // FAILED fetch skips the gate — a network blip must not hold the note
+    // hostage (the Page 5 warning banner still steers the nurse).
+    if (!isEditMode && clientRequiresMar && activePages.includes(5)) {
+      const marGatePid = String(getValues('patientId') || '').trim();
+      const marGateClient = String(getValues('q3_clientName') || '').trim() || 'This client';
+      if (marGatePid) {
+        try {
+          const orders = await getMarOrdersStrict(marGatePid);
+          const activeOrders = orders.filter((o) => o.status === 'active');
+          if (activeOrders.length === 0) {
+            const staged = user
+              ? await getStagedChangesForNote(submissionIdRef.current, user.uid)
+              : [];
+            if (!staged.some((c) => c.type === 'add')) {
+              setCurrentPage(5);
+              window.scrollTo(0, 0);
+              alert(
+                `${marGateClient} is flagged as requiring a Medication Administration Record (MAR), but no medications are on file.\n\nOn the Medications tab, use "Add, change, or discontinue a medication" to enter their medications from the physician's orders. The note can be submitted once they're added.`
+              );
+              return;
+            }
+          } else {
+            const serviceDate = String(getValues('q6_dateofService') || '');
+            const rows: Array<{ orderId: string; medName: string; slot: string; isPRN: boolean }> = [];
+            for (const o of orders) {
+              if (o.isPRN || !orderAppliesOn(o, serviceDate)) continue;
+              for (const t of o.scheduledTimes || []) {
+                rows.push({ orderId: o.id || '', medName: o.medName, slot: t, isPRN: false });
+              }
+            }
+            if (rows.length > 0) {
+              const dayAdmins = resolveCurrentAdministrations(
+                await getAdministrationsForDayStrict(marGatePid, serviceDate),
+              );
+              const marks = selectSubmittableMarks(getAllMarAdmin(), {
+                patientId: marGatePid,
+                sessionId: submissionIdRef.current,
+              });
+              const shiftEndDate = String(getValues('q62_shiftEndDate') || '');
+              const gaps = computeRequiredDoseGaps({
+                rows,
+                markedSlots: marks.map((m) => ({ orderId: m.orderId, slot: m.scheduledTime })),
+                priorSlots: dayAdmins.map((a) => ({ orderId: a.orderId, slot: a.scheduledTime })),
+                shiftStart: String(getValues('q7_shiftStart') || ''),
+                shiftEnd: String(getValues('q62_shiftEndTime') || ''),
+                shiftEndsNextDay: !!shiftEndDate && !!serviceDate && shiftEndDate > serviceDate,
+              });
+              if (gaps.length > 0) {
+                setCurrentPage(5);
+                window.scrollTo(0, 0);
+                alert(
+                  `${marGateClient} requires a MAR, and these scheduled doses due during your shift haven't been documented yet:\n\n${gaps
+                    .map((g) => `• ${g.medName} at ${g.slot}`)
+                    .join('\n')}\n\nMark each one given, held, or refused on the Medications tab before submitting.`
+                );
+                return;
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('Requires-MAR gate skipped (fetch failed):', err);
+        }
+      }
+    }
+
     // Validate signature first (stored via react-hook-form setValue)
     const signatureValue = getValues('q61_signature');
     if (!signatureValue || signatureValue.trim() === '') {
@@ -1979,7 +2070,7 @@ function ProgressNotePageInner() {
         <div style={pageStyle(2)}><FormPageTwo formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} ageStr={watch('q5_ageYears')} dob={watch('q4_dateofBirth')} errors={errors} /></div>
         <div style={pageStyle(3)}><FormPageThree formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} clientHasFeedingTube={clientHasFeedingTube} giExpandSignal={giExpandSignal} errors={errors} /></div>
         <div style={pageStyle(4)}><FormPageFour formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} editMode={isEditMode} errors={errors} /></div>
-        <div style={pageStyle(5)}><FormPageFive formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} isEditMode={isEditMode} documenter={user && profile ? { uid: user.uid, name: profile.displayName || user.email || '', credential: profile.credential || '' } : undefined} getNoteId={ensureSubmissionId} /></div>
+        <div style={pageStyle(5)}><FormPageFive formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} isEditMode={isEditMode} clientRequiresMar={clientRequiresMar} documenter={user && profile ? { uid: user.uid, name: profile.displayName || user.email || '', credential: profile.credential || '' } : undefined} getNoteId={ensureSubmissionId} /></div>
         <div style={pageStyle(6)}><FormPageSix formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} errors={errors} /></div>
         <div style={pageStyle(7)}><FormPageSeven formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} initialSignature={initialSignature} initialTotalHours={initialTotalHours} /></div>
 
