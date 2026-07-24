@@ -59,11 +59,14 @@ function clockNow(): { nowMinutes: number; todayISO: string } {
 interface FormPageFiveProps extends FormPageProps {
   credential?: string;
   isEditMode?: boolean;
+  /** Roster flag: this client requires a MAR, so the empty state escalates to a
+   *  hard warning and submit is gated (see the requires-MAR gate in page.tsx). */
+  clientRequiresMar?: boolean;
   documenter?: MarDocumenter;
   getNoteId?: () => string;
 }
 
-export default function FormPageFive({ formRef, register, watch, setValue, control, credential, isEditMode, documenter, getNoteId }: FormPageFiveProps) {
+export default function FormPageFive({ formRef, register, watch, setValue, control, credential, isEditMode, clientRequiresMar, documenter, getNoteId }: FormPageFiveProps) {
   // Re-render whenever any DeselectableRadio changes so this page can react to
   // the Medication Tolerance choice. q43_medTolerance lives in the radio store
   // (not react-hook-form), so we read its current value from there. The
@@ -693,6 +696,27 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
                   apply to the date of service{marDate ? ` (${marDate})` : ''}. Check the date of service on Page 1 and the
                   order&apos;s start / end dates under Records; a shift dated before an order&apos;s start date won&apos;t show it.
                 </p>
+              ) : clientRequiresMar ? (
+                /* Flagged requiresMar with nothing on file: this is the exact
+                   state the submit gate blocks, so say so loudly and put the
+                   fix (the add-med modal) one tap away. */
+                <div style={marRequiredWarnStyle}>
+                  <strong style={{ display: 'block', marginBottom: 6 }}>
+                    ⚠ This client requires a MAR, but no medications are on file.
+                  </strong>
+                  <span style={{ display: 'block', marginBottom: 10 }}>
+                    Enter their medications from the physician&apos;s orders now — the note can&apos;t be
+                    submitted until they&apos;re added. Please don&apos;t list them only in the text boxes
+                    below; the MAR is the official record.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => { setChangeReqMsg(null); setChangeReqOpen(true); }}
+                    style={marRequiredWarnBtnStyle}
+                  >
+                    Add this client&apos;s medications
+                  </button>
+                </div>
               ) : (
                 <p style={marHintStyle}>
                   No medications are on this client&apos;s MAR yet. If this client should have a MAR, build their orders
@@ -704,6 +728,13 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
                 <p style={marHintStyle}>
                   Mark each due dose. Completed scheduled doses collapse below. Entries are saved when you submit;
                   to correct one afterward, amend it in the medication chart.
+                  {clientRequiresMar && (
+                    <>
+                      {' '}
+                      <strong>This client requires a MAR: every scheduled dose due during your shift must be
+                      marked given, held, or refused before the note can be submitted.</strong>
+                    </>
+                  )}
                 </p>
                 {openRows.map(renderScheduledRow)}
                 {doneRows.length > 0 && (
@@ -834,6 +865,14 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
       {/* Medications */}
       <div className={styles.section}>
         <span className={styles.sectionLabel}>MEDICATIONS</span>
+
+        {marActiveCount > 0 && !isEditMode && (
+          <p style={marHintStyle}>
+            The Medication Administration (MAR) section above is the official record of each dose.
+            Use these boxes only for extra narrative context — text written here does not count as
+            MAR documentation.
+          </p>
+        )}
 
         <div className={styles.row}>
           <div className={styles.f} style={{ flex: '1 1 100%' }}>
@@ -1006,6 +1045,9 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
 }
 
 const marHintStyle: CSSProperties = { fontSize: 13, color: '#6b7280', margin: '4px 0', lineHeight: 1.5 };
+// Requires-MAR empty-state warning: same amber family as the tube-care prompts.
+const marRequiredWarnStyle: CSSProperties = { background: '#fff7ed', border: '1.5px solid #f59e0b', borderRadius: 10, padding: '14px 16px', fontSize: 13.5, color: '#7c2d12', lineHeight: 1.5 };
+const marRequiredWarnBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#b45309', color: 'white', border: 'none', padding: '9px 16px', borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
 const marCardStyle: CSSProperties = { border: '1px solid #e5e7eb', borderRadius: 8, padding: 12, background: '#fafbfc' };
 const marCardHeadStyle: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' };
 const marSlotBadgeStyle: CSSProperties = { background: '#eef4fb', color: '#1a3a5c', fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 999, border: '1px solid #c8def5' };

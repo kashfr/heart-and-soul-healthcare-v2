@@ -127,18 +127,26 @@ function normalizeInput(input: MarOrderInput) {
  */
 export async function getMarOrders(patientId: string): Promise<MarOrder[]> {
   try {
-    const ref = collection(db, 'marOrders');
-    const q = query(ref, where('patientId', '==', patientId));
-    const snap = await getDocs(q);
-    const orders = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as MarOrder[];
-    return orders.sort((a, b) => {
-      if (a.status !== b.status) return a.status === 'active' ? -1 : 1;
-      return (a.medName || '').localeCompare(b.medName || '');
-    });
+    return await getMarOrdersStrict(patientId);
   } catch (error) {
     console.error('Error fetching MAR orders:', error);
     return [];
   }
+}
+
+/** Like getMarOrders but THROWS on a fetch failure. For callers (the
+ *  requires-MAR submit gate) that must distinguish "this client has no orders"
+ *  from "the check itself failed" — swallowing to [] there would block a note
+ *  over a network blip. */
+export async function getMarOrdersStrict(patientId: string): Promise<MarOrder[]> {
+  const ref = collection(db, 'marOrders');
+  const q = query(ref, where('patientId', '==', patientId));
+  const snap = await getDocs(q);
+  const orders = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as MarOrder[];
+  return orders.sort((a, b) => {
+    if (a.status !== b.status) return a.status === 'active' ? -1 : 1;
+    return (a.medName || '').localeCompare(b.medName || '');
+  });
 }
 
 /** Create a new active medication order. Returns the new doc id. */
@@ -321,14 +329,24 @@ export async function getAdministrationsForDay(
   date: string,
 ): Promise<MarAdministration[]> {
   try {
-    const ref = collection(db, 'marAdministrations');
-    const q = query(ref, where('patientId', '==', patientId), where('date', '==', date));
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() })) as MarAdministration[];
+    return await getAdministrationsForDayStrict(patientId, date);
   } catch (error) {
     console.error('Error fetching day administrations:', error);
     return [];
   }
+}
+
+/** Throwing variant of getAdministrationsForDay, for the requires-MAR submit
+ *  gate: a failed fetch must skip the gate, not masquerade as "nothing
+ *  documented today" (which would demand doses another nurse already gave). */
+export async function getAdministrationsForDayStrict(
+  patientId: string,
+  date: string,
+): Promise<MarAdministration[]> {
+  const ref = collection(db, 'marAdministrations');
+  const q = query(ref, where('patientId', '==', patientId), where('date', '==', date));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() })) as MarAdministration[];
 }
 
 /** Whether an order's active window overlaps a date range at all; used to
@@ -581,6 +599,20 @@ function reqMillis(t: unknown): number {
   return t && typeof (t as { toMillis?: () => number }).toMillis === 'function'
     ? (t as { toMillis: () => number }).toMillis()
     : 0;
+}
+
+/** One-shot list of changes still STAGED on a given note. Same query shape as
+ *  subscribeStagedChanges (performedBy == caller's uid, filtered client-side).
+ *  THROWS on fetch failure — the requires-MAR submit gate needs to tell
+ *  "no staged adds" apart from "couldn't check". */
+export async function getStagedChangesForNote(
+  sourceNoteId: string,
+  performedBy: string,
+): Promise<MarChangeRequest[]> {
+  const q = query(collection(db, 'marChangeRequests'), where('performedBy', '==', performedBy));
+  const snap = await getDocs(q);
+  const items = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as MarChangeRequest[];
+  return items.filter((r) => r.status === 'staged' && r.sourceNoteId === sourceNoteId);
 }
 
 /** Live list of changes still STAGED on a given note (so the nurse sees what
