@@ -27,6 +27,10 @@ interface CareTeamStaff {
   role: string;
   credential: string | null;
   active: boolean;
+  /** Declared test/QA login, not a real workforce member. A test account on a
+      real client's care team can read that chart's PHI with no business need,
+      so the picker badges it and confirms before adding. */
+  isTestAccount?: boolean;
 }
 
 const emptyPatient: Partial<Patient> = {
@@ -246,6 +250,18 @@ export default function AdminPatientsPage() {
 
   const handleAddNurse = async (uid: string) => {
     if (!editingId || careTeam.includes(uid)) return;
+    // A test login on a real client's care team grants PHI access to an
+    // identity that isn't a real workforce member. Confirm rather than block:
+    // test accounts legitimately belong on test clients.
+    const candidate = eligibleStaff.find((s) => s.uid === uid);
+    if (candidate?.isTestAccount) {
+      const ok = window.confirm(
+        `${candidate.displayName || 'This login'} is a TEST account, not a real staff member.\n\n` +
+          `Adding it to ${formData.name || 'this client'}'s care team lets it read this client's chart. Only do this for a test client.\n\n` +
+          'Add it anyway?',
+      );
+      if (!ok) return;
+    }
     setSavingCareTeam(true);
     try {
       await updateDoc(doc(db, 'patients', editingId), {
@@ -636,6 +652,7 @@ export default function AdminPatientsPage() {
                       careTeamMembers.map((s) => (
                         <span key={s.uid} style={chipStyle}>
                           {s.displayName || s.email || '(no name)'}
+                          {s.isTestAccount && <span style={chipTestStyle}>Test</span>}
                           {s.credential && (
                             <span style={chipCredStyle}>{s.credential}</span>
                           )}
@@ -682,6 +699,7 @@ export default function AdminPatientsPage() {
                               <span style={{ fontWeight: 600, color: '#2c3e50' }}>
                                 {s.displayName || s.email || '(no name)'}
                               </span>
+                              {s.isTestAccount && <span style={chipTestStyle}>Test</span>}
                               {s.credential && (
                                 <span style={pickerCredStyle}>{s.credential}</span>
                               )}
@@ -800,6 +818,7 @@ const chipsRowStyle: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', 
 const emptyCareTeamStyle: React.CSSProperties = { fontSize: 13, color: '#7f8c8d', fontStyle: 'italic' };
 const chipStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#eef4fb', color: '#1a3a5c', padding: '6px 6px 6px 12px', borderRadius: 999, fontSize: 13, border: '1px solid #c8def5' };
 const chipCredStyle: React.CSSProperties = { fontSize: 10, fontWeight: 700, background: '#1a3a5c', color: 'white', padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4 };
+const chipTestStyle: React.CSSProperties = { fontSize: 10, fontWeight: 700, background: '#fdecea', color: '#a3261c', padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4, textTransform: 'uppercase' };
 const chipRemoveBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', color: '#1a3a5c', border: 'none', padding: 2, borderRadius: 999, cursor: 'pointer' };
 const addNurseBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', color: '#0e7c4a', border: '1px dashed #0e7c4a', padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const pickerListStyle: React.CSSProperties = { marginTop: 8, maxHeight: 200, overflowY: 'auto', border: '1px solid #e5eaf0', borderRadius: 6, background: 'white' };
