@@ -81,9 +81,16 @@ const s = StyleSheet.create({
   docTitle: { fontSize: 10, marginTop: 2 },
   monthLine: { position: 'absolute', right: 0, top: 2, fontSize: 11, fontFamily: 'Helvetica-Bold', color: NAVY },
   infoRow: { flexDirection: 'row', marginBottom: 2 },
-  infoCell: { flexDirection: 'row', marginRight: 14 },
+  // flexShrink lets a cell give up width instead of overflowing the row: without
+  // it, a long value (allergies, diet) renders as one unbroken line that runs
+  // past its cell and paints over the neighbouring ones.
+  infoCell: { flexDirection: 'row', marginRight: 14, flexShrink: 1 },
   infoLabel: { fontFamily: 'Helvetica-Bold', color: '#5c6b7a' },
-  infoValue: { marginLeft: 3 },
+  infoValue: { marginLeft: 3, flexShrink: 1 },
+  // Applied to the free-text fields so they claim the remaining row width and
+  // wrap onto as many lines as they need.
+  infoCellGrow: { flex: 1, marginRight: 0 },
+  infoValueGrow: { flex: 1 },
   allergy: { color: '#b3261e', fontFamily: 'Helvetica-Bold' },
   grid: { marginTop: 6 },
   row: { flexDirection: 'row' },
@@ -259,18 +266,22 @@ export default function MarPDF({
             <Text style={s.infoValue}>{patient.diagnosis || '-'}</Text>
           </View>
         </View>
+        {/* Allergies get their own full-width row: it's the safety-critical
+            field and the longest, so it must never be truncated or overlapped. */}
         <View style={s.infoRow}>
-          <View style={s.infoCell}>
+          <View style={[s.infoCell, s.infoCellGrow]}>
             <Text style={s.infoLabel}>Allergies:</Text>
-            <Text style={[s.infoValue, s.allergy]}>{patient.allergies || 'None listed'}</Text>
+            <Text style={[s.infoValue, s.allergy, s.infoValueGrow]}>{patient.allergies || 'None listed'}</Text>
           </View>
+        </View>
+        <View style={s.infoRow}>
           <View style={s.infoCell}>
             <Text style={s.infoLabel}>Physician:</Text>
             <Text style={s.infoValue}>{patient.physician || '-'}</Text>
           </View>
-          <View style={s.infoCell}>
+          <View style={[s.infoCell, s.infoCellGrow]}>
             <Text style={s.infoLabel}>Diet:</Text>
-            <Text style={s.infoValue}>{patient.diet || '-'}</Text>
+            <Text style={[s.infoValue, s.infoValueGrow]}>{patient.diet || '-'}</Text>
           </View>
         </View>
 
