@@ -89,23 +89,46 @@ export default function MonthlyMarPage() {
   const patientId = String(params.patientId);
   // Nurses reach this same grid from the standalone Medications picker; adjust
   // the back-link and hide the staff-only PDF export for them.
-  const { role } = useEffectiveUser();
+  const { role, isViewingAs } = useEffectiveUser();
   const isNurse = role === 'nurse';
-  // Charting a dose is an RN/LPN action; admins/supervisors stay read-only here
-  // so they can't change a record by accident. Uses the REAL signed-in user (not
-  // view-as), since the create rule requires documentedBy == auth uid.
+  // Charting a dose is a LICENSED action, so the gate is the nursing CREDENTIAL,
+  // not the org role: DBHDD FY27 D.3.i allows administration "only by those who
+  // are licensed in this state to do so", and an RN keeps that license whether
+  // her title here is nurse, supervisor, or admin. Gating on role blocked our
+  // RN supervisors from charting a dose they may legally give, while the
+  // progress-note form (which gates on credential alone) let the same people
+  // chart the same dose — one action, two answers. Credential-gating is also
+  // STRICTER where it matters: a CNA/HHA titled 'nurse', or an unlicensed
+  // office admin, is blocked here but would have passed a role-only check.
+  // The Firestore create rule and the amend/outcome routes already allow staff
+  // and RN/LPN alike, so this only aligns the UI with the server.
+  // Uses the REAL signed-in user (not view-as), since the create rule requires
+  // documentedBy == auth uid — nobody may document under another nurse's name.
+  // "View as" stays strictly READ-ONLY: an RN admin impersonating a nurse would
+  // otherwise be able to chart here (attributed to herself, on a screen that
+  // says she is someone else), breaking the invariant AuthProvider documents.
   const { user, profile } = useAuth();
+  // `active === true` (not `!== false`) so the UI can never offer a clickable
+  // cell the Firestore rule will refuse: hasActiveProfile() requires the field
+  // to be exactly true, and a profile doc missing it would otherwise render as
+  // chartable and then fail the write with a generic "try again". A VA is an
+  // administrative role that never charts, regardless of a stray credential.
   const canAdminister =
-    profile?.role === 'nurse' && (profile?.credential === 'RN' || profile?.credential === 'LPN');
+    !isViewingAs &&
+    profile?.active === true &&
+    profile?.role !== 'va' &&
+    (profile?.credential === 'RN' || profile?.credential === 'LPN');
   // Adding / changing / discontinuing a med is within an RN/LPN's scope, and
   // supervisors + admins may do it too; the med goes live immediately and the
   // supervisor acknowledges it afterward. Admins get the button for visibility
   // (parity with what supervisors see); the server permits staff anyway. Uses
-  // the REAL signed-in user.
+  // the REAL signed-in user, and is view-as guarded for the same reason
+  // charting is: impersonation is read-only, so it must not reach a write.
   const canManageMeds =
-    profile?.role === 'admin' ||
-    profile?.role === 'supervisor' ||
-    (profile?.role === 'nurse' && (profile?.credential === 'RN' || profile?.credential === 'LPN'));
+    !isViewingAs &&
+    (profile?.role === 'admin' ||
+      profile?.role === 'supervisor' ||
+      (profile?.role === 'nurse' && (profile?.credential === 'RN' || profile?.credential === 'LPN')));
   const documenter = {
     uid: user?.uid || '',
     name: profile?.displayName || '',
@@ -130,7 +153,7 @@ export default function MonthlyMarPage() {
   const [exporting, setExporting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   // Click-to-administer state: the open-dose modal (empty cell) or the day chart
-  // to view/amend (documented cell). Nurses only; see canAdminister.
+  // to view/amend (documented cell). Licensed RN/LPN only; see canAdminister.
   const [administer, setAdminister] = useState<{ order: MarOrder; slot: string; iso: string } | null>(null);
   const [chartDay, setChartDay] = useState<string | null>(null);
   // The add / change / discontinue medication modal (applies immediately).
