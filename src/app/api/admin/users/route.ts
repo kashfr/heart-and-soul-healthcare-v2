@@ -195,6 +195,9 @@ export async function GET(request: Request) {
       credential: data.credential ?? null,
       phone: data.phone ?? null,
       active: data.active !== false,
+      // Declared test/QA login (not a real workforce member). Surfaced so the
+      // UI can badge it and warn before it lands on a real client's care team.
+      isTestAccount: data.isTestAccount === true,
       createdAt,
       emailChangeRequest:
         ecr && ecr.status === 'pending' && ecr.newEmail
