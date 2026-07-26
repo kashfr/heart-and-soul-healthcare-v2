@@ -1,10 +1,13 @@
 import 'server-only';
 import { Resend } from 'resend';
 import { buildProviderListEmail, type ProviderListEmailInput } from './providerListContent';
+import { getServerSettings } from '../settingsServer';
+import type { ProviderListEmailSettings } from '../settings';
 
-// Sender for the "GAPP provider list" email (see providerListContent.ts for the
-// copy). Sent to the FAMILY when no partner agency matches their referral, as
-// the final rung of the refer-out triage ladder.
+// Sender for the "GAPP provider list" email. The COPY is admin-editable in
+// settings (`emails.providerList`) and assembled by providerListContent.ts.
+// Sent to the FAMILY when no partner agency matches their referral, as the
+// final rung of the refer-out triage ladder.
 
 const FROM_ADDRESS = 'Heart & Soul Healthcare <notifications@heartandsoulhc.org>';
 const REPLY_TO = 'info@heartandsoulhc.org';
@@ -13,6 +16,12 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export interface SendProviderListInput extends ProviderListEmailInput {
   to: string;
+  /**
+   * Copy to send. Omit to use the saved settings (the normal path). The
+   * settings page passes an unsaved draft here so admins can send themselves a
+   * test of edits before committing them.
+   */
+  copy?: ProviderListEmailSettings;
 }
 
 export async function sendProviderListEmail(
@@ -25,7 +34,8 @@ export async function sendProviderListEmail(
     return { ok: false, error: 'Invalid recipient email.' };
   }
 
-  const { subject, html } = buildProviderListEmail(input);
+  const copy = input.copy ?? (await getServerSettings()).emails.providerList;
+  const { subject, html } = buildProviderListEmail(input, copy);
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
     const { error } = await resend.emails.send({

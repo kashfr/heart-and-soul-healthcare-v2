@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, RotateCcw, Plus, X } from 'lucide-react';
+import { ArrowLeft, Save, RotateCcw, Plus, X, Eye, Send } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
 import { authedFetch } from '@/lib/authedFetch';
@@ -20,7 +20,9 @@ import {
   type VitalAgeGroupKey,
   type VitalRangeKey,
   type VitalRangePair,
+  type ProviderListEmailSettings,
 } from '@/lib/settings';
+import { buildProviderListEmail, findDashFields } from '@/lib/emails/providerListContent';
 import { getDefaultVitalRange } from '@/lib/vitalRanges';
 import { GA_COUNTIES, GAPP_SERVICES, normalizeCounty, type GappServiceKey } from '@/lib/georgia';
 
@@ -42,6 +44,10 @@ export default function AdminSettingsPage() {
   const [toast, setToast] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   // Staging input for the intake service-area county picker.
   const [countyInput, setCountyInput] = useState('');
+  // Provider-list email: preview visibility + test-send state.
+  const [showEmailPreview, setShowEmailPreview] = useState(false);
+  const [sendingTest, setSendingTest] = useState(false);
+  const [testResult, setTestResult] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   // Keep the draft in sync with the live settings until the user
   // starts editing. Once they make a change, the dirty draft "wins"
@@ -168,6 +174,62 @@ export default function AdminSettingsPage() {
       },
     }));
   };
+
+  const updateProviderListCopy = <K extends keyof ProviderListEmailSettings>(
+    key: K,
+    value: string,
+  ) => {
+    setDirty(true);
+    setDraft((prev) => ({
+      ...prev,
+      emails: {
+        ...prev.emails,
+        providerList: { ...prev.emails.providerList, [key]: value },
+      },
+    }));
+  };
+
+  const resetProviderListCopy = () => {
+    setDirty(true);
+    setDraft((prev) => ({
+      ...prev,
+      emails: { ...prev.emails, providerList: { ...DEFAULT_SETTINGS.emails.providerList } },
+    }));
+  };
+
+  // Test send goes to the signed-in admin's own address — the server takes the
+  // recipient from the session, never from this request — and carries the
+  // unsaved draft so wording can be checked before committing it.
+  const sendProviderListTest = async () => {
+    setSendingTest(true);
+    setTestResult(null);
+    try {
+      const res = await authedFetch('/api/admin/emails/provider-list/test', {
+        method: 'POST',
+        body: JSON.stringify({ copy: draft.emails.providerList }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
+      setTestResult({ kind: 'ok', text: `Test sent to ${data.sentTo}.` });
+    } catch (err) {
+      setTestResult({
+        kind: 'err',
+        text: err instanceof Error ? err.message : 'Could not send the test email.',
+      });
+    } finally {
+      setSendingTest(false);
+    }
+  };
+
+  // Live preview built from the DRAFT, so edits render as you type without a
+  // save or a round-trip (the builder is pure and client-safe).
+  const emailPreview = buildProviderListEmail(
+    { familyName: 'Danielle Carter', childName: 'Amaya' },
+    draft.emails.providerList
+  );
+  const dashFields = findDashFields(draft.emails.providerList).map(
+    (k) => PROVIDER_LIST_FIELD_LABELS[k]
+  );
 
   const toggleIntakeService = (key: GappServiceKey) => {
     setDirty(true);
@@ -742,6 +804,154 @@ export default function AdminSettingsPage() {
           </div>
         </section>
 
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Provider list email (to families)</h2>
+          <p style={sectionSubStyle}>
+            Sent to a family when no partner agency can take their referral, with a link
+            to Georgia Medicaid&apos;s official list of approved GAPP providers. This is the
+            last step of the refer-out workflow, so it goes out under your name to
+            someone you could not help. Edit the wording here, preview it, and send
+            yourself a test before it reaches anyone.
+          </p>
+
+          <div style={placeholderNoteStyle}>
+            Use <code style={codeStyle}>{'{{childName}}'}</code> for the child&apos;s name
+            (becomes &ldquo;your child&rdquo; when none is on file) and{' '}
+            <code style={codeStyle}>{'{{phone}}'}</code> for the callback number below.
+            Leave a blank line to start a new paragraph. The greeting is automatic:
+            &ldquo;Hi Danielle,&rdquo; when a contact name is on file, otherwise
+            &ldquo;Hello,&rdquo;.
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
+            <Field
+              label="Subject"
+              hint="Client names are not allowed here: subject lines are visible in notification previews."
+            >
+              <input
+                type="text"
+                value={draft.emails.providerList.subject}
+                onChange={(e) => updateProviderListCopy('subject', e.target.value)}
+                maxLength={200}
+                style={inputStyle}
+              />
+            </Field>
+            <Field label="Callback number" hint="Shown in the body and used for {{phone}}.">
+              <input
+                type="text"
+                value={draft.emails.providerList.phone}
+                onChange={(e) => updateProviderListCopy('phone', e.target.value)}
+                maxLength={40}
+                style={{ ...inputStyle, maxWidth: 220 }}
+              />
+            </Field>
+            <Field label="Opening" hint="First thing they read, above the list link.">
+              <textarea
+                value={draft.emails.providerList.intro}
+                onChange={(e) => updateProviderListCopy('intro', e.target.value)}
+                maxLength={2000}
+                rows={3}
+                style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }}
+              />
+            </Field>
+            <Field label="Introducing the list" hint="Sits directly above the button.">
+              <textarea
+                value={draft.emails.providerList.explainer}
+                onChange={(e) => updateProviderListCopy('explainer', e.target.value)}
+                maxLength={2000}
+                rows={3}
+                style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }}
+              />
+            </Field>
+            <Field label="Button label">
+              <input
+                type="text"
+                value={draft.emails.providerList.ctaLabel}
+                onChange={(e) => updateProviderListCopy('ctaLabel', e.target.value)}
+                maxLength={80}
+                style={{ ...inputStyle, maxWidth: 340 }}
+              />
+            </Field>
+            <Field label="Closing" hint="Everything after the button.">
+              <textarea
+                value={draft.emails.providerList.closing}
+                onChange={(e) => updateProviderListCopy('closing', e.target.value)}
+                maxLength={2000}
+                rows={4}
+                style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }}
+              />
+            </Field>
+            <Field label="Sign-off">
+              <input
+                type="text"
+                value={draft.emails.providerList.signOff}
+                onChange={(e) => updateProviderListCopy('signOff', e.target.value)}
+                maxLength={120}
+                style={{ ...inputStyle, maxWidth: 340 }}
+              />
+            </Field>
+          </div>
+
+          {dashFields.length > 0 && (
+            <div style={dashWarnStyle}>
+              <strong>Heads up:</strong> {dashFields.join(', ')}{' '}
+              {dashFields.length === 1 ? 'contains' : 'contain'} a long dash. Families read
+              these as machine-written, so a period, comma, or parentheses reads better.
+              Saving is still allowed.
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 14 }}>
+            <button
+              type="button"
+              onClick={() => setShowEmailPreview((v) => !v)}
+              style={secondaryBtnStyle}
+            >
+              <Eye size={14} /> {showEmailPreview ? 'Hide preview' : 'Preview email'}
+            </button>
+            <button
+              type="button"
+              onClick={sendProviderListTest}
+              disabled={sendingTest}
+              style={{ ...secondaryBtnStyle, opacity: sendingTest ? 0.6 : 1 }}
+              title="Sends to your own account email, never to a family"
+            >
+              <Send size={14} /> {sendingTest ? 'Sending…' : 'Send test to myself'}
+            </button>
+            <button type="button" onClick={resetProviderListCopy} style={secondaryBtnStyle}>
+              <RotateCcw size={14} /> Restore default wording
+            </button>
+          </div>
+          {testResult && (
+            <div
+              style={{
+                marginTop: 10, fontSize: 13,
+                color: testResult.kind === 'ok' ? '#1e7a3d' : '#b3261e',
+              }}
+              role="status"
+            >
+              {testResult.text}
+            </div>
+          )}
+
+          {showEmailPreview && (
+            <div style={{ marginTop: 14 }}>
+              <div style={previewMetaStyle}>
+                <div><strong>Subject:</strong> {emailPreview.subject}</div>
+                <div style={{ color: '#7f8c8d', marginTop: 2 }}>
+                  Sample data: contact &ldquo;Danielle Carter&rdquo;, child &ldquo;Amaya&rdquo;.
+                  Unsaved edits included.
+                </div>
+              </div>
+              <iframe
+                title="Provider list email preview"
+                srcDoc={emailPreview.html}
+                style={previewFrameStyle}
+              />
+            </div>
+          )}
+        </section>
+
         {toast && (
           <div
             style={toast.kind === 'ok' ? toastOkStyle : toastErrStyle}
@@ -754,6 +964,17 @@ export default function AdminSettingsPage() {
     </div>
   );
 }
+
+/** Field keys as they're labelled in the form, for the long-dash warning. */
+const PROVIDER_LIST_FIELD_LABELS: Record<keyof ProviderListEmailSettings, string> = {
+  subject: 'Subject',
+  phone: 'Callback number',
+  intro: 'Opening',
+  explainer: 'Introducing the list',
+  ctaLabel: 'Button label',
+  closing: 'Closing',
+  signOff: 'Sign-off',
+};
 
 // --- Small composition helpers used inside the page only ---
 
@@ -887,6 +1108,28 @@ const inputStyle: React.CSSProperties = {
   borderRadius: 6,
   fontSize: 14,
   fontFamily: 'inherit',
+};
+const placeholderNoteStyle: React.CSSProperties = {
+  background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 6,
+  padding: '10px 12px', fontSize: 12.5, color: '#475569', lineHeight: 1.6,
+};
+const codeStyle: React.CSSProperties = {
+  background: '#eef5ff', color: '#1a3a5c', borderRadius: 4,
+  padding: '1px 5px', fontSize: 12, fontWeight: 600,
+};
+const dashWarnStyle: React.CSSProperties = {
+  marginTop: 12, background: '#fef6e7', border: '1px solid #f5e3c0',
+  borderRadius: 6, padding: '10px 12px', fontSize: 12.5, color: '#9a6400',
+  lineHeight: 1.55,
+};
+const previewMetaStyle: React.CSSProperties = {
+  border: '1px solid #e5e7eb', borderBottom: 'none',
+  borderRadius: '8px 8px 0 0', background: '#f8fafc',
+  padding: '10px 12px', fontSize: 13, color: '#374151',
+};
+const previewFrameStyle: React.CSSProperties = {
+  display: 'block', width: '100%', height: 520,
+  border: '1px solid #e5e7eb', borderRadius: '0 0 8px 8px', background: '#fff',
 };
 const selectStyle: React.CSSProperties = {
   ...inputStyle,
