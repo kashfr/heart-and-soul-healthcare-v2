@@ -196,27 +196,37 @@ export default function AgenciesPage() {
   );
 }
 
-// Compact "what this agency serves" line under the name: service badges +
-// county summary. A subtle nudge shows when nothing is on file yet, since the
-// smart-match can only rank agencies whose coverage we know.
+/** "19 counties" / "1 county" — shared by the list line and the edit form so the
+ *  two never disagree on how coverage is counted. */
+function countyCountLabel(n: number): string {
+  return `${n} ${n === 1 ? 'county' : 'counties'}`;
+}
+
+// Compact "what this agency serves" line under the name: service badges, a
+// county counter, then a sample of the counties themselves. A subtle nudge shows
+// when nothing is on file yet, since the smart-match can only rank agencies
+// whose coverage we know.
 function ServesLine({ agency }: { agency: PartnerAgency }) {
   const counties = agency.counties ?? [];
   const services = agency.services ?? [];
   if (counties.length === 0 && services.length === 0) {
     return <div style={{ fontWeight: 400, fontSize: 12, color: '#b45309', marginTop: 3 }}>No service area on file</div>;
   }
-  const countyText =
-    counties.length === 0
-      ? ''
-      : counties.length <= 3
-      ? counties.join(', ')
-      : `${counties.slice(0, 3).join(', ')} +${counties.length - 3}`;
+  // The counter carries the total, so the sample doesn't repeat it as "+16".
+  const sample =
+    counties.length <= 3 ? counties.join(', ') : `${counties.slice(0, 3).join(', ')}…`;
   return (
     <div style={servesLineStyle} title={counties.join(', ')}>
       {services.map((s) => (
         <span key={s} style={serviceBadgeStyle}>{SERVICE_SHORT[s]}</span>
       ))}
-      {countyText && <span style={{ fontWeight: 400 }}>{countyText}</span>}
+      {/* Zero counties is worth flagging: county coverage is the hard
+          constraint in the referral smart-match, so an agency without it can
+          never be suggested. */}
+      <span style={counties.length > 0 ? countyCountBadgeStyle : noCountyBadgeStyle}>
+        {counties.length > 0 ? countyCountLabel(counties.length) : 'No counties'}
+      </span>
+      {sample && <span style={{ fontWeight: 400 }}>{sample}</span>}
     </div>
   );
 }
@@ -313,7 +323,10 @@ function AgencyForm({
             </div>
           </Field>
 
-          <Field label="Service area (Georgia counties)">
+          <Field
+            label="Service area (Georgia counties)"
+            hint={counties.length > 0 ? countyCountLabel(counties.length) : undefined}
+          >
             {counties.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
                 {counties.map((c) => (
@@ -370,10 +383,22 @@ function AgencyForm({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  /** Optional right-aligned counter/annotation, e.g. "19 counties". */
+  hint?: string;
+  children: React.ReactNode;
+}) {
   return (
     <label style={{ display: 'block', flex: 1 }}>
-      <span style={{ display: 'block', fontSize: 12, color: '#5c6b7a', marginBottom: 4, fontWeight: 600 }}>{label}</span>
+      <span style={fieldLabelRowStyle}>
+        <span>{label}</span>
+        {hint && <span style={fieldHintStyle}>{hint}</span>}
+      </span>
       {children}
     </label>
   );
@@ -403,6 +428,23 @@ const servesLineStyle: React.CSSProperties = {
 const serviceBadgeStyle: React.CSSProperties = {
   background: '#e7f6ec', color: '#1e7a3d', padding: '1px 7px', borderRadius: 999,
   fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap',
+};
+// County counter. Blue to tie it to the county chips in the edit form, and
+// visually distinct from the green service badges beside it.
+const countyCountBadgeStyle: React.CSSProperties = {
+  background: '#eef5ff', color: '#1a3a5c', padding: '1px 7px', borderRadius: 999,
+  fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap',
+};
+const noCountyBadgeStyle: React.CSSProperties = {
+  ...countyCountBadgeStyle,
+  background: '#fef6e7', color: '#b45309',
+};
+const fieldLabelRowStyle: React.CSSProperties = {
+  display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8,
+  fontSize: 12, color: '#5c6b7a', marginBottom: 4, fontWeight: 600,
+};
+const fieldHintStyle: React.CSSProperties = {
+  fontWeight: 700, color: '#1a3a5c', whiteSpace: 'nowrap',
 };
 const serviceCheckStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, color: '#374151',
