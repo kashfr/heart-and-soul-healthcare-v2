@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { matchAgencies, matchAgenciesBulk, topSuggestions, type MatchableAgency } from './agencyMatch';
+import {
+  matchAgencies,
+  matchAgenciesBulk,
+  summarizePartnerMatches,
+  topSuggestions,
+  type MatchableAgency,
+} from './agencyMatch';
 
 function agency(over: Partial<MatchableAgency> & { name: string }): MatchableAgency {
   return { id: over.name.toLowerCase(), email: `${over.name.toLowerCase()}@x.com`, counties: [], services: [], ...over };
@@ -68,6 +74,66 @@ describe('matchAgenciesBulk', () => {
       [WRONG_COUNTY, COUNTY_ONLY]
     );
     expect(out.map((m) => m.agency.name)).toEqual(['CountyOnly']);
+  });
+});
+
+describe('summarizePartnerMatches', () => {
+  it('counts every positive match, not just the top 3', () => {
+    const many = ['A', 'B', 'C', 'D'].map((n) =>
+      agency({ name: n, counties: ['Henry'], services: ['pss'] })
+    );
+    const out = summarizePartnerMatches({ county: 'Henry', service: 'pss' }, many);
+    expect(out).toMatchObject({ level: 'match', count: 4, label: '4 partners' });
+  });
+
+  it('names the top 3 in the detail and tallies the remainder', () => {
+    const many = ['A', 'B', 'C', 'D'].map((n) =>
+      agency({ name: n, counties: ['Henry'], services: ['pss'] })
+    );
+    const out = summarizePartnerMatches({ county: 'Henry', service: 'pss' }, many);
+    expect(out?.detail).toBe(
+      'A (Covers Henry · PSS); B (Covers Henry · PSS); C (Covers Henry · PSS); +1 more'
+    );
+  });
+
+  it('uses the singular label for one match', () => {
+    const out = summarizePartnerMatches({ county: 'Henry', service: 'pss' }, [FULL]);
+    expect(out?.label).toBe('1 partner');
+  });
+
+  it('reports no match when every saved agency is ruled out on known data', () => {
+    const out = summarizePartnerMatches({ county: 'Henry', service: 'pss' }, [WRONG_COUNTY]);
+    expect(out).toMatchObject({ level: 'none', count: 0, label: 'No partner match' });
+    expect(out?.detail).toBe(
+      'No saved partner covers Henry for Personal Support Services (PSS)'
+    );
+  });
+
+  it('stays silent when the only candidates are unknowns', () => {
+    // NO_DATA has no counties or services on file — thin records are not a miss.
+    expect(summarizePartnerMatches({ county: 'Henry', service: 'pss' }, [NO_DATA])).toBeNull();
+  });
+
+  it('stays silent when there is nothing to match on', () => {
+    expect(summarizePartnerMatches({ county: '', service: null }, [FULL])).toBeNull();
+    expect(summarizePartnerMatches({ county: 'Nowhere', service: null }, [FULL])).toBeNull();
+  });
+
+  it('stays silent when no agencies are saved', () => {
+    expect(summarizePartnerMatches({ county: 'Henry', service: 'pss' }, [])).toBeNull();
+  });
+
+  it('matches on county alone when the care need is unstated', () => {
+    const out = summarizePartnerMatches({ county: 'Henry', service: null }, [COUNTY_ONLY]);
+    expect(out).toMatchObject({ level: 'match', count: 1 });
+    expect(out?.detail).toBe('CountyOnly (Covers Henry)');
+  });
+
+  it('names the service when the county is unknown and nobody offers the need', () => {
+    const out = summarizePartnerMatches({ county: '', service: 'behavioral' }, [FULL]);
+    expect(out?.detail).toBe(
+      'No saved partner agency offers Behavioral Support Aide Services (BSS)'
+    );
   });
 });
 

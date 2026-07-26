@@ -1,11 +1,17 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Printer, Download, Trash2, Share2, X, Check } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { serviceFromCareNeed } from '@/lib/georgia';
-import { matchAgenciesBulk, topSuggestions } from '@/lib/agencyMatch';
+import {
+  matchAgenciesBulk, summarizePartnerMatches, topSuggestions,
+  type PartnerMatchSummary,
+} from '@/lib/agencyMatch';
+import { assessReferralFit, type ReferralFit } from '@/lib/referralFit';
+import { useSettings } from '@/components/SettingsProvider';
 import MatchSuggestions from './MatchSuggestions';
+import { usePartnerAgencies } from './PartnerAgenciesProvider';
 import {
   downloadCsv, formatDate, initials,
   REFERRAL_STAGES, STAGE_ACCENT, STAGE_LABEL, SOURCE_LABEL,
@@ -13,11 +19,25 @@ import {
 } from './types';
 import ShareBadge from './ShareBadge';
 import ProviderListBadge from './ProviderListBadge';
+import FitBadge from './FitBadge';
+import PartnerMatchBadge from './PartnerMatchBadge';
 
 type SortKey =
   | 'clientName' | 'program' | 'county' | 'source'
-  | 'submittedAt' | 'stage' | 'assigneeName';
+  | 'submittedAt' | 'stage' | 'assigneeName' | 'fit' | 'partner';
 type SortDir = 'asc' | 'desc';
+
+/** Sort ranks: ascending puts the most actionable rows first, and rows with no
+ *  verdict last in both columns (they're the ones needing data, not triage). */
+const FIT_RANK: Record<ReferralFit['level'], number> = { good: 0, partial: 1, none: 2 };
+function fitSortValue(fit: ReferralFit | null): number {
+  return fit ? FIT_RANK[fit.level] : 3;
+}
+/** Matches first, most partners first within them, then known non-matches. */
+function partnerSortValue(summary: PartnerMatchSummary | null): number {
+  if (!summary) return 2;
+  return summary.level === 'match' ? -summary.count : 1;
+}
 
 interface Props {
   referrals: Referral[];
@@ -39,12 +59,43 @@ export default function ReferralTable({ referrals, onOpen, onPrint, onDelete, ca
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [shareOpen, setShareOpen] = useState(false);
+  const { settings } = useSettings();
+  const { agencies } = usePartnerAgencies();
+
+  // Fit and partner-match verdicts, computed once per row rather than inside
+  // the sort comparator. Same inputs the board badges use, so the columns and
+  // the cards always agree.
+  const verdicts = useMemo(() => {
+    return new Map(
+      referrals.map((r) => {
+        const input = {
+          county: r.county,
+          service: serviceFromCareNeed(
+            r.details.find((d) => d.label === 'Primary care need')?.value
+          ),
+        };
+        return [
+          r.id,
+          {
+            fit: assessReferralFit(input, settings.intake),
+            partner: summarizePartnerMatches(input, agencies),
+          },
+        ] as const;
+      })
+    );
+  }, [referrals, settings.intake, agencies]);
 
   const sorted = useMemo(() => {
     const arr = [...referrals];
     arr.sort((a, b) => {
       let cmp = 0;
-      if (sortKey === 'submittedAt') {
+      if (sortKey === 'fit') {
+        cmp = fitSortValue(verdicts.get(a.id)?.fit ?? null) -
+          fitSortValue(verdicts.get(b.id)?.fit ?? null);
+      } else if (sortKey === 'partner') {
+        cmp = partnerSortValue(verdicts.get(a.id)?.partner ?? null) -
+          partnerSortValue(verdicts.get(b.id)?.partner ?? null);
+      } else if (sortKey === 'submittedAt') {
         cmp =
           (a.submittedAt ? Date.parse(a.submittedAt) : 0) -
           (b.submittedAt ? Date.parse(b.submittedAt) : 0);
@@ -63,7 +114,7 @@ export default function ReferralTable({ referrals, onOpen, onPrint, onDelete, ca
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return arr;
-  }, [referrals, sortKey, sortDir]);
+  }, [referrals, sortKey, sortDir, verdicts]);
 
   const setSort = (key: SortKey) => {
     if (key === sortKey) {
@@ -125,7 +176,10 @@ export default function ReferralTable({ referrals, onOpen, onPrint, onDelete, ca
           <Printer size={15} /> Print
           {selectedVisible.length > 0 ? ` (${selectedVisible.length})` : ' all'}
         </button>
-        <button onClick={() => downloadCsv(actionTarget)} style={ghostBtnStyle}>
+        <button
+          onClick={() => downloadCsv(actionTarget, { intake: settings.intake, agencies })}
+          style={ghostBtnStyle}
+        >
           <Download size={15} /> Export CSV
         </button>
         {selectedVisible.length > 0 && (
@@ -183,6 +237,12 @@ export default function ReferralTable({ referrals, onOpen, onPrint, onDelete, ca
               <th style={sortThStyle} onClick={() => setSort('county')} aria-sort={ariaSort('county')}>
                 County{sortIndicator('county')}
               </th>
+              <th style={sortThStyle} onClick={() => setSort('fit')} aria-sort={ariaSort('fit')}>
+                Fit{sortIndicator('fit')}
+              </th>
+              <th style={sortThStyle} onClick={() => setSort('partner')} aria-sort={ariaSort('partner')}>
+                Partners{sortIndicator('partner')}
+              </th>
               <th style={sortThStyle} onClick={() => setSort('source')} aria-sort={ariaSort('source')}>
                 Source{sortIndicator('source')}
               </th>
@@ -227,6 +287,20 @@ export default function ReferralTable({ referrals, onOpen, onPrint, onDelete, ca
                 <td style={{ ...tdStyle, fontWeight: 600 }}>{r.clientName || '—'}</td>
                 <td style={tdStyle}>{r.program || '—'}</td>
                 <td style={tdStyle}>{r.county || '—'}</td>
+                <td style={tdStyle}>
+                  {verdicts.get(r.id)?.fit ? (
+                    <FitBadge referral={r} />
+                  ) : (
+                    <span style={{ color: '#cbd5e1' }}>—</span>
+                  )}
+                </td>
+                <td style={tdStyle}>
+                  {verdicts.get(r.id)?.partner ? (
+                    <PartnerMatchBadge referral={r} />
+                  ) : (
+                    <span style={{ color: '#cbd5e1' }}>—</span>
+                  )}
+                </td>
                 <td style={tdStyle}>
                   <span style={sourceBadge}>{SOURCE_LABEL[r.source] ?? r.source}</span>
                 </td>
@@ -281,9 +355,9 @@ function BulkShareModal({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const [agencies, setAgencies] = useState<
-    { id: string; name: string; email: string; counties: string[]; services: string[] }[]
-  >([]);
+  // Shared directory (fetched once for the screen) — powers autocomplete,
+  // email auto-fill, and the batch smart-match suggestions.
+  const { agencies } = usePartnerAgencies();
   const [agency, setAgency] = useState('');
   const [email, setEmail] = useState('');
   const [expiry, setExpiry] = useState(14);
@@ -291,30 +365,6 @@ function BulkShareModal({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ createdCount: number; failedCount: number; movedCount: number; emailSent: boolean } | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await authedFetch('/api/admin/agencies');
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!cancelled) {
-          setAgencies(
-            (data.agencies ?? []).map(
-              (a: { id: string; name: string; email: string; counties?: string[]; services?: string[] }) => ({
-                id: a.id, name: a.name, email: a.email,
-                counties: a.counties ?? [], services: a.services ?? [],
-              })
-            )
-          );
-        }
-      } catch {
-        /* non-fatal: autocomplete just won't be available */
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
 
   const onAgencyName = (value: string) => {
     setAgency(value);
@@ -536,10 +586,13 @@ const tableWrapStyle: React.CSSProperties = {
   background: 'white',
   border: '1px solid #e5e7eb',
   borderRadius: 10,
-  overflow: 'hidden',
+  // Twelve columns don't fit a laptop viewport: scroll the table rather than
+  // crushing the name and program cells.
+  overflowX: 'auto',
 };
 const tableStyle: React.CSSProperties = {
   width: '100%',
+  minWidth: 1180,
   borderCollapse: 'collapse',
   fontSize: 14,
 };
