@@ -11,6 +11,8 @@ import { serviceFromCareNeed, type GappServiceKey } from '@/lib/georgia';
 import { matchAgencies, topSuggestions } from '@/lib/agencyMatch';
 import MatchSuggestions from './MatchSuggestions';
 import FitBadge from './FitBadge';
+import PartnerMatchBadge from './PartnerMatchBadge';
+import { usePartnerAgencies } from './PartnerAgenciesProvider';
 import {
   fieldRows, formatDateTime, formatRelative,
   REFERRAL_STAGES, STAGE_ACCENT, STAGE_LABEL, SOURCE_LABEL,
@@ -105,6 +107,8 @@ export default function ReferralDetail({
               <span style={sourceBadge}>{SOURCE_LABEL[referral.source] ?? referral.source}</span>
               {' '}
               <FitBadge referral={referral} />
+              {' '}
+              <PartnerMatchBadge referral={referral} />
               {' · '}
               Received {formatDateTime(referral.submittedAt) || '—'}
             </div>
@@ -391,35 +395,10 @@ function SharePanel({
   const [formError, setFormError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ count: number; emailsSent: number; failed: number } | null>(null);
   const [copiedShareId, setCopiedShareId] = useState<string | null>(null);
-  const [agencies, setAgencies] = useState<
-    { id: string; name: string; email: string; counties: string[]; services: string[] }[]
-  >([]);
-
-  // Saved partner agencies power the name autocomplete, email auto-fill, and
-  // the smart-match suggestions (county + service fit).
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await authedFetch('/api/admin/agencies');
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!cancelled) {
-          setAgencies(
-            (data.agencies ?? []).map(
-              (a: { id: string; name: string; email: string; counties?: string[]; services?: string[] }) => ({
-                id: a.id, name: a.name, email: a.email,
-                counties: a.counties ?? [], services: a.services ?? [],
-              })
-            )
-          );
-        }
-      } catch {
-        /* non-fatal: autocomplete just won't be available */
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+  // Saved partner agencies (shared directory, fetched once for the screen)
+  // power the name autocomplete, email auto-fill, and the smart-match
+  // suggestions (county + service fit).
+  const { agencies } = usePartnerAgencies();
 
   // Top smart-match suggestions for this referral, excluding agencies already
   // queued as recipients or already holding a share on this referral.

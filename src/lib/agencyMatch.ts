@@ -9,7 +9,12 @@
 // known and do NOT include the referral's county are excluded from suggestions
 // entirely (suggesting a known-wrong agency is worse than suggesting nothing).
 
-import { normalizeCounty, SERVICE_SHORT, type GappServiceKey } from './georgia';
+import {
+  normalizeCounty,
+  SERVICE_LABEL,
+  SERVICE_SHORT,
+  type GappServiceKey,
+} from './georgia';
 
 export interface MatchableAgency {
   id: string;
@@ -138,4 +143,72 @@ export function matchAgenciesBulk(
  *  county or service match, not just unknowns). */
 export function topSuggestions(matches: AgencyMatch[], n = 3): AgencyMatch[] {
   return matches.filter((m) => m.reasons.length > 0).slice(0, n);
+}
+
+export type PartnerMatchLevel = 'match' | 'none';
+
+export interface PartnerMatchSummary {
+  level: PartnerMatchLevel;
+  /** How many partners have positive evidence (0 when level is 'none'). */
+  count: number;
+  /** Badge text, e.g. "3 partners" / "No partner match". */
+  label: string;
+  /** Hover explanation: who matched and why, or what ruled everyone out. */
+  detail: string;
+}
+
+/**
+ * Board-level answer to "can somebody ELSE serve this family?" — the companion
+ * to assessReferralFit's "can WE serve them?". Same directory and ranking the
+ * share pickers use, collapsed to one pill.
+ *
+ * Returns null whenever a verdict would be guesswork rather than a finding:
+ *  - no agencies saved at all (nothing to match against);
+ *  - neither a recognizable county nor a stated care need (nothing to match on);
+ *  - candidates exist but every one is an unknown — no counties or services on
+ *    file. Calling those a non-match would libel agencies for having thin
+ *    records, which is exactly what matchAgencies refuses to do.
+ *
+ * So 'none' carries a real meaning: every saved partner was ruled out on data
+ * we actually have.
+ */
+export function summarizePartnerMatches(
+  input: { county: string | null | undefined; service: GappServiceKey | null },
+  agencies: MatchableAgency[]
+): PartnerMatchSummary | null {
+  if (agencies.length === 0) return null;
+
+  const county = normalizeCounty(input.county);
+  const service = input.service;
+  if (!county && !service) return null;
+
+  const viable = matchAgencies(input, agencies);
+  const positives = viable.filter((m) => m.reasons.length > 0);
+
+  if (positives.length > 0) {
+    const shown = positives.slice(0, 3);
+    const rest = positives.length - shown.length;
+    const detail = shown
+      .map((m) => `${m.agency.name} (${m.reasons.join(' · ')})`)
+      .join('; ');
+    return {
+      level: 'match',
+      count: positives.length,
+      label: positives.length === 1 ? '1 partner' : `${positives.length} partners`,
+      detail: rest > 0 ? `${detail}; +${rest} more` : detail,
+    };
+  }
+
+  // Survivors with no positive evidence are unknowns, not misses — say nothing.
+  if (viable.length > 0) return null;
+
+  let detail: string;
+  if (county && service) {
+    detail = `No saved partner covers ${county} for ${SERVICE_LABEL[service]}`;
+  } else if (county) {
+    detail = `No saved partner agency covers ${county}`;
+  } else {
+    detail = `No saved partner agency offers ${SERVICE_LABEL[service as GappServiceKey]}`;
+  }
+  return { level: 'none', count: 0, label: 'No partner match', detail };
 }

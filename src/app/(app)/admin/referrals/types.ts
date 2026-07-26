@@ -3,6 +3,11 @@
 // the client (which can't import the 'server-only' lib). The server validates
 // every write, so this copy is purely for rendering.
 
+import { serviceFromCareNeed } from '@/lib/georgia';
+import { matchAgencies, summarizePartnerMatches, type MatchableAgency } from '@/lib/agencyMatch';
+import { assessReferralFit } from '@/lib/referralFit';
+import type { IntakeSettings } from '@/lib/settings';
+
 export type ReferralSource = 'gapp-website' | 'hs-website';
 export type ReferralStatus = 'new' | 'contacted' | 'archived';
 export type ReferralStage =
@@ -221,13 +226,39 @@ function csvEscape(value: string): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-export function downloadCsv(list: Referral[]) {
+/** Inputs the triage columns are derived from — the org's own intake profile
+ *  and the saved partner directory, exactly as the board badges use them. */
+export interface CsvMatchContext {
+  intake: IntakeSettings;
+  agencies: MatchableAgency[];
+}
+
+export function downloadCsv(list: Referral[], context: CsvMatchContext) {
+  // Triage columns are appended rather than slotted next to County so existing
+  // saved spreadsheets keep their column positions.
   const headers = [
     'Name', 'Phone', 'Email', 'County', 'Program', 'Source', 'Stage',
     'Assigned to', 'Received', 'Referred by', 'Details',
+    'Fit', 'Partner matches', 'Matching agencies',
   ];
-  const rows = list.map((r) =>
-    [
+  const rows = list.map((r) => {
+    const input = {
+      county: r.county,
+      service: serviceFromCareNeed(
+        r.details.find((d) => d.label === 'Primary care need')?.value
+      ),
+    };
+    const fit = assessReferralFit(input, context.intake);
+    const partner = summarizePartnerMatches(input, context.agencies);
+    // Every matching agency, not the top 3 the badge tooltip shows — a
+    // spreadsheet is where you want the whole list to work from.
+    const matching =
+      partner?.level === 'match'
+        ? matchAgencies(input, context.agencies)
+            .filter((m) => m.reasons.length > 0)
+            .map((m) => m.agency.name)
+        : [];
+    return [
       r.clientName,
       r.clientPhone,
       r.clientEmail,
@@ -239,10 +270,15 @@ export function downloadCsv(list: Referral[]) {
       r.submittedAt ? new Date(r.submittedAt).toLocaleString() : '',
       r.referrerName ?? '',
       r.details.map((d) => `${d.label}: ${d.value}`).join(' | '),
+      fit?.label ?? '',
+      // Blank (not 0) when there's no verdict, so "nothing matched" and
+      // "couldn't be judged" stay distinguishable in the spreadsheet.
+      partner ? String(partner.count) : '',
+      matching.join(' | '),
     ]
       .map(csvEscape)
-      .join(',')
-  );
+      .join(',');
+  });
   // Prepend a BOM so Excel reads UTF-8 correctly.
   const csv = '﻿' + [headers.join(','), ...rows].join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });

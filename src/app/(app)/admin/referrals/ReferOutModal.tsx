@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { X, Copy, Check, FileText } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import type { GappServiceKey } from '@/lib/georgia';
 import { matchAgencies, topSuggestions } from '@/lib/agencyMatch';
 import { PROVIDER_LIST_URL } from '@/lib/shareLink';
 import MatchSuggestions from './MatchSuggestions';
+import { usePartnerAgencies } from './PartnerAgenciesProvider';
 
 // Required capture when a referral is dragged into "Referred Out" without ever
 // being shared. We record which agency it was handed off to (a manual share
@@ -29,9 +30,9 @@ export default function ReferOutModal({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const [agencies, setAgencies] = useState<
-    { id: string; name: string; email: string; counties: string[]; services: string[] }[]
-  >([]);
+  // Shared directory (fetched once for the screen) — powers autocomplete,
+  // email auto-fill, and the smart-match suggestions.
+  const { agencies } = usePartnerAgencies();
   const [agency, setAgency] = useState('');
   const [email, setEmail] = useState('');
   const [saving, setSaving] = useState(false);
@@ -41,30 +42,6 @@ export default function ReferOutModal({
   const [mode, setMode] = useState<'agency' | 'providerList'>('agency');
   const [familyEmail, setFamilyEmail] = useState(clientEmail);
   const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await authedFetch('/api/admin/agencies');
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!cancelled) {
-          setAgencies(
-            (data.agencies ?? []).map(
-              (a: { id: string; name: string; email: string; counties?: string[]; services?: string[] }) => ({
-                id: a.id, name: a.name, email: a.email,
-                counties: a.counties ?? [], services: a.services ?? [],
-              })
-            )
-          );
-        }
-      } catch {
-        /* non-fatal: autocomplete just won't be available */
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
 
   // Smart-match: rank the directory against this referral's county + care need.
   const suggestions = topSuggestions(matchAgencies({ county, service }, agencies));
