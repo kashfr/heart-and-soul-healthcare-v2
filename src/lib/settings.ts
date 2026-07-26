@@ -203,8 +203,40 @@ export interface EmailsSubjects {
   emailChanged: string;
 }
 
+/**
+ * Editable copy for the family-facing "GAPP provider list" email — the last
+ * rung of the refer-out ladder, sent when no partner agency can take a
+ * referral. Admin-editable because it goes out under the org's name and the
+ * wording is a judgement call, not a technical detail.
+ *
+ * Two placeholders are substituted at send time: `{{childName}}` (falls back to
+ * "your child") and `{{phone}}` (the callback number below). Blank lines split
+ * the long fields into separate paragraphs. Everything is HTML-escaped, so copy
+ * can never inject markup.
+ *
+ * The greeting is deliberately NOT editable: it needs fallback logic
+ * ("Hi <first name>," vs "Hello," when no contact name is on file) that a
+ * free-text field can't carry.
+ */
+export interface ProviderListEmailSettings {
+  subject: string;
+  /** Callback number families are told to call; also fills `{{phone}}`. */
+  phone: string;
+  /** Opening paragraph(s), before the provider-list button. */
+  intro: string;
+  /** Paragraph(s) introducing the list, immediately above the button. */
+  explainer: string;
+  /** Text on the button that links the hosted Appendix P PDF. */
+  ctaLabel: string;
+  /** Paragraph(s) after the button. */
+  closing: string;
+  /** Sign-off line under the body. */
+  signOff: string;
+}
+
 export interface EmailsSettings {
   subjects: EmailsSubjects;
+  providerList: ProviderListEmailSettings;
 }
 
 export interface CriticalVitalsSettings {
@@ -266,6 +298,22 @@ export const DEFAULT_SETTINGS: AppSettings = {
       staffInviteWelcome: 'Welcome to Heart and Soul Healthcare — set up your account',
       staffInviteResend: 'Your Heart and Soul Healthcare password reset link',
       emailChanged: 'Your Heart and Soul Healthcare account email was changed',
+    },
+    // The copy that shipped in PR #108, moved here verbatim so switching to
+    // settings-driven copy changes nothing about what families receive. NOTE:
+    // no em or en dashes in any of this — it goes out under the org's name, and
+    // providerListContent.test.ts fails the build if one appears.
+    providerList: {
+      subject: 'A list of GAPP providers for your family',
+      phone: '(470) 635-5774',
+      intro:
+        'Thank you for reaching out to Heart & Soul Healthcare about {{childName}}. After reviewing your referral, we are not able to take it on at this time.',
+      explainer:
+        "We do not want that to slow down your search for care. Georgia Medicaid publishes an official list of approved GAPP providers, with each provider's address and phone number. You can view and download it here:",
+      ctaLabel: 'View the GAPP provider list (PDF)',
+      closing:
+        'Coverage areas change often, so we recommend calling a few providers directly to confirm they serve your county and are accepting new clients.\n\nIf your situation changes or you have any questions, reply to this email or call us at {{phone}}. We are sorry we could not help this time, and we wish your family the very best.',
+      signOff: 'Heart & Soul Healthcare',
     },
   },
   intake: {
@@ -387,6 +435,26 @@ function mergeEmails(input: unknown): EmailsSettings {
           ? subs.emailChanged.trim()
           : DEFAULT_SETTINGS.emails.subjects.emailChanged,
     },
+    providerList: mergeProviderListEmail(src.providerList),
+  };
+}
+
+/** Field-by-field fallback so a partially-saved doc can't blank out the email. */
+function mergeProviderListEmail(input: unknown): ProviderListEmailSettings {
+  const src = (input ?? {}) as Partial<ProviderListEmailSettings>;
+  const def = DEFAULT_SETTINGS.emails.providerList;
+  const pick = (key: keyof ProviderListEmailSettings): string => {
+    const v = src[key];
+    return typeof v === 'string' && v.trim() ? v : def[key];
+  };
+  return {
+    subject: pick('subject'),
+    phone: pick('phone'),
+    intro: pick('intro'),
+    explainer: pick('explainer'),
+    ctaLabel: pick('ctaLabel'),
+    closing: pick('closing'),
+    signOff: pick('signOff'),
   };
 }
 
@@ -644,6 +712,39 @@ export function validateSettings(payload: unknown): AppSettings {
             );
           }
         }
+      }
+    }
+    if (e.providerList !== undefined) {
+      const pl = e.providerList as Partial<ProviderListEmailSettings>;
+      // Generous caps: this is prose an admin writes, and the only real risk is
+      // an accidental paste of something enormous.
+      const LIMITS: Record<keyof ProviderListEmailSettings, number> = {
+        subject: 200, phone: 40, ctaLabel: 80, signOff: 120,
+        intro: 2000, explainer: 2000, closing: 2000,
+      };
+      for (const key of Object.keys(LIMITS) as (keyof ProviderListEmailSettings)[]) {
+        const v = pl[key];
+        if (v === undefined) continue;
+        if (typeof v !== 'string') {
+          throw new SettingsValidationError(`emails.providerList.${key}`, `${key} must be a string.`);
+        }
+        if (v.trim() === '') {
+          throw new SettingsValidationError(`emails.providerList.${key}`, `${key} cannot be empty.`);
+        }
+        if (v.length > LIMITS[key]) {
+          throw new SettingsValidationError(
+            `emails.providerList.${key}`,
+            `${key} is too long (max ${LIMITS[key]} chars).`,
+          );
+        }
+      }
+      // Subject lines travel unencrypted through mail servers and show up in
+      // notification previews, so the child's name must never go there.
+      if (typeof pl.subject === 'string' && /\{\{\s*childName\s*\}\}/.test(pl.subject)) {
+        throw new SettingsValidationError(
+          'emails.providerList.subject',
+          'The subject cannot include {{childName}} — subject lines must stay free of client names.',
+        );
       }
     }
   }
