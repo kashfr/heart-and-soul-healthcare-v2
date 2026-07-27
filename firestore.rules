@@ -144,6 +144,28 @@ service cloud.firestore {
     // a DISCONTINUE (status flip), never a lossy edit, so notes documented
     // against a task keep their referent. The RN approval stamp is a plain
     // update (approvedBy/At) and rides the same staff-only update rule.
+    // TAR — treatment administration entries. One doc per care task per day per
+    // slot, linked by patientId; the treatment twin of marAdministrations.
+    // APPEND-ONLY: a correction is a NEW doc carrying `amends`, so no update or
+    // delete is ever allowed, not even to staff. documentedBy is pinned to the
+    // caller so nobody can chart under another clinician's name — the same
+    // invariant the MAR write path enforces.
+    match /careTaskAdministrations/{entryId} {
+      allow read: if isStaff()
+        || (isNurse()
+            && resource.data.get('patientId', null) != null
+            && get(/databases/$(database)/documents/patients/$(resource.data.patientId))
+                 .data.get('assignedNurseIds', []).hasAny([request.auth.uid]));
+      allow create: if hasActiveProfile()
+        && getRole() != 'va'
+        && incomingData().patientId is string && incomingData().patientId.size() > 0
+        && incomingData().taskId is string && incomingData().taskId.size() > 0
+        && incomingData().date is string && incomingData().date.size() == 10
+        && incomingData().documentedBy == request.auth.uid
+        && incomingData().at == request.time;
+      allow update, delete: if false;
+    }
+
     match /careTasks/{taskId} {
       allow read: if isStaff()
         || (isNurse()

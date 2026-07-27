@@ -38,6 +38,25 @@ export interface CareTask {
   level: CareTaskLevel;
   frequency: string;
   instructions?: string;
+  /**
+   * Boxes the TAR grid gives this task per day. Defaults to 1 (a single daily
+   * box, per the RN supervisor); raise it when an order calls for the
+   * treatment more than once a day.
+   */
+  timesPerDay?: number;
+  /**
+   * The physician order authorising this treatment. For GAPP members that is
+   * the Appendix T Physician Plan of Treatment, which the manual calls "the
+   * document by which the physician delegates the authority to the nursing
+   * staff to perform certain medical services" and which must be re-signed at
+   * each recertification. Mirrors the same fields on marOrders so the order
+   * currency check behaves identically for treatments and medications.
+   */
+  orderingPhysician?: string;
+  /** Author explicitly flagged the prescriber as unknown; follow-up queue. */
+  physicianPending?: boolean;
+  /** Date on the signed order (the Appendix T date for GAPP). '' = unknown. */
+  orderSignedDate?: string;
   status: CareTaskStatus;
 
   createdAt?: unknown;
@@ -68,6 +87,17 @@ export interface CareTaskInput {
   level: CareTaskLevel;
   frequency: string;
   instructions?: string;
+  timesPerDay?: number;
+  orderingPhysician?: string;
+  physicianPending?: boolean;
+  orderSignedDate?: string;
+}
+
+/** Clamp to a sane number of TAR boxes per day; 1 when unset or nonsense. */
+export function normalizeTimesPerDay(value: unknown): number {
+  const n = Math.floor(Number(value));
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(n, 12);
 }
 
 export interface CareTaskActor {
@@ -103,6 +133,10 @@ export async function addCareTask(
     categoryLabel: input.categoryLabel,
     level: input.level,
     frequency: input.frequency,
+    timesPerDay: normalizeTimesPerDay(input.timesPerDay),
+    orderingPhysician: input.orderingPhysician?.trim() ?? '',
+    physicianPending: input.physicianPending === true,
+    orderSignedDate: input.orderSignedDate?.trim() ?? '',
     status: 'active' as CareTaskStatus,
     createdAt: serverTimestamp(),
     createdBy: actor.uid,
@@ -124,13 +158,20 @@ export async function addCareTask(
  */
 export async function updateCareTask(
   taskId: string,
-  input: Pick<CareTaskInput, 'name' | 'frequency' | 'instructions'>,
+  input: Pick<
+    CareTaskInput,
+    'name' | 'frequency' | 'instructions' | 'timesPerDay' | 'orderingPhysician' | 'physicianPending' | 'orderSignedDate'
+  >,
   actor: CareTaskActor,
 ): Promise<void> {
   await updateDoc(doc(db, 'careTasks', taskId), {
     name: input.name,
     frequency: input.frequency,
     instructions: input.instructions?.trim() || '',
+    timesPerDay: normalizeTimesPerDay(input.timesPerDay),
+    orderingPhysician: input.orderingPhysician?.trim() || '',
+    physicianPending: input.physicianPending === true,
+    orderSignedDate: input.orderSignedDate?.trim() || '',
     lastEditedAt: serverTimestamp(),
     lastEditedBy: actor.uid,
     lastEditedByName: actor.displayName,

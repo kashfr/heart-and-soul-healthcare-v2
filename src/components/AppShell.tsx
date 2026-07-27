@@ -13,6 +13,7 @@ import {
   UserCog,
   FileText,
   Pill,
+  Stethoscope,
   Tablets,
   Wrench,
   Settings,
@@ -51,6 +52,9 @@ const NAV: NavItem[] = [
   // Always-on MAR for nurses: their standalone way into the same grid supervisors
   // see via Records. Nurse-only here (staff reach the MAR through Records).
   { href: '/admin/mar', label: 'Medications', icon: <Tablets size={18} />, allow: ['nurse'] },
+  // Same idea for treatments: the TAR is the non-medication twin of the MAR,
+  // charting the ordered care on a client's plan (tube site care, wound care).
+  { href: '/admin/treatments', label: 'Treatments', icon: <Stethoscope size={18} />, allow: ['nurse'] },
   { href: '/admin/patients', label: 'Patients', icon: <Users size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/records', label: 'Records', icon: <Pill size={18} />, allow: ['admin', 'supervisor'] },
   // Per-client plan-of-care task lists (Option C): staff build the list, the

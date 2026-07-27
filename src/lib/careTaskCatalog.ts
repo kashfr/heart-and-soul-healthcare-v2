@@ -68,7 +68,9 @@ export const CARE_TASK_CATALOG: CareTaskCategory[] = [
     label: 'Nutrition / Feeding',
     tasks: [
       { key: 'tube-feeding', name: 'Tube feeding administered (G / GJ / J / NG per orders)', level: 'skilled', defaultFrequency: 'Per physician order' },
-      { key: 'tube-site-care', name: 'Feeding tube site care (cleaned, dried, dressing as ordered)', level: 'skilled', defaultFrequency: 'Every shift' },
+      { key: 'tube-site-assessment', name: 'Feeding tube site assessed for signs and symptoms of infection', level: 'skilled', defaultFrequency: 'Daily' },
+      { key: 'tube-site-care', name: 'Feeding tube site care (cleaned, dried, dressing as ordered)', level: 'skilled', defaultFrequency: 'Daily' },
+      { key: 'tube-granulation', name: 'Granulation tissue assessed at the tube site', level: 'skilled', defaultFrequency: 'Daily' },
       { key: 'tube-flush', name: 'Feeding tube flushed with water', level: 'skilled', defaultFrequency: 'Per physician order' },
       { key: 'feeding-pump', name: 'Feeding pump checked (rate verified, tubing changed per schedule)', level: 'skilled', defaultFrequency: 'Every shift' },
       { key: 'oral-feeding-assist', name: 'Oral feeding / meal assistance', level: 'any', defaultFrequency: 'Every shift' },
