@@ -68,6 +68,8 @@ export default function AdministerDoseModal({
   // and the amend flow records a late notification).
   const [prescriberNotified, setPrescriberNotified] = useState(false);
   const [outcome, setOutcome] = useState('');
+  // Reading for a check-style order (e.g. gastric residual in mL).
+  const [value, setValue] = useState('');
   const [initials, setInitials] = useState(defaultInitials);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,6 +90,11 @@ export default function AdministerDoseModal({
   }, [onClose]);
 
   const isNurseAdmin = administeredByType === 'nurse';
+  // A check records a measurement instead of an amount given, so the form asks
+  // for the reading and the wording drops "dose".
+  const valueLabel = (order.valueLabel || '').trim();
+  const isCheck = !!valueLabel;
+  const valueUnit = (order.valueUnit || '').trim();
   const needsReason = status === 'held' || status === 'refused' || (status === 'given' && isPRN);
   const indication = (order.indication || '').trim();
   const isLate = !!dateISO && dateISO !== todayISO;
@@ -98,7 +105,11 @@ export default function AdministerDoseModal({
       return;
     }
     if (status === 'given' && !actualTime) {
-      setError('Enter the time the dose was given.');
+      setError(isCheck ? 'Enter the time the check was done.' : 'Enter the time the dose was given.');
+      return;
+    }
+    if (isCheck && status === 'given' && !value.trim()) {
+      setError(`Enter the ${valueLabel.toLowerCase()} reading.`);
       return;
     }
     if (needsReason && !reason.trim()) {
@@ -128,6 +139,9 @@ export default function AdministerDoseModal({
             indication,
             outcome,
             prescriberNotified,
+            value,
+            valueLabel,
+            valueUnit,
           },
         ],
         { patientId, date: dateISO, sourceNoteId: '', documenter },
@@ -149,8 +163,10 @@ export default function AdministerDoseModal({
           <div style={{ minWidth: 0 }}>
             <div style={medName}>{order.medName}</div>
             <div style={medMeta}>
-              {order.dose}
-              {order.units ? ` ${order.units}` : ''} · {order.route} · {isPRN ? 'PRN' : slot}
+              {isCheck
+                ? `${valueLabel}${valueUnit ? ` (${valueUnit})` : ''}`
+                : `${order.dose}${order.units ? ` ${order.units}` : ''}`}
+              {' · '}{order.route} · {isPRN ? 'PRN' : slot}
             </div>
             <div style={dateLine}>{prettyDate(dateISO)}</div>
           </div>
@@ -176,15 +192,31 @@ export default function AdministerDoseModal({
               onClick={() => setStatus((cur) => (cur === s ? '' : s))}
               style={status === s ? statusActive[s] : statusBtn}
             >
-              {s === 'given' ? 'Given' : s === 'held' ? 'Held' : 'Refused'}
+              {s === 'given' ? (isCheck ? 'Done' : 'Given') : s === 'held' ? 'Held' : 'Refused'}
             </button>
           ))}
         </div>
 
         {status === 'given' && (
           <div style={grid2}>
+            {isCheck && (
+              <label style={field}>
+                <span style={fieldLabel}>
+                  {valueLabel}
+                  {valueUnit ? ` (${valueUnit})` : ''} *
+                </span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  style={input}
+                  placeholder={valueUnit ? `e.g., 30 ${valueUnit}` : 'Reading'}
+                />
+              </label>
+            )}
             <label style={field}>
-              <span style={fieldLabel}>Time given</span>
+              <span style={fieldLabel}>{isCheck ? 'Time checked' : 'Time given'}</span>
               <input type="time" value={actualTime} onChange={(e) => setActualTime(e.target.value)} style={input} />
             </label>
             <label style={field}>

@@ -53,6 +53,11 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
   const [frequencyLabel, setFrequencyLabel] = useState('');
   const [times, setTimes] = useState<string[]>(['08:00']);
   const [indication, setIndication] = useState('');
+  // Check-style order: records a measurement instead of an amount given (e.g.
+  // "Gastric residual" in mL). Setting a label is what makes it a check, which
+  // is why dose and units stop being required below.
+  const [valueLabel, setValueLabel] = useState('');
+  const [valueUnit, setValueUnit] = useState('');
   const [orderingPhysician, setOrderingPhysician] = useState('');
   const [orderSignedDate, setOrderSignedDate] = useState('');
   // Honest escape hatch: the nurse can flag the physician as unknown at entry
@@ -86,6 +91,8 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
       setFrequencyLabel(o.isPRN ? PRN_FREQUENCY : o.frequencyLabel || '');
       setTimes(o.scheduledTimes && o.scheduledTimes.length > 0 ? [...o.scheduledTimes] : ['08:00']);
       setIndication(o.indication || '');
+      setValueLabel(o.valueLabel || '');
+      setValueUnit(o.valueUnit || '');
       setOrderingPhysician(o.orderingPhysician || '');
       setOrderSignedDate(o.orderSignedDate || '');
       setPhysicianUnknown(o.physicianPending === true);
@@ -104,7 +111,14 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
         setError('Choose the medication to change.');
         return;
       }
-      if (!medName.trim() || !dose.trim() || !units.trim() || !route.trim()) {
+      // A check records a reading rather than an amount, so it needs no dose or
+      // units — requiring them would force junk values onto the order.
+      const isCheck = !!valueLabel.trim();
+      if (!medName.trim() || !route.trim()) {
+        setError(isCheck ? 'Name and route are required.' : 'Medication, dose, units, and route are required.');
+        return;
+      }
+      if (!isCheck && (!dose.trim() || !units.trim())) {
         setError('Medication, dose, units, and route are required.');
         return;
       }
@@ -146,7 +160,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
       body.proposedMed = {
         medName, dose, units, route, frequencyLabel,
         scheduledTimes: times.filter(Boolean),
-        isPRN, indication, orderingPhysician, orderSignedDate,
+        isPRN, indication, valueLabel, valueUnit, orderingPhysician, orderSignedDate,
         physicianPending: physicianUnknown && looksLikeUnknownPhysician(orderingPhysician),
         notes,
         startDate: mode === 'add' ? startDate : effectiveDate,
@@ -292,6 +306,38 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
                     placeholder={isPRN ? 'e.g., Moderate pain (4-6/10)' : 'e.g., Hypertension'}
                   />
                 </Field>
+
+                {/* Check-style order: the nurse records a reading rather than
+                    confirming an amount given. Naming a measurement is what
+                    turns this row into a check, so dose and units stop being
+                    required. Used for gastric residual on tube-fed clients. */}
+                <div style={grid2}>
+                  <Field label="Measurement recorded (optional)">
+                    <input
+                      type="text"
+                      value={valueLabel}
+                      onChange={(e) => setValueLabel(e.target.value)}
+                      style={input}
+                      placeholder="e.g., Gastric residual"
+                    />
+                  </Field>
+                  <Field label="Measurement unit">
+                    <input
+                      type="text"
+                      value={valueUnit}
+                      onChange={(e) => setValueUnit(e.target.value)}
+                      style={input}
+                      placeholder="e.g., mL"
+                      disabled={!valueLabel.trim()}
+                    />
+                  </Field>
+                </div>
+                {valueLabel.trim() && (
+                  <p style={{ fontSize: 12, color: '#7c2d12', background: '#fff7ed', border: '1px solid #f59e0b', borderRadius: 6, padding: '8px 10px', margin: '0 0 12px', lineHeight: 1.45 }}>
+                    This row will ask for a <strong>{valueLabel.trim()}</strong> reading each time it is
+                    charted, rather than confirming a dose. Dose and units are not required.
+                  </p>
+                )}
 
                 <div style={grid2}>
                   <Field label={mode === 'add' ? 'Start date' : 'Effective date'}>

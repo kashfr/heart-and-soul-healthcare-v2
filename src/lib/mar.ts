@@ -41,6 +41,16 @@ export interface MarOrder {
   // important for PRN orders, where the nurse documents WHY each dose was given
   // against this standing indication. Snapshotted onto each administration.
   indication?: string;
+  /**
+   * Turns this row into a MEASUREMENT rather than a dose: the nurse records a
+   * number ("Gastric residual", mL) instead of confirming an amount given.
+   * Presence of valueLabel is what marks the order as a check, so dose and
+   * units stop being required on it. Requested by the RN supervisor, who wants
+   * gastric residual charted alongside the tube's other MAR entries rather
+   * than on the treatment record.
+   */
+  valueLabel?: string;
+  valueUnit?: string;
   startDate: string; // YYYY-MM-DD
   endDate?: string | null; // null/undefined = ongoing
   // Date on the most recent SIGNED physician order backing this med (D.1
@@ -90,12 +100,19 @@ export interface MarOrderInput {
   scheduledTimes: string[];
   isPRN: boolean;
   indication?: string;
+  valueLabel?: string;
+  valueUnit?: string;
   startDate: string;
   endDate?: string | null;
   orderSignedDate?: string;
   orderingPhysician?: string;
   physicianPending?: boolean;
   notes?: string;
+}
+
+/** True when this order records a measurement rather than an amount given. */
+export function orderRecordsValue(order: { valueLabel?: string }): boolean {
+  return !!(order.valueLabel || '').trim();
 }
 
 // PRN orders carry no scheduled times; normalize so the stored shape is
@@ -112,6 +129,8 @@ function normalizeInput(input: MarOrderInput) {
       : Array.from(new Set(input.scheduledTimes.filter(Boolean))).sort(),
     isPRN: input.isPRN,
     indication: input.indication?.trim() ?? '',
+    valueLabel: input.valueLabel?.trim() ?? '',
+    valueUnit: input.valueUnit?.trim() ?? '',
     startDate: input.startDate,
     endDate: input.endDate ?? null,
     orderSignedDate: input.orderSignedDate?.trim() ?? '',
@@ -223,6 +242,13 @@ export interface MarAdministration {
   unitsSnapshot: string;
   routeSnapshot: string;
   indicationSnapshot?: string; // the order's "what for" at the time of this dose
+  // Measurement recorded against a check-style order (see MarOrder.valueLabel):
+  // the number the nurse read, e.g. a 30 mL gastric residual. Empty on ordinary
+  // dose administrations. The label/unit are snapshotted alongside so the
+  // reading stays interpretable if the order is later edited.
+  value?: string;
+  valueLabelSnapshot?: string;
+  valueUnitSnapshot?: string;
   date: string; // YYYY-MM-DD (date of service)
   scheduledTime: string; // 'HH:MM' or 'PRN'
   status: AdminStatus;
@@ -276,6 +302,9 @@ export interface MarAdministrationDraft {
   indication: string; // the order's standing indication, snapshotted
   outcome?: string; // PRN effectiveness/result, when known at write time
   prescriberNotified?: boolean; // held/refused: documenter notified the prescriber
+  value?: string; // measurement, for a check-style order (e.g. gastric residual)
+  valueLabel?: string;
+  valueUnit?: string;
 }
 
 export interface MarDocumenter {

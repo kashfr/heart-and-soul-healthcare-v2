@@ -402,3 +402,41 @@ describe('computeRequiredDoseGaps', () => {
     expect(gaps.map((g) => g.slot)).toEqual(['bedtime']);
   });
 });
+
+describe('buildMarAdminFields — check-style orders (measured value)', () => {
+  const check = (overrides: Partial<MarAdminFieldInput> = {}) =>
+    input({
+      medName: 'Gastric residual check',
+      dose: '',
+      units: '',
+      valueLabel: 'Gastric residual',
+      valueUnit: 'mL',
+      value: ' 30 ',
+      ...overrides,
+    });
+
+  it('keeps the trimmed reading on a performed check', () => {
+    const f = buildMarAdminFields(check(), meta);
+    expect(f.value).toBe('30');
+    expect(f.valueLabelSnapshot).toBe('Gastric residual');
+    expect(f.valueUnitSnapshot).toBe('mL');
+  });
+
+  it('blanks the reading when the check was held or refused (no reading exists)', () => {
+    expect(buildMarAdminFields(check({ status: 'held', reason: 'asleep' }), meta).value).toBe('');
+    expect(buildMarAdminFields(check({ status: 'refused', reason: 'declined' }), meta).value).toBe('');
+  });
+
+  it('still snapshots the label and unit on a not-done check, so the row stays readable', () => {
+    const f = buildMarAdminFields(check({ status: 'held', reason: 'asleep' }), meta);
+    expect(f.valueLabelSnapshot).toBe('Gastric residual');
+    expect(f.valueUnitSnapshot).toBe('mL');
+  });
+
+  it('leaves value empty on an ordinary dose that carries no measurement', () => {
+    const f = buildMarAdminFields(input(), meta);
+    expect(f.value).toBe('');
+    expect(f.valueLabelSnapshot).toBe('');
+    expect(f.valueUnitSnapshot).toBe('');
+  });
+});
