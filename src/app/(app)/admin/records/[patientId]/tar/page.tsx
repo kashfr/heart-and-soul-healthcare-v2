@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardList } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardList, FileDown } from 'lucide-react';
 import { getPatient, getPatientClinical, type Patient, type PatientClinical } from '@/lib/patients';
 import { getCareTasks, normalizeTimesPerDay, type CareTask } from '@/lib/careTasks';
 import { getTarEntriesForRange, type TarEntry } from '@/lib/tar';
@@ -14,6 +14,8 @@ import {
   tarCellLabel,
 } from '@/lib/tarShared';
 import { physicianAttributionPending } from '@/lib/marShared';
+import { authedFetch } from '@/lib/authedFetch';
+import { triggerDownload } from '@/lib/batchExport';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import RecordTreatmentModal from './RecordTreatmentModal';
 
@@ -69,6 +71,8 @@ export default function MonthlyTarPage() {
   const [monthLoading, setMonthLoading] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [recordFor, setRecordFor] = useState<{ task: CareTask; date: string; slotIndex: number; timesPerDay: number } | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
   const days = daysInMonth(month);
   const monthStart = dayISO(month, 1);
@@ -172,6 +176,30 @@ export default function MonthlyTarPage() {
     return out;
   }, [tasks]);
 
+  // Export is staff-only, matching the MAR: the route requires admin/supervisor.
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const res = await authedFetch('/api/tar/pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patientId, month }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setToast(data.error || 'Export failed.');
+        return;
+      }
+      const blob = await res.blob();
+      const safeName = (patient?.name || 'client').replace(/[^a-zA-Z0-9-]+/g, '_');
+      triggerDownload(blob, `TAR_${safeName}_${month}.pdf`);
+    } catch {
+      setToast('Export failed.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const documenter = {
     uid: profile?.uid || '',
     name: profile?.displayName || '',
@@ -204,6 +232,11 @@ export default function MonthlyTarPage() {
                 {patient?.mrn ? ` · Record #${patient.mrn}` : ''}
               </div>
             </div>
+            {!isNurse && (
+              <button type="button" onClick={handleExport} style={exportBtnStyle} disabled={exporting}>
+                <FileDown size={15} /> {exporting ? 'Exporting…' : 'Export PDF'}
+              </button>
+            )}
           </div>
           {(clinical?.allergies || clinical?.diet) && (
             <div style={headerGridStyle}>
@@ -350,6 +383,8 @@ export default function MonthlyTarPage() {
         )}
       </div>
 
+      {toast && <div style={toastStyle} onClick={() => setToast(null)}>{toast}</div>}
+
       {recordFor && (
         <RecordTreatmentModal
           patientId={patientId}
@@ -398,4 +433,6 @@ const notDoneCellStyle: React.CSSProperties = { background: '#fdecea', color: '#
 const familyCellStyle: React.CSSProperties = { background: '#eef5ff' };
 const physicianNeededChipStyle: React.CSSProperties = { display: 'inline-block', marginTop: 4, padding: '1px 7px', borderRadius: 999, background: '#fff3e0', color: '#b45309', fontSize: 10, fontWeight: 700 };
 const legendStyle: React.CSSProperties = { background: 'white', border: '1px solid #e5e7eb', borderRadius: 10, padding: '12px 16px', fontSize: 12, color: '#5c6b7a', lineHeight: 1.55, marginBottom: 12 };
+const exportBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#1a3a5c', color: 'white', padding: '10px 16px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 };
+const toastStyle: React.CSSProperties = { position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: '#1f2937', color: 'white', padding: '10px 18px', borderRadius: 8, fontSize: 13.5, cursor: 'pointer', zIndex: 1100 };
 const noticeStyle: React.CSSProperties = { background: '#fff7ed', border: '1px solid #f59e0b', borderRadius: 8, padding: '10px 14px', fontSize: 12.5, color: '#7c2d12', marginBottom: 12 };
