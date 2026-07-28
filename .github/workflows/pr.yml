@@ -1,0 +1,71 @@
+# Pre-merge checks for pull requests.
+#
+# Cloud Build only runs AFTER a merge to main, so without this nothing
+# validates a PR before it lands. (Vercel preview builds used to fill that
+# role incidentally; the Git integration was disconnected on 2026-07-27 once
+# the portal moved to Cloud Run, taking the last pre-merge signal with it.)
+#
+# Steps run fastest-first so a failure surfaces early.
+#
+# NOT included: `npm run lint`. It currently reports 33 errors on main, so a
+# blocking lint gate would fail every PR including no-op ones. Add it here
+# once that backlog is cleared.
+
+name: PR
+
+on:
+  pull_request:
+    branches: [main]
+
+# A new push to the same PR makes the in-flight run obsolete.
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Typecheck, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      # Public client-side Firebase config, compiled into the browser bundle.
+      # Same values, and the same reasoning, as the substitutions in
+      # cloudbuild.yaml: these are already visible in the site's JS, so they
+      # are not secrets. Real secrets reach the app at runtime via Secret
+      # Manager and are not needed to build.
+      NEXT_PUBLIC_FIREBASE_API_KEY: 'AIzaSyC9w8Bt2v89xTT8NQBQxvUpltgqZRxbda0'
+      NEXT_PUBLIC_FIREBASE_APP_ID: '1:7166948307:web:58806bebd4fa7b1879b526'
+      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: 'heart-and-soul-hc.firebaseapp.com'
+      NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: '7166948307'
+      NEXT_PUBLIC_FIREBASE_PROJECT_ID: 'heart-and-soul-hc'
+      NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: 'heart-and-soul-hc.firebasestorage.app'
+      NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: 'AIzaSyCa-3mD_SYjotMScwC8Dd0ydG8jj30fpfc'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 22 to match the Dockerfile's builder stage — CI should fail on
+      # the same runtime production compiles on, not a newer local one.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Test
+        run: npm test
+
+      # Catches what tsc and vitest structurally cannot: the RSC server/client
+      # boundary. Server-rendered react-pdf components have broken here before
+      # while both of the above stayed green.
+      - name: Build
+        run: npm run build
