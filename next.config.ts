@@ -9,6 +9,20 @@ const nextConfig: NextConfig = {
   // filesystem ancestor and mirrors the whole absolute path inside
   // .next/standalone, burying server.js.
   outputFileTracingRoot: process.cwd(),
+  experimental: {
+    serverActions: {
+      // The referral and contact forms are Server Actions, which POST to the
+      // page's own URL and are CSRF-checked by comparing Origin against Host.
+      //
+      // The apex -> www redirect below is a 308, so it preserves the POST body
+      // and replays it against www — but the Origin header still says apex, and
+      // the mismatch would make Next reject the submission. That only bites
+      // someone who had a form open on the apex when a deploy landed, or who
+      // reached it from an old apex bookmark, but a silently dropped referral
+      // is the worst failure this site has. Accept both hostnames.
+      allowedOrigins: ["heartandsoulhc.org", "www.heartandsoulhc.org"],
+    },
+  },
   async headers() {
     return [
       {
@@ -45,6 +59,24 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
+      // Apex -> www. Both hostnames map to this same Cloud Run service and both
+      // answered 200, so every page existed at two URLs. Canonical tags already
+      // pointed at www, but a 308 consolidates the signals properly.
+      //
+      // `/api/*` is deliberately excluded. Cron callers, the shared-referral
+      // token links, and form POSTs may address the apex directly, and a
+      // cross-host redirect is a bad thing to put in front of them. Search
+      // engines don't index /api, so there's nothing to gain there anyway.
+      //
+      // The host condition matches the apex exactly, so www requests don't
+      // match and can't loop. `*.run.app` (health checks, direct service URL)
+      // doesn't match either and is left alone.
+      {
+        source: "/:path((?!api/).*)",
+        has: [{ type: "host", value: "heartandsoulhc\\.org" }],
+        destination: "https://www.heartandsoulhc.org/:path",
+        permanent: true,
+      },
       {
         source: "/progress-note/submissions",
         destination: "/admin/submissions",
