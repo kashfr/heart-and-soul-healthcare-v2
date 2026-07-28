@@ -3,7 +3,16 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { formatUSPhone } from '@/lib/phone';
-import { classifyDiagnosis } from '@/lib/diagnosisScreening';
+import {
+  BEHAVIOR_RISK_OPTIONS,
+  CURRENT_SERVICE_OPTIONS,
+  DIAGNOSIS_GROUPS,
+  EQUIPMENT_OPTIONS,
+  classifyFreeText,
+  diagnosisPicture,
+  inferService,
+  type BehaviorRisk,
+} from '@/lib/diagnosisCatalog';
 import {
   FileText,
   User,
@@ -138,6 +147,11 @@ export default function ReferralPage() {
     additionalNotes: '',
     seekingPaidCaregiver: '',
     careNeeds: '',
+    diagnoses: [] as string[],
+    diagnosisOther: '',
+    equipment: [] as string[],
+    behaviorRisk: '' as BehaviorRisk,
+    currentServices: [] as string[],
   });
 
   // Debounce the read-only age so it doesn't recompute on every keystroke as the
@@ -160,22 +174,67 @@ export default function ReferralPage() {
   const seekingPaidGapp =
     formData.programInterest === 'gapp' &&
     formData.seekingPaidCaregiver === 'yes';
+  // What the structured answers say, and which GAPP service line they point to.
+  // Same catalog and inference the GAPP site's form and the portal intake use.
+  const structuredPicture = diagnosisPicture(
+    formData.diagnoses,
+    formData.diagnosisOther
+  );
+  const inferred = inferService({
+    diagnoses: formData.diagnoses,
+    diagnosisOther: formData.diagnosisOther,
+    equipment: formData.equipment,
+    behaviorRisk: formData.behaviorRisk,
+    currentServices: formData.currentServices,
+    careNeeds: formData.careNeeds,
+  });
   // Cross-check the free-text needs/notes too — submitters dodge the radio by
-  // picking "personal care" while describing autism. A behavioral/developmental
-  // description with no physical condition is a paid-parent dead end, same as
-  // selecting the behavioral option.
-  const careNeedsDxClass = classifyDiagnosis(
+  // picking "personal care" while describing autism. Kept separate from the
+  // structured answers rather than concatenated: this prose is a long
+  // description, and feeding it in as "Other" would read as an unclassifiable
+  // medical signal on every submission and quietly disable the check.
+  const proseDxClass = classifyFreeText(
     `${formData.serviceNeeds} ${formData.additionalNotes}`
   );
+  // Reported skilled equipment settles it — the child needs nursing, so nothing
+  // in the prose should block them (same rule as the GAPP site's form).
+  const reportsSkilledCare = inferred.source === 'equipment';
   const isPaidBehavioralBlock =
     seekingPaidGapp &&
-    (formData.careNeeds === 'behavioral' || careNeedsDxClass === 'behavioral');
-  // Blocked by the description, not the option they picked.
+    !reportsSkilledCare &&
+    (inferred.service === 'behavioral' || proseDxClass === 'behavioral');
+  // Blocked by what they described, not the option they picked.
   const blockedByDiagnosis =
     isPaidBehavioralBlock && formData.careNeeds !== 'behavioral';
-  // Behavioral description + a physical/medical condition: don't block; prompt.
+  // Behavioral alongside a physical/medical condition: don't block; prompt.
   const isPaidMixedDx =
-    seekingPaidGapp && !isPaidBehavioralBlock && careNeedsDxClass === 'mixed';
+    seekingPaidGapp &&
+    !isPaidBehavioralBlock &&
+    (proseDxClass === 'mixed' || structuredPicture === 'mixed');
+
+  // The GAPP clinical questions only apply to GAPP referrals; NOW/COMP, ICWP,
+  // EDWP and private-pay inquiries never see them.
+  const showGappClinical = formData.programInterest === 'gapp';
+
+  // "None of these" is mutually exclusive with every real answer, both ways.
+  const toggleMulti = (field: 'diagnoses' | 'equipment' | 'currentServices',
+                       code: string, noneCode?: string) =>
+    setFormData((prev) => {
+      const current = prev[field];
+      let next: string[];
+      if (noneCode && code === noneCode) {
+        next = current.includes(noneCode) ? [] : [noneCode];
+      } else {
+        const without = noneCode ? current.filter((c) => c !== noneCode) : current;
+        next = without.includes(code)
+          ? without.filter((c) => c !== code)
+          : [...without, code];
+      }
+      return { ...prev, [field]: next };
+    });
+
+  const hasDiagnosis =
+    formData.diagnoses.length > 0 || formData.diagnosisOther.trim().length > 0;
 
   // Returns list of missing required field labels for the current step
   const getMissingFields = (): string[] => {
@@ -192,6 +251,10 @@ export default function ReferralPage() {
     } else if (step === 2) {
       if (!formData.referralSource) missing.push('Referral Source');
       if (!isSelfReferral && formData.referralSource && !formData.referrerName) missing.push('Referrer Name');
+      if (showGappClinical && !hasDiagnosis) missing.push("Your child's diagnosis");
+      if (showGappClinical && formData.equipment.length === 0)
+        missing.push('What your child needs at home');
+      if (showGappClinical && !formData.behaviorRisk) missing.push('Behavior question');
       if (!formData.seekingPaidCaregiver) missing.push('Paid caregiver question');
       if (formData.seekingPaidCaregiver === 'yes' && !formData.careNeeds)
         missing.push('What your child needs help with');
@@ -312,6 +375,11 @@ export default function ReferralPage() {
           additionalNotes: formData.additionalNotes,
           seekingPaidCaregiver: formData.seekingPaidCaregiver,
           careNeeds: formData.careNeeds,
+          diagnoses: formData.diagnoses,
+          diagnosisOther: formData.diagnosisOther,
+          equipment: formData.equipment,
+          behaviorRisk: formData.behaviorRisk,
+          currentServices: formData.currentServices,
         },
       };
 
@@ -342,6 +410,10 @@ export default function ReferralPage() {
         return (
           formData.referralSource &&
           (isSelfReferral || formData.referrerName) &&
+          (!showGappClinical ||
+            (hasDiagnosis &&
+              formData.equipment.length > 0 &&
+              formData.behaviorRisk !== '')) &&
           formData.seekingPaidCaregiver &&
           (formData.seekingPaidCaregiver === 'no' || formData.careNeeds)
         );
@@ -402,6 +474,8 @@ export default function ReferralPage() {
                       insuranceProvider: '', insuranceNumber: '', serviceNeeds: '',
                       urgency: 'standard', additionalNotes: '',
                       seekingPaidCaregiver: '', careNeeds: '',
+                      diagnoses: [], diagnosisOther: '', equipment: [],
+                      behaviorRisk: '' as BehaviorRisk, currentServices: [],
                     });
                   }}
                 >
@@ -931,6 +1005,137 @@ export default function ReferralPage() {
                   </div>
                 </div>
 
+                {/* GAPP clinical questions. These shape which GAPP service line
+                    fits (skilled nursing / PSS / behavioral support aide); none
+                    of them decides eligibility, which Alliant determines from
+                    medical necessity (GAPP manual §702.1.1). Same catalog the
+                    GAPP site's form uses, so both funnels produce comparable
+                    answers. */}
+                {showGappClinical && (
+                  <>
+                    <div className={styles.sectionDivider} />
+                    <h3 className={styles.subSectionTitle}>About your child&apos;s needs</h3>
+                    <p className={styles.subSectionDescription}>
+                      This helps us match your child with the right kind of care.
+                    </p>
+
+                    <div className={styles.formGridSingle}>
+                      <div className="form-group">
+                        <label className="form-label">
+                          What has your child been diagnosed with? *
+                        </label>
+                        <p className={styles.checkboxHint}>
+                          Check everything that applies. If you are not sure of the
+                          exact name, use &ldquo;Other&rdquo; below.
+                        </p>
+                        {DIAGNOSIS_GROUPS.map((group) => (
+                          <fieldset key={group.key} className={styles.checkboxGroup}>
+                            <legend className={styles.checkboxLegend}>{group.title}</legend>
+                            {group.options.map((opt) => (
+                              <label key={opt.code} className={styles.checkboxRow}>
+                                <input
+                                  type="checkbox"
+                                  checked={formData.diagnoses.includes(opt.code)}
+                                  onChange={() => toggleMulti('diagnoses', opt.code)}
+                                />
+                                <span>{opt.label}</span>
+                              </label>
+                            ))}
+                          </fieldset>
+                        ))}
+                        <label htmlFor="diagnosisOther" className={styles.checkboxLegend}>
+                          Other (please describe)
+                        </label>
+                        <input
+                          id="diagnosisOther"
+                          name="diagnosisOther"
+                          type="text"
+                          className={`form-input ${
+                            isFieldInvalid('diagnosisOther') && !hasDiagnosis
+                              ? styles.fieldError
+                              : ''
+                          }`}
+                          placeholder="Anything not listed above"
+                          value={formData.diagnosisOther}
+                          onChange={handleChange}
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">
+                          Which of these does your child need at home? *
+                        </label>
+                        <p className={styles.checkboxHint}>
+                          Check everything that applies.
+                        </p>
+                        <div className={styles.checkboxGroup}>
+                          {EQUIPMENT_OPTIONS.map((opt) => (
+                            <label key={opt.code} className={styles.checkboxRow}>
+                              <input
+                                type="checkbox"
+                                checked={formData.equipment.includes(opt.code)}
+                                onChange={() =>
+                                  toggleMulti('equipment', opt.code, 'equip_none')
+                                }
+                              />
+                              <span>{opt.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="form-group">
+                        <label htmlFor="behaviorRisk" className="form-label">
+                          Does your child have behaviors that put them or others at
+                          risk, or that stop daily activities? *
+                        </label>
+                        <p className={styles.checkboxHint}>
+                          For example, aggression, self-injury, or running away.
+                        </p>
+                        <select
+                          id="behaviorRisk"
+                          name="behaviorRisk"
+                          className={`form-select ${
+                            isFieldInvalid('behaviorRisk') ? styles.fieldError : ''
+                          }`}
+                          value={formData.behaviorRisk}
+                          onChange={handleChange}
+                        >
+                          <option value="">Please select</option>
+                          {BEHAVIOR_RISK_OPTIONS.map((opt) => (
+                            <option key={opt.code} value={opt.code}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">
+                          What services does your child already receive?
+                        </label>
+                        <p className={styles.checkboxHint}>
+                          Optional, but it helps us understand what is already in place.
+                        </p>
+                        <div className={styles.checkboxGroup}>
+                          {CURRENT_SERVICE_OPTIONS.map((opt) => (
+                            <label key={opt.code} className={styles.checkboxRow}>
+                              <input
+                                type="checkbox"
+                                checked={formData.currentServices.includes(opt.code)}
+                                onChange={() =>
+                                  toggleMulti('currentServices', opt.code, 'services_none')
+                                }
+                              />
+                              <span>{opt.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+
                 {/* Paid-caregiver screening */}
                 <div className={styles.sectionDivider} />
                 <h3 className={styles.subSectionTitle}>One more question</h3>
@@ -1081,8 +1286,11 @@ export default function ReferralPage() {
                           </div>
                         )}
 
+                      {/* Keyed on the inferred service line, not the care-need
+                          dropdown, so this matches what the GAPP site's form
+                          tells the same family. */}
                       {formData.programInterest === 'gapp' &&
-                        formData.careNeeds === 'personal' &&
+                        inferred.service === 'pss' &&
                         !isPaidBehavioralBlock &&
                         !isPaidMixedDx && (
                           <div className={styles.countyNotice}>
@@ -1094,6 +1302,23 @@ export default function ReferralPage() {
                               support. The agency hires you as an employee, and the
                               paid hours are set by a nurse&apos;s assessment. We will
                               walk you through it.
+                            </p>
+                          </div>
+                        )}
+
+                      {/* Reported skilled care: the FCO covers personal support
+                          only, never skilled nursing (§604.2, §604.3). */}
+                      {formData.programInterest === 'gapp' &&
+                        inferred.service === 'nursing' &&
+                        !isPaidBehavioralBlock &&
+                        !isPaidMixedDx && (
+                          <div className={styles.countyNotice}>
+                            <AlertCircle size={16} />
+                            <p>
+                              A parent can be paid for personal care support, but not
+                              for skilled nursing. If your child also needs hands-on
+                              personal care, you may qualify for the Family Caregiver
+                              Option. We will go over what fits when we talk.
                             </p>
                           </div>
                         )}

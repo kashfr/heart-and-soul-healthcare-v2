@@ -4,6 +4,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
 import { isStaleReferredOut, REFERRED_OUT_AUTO_CLOSE_DAYS } from './referralAutoClose';
 import type { AuthedCaller } from './adminAuthGuard';
+import type { ServiceKey } from './diagnosisCatalog';
 
 export { REFERRED_OUT_AUTO_CLOSE_DAYS } from './referralAutoClose';
 
@@ -111,6 +112,18 @@ export interface ReferralInput {
   county?: string;
   program?: string;
   referrerName?: string;
+  /**
+   * The GAPP service line the submission points to, inferred at intake from the
+   * family's answers (see src/lib/diagnosisCatalog.ts). Drives the board's fit
+   * badge and partner matching.
+   *
+   * Null both when the answers don't support a call and on every referral
+   * created before structured intake existed, so readers must treat null as
+   * "unknown, look elsewhere" and fall back to the "Primary care need" detail
+   * row. serviceForReferral() in the admin types module is the one place that
+   * does; nothing else should read this field directly.
+   */
+  service?: ServiceKey | null;
   /** Full submission, rendered as-is in the detail view. */
   details: ReferralDetail[];
 }
@@ -214,6 +227,7 @@ export async function createReferral(
     county: clamp(input.county ?? '', MAX.county),
     program: clamp(input.program ?? '', MAX.program),
     referrerName: clamp(input.referrerName ?? '', MAX.referrer),
+    service: input.service ?? null,
     details: normalizeDetails(input.details),
     submittedAt: FieldValue.serverTimestamp(),
     createdAt: FieldValue.serverTimestamp(),
@@ -266,6 +280,7 @@ function toReferral(id: string, data: FirebaseFirestore.DocumentData): Referral 
     county: data.county ?? '',
     program: data.program ?? '',
     referrerName: data.referrerName ?? '',
+    service: (data.service as ServiceKey | null) ?? null,
     details: Array.isArray(data.details) ? data.details : [],
     submittedAt: toIso(data.submittedAt),
     updatedAt: toIso(data.updatedAt),

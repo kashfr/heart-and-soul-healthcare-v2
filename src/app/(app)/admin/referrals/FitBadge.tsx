@@ -1,9 +1,8 @@
 'use client';
 
 import { useSettings } from '@/components/SettingsProvider';
-import { serviceFromCareNeed } from '@/lib/georgia';
 import { assessReferralFit, type ReferralFit } from '@/lib/referralFit';
-import type { Referral } from './types';
+import { matchInputFor, type Referral } from './types';
 
 // Derived "can WE serve this client?" pill, judged against the org's intake
 // profile (Settings → Referral intake). Fully automatic — appears on any card
@@ -11,17 +10,11 @@ import type { Referral } from './types';
 // closer; gray = candidate for referring out.
 
 /** Fit for one referral against the current settings profile (null = no badge). */
-export function useReferralFit(referral: Pick<Referral, 'county' | 'details'>): ReferralFit | null {
+export function useReferralFit(
+  referral: Pick<Referral, 'county' | 'service' | 'details'>
+): ReferralFit | null {
   const { settings } = useSettings();
-  return assessReferralFit(
-    {
-      county: referral.county,
-      service: serviceFromCareNeed(
-        referral.details.find((d) => d.label === 'Primary care need')?.value
-      ),
-    },
-    settings.intake
-  );
+  return assessReferralFit(matchInputFor(referral), settings.intake);
 }
 
 const PALETTE: Record<ReferralFit['level'], { bg: string; fg: string; dot: string }> = {

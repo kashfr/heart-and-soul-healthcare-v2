@@ -5,7 +5,7 @@ import { Search, X, RefreshCw, LayoutGrid, List } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { useAuth } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
-import { serviceFromCareNeed, type GappServiceKey } from '@/lib/georgia';
+import { type GappServiceKey } from '@/lib/georgia';
 import { assessReferralFit } from '@/lib/referralFit';
 import { summarizePartnerMatches } from '@/lib/agencyMatch';
 import { usePartnerAgencies } from './PartnerAgenciesProvider';
@@ -15,6 +15,8 @@ import ReferralDetail from './ReferralDetail';
 import PrintOverlay from './PrintOverlay';
 import ReferOutModal from './ReferOutModal';
 import {
+  matchInputFor,
+  serviceForReferral,
   statusFromStage,
   type Referral, type ReferralStage, type StaffOption,
 } from './types';
@@ -155,30 +157,14 @@ export default function ReferralsPage() {
       }
       // Fit against the org's own intake profile (same logic as the card badge).
       if (fitFilter !== 'all') {
-        const fit = assessReferralFit(
-          {
-            county: r.county,
-            service: serviceFromCareNeed(
-              r.details.find((d) => d.label === 'Primary care need')?.value
-            ),
-          },
-          settings.intake
-        );
+        const fit = assessReferralFit(matchInputFor(r), settings.intake);
         if ((fit?.level ?? null) !== fitFilter) return false;
       }
       // Partner match against the saved agency directory (same logic as the
       // card badge). Cards we can't judge are in neither bucket, so "No partner
       // match" stays a real finding rather than a catch-all.
       if (partnerFilter !== 'all') {
-        const summary = summarizePartnerMatches(
-          {
-            county: r.county,
-            service: serviceFromCareNeed(
-              r.details.find((d) => d.label === 'Primary care need')?.value
-            ),
-          },
-          agencies
-        );
+        const summary = summarizePartnerMatches(matchInputFor(r), agencies);
         if ((summary?.level ?? null) !== partnerFilter) return false;
       }
       if (!needle) return true;
@@ -261,9 +247,7 @@ export default function ReferralsPage() {
             id,
             name: ref?.clientName || 'this referral',
             county: ref?.county ?? '',
-            service: serviceFromCareNeed(
-              ref?.details.find((d) => d.label === 'Primary care need')?.value
-            ),
+            service: ref ? serviceForReferral(ref) : null,
             clientEmail: ref?.clientEmail ?? '',
           });
           return;

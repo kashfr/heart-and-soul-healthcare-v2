@@ -7,6 +7,20 @@ import { createClickUpTask } from '@/lib/clickup';
 import { createReferral } from '@/lib/referrals';
 import { sendReferralConfirmation } from '@/lib/emails/referralConfirmation';
 import { paidCaregiverDiagnosisFlag } from '@/lib/diagnosisScreening';
+import {
+  behaviorRiskLabel,
+  composeDiagnosisText,
+  currentServiceLabels,
+  equipmentLabels,
+  inferService,
+  type ServiceKey,
+} from '@/lib/diagnosisCatalog';
+
+const GAPP_SERVICE_LABELS: Record<ServiceKey, string> = {
+  nursing: 'Skilled Nursing',
+  pss: 'Personal Support Services (PSS)',
+  behavioral: 'Behavioral Support Aide Services (BSS)',
+};
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -240,6 +254,12 @@ export async function processReferralSubmission(data: any) {
               details.seekingPaidCaregiver
             )
           : null;
+      // Which GAPP service line the answers point to. Scoped to GAPP: the other
+      // programs on this form (NOW/COMP, ICWP, EDWP, private pay) don't have
+      // GAPP service lines and never see the clinical questions.
+      const inferred =
+        program.interest === 'gapp' ? inferService(details) : null;
+
       await createReferral({
         source: 'hs-website',
         clientName: `${client.firstName ?? ''} ${client.lastName ?? ''}`.trim(),
@@ -248,8 +268,12 @@ export async function processReferralSubmission(data: any) {
         county: client.county ?? '',
         program: labelFor(PROGRAM_LABELS, program.interest ?? ''),
         referrerName: referrer.name ?? '',
+        service: inferred?.service ?? null,
         details: [
           ...(reviewFlag ? [{ label: '⚠ Review', value: reviewFlag }] : []),
+          ...(inferred?.conflict
+            ? [{ label: '⚠ Care need unclear', value: inferred.conflict }]
+            : []),
           { label: 'Date of birth', value: client.dob ?? '' },
           { label: 'Secondary phone', value: client.secondaryPhone ?? '' },
           {
@@ -266,6 +290,10 @@ export async function processReferralSubmission(data: any) {
           { label: 'Referrer email', value: referrer.email ?? '' },
           { label: 'Referrer organization', value: referrer.organization ?? '' },
           { label: 'Urgency', value: labelFor(URGENCY_LABELS, details.urgency ?? '') },
+          { label: 'Diagnosis', value: composeDiagnosisText(details.diagnoses, details.diagnosisOther) },
+          { label: 'Equipment & daily care', value: equipmentLabels(details.equipment).join(', ') },
+          { label: 'Behavior risk', value: behaviorRiskLabel(details.behaviorRisk) },
+          { label: 'Current services', value: currentServiceLabels(details.currentServices).join(', ') },
           { label: 'Service needs', value: details.serviceNeeds ?? '' },
           { label: 'Additional notes', value: details.additionalNotes ?? '' },
           {
@@ -276,6 +304,12 @@ export async function processReferralSubmission(data: any) {
                 : details.seekingPaidCaregiver === 'no'
                 ? 'No'
                 : '',
+          },
+          {
+            label: 'Inferred service need',
+            value: inferred?.service
+              ? `${GAPP_SERVICE_LABELS[inferred.service]} (${inferred.reason})`
+              : '',
           },
           ...(details.seekingPaidCaregiver === 'yes'
             ? [

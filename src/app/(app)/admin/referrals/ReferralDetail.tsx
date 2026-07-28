@@ -7,14 +7,14 @@ import {
 } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { buildShareUrl } from '@/lib/shareLink';
-import { serviceFromCareNeed, type GappServiceKey } from '@/lib/georgia';
+import { type GappServiceKey } from '@/lib/georgia';
 import { matchAgencies, topSuggestions } from '@/lib/agencyMatch';
 import MatchSuggestions from './MatchSuggestions';
 import FitBadge from './FitBadge';
 import PartnerMatchBadge from './PartnerMatchBadge';
 import { usePartnerAgencies } from './PartnerAgenciesProvider';
 import {
-  fieldRows, formatDateTime, formatRelative,
+  fieldRows, formatDateTime, formatRelative, serviceForReferral,
   REFERRAL_STAGES, STAGE_ACCENT, STAGE_LABEL, SOURCE_LABEL,
   type Referral, type ReferralActivity, type ReferralActivityType,
   type ReferralStage, type StaffOption, type ReferralShare, type ShareStatus,
@@ -215,9 +215,7 @@ export default function ReferralDetail({
             referralId={referral.id}
             stage={referral.stage}
             county={referral.county}
-            service={serviceFromCareNeed(
-              referral.details.find((d) => d.label === 'Primary care need')?.value
-            )}
+            service={serviceForReferral(referral)}
             onChanged={onChanged}
           />
 

@@ -109,6 +109,57 @@ describe('summarizePartnerMatches', () => {
     );
   });
 
+  it('excludes a partner that covers the county but not the service', () => {
+    // NursingOnly serves Henry, so it survives matchAgencies as a fallback —
+    // but it can't take a PSS case, so it must not inflate the count.
+    const nursingOnly = agency({ name: 'NursingOnly', counties: ['Henry'], services: ['nursing'] });
+    const out = summarizePartnerMatches({ county: 'Henry', service: 'pss' }, [FULL, nursingOnly]);
+    expect(out).toMatchObject({ level: 'match', count: 1 });
+    expect(out?.detail).toBe('FullMatch (Covers Henry · PSS)');
+  });
+
+  it('does not report the same count for every service line', () => {
+    // Regression: the count used to be driven by county coverage alone, so a
+    // BSS referral in a well-covered county reported the same number of
+    // partners as a nursing one even when only one agency offered BSS.
+    const directory = [
+      agency({ name: 'A', counties: ['DeKalb'], services: ['nursing', 'pss'] }),
+      agency({ name: 'B', counties: ['DeKalb'], services: ['nursing', 'pss'] }),
+      agency({ name: 'C', counties: ['DeKalb'], services: ['nursing'] }),
+      agency({ name: 'D', counties: ['DeKalb'], services: ['nursing', 'pss', 'behavioral'] }),
+    ];
+    const counts = (['nursing', 'pss', 'behavioral'] as const).map(
+      (s) => summarizePartnerMatches({ county: 'DeKalb', service: s }, directory)?.count
+    );
+    expect(counts).toEqual([4, 3, 1]);
+  });
+
+  it('reports no match when partners cover the county but none offer the service', () => {
+    const directory = [
+      agency({ name: 'A', counties: ['DeKalb'], services: ['nursing', 'pss'] }),
+      agency({ name: 'B', counties: ['DeKalb'], services: ['nursing'] }),
+    ];
+    const out = summarizePartnerMatches({ county: 'DeKalb', service: 'behavioral' }, directory);
+    expect(out).toMatchObject({ level: 'none', count: 0, label: 'No partner match' });
+    expect(out?.detail).toBe(
+      'No saved partner covers DeKalb for Behavioral Support Aide Services (BSS)'
+    );
+  });
+
+  it('still counts a county match when the referral states no care need', () => {
+    // Nothing to mismatch against, so coverage alone remains a real answer.
+    const nursingOnly = agency({ name: 'NursingOnly', counties: ['Henry'], services: ['nursing'] });
+    const out = summarizePartnerMatches({ county: 'Henry', service: null }, [nursingOnly]);
+    expect(out).toMatchObject({ level: 'match', count: 1 });
+  });
+
+  it('still counts a partner whose services are unrecorded', () => {
+    // Thin records are unknowns, not mismatches — same rule matchAgencies uses.
+    const noServices = agency({ name: 'NoServices', counties: ['Henry'] });
+    const out = summarizePartnerMatches({ county: 'Henry', service: 'pss' }, [noServices]);
+    expect(out).toMatchObject({ level: 'match', count: 1 });
+  });
+
   it('stays silent when the only candidates are unknowns', () => {
     // NO_DATA has no counties or services on file — thin records are not a miss.
     expect(summarizePartnerMatches({ county: 'Henry', service: 'pss' }, [NO_DATA])).toBeNull();
@@ -138,6 +189,14 @@ describe('summarizePartnerMatches', () => {
 });
 
 describe('topSuggestions', () => {
+  it('does not suggest an agency that covers the county but not the service', () => {
+    // Same rule as the badge, so the count on the card matches what the
+    // Best-matches row actually offers when you open the drawer.
+    const nursingOnly = agency({ name: 'NursingOnly', counties: ['Henry'], services: ['nursing'] });
+    const top = topSuggestions(matchAgencies({ county: 'Henry', service: 'pss' }, [FULL, nursingOnly]));
+    expect(top.map((m) => m.agency.name)).toEqual(['FullMatch']);
+  });
+
   it('keeps only positive-evidence matches, capped at 3', () => {
     const matches = matchAgencies({ county: 'Henry', service: 'pss' }, [
       FULL, COUNTY_ONLY, NO_DATA,

@@ -375,6 +375,52 @@
   margin-bottom: var(--space-5);
 }
 
+/* GAPP clinical questions: grouped checkbox lists (diagnosis, equipment,
+   current services). Sized for touch — parents fill these in on phones. */
+.checkboxHint {
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--color-gray-500);
+  margin: 0.25rem 0 0.75rem;
+}
+
+.checkboxGroup {
+  border: none;
+  padding: 0;
+  margin: 0 0 var(--space-4);
+}
+
+.checkboxLegend {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-gray-700);
+  margin-bottom: 0.25rem;
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.4rem 0.25rem;
+  font-size: var(--text-base);
+  color: var(--color-gray-700);
+  cursor: pointer;
+  border-radius: 0.5rem;
+}
+
+.checkboxRow:hover {
+  background: var(--color-gray-50);
+}
+
+.checkboxRow input {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.15rem;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
 /* Full-width form grid */
 .formGridFull {
   display: grid;

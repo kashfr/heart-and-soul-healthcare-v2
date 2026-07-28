@@ -4,7 +4,10 @@
 // every write, so this copy is purely for rendering.
 
 import { serviceFromCareNeed } from '@/lib/georgia';
-import { matchAgencies, summarizePartnerMatches, type MatchableAgency } from '@/lib/agencyMatch';
+import type { ServiceKey } from '@/lib/diagnosisCatalog';
+import {
+  matchAgencies, qualifiedMatches, summarizePartnerMatches, type MatchableAgency,
+} from '@/lib/agencyMatch';
 import { assessReferralFit } from '@/lib/referralFit';
 import type { IntakeSettings } from '@/lib/settings';
 
@@ -80,6 +83,9 @@ export interface Referral {
   county: string;
   program: string;
   referrerName?: string;
+  /** Service line inferred at intake. Read it through serviceForReferral(),
+   *  never directly — null means "unknown", not "no need". */
+  service?: ServiceKey | null;
   details: ReferralDetail[];
   submittedAt: string | null;
   updatedAt: string | null;
@@ -89,6 +95,36 @@ export interface Referral {
   providerListSentAt?: string | null;
   /** Family email the list went to; empty string for the no-email-on-file path. */
   providerListSentTo?: string | null;
+}
+
+/**
+ * The service line to judge a referral by — the single source the fit badge,
+ * the partner badge, both filters, the share pickers, and the CSV export all
+ * read. Everything used to call serviceFromCareNeed() on the "Primary care
+ * need" row independently, which meant the board could only ever route on the
+ * self-reported radio.
+ *
+ * Prefers the value inferred at intake from the family's full answers
+ * (equipment, behaviour risk, diagnosis — see src/lib/diagnosisCatalog.ts), and
+ * falls back to the care-need row for referrals submitted before the structured
+ * form existed, or where the inference came up empty.
+ */
+export function serviceForReferral(
+  referral: Pick<Referral, 'service' | 'details'>
+): ServiceKey | null {
+  return (
+    referral.service ??
+    serviceFromCareNeed(
+      referral.details.find((d) => d.label === 'Primary care need')?.value
+    )
+  );
+}
+
+/** The {county, service} pair every matcher and fit check takes. */
+export function matchInputFor(
+  referral: Pick<Referral, 'county' | 'service' | 'details'>
+): { county: string; service: ServiceKey | null } {
+  return { county: referral.county, service: serviceForReferral(referral) };
 }
 
 export interface ReferralActivity {
@@ -242,21 +278,15 @@ export function downloadCsv(list: Referral[], context: CsvMatchContext) {
     'Fit', 'Partner matches', 'Matching agencies',
   ];
   const rows = list.map((r) => {
-    const input = {
-      county: r.county,
-      service: serviceFromCareNeed(
-        r.details.find((d) => d.label === 'Primary care need')?.value
-      ),
-    };
+    const input = matchInputFor(r);
     const fit = assessReferralFit(input, context.intake);
     const partner = summarizePartnerMatches(input, context.agencies);
     // Every matching agency, not the top 3 the badge tooltip shows — a
-    // spreadsheet is where you want the whole list to work from.
+    // spreadsheet is where you want the whole list to work from. Same
+    // qualification rule as the badge, so the count column and this one agree.
     const matching =
       partner?.level === 'match'
-        ? matchAgencies(input, context.agencies)
-            .filter((m) => m.reasons.length > 0)
-            .map((m) => m.agency.name)
+        ? qualifiedMatches(matchAgencies(input, context.agencies)).map((m) => m.agency.name)
         : [];
     return [
       r.clientName,

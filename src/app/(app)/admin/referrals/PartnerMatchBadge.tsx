@@ -1,10 +1,9 @@
 'use client';
 
 import { Building2 } from 'lucide-react';
-import { serviceFromCareNeed } from '@/lib/georgia';
 import { summarizePartnerMatches, type PartnerMatchSummary } from '@/lib/agencyMatch';
 import { usePartnerAgencies } from './PartnerAgenciesProvider';
-import type { Referral } from './types';
+import { matchInputFor, type Referral } from './types';
 
 // "Can somebody ELSE serve this family?" pill, sitting next to FitBadge's "can
 // WE serve them?". Same directory and ranking the share pickers use, so the
@@ -17,18 +16,10 @@ import type { Referral } from './types';
 
 /** Partner-match summary for one referral against the saved directory. */
 export function usePartnerMatch(
-  referral: Pick<Referral, 'county' | 'details'>
+  referral: Pick<Referral, 'county' | 'service' | 'details'>
 ): PartnerMatchSummary | null {
   const { agencies } = usePartnerAgencies();
-  return summarizePartnerMatches(
-    {
-      county: referral.county,
-      service: serviceFromCareNeed(
-        referral.details.find((d) => d.label === 'Primary care need')?.value
-      ),
-    },
-    agencies
-  );
+  return summarizePartnerMatches(matchInputFor(referral), agencies);
 }
 
 const PALETTE: Record<PartnerMatchSummary['level'], { bg: string; fg: string }> = {
@@ -39,7 +30,7 @@ const PALETTE: Record<PartnerMatchSummary['level'], { bg: string; fg: string }> 
 export default function PartnerMatchBadge({
   referral,
 }: {
-  referral: Pick<Referral, 'county' | 'details'>;
+  referral: Pick<Referral, 'county' | 'service' | 'details'>;
 }) {
   const summary = usePartnerMatch(referral);
   if (!summary) return null;

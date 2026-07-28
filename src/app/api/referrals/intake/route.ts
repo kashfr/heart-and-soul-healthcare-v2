@@ -4,6 +4,14 @@ import { createReferral, type ReferralInput } from '@/lib/referrals';
 import { sendReferralNotification } from '@/lib/emails/referralNotification';
 import { sendReferralConfirmation } from '@/lib/emails/referralConfirmation';
 import { paidCaregiverDiagnosisFlag } from '@/lib/diagnosisScreening';
+import {
+  CATALOG_VERSION,
+  behaviorRiskLabel,
+  currentServiceLabels,
+  equipmentLabels,
+  inferService,
+  type BehaviorRisk,
+} from '@/lib/diagnosisCatalog';
 
 // Public intake for referrals submitted from external sites (the GAPP website).
 // Authenticated with a shared secret (not a user session), since the caller is
@@ -44,7 +52,20 @@ interface IncomingPayload {
     zip?: string;
     county?: string;
     childsMedicaidID?: string;
+    /** Readable diagnosis text. Composed by the form from the structured
+     *  answers below (or typed free-hand by older form builds), and stored
+     *  verbatim as the Diagnosis row so nothing downstream had to change. */
     diagnosis?: string;
+    /** Structured intake (src/lib/diagnosisCatalog.ts). Absent on submissions
+     *  from a form build that predates the checkboxes — every consumer below
+     *  degrades to the free-text diagnosis in that case. */
+    diagnoses?: string[];
+    diagnosisOther?: string;
+    equipment?: string[];
+    behaviorRisk?: BehaviorRisk;
+    currentServices?: string[];
+    /** The catalog the submitting form was built against. */
+    catalogVersion?: string;
     comments?: string;
     provideLater?: boolean;
     dob?: string;
@@ -58,6 +79,12 @@ const CARE_LABEL: Record<string, string> = {
   nursing: 'Skilled medical / nursing care',
   behavioral: 'Behavioral / autism support',
   unsure: 'Not sure',
+};
+
+const SERVICE_LABEL: Record<string, string> = {
+  nursing: 'Skilled Nursing',
+  pss: 'Personal Support Services (PSS)',
+  behavioral: 'Behavioral Support Aide Services (BSS)',
 };
 
 // Age label for the staff view, e.g. "2 years" or "8 months". Empty if the date
@@ -101,6 +128,23 @@ function toReferralInput(payload: IncomingPayload): ReferralInput {
   // requests, but flag any that reach us so staff can triage at a glance.
   const reviewFlag = paidCaregiverDiagnosisFlag(r.diagnosis, r.seekingPaidCaregiver);
 
+  // Which GAPP service line the family's answers point to, and whether that
+  // disagrees with the care need they selected. Advisory: it drives the board's
+  // partner matching and flags the card, it never decides eligibility (which
+  // Alliant determines on medical necessity, GAPP manual §702.1.1).
+  const inferred = inferService(r);
+  const inferredValue = inferred.service
+    ? `${SERVICE_LABEL[inferred.service]} (${inferred.reason})`
+    : '';
+
+  // A form built against a different catalog than this one is speaking a
+  // vocabulary we may not fully understand, so say so on the card rather than
+  // silently dropping codes we don't recognize.
+  const catalogDrift =
+    r.catalogVersion && r.catalogVersion !== CATALOG_VERSION
+      ? `Submitted by a form using catalog ${r.catalogVersion}; this portal expects ${CATALOG_VERSION}. Some answers may be missing.`
+      : null;
+
   return {
     source: 'gapp-website',
     externalId: payload.id,
@@ -110,18 +154,27 @@ function toReferralInput(payload: IncomingPayload): ReferralInput {
     county: r.county ?? '',
     program: 'GAPP - Georgia Pediatric Program',
     referrerName: r.submitterName || undefined,
+    service: inferred.service,
     details: [
       ...(reviewFlag ? [{ label: '⚠ Review', value: reviewFlag }] : []),
+      ...(inferred.conflict
+        ? [{ label: '⚠ Care need unclear', value: inferred.conflict }]
+        : []),
+      ...(catalogDrift ? [{ label: '⚠ Form version', value: catalogDrift }] : []),
       { label: 'Date of birth', value: r.dob ?? '' },
       { label: 'Age', value: ageLabel(r.dob) },
       { label: 'Address', value: address },
       { label: "Member's Medicaid ID", value: medicaid },
       { label: 'Diagnosis', value: r.diagnosis ?? '' },
+      { label: 'Equipment & daily care', value: equipmentLabels(r.equipment).join(', ') },
+      { label: 'Behavior risk', value: behaviorRiskLabel(r.behaviorRisk) },
+      { label: 'Current services', value: currentServiceLabels(r.currentServices).join(', ') },
       { label: 'Comments', value: r.comments ?? '' },
       {
         label: 'Primary care need',
         value: CARE_LABEL[r.careNeeds ?? ''] ?? '',
       },
+      { label: 'Inferred service need', value: inferredValue },
       { label: 'Seeking paid caregiver', value: seekingValue },
     ],
   };

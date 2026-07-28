@@ -139,10 +139,28 @@ export function matchAgenciesBulk(
   );
 }
 
-/** Top-N suggestions worth showing: positive evidence only (score from a real
- *  county or service match, not just unknowns). */
+/**
+ * The matches worth acting on, and the single definition of "a partner for this
+ * referral" shared by the badge, the share pickers, and the CSV export.
+ *
+ * Two conditions. Positive evidence (a real county or service hit, not just
+ * unknowns), AND no known service mismatch: an agency that covers the family's
+ * county but is on record as not offering the service they need is a wasted
+ * call, so it never counts. Without that second condition the count collapses
+ * into "how many partners cover this county" — the same number for a nursing,
+ * PSS, or BSS referral — which is how a behavioral case came to show eight
+ * partners when only one of them offers behavioral support.
+ *
+ * Ruled-out agencies stay in matchAgencies' ranking; they're just no longer
+ * proposed. Staff can still pick any agency by hand.
+ */
+export function qualifiedMatches(matches: AgencyMatch[]): AgencyMatch[] {
+  return matches.filter((m) => m.reasons.length > 0 && m.serviceMatch !== false);
+}
+
+/** Top-N suggestions worth showing, best first. */
 export function topSuggestions(matches: AgencyMatch[], n = 3): AgencyMatch[] {
-  return matches.filter((m) => m.reasons.length > 0).slice(0, n);
+  return qualifiedMatches(matches).slice(0, n);
 }
 
 export type PartnerMatchLevel = 'match' | 'none';
@@ -184,23 +202,28 @@ export function summarizePartnerMatches(
 
   const viable = matchAgencies(input, agencies);
   const positives = viable.filter((m) => m.reasons.length > 0);
+  const qualified = qualifiedMatches(viable);
 
-  if (positives.length > 0) {
-    const shown = positives.slice(0, 3);
-    const rest = positives.length - shown.length;
+  if (qualified.length > 0) {
+    const shown = qualified.slice(0, 3);
+    const rest = qualified.length - shown.length;
     const detail = shown
       .map((m) => `${m.agency.name} (${m.reasons.join(' · ')})`)
       .join('; ');
     return {
       level: 'match',
-      count: positives.length,
-      label: positives.length === 1 ? '1 partner' : `${positives.length} partners`,
+      count: qualified.length,
+      label: qualified.length === 1 ? '1 partner' : `${qualified.length} partners`,
       detail: rest > 0 ? `${detail}; +${rest} more` : detail,
     };
   }
 
-  // Survivors with no positive evidence are unknowns, not misses — say nothing.
-  if (viable.length > 0) return null;
+  // Nobody qualified. That's a finding when we ruled partners out on data we
+  // actually have — either everyone failed on county (nothing viable), or
+  // partners do cover the county but are on record as not offering the service
+  // (positives survived, none qualified). Survivors with no positive evidence
+  // at all are unknowns, not misses — say nothing.
+  if (positives.length === 0 && viable.length > 0) return null;
 
   let detail: string;
   if (county && service) {

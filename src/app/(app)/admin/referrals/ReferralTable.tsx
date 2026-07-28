@@ -3,7 +3,6 @@
 import { useMemo, useState } from 'react';
 import { Printer, Download, Trash2, Share2, X, Check } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
-import { serviceFromCareNeed } from '@/lib/georgia';
 import {
   matchAgenciesBulk, summarizePartnerMatches, topSuggestions,
   type PartnerMatchSummary,
@@ -13,7 +12,7 @@ import { useSettings } from '@/components/SettingsProvider';
 import MatchSuggestions from './MatchSuggestions';
 import { usePartnerAgencies } from './PartnerAgenciesProvider';
 import {
-  downloadCsv, formatDate, initials,
+  downloadCsv, formatDate, initials, matchInputFor,
   REFERRAL_STAGES, STAGE_ACCENT, STAGE_LABEL, SOURCE_LABEL,
   type Referral, type ReferralStage,
 } from './types';
@@ -68,12 +67,7 @@ export default function ReferralTable({ referrals, onOpen, onPrint, onDelete, ca
   const verdicts = useMemo(() => {
     return new Map(
       referrals.map((r) => {
-        const input = {
-          county: r.county,
-          service: serviceFromCareNeed(
-            r.details.find((d) => d.label === 'Primary care need')?.value
-          ),
-        };
+        const input = matchInputFor(r);
         return [
           r.id,
           {
@@ -376,12 +370,7 @@ function BulkShareModal({
   // selected referrals' counties they cover + the care needs they offer.
   const suggestions = topSuggestions(
     matchAgenciesBulk(
-      referrals.map((r) => ({
-        county: r.county,
-        service: serviceFromCareNeed(
-          r.details.find((d) => d.label === 'Primary care need')?.value
-        ),
-      })),
+      referrals.map(matchInputFor),
       agencies
     )
   );
