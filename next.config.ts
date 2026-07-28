@@ -20,6 +20,27 @@ const nextConfig: NextConfig = {
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
         ],
       },
+      // Keep the staff portal and the auth screens out of search results.
+      // AuthGuard is client-side, so these routes answer a crawler with a 200
+      // shell — enough for Google to crawl and evaluate them. A header covers
+      // every current and future /admin route without touching each page, and
+      // reaches route handlers that can't export `metadata`.
+      //
+      // Deliberately NOT paired with a robots.txt Disallow: Google has to fetch
+      // the page to see this directive, so blocking the crawl would strand any
+      // URL it already knows about.
+      {
+        source: "/admin/:path*",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
+      {
+        source: "/login",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
+      {
+        source: "/reset-password",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
     ];
   },
   async redirects() {
