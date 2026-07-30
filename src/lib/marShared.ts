@@ -124,6 +124,27 @@ export function buildMarAdminFields(r: MarAdminFieldInput, meta: MarAdminFieldMe
   };
 }
 
+/**
+ * Normalise an allowed-values list from either an array or the comma-separated
+ * string the order forms collect. Trims, drops blanks, and de-duplicates while
+ * PRESERVING the author's order — a clinical scale reads in the order it was
+ * written, so this must not sort.
+ */
+export function parseValueOptions(input: string[] | string | undefined): string[] {
+  const raw = Array.isArray(input) ? input : String(input || '').split(',');
+  const out: string[] = [];
+  for (const item of raw) {
+    const v = String(item).trim();
+    if (v && !out.includes(v)) out.push(v);
+  }
+  return out;
+}
+
+/** Sensible default scale for a volume reading, used to pre-fill the order form. */
+export const DEFAULT_ML_VALUE_OPTIONS = [
+  '0', '5', '10', '15', '20', '25', '30', '40', '50', '75', '100', '150', '200', '250', 'More than 250',
+];
+
 // ---------------------------------------------------------------------------
 // Time-aware live status (the in-progress MAR colors the dose pill by this).
 // ---------------------------------------------------------------------------

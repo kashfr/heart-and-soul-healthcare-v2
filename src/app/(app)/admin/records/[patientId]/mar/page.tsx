@@ -322,6 +322,12 @@ export default function MonthlyMarPage() {
       `${a.status.toUpperCase()}${a.actualTime ? ` at ${a.actualTime}` : ''}`,
       `By ${who}`,
     ];
+    // On a check the reading IS the record, so surface it before anything else.
+    if ((a.value || '').trim()) {
+      const unit = (a.valueUnitSnapshot || '').trim();
+      const label = (a.valueLabelSnapshot || '').trim() || 'Reading';
+      bits.splice(1, 0, `${label}: ${a.value}${unit ? ` ${unit}` : ''}`);
+    }
     if (a.reason) bits.push(`Reason: ${a.reason}`);
     if (a.outcome) bits.push(`Result: ${a.outcome}`);
     return bits.join(' · ');
@@ -469,9 +475,22 @@ export default function MonthlyMarPage() {
                             return (
                               <td
                                 key={iso}
+                                className={chartable ? 'hs-chartable' : undefined}
                                 style={chartable ? { ...emptyStyle, ...clickableCellStyle } : emptyStyle}
                                 onClick={chartable ? () => setAdminister({ order, slot, iso }) : undefined}
-                                title={chartable ? 'Document this dose' : undefined}
+                                title={chartable ? 'Click to document this dose' : undefined}
+                                tabIndex={chartable ? 0 : undefined}
+                                role={chartable ? 'button' : undefined}
+                                onKeyDown={
+                                  chartable
+                                    ? (e) => {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                          e.preventDefault();
+                                          setAdminister({ order, slot, iso });
+                                        }
+                                      }
+                                    : undefined
+                                }
                               />
                             );
                           }
@@ -497,6 +516,7 @@ export default function MonthlyMarPage() {
                           return (
                             <td
                               key={iso}
+                              className={canAdminister ? 'hs-chartable' : undefined}
                               style={canAdminister ? { ...gridTdStyle, ...style, ...clickableCellStyle } : { ...gridTdStyle, ...style }}
                               title={
                                 !canAdminister
@@ -524,6 +544,16 @@ export default function MonthlyMarPage() {
               </div>
             )}
 
+            {/* Lead with the interaction, not the colour key: a blank month
+                grid gives no hint that the boxes are clickable, and nurses were
+                only discovering it by accident. */}
+            {canAdminister && (
+              <div style={chartHintStyle}>
+                <strong>Click any box to document a dose.</strong> Empty boxes show a faint + when you hover
+                over them.
+              </div>
+            )}
+
             <div style={legendRowStyle}>
               <span style={{ ...legendChipStyle, background: '#d8efd8', color: '#1e5c1e' }}>Initials = given</span>
               <span style={{ ...legendChipStyle, background: '#fcebcd', color: '#8a5a0d' }}>Held</span>
@@ -536,6 +566,12 @@ export default function MonthlyMarPage() {
               </span>
               <span style={{ ...legendChipStyle, background: '#fde68a', color: '#1a3a5c' }}>Amber column = today</span>
               <span style={{ ...legendChipStyle, background: '#eef4fb', color: '#1a3a5c' }}>* = given by family/proxy (see log)</span>
+              {/* Future days are deliberately not chartable (a nurse documents
+                  what happened, not what will). Saying so stops the silent
+                  "why won't this box open?" dead end. */}
+              <span style={{ ...legendChipStyle, background: 'white', color: '#5c6b7a', border: '1px solid #dde3ea' }}>
+                Future days can&apos;t be charted
+              </span>
             </div>
 
             {legend.length > 0 && (
@@ -704,6 +740,7 @@ export default function MonthlyMarPage() {
 }
 
 const clickableCellStyle: React.CSSProperties = { cursor: 'pointer' };
+const chartHintStyle: React.CSSProperties = { background: '#eef5ff', border: '1px solid #c8def5', borderRadius: 8, padding: '9px 14px', fontSize: 12.5, color: '#1a3a5c', marginBottom: 10, lineHeight: 1.5 };
 
 const resultPendingChipStyle: React.CSSProperties = {
   display: 'inline-block',

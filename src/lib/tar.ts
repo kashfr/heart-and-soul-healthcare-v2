@@ -86,9 +86,14 @@ export async function amendTarEntry(
 
 /**
  * Every entry for a client within a date range. Equality on patientId plus a
- * range on date needs only a single-field index Firestore creates
- * automatically. Fails open to [] so a permission miss never blanks the UI
- * into looking like "nothing was done".
+ * RANGE on date requires a composite index (patientId ASC, date ASC) — it is
+ * declared in firestore.indexes.json and must be deployed, exactly like the
+ * one marAdministrations uses for the same query shape.
+ *
+ * Fails open to [] rather than throwing, so a permission or index problem
+ * degrades to an empty grid instead of a crash. That is deliberately paired
+ * with the strict variant below: anything that must tell "nothing charted"
+ * apart from "couldn't read" has to use that one.
  */
 export async function getTarEntriesForRange(
   patientId: string,

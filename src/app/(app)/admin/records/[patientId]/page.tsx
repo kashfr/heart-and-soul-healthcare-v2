@@ -12,6 +12,8 @@ import {
   type PatientClinical,
 } from '@/lib/patients';
 import {
+  DEFAULT_ML_VALUE_OPTIONS,
+  parseValueOptions,
   getMarOrders,
   addMarOrder,
   updateMarOrder,
@@ -31,6 +33,13 @@ interface OrderForm {
   scheduledTimes: string[];
   isPRN: boolean;
   indication: string;
+  // Check-style order: records a measurement instead of an amount given.
+  // Naming a measurement is what makes it a check, so dose/units stop being
+  // required. Used for gastric residual on tube-fed clients.
+  valueLabel: string;
+  valueUnit: string;
+  /** Comma-separated allowed readings; becomes the charting dropdown. */
+  valueOptions: string;
   startDate: string;
   endDate: string;
   orderSignedDate: string;
@@ -57,6 +66,9 @@ function emptyForm(): OrderForm {
     scheduledTimes: ['08:00'],
     isPRN: false,
     indication: '',
+    valueLabel: '',
+    valueUnit: '',
+    valueOptions: '',
     startDate: todayISO(),
     endDate: '',
     orderSignedDate: '',
@@ -161,6 +173,9 @@ export default function RecordDetailPage() {
       // old independent checkbox); trust the label so a re-save heals them.
       isPRN: !!o.isPRN || o.frequencyLabel === PRN_FREQUENCY,
       indication: o.indication || '',
+      valueLabel: o.valueLabel || '',
+      valueUnit: o.valueUnit || '',
+      valueOptions: (o.valueOptions || []).join(', '),
       startDate: o.startDate || todayISO(),
       endDate: o.endDate || '',
       orderSignedDate: o.orderSignedDate || '',
@@ -185,8 +200,19 @@ export default function RecordDetailPage() {
       showToast('Not signed in.');
       return;
     }
-    if (!form.medName.trim() || !form.dose.trim() || !form.units.trim() || !form.route.trim() || !form.startDate) {
+    // A check records a reading rather than an amount, so it needs no dose or
+    // units — requiring them would force junk values onto the order.
+    const isCheck = !!form.valueLabel.trim();
+    if (!form.medName.trim() || !form.route.trim() || !form.startDate) {
+      showToast('Medication, route, and start date are required.');
+      return;
+    }
+    if (!isCheck && (!form.dose.trim() || !form.units.trim())) {
       showToast('Medication, dose, units, route, and start date are required.');
+      return;
+    }
+    if (isCheck && parseValueOptions(form.valueOptions).length < 2) {
+      showToast('Add at least two allowed readings so the nurse picks from a list instead of typing.');
       return;
     }
     if (!form.isPRN && form.scheduledTimes.filter(Boolean).length === 0) {
@@ -220,6 +246,9 @@ export default function RecordDetailPage() {
         scheduledTimes: form.scheduledTimes,
         isPRN: form.isPRN,
         indication: form.indication,
+        valueLabel: form.valueLabel,
+        valueUnit: form.valueUnit,
+        valueOptions: form.valueOptions,
         startDate: form.startDate,
         endDate: form.endDate || null,
         orderSignedDate: form.orderSignedDate,
@@ -393,20 +422,20 @@ export default function RecordDetailPage() {
               </Field>
 
               <div style={gridTwoStyle}>
-                <Field label="Dose *">
+                <Field label={form.valueLabel.trim() ? 'Dose' : 'Dose *'}>
                   <input
                     type="text"
-                    required
+                    required={!form.valueLabel.trim()}
                     value={form.dose}
                     onChange={(e) => setForm((f) => ({ ...f, dose: e.target.value }))}
                     style={inputStyle}
                     placeholder="e.g., 10"
                   />
                 </Field>
-                <Field label="Units *">
+                <Field label={form.valueLabel.trim() ? 'Units' : 'Units *'}>
                   <input
                     type="text"
-                    required
+                    required={!form.valueLabel.trim()}
                     list="mar-units"
                     value={form.units}
                     onChange={(e) => setForm((f) => ({ ...f, units: e.target.value }))}
@@ -513,6 +542,71 @@ export default function RecordDetailPage() {
                     : 'Optional. Shown on the chart and snapshotted onto each recorded dose.'}
                 </span>
               </Field>
+
+              {/* Check-style order: the nurse records a reading rather than
+                  confirming an amount given. Naming a measurement is what turns
+                  this row into a check, so dose and units stop being required.
+                  Used for gastric residual on tube-fed clients. */}
+              <div style={gridTwoStyle}>
+                <Field label="Measurement recorded (optional)">
+                  <input
+                    type="text"
+                    value={form.valueLabel}
+                    onChange={(e) => setForm((f) => ({ ...f, valueLabel: e.target.value }))}
+                    style={inputStyle}
+                    placeholder="e.g., Gastric residual"
+                  />
+                  <span style={indicationHintStyle}>
+                    Leave blank for an ordinary medication. Fill it in for a check the nurse records a
+                    number for, such as a gastric residual.
+                  </span>
+                </Field>
+                <Field label="Measurement unit">
+                  <input
+                    type="text"
+                    value={form.valueUnit}
+                    onChange={(e) => setForm((f) => ({ ...f, valueUnit: e.target.value }))}
+                    style={inputStyle}
+                    placeholder="e.g., mL"
+                    disabled={!form.valueLabel.trim()}
+                  />
+                </Field>
+              </div>
+              {form.valueLabel.trim() && (
+                <>
+                  {/* The nurse PICKS a reading rather than typing one: a
+                      mistyped clinical value (300 for 30 on a residual) is a
+                      real safety risk, so the order defines what's allowed. */}
+                  <Field label="Allowed readings (the nurse picks from these) *">
+                    <input
+                      type="text"
+                      value={form.valueOptions}
+                      onChange={(e) => setForm((f) => ({ ...f, valueOptions: e.target.value }))}
+                      style={inputStyle}
+                      placeholder="0, 5, 10, 15, 20, 25, 30, 50, 100…"
+                    />
+                    <span style={indicationHintStyle}>
+                      Separate with commas, in the order they should appear. The nurse chooses from a
+                      dropdown, so she can&apos;t mistype a reading.{' '}
+                      {form.valueUnit.trim().toLowerCase() === 'ml' && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setForm((f) => ({ ...f, valueOptions: DEFAULT_ML_VALUE_OPTIONS.join(', ') }))
+                          }
+                          style={{ background: 'none', border: 'none', padding: 0, color: '#1a73c4', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit' }}
+                        >
+                          Use the standard mL scale
+                        </button>
+                      )}
+                    </span>
+                  </Field>
+                  <p style={{ fontSize: 12, color: '#7c2d12', background: '#fff7ed', border: '1px solid #f59e0b', borderRadius: 6, padding: '8px 10px', margin: '0 0 12px', lineHeight: 1.45 }}>
+                    This row will ask for a <strong>{form.valueLabel.trim()}</strong> reading each time it is
+                    charted, instead of confirming a dose. Dose and units are not required.
+                  </p>
+                </>
+              )}
 
               <div style={gridTwoStyle}>
                 <Field label="Start date *">

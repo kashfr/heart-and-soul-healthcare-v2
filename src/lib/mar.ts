@@ -12,7 +12,12 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { buildMarAdminFields } from './marShared';
+import { buildMarAdminFields, parseValueOptions, DEFAULT_ML_VALUE_OPTIONS } from './marShared';
+
+// Re-exported so UI code can keep importing these from '@/lib/mar' alongside
+// the order types; they live in marShared because the server-only med-change
+// route needs them and must not pull in the client Firebase SDK.
+export { parseValueOptions, DEFAULT_ML_VALUE_OPTIONS };
 
 /**
  * MAR standing medication orders. One doc per medication per client in the
@@ -51,6 +56,14 @@ export interface MarOrder {
    */
   valueLabel?: string;
   valueUnit?: string;
+  /**
+   * Allowed readings, rendered as a DROPDOWN at charting time. A free-text box
+   * for a clinical measurement invites a finger slip (300 for 30 on a gastric
+   * residual is the difference between continuing a feed and holding it), so
+   * the order defines what may be recorded and the nurse picks from it. Empty
+   * falls back to a constrained numeric input.
+   */
+  valueOptions?: string[];
   startDate: string; // YYYY-MM-DD
   endDate?: string | null; // null/undefined = ongoing
   // Date on the most recent SIGNED physician order backing this med (D.1
@@ -102,6 +115,7 @@ export interface MarOrderInput {
   indication?: string;
   valueLabel?: string;
   valueUnit?: string;
+  valueOptions?: string[] | string;
   startDate: string;
   endDate?: string | null;
   orderSignedDate?: string;
@@ -131,6 +145,7 @@ function normalizeInput(input: MarOrderInput) {
     indication: input.indication?.trim() ?? '',
     valueLabel: input.valueLabel?.trim() ?? '',
     valueUnit: input.valueUnit?.trim() ?? '',
+    valueOptions: parseValueOptions(input.valueOptions),
     startDate: input.startDate,
     endDate: input.endDate ?? null,
     orderSignedDate: input.orderSignedDate?.trim() ?? '',

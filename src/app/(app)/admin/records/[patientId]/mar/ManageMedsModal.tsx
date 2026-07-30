@@ -6,6 +6,7 @@ import { X, Plus, Clock } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { MED_FREQUENCIES, PRN_FREQUENCY } from '@/lib/medFrequencies';
 import { looksLikeUnknownPhysician, physicianAttributionPending } from '@/lib/marShared';
+import { DEFAULT_ML_VALUE_OPTIONS, parseValueOptions } from '@/lib/mar';
 import type { MarOrder, MarChangeRequestType } from '@/lib/mar';
 
 const ROUTES = ['PO (by mouth)', 'SL (sublingual)', 'Topical', 'Inhalation', 'Subcutaneous', 'IM', 'IV', 'Rectal', 'G-tube', 'J-tube', 'NG tube', 'Ophthalmic', 'Otic', 'Nasal'];
@@ -58,6 +59,8 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
   // is why dose and units stop being required below.
   const [valueLabel, setValueLabel] = useState('');
   const [valueUnit, setValueUnit] = useState('');
+  // Allowed readings, comma-separated; becomes the charting dropdown.
+  const [valueOptions, setValueOptions] = useState('');
   const [orderingPhysician, setOrderingPhysician] = useState('');
   const [orderSignedDate, setOrderSignedDate] = useState('');
   // Honest escape hatch: the nurse can flag the physician as unknown at entry
@@ -93,6 +96,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
       setIndication(o.indication || '');
       setValueLabel(o.valueLabel || '');
       setValueUnit(o.valueUnit || '');
+      setValueOptions((o.valueOptions || []).join(', '));
       setOrderingPhysician(o.orderingPhysician || '');
       setOrderSignedDate(o.orderSignedDate || '');
       setPhysicianUnknown(o.physicianPending === true);
@@ -120,6 +124,10 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
       }
       if (!isCheck && (!dose.trim() || !units.trim())) {
         setError('Medication, dose, units, and route are required.');
+        return;
+      }
+      if (isCheck && parseValueOptions(valueOptions).length < 2) {
+        setError('Add at least two allowed readings so the nurse picks from a list instead of typing.');
         return;
       }
       if (orderSignedDate && orderSignedDate > todayISO()) {
@@ -160,7 +168,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
       body.proposedMed = {
         medName, dose, units, route, frequencyLabel,
         scheduledTimes: times.filter(Boolean),
-        isPRN, indication, valueLabel, valueUnit, orderingPhysician, orderSignedDate,
+        isPRN, indication, valueLabel, valueUnit, valueOptions, orderingPhysician, orderSignedDate,
         physicianPending: physicianUnknown && looksLikeUnknownPhysician(orderingPhysician),
         notes,
         startDate: mode === 'add' ? startDate : effectiveDate,
@@ -333,10 +341,36 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
                   </Field>
                 </div>
                 {valueLabel.trim() && (
-                  <p style={{ fontSize: 12, color: '#7c2d12', background: '#fff7ed', border: '1px solid #f59e0b', borderRadius: 6, padding: '8px 10px', margin: '0 0 12px', lineHeight: 1.45 }}>
-                    This row will ask for a <strong>{valueLabel.trim()}</strong> reading each time it is
-                    charted, rather than confirming a dose. Dose and units are not required.
-                  </p>
+                  <>
+                    {/* The nurse PICKS a reading rather than typing one: a
+                        mistyped clinical value is a real safety risk. */}
+                    <Field label="Allowed readings (the nurse picks from these) *">
+                      <input
+                        type="text"
+                        value={valueOptions}
+                        onChange={(e) => setValueOptions(e.target.value)}
+                        style={input}
+                        placeholder="0, 5, 10, 15, 20, 25, 30, 50, 100…"
+                      />
+                    </Field>
+                    <p style={{ fontSize: 11.5, color: '#5c6b7a', margin: '-6px 0 10px', lineHeight: 1.45 }}>
+                      Separate with commas, in the order they should appear. The nurse chooses from a
+                      dropdown, so she can&apos;t mistype a reading.{' '}
+                      {valueUnit.trim().toLowerCase() === 'ml' && (
+                        <button
+                          type="button"
+                          onClick={() => setValueOptions(DEFAULT_ML_VALUE_OPTIONS.join(', '))}
+                          style={{ background: 'none', border: 'none', padding: 0, color: '#1a73c4', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit' }}
+                        >
+                          Use the standard mL scale
+                        </button>
+                      )}
+                    </p>
+                    <p style={{ fontSize: 12, color: '#7c2d12', background: '#fff7ed', border: '1px solid #f59e0b', borderRadius: 6, padding: '8px 10px', margin: '0 0 12px', lineHeight: 1.45 }}>
+                      This row will ask for a <strong>{valueLabel.trim()}</strong> reading each time it is
+                      charted, rather than confirming a dose. Dose and units are not required.
+                    </p>
+                  </>
                 )}
 
                 <div style={grid2}>

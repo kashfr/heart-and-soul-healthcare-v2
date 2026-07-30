@@ -82,6 +82,7 @@ interface AdminDoc {
   outcome: string;
   /** Reading for a check-style order (gastric residual, etc.); '' for doses. */
   value: string;
+  valueUnit: string;
   documentedByName: string;
   documentedByCredential: string;
 }
@@ -203,6 +204,7 @@ export async function POST(request: Request) {
           typeof a.prescriberNotified === 'boolean' ? a.prescriberNotified : null,
         outcome: String(a.outcome || ''),
         value: String(a.value || ''),
+        valueUnit: String(a.valueUnitSnapshot || ''),
         documentedByName: String(a.documentedByName || ''),
         documentedByCredential: String(a.documentedByCredential || ''),
       };
@@ -324,11 +326,14 @@ export async function POST(request: Request) {
                 : a.reason || '-',
           // A given PRN dose is complete only once its result is recorded; the
           // export says so explicitly rather than printing a silent blank.
-          result: a.outcome.trim()
-            ? a.outcome
-            : a.status === 'given' && a.scheduledTime === 'PRN'
-              ? 'Result pending'
-              : '-',
+          // A check's reading belongs in Result: it is what the entry recorded.
+          result: a.value.trim()
+            ? `${a.value}${a.valueUnit ? ` ${a.valueUnit}` : ''}`
+            : a.outcome.trim()
+              ? a.outcome
+              : a.status === 'given' && a.scheduledTime === 'PRN'
+                ? 'Result pending'
+                : '-',
           initials: a.initials || '-',
           amendment,
         };
