@@ -1324,6 +1324,34 @@ export default function ReferralPage() {
                         )}
                     </>
                   )}
+
+                  {/* CMO disclosure. Per the January 2026 GAPP Provider
+                      Teleconference: "if a member wants to apply for GAPP
+                      services, that they will be removed from their CMO if they
+                      are in one. They need to know that they may not receive
+                      some of the services that they were provided in their CMO."
+                      GAPP-only, and worded to make clear this form is a referral,
+                      not the Medicaid filing. */}
+                  {showGappClinical && (
+                    <div className={styles.cmoNotice}>
+                      <Info size={16} />
+                      <div>
+                        <strong>One thing to know before you apply.</strong>
+                        <p>
+                          If your child is currently enrolled in a Medicaid care
+                          management organization (CMO), applying for GAPP will
+                          remove them from it, and some services their CMO covers
+                          may not be available through GAPP.
+                        </p>
+                        <p>
+                          Sending this form does not apply for GAPP or change your
+                          child&apos;s Medicaid coverage. It starts a conversation
+                          with us. We will go over what your child would gain and
+                          lose before anything is filed.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

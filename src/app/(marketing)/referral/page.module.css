@@ -329,6 +329,45 @@
   margin: 0;
 }
 
+/* CMO disclosure: neutral grey, deliberately not the amber warning treatment.
+   It is a material consequence families must know about, not a problem with
+   their submission. */
+.cmoNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-gray-50);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+  color: var(--color-gray-700);
+  grid-column: 1 / -1;
+}
+
+.cmoNotice svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--color-gray-500);
+}
+
+.cmoNotice strong {
+  display: block;
+  color: var(--color-gray-900);
+  font-size: var(--text-sm);
+  margin-bottom: 0.35rem;
+}
+
+.cmoNotice p {
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  margin: 0 0 0.5rem;
+}
+
+.cmoNotice p:last-child {
+  margin-bottom: 0;
+}
+
 /* Self-Referral Notice */
 .selfReferralNotice {
   display: flex;
