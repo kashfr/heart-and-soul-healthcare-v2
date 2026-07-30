@@ -56,6 +56,12 @@ export interface MarAdminFieldInput {
   // doses; forced false otherwise. (Notified later? The existing amend flow
   // records it as an appended correction.)
   prescriberNotified?: boolean;
+  // Measurement for a check-style order (MarOrder.valueLabel), e.g. a gastric
+  // residual in mL. Meaningful only on a GIVEN (performed) entry; a check that
+  // was held or refused produced no reading, so it is blanked.
+  value?: string;
+  valueLabel?: string;
+  valueUnit?: string;
 }
 
 export interface MarAdminFieldMeta {
@@ -105,6 +111,12 @@ export function buildMarAdminFields(r: MarAdminFieldInput, meta: MarAdminFieldMe
     reason: r.status === 'given' && !isPRN ? '' : r.reason.trim(),
     outcome: r.status === 'given' && isPRN ? (r.outcome || '').trim() : '',
     prescriberNotified: r.status !== 'given' && r.prescriberNotified === true,
+    // A reading exists only where the check was actually performed. The label
+    // and unit ride along so the number stays interpretable if the order that
+    // defined them is later edited.
+    value: r.status === 'given' ? (r.value || '').trim() : '',
+    valueLabelSnapshot: (r.valueLabel || '').trim(),
+    valueUnitSnapshot: (r.valueUnit || '').trim(),
     sourceNoteId: meta.sourceNoteId,
     documentedBy: meta.documenter.uid,
     documentedByName: meta.documenter.name,

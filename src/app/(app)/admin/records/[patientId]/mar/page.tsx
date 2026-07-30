@@ -482,9 +482,12 @@ export default function MonthlyMarPage() {
                               : a.status === 'held'
                                 ? heldCellStyle
                                 : refusedCellStyle;
+                          // A check-style order records a reading, and the number
+                          // IS the record, so the box shows it instead of initials
+                          // (who documented it stays in the cell tooltip and log).
                           const label = cellAdmins.length > 1
-                            ? cellAdmins.map((x) => x.initials || '·').join('/')
-                            : a.initials || '✓';
+                            ? cellAdmins.map((x) => x.value || x.initials || '·').join('/')
+                            : a.value || a.initials || '✓';
                           const star = a.administeredByType && a.administeredByType !== 'nurse' ? '*' : '';
                           // A PRN ("as needed") med can be given more than once a day,
                           // so a documented PRN cell still opens the dose modal to

@@ -39,6 +39,8 @@ interface ProposedMedShape {
   scheduledTimes?: string[];
   isPRN?: boolean;
   indication?: string;
+  valueLabel?: string;
+  valueUnit?: string;
   startDate?: string;
   orderSignedDate?: string;
   orderingPhysician?: string;
@@ -63,6 +65,8 @@ function orderFromProposed(
     scheduledTimes: p.isPRN ? [] : Array.isArray(p.scheduledTimes) ? p.scheduledTimes : [],
     isPRN: !!p.isPRN,
     indication: String(p.indication || ''),
+    valueLabel: String(p.valueLabel || ''),
+    valueUnit: String(p.valueUnit || ''),
     startDate,
     endDate: null,
     orderSignedDate: String(p.orderSignedDate || ''),
@@ -267,6 +271,8 @@ function cleanProposed(p: ProposedMedShape) {
     scheduledTimes: p.isPRN ? [] : Array.isArray(p.scheduledTimes) ? p.scheduledTimes.filter(Boolean) : [],
     isPRN: !!p.isPRN,
     indication: String(p.indication || '').trim(),
+    valueLabel: String(p.valueLabel || '').trim(),
+    valueUnit: String(p.valueUnit || '').trim(),
     startDate: String(p.startDate || ''),
     orderSignedDate: String(p.orderSignedDate || '').trim(),
     orderingPhysician: String(p.orderingPhysician || '').trim(),

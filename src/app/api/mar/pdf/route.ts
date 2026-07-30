@@ -80,6 +80,8 @@ interface AdminDoc {
   reason: string;
   prescriberNotified: boolean | null;
   outcome: string;
+  /** Reading for a check-style order (gastric residual, etc.); '' for doses. */
+  value: string;
   documentedByName: string;
   documentedByCredential: string;
 }
@@ -200,6 +202,7 @@ export async function POST(request: Request) {
         prescriberNotified:
           typeof a.prescriberNotified === 'boolean' ? a.prescriberNotified : null,
         outcome: String(a.outcome || ''),
+        value: String(a.value || ''),
         documentedByName: String(a.documentedByName || ''),
         documentedByCredential: String(a.documentedByCredential || ''),
       };
@@ -245,10 +248,13 @@ export async function POST(request: Request) {
           }
           const first = hits[0];
           cells.push({
+            // A check-style order records a reading; the number is the record,
+            // so print it in the box rather than the documenter's initials
+            // (which stay in the legend and the exception log).
             label:
               hits.length > 1
-                ? hits.map((h) => h.initials || '·').join('/')
-                : first.initials || '✓',
+                ? hits.map((h) => h.value || h.initials || '·').join('/')
+                : first.value || first.initials || '✓',
             status: (first.status as MarCellStatus) || 'given',
             star: hits.some((h) => h.administeredByType && h.administeredByType !== 'nurse'),
           });
