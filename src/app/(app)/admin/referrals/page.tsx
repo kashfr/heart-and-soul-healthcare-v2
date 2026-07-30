@@ -6,6 +6,7 @@ import { authedFetch } from '@/lib/authedFetch';
 import { useAuth } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
 import { type GappServiceKey } from '@/lib/georgia';
+import type { ServiceKey } from '@/lib/diagnosisCatalog';
 import { assessReferralFit } from '@/lib/referralFit';
 import { summarizePartnerMatches } from '@/lib/agencyMatch';
 import { usePartnerAgencies } from './PartnerAgenciesProvider';
@@ -274,6 +275,19 @@ export default function ReferralsPage() {
     [mutate]
   );
 
+  // Staff override of the service line. Optimistic like the others, so the fit
+  // and partner badges re-derive the moment the select changes.
+  const handleServiceChange = useCallback(
+    (id: string, service: ServiceKey | null) =>
+      mutate(
+        id,
+        (r) => ({ ...r, service }),
+        { service },
+        'Could not update the care need.'
+      ),
+    [mutate]
+  );
+
   const handleDelete = useCallback(async (id: string) => {
     try {
       const res = await authedFetch(`/api/admin/referrals/${id}`, { method: 'DELETE' });
@@ -447,6 +461,7 @@ export default function ReferralsPage() {
           onClose={() => setSelectedId(null)}
           onStageChange={(stage) => handleMove(selected.id, stage, selected.order)}
           onAssign={(assignee) => handleAssign(selected.id, assignee)}
+          onServiceChange={(service) => handleServiceChange(selected.id, service)}
           onPrint={(r) => openPrint([r])}
           onDelete={() => handleDelete(selected.id)}
           canDelete={canDelete}

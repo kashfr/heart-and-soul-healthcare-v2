@@ -3,12 +3,17 @@ import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
 import {
   moveReferral,
   assignReferral,
+  setReferralService,
   getReferral,
   deleteReferral,
   stageFromStatus,
   REFERRAL_STAGES,
   type ReferralStage,
 } from '@/lib/referrals';
+// SERVICE_KEYS is the portal's canonical list; ServiceKey is the shared
+// catalog's identical union, used because that's what the data layer takes.
+import { SERVICE_KEYS } from '@/lib/georgia';
+import type { ServiceKey } from '@/lib/diagnosisCatalog';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -22,6 +27,8 @@ interface PatchBody {
   status?: string;
   /** Present (possibly null) to (un)assign the referral. */
   assignee?: { uid?: string; name?: string } | null;
+  /** Present (possibly null) to override or clear the GAPP service line. */
+  service?: string | null;
 }
 
 export async function PATCH(
@@ -72,7 +79,23 @@ export async function PATCH(
   const hasOrder = has('order');
   const hasMove = stage !== undefined || hasOrder;
 
-  if (!hasAssignee && !hasMove) {
+  // null is a meaningful value here (clear the override), so validate on
+  // presence rather than truthiness.
+  const hasService = has('service');
+  let service: ServiceKey | null = null;
+  if (hasService) {
+    if (body.service !== null) {
+      if (
+        typeof body.service !== 'string' ||
+        !SERVICE_KEYS.includes(body.service as ServiceKey)
+      ) {
+        return NextResponse.json({ error: 'Invalid service.' }, { status: 400 });
+      }
+      service = body.service as ServiceKey;
+    }
+  }
+
+  if (!hasAssignee && !hasMove && !hasService) {
     return NextResponse.json({ error: 'No changes supplied.' }, { status: 400 });
   }
 
@@ -87,6 +110,14 @@ export async function PATCH(
       assignee = { uid: a.uid, name: a.name };
     }
     const ok = await assignReferral(id, assignee, caller);
+    if (!ok) {
+      return NextResponse.json({ error: 'Referral not found.' }, { status: 404 });
+    }
+  }
+
+  // Service-line override (null clears it, restoring the intake fallback).
+  if (hasService) {
+    const ok = await setReferralService(id, service, caller);
     if (!ok) {
       return NextResponse.json({ error: 'Referral not found.' }, { status: 404 });
     }

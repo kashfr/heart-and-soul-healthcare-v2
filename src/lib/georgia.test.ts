@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { GA_COUNTIES, normalizeCounty, serviceFromCareNeed, SERVICE_KEYS } from './georgia';
+import { GA_COUNTIES, normalizeCounty, serviceFromCareNeed, SERVICE_KEYS , GAPP_SERVICES} from './georgia';
 
 describe('GA_COUNTIES', () => {
   it('has exactly the 159 Georgia counties, no duplicates', () => {
@@ -44,5 +44,14 @@ describe('serviceFromCareNeed', () => {
 
   it('service keys stay in sync with the canonical list', () => {
     expect(SERVICE_KEYS).toEqual(['nursing', 'pss', 'behavioral']);
+  });
+
+  it('service keys match the shared catalog, which the data layer types against', () => {
+    // The referrals PATCH route validates an incoming service override against
+    // SERVICE_KEYS but hands it to setReferralService as the catalog's
+    // ServiceKey. If these two lists ever diverge, the route would accept a key
+    // the data layer cannot represent (or reject one it can).
+    const catalogKeys = GAPP_SERVICES.map((s) => s.key);
+    expect(SERVICE_KEYS).toEqual(catalogKeys);
   });
 });

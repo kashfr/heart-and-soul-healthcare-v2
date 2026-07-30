@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   X, Phone, Mail, Printer, MessageSquare, ArrowRightLeft, UserCheck,
-  Inbox, PhoneCall, Send, Share2, Copy, Check, Trash2, Plus,
+  Inbox, PhoneCall, Send, Share2, Copy, Check, Trash2, Plus, Stethoscope,
 } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { buildShareUrl } from '@/lib/shareLink';
-import { type GappServiceKey } from '@/lib/georgia';
+import { GAPP_SERVICES, SERVICE_LABEL, serviceFromCareNeed, type GappServiceKey } from '@/lib/georgia';
+import type { ServiceKey } from '@/lib/diagnosisCatalog';
 import { matchAgencies, topSuggestions } from '@/lib/agencyMatch';
 import MatchSuggestions from './MatchSuggestions';
 import FitBadge from './FitBadge';
@@ -27,6 +28,7 @@ interface Props {
   onClose: () => void;
   onStageChange: (stage: ReferralStage) => void;
   onAssign: (assignee: { uid: string; name: string } | null) => void;
+  onServiceChange: (service: ServiceKey | null) => void;
   onPrint: (referral: Referral) => void;
   onDelete: () => void;
   canDelete: boolean;
@@ -35,7 +37,8 @@ interface Props {
 }
 
 export default function ReferralDetail({
-  referral, staff, busy, onClose, onStageChange, onAssign, onPrint, onDelete, canDelete, onChanged,
+  referral, staff, busy, onClose, onStageChange, onAssign, onServiceChange,
+  onPrint, onDelete, canDelete, onChanged,
 }: Props) {
   const [activity, setActivity] = useState<ReferralActivity[]>([]);
   const [activityLoading, setActivityLoading] = useState(true);
@@ -89,6 +92,11 @@ export default function ReferralDetail({
   };
 
   const rows = fieldRows(referral);
+  // What the card falls back to with no staff override, so the placeholder
+  // option can name it rather than saying a bare "From the form".
+  const fallbackService = serviceFromCareNeed(
+    referral.details.find((d) => d.label === 'Primary care need')?.value
+  );
 
   return (
     <div style={backdropStyle} onClick={onClose}>
@@ -182,6 +190,40 @@ export default function ReferralDetail({
                   </option>
                 ))}
               </select>
+            </label>
+
+            {/* Care-need override. The intake inference only sees what the
+                family answered, and sees nothing at all on referrals taken
+                before the structured form — so this is how staff correct a card
+                the board is routing on the wrong service line. "From the form"
+                clears the override and falls back to what the family selected. */}
+            <label style={controlBlockStyle}>
+              <span style={controlLabelStyle}>Care need</span>
+              <select
+                value={referral.service ?? ''}
+                disabled={busy}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  onServiceChange(v ? (v as ServiceKey) : null);
+                }}
+                style={selectStyle}
+              >
+                <option value="">
+                  {fallbackService
+                    ? `From the form: ${SERVICE_LABEL[fallbackService]}`
+                    : 'From the form: not stated'}
+                </option>
+                {GAPP_SERVICES.map((svc) => (
+                  <option key={svc.key} value={svc.key}>
+                    {svc.label}
+                  </option>
+                ))}
+              </select>
+              <span style={controlHintStyle}>
+                {referral.service
+                  ? 'Set by staff. Drives fit and partner matching.'
+                  : 'Taken from what the family selected. Change it if that is wrong.'}
+              </span>
             </label>
           </div>
 
@@ -317,6 +359,7 @@ const ACTIVITY_ICON: Record<ReferralActivityType, React.ReactNode> = {
   created: <Inbox size={14} />,
   stage_change: <ArrowRightLeft size={14} />,
   assignment: <UserCheck size={14} />,
+  service_change: <Stethoscope size={14} />,
   note: <MessageSquare size={14} />,
   contact: <PhoneCall size={14} />,
   share: <Share2 size={14} />,
@@ -848,6 +891,11 @@ const controlLabelStyle: React.CSSProperties = {
   textTransform: 'uppercase',
   letterSpacing: 0.4,
   color: '#7f8c8d',
+};
+const controlHintStyle: React.CSSProperties = {
+  fontSize: 11,
+  lineHeight: 1.4,
+  color: '#9ca3af',
 };
 const selectStyle: React.CSSProperties = {
   width: '100%',

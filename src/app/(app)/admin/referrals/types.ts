@@ -25,6 +25,7 @@ export type ReferralActivityType =
   | 'created'
   | 'stage_change'
   | 'assignment'
+  | 'service_change'
   | 'note'
   | 'contact'
   | 'share';

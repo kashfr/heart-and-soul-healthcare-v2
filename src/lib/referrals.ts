@@ -86,6 +86,7 @@ export type ReferralActivityType =
   | 'created'
   | 'stage_change'
   | 'assignment'
+  | 'service_change'
   | 'note'
   | 'contact'
   | 'share';
@@ -605,6 +606,56 @@ export async function deleteReferral(id: string, caller: AuthedCaller): Promise<
   } catch {
     /* ignore */
   }
+  return true;
+}
+
+const SERVICE_ACTIVITY_LABEL: Record<ServiceKey, string> = {
+  nursing: 'Skilled Nursing',
+  pss: 'Personal Support Services (PSS)',
+  behavioral: 'Behavioral Support Aide Services (BSS)',
+};
+
+/**
+ * Set (or, with null, clear) the GAPP service line on a referral.
+ *
+ * The line is inferred at intake, but the inference only sees what the family
+ * answered — and it sees nothing at all on referrals taken before the structured
+ * form existed, where the diagnosis is free text the board never reads. Without
+ * a manual override there is no way to tell the board that an autism referral
+ * filed as "hands-on personal care" is really a behavioral case.
+ *
+ * Passing null clears the override, putting the card back on the fallback in
+ * serviceForReferral() (the "Primary care need" row).
+ */
+export async function setReferralService(
+  id: string,
+  service: ServiceKey | null,
+  caller: AuthedCaller
+): Promise<boolean> {
+  const ref = adminDb().collection(COLLECTION).doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) return false;
+
+  const prev = snap.data() as FirebaseFirestore.DocumentData;
+  const prevService: ServiceKey | null = prev.service ?? null;
+  if (prevService === service) return true; // no-op; don't log a non-change
+
+  await ref.update({
+    service,
+    updatedAt: FieldValue.serverTimestamp(),
+    statusUpdatedBy: caller.uid,
+    statusUpdatedByName: caller.profile.displayName || '',
+  });
+
+  await logReferralActivity(id, {
+    type: 'service_change',
+    text: service
+      ? `Care need set to ${SERVICE_ACTIVITY_LABEL[service]}`
+      : 'Care need cleared (back to what the family selected)',
+    byUid: caller.uid,
+    byName: caller.profile.displayName || '',
+    byRole: caller.role,
+  });
   return true;
 }
 
