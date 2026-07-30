@@ -10,8 +10,9 @@ import { getPatients, getPatientsForNurse, type Patient } from '@/lib/patients';
  * Standalone Treatments (TAR) entry point, mirroring the Medications picker. A
  * nurse reaches her treatment records here from the sidebar, independent of
  * writing a progress note: she picks one of her assigned clients and opens the
- * SAME monthly TAR grid supervisors use (under /admin/records/[id]/tar). Staff
- * who land here directly see all clients (they normally use Records).
+ * SAME monthly TAR grid supervisors use (under /admin/records/[id]/tar). Admins
+ * and supervisors reach the same picker from the sidebar and see the full
+ * roster.
  */
 export default function TreatmentsPickerPage() {
   const { uid, role } = useEffectiveUser();

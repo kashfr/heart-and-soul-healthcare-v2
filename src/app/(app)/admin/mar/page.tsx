@@ -10,8 +10,8 @@ import { getPatients, getPatientsForNurse, type Patient } from '@/lib/patients';
  * Standalone Medications (MAR) entry point. A nurse reaches her medication
  * records here from the sidebar, independent of writing a progress note: she
  * picks one of her assigned clients and opens the SAME monthly MAR grid
- * supervisors use (under /admin/records/[id]/mar). Staff who land here directly
- * see all clients (they normally use Records).
+ * supervisors use (under /admin/records/[id]/mar). Admins and supervisors reach the same
+ * picker from the sidebar and see the full roster.
  */
 export default function MedicationsPickerPage() {
   const { uid, role } = useEffectiveUser();
