@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, usePathname } from 'next/navigation';
 import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardList, FileDown } from 'lucide-react';
 import { getPatient, getPatientClinical, type Patient, type PatientClinical } from '@/lib/patients';
 import { getCareTasks, normalizeTimesPerDay, type CareTask } from '@/lib/careTasks';
@@ -58,6 +58,11 @@ interface GridRow {
 export default function MonthlyTarPage() {
   const params = useParams();
   const patientId = String(params.patientId);
+  // Same grid, two routes — /admin/records/[id]/tar and the standalone
+  // /admin/treatments/[id] picker. The back-link follows the route rather than
+  // the role, since staff reach the picker too. See the MAR page for the reason.
+  const pathname = usePathname();
+  const cameFromPicker = pathname.startsWith('/admin/treatments');
   const { role, isViewingAs } = useEffectiveUser();
   const { profile } = useAuth();
   const isNurse = role === 'nurse';
@@ -217,8 +222,11 @@ export default function MonthlyTarPage() {
   return (
     <div style={containerStyle}>
       <div style={wrapStyle}>
-        <Link href={isNurse ? '/admin/treatments' : `/admin/records/${patientId}`} style={backLinkStyle}>
-          <ArrowLeft size={14} /> {isNurse ? 'Back to Treatments' : 'Back to client record'}
+        <Link
+          href={cameFromPicker ? '/admin/treatments' : `/admin/records/${patientId}`}
+          style={backLinkStyle}
+        >
+          <ArrowLeft size={14} /> {cameFromPicker ? 'Back to Treatments' : 'Back to client record'}
         </Link>
 
         <div style={headerCardStyle}>

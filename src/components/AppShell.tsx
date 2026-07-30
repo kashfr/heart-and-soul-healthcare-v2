@@ -49,12 +49,27 @@ const NAV: NavItem[] = [
   // Per-client dashboards for the whole care team: nurses see their assigned
   // clients, staff see all. The client picker routes to /admin/clients/[id].
   { href: '/admin/clients', label: 'Clients', icon: <HeartPulse size={18} />, allow: ['admin', 'supervisor', 'nurse'] },
-  // Always-on MAR for nurses: their standalone way into the same grid supervisors
-  // see via Records. Nurse-only here (staff reach the MAR through Records).
-  { href: '/admin/mar', label: 'Medications', icon: <Tablets size={18} />, allow: ['nurse'] },
-  // Same idea for treatments: the TAR is the non-medication twin of the MAR,
-  // charting the ordered care on a client's plan (tube site care, wound care).
-  { href: '/admin/treatments', label: 'Treatments', icon: <Stethoscope size={18} />, allow: ['nurse'] },
+  // Always-on MAR and TAR. Open to staff as well as nurses: reaching a client's
+  // med or treatment record via Records -> client -> button is several clicks
+  // for a supervisor doing oversight across a caseload, and the TAR was
+  // effectively undiscoverable for staff because nothing in the sidebar named
+  // it. Both pickers already scope themselves — a nurse sees only her assigned
+  // clients, staff see the full roster — so widening the nav grants no access
+  // the role didn't already have.
+  {
+    href: '/admin/mar',
+    label: 'Medications',
+    icon: <Tablets size={18} />,
+    allow: ['admin', 'supervisor', 'nurse'],
+  },
+  // The TAR is the non-medication twin of the MAR, charting the ordered care on
+  // a client's plan (tube site care, wound care).
+  {
+    href: '/admin/treatments',
+    label: 'Treatments',
+    icon: <Stethoscope size={18} />,
+    allow: ['admin', 'supervisor', 'nurse'],
+  },
   { href: '/admin/patients', label: 'Patients', icon: <Users size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/records', label: 'Records', icon: <Pill size={18} />, allow: ['admin', 'supervisor'] },
   // Per-client plan-of-care task lists (Option C): staff build the list, the

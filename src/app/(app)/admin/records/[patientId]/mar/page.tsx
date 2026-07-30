@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, usePathname } from 'next/navigation';
 import { ArrowLeft, ChevronLeft, ChevronRight, FileDown, Pill, PlusCircle } from 'lucide-react';
 import {
   getPatient,
@@ -87,8 +87,14 @@ interface GridRow {
 export default function MonthlyMarPage() {
   const params = useParams();
   const patientId = String(params.patientId);
-  // Nurses reach this same grid from the standalone Medications picker; adjust
-  // the back-link and hide the staff-only PDF export for them.
+  // The same grid renders at two routes: /admin/records/[id]/mar (drilled into
+  // from a client's record) and /admin/mar/[id] (the standalone Medications
+  // picker). The back-link follows the ROUTE, not the role, because staff can
+  // now reach the picker too — sending a supervisor who came from Medications
+  // "back" into Records would drop them somewhere they never were.
+  const pathname = usePathname();
+  const cameFromPicker = pathname.startsWith('/admin/mar');
+  // The PDF export stays role-gated (staff only) regardless of route.
   const { role, isViewingAs } = useEffectiveUser();
   const isNurse = role === 'nurse';
   // Charting a dose is a LICENSED action, so the gate is the nursing CREDENTIAL,
@@ -341,8 +347,12 @@ export default function MonthlyMarPage() {
     <div style={containerStyle}>
       <div style={wrapStyle}>
         <div style={{ marginBottom: 16 }}>
-          <Link href={isNurse ? '/admin/mar' : `/admin/records/${patientId}`} style={backLinkStyle}>
-            <ArrowLeft size={14} /> {isNurse ? 'Back to Medications' : 'Back to medication orders'}
+          <Link
+            href={cameFromPicker ? '/admin/mar' : `/admin/records/${patientId}`}
+            style={backLinkStyle}
+          >
+            <ArrowLeft size={14} />{' '}
+            {cameFromPicker ? 'Back to Medications' : 'Back to medication orders'}
           </Link>
         </div>
 
