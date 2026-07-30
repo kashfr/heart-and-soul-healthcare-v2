@@ -499,3 +499,39 @@ button {
 @keyframes hs-spin {
   to { transform: rotate(360deg); }
 }
+
+/* Chartable MAR / TAR grid cells.
+   A blank cell in a month grid reads as inert: nurses were clicking one only
+   by accident, so the affordance has to be visible, not just a cursor change.
+   On hover the box lifts to a tinted panel with an inset ring, and an empty
+   one shows a faint "+" so it reads as "add an entry here". Declared globally
+   because the grids are built from inline styles, which can't express :hover
+   or ::after. */
+.hs-chartable {
+  cursor: pointer;
+  position: relative;
+  transition: background-color 0.12s ease, box-shadow 0.12s ease;
+}
+.hs-chartable:hover {
+  background-color: #e8f1fd !important;
+  box-shadow: inset 0 0 0 2px #1a73c4;
+}
+.hs-chartable:focus-visible {
+  outline: none;
+  background-color: #e8f1fd;
+  box-shadow: inset 0 0 0 2px #1a73c4;
+}
+/* Only an EMPTY cell gets the plus; a documented one already shows initials. */
+.hs-chartable:empty::after {
+  content: '+';
+  color: #9db8d8;
+  font-weight: 700;
+  font-size: 12px;
+}
+.hs-chartable:empty:hover::after {
+  color: #1a73c4;
+}
+@media (hover: none) {
+  /* Touch devices get the hint permanently: there is no hover to discover it. */
+  .hs-chartable:empty::after { color: #b9cbe2; }
+}

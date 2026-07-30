@@ -3,7 +3,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
-import { writeMarAdministrations, type MarOrder } from '@/lib/mar';
+import { parseValueOptions, writeMarAdministrations, type MarOrder } from '@/lib/mar';
 
 const ADMIN_BY_OPTIONS = [
   { value: 'nurse', label: 'Nurse (me)' },
@@ -95,13 +95,17 @@ export default function AdministerDoseModal({
   const valueLabel = (order.valueLabel || '').trim();
   const isCheck = !!valueLabel;
   const valueUnit = (order.valueUnit || '').trim();
+  // Prefer a picklist over free text: a mistyped clinical reading is a real
+  // safety risk, and a dropdown removes the finger-slip entirely. Falls back to
+  // a numeric keypad only when the order defines no allowed values.
+  const valueOptions = parseValueOptions(order.valueOptions);
   const needsReason = status === 'held' || status === 'refused' || (status === 'given' && isPRN);
   const indication = (order.indication || '').trim();
   const isLate = !!dateISO && dateISO !== todayISO;
 
   const save = async () => {
     if (!status) {
-      setError('Choose Given, Held, or Refused.');
+      setError(isCheck ? 'Choose Done, Held, or Refused.' : 'Choose Given, Held, or Refused.');
       return;
     }
     if (status === 'given' && !actualTime) {
@@ -109,7 +113,11 @@ export default function AdministerDoseModal({
       return;
     }
     if (isCheck && status === 'given' && !value.trim()) {
-      setError(`Enter the ${valueLabel.toLowerCase()} reading.`);
+      setError(
+        valueOptions.length > 0
+          ? `Select the ${valueLabel.toLowerCase()} reading.`
+          : `Enter the ${valueLabel.toLowerCase()} reading.`,
+      );
       return;
     }
     if (needsReason && !reason.trim()) {
@@ -149,7 +157,7 @@ export default function AdministerDoseModal({
       onSaved();
       onClose();
     } catch {
-      setError('Could not save the dose. Please try again.');
+      setError(isCheck ? 'Could not save the entry. Please try again.' : 'Could not save the dose. Please try again.');
       setBusy(false);
     }
   };
@@ -157,7 +165,7 @@ export default function AdministerDoseModal({
   if (!mounted) return null;
 
   return createPortal(
-    <div style={backdrop} role="dialog" aria-modal="true" aria-label="Document a dose">
+    <div style={backdrop} role="dialog" aria-modal="true" aria-label={isCheck ? 'Record a check' : 'Document a dose'}>
       <div style={sheet}>
         <div style={head}>
           <div style={{ minWidth: 0 }}>
@@ -205,14 +213,27 @@ export default function AdministerDoseModal({
                   {valueLabel}
                   {valueUnit ? ` (${valueUnit})` : ''} *
                 </span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                  style={input}
-                  placeholder={valueUnit ? `e.g., 30 ${valueUnit}` : 'Reading'}
-                />
+                {valueOptions.length > 0 ? (
+                  <select value={value} onChange={(e) => setValue(e.target.value)} style={input}>
+                    <option value="">Select a reading…</option>
+                    {valueOptions.map((o) => (
+                      <option key={o} value={o}>
+                        {/^-?\d+(\.\d+)?$/.test(o) && valueUnit ? `${o} ${valueUnit}` : o}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    step="any"
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                    style={input}
+                    placeholder={valueUnit ? `e.g., 30 ${valueUnit}` : 'Reading'}
+                  />
+                )}
               </label>
             )}
             <label style={field}>
@@ -280,7 +301,12 @@ export default function AdministerDoseModal({
               style={{ marginTop: 2 }}
             />
             <span style={{ fontSize: 12.5, color: '#5c6b7a', lineHeight: 1.4 }}>
-              I notified the prescriber{status === 'refused' ? ' of this refusal' : ' that this dose was not given'}.
+              I notified the prescriber
+              {status === 'refused'
+                ? ' of this refusal'
+                : isCheck
+                  ? ' that this check was not done'
+                  : ' that this dose was not given'}.
               (You can record this later with a correction if you reach them after documenting.)
             </span>
           </label>
@@ -313,7 +339,7 @@ export default function AdministerDoseModal({
             Cancel
           </button>
           <button type="button" style={saveBtn} onClick={save} disabled={busy}>
-            {busy ? 'Saving…' : 'Save dose'}
+            {busy ? 'Saving…' : isCheck ? 'Save entry' : 'Save dose'}
           </button>
         </div>
       </div>

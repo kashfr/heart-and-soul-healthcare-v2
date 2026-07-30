@@ -9,6 +9,7 @@ import { getPatient, type Patient } from '@/lib/patients';
 import {
   getCareTasks,
   addCareTask,
+  normalizeTimesPerDay,
   updateCareTask,
   discontinueCareTask,
   approveCareTasks,
@@ -22,6 +23,7 @@ import {
   findCatalogTask,
   type CareTaskLevel,
 } from '@/lib/careTaskCatalog';
+import { looksLikeUnknownPhysician } from '@/lib/marShared';
 
 /**
  * Per-client care task editor (Option C phase 1). Staff assign tasks from
@@ -53,6 +55,12 @@ export default function CarePlanEditorPage() {
   const [editName, setEditName] = useState('');
   const [editFrequency, setEditFrequency] = useState('');
   const [editInstructions, setEditInstructions] = useState('');
+  // TAR fields: how many boxes a day this treatment gets on the grid, and the
+  // physician order authorising it (Appendix T for GAPP members).
+  const [editTimesPerDay, setEditTimesPerDay] = useState(1);
+  const [editPhysician, setEditPhysician] = useState('');
+  const [editPhysicianUnknown, setEditPhysicianUnknown] = useState(false);
+  const [editSignedDate, setEditSignedDate] = useState('');
 
   // Discontinue modal
   const [dcTarget, setDcTarget] = useState<CareTask | null>(null);
@@ -168,6 +176,10 @@ export default function CarePlanEditorPage() {
     setEditName(t.name);
     setEditFrequency(t.frequency);
     setEditInstructions(t.instructions || '');
+    setEditTimesPerDay(normalizeTimesPerDay(t.timesPerDay));
+    setEditPhysician(t.orderingPhysician || '');
+    setEditPhysicianUnknown(t.physicianPending === true);
+    setEditSignedDate(t.orderSignedDate || '');
   };
 
   const handleEdit = () =>
@@ -175,7 +187,17 @@ export default function CarePlanEditorPage() {
       if (!actor || !editTarget?.id) return;
       await updateCareTask(
         editTarget.id,
-        { name: editName.trim() || editTarget.name, frequency: editFrequency, instructions: editInstructions },
+        {
+          name: editName.trim() || editTarget.name,
+          frequency: editFrequency,
+          instructions: editInstructions,
+          timesPerDay: editTimesPerDay,
+          orderingPhysician: editPhysician,
+          // Honest escape hatch, mirroring the MAR: flag the prescriber as
+          // unknown rather than typing a placeholder into the field.
+          physicianPending: editPhysicianUnknown && looksLikeUnknownPhysician(editPhysician),
+          orderSignedDate: editSignedDate,
+        },
         actor,
       );
       setEditTarget(null);
@@ -410,6 +432,57 @@ export default function CarePlanEditorPage() {
             </select>
             <label style={fieldLabelStyle}>Instructions</label>
             <input type="text" value={editInstructions} onChange={(e) => setEditInstructions(e.target.value)} style={inputStyle} placeholder="Optional…" />
+
+            {/* TAR fields. Boxes-per-day is the RN supervisor's "single box
+                would do it, but make it editable if there's a specific order
+                to do something more than once per day". */}
+            <label style={fieldLabelStyle}>Boxes per day on the TAR</label>
+            <input
+              type="number"
+              min={1}
+              max={12}
+              value={editTimesPerDay}
+              onChange={(e) => setEditTimesPerDay(Number(e.target.value))}
+              style={inputStyle}
+            />
+            <p style={{ fontSize: 11.5, color: '#7f8c8d', margin: '2px 0 10px', lineHeight: 1.45 }}>
+              One box a day is usually right. Raise it only when an order calls for the treatment more
+              than once daily and each occurrence has to be signed for separately.
+            </p>
+
+            <label style={fieldLabelStyle}>Ordering physician</label>
+            <input
+              type="text"
+              value={editPhysician}
+              onChange={(e) => setEditPhysician(e.target.value)}
+              style={inputStyle}
+              placeholder="Dr. …"
+            />
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12.5, color: '#2c3e50', margin: '6px 0 10px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={editPhysicianUnknown}
+                onChange={(e) => setEditPhysicianUnknown(e.target.checked)}
+                style={{ marginTop: 2 }}
+              />
+              <span>
+                I don&apos;t know the ordering physician right now. Flag this treatment for follow-up so it
+                can be updated with the physician&apos;s name.
+              </span>
+            </label>
+
+            <label style={fieldLabelStyle}>Physician order signed on</label>
+            <input
+              type="date"
+              value={editSignedDate}
+              onChange={(e) => setEditSignedDate(e.target.value)}
+              style={inputStyle}
+            />
+            <p style={{ fontSize: 11.5, color: '#7f8c8d', margin: '2px 0 10px', lineHeight: 1.45 }}>
+              For GAPP members this is the date on the Appendix T Physician Plan of Treatment, which has to
+              be re-signed at each recertification.
+            </p>
+
             {editTarget.approvedAt != null && (
               <p style={editWarnStyle}>Editing clears this task&apos;s RN approval; it returns to pending review.</p>
             )}

@@ -10,6 +10,7 @@ import {
   physicianAttributionPending,
   physicianOrderStale,
   parseHHMM,
+  parseValueOptions,
   resolveCurrentAdministrations,
   type MarAdminFieldInput,
   type MarAdminFieldMeta,
@@ -438,5 +439,33 @@ describe('buildMarAdminFields — check-style orders (measured value)', () => {
     expect(f.value).toBe('');
     expect(f.valueLabelSnapshot).toBe('');
     expect(f.valueUnitSnapshot).toBe('');
+  });
+});
+
+describe('parseValueOptions', () => {
+  it('splits a comma-separated scale and trims each entry', () => {
+    expect(parseValueOptions('0, 5, 10 , 15')).toEqual(['0', '5', '10', '15']);
+  });
+
+  it('PRESERVES the author order — a clinical scale must not be re-sorted', () => {
+    expect(parseValueOptions('30, 0, 100, 5')).toEqual(['30', '0', '100', '5']);
+  });
+
+  it('drops blanks and duplicates', () => {
+    expect(parseValueOptions('0, , 5, 5,  ,10')).toEqual(['0', '5', '10']);
+  });
+
+  it('accepts an array (the stored shape) unchanged', () => {
+    expect(parseValueOptions([' 0 ', '5'])).toEqual(['0', '5']);
+  });
+
+  it('keeps non-numeric entries, so "More than 250" survives', () => {
+    expect(parseValueOptions('200, 250, More than 250')).toEqual(['200', '250', 'More than 250']);
+  });
+
+  it('returns an empty list for undefined or empty input', () => {
+    expect(parseValueOptions(undefined)).toEqual([]);
+    expect(parseValueOptions('')).toEqual([]);
+    expect(parseValueOptions('  ,  ')).toEqual([]);
   });
 });

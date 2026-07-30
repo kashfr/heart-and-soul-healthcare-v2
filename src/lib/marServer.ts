@@ -2,7 +2,7 @@ import 'server-only';
 import { FieldValue, type DocumentData, type DocumentReference } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
 import type { AuthedCaller } from './adminAuthGuard';
-import { buildMarAdminFields } from './marShared';
+import { buildMarAdminFields, parseValueOptions } from './marShared';
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** Return `value` if it is an ISO YYYY-MM-DD date string, else `fallback`. Both
@@ -41,6 +41,7 @@ interface ProposedMedShape {
   indication?: string;
   valueLabel?: string;
   valueUnit?: string;
+  valueOptions?: string[] | string;
   startDate?: string;
   orderSignedDate?: string;
   orderingPhysician?: string;
@@ -67,6 +68,7 @@ function orderFromProposed(
     indication: String(p.indication || ''),
     valueLabel: String(p.valueLabel || ''),
     valueUnit: String(p.valueUnit || ''),
+    valueOptions: parseValueOptions(p.valueOptions),
     startDate,
     endDate: null,
     orderSignedDate: String(p.orderSignedDate || ''),
@@ -273,6 +275,7 @@ function cleanProposed(p: ProposedMedShape) {
     indication: String(p.indication || '').trim(),
     valueLabel: String(p.valueLabel || '').trim(),
     valueUnit: String(p.valueUnit || '').trim(),
+    valueOptions: parseValueOptions(p.valueOptions),
     startDate: String(p.startDate || ''),
     orderSignedDate: String(p.orderSignedDate || '').trim(),
     orderingPhysician: String(p.orderingPhysician || '').trim(),

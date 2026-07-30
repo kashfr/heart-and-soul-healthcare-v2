@@ -144,17 +144,24 @@ const s = StyleSheet.create({
     minHeight: 16,
   },
   dayText: { fontSize: 6.5, fontFamily: 'Helvetica-Bold', textAlign: 'center' },
+  // A TRUE circle: the radius must be exactly half the side, and the side must
+  // be square. An earlier 15x11 box with radius 8 rendered as a squashed
+  // lozenge. Values kept identical to MarPDF so both printed records use the
+  // same not-given mark.
   circled: {
-    borderWidth: 0.7,
-    borderRadius: 8,
-    width: 15,
-    height: 11,
+    width: 12,
+    height: 12,
+    borderWidth: 0.9,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // Fallback pill for longer labels (e.g. "N/A") that can't fit a 12pt circle.
   circledWide: {
-    borderWidth: 0.7,
-    borderRadius: 6,
+    borderWidth: 0.9,
+    borderRadius: 5,
+    height: 10,
+    minWidth: 11,
     paddingHorizontal: 2,
     alignItems: 'center',
     justifyContent: 'center',

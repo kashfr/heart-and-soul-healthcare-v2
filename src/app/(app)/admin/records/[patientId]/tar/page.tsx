@@ -339,6 +339,19 @@ export default function MonthlyTarPage() {
                           <td
                             key={d}
                             title={title}
+                            className={chartable ? 'hs-chartable' : undefined}
+                            tabIndex={chartable ? 0 : undefined}
+                            role={chartable ? 'button' : undefined}
+                            onKeyDown={
+                              chartable
+                                ? (e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault();
+                                      setRecordFor({ task, date: iso, slotIndex, timesPerDay });
+                                    }
+                                  }
+                                : undefined
+                            }
                             onClick={chartable ? () => setRecordFor({ task, date: iso, slotIndex, timesPerDay }) : undefined}
                             style={{
                               ...gridTdStyle,
@@ -358,11 +371,19 @@ export default function MonthlyTarPage() {
               </table>
             </div>
 
+            {canChartAny && (
+              <div style={chartHintStyle}>
+                <strong>Click any box to record a treatment.</strong> Empty boxes show a faint + when you
+                hover over them.
+              </div>
+            )}
+
             <div style={legendStyle}>
               Initials in a box = treatment carried out. <strong>R</strong> = not carried out; see the reason
               on hover. <strong>N/A</strong> = not applicable that day. A shaded box means the care was
               performed by family or another non-agency caregiver, recorded by the nurse. Entries cannot be
-              edited once saved; a correction is recorded as a new entry.
+              edited once saved; a correction is recorded as a new entry. A future day can&apos;t be
+              charted: you record what happened, not what will.
               {monthLoading ? ' Loading this month…' : ''}
             </div>
 
@@ -429,6 +450,7 @@ const todayEmptyCellStyle: React.CSSProperties = { background: '#fffbeb' };
 const gridTdStyle: React.CSSProperties = { border: '1px solid #dde3ea', padding: '6px 4px', textAlign: 'center', fontSize: 11.5, color: '#2c3e50', whiteSpace: 'nowrap' };
 const taskColStyle: React.CSSProperties = { minWidth: 210, maxWidth: 280, whiteSpace: 'normal', background: '#f4f7fa', textAlign: 'left' };
 const clickableCellStyle: React.CSSProperties = { cursor: 'pointer' };
+const chartHintStyle: React.CSSProperties = { background: '#eef5ff', border: '1px solid #c8def5', borderRadius: 8, padding: '9px 14px', fontSize: 12.5, color: '#1a3a5c', marginBottom: 10, lineHeight: 1.5 };
 const notDoneCellStyle: React.CSSProperties = { background: '#fdecea', color: '#a3261c', fontWeight: 700 };
 const familyCellStyle: React.CSSProperties = { background: '#eef5ff' };
 const physicianNeededChipStyle: React.CSSProperties = { display: 'inline-block', marginTop: 4, padding: '1px 7px', borderRadius: 999, background: '#fff3e0', color: '#b45309', fontSize: 10, fontWeight: 700 };

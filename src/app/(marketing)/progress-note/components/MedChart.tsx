@@ -189,7 +189,17 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
   const extras = dayAdminsCurrent.filter((a) => !consumedIds.has(a.id || ''));
   const isToday = day === today;
 
-  const statusLabel = (s: string) => (s === 'given' ? 'Given' : s === 'held' ? 'Held' : 'Refused');
+  const statusLabel = (s: string, isCheck = false) =>
+    s === 'given' ? (isCheck ? 'Done' : 'Given') : s === 'held' ? 'Held' : 'Refused';
+  /** The recorded reading for a check-style order, e.g. "10 mL". Empty for an
+   *  ordinary dose. The number IS the record on a check, so it must show
+   *  wherever the entry is summarised, not only in the month grid. */
+  const readingOf = (a: MarAdministration): string => {
+    const v = (a.value || '').trim();
+    if (!v) return '';
+    const unit = (a.valueUnitSnapshot || '').trim();
+    return unit && /^-?\d+(\.\d+)?$/.test(v) ? `${v} ${unit}` : v;
+  };
 
   // The documenting nurse may correct her own entry; an RN (clinical reviewer)
   // may correct any. The server re-checks this; the UI just hides the button.
@@ -272,7 +282,8 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
     return (
       <>
         <span style={statusPill[a.status] || statusPill.given}>
-          {statusLabel(a.status)}
+          {statusLabel(a.status, !!(a.valueLabelSnapshot || '').trim())}
+          {readingOf(a) ? ` ${readingOf(a)}` : ''}
           {a.status === 'given' && a.actualTime ? ` ${a.actualTime}` : ''}
           {a.initials ? ` · ${a.initials}` : ''}
         </span>
@@ -489,7 +500,8 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
                           <div key={a.id} style={timelineRow}>
                             <span style={timelineDate}>{dayLabel(a.date).replace(`, ${a.date.slice(0, 4)}`, '')}</span>
                             <span style={statusPill[a.status] || statusPill.given}>
-                              {a.status === 'given' ? 'Given' : a.status === 'held' ? 'Held' : 'Refused'}
+                              {statusLabel(a.status, !!(a.valueLabelSnapshot || '').trim())}
+                              {readingOf(a) ? ` ${readingOf(a)}` : ''}
                               {a.status === 'given' && a.actualTime ? ` ${a.actualTime}` : ''}
                               {a.initials ? ` · ${a.initials}` : ''}
                             </span>
