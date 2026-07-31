@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { formatUSPhone } from '@/lib/phone';
+import { YOUNG_PAID_CAREGIVER_AGE_YEARS } from '@/lib/diagnosisScreening';
 import {
   BEHAVIOR_RISK_OPTIONS,
   CURRENT_SERVICE_OPTIONS,
@@ -211,6 +212,14 @@ export default function ReferralPage() {
     seekingPaidGapp &&
     !isPaidBehavioralBlock &&
     (proseDxClass === 'mixed' || structuredPicture === 'mixed');
+  // Young child + paid-caregiver: advisory only, never a block. There is no age
+  // rule in the GAPP manual; the lever is medical necessity (paid family hours
+  // cover only care beyond age-typical needs), so we set expectations without
+  // turning away medically fragile toddlers who can legitimately qualify.
+  const isPaidYoungChild =
+    seekingPaidGapp &&
+    !!childAge &&
+    childAge.years < YOUNG_PAID_CAREGIVER_AGE_YEARS;
 
   // The GAPP clinical questions only apply to GAPP referrals; NOW/COMP, ICWP,
   // EDWP and private-pay inquiries never see them.
@@ -1252,6 +1261,24 @@ export default function ReferralPage() {
                             for hands-on care related to the physical or medical
                             condition, not for autism or behavioral support. We will
                             confirm what your child qualifies for when we talk.
+                          </p>
+                        </div>
+                      )}
+
+                      {isPaidYoungChild && !isPaidBehavioralBlock && (
+                        <div className={styles.countyNotice}>
+                          <AlertCircle size={16} />
+                          <p>
+                            A note about being paid to care for a young child: Medicaid
+                            approves paid family caregiver hours only for care that goes
+                            beyond what a child of the same age would ordinarily need.
+                            Everyday help for infants and young children, like feeding,
+                            bathing, dressing, and diapering, is considered typical
+                            parenting, so paid hours are rarely approved at this age.
+                            Approval is more likely when a child has significant medical
+                            needs, such as a feeding tube, trach, or ventilator. You are
+                            welcome to apply either way. Your child may still qualify
+                            for other GAPP services based on their medical needs.
                           </p>
                         </div>
                       )}

@@ -3,7 +3,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { createReferral, type ReferralInput } from '@/lib/referrals';
 import { sendReferralNotification } from '@/lib/emails/referralNotification';
 import { sendReferralConfirmation } from '@/lib/emails/referralConfirmation';
-import { paidCaregiverDiagnosisFlag } from '@/lib/diagnosisScreening';
+import { paidCaregiverDiagnosisFlag, paidCaregiverAgeFlag } from '@/lib/diagnosisScreening';
 import {
   CATALOG_VERSION,
   behaviorRiskLabel,
@@ -127,6 +127,9 @@ function toReferralInput(payload: IncomingPayload): ReferralInput {
   // Backstop flag: the GAPP form blocks most paid-caregiver-for-behavioral
   // requests, but flag any that reach us so staff can triage at a glance.
   const reviewFlag = paidCaregiverDiagnosisFlag(r.diagnosis, r.seekingPaidCaregiver);
+  // Young-child advisory: paid family hours cover only care beyond age-typical
+  // needs, so a request for a toddler is unlikely to be approved as-is.
+  const ageFlag = paidCaregiverAgeFlag(r.dob, r.seekingPaidCaregiver);
 
   // Which GAPP service line the family's answers point to, and whether that
   // disagrees with the care need they selected. Advisory: it drives the board's
@@ -157,6 +160,7 @@ function toReferralInput(payload: IncomingPayload): ReferralInput {
     service: inferred.service,
     details: [
       ...(reviewFlag ? [{ label: '⚠ Review', value: reviewFlag }] : []),
+      ...(ageFlag ? [{ label: '⚠ Young child', value: ageFlag }] : []),
       ...(inferred.conflict
         ? [{ label: '⚠ Care need unclear', value: inferred.conflict }]
         : []),

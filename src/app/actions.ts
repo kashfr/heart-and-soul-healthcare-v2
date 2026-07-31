@@ -6,7 +6,7 @@ import { JWT } from 'google-auth-library';
 import { createClickUpTask } from '@/lib/clickup';
 import { createReferral } from '@/lib/referrals';
 import { sendReferralConfirmation } from '@/lib/emails/referralConfirmation';
-import { paidCaregiverDiagnosisFlag } from '@/lib/diagnosisScreening';
+import { paidCaregiverDiagnosisFlag, paidCaregiverAgeFlag } from '@/lib/diagnosisScreening';
 import {
   behaviorRiskLabel,
   composeDiagnosisText,
@@ -254,6 +254,12 @@ export async function processReferralSubmission(data: any) {
               details.seekingPaidCaregiver
             )
           : null;
+      // Young-child advisory (GAPP only): paid family hours cover only care
+      // beyond age-typical needs, so a toddler request is unlikely as-is.
+      const ageFlag =
+        program.interest === 'gapp'
+          ? paidCaregiverAgeFlag(client.dob, details.seekingPaidCaregiver)
+          : null;
       // Which GAPP service line the answers point to. Scoped to GAPP: the other
       // programs on this form (NOW/COMP, ICWP, EDWP, private pay) don't have
       // GAPP service lines and never see the clinical questions.
@@ -271,6 +277,7 @@ export async function processReferralSubmission(data: any) {
         service: inferred?.service ?? null,
         details: [
           ...(reviewFlag ? [{ label: '⚠ Review', value: reviewFlag }] : []),
+          ...(ageFlag ? [{ label: '⚠ Young child', value: ageFlag }] : []),
           ...(inferred?.conflict
             ? [{ label: '⚠ Care need unclear', value: inferred.conflict }]
             : []),
