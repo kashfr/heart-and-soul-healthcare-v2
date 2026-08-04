@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { ArrowRight, Clock, Calendar } from 'lucide-react';
-import { CATEGORY_COLORS } from '@/lib/blog';
+import { CATEGORY_COLORS, formatPostDate } from '@/lib/blog';
 import styles from './BlogCard.module.css';
 
 interface BlogCardProps {
@@ -12,14 +12,6 @@ interface BlogCardProps {
   readingTime: string;
   slug: string;
   featuredImage?: string;
-}
-
-function formatDate(dateString: string): string {
-  return new Date(dateString).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
 }
 
 export default function BlogCard({
@@ -62,7 +54,7 @@ export default function BlogCard({
           <div className={styles.meta}>
             <div className={styles.metaItem}>
               <Calendar size={14} />
-              <time dateTime={date}>{formatDate(date)}</time>
+              <time dateTime={date}>{formatPostDate(date)}</time>
             </div>
             <div className={styles.metaItem}>
               <Clock size={14} />

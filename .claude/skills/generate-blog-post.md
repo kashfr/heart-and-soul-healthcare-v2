@@ -45,43 +45,46 @@ published: true
 ---
 ```
 
-6. **Image Placeholders** (Claude Code cannot generate images — the human will add them before merging):
+6. **Image Placeholders** — write these as `PLACEHOLDER-` paths first, then generate the real images in step 7. Do NOT leave `PLACEHOLDER-` paths in a committed post; every referenced image must exist on disk before you commit.
 
    **Featured Image:**
    - Set `featuredImage` in frontmatter to `/images/blog/PLACEHOLDER-<slug>-hero.png`
+   - Also add a `heroImagePrompt` frontmatter field with the full hero generation prompt (scene, subjects, mood, setting, lighting, "photorealism, professional editorial photography, warm tones, natural lighting, wide landscape composition, 16:9 aspect ratio")
 
    **Inline Images:**
-   - Include exactly 3 inline placeholder images distributed at natural visual breakpoints throughout the post
+   - Include **at least 3** inline placeholder images (hard minimum — the generation script refuses to run with fewer) distributed at natural visual breakpoints throughout the post. Add a 4th or 5th when the post is long or has more major sections that deserve a visual break.
    - Use this format: `![Detailed descriptive alt text that doubles as an image generation prompt](/images/blog/PLACEHOLDER-<slug>-<section-keyword>.png)`
-   - The alt text MUST be detailed enough to serve as an AI image generation prompt (describe the scene, subjects, mood, setting, and lighting)
+   - The alt text IS the generation prompt — describe the scene, subjects, mood, setting, lighting, style, and aspect ratio (3:2 for inline). Always include the words "photorealism" and "professional editorial photography".
    - Place them after major section headings where a visual break enhances readability
    - Use descriptive filenames: e.g., `PLACEHOLDER-medicaid-guide-family-documents.png`
 
-   **Image Generation Prompts in PR Body:**
-   - In the PR description, include a `## Image Prompts` section
-   - For each placeholder (hero + 3 inline = 4 total), write a detailed image generation prompt including:
-     - Subject matter and composition
-     - Setting and lighting (warm, natural light preferred)
-     - Mood (hopeful, compassionate, professional)
-     - Style: "Professional editorial photography, warm tones, natural lighting"
-     - Aspect ratio: 16:9 for hero, 3:2 for inline
-   - After the prompts, include a checklist of the placeholder filenames that need to be replaced
+7. **Generate the images** — run the generation script:
+   ```
+   bash .claude/scripts/generate-blog-images.sh content/blog/<slug>.mdx
+   ```
+   This calls OpenAI `gpt-image-2` using `heroImagePrompt` for the hero (1792×1024) and each inline image's alt text (1344×896), saves to `public/images/blog/`, and strips the `PLACEHOLDER-` prefixes. It takes roughly 45–60 seconds per image. `OPENAI_API_KEY` is provided via `.claude/settings.local.json`.
 
-7. **File Naming**: Use kebab-case slug derived from the title. Example: `how-to-apply-for-gapp-georgia.mdx`
+   The script fails if any image is missing at the end. **If it fails, stop and report — do not commit a post with `PLACEHOLDER-` paths.** Missing images render as broken `<img>` tags on the live blog index and post page.
 
-8. **Git Workflow**:
-   - Create a new branch: `blog/<slug>`
+   Then review the generated images (Read each PNG) before committing — check for anatomical errors, garbled text, and respectful, authentic representation.
+
+8. **File Naming**: Use kebab-case slug derived from the title. Example: `how-to-apply-for-gapp-georgia.mdx`
+
+9. **Git Workflow**:
+   - Create a new branch: `blog/<slug>` — start it from an up-to-date `main` (`git fetch origin && git checkout -b blog/<slug> origin/main`) so the post cannot get swept into an unrelated PR
    - Write the MDX file to `content/blog/<slug>.mdx`
-   - Commit with message: `content: add blog post — "<title>"`
+   - Before staging, confirm the post is clean: `grep -c PLACEHOLDER content/blog/<slug>.mdx` must return 0
+   - Stage the MDX **and** `public/images/blog/<slug>-*.png`
+   - Commit with message: `content: add blog post with images — "<title>"`
    - Push and open a PR with:
      - Title: `Blog: <post title>`
      - Body must include:
        - Summary of the post, target keywords, and category
-       - `## Image Prompts` section with detailed prompts for each placeholder image
-       - `## Image Checklist` with a markdown checkbox list of all placeholder filenames to replace
-       - A note that it was auto-generated and needs images + human review before merging
+       - `## Images Generated` — the 4 filenames with their dimensions
+       - A note that it was auto-generated and needs human review before merging
+   - Verify the PR contains every expected file (`gh pr view <n> --json files`) before merging
 
-9. **Category Color Reference** (for context, not included in the file):
+10. **Category Color Reference** (for context, not included in the file):
    - GAPP → teal
    - NOW/COMP → gold
    - ICWP → sage
