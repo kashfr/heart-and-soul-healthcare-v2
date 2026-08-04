@@ -4,7 +4,13 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { MDXRemote } from 'next-mdx-remote/rsc';
 import { Calendar, Clock, User, ChevronRight } from 'lucide-react';
-import { getAllPosts, getPostBySlug, getRelatedPosts, CATEGORY_COLORS } from '@/lib/blog';
+import {
+  getAllPosts,
+  getPostBySlug,
+  getRelatedPosts,
+  CATEGORY_COLORS,
+  formatPostDate,
+} from '@/lib/blog';
 import mdxComponents from '@/components/blog/MDXComponents';
 import BlogCard from '@/components/blog/BlogCard';
 import { ScrollReveal, StaggerContainer, StaggerItem } from '@/components/animations';
@@ -49,14 +55,6 @@ export async function generateMetadata({ params }: BlogPostPageProps): Promise<M
         : undefined,
     },
   };
-}
-
-function formatDate(dateString: string): string {
-  return new Date(dateString).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
 }
 
 export default async function BlogPostPage({ params }: BlogPostPageProps) {
@@ -142,7 +140,7 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
                 </div>
                 <div className={styles.metaItem}>
                   <Calendar size={16} />
-                  <time dateTime={post.date}>{formatDate(post.date)}</time>
+                  <time dateTime={post.date}>{formatPostDate(post.date)}</time>
                 </div>
                 <div className={styles.metaItem}>
                   <Clock size={16} />

@@ -68,6 +68,21 @@ echo "🖼   Generating images for: $(basename "$MDX_FILE")"
 echo "    Model: gpt-image-2  |  Quality: $QUALITY"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
+# ── House rule: every post carries a hero + at least MIN_INLINE inline images ──
+# Counts images already generated as well as pending PLACEHOLDERs, so re-running
+# the script on a finished post does not trip the gate.
+MIN_INLINE="${BLOG_MIN_INLINE_IMAGES:-3}"
+inline_count=$(grep -c '^!\[.*\](/images/blog/' "$MDX_FILE" || true)
+if [ "$inline_count" -lt "$MIN_INLINE" ]; then
+  echo ""
+  echo "❌  Only $inline_count inline image(s); every post needs at least $MIN_INLINE."
+  echo "    Add more ![prompt-as-alt-text](/images/blog/PLACEHOLDER-<slug>-<keyword>.png)"
+  echo "    at natural section breaks, then re-run. No images were generated."
+  exit 1
+fi
+echo "    Inline images: $inline_count (minimum $MIN_INLINE) ✓"
+echo ""
+
 # ── Hero / featured image ─────────────────────────────────────────────────────
 hero_line=$(grep 'featuredImage:.*PLACEHOLDER' "$MDX_FILE" || true)
 if [ -n "$hero_line" ]; then
@@ -92,10 +107,33 @@ while IFS= read -r line; do
   generate_image "$alt" "1344x896" "$PUBLIC_DIR/${filename}.png"
 done < <(grep '!\[.*\](/images/blog/PLACEHOLDER-' "$MDX_FILE" || true)
 
+# ── Verify every referenced image exists BEFORE rewriting the MDX ─────────────
+# Without this, a silently-failed generation would still get its PLACEHOLDER-
+# prefix stripped, producing a post that looks clean but renders broken <img>
+# tags on the live blog index and post page.
+missing=0
+while IFS= read -r ref; do
+  [ -z "$ref" ] && continue
+  if [ ! -s "$PUBLIC_DIR/${ref}.png" ]; then
+    echo "    ❌  Missing or empty: $PUBLIC_DIR/${ref}.png"
+    missing=$((missing + 1))
+  fi
+done < <(grep -o '/images/blog/PLACEHOLDER-[^")]*\.png' "$MDX_FILE" \
+         | sed 's|/images/blog/PLACEHOLDER-||; s|\.png$||' | sort -u)
+
+if [ "$missing" -gt 0 ]; then
+  echo ""
+  echo "❌  $missing image(s) failed to generate. MDX left untouched —"
+  echo "    PLACEHOLDER- prefixes kept so this post is not committed with broken images."
+  echo "    Re-run this script after resolving the failure."
+  exit 1
+fi
+
 # ── Rewrite MDX: strip PLACEHOLDER- prefix from all image paths ───────────────
 sed -i '' 's|/images/blog/PLACEHOLDER-|/images/blog/|g' "$MDX_FILE"
 
 echo ""
 echo "✅  Done. Images saved to public/images/blog/"
+echo "✅  All referenced images verified on disk."
 echo "✅  MDX updated — PLACEHOLDER- prefixes removed."
 echo ""

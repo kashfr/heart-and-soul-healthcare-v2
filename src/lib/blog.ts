@@ -104,3 +104,23 @@ export function getAllTags(): string[] {
   const posts = getAllPosts();
   return [...new Set(posts.flatMap((p) => p.tags))];
 }
+
+/**
+ * Format a post's `date` frontmatter value (a plain "YYYY-MM-DD" string) for display.
+ *
+ * `new Date('2026-07-15')` is parsed as UTC midnight per spec, but `toLocaleDateString`
+ * renders in the runtime's local zone — so anywhere west of UTC (all of the US, including
+ * every reader in Georgia) the date rendered one day early. Anchoring to noon leaves ~12
+ * hours of slack in either direction, so no offset can push it across a day boundary.
+ *
+ * Only display strings go through here. `datePublished`, `publishedTime`, sitemap
+ * `lastModified`, and `<time dateTime>` intentionally keep the raw ISO value.
+ */
+export function formatPostDate(dateString: string): string {
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(dateString);
+  return new Date(dateOnly ? `${dateString}T12:00:00` : dateString).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+}
