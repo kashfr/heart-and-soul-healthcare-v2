@@ -9,6 +9,9 @@ import {
   orderSignedAgeDays,
   physicianAttributionPending,
   physicianOrderStale,
+  regimenFieldsChanged,
+  isCorrectionOnly,
+  describeRegimenChanges,
   parseHHMM,
   parseValueOptions,
   resolveCurrentAdministrations,
@@ -467,5 +470,88 @@ describe('parseValueOptions', () => {
     expect(parseValueOptions(undefined)).toEqual([]);
     expect(parseValueOptions('')).toEqual([]);
     expect(parseValueOptions('  ,  ')).toEqual([]);
+  });
+});
+
+describe('regimenFieldsChanged', () => {
+  // The order as Lilian found it: a live med with no ordering physician
+  // transcribed, flagged for attribution follow-up.
+  const order = {
+    medName: 'Carnitor (levocarnitine)',
+    dose: '5',
+    units: 'mL',
+    route: 'G-tube',
+    frequencyLabel: 'Twice daily (BID)',
+    scheduledTimes: ['06:00', '18:00'],
+    isPRN: false,
+    valueLabel: '',
+    valueUnit: '',
+  };
+
+  it('reports nothing when only the ordering physician is filled in', () => {
+    // The bug this guards: adding the MD discontinued the med and started a
+    // duplicate row on the MAR, which reads as the med being stopped.
+    expect(regimenFieldsChanged(order, { ...order })).toEqual([]);
+    expect(isCorrectionOnly(order, { ...order })).toBe(true);
+  });
+
+  it('ignores scheduled-time order and duplicates', () => {
+    expect(regimenFieldsChanged(order, { ...order, scheduledTimes: ['18:00', '06:00', '06:00'] })).toEqual([]);
+  });
+
+  it('ignores surrounding whitespace', () => {
+    expect(regimenFieldsChanged(order, { ...order, dose: ' 5 ', route: 'G-tube ' })).toEqual([]);
+  });
+
+  it('flags a dose change', () => {
+    expect(regimenFieldsChanged(order, { ...order, dose: '10' })).toEqual(['dose']);
+    expect(isCorrectionOnly(order, { ...order, dose: '10' })).toBe(false);
+  });
+
+  it('flags added and removed scheduled times', () => {
+    expect(regimenFieldsChanged(order, { ...order, scheduledTimes: ['06:00', '12:00', '18:00'] })).toEqual([
+      'scheduledTimes',
+    ]);
+    expect(regimenFieldsChanged(order, { ...order, scheduledTimes: ['06:00'] })).toEqual(['scheduledTimes']);
+  });
+
+  it('flags every moved field, so the notice can name them', () => {
+    const changed = regimenFieldsChanged(order, { ...order, dose: '10', route: 'PO (by mouth)' });
+    expect(changed).toEqual(['dose', 'route']);
+    expect(describeRegimenChanges(changed)).toBe('dose and route');
+  });
+
+  it('flags a switch to PRN and drops the now-meaningless times', () => {
+    const changed = regimenFieldsChanged(order, { ...order, isPRN: true, scheduledTimes: [] });
+    expect(changed).toContain('isPRN');
+  });
+
+  it('does not read a PRN order re-saved with a different frequency label as a change', () => {
+    // PRN orders carry whatever label the form that created them used, so
+    // comparing labels would restart the regimen on every PRN detail edit.
+    const prn = { ...order, isPRN: true, scheduledTimes: [], frequencyLabel: 'PRN' };
+    expect(regimenFieldsChanged(prn, { ...prn, frequencyLabel: 'As needed (PRN)' })).toEqual([]);
+  });
+
+  it('flags a change to what a check-style order measures', () => {
+    const check = { ...order, dose: '', units: '', valueLabel: 'Gastric residual', valueUnit: 'mL' };
+    expect(regimenFieldsChanged(check, { ...check, valueUnit: 'cc' })).toEqual(['valueUnit']);
+  });
+
+  it('treats the allowed-readings list as documentation, not a regimen change', () => {
+    // valueOptions is the charting picker, not a term of the physician's order.
+    const check = { ...order, valueLabel: 'Gastric residual', valueUnit: 'mL' };
+    expect(regimenFieldsChanged(check, { ...check })).toEqual([]);
+  });
+});
+
+describe('describeRegimenChanges', () => {
+  it('renders one, two, and three field names', () => {
+    expect(describeRegimenChanges([])).toBe('');
+    expect(describeRegimenChanges(['dose'])).toBe('dose');
+    expect(describeRegimenChanges(['dose', 'route'])).toBe('dose and route');
+    expect(describeRegimenChanges(['dose', 'route', 'scheduledTimes'])).toBe(
+      'dose, route and scheduled times',
+    );
   });
 });

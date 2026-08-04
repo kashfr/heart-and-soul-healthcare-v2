@@ -5,7 +5,12 @@ import { createPortal } from 'react-dom';
 import { X, Plus, Clock } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { MED_FREQUENCIES, PRN_FREQUENCY } from '@/lib/medFrequencies';
-import { looksLikeUnknownPhysician, physicianAttributionPending } from '@/lib/marShared';
+import {
+  looksLikeUnknownPhysician,
+  physicianAttributionPending,
+  regimenFieldsChanged,
+  describeRegimenChanges,
+} from '@/lib/marShared';
 import { DEFAULT_ML_VALUE_OPTIONS, parseValueOptions } from '@/lib/mar';
 import type { MarOrder, MarChangeRequestType } from '@/lib/mar';
 
@@ -76,6 +81,21 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
   // PRN is driven by the Frequency selection (single source of truth): selecting
   // "As needed (PRN)" hides the scheduled times and requires an indication.
   const isPRN = frequencyLabel === PRN_FREQUENCY;
+
+  // What a Change will actually do, computed live from the same helper the
+  // server uses to decide. Editing only who ordered the med (or why) corrects
+  // the order in place; moving dose/route/frequency/times starts a new regimen.
+  // Shown before she saves, because "Save change" quietly discontinuing a med
+  // she only meant to annotate is exactly the surprise this prevents.
+  const changeTarget = activeOrders.find((o) => o.id === targetOrderId);
+  const pendingRegimenChanges =
+    mode === 'change' && changeTarget
+      ? regimenFieldsChanged(changeTarget, {
+          medName, dose, units, route, frequencyLabel, isPRN, valueLabel, valueUnit,
+          scheduledTimes: times.filter(Boolean),
+        })
+      : [];
+  const startsNewRegimen = pendingRegimenChanges.length > 0;
 
   const setTimeAt = (i: number, v: string) => setTimes((t) => t.map((x, idx) => (idx === i ? v : x)));
   const addTime = () => setTimes((t) => [...t, '']);
@@ -197,7 +217,9 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
         mode === 'add'
           ? `Added ${medName.trim()}. It's live on the MAR now; your supervisor will acknowledge it.`
           : mode === 'change'
-            ? `Updated ${target?.medName || 'medication'}. The change is live on the MAR.`
+            ? startsNewRegimen
+              ? `Changed ${target?.medName || 'medication'}. The previous order was discontinued and the new one is live on the MAR.`
+              : `Updated the details on ${target?.medName || 'medication'}. The order is unchanged on the MAR.`
             : `Discontinued ${target?.medName || 'medication'}.`;
       onSaved(summary);
       onClose();
@@ -251,10 +273,26 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
 
             {showMedFields && (
               <>
-                {mode === 'change' && (
+                {mode === 'change' && !changeTarget && (
                   <p style={{ fontSize: 12.5, color: '#6b7280', margin: '0 0 10px' }}>
-                    Edit the values that changed. The old order is discontinued and a new one starts, so the history
-                    stays intact.
+                    Pick the medication above, then edit the values that changed.
+                  </p>
+                )}
+                {mode === 'change' && changeTarget && (
+                  <p style={startsNewRegimen ? regimenNoticeStyle : correctionNoticeStyle}>
+                    {startsNewRegimen ? (
+                      <>
+                        <strong>This starts a new order.</strong> You changed the{' '}
+                        {describeRegimenChanges(pendingRegimenChanges)}, so the current order is discontinued on the
+                        effective date and a new one begins, keeping each dose tied to the orders it was given under.
+                      </>
+                    ) : (
+                      <>
+                        <strong>This updates the existing order.</strong> You&apos;re only changing details like the
+                        ordering physician or notes, so the medication stays exactly as it is on the MAR. Nothing is
+                        discontinued.
+                      </>
+                    )}
                   </p>
                 )}
                 <Field label="Medication name *">
@@ -374,14 +412,24 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
                 )}
 
                 <div style={grid2}>
-                  <Field label={mode === 'add' ? 'Start date' : 'Effective date'}>
+                  {/* A correction doesn't take effect on a date — the order and
+                      its start date are untouched — so the field is disabled
+                      rather than silently ignored. */}
+                  <Field
+                    label={mode === 'add' ? 'Start date' : startsNewRegimen ? 'Effective date' : 'Order start date'}
+                  >
                     <input
                       type="date"
-                      value={mode === 'add' ? startDate : effectiveDate}
+                      value={mode === 'add' ? startDate : startsNewRegimen ? effectiveDate : changeTarget?.startDate || ''}
                       onChange={(e) => (mode === 'add' ? setStartDate(e.target.value) : setEffectiveDate(e.target.value))}
-                      style={input}
+                      disabled={mode === 'change' && !!changeTarget && !startsNewRegimen}
+                      style={mode === 'change' && !!changeTarget && !startsNewRegimen ? { ...input, background: '#f6f8fa', color: '#6b7280' } : input}
                     />
-                    <span style={dateHint}>Use the date on the physician&apos;s order; a past date is OK if you&apos;re documenting late.</span>
+                    <span style={dateHint}>
+                      {mode === 'change' && changeTarget && !startsNewRegimen
+                        ? 'Unchanged — this edit corrects the existing order rather than starting a new one.'
+                        : 'Use the date on the physician’s order; a past date is OK if you’re documenting late.'}
+                    </span>
                   </Field>
                   <Field label="Ordering physician *">
                     <input type="text" value={orderingPhysician} onChange={(e) => setOrderingPhysician(e.target.value)} style={input} placeholder="Dr. ..." />
@@ -469,6 +517,12 @@ const textarea: CSSProperties = { width: '100%', padding: '9px 11px', border: '1
 const grid2: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 };
 const removeTimeBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', color: '#c44', border: 'none', padding: 4, borderRadius: 4, cursor: 'pointer' };
 const addTimeBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, background: 'white', color: '#0e7c4a', border: '1px dashed #0e7c4a', padding: '7px 12px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', marginTop: 8 };
+const noticeBase: CSSProperties = {
+  fontSize: 12.5, lineHeight: 1.5, borderRadius: 6, padding: '9px 11px', margin: '0 0 12px', border: '1px solid',
+};
+// Green: the order survives untouched. Amber: a regimen is being replaced.
+const correctionNoticeStyle: CSSProperties = { ...noticeBase, color: '#14532d', background: '#f0fdf4', borderColor: '#86efac' };
+const regimenNoticeStyle: CSSProperties = { ...noticeBase, color: '#7c2d12', background: '#fff7ed', borderColor: '#f59e0b' };
 const errorBox: CSSProperties = { background: '#fef2f2', border: '1px solid #fecaca', color: '#b3261e', borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: 10 };
 const secondaryBtn: CSSProperties = { background: '#eef1f4', color: '#2c3e50', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const primaryBtn: CSSProperties = { background: '#27ae60', color: 'white', padding: '10px 16px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };

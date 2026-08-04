@@ -146,6 +146,132 @@ export const DEFAULT_ML_VALUE_OPTIONS = [
 ];
 
 // ---------------------------------------------------------------------------
+// Correction vs. new regimen: what a "change" actually does to the order.
+// ---------------------------------------------------------------------------
+
+/**
+ * Fields that define HOW the med is given. Editing any of them is a genuine
+ * regimen change, so the old order is discontinued and a replacement starts on
+ * the effective date — that is what keeps every charted dose tied to the terms
+ * it was given under, and it's the paper-MAR convention (line out, rewrite).
+ *
+ * Everything NOT listed here documents WHO ordered the med and WHY. Editing
+ * only those is a correction to the same order: it is updated in place, no
+ * discontinue, no second row. Filling in an ordering physician that was never
+ * transcribed is the motivating case — nothing about the administration
+ * changed, so showing the med as D/C'd misrepresents the record.
+ *
+ * `valueOptions` is deliberately on the correction side: the allowed-readings
+ * list is a charting aid (what the nurse may pick from), not a term of the
+ * physician's order, and each administration snapshots its own reading anyway.
+ */
+export const REGIMEN_FIELDS = [
+  'medName',
+  'dose',
+  'units',
+  'route',
+  'frequencyLabel',
+  'scheduledTimes',
+  'isPRN',
+  'valueLabel',
+  'valueUnit',
+] as const;
+
+export type RegimenField = (typeof REGIMEN_FIELDS)[number];
+
+/** How a change was applied. 'correction' edits the order in place; 'regimen'
+ *  discontinues it and starts a replacement. */
+export type MarChangeKind = 'correction' | 'regimen';
+
+/** Human labels for the regimen fields, for the "this will start a new order
+ *  because X changed" hint and the review queue. */
+export const REGIMEN_FIELD_LABELS: Record<RegimenField, string> = {
+  medName: 'medication',
+  dose: 'dose',
+  units: 'units',
+  route: 'route',
+  frequencyLabel: 'frequency',
+  scheduledTimes: 'scheduled times',
+  isPRN: 'PRN/scheduled',
+  valueLabel: 'measurement',
+  valueUnit: 'measurement unit',
+};
+
+/** The subset of an order (or a proposal) the regimen comparison reads. */
+export interface RegimenComparable {
+  medName?: string;
+  dose?: string;
+  units?: string;
+  route?: string;
+  frequencyLabel?: string;
+  scheduledTimes?: string[];
+  isPRN?: boolean;
+  valueLabel?: string;
+  valueUnit?: string;
+}
+
+function normText(v: unknown): string {
+  return String(v ?? '').trim();
+}
+
+/** Scheduled times compared as a set: order and duplicates are storage detail,
+ *  and a PRN order carries none, so re-saving must not read as a change. */
+function normTimes(times: unknown, isPRN: boolean): string {
+  if (isPRN) return '';
+  const arr = Array.isArray(times) ? times.map((t) => String(t).trim()).filter(Boolean) : [];
+  return Array.from(new Set(arr)).sort().join(',');
+}
+
+/**
+ * Which regimen fields differ between the order as it stands and the proposed
+ * values. Empty means the edit touches documentation only.
+ *
+ * Pure and shared: the modal calls it to tell the nurse what will happen before
+ * she saves, and the server calls it again to decide what actually happens, so
+ * the two can never disagree.
+ */
+export function regimenFieldsChanged(
+  current: RegimenComparable,
+  proposed: RegimenComparable,
+): RegimenField[] {
+  const currentPRN = current.isPRN === true;
+  const proposedPRN = proposed.isPRN === true;
+  const changed: RegimenField[] = [];
+  if (normText(current.medName) !== normText(proposed.medName)) changed.push('medName');
+  if (normText(current.dose) !== normText(proposed.dose)) changed.push('dose');
+  if (normText(current.units) !== normText(proposed.units)) changed.push('units');
+  if (normText(current.route) !== normText(proposed.route)) changed.push('route');
+  // For a PRN order the frequency IS "as needed", so isPRN already carries the
+  // meaning and the stored label varies by which form created the order. Only
+  // compare labels when both sides are scheduled — otherwise every edit to a
+  // PRN med would read as a frequency change and start a needless new regimen.
+  if (!(currentPRN && proposedPRN) && normText(current.frequencyLabel) !== normText(proposed.frequencyLabel)) {
+    changed.push('frequencyLabel');
+  }
+  if (currentPRN !== proposedPRN) changed.push('isPRN');
+  if (normTimes(current.scheduledTimes, currentPRN) !== normTimes(proposed.scheduledTimes, proposedPRN)) {
+    changed.push('scheduledTimes');
+  }
+  if (normText(current.valueLabel) !== normText(proposed.valueLabel)) changed.push('valueLabel');
+  if (normText(current.valueUnit) !== normText(proposed.valueUnit)) changed.push('valueUnit');
+  return changed;
+}
+
+/** Whether a proposed change edits documentation only, leaving the order (and
+ *  the MAR row) intact. */
+export function isCorrectionOnly(current: RegimenComparable, proposed: RegimenComparable): boolean {
+  return regimenFieldsChanged(current, proposed).length === 0;
+}
+
+/** "dose and frequency" / "dose, route and frequency" — for the hint text. */
+export function describeRegimenChanges(fields: RegimenField[]): string {
+  const names = fields.map((f) => REGIMEN_FIELD_LABELS[f]);
+  if (names.length === 0) return '';
+  if (names.length === 1) return names[0];
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+// ---------------------------------------------------------------------------
 // Time-aware live status (the in-progress MAR colors the dose pill by this).
 // ---------------------------------------------------------------------------
 

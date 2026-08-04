@@ -13,11 +13,13 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { buildMarAdminFields, parseValueOptions, DEFAULT_ML_VALUE_OPTIONS } from './marShared';
+import type { MarChangeKind, RegimenField } from './marShared';
 
 // Re-exported so UI code can keep importing these from '@/lib/mar' alongside
 // the order types; they live in marShared because the server-only med-change
 // route needs them and must not pull in the client Firebase SDK.
 export { parseValueOptions, DEFAULT_ML_VALUE_OPTIONS };
+export type { MarChangeKind, RegimenField };
 
 /**
  * MAR standing medication orders. One doc per medication per client in the
@@ -30,7 +32,13 @@ export { parseValueOptions, DEFAULT_ML_VALUE_OPTIONS };
  * A month's MAR materializes from the orders active during that month plus that
  * month's administration entries, which is why standing orders "roll forward".
  */
-export type MarOrderStatus = 'active' | 'discontinued';
+/**
+ * 'voided' = the change that created this order was reverted, so the order is
+ * treated as never having existed: it is kept for the audit trail but filtered
+ * out of every MAR view (grid, PDF, order lists). Only reachable when nothing
+ * was ever charted against it — see revertChange.
+ */
+export type MarOrderStatus = 'active' | 'discontinued' | 'voided';
 
 export interface MarOrder {
   id?: string;
@@ -176,7 +184,11 @@ export async function getMarOrdersStrict(patientId: string): Promise<MarOrder[]>
   const ref = collection(db, 'marOrders');
   const q = query(ref, where('patientId', '==', patientId));
   const snap = await getDocs(q);
-  const orders = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as MarOrder[];
+  const orders = (snap.docs.map((d) => ({ id: d.id, ...d.data() })) as MarOrder[])
+    // A voided order was created by a change that has since been reverted; it
+    // is audit history, not part of the record. Filtered here so every screen
+    // reading orders (grid, order lists, dashboard) drops it consistently.
+    .filter((o) => o.status !== 'voided');
   return orders.sort((a, b) => {
     if (a.status !== b.status) return a.status === 'active' ? -1 : 1;
     return (a.medName || '').localeCompare(b.medName || '');
@@ -500,7 +512,9 @@ export async function discontinueMarOrder(
  */
 export type MarChangeRequestType = 'add' | 'change' | 'discontinue';
 export type MarChangeRequestStatus = 'staged' | 'applied';
-export type MarReviewStatus = 'pending' | 'reviewed';
+/** 'reverted' takes the change out of the acknowledgment queue: it has been
+ *  undone, so there is nothing left for the RN to acknowledge. */
+export type MarReviewStatus = 'pending' | 'reviewed' | 'reverted';
 
 export interface ProposedMed {
   medName: string;
@@ -538,12 +552,31 @@ export interface MarChangeRequest {
   stagedAt?: unknown;
   // Set when applied at note submit.
   appliedAt?: unknown;
-  createdOrderId?: string; // new order id for add/change
+  createdOrderId?: string; // new order id for add / regimen change
+  /**
+   * How a 'change' was applied: 'correction' edited the order in place (only
+   * documentation moved — ordering physician, signed date, indication, notes,
+   * allowed readings), 'regimen' discontinued it and started a replacement.
+   * Absent on changes applied before the correction path existed; those were
+   * all discontinue-and-replace, so treat a missing value as 'regimen'.
+   */
+  changeKind?: MarChangeKind;
+  updatedOrderId?: string; // the order edited in place, for a correction
+  regimenFieldsChanged?: RegimenField[]; // what forced a new regimen
+  /** The documentation fields as they stood BEFORE a correction, so it can be
+   *  reverted without guessing. */
+  previousValues?: Record<string, unknown>;
   // RN review (acknowledgment only; no approval).
   reviewStatus?: MarReviewStatus;
   reviewedBy?: string;
   reviewedByName?: string;
   reviewedAt?: unknown;
+  // Undo: set when a supervisor reverts an applied change. The request itself
+  // is kept, so the record shows what was done and that it was undone.
+  revertedAt?: unknown;
+  revertedBy?: string;
+  revertedByName?: string;
+  revertReason?: string;
 }
 
 export interface MarChangeRequestInput {

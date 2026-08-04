@@ -2,7 +2,7 @@ import 'server-only';
 import { FieldValue, type DocumentData, type DocumentReference } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
 import type { AuthedCaller } from './adminAuthGuard';
-import { buildMarAdminFields, parseValueOptions } from './marShared';
+import { buildMarAdminFields, parseValueOptions, regimenFieldsChanged } from './marShared';
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** Return `value` if it is an ISO YYYY-MM-DD date string, else `fallback`. Both
@@ -85,13 +85,34 @@ function orderFromProposed(
 }
 
 /**
+ * The documentation half of an order: who ordered it, why, and how it reads —
+ * everything a "change" may rewrite WITHOUT starting a new regimen. Used both
+ * to apply a correction and (run over the pre-change order) to snapshot what it
+ * replaced so the edit can be reverted.
+ */
+function correctionFields(p: ProposedMedShape) {
+  return {
+    indication: String(p.indication || ''),
+    notes: String(p.notes || ''),
+    orderingPhysician: String(p.orderingPhysician || ''),
+    orderSignedDate: String(p.orderSignedDate || ''),
+    physicianPending: p.physicianPending === true,
+    valueOptions: parseValueOptions(p.valueOptions),
+  };
+}
+
+/**
  * Apply ONE medication change in a single atomic batch and stamp its change
  * request applied + reviewStatus 'pending' (RN acknowledgment; there is NO
  * approval gate). Shared by the note flow (applyStagedChanges) and the
  * standalone MAR (applyStandaloneChange) so both behave identically:
  *   - add: create a new active order.
- *   - change: discontinue the target (effective date) AND create the new order,
- *     linked via supersedes / supersededBy.
+ *   - change: if the edit moves a REGIMEN field (dose, route, frequency,
+ *     times, PRN, measurement), discontinue the target on the effective date
+ *     and create its replacement, linked via supersedes / supersededBy. If it
+ *     only rewrites documentation (ordering physician, signed date, indication,
+ *     notes, allowed readings), update the order IN PLACE — no discontinue and
+ *     no second MAR row.
  *   - discontinue: stop the target effective the given date.
  * Adding OR changing a med also trips `patient.requiresMar = true`, so the MAR
  * becomes visible to everyone the instant a med exists — whichever surface (or
@@ -133,29 +154,74 @@ async function applyChangeInBatch(
     if (!oldSnap.exists || String(old.patientId || '') !== patientId || String(old.status || '') !== 'active') {
       return false;
     }
-    const effective = isoOr(data.effectiveDate, today);
     const p = (data.proposedMed || {}) as ProposedMedShape;
-    const newRef = adminDb().collection('marOrders').doc();
-    // The new order starts the day the old one ends (the change's effective
-    // date), so the regimens hand off cleanly with no overlap or gap.
-    batch.set(
-      newRef,
-      orderFromProposed(patientId, p, effective, caller, {
-        fromChangeRequestId: reqRef.id,
-        supersedesOrderId: oldId,
-      }),
-    );
-    batch.update(oldRef, {
-      status: 'discontinued',
-      endDate: effective,
-      discontinuedAt: FieldValue.serverTimestamp(),
-      discontinuedBy: caller.uid,
-      discontinuedByName: caller.profile.displayName || '',
-      discontinueReason: `Changed per physician order: ${String(data.reason || '').trim()}`.trim(),
-      supersededByOrderId: newRef.id,
+
+    // Does this edit change HOW the med is given, or only who ordered it and
+    // why? Re-derived here rather than trusted from the client, so a crafted
+    // payload can't turn a dose change into a silent in-place edit.
+    const regimenChanges = regimenFieldsChanged(old, {
+      medName: p.medName,
+      dose: p.dose,
+      units: p.units,
+      route: p.route,
+      frequencyLabel: p.frequencyLabel,
+      scheduledTimes: p.scheduledTimes,
+      isPRN: p.isPRN,
+      valueLabel: p.valueLabel,
+      valueUnit: p.valueUnit,
     });
-    if (patientRef) batch.set(patientRef, { requiresMar: true }, { merge: true });
-    batch.update(reqRef, { ...reviewStamp, createdOrderId: newRef.id });
+
+    if (regimenChanges.length === 0) {
+      // CORRECTION: nothing about the administration changed, so the order is
+      // updated in place. No discontinue, no replacement, one unbroken MAR row
+      // — a med whose ordering physician was finally filled in must not read as
+      // though it was stopped.
+      batch.update(oldRef, {
+        ...correctionFields(p),
+        lastEditedAt: FieldValue.serverTimestamp(),
+        lastEditedBy: caller.uid,
+        lastEditedByName: caller.profile.displayName || '',
+      });
+      batch.update(reqRef, {
+        ...reviewStamp,
+        changeKind: 'correction',
+        updatedOrderId: oldId,
+        // Exactly the fields the correction overwrote, so a revert can put the
+        // order back without guessing what it looked like.
+        previousValues: correctionFields(old as ProposedMedShape),
+      });
+    } else {
+      // REGIMEN CHANGE: the terms of administration moved, so the old order is
+      // discontinued and a replacement starts on the effective date. Each
+      // charted dose stays tied to the regimen it was given under.
+      const effective = isoOr(data.effectiveDate, today);
+      const newRef = adminDb().collection('marOrders').doc();
+      // The new order starts the day the old one ends (the change's effective
+      // date), so the regimens hand off cleanly with no overlap or gap.
+      batch.set(
+        newRef,
+        orderFromProposed(patientId, p, effective, caller, {
+          fromChangeRequestId: reqRef.id,
+          supersedesOrderId: oldId,
+        }),
+      );
+      batch.update(oldRef, {
+        status: 'discontinued',
+        endDate: effective,
+        discontinuedAt: FieldValue.serverTimestamp(),
+        discontinuedBy: caller.uid,
+        discontinuedByName: caller.profile.displayName || '',
+        discontinueReason: `Changed per physician order: ${String(data.reason || '').trim()}`.trim(),
+        supersededByOrderId: newRef.id,
+      });
+      if (patientRef) batch.set(patientRef, { requiresMar: true }, { merge: true });
+      batch.update(reqRef, {
+        ...reviewStamp,
+        changeKind: 'regimen',
+        regimenFieldsChanged: regimenChanges,
+        createdOrderId: newRef.id,
+      });
+    }
   } else if (data.type === 'discontinue') {
     const orderId = String(data.targetOrderId || '');
     if (!orderId) return false;
@@ -649,5 +715,193 @@ export async function acknowledgeReview(reqId: string, caller: AuthedCaller): Pr
     reviewedByName: caller.profile.displayName || '',
     reviewedAt: FieldValue.serverTimestamp(),
   });
+  return { ok: true, reqId };
+}
+
+// ---------------------------------------------------------------------------
+// Undo an applied medication change.
+//
+// Applied changes take effect immediately with no approval gate, so a mistake
+// is live on the MAR the moment it is saved. This puts the orders back the way
+// they were and marks the change reverted; the change request itself is never
+// deleted, so the record still shows what was done, by whom, and that it was
+// undone (and why).
+//
+// The hard limit is charted doses: administrations are append-only and legally
+// immutable, so an order a nurse has already charted against cannot be unwound.
+// Those reverts are refused with an explanation rather than half-applied.
+// ---------------------------------------------------------------------------
+
+export type RevertFailureReason =
+  | 'not-found'
+  | 'not-applied'
+  | 'already-reverted'
+  | 'has-doses'
+  | 'order-missing'
+  | 'missing-reason';
+
+export interface RevertResult {
+  ok: boolean;
+  reqId: string;
+  reason?: RevertFailureReason;
+  message?: string;
+}
+
+/** True when any administration has been charted against one of these orders.
+ *  Reverting would orphan it, so the revert is refused instead. */
+async function ordersHaveDoses(orderIds: string[]): Promise<boolean> {
+  const ids = orderIds.filter(Boolean);
+  if (ids.length === 0) return false;
+  const snap = await adminDb()
+    .collection('marAdministrations')
+    .where('orderId', 'in', ids.slice(0, 10))
+    .limit(1)
+    .get();
+  return !snap.empty;
+}
+
+/** Restore a discontinued order to active, clearing the stop stamps. Shared by
+ *  the discontinue and regimen-change reverts. */
+function reactivateFields() {
+  return {
+    status: 'active',
+    endDate: null,
+    discontinuedAt: FieldValue.delete(),
+    discontinuedBy: FieldValue.delete(),
+    discontinuedByName: FieldValue.delete(),
+    discontinueReason: FieldValue.delete(),
+    supersededByOrderId: FieldValue.delete(),
+  };
+}
+
+/**
+ * Undo an applied change request, putting the affected orders back.
+ *
+ *  - add                → void the created order (it never should have existed).
+ *  - change/correction  → restore the documentation fields it overwrote.
+ *  - change/regimen     → void the replacement, reactivate the original.
+ *  - discontinue        → reactivate the order.
+ *
+ * A voided order is kept in Firestore for the audit trail but filtered out of
+ * every MAR view, so an order added in error leaves no row behind — showing it
+ * as "D/C" would be its own misstatement of the record.
+ *
+ * Older applied changes carry no `changeKind` (they predate the correction
+ * path), and every one of those was a discontinue-and-replace, so an absent
+ * kind is read as 'regimen'.
+ */
+export async function revertChange(
+  reqId: string,
+  caller: AuthedCaller,
+  revertReason: string,
+): Promise<RevertResult> {
+  const reason = String(revertReason || '').trim();
+  if (!reason) {
+    return { ok: false, reqId, reason: 'missing-reason', message: 'A reason for the revert is required.' };
+  }
+
+  const ref = adminDb().collection('marChangeRequests').doc(reqId);
+  const snap = await ref.get();
+  if (!snap.exists) return { ok: false, reqId, reason: 'not-found', message: 'Change not found.' };
+  const data = snap.data() || {};
+  if (data.status !== 'applied') {
+    return { ok: false, reqId, reason: 'not-applied', message: 'Only an applied change can be reverted.' };
+  }
+  if (data.revertedAt) {
+    return { ok: false, reqId, reason: 'already-reverted', message: 'This change was already reverted.' };
+  }
+
+  const type = String(data.type || '');
+  const kind = String(data.changeKind || 'regimen');
+  const createdOrderId = String(data.createdOrderId || '');
+  const targetOrderId = String(data.targetOrderId || '');
+  const patientId = String(data.patientId || '');
+
+  const voidStamp = {
+    status: 'voided',
+    voidedAt: FieldValue.serverTimestamp(),
+    voidedBy: caller.uid,
+    voidedByName: caller.profile.displayName || '',
+    voidReason: reason,
+  };
+  const revertStamp = {
+    // Drops out of the pending-review queue: there is nothing left to
+    // acknowledge once the change has been undone.
+    reviewStatus: 'reverted',
+    revertedAt: FieldValue.serverTimestamp(),
+    revertedBy: caller.uid,
+    revertedByName: caller.profile.displayName || '',
+    revertReason: reason,
+  };
+
+  const batch = adminDb().batch();
+
+  if (type === 'add') {
+    if (!createdOrderId) {
+      return { ok: false, reqId, reason: 'order-missing', message: 'The order this change created is missing.' };
+    }
+    if (await ordersHaveDoses([createdOrderId])) {
+      return {
+        ok: false,
+        reqId,
+        reason: 'has-doses',
+        message:
+          'Doses have already been charted against this medication, so it can’t be removed. Discontinue it instead — the charted doses have to stay on the record.',
+      };
+    }
+    batch.update(adminDb().collection('marOrders').doc(createdOrderId), voidStamp);
+  } else if (type === 'change' && kind === 'correction') {
+    const orderId = String(data.updatedOrderId || targetOrderId || '');
+    const prev = (data.previousValues || null) as Record<string, unknown> | null;
+    if (!orderId || !prev) {
+      return {
+        ok: false,
+        reqId,
+        reason: 'order-missing',
+        message: 'The original values for this correction were not recorded, so it can’t be reverted.',
+      };
+    }
+    // Only text fields move back; administrations snapshot their own values, so
+    // nothing already charted is affected.
+    batch.update(adminDb().collection('marOrders').doc(orderId), {
+      ...prev,
+      lastEditedAt: FieldValue.serverTimestamp(),
+      lastEditedBy: caller.uid,
+      lastEditedByName: caller.profile.displayName || '',
+    });
+  } else if (type === 'change') {
+    if (!createdOrderId || !targetOrderId) {
+      return { ok: false, reqId, reason: 'order-missing', message: 'The orders this change touched are missing.' };
+    }
+    if (await ordersHaveDoses([createdOrderId])) {
+      return {
+        ok: false,
+        reqId,
+        reason: 'has-doses',
+        message:
+          'Doses have already been charted against the new order, so this change can’t be rolled back. Make a further change instead.',
+      };
+    }
+    const oldSnap = await adminDb().collection('marOrders').doc(targetOrderId).get();
+    if (!oldSnap.exists || String((oldSnap.data() || {}).patientId || '') !== patientId) {
+      return { ok: false, reqId, reason: 'order-missing', message: 'The original order is no longer available.' };
+    }
+    batch.update(adminDb().collection('marOrders').doc(createdOrderId), voidStamp);
+    batch.update(adminDb().collection('marOrders').doc(targetOrderId), reactivateFields());
+  } else if (type === 'discontinue') {
+    if (!targetOrderId) {
+      return { ok: false, reqId, reason: 'order-missing', message: 'The discontinued order is missing.' };
+    }
+    const ordSnap = await adminDb().collection('marOrders').doc(targetOrderId).get();
+    if (!ordSnap.exists || String((ordSnap.data() || {}).patientId || '') !== patientId) {
+      return { ok: false, reqId, reason: 'order-missing', message: 'That order is no longer available.' };
+    }
+    batch.update(adminDb().collection('marOrders').doc(targetOrderId), reactivateFields());
+  } else {
+    return { ok: false, reqId, reason: 'not-applied', message: 'This change cannot be reverted.' };
+  }
+
+  batch.update(ref, revertStamp);
+  await batch.commit();
   return { ok: true, reqId };
 }

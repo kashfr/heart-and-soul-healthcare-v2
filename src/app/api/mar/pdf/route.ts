@@ -160,7 +160,12 @@ export async function POST(request: Request) {
     const p = patientSnap.data() || {};
     const c = clinicalSnap.exists ? clinicalSnap.data() || {} : {};
 
-    const orders: OrderDoc[] = ordersSnap.docs.map((d) => {
+    // A voided order came from a change that was later reverted; it is audit
+    // history and must not print on the record. Mirrors getMarOrdersStrict.
+    const liveOrderDocs = ordersSnap.docs.filter(
+      (d) => String((d.data() || {}).status || '') !== 'voided',
+    );
+    const orders: OrderDoc[] = liveOrderDocs.map((d) => {
       const o = d.data() || {};
       return {
         id: d.id,

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
-import { looksLikeUnknownPhysician } from '@/lib/marShared';
+import { looksLikeUnknownPhysician, parseValueOptions } from '@/lib/marShared';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { applyStandaloneChange, type StandaloneChangeInput } from '@/lib/marServer';
 
@@ -98,8 +98,18 @@ export async function POST(request: Request) {
     const route = String(rawProposed.route || '').trim();
     const orderingPhysician = String(rawProposed.orderingPhysician || '').trim();
     const indication = String(rawProposed.indication || '').trim();
-    if (!medName || !dose || !units || !route) {
+    // A check-style order records a reading rather than an amount given, so it
+    // carries no dose or units (mirrors the modal's rule; without this the
+    // server rejected every edit to a check order the modal happily accepted).
+    const isCheck = !!String(rawProposed.valueLabel || '').trim();
+    if (!medName || !route || (!isCheck && (!dose || !units))) {
       return NextResponse.json({ error: 'Medication, dose, units, and route are required.' }, { status: 400 });
+    }
+    if (isCheck && parseValueOptions(rawProposed.valueOptions as string[] | string | undefined).length < 2) {
+      return NextResponse.json(
+        { error: 'A check-style order needs at least two allowed readings.' },
+        { status: 400 },
+      );
     }
     // Mirror of the form rule: a REAL name is required, but the author may
     // instead explicitly flag the physician as unknown (physicianPending) —
@@ -152,6 +162,13 @@ export async function POST(request: Request) {
             scheduledTimes,
             isPRN,
             indication: String(rawProposed.indication || ''),
+            // Check-style order config (see MarOrder.valueLabel). These must be
+            // forwarded: dropping them silently stripped the measurement from
+            // any check order that was edited, and left the regimen comparison
+            // seeing a measurement removal on every such edit.
+            valueLabel: String(rawProposed.valueLabel || ''),
+            valueUnit: String(rawProposed.valueUnit || ''),
+            valueOptions: parseValueOptions(rawProposed.valueOptions as string[] | string | undefined),
             startDate: ISO_DATE_RE.test(String(rawProposed.startDate || '')) ? String(rawProposed.startDate) : today,
             // Shape-valid AND not in the future (a typo year would suppress
             // the staleness flag for over a year); bad values fall back to ''
