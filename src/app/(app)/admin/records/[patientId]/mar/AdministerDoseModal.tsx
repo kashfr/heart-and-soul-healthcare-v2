@@ -4,6 +4,7 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { parseValueOptions, writeMarAdministrations, type MarOrder } from '@/lib/mar';
+import { parseHHMM } from '@/lib/marShared';
 
 const ADMIN_BY_OPTIONS = [
   { value: 'nurse', label: 'Nurse (me)' },
@@ -30,7 +31,6 @@ interface Props {
   dateISO: string; // the day being charted
   todayISO: string; // for the late-entry notice
   documenter: { uid: string; name: string; credential: string };
-  defaultInitials: string;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -50,7 +50,6 @@ export default function AdministerDoseModal({
   dateISO,
   todayISO,
   documenter,
-  defaultInitials,
   onClose,
   onSaved,
 }: Props) {
@@ -70,7 +69,6 @@ export default function AdministerDoseModal({
   const [outcome, setOutcome] = useState('');
   // Reading for a check-style order (e.g. gastric residual in mL).
   const [value, setValue] = useState('');
-  const [initials, setInitials] = useState(defaultInitials);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -102,6 +100,16 @@ export default function AdministerDoseModal({
   const needsReason = status === 'held' || status === 'refused' || (status === 'given' && isPRN);
   const indication = (order.indication || '').trim();
   const isLate = !!dateISO && dateISO !== todayISO;
+  // Mis-click guard: charting the 20:00 row while recording an 08:00 given
+  // time is almost always the wrong ROW, not a late dose. Warn (don't block)
+  // when the recorded time is more than 2 hours from the scheduled slot.
+  const slotMinutes = !isPRN ? parseHHMM(slot) : null;
+  const actualMinutes = parseHHMM(actualTime);
+  const farFromSlot =
+    status === 'given' &&
+    slotMinutes !== null &&
+    actualMinutes !== null &&
+    Math.abs(actualMinutes - slotMinutes) > 120;
 
   const save = async () => {
     if (!status) {
@@ -141,7 +149,6 @@ export default function AdministerDoseModal({
             administeredByType,
             administratorName,
             actualTime: status === 'given' ? actualTime : '',
-            initials,
             reason,
             isPRN,
             indication,
@@ -241,10 +248,6 @@ export default function AdministerDoseModal({
               <input type="time" value={actualTime} onChange={(e) => setActualTime(e.target.value)} style={input} />
             </label>
             <label style={field}>
-              <span style={fieldLabel}>Initials</span>
-              <input type="text" value={initials} onChange={(e) => setInitials(e.target.value)} style={input} maxLength={5} />
-            </label>
-            <label style={field}>
               <span style={fieldLabel}>Administered by</span>
               <select value={administeredByType} onChange={(e) => setAdministeredByType(e.target.value)} style={input}>
                 {ADMIN_BY_OPTIONS.map((o) => (
@@ -330,6 +333,14 @@ export default function AdministerDoseModal({
               pending&quot; on the MAR until the result is recorded.
             </span>
           </label>
+        )}
+
+        {farFromSlot && (
+          <div style={lateNotice}>
+            Double-check the time row: you&apos;re documenting the <strong>{slot}</strong> dose but recorded it
+            as given at <strong>{actualTime}</strong>. If you meant a different scheduled time, cancel and
+            click that row instead.
+          </div>
         )}
 
         {error && <div style={errBox}>{error}</div>}

@@ -45,8 +45,8 @@ describe('buildTarEntryFields', () => {
     expect(f.documentedByCredential).toBe('RN');
   });
 
-  it('uppercases initials and snapshots the task', () => {
-    const f = buildTarEntryFields(input(), meta);
+  it('derives initials from the documenter name (row value ignored) and snapshots the task', () => {
+    const f = buildTarEntryFields(input({ initials: 'ZZZ' }), meta);
     expect(f.initials).toBe('SP');
     expect(f.taskNameSnapshot).toBe('Feeding tube site care');
     expect(f.levelSnapshot).toBe('skilled');

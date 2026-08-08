@@ -307,6 +307,17 @@ export interface MarAdministration {
   // new doc via documentedBy*/`at`, so the chain carries who-changed-what-when.
   amends?: string;
   amendmentReason?: string;
+  // Entered-in-error trail (the dose twin of a voided ORDER, see MarOrderStatus):
+  // a mis-click charted a dose that never belonged on the record (wrong slot,
+  // wrong day, wrong client), so amending its status would still leave a false
+  // row. Voiding stamps who/when/why on the doc itself (Admin SDK only; the
+  // client update rule stays false), keeps it for the audit trail, and every
+  // live view drops it via resolveCurrentAdministrations so the slot reopens.
+  voided?: boolean;
+  voidedAt?: unknown;
+  voidedBy?: string;
+  voidedByName?: string;
+  voidReason?: string;
   at?: unknown;
 }
 
@@ -323,7 +334,9 @@ export interface MarAdministrationDraft {
   administeredByType: string;
   administratorName: string;
   actualTime: string;
-  initials: string;
+  /** Ignored at write time — initials are derived from the documenter's
+   *  profile name in buildMarAdminFields. Kept optional for draft compat. */
+  initials?: string;
   reason: string;
   isPRN: boolean; // a PRN given dose keeps its reason (why it was given)
   indication: string; // the order's standing indication, snapshotted

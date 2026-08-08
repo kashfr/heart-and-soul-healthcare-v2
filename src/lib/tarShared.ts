@@ -9,6 +9,8 @@
  * performer separately from the person documenting it.
  */
 
+import { deriveInitials } from './marShared';
+
 /** What happened to a scheduled treatment box. */
 export type TarStatus = 'done' | 'not-done' | 'na';
 
@@ -56,7 +58,9 @@ export interface TarEntryFieldInput {
   status: TarStatus;
   performedByType: TarPerformerType | '';
   performerName: string;
-  initials: string;
+  /** Ignored at write time — initials are derived from the documenter's
+   *  profile name (see deriveInitials). Kept optional for draft compat. */
+  initials?: string;
   time: string; // 'HH:MM' the treatment was performed
   reason: string; // required when status is 'not-done'
   note: string;
@@ -93,7 +97,8 @@ export function buildTarEntryFields(r: TarEntryFieldInput, meta: TarEntryFieldMe
     status: r.status,
     performedByType: done ? r.performedByType || 'nurse' : '',
     performerName: done && !selfPerformed ? r.performerName.trim() : '',
-    initials: r.initials.trim().toUpperCase(),
+    // Derived, never typed — same signature rule as the MAR (deriveInitials).
+    initials: deriveInitials(meta.documenter.name) || (r.initials || '').trim().toUpperCase(),
     time: done ? r.time.trim() : '',
     reason: r.status === 'not-done' ? r.reason.trim() : '',
     note: r.note.trim(),

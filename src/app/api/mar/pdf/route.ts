@@ -83,6 +83,7 @@ interface AdminDoc {
   /** Reading for a check-style order (gastric residual, etc.); '' for doses. */
   value: string;
   valueUnit: string;
+  documentedBy: string;
   documentedByName: string;
   documentedByCredential: string;
 }
@@ -184,7 +185,12 @@ export async function POST(request: Request) {
       };
     });
 
-    const admins: AdminDoc[] = adminsSnap.docs.map((d) => {
+    // A voided administration was removed as entered in error (mis-clicked
+    // slot/day): audit history, not part of the record, so it must not print —
+    // mirrors the voided-order filter above and resolveCurrentAdministrations
+    // on the web grid. Its slot prints blank (or with the corrected entry).
+    const liveAdminDocs = adminsSnap.docs.filter((d) => (d.data() || {}).voided !== true);
+    const admins: AdminDoc[] = liveAdminDocs.map((d) => {
       const a = d.data() || {};
       return {
         id: d.id,
@@ -210,6 +216,7 @@ export async function POST(request: Request) {
         outcome: String(a.outcome || ''),
         value: String(a.value || ''),
         valueUnit: String(a.valueUnitSnapshot || ''),
+        documentedBy: String(a.documentedBy || ''),
         documentedByName: String(a.documentedByName || ''),
         documentedByCredential: String(a.documentedByCredential || ''),
       };
@@ -344,15 +351,22 @@ export async function POST(request: Request) {
         };
       });
 
-    const legendMap = new Map<string, string>();
+    // Legend keyed by the documenting USER, not the initials string, so one
+    // nurse prints as one row even where historical docs carry differently-
+    // formed initials (they were once free-typed; derived-only now). Every
+    // distinct token she used is listed so each grid mark stays resolvable.
+    const byUid = new Map<string, { name: string; tokens: string[] }>();
     for (const a of admins) {
-      if (a.initials && a.documentedByName && !legendMap.has(a.initials)) {
-        legendMap.set(
-          a.initials,
-          `${a.documentedByName}${a.documentedByCredential ? `, ${a.documentedByCredential}` : ''}`,
-        );
-      }
+      if (!a.documentedBy || !a.documentedByName || !a.initials) continue;
+      const entry = byUid.get(a.documentedBy) || {
+        name: `${a.documentedByName}${a.documentedByCredential ? `, ${a.documentedByCredential}` : ''}`,
+        tokens: [],
+      };
+      if (!entry.tokens.includes(a.initials)) entry.tokens.push(a.initials);
+      byUid.set(a.documentedBy, entry);
     }
+    const legendMap = new Map<string, string>();
+    for (const e of byUid.values()) legendMap.set(e.tokens.join(' / '), e.name);
 
     const element = React.createElement(MarPDF, {
       orgName: settings.branding.orgName || 'Heart and Soul Healthcare',

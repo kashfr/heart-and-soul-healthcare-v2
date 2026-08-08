@@ -19,7 +19,6 @@ interface Props {
   /** Total boxes this task has per day; shown only when more than one. */
   timesPerDay: number;
   documenter: { uid: string; name: string; credential: string };
-  defaultInitials: string;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -45,7 +44,6 @@ export default function RecordTreatmentModal({
   slotIndex,
   timesPerDay,
   documenter,
-  defaultInitials,
   onClose,
   onSaved,
 }: Props) {
@@ -53,7 +51,6 @@ export default function RecordTreatmentModal({
   const [performedByType, setPerformedByType] = useState<TarPerformerType>('nurse');
   const [performerName, setPerformerName] = useState('');
   const [time, setTime] = useState(nowHHMM());
-  const [initials, setInitials] = useState(defaultInitials);
   const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
@@ -63,10 +60,6 @@ export default function RecordTreatmentModal({
 
   const save = async () => {
     setError(null);
-    if (!initials.trim()) {
-      setError('Initials are required: they identify who documented this entry.');
-      return;
-    }
     if (status === 'not-done' && !reason.trim()) {
       setError('Choose why the treatment was not carried out.');
       return;
@@ -84,7 +77,7 @@ export default function RecordTreatmentModal({
           status,
           performedByType,
           performerName,
-          initials,
+          initials: '', // derived from the documenter's profile at write time
           time,
           reason,
           note,
@@ -217,19 +210,11 @@ export default function RecordTreatmentModal({
         </div>
 
         <div style={field}>
-          <label style={label} htmlFor="tar-initials">Your initials *</label>
-          <input
-            id="tar-initials"
-            type="text"
-            value={initials}
-            onChange={(e) => setInitials(e.target.value)}
-            style={{ ...input, maxWidth: 120, textTransform: 'uppercase' }}
-            maxLength={4}
-          />
           <div style={hint}>
             Documented by {documenter.name}
-            {documenter.credential ? `, ${documenter.credential}` : ''}. Entries cannot be edited once
-            saved; a correction is recorded as a new entry.
+            {documenter.credential ? `, ${documenter.credential}` : ''} — signed with your initials
+            automatically. Entries cannot be edited once saved; a correction is recorded as a new
+            entry.
           </div>
         </div>
 
