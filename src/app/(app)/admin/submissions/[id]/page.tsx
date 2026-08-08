@@ -817,8 +817,16 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           'q43_interventionTime', 'q43_eventInterventionDetails', 'q43_postEventMonitoring',
         ]) && (
           <Section title="Medications">
-            {hasValue(data.q43_scheduledMeds) && <TextBlock fieldKey="q43_scheduledMeds" label="Scheduled" value={data.q43_scheduledMeds} />}
-            {hasValue(data.q43_prnMeds) && <TextBlock fieldKey="q43_prnMeds" label="PRN" value={data.q43_prnMeds} />}
+            {/* Same caption as the PDF: free-typed med text is narrative, not
+                the dose record — the MAR is. */}
+            {anyHasValue(['q43_scheduledMeds', 'q43_prnMeds']) && (
+              <p style={{ fontStyle: 'italic', color: '#6b7280', fontSize: 12.5, margin: '0 0 6px' }}>
+                Nurse narrative only. The official record of each dose is the client&apos;s
+                Medication Administration Record (MAR).
+              </p>
+            )}
+            {hasValue(data.q43_scheduledMeds) && <TextBlock fieldKey="q43_scheduledMeds" label="Medication Notes" value={data.q43_scheduledMeds} />}
+            {hasValue(data.q43_prnMeds) && <TextBlock fieldKey="q43_prnMeds" label="PRN Notes" value={data.q43_prnMeds} />}
             {hasValue(data.q43_medTolerance) && <TextBlock fieldKey="q43_medTolerance" label="Tolerance" value={data.q43_medTolerance} />}
             {anyHasValue(['q43_reactionMed', 'q43_reactionTime', 'q43_reactionType', 'q43_reactionDescription', 'q43_reactionPhysNotified', 'q43_reactionPhysTime']) && (
               <div style={{ marginTop: 8 }}>

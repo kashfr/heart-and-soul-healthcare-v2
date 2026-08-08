@@ -1150,8 +1150,17 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
           'q43_interventionTime', 'q43_eventInterventionDetails', 'q43_postEventMonitoring',
         ]) && (
           <SectionBreakable title="Medications">
-            {hasValue(data.q43_scheduledMeds) && <TextBlock fieldKey="q43_scheduledMeds" label="Scheduled" value={data.q43_scheduledMeds} />}
-            {hasValue(data.q43_prnMeds) && <TextBlock fieldKey="q43_prnMeds" label="PRN" value={data.q43_prnMeds} />}
+            {/* The narrative text below is nurse-written context, NOT the dose
+                record; captioned so a reader (or surveyor) never mistakes a
+                free-typed med list for the official MAR. */}
+            {anyHasValue(data, ['q43_scheduledMeds', 'q43_prnMeds']) && (
+              <Text style={{ fontStyle: 'italic', color: '#555', marginBottom: 3 }}>
+                Nurse narrative only. The official record of each dose is the client&apos;s
+                Medication Administration Record (MAR).
+              </Text>
+            )}
+            {hasValue(data.q43_scheduledMeds) && <TextBlock fieldKey="q43_scheduledMeds" label="Medication Notes" value={data.q43_scheduledMeds} />}
+            {hasValue(data.q43_prnMeds) && <TextBlock fieldKey="q43_prnMeds" label="PRN Notes" value={data.q43_prnMeds} />}
             {hasValue(data.q43_medTolerance) && <TextBlock fieldKey="q43_medTolerance" label="Tolerance" value={data.q43_medTolerance} />}
             {anyHasValue(data, ['q43_reactionMed', 'q43_reactionTime', 'q43_reactionType', 'q43_reactionDescription', 'q43_reactionPhysNotified', 'q43_reactionPhysTime']) && (
               <View>
