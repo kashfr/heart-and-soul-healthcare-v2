@@ -92,6 +92,9 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
   // med documentation on her first shift. Tracked separately so the UI can say
   // "couldn't load" instead of "there are none".
   const [marLoadError, setMarLoadError] = useState(false);
+  // Healthy-path medication note starts collapsed behind a link; opens on
+  // click or whenever a resumed draft already carries text.
+  const [medNoteOpen, setMedNoteOpen] = useState(false);
   const [changeReqOpen, setChangeReqOpen] = useState(false);
   const [changeReqMsg, setChangeReqMsg] = useState<string | null>(null);
   const [stagedChanges, setStagedChanges] = useState<MarChangeRequest[]>([]);
@@ -179,6 +182,17 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
   const marApplicableOrders = marAllOrders.filter((o) => orderAppliesOn(o, marDate));
   const marActiveOrders = marAllOrders.filter((o) => o.status === 'active');
   const marActiveCount = marActiveOrders.length;
+
+  // Which MEDICATIONS variant to render (see the section comment below):
+  // full free-text boxes only in edit mode, when the orders fetch FAILED
+  // (downtime/paper record), or when the client genuinely has no orders on
+  // file. Everywhere else the structured MAR is the record and free text is a
+  // collapsed optional context note.
+  const marFreeTextMode =
+    !!isEditMode || marLoadError || (!!marPatientId && !marLoading && marActiveCount === 0);
+  const marSchedTextVal = String(watch('q43_scheduledMeds') || '');
+  const marPrnTextVal = String(watch('q43_prnMeds') || '');
+  const medNoteVisible = medNoteOpen || marSchedTextVal.trim() !== '';
 
   // One row per scheduled time (PRN orders get a single 'PRN' row).
   const marRows: { order: MarOrder; slot: string }[] = [];
@@ -879,43 +893,93 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
         />
       )}
 
-      {/* Medications */}
+      {/* Medications.
+          Free-text dose lists are the app's top med-error generator (invented
+          drug names, wrong concentrations, look-alike swaps), so the dose-list
+          boxes only appear where they're genuinely needed:
+           - healthy path (orders loaded): a single OPTIONAL collapsed
+             "medication notes" field for narrative context, never dose lists —
+             every dose is charted structurally above;
+           - fallback (orders failed to load, or the client has none on file):
+             the full boxes remain as the downtime/paper record;
+           - edit mode keeps the legacy boxes so old notes stay editable. */}
       <div className={styles.section}>
         <span className={styles.sectionLabel}>MEDICATIONS</span>
 
-        {marActiveCount > 0 && !isEditMode && (
-          <p style={marHintStyle}>
-            The Medication Administration (MAR) section above is the official record of each dose.
-            Use these boxes only for extra narrative context — text written here does not count as
-            MAR documentation.
-          </p>
+        {marFreeTextMode ? (
+          <>
+            {marLoadError && !isEditMode && (
+              <p style={marRequiredWarnStyle}>
+                The medication list couldn&apos;t load, so these boxes are the fallback record for
+                this shift: list each med with its dose, route, and time. When access is restored,
+                late-enter every dose on the MAR — that remains the official record.
+              </p>
+            )}
+            <div className={styles.row}>
+              <div className={styles.f} style={{ flex: '1 1 100%' }}>
+                <label className={styles.label} htmlFor="q43_scheduledMeds">Scheduled Medications Administered</label>
+                <textarea
+                  className={styles.textarea}
+                  id="q43_scheduledMeds"
+                  {...register('q43_scheduledMeds')}
+                  rows={4}
+                  placeholder="List medications, doses, routes, and times administered..."
+                />
+              </div>
+            </div>
+
+            <div className={styles.row}>
+              <div className={styles.f} style={{ flex: '1 1 100%' }}>
+                <label className={styles.label} htmlFor="q43_prnMeds">PRN Medications Administered</label>
+                <textarea
+                  className={styles.textarea}
+                  id="q43_prnMeds"
+                  {...register('q43_prnMeds')}
+                  rows={4}
+                  placeholder="List PRN medications, doses, routes, times, and reason..."
+                />
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            {medNoteVisible ? (
+              <div className={styles.row}>
+                <div className={styles.f} style={{ flex: '1 1 100%' }}>
+                  <label className={styles.label} htmlFor="q43_scheduledMeds">
+                    Medication notes (context only — doses are recorded above)
+                  </label>
+                  <textarea
+                    className={styles.textarea}
+                    id="q43_scheduledMeds"
+                    {...register('q43_scheduledMeds')}
+                    rows={3}
+                    placeholder="Optional context: pharmacy or brand changes, who administers which doses, timing quirks. Don't list doses here — chart each dose in the MAR section above."
+                  />
+                </div>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setMedNoteOpen(true)} style={medNoteLinkStyle}>
+                + Add a medication note (optional — doses are recorded above)
+              </button>
+            )}
+            {/* Legacy PRN narrative from a resumed draft: never hide text that
+                would still be submitted. Fresh healthy-path notes don't offer it. */}
+            {marPrnTextVal.trim() !== '' && (
+              <div className={styles.row}>
+                <div className={styles.f} style={{ flex: '1 1 100%' }}>
+                  <label className={styles.label} htmlFor="q43_prnMeds">PRN medication notes (context only)</label>
+                  <textarea
+                    className={styles.textarea}
+                    id="q43_prnMeds"
+                    {...register('q43_prnMeds')}
+                    rows={3}
+                  />
+                </div>
+              </div>
+            )}
+          </>
         )}
-
-        <div className={styles.row}>
-          <div className={styles.f} style={{ flex: '1 1 100%' }}>
-            <label className={styles.label} htmlFor="q43_scheduledMeds">Scheduled Medications Administered</label>
-            <textarea
-              className={styles.textarea}
-              id="q43_scheduledMeds"
-              {...register('q43_scheduledMeds')}
-              rows={4}
-              placeholder="List medications, doses, routes, and times administered..."
-            />
-          </div>
-        </div>
-
-        <div className={styles.row}>
-          <div className={styles.f} style={{ flex: '1 1 100%' }}>
-            <label className={styles.label} htmlFor="q43_prnMeds">PRN Medications Administered</label>
-            <textarea
-              className={styles.textarea}
-              id="q43_prnMeds"
-              {...register('q43_prnMeds')}
-              rows={4}
-              placeholder="List PRN medications, doses, routes, times, and reason..."
-            />
-          </div>
-        </div>
 
         <div className={styles.row}>
           <div className={styles.f}>
@@ -1062,6 +1126,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
 }
 
 const marHintStyle: CSSProperties = { fontSize: 13, color: '#6b7280', margin: '4px 0', lineHeight: 1.5 };
+const medNoteLinkStyle: CSSProperties = { background: 'none', border: 'none', padding: '2px 0', margin: '2px 0 10px', fontSize: 13, fontWeight: 600, color: '#1a73c4', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' };
 // Requires-MAR empty-state warning: same amber family as the tube-care prompts.
 const marRequiredWarnStyle: CSSProperties = { background: '#fff7ed', border: '1.5px solid #f59e0b', borderRadius: 10, padding: '14px 16px', fontSize: 13.5, color: '#7c2d12', lineHeight: 1.5 };
 const marRequiredWarnBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#b45309', color: 'white', border: 'none', padding: '9px 16px', borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
