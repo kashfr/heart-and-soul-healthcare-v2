@@ -598,7 +598,7 @@ export default function AdminSettingsPage() {
                       },
                     }));
                   }}
-                  style={inputStyle}
+                  style={selectStyle}
                 >
                   <option value="">Not set — no one is notified</option>
                   {reviewerOptions.map((o) => (

@@ -3,6 +3,7 @@
 import { useState, type CSSProperties } from 'react';
 import { X } from 'lucide-react';
 import { recordTarEntry } from '@/lib/tar';
+import { withSelectChevron } from '@/lib/selectChevron';
 import {
   TAR_NOT_DONE_REASONS,
   TAR_PERFORMER_TYPES,
@@ -156,7 +157,7 @@ export default function RecordTreatmentModal({
                   id="tar-performer"
                   value={performedByType}
                   onChange={(e) => setPerformedByType(e.target.value as TarPerformerType)}
-                  style={input}
+                  style={select}
                 >
                   {TAR_PERFORMER_TYPES.map((p) => (
                     <option key={p.value} value={p.value}>{p.label}</option>
@@ -187,7 +188,7 @@ export default function RecordTreatmentModal({
         {status === 'not-done' && (
           <div style={field}>
             <label style={label} htmlFor="tar-reason">Reason not carried out *</label>
-            <select id="tar-reason" value={reason} onChange={(e) => setReason(e.target.value)} style={input}>
+            <select id="tar-reason" value={reason} onChange={(e) => setReason(e.target.value)} style={select}>
               <option value="">Select a reason…</option>
               {TAR_NOT_DONE_REASONS.map((r) => (
                 <option key={r} value={r}>{r}</option>
@@ -242,6 +243,7 @@ const field: CSSProperties = { marginBottom: 14, flex: 1 };
 const row: CSSProperties = { display: 'flex', gap: 12, flexWrap: 'wrap' };
 const label: CSSProperties = { display: 'block', fontSize: 12.5, fontWeight: 700, color: '#2c3e50', marginBottom: 5 };
 const input: CSSProperties = { width: '100%', padding: '9px 10px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', color: '#2c3e50', background: 'white' };
+const select: CSSProperties = withSelectChevron(input);
 const seg: CSSProperties = { padding: '8px 14px', borderRadius: 6, border: '1px solid #d0d7de', background: 'white', color: '#2c3e50', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const segActive: CSSProperties = { ...seg, background: '#1a3a5c', color: 'white', borderColor: '#1a3a5c' };
 const hint: CSSProperties = { fontSize: 11.5, color: '#7f8c8d', marginTop: 6, lineHeight: 1.45 };

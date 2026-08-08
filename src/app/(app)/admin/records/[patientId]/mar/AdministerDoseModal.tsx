@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { parseValueOptions, writeMarAdministrations, type MarOrder } from '@/lib/mar';
 import { parseHHMM } from '@/lib/marShared';
+import { withSelectChevron } from '@/lib/selectChevron';
 
 const ADMIN_BY_OPTIONS = [
   { value: 'nurse', label: 'Nurse (me)' },
@@ -221,7 +222,7 @@ export default function AdministerDoseModal({
                   {valueUnit ? ` (${valueUnit})` : ''} *
                 </span>
                 {valueOptions.length > 0 ? (
-                  <select value={value} onChange={(e) => setValue(e.target.value)} style={input}>
+                  <select value={value} onChange={(e) => setValue(e.target.value)} style={select}>
                     <option value="">Select a reading…</option>
                     {valueOptions.map((o) => (
                       <option key={o} value={o}>
@@ -249,7 +250,7 @@ export default function AdministerDoseModal({
             </label>
             <label style={field}>
               <span style={fieldLabel}>Administered by</span>
-              <select value={administeredByType} onChange={(e) => setAdministeredByType(e.target.value)} style={input}>
+              <select value={administeredByType} onChange={(e) => setAdministeredByType(e.target.value)} style={select}>
                 {ADMIN_BY_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
@@ -379,6 +380,7 @@ const grid2: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, 
 const field: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 };
 const fieldLabel: CSSProperties = { fontSize: 12, fontWeight: 600, color: '#5c6b7a' };
 const input: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', height: 38 };
+const select: CSSProperties = withSelectChevron(input);
 const outcomeHint: CSSProperties = { fontSize: 11.5, color: '#8a949e', lineHeight: 1.4, marginTop: 2 };
 const errBox: CSSProperties = { marginTop: 12, background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '8px 11px', fontSize: 13 };
 const actions: CSSProperties = { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 };
