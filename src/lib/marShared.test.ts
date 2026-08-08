@@ -235,9 +235,9 @@ describe('resolveCurrentAdministrations / amendmentChain', () => {
 });
 
 describe('deriveInitials', () => {
-  it('takes the first letter of the first two name parts, uppercased', () => {
+  it('takes first-name + last-name initials, uppercased (middle names do not sign)', () => {
     expect(deriveInitials('Sarah Smith')).toBe('SS');
-    expect(deriveInitials('Ma Jamie Ann Yap')).toBe('MJ');
+    expect(deriveInitials('Ma Jamie Ann Yap')).toBe('MY');
     expect(deriveInitials('  sam   jones  ')).toBe('SJ');
   });
 

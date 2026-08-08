@@ -31,23 +31,20 @@ export function compareMarOrders(a: MarOrderSortable, b: MarOrderSortable): numb
 }
 
 /**
- * THE initials derivation: first letter of the first two name parts, uppercased
- * ("Sarah Smith" -> SS, "Ma Jamie Ann Yap" -> MJ). Initials are a signature on
- * a legal record, so they are ALWAYS derived from the documenter's profile name
- * at write time — never typed, never trusted from a draft. Before this there
- * were three different derivations plus a free-text input, which let one nurse
- * sign four different ways (MJ / MY / MJA / hand-typed "MYap") and duplicated
- * her in the signature legend.
+ * THE initials derivation: FIRST name + LAST name initial, uppercased
+ * ("Sarah Smith" -> SS, "Ma Jamie Ann Yap" -> MY — first token is the first
+ * name, last token is the surname, middle names don't sign). Initials are a
+ * signature on a legal record, so they are ALWAYS derived from the documenter's
+ * profile name at write time — never typed, never trusted from a draft. Before
+ * this there were three different derivations plus a free-text input, which let
+ * one nurse sign four different ways (MJ / MY / MJA / hand-typed "MYap") and
+ * duplicated her in the signature legend.
  */
 export function deriveInitials(name: string): string {
-  return (name || '')
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((p) => p[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
+  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '';
+  if (parts.length === 1) return parts[0][0].toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
 /** The per-row data a marked dose carries into the administration write. Kept
