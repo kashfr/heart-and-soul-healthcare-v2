@@ -37,6 +37,28 @@ service cloud.firestore {
       return hasActiveProfile() && getRole() == 'nurse';
     }
 
+    // A nurse with an active profile AND a clinical nursing credential (RN or
+    // LPN) — the population allowed to document med administrations. Used to
+    // open clinical READS (med orders, administrations, clinical profile) to
+    // any licensed nurse on staff: care-team membership (assignedNurseIds) is
+    // only seeded when a nurse SUBMITS her first note for a client, so gating
+    // first-shift reads on it locked a brand-new nurse out of the MAR during
+    // the very shift that would have enrolled her (she saw "no medications on
+    // file" and had to chart free-text). Writes stay unchanged.
+    function isLicensedNurse() {
+      return isNurse()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid))
+             .data.get('credential', '') in ['RN', 'LPN'];
+    }
+
+    // Any active portal member who documents care (staff, nurses, aides) —
+    // everyone except the administrative VA role. Care-task charting is open
+    // to this population, so reading the task list must be too (same
+    // first-shift chicken-and-egg as the MAR otherwise).
+    function isActiveCareStaff() {
+      return hasActiveProfile() && getRole() != 'va';
+    }
+
     // --- Collections ---
 
     // Contact Submissions — public create, everything else via Admin SDK
@@ -97,6 +119,7 @@ service cloud.firestore {
       // the admin Patients screen).
       match /clinical/{clinicalId} {
         allow read: if isStaff()
+          || isLicensedNurse()
           || (isNurse()
               && get(/databases/$(database)/documents/patients/$(patientId))
                    .data.get('assignedNurseIds', []).hasAny([request.auth.uid]));
@@ -121,6 +144,7 @@ service cloud.firestore {
     // pins patientId/createdBy/createdAt to their original values.
     match /marOrders/{orderId} {
       allow read: if isStaff()
+        || isLicensedNurse()
         || (isNurse()
             && resource.data.get('patientId', null) != null
             && get(/databases/$(database)/documents/patients/$(resource.data.patientId))
@@ -152,6 +176,7 @@ service cloud.firestore {
     // invariant the MAR write path enforces.
     match /careTaskAdministrations/{entryId} {
       allow read: if isStaff()
+        || isActiveCareStaff()
         || (isNurse()
             && resource.data.get('patientId', null) != null
             && get(/databases/$(database)/documents/patients/$(resource.data.patientId))
@@ -168,6 +193,7 @@ service cloud.firestore {
 
     match /careTasks/{taskId} {
       allow read: if isStaff()
+        || isActiveCareStaff()
         || (isNurse()
             && resource.data.get('patientId', null) != null
             && get(/databases/$(database)/documents/patients/$(resource.data.patientId))
@@ -194,6 +220,7 @@ service cloud.firestore {
     // documenter, or a nurse on the client's care team.
     match /marAdministrations/{adminId} {
       allow read: if isStaff()
+        || isLicensedNurse()
         || (isNurse() && resource.data.get('documentedBy', null) == request.auth.uid)
         || (isNurse()
             && resource.data.get('patientId', null) != null

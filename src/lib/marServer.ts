@@ -2,7 +2,7 @@ import 'server-only';
 import { FieldValue, type DocumentData, type DocumentReference } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
 import type { AuthedCaller } from './adminAuthGuard';
-import { buildMarAdminFields, parseValueOptions, regimenFieldsChanged } from './marShared';
+import { buildMarAdminFields, deriveInitials, parseValueOptions, regimenFieldsChanged } from './marShared';
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** Return `value` if it is an ISO YYYY-MM-DD date string, else `fallback`. Both
@@ -432,7 +432,8 @@ export type AmendFailureReason =
   | 'forbidden'
   | 'superseded'
   | 'bad-status'
-  | 'missing-reason';
+  | 'missing-reason'
+  | 'voided';
 
 export interface AmendResult {
   ok: boolean;
@@ -442,16 +443,6 @@ export interface AmendResult {
 }
 
 const AMENDABLE_STATUS = new Set(['given', 'held', 'refused']);
-
-function initialsFrom(name: string): string {
-  return (name || '')
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((p) => p.charAt(0).toUpperCase())
-    .slice(0, 3)
-    .join('');
-}
 
 /**
  * Record a correction to an existing administration. Writes a superseding doc
@@ -514,7 +505,7 @@ export async function amendMarAdministration(
       administeredByType: givenStatus ? String(orig.administeredByType || 'nurse') : 'nurse',
       administratorName: givenStatus ? String(orig.administratorName || '') : '',
       actualTime: String(input.actualTime || ''),
-      initials: initialsFrom(amenderName),
+      initials: deriveInitials(amenderName),
       reason: String(input.reason || ''),
       // A correction carries the outcome forward unless the amender edits it,
       // so amending a dose's time can never silently drop its recorded result.
@@ -551,6 +542,7 @@ export async function amendMarAdministration(
     ]);
     if (!fresh.exists) return 'not-found';
     if (!existing.empty) return 'superseded';
+    if ((fresh.data() || {}).voided === true) return 'voided';
 
     const freshData = fresh.data() || {};
     const freshOutcome = String(freshData.outcome || '').trim();
@@ -594,7 +586,106 @@ export async function amendMarAdministration(
       message: 'This entry was already amended. Refresh and amend the current entry.',
     };
   }
+  if (failure === 'voided') {
+    return {
+      ok: false,
+      reason: 'voided',
+      message: 'This entry was removed as entered in error and can no longer be amended.',
+    };
+  }
   return { ok: true, id: newRef.id };
+}
+
+// ---------------------------------------------------------------------------
+// Entered-in-error void. An amendment corrects WHAT a dose entry says; a void
+// says the entry should never have existed at all (mis-clicked slot or day,
+// wrong client). The dose twin of a voided ORDER (revertChange): the doc keeps
+// a who/when/why stamp for the audit trail, every live view drops it via
+// resolveCurrentAdministrations, and the slot reopens for correct charting.
+// Admin SDK only — the client-side update rule on marAdministrations stays
+// `false`, so this is the ONLY mutation path besides the write-once outcome.
+// ---------------------------------------------------------------------------
+
+export type VoidFailureReason = 'not-found' | 'forbidden' | 'superseded' | 'already-voided' | 'missing-reason';
+
+export interface VoidResult {
+  ok: boolean;
+  reason?: VoidFailureReason;
+  message?: string;
+}
+
+/**
+ * Mark an administration entry as entered in error. Permission mirrors the
+ * amend flow — the documenting nurse may remove her own entry (real-time
+ * self-correction of a mis-click), and an RN / supervisor / admin may remove
+ * any — with a required reason. Must target the CURRENT head of an amend
+ * chain; voiding it removes the whole logical dose (predecessors stay
+ * superseded, so nothing resurrects).
+ */
+export async function voidMarAdministration(
+  adminId: string,
+  input: { voidReason: string },
+  caller: AuthedCaller,
+): Promise<VoidResult> {
+  const col = adminDb().collection('marAdministrations');
+  const origSnap = await col.doc(adminId).get();
+  if (!origSnap.exists) {
+    return { ok: false, reason: 'not-found', message: 'That administration was not found.' };
+  }
+  const orig = origSnap.data() || {};
+
+  const isReviewer =
+    caller.role === 'admin' || caller.role === 'supervisor' || caller.profile.credential === 'RN';
+  const isOwner = String(orig.documentedBy || '') === caller.uid;
+  if (!isReviewer && !isOwner) {
+    return {
+      ok: false,
+      reason: 'forbidden',
+      message: 'Only the documenting nurse or an RN, supervisor, or admin can remove this entry.',
+    };
+  }
+
+  const voidReason = String(input.voidReason || '').trim();
+  if (!voidReason) {
+    return { ok: false, reason: 'missing-reason', message: 'A reason is required to remove an entry.' };
+  }
+
+  const callerName = caller.profile.displayName || caller.email || '';
+  const failure = await adminDb().runTransaction(async (tx): Promise<VoidFailureReason | null> => {
+    const [fresh, successor] = await Promise.all([
+      tx.get(col.doc(adminId)),
+      tx.get(col.where('amends', '==', adminId).limit(1)),
+    ]);
+    if (!fresh.exists) return 'not-found';
+    const data = fresh.data() || {};
+    if (data.voided === true) return 'already-voided';
+    // A superseded entry is already not the record; removing it would leave the
+    // superseding correction standing on a voided base. Void the current entry.
+    if (!successor.empty) return 'superseded';
+    tx.update(col.doc(adminId), {
+      voided: true,
+      voidedAt: FieldValue.serverTimestamp(),
+      voidedBy: caller.uid,
+      voidedByName: callerName,
+      voidReason,
+    });
+    return null;
+  });
+
+  if (failure === 'not-found') {
+    return { ok: false, reason: 'not-found', message: 'That administration was not found.' };
+  }
+  if (failure === 'already-voided') {
+    return { ok: false, reason: 'already-voided', message: 'This entry was already removed.' };
+  }
+  if (failure === 'superseded') {
+    return {
+      ok: false,
+      reason: 'superseded',
+      message: 'This entry was corrected by a newer one. Refresh and remove the current entry.',
+    };
+  }
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------

@@ -29,7 +29,6 @@ interface Props {
   activeOrders: MarOrder[];
   documenter?: MarDocumenter;
   getNoteId: () => string;
-  defaultInitials: string;
   onClose: () => void;
   onStaged: (summary: string) => void;
 }
@@ -41,7 +40,6 @@ export default function MedChangeRequestModal({
   activeOrders,
   documenter,
   getNoteId,
-  defaultInitials,
   onClose,
   onStaged,
 }: Props) {
@@ -76,7 +74,6 @@ export default function MedChangeRequestModal({
   // Add-only: "I gave a dose this shift"
   const [doseGiven, setDoseGiven] = useState(false);
   const [doseTime, setDoseTime] = useState('');
-  const [doseInitials, setDoseInitials] = useState(defaultInitials);
   const [doseByType, setDoseByType] = useState('nurse');
   const [doseByName, setDoseByName] = useState('');
 
@@ -194,7 +191,7 @@ export default function MedChangeRequestModal({
             administeredByType: doseByType,
             administratorName: doseByName,
             actualTime: doseTime,
-            initials: doseInitials,
+            initials: '', // derived from the documenter's profile at write time
             reason: '',
             sessionId: noteId,
           });
@@ -389,9 +386,6 @@ export default function MedChangeRequestModal({
                         <div style={grid2}>
                           <Field label="Time given">
                             <input type="time" value={doseTime} onChange={(e) => setDoseTime(e.target.value)} style={input} />
-                          </Field>
-                          <Field label="Initials">
-                            <input type="text" value={doseInitials} onChange={(e) => setDoseInitials(e.target.value)} style={input} maxLength={5} />
                           </Field>
                         </div>
                         <div style={grid2}>

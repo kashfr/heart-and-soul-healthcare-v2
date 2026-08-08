@@ -4,9 +4,17 @@ import { applyStagedChanges } from '@/lib/marServer';
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+// Agency-local (America/New_York) date, NOT container-local: Cloud Run runs in
+// UTC, where a plain new Date() y/m/d is already TOMORROW after 8 PM Eastern —
+// an effective-date fallback stamped that way would mis-schedule an order by a
+// day. en-CA formats as YYYY-MM-DD.
 function serverToday(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
 }
 
 export async function POST(request: Request) {

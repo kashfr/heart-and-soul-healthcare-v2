@@ -93,15 +93,6 @@ export default function MonthlyTarPage() {
   const canChartAny = !isViewingAs && profile?.active === true && profile?.role !== 'va';
   const canChart = (task: CareTask) => canChartAny && (task.level === 'skilled' ? hasLicense : true);
 
-  const myInitials = (profile?.displayName || '')
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((p) => p[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
-
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 640);
     check();
@@ -422,7 +413,6 @@ export default function MonthlyTarPage() {
           slotIndex={recordFor.slotIndex}
           timesPerDay={recordFor.timesPerDay}
           documenter={documenter}
-          defaultInitials={myInitials}
           onClose={() => setRecordFor(null)}
           onSaved={async () => {
             setRecordFor(null);

@@ -86,6 +86,13 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
   const [amendWhy, setAmendWhy] = useState('');
   const [amendBusy, setAmendBusy] = useState(false);
   const [amendError, setAmendError] = useState<string | null>(null);
+  // Remove-as-entered-in-error state. A void differs from an amend: the entry
+  // should never have existed (mis-clicked slot/day), so it is struck from the
+  // live record and its slot reopens rather than being corrected in place.
+  const [voidFor, setVoidFor] = useState<string | null>(null);
+  const [voidWhy, setVoidWhy] = useState('');
+  const [voidBusy, setVoidBusy] = useState(false);
+  const [voidError, setVoidError] = useState<string | null>(null);
 
   // Render into a portal on document.body: standard full-screen-overlay hygiene
   // so this fixed sheet can never be clipped or out-stacked by an ancestor's
@@ -210,6 +217,37 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
   const prevOf = (a: MarAdministration): MarAdministration | undefined =>
     a.amends ? dayAdmins.find((r) => r.id === a.amends) : undefined;
 
+  const saveVoid = async (a: MarAdministration) => {
+    if (!a.id) return;
+    if (!voidWhy.trim()) {
+      setVoidError('A reason is required (e.g., clicked the wrong time row).');
+      return;
+    }
+    setVoidBusy(true);
+    setVoidError(null);
+    try {
+      const res = await authedFetch('/api/mar/void', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminId: a.id, voidReason: voidWhy.trim() }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setVoidError(data.error || 'Could not remove the entry.');
+        setVoidBusy(false);
+        return;
+      }
+      setVoidFor(null);
+      setVoidWhy('');
+      setVoidBusy(false);
+      setTimelines({}); // drop cached history so it reloads without the entry
+      setRefreshKey((k) => k + 1);
+    } catch {
+      setVoidError('Network error removing the entry.');
+      setVoidBusy(false);
+    }
+  };
+
   const openAmend = (a: MarAdministration) => {
     setAmendFor(a.id || null);
     setAmendStatus(a.status);
@@ -314,10 +352,58 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
             {a.amendmentReason ? ` — ${a.amendmentReason}` : ''}
           </div>
         )}
-        {canAmend(a) && amendFor === null && (
-          <button type="button" style={amendBtn} onClick={() => openAmend(a)}>
-            Correct this entry
-          </button>
+        {canAmend(a) && amendFor === null && voidFor === null && (
+          <>
+            <button type="button" style={amendBtn} onClick={() => openAmend(a)}>
+              Correct this entry
+            </button>
+            <button
+              type="button"
+              style={{ ...amendBtn, marginLeft: 8, color: '#a82315', borderColor: '#f0c8c2' }}
+              onClick={() => {
+                setVoidFor(a.id || null);
+                setVoidWhy('');
+                setVoidError(null);
+              }}
+            >
+              Remove — entered in error
+            </button>
+          </>
+        )}
+        {voidFor === a.id && (
+          <div style={amendBox}>
+            <div style={amendTitle}>Remove this entry (entered in error)</div>
+            <div style={{ fontSize: 12.5, color: '#5c6b7a', lineHeight: 1.45, marginBottom: 10 }}>
+              Use this when the entry never should have been charted at all — wrong time row, wrong
+              day, or wrong client. It is struck from the MAR (the audit trail keeps it) and the
+              slot reopens so it can be charted correctly. To change what the entry says (given vs
+              held, the time), use <em>Correct this entry</em> instead.
+            </div>
+            <label style={amendField}>
+              <span style={amendFieldLabel}>Why is this entry being removed? *</span>
+              <input
+                type="text"
+                value={voidWhy}
+                onChange={(e) => setVoidWhy(e.target.value)}
+                style={amendInput}
+                placeholder="e.g., clicked the 20:00 row while charting the 08:00 dose"
+              />
+            </label>
+            {voidError && <div style={amendErr}>{voidError}</div>}
+            <div style={amendActions}>
+              <button type="button" style={amendCancel} onClick={() => setVoidFor(null)} disabled={voidBusy}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                style={{ ...amendSave, background: '#a82315', border: '1px solid #a82315' }}
+                onClick={() => saveVoid(a)}
+                disabled={voidBusy}
+              >
+                {voidBusy ? 'Removing…' : 'Remove entry'}
+              </button>
+            </div>
+          </div>
         )}
         {amendFor === a.id && (
           <div style={amendBox}>

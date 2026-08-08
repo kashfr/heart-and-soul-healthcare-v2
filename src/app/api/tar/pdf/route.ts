@@ -84,6 +84,7 @@ interface EntryDoc {
   reason: string;
   note: string;
   taskNameSnapshot: string;
+  documentedBy: string;
   documentedByName: string;
   documentedByCredential: string;
 }
@@ -177,6 +178,7 @@ export async function POST(request: Request) {
         reason: String(e.reason || ''),
         note: String(e.note || ''),
         taskNameSnapshot: String(e.taskNameSnapshot || ''),
+        documentedBy: String(e.documentedBy || ''),
         documentedByName: String(e.documentedByName || ''),
         documentedByCredential: String(e.documentedByCredential || ''),
       };
@@ -258,15 +260,21 @@ export async function POST(request: Request) {
         amendment: e.amends ? `[Correction: ${e.amendReason || 'no reason given'}]` : undefined,
       }));
 
-    const legendMap = new Map<string, string>();
+    // Legend keyed by the documenting USER, not the initials string, so one
+    // clinician prints as one row even where historical entries carry
+    // differently-formed initials (they were once free-typed; derived now).
+    const byUid = new Map<string, { name: string; tokens: string[] }>();
     for (const e of rawEntries) {
-      if (e.initials && e.documentedByName && !legendMap.has(e.initials)) {
-        legendMap.set(
-          e.initials,
-          `${e.documentedByName}${e.documentedByCredential ? `, ${e.documentedByCredential}` : ''}`,
-        );
-      }
+      if (!e.documentedBy || !e.documentedByName || !e.initials) continue;
+      const entry = byUid.get(e.documentedBy) || {
+        name: `${e.documentedByName}${e.documentedByCredential ? `, ${e.documentedByCredential}` : ''}`,
+        tokens: [],
+      };
+      if (!entry.tokens.includes(e.initials)) entry.tokens.push(e.initials);
+      byUid.set(e.documentedBy, entry);
     }
+    const legendMap = new Map<string, string>();
+    for (const e of byUid.values()) legendMap.set(e.tokens.join(' / '), e.name);
 
     const element = React.createElement(TarPDF, {
       orgName: settings.branding.orgName || 'Heart and Soul Healthcare',

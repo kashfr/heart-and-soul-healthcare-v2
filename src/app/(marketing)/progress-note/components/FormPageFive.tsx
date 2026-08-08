@@ -5,7 +5,7 @@ import type { FormPageProps } from '../types';
 import styles from '../page.module.css';
 import DeselectableRadio, { radioState, radioSubscribe, radioGetSnapshot } from './DeselectableRadio';
 import {
-  getMarOrders,
+  getMarOrdersStrict,
   orderAppliesOn,
   subscribeStagedChanges,
   removeStagedChange,
@@ -39,13 +39,9 @@ const ADMIN_BY_OPTIONS = [
   { value: 'proxy', label: 'Proxy' },
 ];
 
-// Default initials from the nurse's name: first + last initial.
-function computeInitials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return '';
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
+// Initials are no longer collected here: they are DERIVED from the signed-in
+// documenter's profile name at write time (see deriveInitials/buildMarAdminFields
+// in marShared), so a nurse can neither mistype them nor sign inconsistently.
 
 // Current local time as {minutes since midnight, YYYY-MM-DD}, for the time-aware
 // MAR pill. Isolated so the only Date reads happen at mount + the 60s tick,
@@ -89,9 +85,13 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
   useSyncExternalStore(marAdminSubscribe, marAdminGetSnapshot, marAdminGetSnapshot);
   const marPatientId = String(watch('patientId') || '').trim();
   const marDate = String(watch('q6_dateofService') || '');
-  const marDefaultInitials = computeInitials(String(watch('q11_nurseName') || ''));
   const [marAllOrders, setMarAllOrders] = useState<MarOrder[]>([]);
   const [marLoading, setMarLoading] = useState(false);
+  // A FAILED med-orders fetch (network, permissions) must never render as
+  // "no medications on file" — that exact confusion sent a nurse to free-text
+  // med documentation on her first shift. Tracked separately so the UI can say
+  // "couldn't load" instead of "there are none".
+  const [marLoadError, setMarLoadError] = useState(false);
   const [changeReqOpen, setChangeReqOpen] = useState(false);
   const [changeReqMsg, setChangeReqMsg] = useState<string | null>(null);
   const [stagedChanges, setStagedChanges] = useState<MarChangeRequest[]>([]);
@@ -154,10 +154,18 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
     let cancelled = false;
     (async () => {
       setMarLoading(true);
-      const all = await getMarOrders(marPatientId);
-      if (cancelled) return;
-      setMarAllOrders(all);
-      setMarLoading(false);
+      setMarLoadError(false);
+      try {
+        const all = await getMarOrdersStrict(marPatientId);
+        if (cancelled) return;
+        setMarAllOrders(all);
+      } catch (error) {
+        console.error('Error loading MAR orders for the note:', error);
+        if (cancelled) return;
+        setMarAllOrders([]);
+        setMarLoadError(true);
+      }
+      if (!cancelled) setMarLoading(false);
     })();
     return () => {
       cancelled = true;
@@ -205,7 +213,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
         administeredByType: 'nurse',
         administratorName: '',
         actualTime: slot === 'PRN' ? '' : slot,
-        initials: marDefaultInitials,
+        initials: '', // derived from the documenter's profile at write time
         reason: '',
         // Stamp the note session that created this mark (event-time, so the
         // lazy id mint doesn't run during render). The submit harvest writes
@@ -355,10 +363,6 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
             <label style={marFieldStyle}>
               <span style={marFieldLabelStyle}>Time given</span>
               <input type="time" value={opts.rec?.actualTime || ''} onChange={(e) => opts.onPatch({ actualTime: e.target.value })} style={marInputStyle} />
-            </label>
-            <label style={marFieldStyle}>
-              <span style={marFieldLabelStyle}>Initials</span>
-              <input type="text" value={opts.rec?.initials || ''} onChange={(e) => opts.onPatch({ initials: e.target.value })} style={marInputStyle} maxLength={5} />
             </label>
             <label style={marFieldStyle}>
               <span style={marFieldLabelStyle}>Administered by</span>
@@ -687,6 +691,20 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
           <p style={marHintStyle}>Select a client from the roster on Page 1 to load their medication schedule.</p>
         ) : marLoading ? (
           <p style={marHintStyle}>Loading medications…</p>
+        ) : marLoadError ? (
+          /* A failed fetch is NOT "no medications". Saying "none on file" here
+             once sent a nurse to free-text med documentation for a client with
+             8 active orders. */
+          <div style={marRequiredWarnStyle}>
+            <strong style={{ display: 'block', marginBottom: 6 }}>
+              ⚠ Couldn&apos;t load this client&apos;s medication orders.
+            </strong>
+            <span style={{ display: 'block' }}>
+              This is a loading problem, not an empty MAR — do not document medications in the
+              text boxes below. Check your connection and reload; if it keeps failing, contact
+              the office so your access can be checked.
+            </span>
+          </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {marRows.length === 0 && extraMarks.length === 0 ? (
@@ -856,7 +874,6 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
           activeOrders={marActiveOrders}
           documenter={documenter}
           getNoteId={getNoteId || (() => '')}
-          defaultInitials={marDefaultInitials}
           onClose={() => setChangeReqOpen(false)}
           onStaged={(msg) => setChangeReqMsg(msg)}
         />

@@ -30,6 +30,26 @@ export function compareMarOrders(a: MarOrderSortable, b: MarOrderSortable): numb
   );
 }
 
+/**
+ * THE initials derivation: first letter of the first two name parts, uppercased
+ * ("Sarah Smith" -> SS, "Ma Jamie Ann Yap" -> MJ). Initials are a signature on
+ * a legal record, so they are ALWAYS derived from the documenter's profile name
+ * at write time — never typed, never trusted from a draft. Before this there
+ * were three different derivations plus a free-text input, which let one nurse
+ * sign four different ways (MJ / MY / MJA / hand-typed "MYap") and duplicated
+ * her in the signature legend.
+ */
+export function deriveInitials(name: string): string {
+  return (name || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((p) => p[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+}
+
 /** The per-row data a marked dose carries into the administration write. Kept
  *  structural (not importing the mar.ts type) so this module stays Firebase
  *  free and unit-testable. */
@@ -44,7 +64,9 @@ export interface MarAdminFieldInput {
   administeredByType: string;
   administratorName: string;
   actualTime: string;
-  initials: string;
+  /** Ignored at write time (kept for draft-shape compatibility): the stored
+   *  initials are ALWAYS derived from meta.documenter.name. */
+  initials?: string;
   reason: string;
   isPRN?: boolean;
   indication?: string;
@@ -107,7 +129,11 @@ export function buildMarAdminFields(r: MarAdminFieldInput, meta: MarAdminFieldMe
     administeredByType: r.administeredByType || 'nurse',
     administratorName: isNurse ? '' : r.administratorName.trim(),
     actualTime: r.status === 'given' ? r.actualTime : '',
-    initials: r.initials.trim(),
+    // Derived, never typed: the initials sign the record for the DOCUMENTER
+    // (who physically gave a family/proxy dose is carried by administratorName
+    // and the grid's * marker). Falls back to any provided value only when the
+    // documenter has no name to derive from (should never happen in practice).
+    initials: deriveInitials(meta.documenter.name) || (r.initials || '').trim().toUpperCase(),
     reason: r.status === 'given' && !isPRN ? '' : r.reason.trim(),
     outcome: r.status === 'given' && isPRN ? (r.outcome || '').trim() : '',
     prescriberNotified: r.status !== 'given' && r.prescriberNotified === true,
@@ -320,10 +346,17 @@ export function doseTimeStatus(
 export interface AmendableRecord {
   id?: string;
   amends?: string;
+  /** True when this entry was removed as entered-in-error (see
+   *  voidMarAdministration). A voided entry is audit history: it is kept in
+   *  Firestore but drops out of every live view, and its slot reopens. */
+  voided?: boolean;
 }
 
 /** The records that are NOT superseded by any other record's `amends` pointer,
  *  i.e. the current/live value of each administration after corrections.
+ *  A VOIDED record (entered in error) is dropped too — and because its
+ *  predecessors in an amend chain remain superseded, voiding the head of a
+ *  chain removes the whole logical dose rather than resurrecting the original.
  *
  *  INVARIANT: callers must pass COMPLETE chains. An amendment doc inherits the
  *  original's `date` and `orderId` (see amendMarAdministration), so every member
@@ -335,7 +368,7 @@ export interface AmendableRecord {
 export function resolveCurrentAdministrations<T extends AmendableRecord>(list: T[]): T[] {
   const superseded = new Set<string>();
   for (const r of list) if (r.amends) superseded.add(r.amends);
-  return list.filter((r) => !(r.id && superseded.has(r.id)));
+  return list.filter((r) => !(r.id && superseded.has(r.id)) && r.voided !== true);
 }
 
 /** The full amendment chain for a current record, oldest original first through

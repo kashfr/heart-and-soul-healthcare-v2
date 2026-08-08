@@ -140,14 +140,6 @@ export default function MonthlyMarPage() {
     name: profile?.displayName || '',
     credential: profile?.credential || '',
   };
-  const myInitials = (profile?.displayName || '')
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((p) => p[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
 
   const [month, setMonth] = useState(currentMonth());
   const [patient, setPatient] = useState<Patient | null>(null);
@@ -284,15 +276,35 @@ export default function MonthlyMarPage() {
     [currentAdmins, rowOrderIds],
   );
 
-  // Initials legend from the month's administrations.
+  // Initials legend from the month's live administrations, keyed by the
+  // documenting USER (uid), not the initials string — so one nurse is one row
+  // even where historical docs carry differently-formed initials (initials
+  // were once free-typed; they're derived from the profile name now). All of
+  // a nurse's tokens are listed so every grid mark stays resolvable.
   const legend = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const a of admins) {
-      if (a.initials && a.documentedByName && !map.has(a.initials)) {
-        map.set(a.initials, `${a.documentedByName}${a.documentedByCredential ? `, ${a.documentedByCredential}` : ''}`);
-      }
+    const byUid = new Map<string, { name: string; tokens: string[] }>();
+    for (const a of currentAdmins) {
+      if (!a.documentedBy || !a.documentedByName || !a.initials) continue;
+      const entry = byUid.get(a.documentedBy) || {
+        name: `${a.documentedByName}${a.documentedByCredential ? `, ${a.documentedByCredential}` : ''}`,
+        tokens: [],
+      };
+      if (!entry.tokens.includes(a.initials)) entry.tokens.push(a.initials);
+      byUid.set(a.documentedBy, entry);
     }
-    return Array.from(map.entries());
+    return Array.from(byUid.entries()).map(
+      ([uid, e]) => [uid, e.tokens.join(' / '), e.name] as [string, string, string],
+    );
+  }, [currentAdmins]);
+
+  // Entries removed as entered-in-error. Hidden from the grid (the slot
+  // reopens) but listed in the exception log struck through, so the screen
+  // still accounts for every record that once existed. Superseded members of
+  // an amend chain stay collapsed as usual.
+  const voidedEntries = useMemo(() => {
+    const superseded = new Set<string>();
+    for (const a of admins) if (a.amends) superseded.add(a.amends);
+    return admins.filter((a) => a.voided === true && !(a.id && superseded.has(a.id)));
   }, [admins]);
 
   const handleExport = async () => {
@@ -341,7 +353,17 @@ export default function MonthlyMarPage() {
 
   // A given PRN dose is complete only once its result is documented.
   const resultPending = (a: MarAdministration): boolean =>
-    a.status === 'given' && a.scheduledTime === 'PRN' && !(a.outcome || '').trim();
+    a.status === 'given' && a.scheduledTime === 'PRN' && !(a.outcome || '').trim() && a.voided !== true;
+
+  // Exception log rows: live exceptions plus removed (voided) entries, in one
+  // chronological list.
+  const logRows = useMemo(
+    () =>
+      [...logEntries, ...voidedEntries].sort((a, b) =>
+        (a.date + (a.actualTime || '')).localeCompare(b.date + (b.actualTime || '')),
+      ),
+    [logEntries, voidedEntries],
+  );
 
   return (
     <div style={containerStyle}>
@@ -588,8 +610,8 @@ export default function MonthlyMarPage() {
               <section style={sectionCardStyle}>
                 <div style={sectionTitleStyle}>Initial / signature legend</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-                  {legend.map(([init, name]) => (
-                    <span key={init} style={legendEntryStyle}>
+                  {legend.map(([uid, init, name]) => (
+                    <span key={uid} style={legendEntryStyle}>
                       <strong>{init}</strong> · {name}
                     </span>
                   ))}
@@ -597,7 +619,7 @@ export default function MonthlyMarPage() {
               </section>
             )}
 
-            {logEntries.length > 0 && (
+            {logRows.length > 0 && (
               <section style={sectionCardStyle}>
                 <div style={sectionTitleStyle}>PRN, refused &amp; exception log</div>
                 <div style={{ overflowX: 'auto' }}>
@@ -615,8 +637,8 @@ export default function MonthlyMarPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {logEntries.map((a) => (
-                        <tr key={a.id}>
+                      {logRows.map((a) => (
+                        <tr key={a.id} style={a.voided === true ? { opacity: 0.55 } : undefined}>
                           <td style={logTdStyle}>{formatDate(a.date)}</td>
                           <td style={logTdStyle}>{a.actualTime || '-'}</td>
                           <td style={logTdStyle}>
@@ -627,15 +649,22 @@ export default function MonthlyMarPage() {
                           <td style={logTdStyle}>
                             <span
                               style={
-                                a.status === 'given'
-                                  ? { ...statusChipStyle, background: '#e8f4e8', color: '#2a7a2a' }
-                                  : a.status === 'held'
-                                    ? { ...statusChipStyle, background: '#fef3e2', color: '#b56a17' }
-                                    : { ...statusChipStyle, background: '#fdeaea', color: '#c0392b' }
+                                a.voided === true
+                                  ? { ...statusChipStyle, background: '#eceff3', color: '#5c6b7a', textDecoration: 'line-through' }
+                                  : a.status === 'given'
+                                    ? { ...statusChipStyle, background: '#e8f4e8', color: '#2a7a2a' }
+                                    : a.status === 'held'
+                                      ? { ...statusChipStyle, background: '#fef3e2', color: '#b56a17' }
+                                      : { ...statusChipStyle, background: '#fdeaea', color: '#c0392b' }
                               }
                             >
                               {a.status}
                             </span>
+                            {a.voided === true && (
+                              <span style={{ display: 'block', fontSize: 10.5, color: '#5c6b7a', fontWeight: 700, marginTop: 3 }}>
+                                Removed — entered in error
+                              </span>
+                            )}
                           </td>
                           <td style={logTdStyle}>
                             {a.administeredByType && a.administeredByType !== 'nurse'
@@ -644,6 +673,11 @@ export default function MonthlyMarPage() {
                           </td>
                           <td style={logTdStyle}>
                             {a.reason || '-'}
+                            {a.voided === true && (
+                              <span style={{ display: 'block', fontSize: 10.5, color: '#5c6b7a' }}>
+                                Removed{a.voidedByName ? ` by ${a.voidedByName}` : ''}{a.voidReason ? `: ${a.voidReason}` : ''}
+                              </span>
+                            )}
                             {(a.status === 'held' || a.status === 'refused') && a.prescriberNotified === true && (
                               <span style={{ display: 'block', fontSize: 10.5, color: '#1e5c1e', fontWeight: 600 }}>
                                 Prescriber notified
@@ -697,7 +731,6 @@ export default function MonthlyMarPage() {
           dateISO={administer.iso}
           todayISO={todayISO()}
           documenter={documenter}
-          defaultInitials={myInitials}
           onClose={() => setAdminister(null)}
           onSaved={() => {
             setToast('Dose documented.');

@@ -4,6 +4,7 @@ import {
   buildMarAdminFields,
   compareMarOrders,
   computeRequiredDoseGaps,
+  deriveInitials,
   doseTimeStatus,
   looksLikeUnknownPhysician,
   orderSignedAgeDays,
@@ -214,6 +215,51 @@ describe('resolveCurrentAdministrations / amendmentChain', () => {
     ];
     const p = looped[0];
     expect(() => amendmentChain(p, looped)).not.toThrow();
+  });
+
+  it('drops a voided (entered-in-error) record from the live view', () => {
+    const withVoided = [
+      { id: 'a', voided: true },
+      { id: 'b' },
+    ];
+    expect(resolveCurrentAdministrations(withVoided).map((r) => r.id)).toEqual(['b']);
+  });
+
+  it('voiding the head of an amend chain removes the whole logical dose (the original stays superseded)', () => {
+    const chain = [
+      { id: 'a' },
+      { id: 'b', amends: 'a', voided: true },
+    ];
+    expect(resolveCurrentAdministrations(chain)).toEqual([]);
+  });
+});
+
+describe('deriveInitials', () => {
+  it('takes the first letter of the first two name parts, uppercased', () => {
+    expect(deriveInitials('Sarah Smith')).toBe('SS');
+    expect(deriveInitials('Ma Jamie Ann Yap')).toBe('MJ');
+    expect(deriveInitials('  sam   jones  ')).toBe('SJ');
+  });
+
+  it('handles one-word and empty names', () => {
+    expect(deriveInitials('Cher')).toBe('C');
+    expect(deriveInitials('')).toBe('');
+    expect(deriveInitials('   ')).toBe('');
+  });
+});
+
+describe('buildMarAdminFields — initials are derived, never typed', () => {
+  it('derives initials from the documenter name and ignores the row value', () => {
+    const f = buildMarAdminFields(input({ initials: 'MYap' }), meta);
+    expect(f.initials).toBe('SJ');
+  });
+
+  it('falls back to the trimmed uppercased row value only when the documenter has no name', () => {
+    const f = buildMarAdminFields(input({ initials: ' ab ' }), {
+      ...meta,
+      documenter: { ...meta.documenter, name: '' },
+    });
+    expect(f.initials).toBe('AB');
   });
 });
 
