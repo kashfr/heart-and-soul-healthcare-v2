@@ -43,8 +43,11 @@ export default function ClarificationGate() {
     return () => unsub();
   }, [loading, effectiveRole, effectiveUid]);
 
-  // Everything still awaiting her reply, already in priority order from the lib.
-  const pending = useMemo(() => items.filter((i) => i.awaitsNurse), [items]);
+  // Everything still awaiting her reply, already in priority order from the
+  // lib. Blocking corrections are excluded: those are owned by the stronger
+  // CorrectionsBlockGate (which demands an AMENDMENT, not just a reply), and
+  // stacking both overlays for the same note would be confusing.
+  const pending = useMemo(() => items.filter((i) => i.awaitsNurse && !i.blocksNotes), [items]);
 
   // Suppress the gate on the note page she's been routed to, so she can review
   // and reply there. Path is /admin/submissions/<noteId>. We let her work on

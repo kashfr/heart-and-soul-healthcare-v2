@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { Suspense, useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -29,6 +29,7 @@ import { useSettings } from './SettingsProvider';
 import UserMenu from './UserMenu';
 import NotificationsBell from './NotificationsBell';
 import ClarificationGate from './ClarificationGate';
+import CorrectionsBlockGate from './CorrectionsBlockGate';
 import type { Role } from '@/lib/auth';
 import { subscribePendingDupCount } from '@/lib/drafts';
 import { subscribeMyOpenClarifications } from '@/lib/clarifications';
@@ -231,6 +232,14 @@ export function AppShell({ children }: { children: ReactNode }) {
           to each before she can use the portal. Renders nothing for non-nurses
           or when there's nothing awaiting a response. */}
       <ClarificationGate />
+      {/* Corrections hard stop, portal-wide: a nurse with a note flagged
+          "must be corrected" sees this the moment she signs in — not only if
+          she happens to open the note form. Suppresses itself on the blocked
+          notes' own pages so she can review and amend them. Suspense: the
+          gate reads useSearchParams. */}
+      <Suspense fallback={null}>
+        <CorrectionsBlockGate />
+      </Suspense>
       <div className="app-shell-body">
       <aside
         suppressHydrationWarning
