@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { MessageCircleQuestion, CheckCircle2 } from 'lucide-react';
+import { MessageCircleQuestion, CheckCircle2, Ban } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
-import { clarificationMessages, type NoteClarification } from '@/lib/submissions';
+import { useSettings } from '@/components/SettingsProvider';
+import { clarificationMessages, clarificationBlocksNotes, type NoteClarification } from '@/lib/submissions';
 import type { Role } from '@/lib/auth';
 
 type TS = { toDate?: () => Date } | Date | null | undefined;
@@ -39,17 +40,23 @@ export default function ClarificationPanel({
   const canReview =
     !readOnly && (viewerRole === 'admin' || viewerRole === 'supervisor' || viewerCredential === 'RN');
   const isAuthor = !readOnly && !!viewerUid && !!authorId && viewerUid === authorId;
+  const { settings } = useSettings();
 
   const [mode, setMode] = useState<null | 'flag' | 'respond' | 'resolve'>(null);
   // Which kind of flag the reviewer is starting (only relevant in 'flag' mode).
   const [flagKind, setFlagKind] = useState<'clarification' | 'correction'>('clarification');
+  // Whether a new CORRECTION blocks the author from new notes until amended.
+  // Starting position comes from settings; the reviewer can flip it per flag.
+  const [flagBlocks, setFlagBlocks] = useState(settings.corrections.blockByDefault);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [blockBusy, setBlockBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const isOpen = clarification?.status === 'open';
   const isResolved = clarification?.status === 'resolved';
   const isCorrection = clarification?.kind === 'correction';
+  const blocksNow = clarificationBlocksNotes(clarification);
 
   // Nobody to show anything to: no thread and the viewer can't start one.
   if (!clarification && !canReview) return null;
@@ -61,7 +68,12 @@ export default function ClarificationPanel({
       const res = await authedFetch(`/api/admin/submissions/${noteId}/clarification`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, text: text.trim(), ...(action === 'flag' ? { kind: flagKind } : {}) }),
+        body: JSON.stringify({
+          action,
+          text: text.trim(),
+          ...(action === 'flag' ? { kind: flagKind } : {}),
+          ...(action === 'flag' && flagKind === 'correction' ? { blocksNotes: flagBlocks } : {}),
+        }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -77,6 +89,29 @@ export default function ClarificationPanel({
     }
   }
 
+  /** Reviewer lever: turn the author's new-notes block on/off for this open
+   *  correction without resolving it. */
+  async function setBlock(next: boolean) {
+    setBlockBusy(true);
+    setError(null);
+    try {
+      const res = await authedFetch(`/api/admin/submissions/${noteId}/clarification`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'setBlock', blocksNotes: next }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Request failed.');
+      }
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Something went wrong.');
+    } finally {
+      setBlockBusy(false);
+    }
+  }
+
   return (
     <div style={wrapStyle} className="no-print">
       <div style={headerStyle}>
@@ -86,6 +121,11 @@ export default function ClarificationPanel({
         </strong>
         {isOpen && <span style={isCorrection ? correctionBadge : openBadge}>Open</span>}
         {isResolved && <span style={resolvedBadge}>Resolved</span>}
+        {blocksNow && (
+          <span style={blockingBadge} title="The author can't start or submit new notes until she amends this one.">
+            <Ban size={10} /> Blocking new notes
+          </span>
+        )}
       </div>
 
       <div style={{ padding: '0 14px 14px' }}>
@@ -152,6 +192,21 @@ export default function ClarificationPanel({
                 Mark resolved
               </button>
             )}
+            {canReview && isCorrection && (
+              <button
+                type="button"
+                style={blocksNow ? ghostBtn : correctionBtn}
+                disabled={blockBusy}
+                onClick={() => setBlock(!blocksNow)}
+                title={
+                  blocksNow
+                    ? 'Let the author document new notes again without resolving this correction.'
+                    : 'Stop the author from documenting new notes until she amends this note.'
+                }
+              >
+                {blockBusy ? 'Saving…' : blocksNow ? 'Remove block' : 'Block new notes'}
+              </button>
+            )}
           </div>
         )}
 
@@ -174,6 +229,21 @@ export default function ClarificationPanel({
               }
               style={textareaStyle}
             />
+            {mode === 'flag' && flagKind === 'correction' && (
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 8, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={flagBlocks}
+                  onChange={(e) => setFlagBlocks(e.target.checked)}
+                  style={{ marginTop: 2 }}
+                />
+                <span style={{ fontSize: 12.5, color: '#5c6b7a', lineHeight: 1.4 }}>
+                  Block new notes until this is amended. The author can&apos;t start or submit new
+                  progress notes until she amends this one; the block lifts automatically when her
+                  amendment is saved and you&apos;ll be notified to verify it.
+                </span>
+              </label>
+            )}
             {error && <div style={errStyle}>{error}</div>}
             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
               <button
@@ -220,6 +290,7 @@ const headerStyle: React.CSSProperties = { display: 'flex', alignItems: 'center'
 const openBadge: React.CSSProperties = { background: '#fef3c7', color: '#92400e', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, padding: '1px 8px', borderRadius: 999 };
 const correctionBadge: React.CSSProperties = { background: '#fee2e2', color: '#b3261e', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, padding: '1px 8px', borderRadius: 999 };
 const resolvedBadge: React.CSSProperties = { background: '#dcfce7', color: '#166534', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, padding: '1px 8px', borderRadius: 999 };
+const blockingBadge: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: '#7f1d1d', color: 'white', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, padding: '1px 8px', borderRadius: 999 };
 const threadStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 8 };
 const bubbleStyle = (bg: string, border: string): React.CSSProperties => ({ background: bg, border: `1px solid ${border}`, borderRadius: 6, padding: '8px 10px' });
 const metaStyle: React.CSSProperties = { fontSize: 11, color: '#64748b' };

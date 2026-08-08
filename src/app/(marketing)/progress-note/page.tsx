@@ -14,6 +14,8 @@ import { isBpRoutinelyRequired } from '@/lib/vitalRanges';
 import { unansweredCareTasks } from '@/lib/careTaskCharting';
 import { normalizeName } from '@/lib/levenshtein';
 import { authedFetch } from '@/lib/authedFetch';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
 import { setRadio, radioState, clearRadioStorage } from './components/DeselectableRadio';
@@ -1524,6 +1526,17 @@ function ProgressNotePageInner() {
           editReasonRef.current.trim() || undefined,
         );
         editReasonRef.current = '';
+        // If this note's open correction was BLOCKING the author, tell the
+        // server the fix landed: it verifies the fresh editHistory entry,
+        // lifts the block, and notifies the corrections reviewer. Awaited (not
+        // fire-and-forget) so the gate is already down when she lands back in
+        // the portal; errors are non-fatal — a reviewer can always lift the
+        // block by hand, and a non-blocked note answers 409 'no-block'.
+        try {
+          await authedFetch(`/api/admin/submissions/${editId}/amended`, { method: 'POST' });
+        } catch (err) {
+          console.warn('Correction-amended event failed (non-fatal):', err);
+        }
         alert('Progress note updated successfully!');
         window.location.href = `/admin/submissions/${editId}`;
         return;
@@ -1562,6 +1575,31 @@ function ProgressNotePageInner() {
 
       let docId = submissionId;
       if (!alreadyWritten) {
+        // Corrections hard stop: a nurse with a blocking correction (or a
+        // manual admin block) may not submit NEW notes — amending existing
+        // ones is the fix path and goes through the edit branch above. The
+        // Firestore create rule enforces the same check server-side; this
+        // client check exists to give a clear message instead of a raw
+        // permission error. Fails open on read error (the rule still holds).
+        if (user) {
+          try {
+            const meSnap = await getDoc(doc(db, 'users', user.uid));
+            const me = meSnap.data() || {};
+            const blocked =
+              (me.correctionsBlock as { active?: boolean } | undefined)?.active === true ||
+              me.manualNotesBlock === true;
+            if (blocked) {
+              alert(
+                'You have a note flagged for correction that must be fixed before new notes can be submitted. Close this form and follow the correction prompt, or contact the nursing supervisor.',
+              );
+              setSubmitting(false);
+              return;
+            }
+          } catch (err) {
+            console.warn('Corrections-block check skipped (fetch failed):', err);
+          }
+        }
+
         // Duplicate hard stop: block a second note for a shift she already
         // documented. Only an APPROVED matching request lets it through;
         // pending/denied/none surface the blocking modal. Admins + edit-mode
