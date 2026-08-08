@@ -69,11 +69,17 @@ export default function CorrectionsBlockGate() {
   const blocking = useMemo(() => items.filter((i) => i.blocksNotes), [items]);
 
   // Let her work the fix: suppress while editing one of the BLOCKED notes,
-  // and on the submitted-note confirmation pages.
+  // while VIEWING a blocked note in the portal (/admin/submissions/<id> — she
+  // needs to read the flag thread and hit Amend there), and on the
+  // submitted-note confirmation pages. Everything else stays gated.
   const editingBlockedNote = useMemo(() => {
     const editId = searchParams?.get('edit') || '';
     return !!editId && blocking.some((b) => b.noteId === editId);
   }, [searchParams, blocking]);
+  const viewingBlockedNote = useMemo(() => {
+    const m = pathname?.match(/^\/admin\/submissions\/([^/]+)$/);
+    return !!m && blocking.some((b) => b.noteId === m[1]);
+  }, [pathname, blocking]);
   const onSubmittedPage = !!pathname && pathname.startsWith('/progress-note/submitted');
 
   if (
@@ -81,6 +87,7 @@ export default function CorrectionsBlockGate() {
     !ready ||
     (blocking.length === 0 && !manualBlock) ||
     editingBlockedNote ||
+    viewingBlockedNote ||
     onSubmittedPage
   ) {
     return null;
