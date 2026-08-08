@@ -41,6 +41,47 @@ export default function AdminSettingsPage() {
 
   const [draft, setDraft] = useState<AppSettings>(settings);
   const [saving, setSaving] = useState(false);
+  // Staff list for the corrections-reviewer picker (a dropdown, deliberately
+  // NOT a raw uid input — a mistyped uid would silently break notifications).
+  const [reviewerOptions, setReviewerOptions] = useState<
+    Array<{ uid: string; displayName: string; role: string; credential: string; phone: string }>
+  >([]);
+  // The long per-age-group vitals grid is collapsed by default so the page
+  // stays scannable; expanding it is one click.
+  const [vitalsOpen, setVitalsOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authedFetch('/api/admin/users');
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          users?: Array<{ uid: string; displayName?: string; role?: string; credential?: string; phone?: string; active?: boolean }>;
+        };
+        if (cancelled || !Array.isArray(data.users)) return;
+        // Reviewer population = who may flag/resolve corrections: admins,
+        // supervisors, and RNs. Active accounts only.
+        const opts = data.users
+          .filter((u) => u.active !== false)
+          .filter((u) => u.role === 'admin' || u.role === 'supervisor' || u.credential === 'RN')
+          .map((u) => ({
+            uid: u.uid,
+            displayName: u.displayName || '(no name)',
+            role: u.role || '',
+            credential: u.credential || '',
+            phone: u.phone || '',
+          }))
+          .sort((a, b) => a.displayName.localeCompare(b.displayName));
+        setReviewerOptions(opts);
+      } catch {
+        // Picker degrades to a read-only summary; the saved value is untouched.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [toast, setToast] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   // Staging input for the intake service-area county picker.
   const [countyInput, setCountyInput] = useState('');
@@ -531,16 +572,62 @@ export default function AdminSettingsPage() {
 
           <div style={{ ...fieldGridStyle, marginTop: 14 }}>
             <Field
-              label="Corrections reviewer user ID"
-              hint="The staff account (normally the RN supervisor) notified by email, text, and portal bell when a nurse amends a blocked note. Copy the UID from Staff & Roles."
+              label="Corrections reviewer"
+              hint="The staff member (normally the RN supervisor) notified by email, text, and portal bell when a nurse amends a blocked note. Picking someone fills in the display name and phone below."
             >
-              <input
-                type="text"
-                value={draft.corrections.reviewerUid}
-                onChange={(e) => updateCorrections('reviewerUid', e.target.value)}
-                maxLength={128}
-                style={inputStyle}
-              />
+              {reviewerOptions.length > 0 ? (
+                <select
+                  value={draft.corrections.reviewerUid}
+                  onChange={(e) => {
+                    const uid = e.target.value;
+                    const picked = reviewerOptions.find((o) => o.uid === uid);
+                    setDirty(true);
+                    setDraft((prev) => ({
+                      ...prev,
+                      corrections: {
+                        ...prev.corrections,
+                        reviewerUid: uid,
+                        ...(picked
+                          ? {
+                              reviewerName: picked.credential
+                                ? `${picked.displayName}, ${picked.credential}`
+                                : picked.displayName,
+                              reviewerPhone: picked.phone,
+                            }
+                          : {}),
+                      },
+                    }));
+                  }}
+                  style={inputStyle}
+                >
+                  <option value="">Not set — no one is notified</option>
+                  {reviewerOptions.map((o) => (
+                    <option key={o.uid} value={o.uid}>
+                      {o.displayName}
+                      {o.credential ? ` (${o.credential}` : ` (`}
+                      {o.credential && o.role ? ', ' : ''}
+                      {o.role}
+                      {')'}
+                    </option>
+                  ))}
+                  {/* Keep a saved reviewer selectable even if they're missing
+                      from the fetched list (e.g. deactivated) so opening this
+                      page never silently clears the setting. */}
+                  {draft.corrections.reviewerUid &&
+                    !reviewerOptions.some((o) => o.uid === draft.corrections.reviewerUid) && (
+                      <option value={draft.corrections.reviewerUid}>
+                        {draft.corrections.reviewerName || 'Current reviewer'}
+                      </option>
+                    )}
+                </select>
+              ) : (
+                <div style={{ fontSize: 13.5, color: '#5c6b7a', padding: '9px 0' }}>
+                  {draft.corrections.reviewerName
+                    ? `Currently: ${draft.corrections.reviewerName}`
+                    : 'Not set.'}{' '}
+                  (Staff list unavailable right now — reload to change the reviewer.)
+                </div>
+              )}
             </Field>
             <Field
               label="Reviewer display name"
@@ -569,9 +656,30 @@ export default function AdminSettingsPage() {
           </div>
         </section>
 
-        {/* --- Pediatric vital ranges --- */}
+        {/* --- Pediatric vital ranges (collapsed by default: the per-age-group
+            grid is by far the longest block on this page) --- */}
         <section style={sectionStyle}>
-          <h2 style={sectionTitleStyle}>Vital sign ranges</h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <h2 style={{ ...sectionTitleStyle, marginBottom: vitalsOpen ? undefined : 0 }}>
+              Vital sign ranges
+            </h2>
+            <button
+              type="button"
+              onClick={() => setVitalsOpen((v) => !v)}
+              style={collapseToggleStyle}
+              aria-expanded={vitalsOpen}
+            >
+              {vitalsOpen ? '▾ Hide' : '▸ Show'}
+            </button>
+          </div>
+          {!vitalsOpen && (
+            <p style={{ ...sectionSubStyle, marginBottom: 0 }}>
+              Per-age-group thresholds for what counts as an abnormal vital. Collapsed to keep
+              this page short — expand to view or edit.
+            </p>
+          )}
+          {vitalsOpen && (
+          <>
           <p style={sectionSubStyle}>
             Per-age-group thresholds for what counts as an abnormal vital. The greyed-out
             number in each field is the current default — leave a cell blank to keep it, or
@@ -693,6 +801,8 @@ export default function AdminSettingsPage() {
               );
             })}
           </div>
+          </>
+          )}
         </section>
 
         {/* --- Branding & emails --- */}
@@ -1157,6 +1267,18 @@ const sectionTitleStyle: React.CSSProperties = {
   margin: 0,
   fontSize: 18,
   color: '#2c3e50',
+};
+const collapseToggleStyle: React.CSSProperties = {
+  background: 'white',
+  color: '#1a3a5c',
+  border: '1px solid #c8def5',
+  borderRadius: 6,
+  padding: '6px 12px',
+  fontSize: 12.5,
+  fontWeight: 600,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  whiteSpace: 'nowrap',
 };
 const sectionSubStyle: React.CSSProperties = {
   fontSize: 13,
