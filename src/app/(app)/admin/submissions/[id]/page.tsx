@@ -1228,6 +1228,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           cosignedCredential: '',
           clarificationStatus: formData?.clarification?.status ?? null,
           clarificationKind: formData?.clarification?.kind ?? null,
+          clarificationBlocksNotes: formData?.clarification?.blocksNotes === true,
         };
         return (
           <CoSignModal

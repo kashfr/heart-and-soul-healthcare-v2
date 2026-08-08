@@ -38,6 +38,11 @@ interface StaffRow {
       and warned about in the care-team picker so it never quietly reads a
       real client's chart. */
   isTestAccount?: boolean;
+  /** True while open blocking corrections stop this nurse from new notes
+      (server-maintained; clears when she amends or a reviewer unblocks). */
+  correctionsBlocked?: boolean;
+  /** Manual admin "no new notes" toggle, independent of any correction. */
+  manualNotesBlock?: boolean;
 }
 
 interface CreateResult {
@@ -283,6 +288,22 @@ function StaffTable({
                     {s.isTestAccount && (
                       <span style={testBadgeStyle} title="Declared test / QA login, not a real staff member">
                         Test
+                      </span>
+                    )}
+                    {s.correctionsBlocked && (
+                      <span
+                        style={blockedBadgeStyle}
+                        title="Blocked from new notes until they amend a flagged note. Clear it from the note's correction panel (Remove block or Mark resolved)."
+                      >
+                        Blocked — corrections
+                      </span>
+                    )}
+                    {s.manualNotesBlock && (
+                      <span
+                        style={blockedBadgeStyle}
+                        title="Manually blocked from new notes by an administrator. Toggle it off in Edit."
+                      >
+                        Blocked — manual
                       </span>
                     )}
                   </div>
@@ -544,7 +565,7 @@ function EditStaffModal({
   const [credential, setCredential] = useState(staff.credential || '');
   const [phone, setPhone] = useState(staff.phone || '');
   const [role, setRole] = useState<Role>(staff.role || 'nurse');
-  const [busy, setBusy] = useState<null | 'save' | 'deactivate' | 'reactivate' | 'link' | 'approveEmail' | 'dismissEmail'>(null);
+  const [busy, setBusy] = useState<null | 'save' | 'deactivate' | 'reactivate' | 'link' | 'approveEmail' | 'dismissEmail' | 'block'>(null);
   const [error, setError] = useState<string | null>(null);
   const emailRequest = staff.emailChangeRequest || null;
 
@@ -652,6 +673,31 @@ function EditStaffModal({
       if (updated) onSaved(updated);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Reactivate failed.');
+      setBusy(null);
+    }
+  };
+
+  // Manual "no new notes" lever, independent of any correction flag. The
+  // correction-driven block (staff.correctionsBlocked) is NOT toggled here —
+  // that one clears when the nurse amends the flagged note or a reviewer
+  // removes the block from the note's correction panel.
+  const handleToggleManualBlock = async () => {
+    const next = !staff.manualNotesBlock;
+    if (
+      next &&
+      !window.confirm(
+        `Block ${staff.displayName || 'this user'} from starting or submitting new progress notes? ` +
+          `They can still amend existing notes. Lift the block from this screen any time.`,
+      )
+    )
+      return;
+    setBusy('block');
+    setError(null);
+    try {
+      const updated = await patch({ manualNotesBlock: next });
+      if (updated) onSaved(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update the block.');
       setBusy(null);
     }
   };
@@ -847,6 +893,26 @@ function EditStaffModal({
               </button>
             )}
 
+            {staff.active && staff.role === 'nurse' && (
+              <button
+                type="button"
+                onClick={handleToggleManualBlock}
+                disabled={!!busy}
+                style={staff.manualNotesBlock ? secondaryBtnStyle : dangerBtnStyle}
+                title={
+                  staff.manualNotesBlock
+                    ? 'Allow this nurse to start and submit new progress notes again.'
+                    : 'Stop this nurse from starting or submitting NEW progress notes (amending existing notes stays allowed).'
+                }
+              >
+                {busy === 'block'
+                  ? 'Saving…'
+                  : staff.manualNotesBlock
+                    ? 'Unblock new notes'
+                    : 'Block new notes'}
+              </button>
+            )}
+
             <div style={{ flex: 1 }} />
 
             <button type="button" onClick={close} disabled={!!busy} style={secondaryBtnStyle}>
@@ -994,6 +1060,7 @@ const sectionHeadingStyle: React.CSSProperties = { fontSize: 14, color: '#2c3e50
 const statusBadgeStyle: React.CSSProperties = { display: 'inline-block', padding: '2px 8px', fontSize: 11, fontWeight: 700, borderRadius: 999, textTransform: 'uppercase', letterSpacing: 0.4 };
 const selfBadgeStyle: React.CSSProperties = { marginLeft: 8, fontSize: 10, padding: '2px 6px', borderRadius: 999, background: '#eef5ff', color: '#1a3a5c', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 };
 const testBadgeStyle: React.CSSProperties = { marginLeft: 8, fontSize: 10, padding: '2px 6px', borderRadius: 999, background: '#fdecea', color: '#a3261c', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 };
+const blockedBadgeStyle: React.CSSProperties = { marginLeft: 8, fontSize: 10, padding: '2px 6px', borderRadius: 999, background: '#7f1d1d', color: 'white', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 };
 const viewAsRowBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, background: '#3f6f8f', color: 'white', border: 'none', borderRadius: 999, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', transition: 'background 0.15s ease' };
 const emailReqChipStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 5, background: '#fff4e5', color: '#a35400', border: '1px solid #f0d9a8', borderRadius: 999, padding: '2px 9px', fontSize: 11, fontWeight: 700, letterSpacing: 0.2 };
 const emailReqBoxStyle: React.CSSProperties = { background: '#fff8ec', border: '1px solid #f0d9a8', borderRadius: 8, padding: '14px 16px', marginBottom: 18 };

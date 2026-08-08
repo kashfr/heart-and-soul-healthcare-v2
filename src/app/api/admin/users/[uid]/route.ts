@@ -20,6 +20,8 @@ interface PatchBody {
   active?: boolean;
   email?: string;
   phone?: string;
+  /** Manual "no new notes" block (amending stays allowed). */
+  manualNotesBlock?: boolean;
   /** Dismiss a pending self-service email-change request without applying it. */
   clearEmailRequest?: boolean;
 }
@@ -108,6 +110,17 @@ export async function PATCH(
       return forbidden('You cannot deactivate your own account.');
     }
     update.active = body.active;
+  }
+
+  // Manual new-notes block: stops the account from starting/submitting new
+  // progress notes (amending existing ones stays allowed) without touching any
+  // correction flag. The Firestore create rule reads it; same admin/supervisor
+  // permission surface as `active`.
+  if (body.manualNotesBlock !== undefined) {
+    if (typeof body.manualNotesBlock !== 'boolean') {
+      return badRequest('manualNotesBlock must be true or false.');
+    }
+    update.manualNotesBlock = body.manualNotesBlock;
   }
 
   // Email change: validate, normalize, and detect whether it actually

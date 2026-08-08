@@ -198,6 +198,12 @@ export async function GET(request: Request) {
       // Declared test/QA login (not a real workforce member). Surfaced so the
       // UI can badge it and warn before it lands on a real client's care team.
       isTestAccount: data.isTestAccount === true,
+      // Corrections block state: derived from open blocking corrections
+      // (server-maintained mirror) plus the manual admin toggle. Surfaced so
+      // Staff & Roles can badge a blocked nurse and offer the manual lever.
+      correctionsBlocked:
+        (data.correctionsBlock as { active?: boolean } | undefined)?.active === true,
+      manualNotesBlock: data.manualNotesBlock === true,
       createdAt,
       emailChangeRequest:
         ecr && ecr.status === 'pending' && ecr.newEmail

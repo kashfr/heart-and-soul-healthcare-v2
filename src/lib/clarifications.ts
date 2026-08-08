@@ -11,7 +11,7 @@
  */
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from './firebase';
-import { clarificationMessages, clarificationAwaitsNurse, type NoteClarification, type ClarificationMessage, type ClarificationKind } from './submissions';
+import { clarificationMessages, clarificationAwaitsNurse, clarificationBlocksNotes, type NoteClarification, type ClarificationMessage, type ClarificationKind } from './submissions';
 import { hasCriticalVital } from './criticalVitals';
 
 export interface OpenClarification {
@@ -34,6 +34,12 @@ export interface OpenClarification {
    * has replied (last message is hers) — until a reviewer messages again.
    */
   awaitsNurse: boolean;
+  /**
+   * True when this open correction blocks the nurse from starting/submitting
+   * NEW notes until she amends this one. Drives the note-form gate; a thread
+   * reply does not clear it — only an actual amendment (or a reviewer) does.
+   */
+  blocksNotes: boolean;
   /**
    * Millisecond timestamp of the latest message, so the gate's per-session
    * "cleared" flag can key off it: dismissing suppresses only the message she's
@@ -91,6 +97,7 @@ export function subscribeMyOpenClarifications(
           latestReviewerMessage: lastReviewer?.text || clar.message || '',
           hasCriticalVitals: hasCriticalVital(data),
           awaitsNurse: clarificationAwaitsNurse(clar),
+          blocksNotes: clarificationBlocksNotes(clar),
           latestAt: toMs(last?.at),
           flaggedAt: toMs(clar.flaggedAt),
         });

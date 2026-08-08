@@ -116,6 +116,14 @@ export default function AdminSettingsPage() {
     setDraft((prev) => ({ ...prev, criticalVitals: { enabled } }));
   };
 
+  const updateCorrections = (
+    field: 'blockByDefault' | 'reviewerUid' | 'reviewerName' | 'reviewerPhone',
+    value: boolean | string,
+  ) => {
+    setDirty(true);
+    setDraft((prev) => ({ ...prev, corrections: { ...prev.corrections, [field]: value } }));
+  };
+
   const updateVitalRange = (
     group: VitalAgeGroupKey,
     vital: VitalRangeKey,
@@ -500,6 +508,65 @@ export default function AdminSettingsPage() {
             onChange={toggleCriticalVitals}
             hint="When ON, submitting a note whose heart rate, respiratory rate, SpO₂, systolic BP, or temperature crosses the age-based critical threshold asks the nurse to document who they notified, or to record that no escalation was needed and why. When OFF, no prompt appears."
           />
+        </section>
+
+        {/* --- Note corrections & the new-notes block --- */}
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Note corrections</h2>
+          <p style={sectionSubStyle}>
+            When a reviewer flags a note for CORRECTION, the flag can block its author from
+            starting or submitting any new progress notes until she amends that note. The
+            block lifts automatically the moment her amendment is saved, and the reviewer
+            below is notified to verify the fix and resolve the flag. Reviewers can also
+            remove or restore a block per note from the note&apos;s correction panel, and
+            admins can block a nurse manually from Staff &amp; Roles.
+          </p>
+
+          <Toggle
+            label="New corrections block the nurse by default"
+            checked={draft.corrections.blockByDefault}
+            onChange={(v) => updateCorrections('blockByDefault', v)}
+            hint="Sets the starting position of the 'block new notes until amended' checkbox on the Flag-a-correction form. The reviewer can always uncheck it for advisory corrections."
+          />
+
+          <div style={{ ...fieldGridStyle, marginTop: 14 }}>
+            <Field
+              label="Corrections reviewer user ID"
+              hint="The staff account (normally the RN supervisor) notified by email, text, and portal bell when a nurse amends a blocked note. Copy the UID from Staff & Roles."
+            >
+              <input
+                type="text"
+                value={draft.corrections.reviewerUid}
+                onChange={(e) => updateCorrections('reviewerUid', e.target.value)}
+                maxLength={128}
+                style={inputStyle}
+              />
+            </Field>
+            <Field
+              label="Reviewer display name"
+              hint="Shown to a blocked nurse on the gate ('Questions? Call …')."
+            >
+              <input
+                type="text"
+                value={draft.corrections.reviewerName}
+                onChange={(e) => updateCorrections('reviewerName', e.target.value)}
+                maxLength={80}
+                style={inputStyle}
+              />
+            </Field>
+            <Field
+              label="Reviewer phone"
+              hint="Displayed as a tap-to-call link on the block screen so a nurse can discuss the correction."
+            >
+              <input
+                type="text"
+                value={draft.corrections.reviewerPhone}
+                onChange={(e) => updateCorrections('reviewerPhone', e.target.value)}
+                maxLength={20}
+                style={inputStyle}
+              />
+            </Field>
+          </div>
         </section>
 
         {/* --- Pediatric vital ranges --- */}

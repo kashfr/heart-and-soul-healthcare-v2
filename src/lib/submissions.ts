@@ -208,6 +208,16 @@ export interface NoteClarification {
   status: 'open' | 'resolved';
   /** What kind of flag this is. Absent → treat as 'clarification' (legacy). */
   kind?: ClarificationKind;
+  /**
+   * When true on an OPEN correction, the author is BLOCKED from starting or
+   * submitting new notes until she actually AMENDS this note (a thread reply
+   * is not a fix). Set at flag time (reviewer checkbox, default on for
+   * corrections), cleared server-side by the amendment event or a reviewer's
+   * explicit unblock/resolve. The enforceable mirror lives on the author's
+   * users doc (correctionsBlock, Admin-SDK-only) — this field is the per-note
+   * source the mirror is recomputed from.
+   */
+  blocksNotes?: boolean;
   /** Append-only conversation. First entry is the reviewer's opening question. */
   thread?: ClarificationMessage[];
   message: string;
@@ -257,6 +267,15 @@ export function clarificationAwaitsNurse(c: NoteClarification | null | undefined
   return msgs[msgs.length - 1].byRole !== 'nurse';
 }
 
+/**
+ * True when this note's flag currently blocks its author from new notes:
+ * an OPEN correction with blocksNotes set. A clarification (question) never
+ * blocks, and a resolved flag never blocks.
+ */
+export function clarificationBlocksNotes(c: NoteClarification | null | undefined): boolean {
+  return !!c && c.status === 'open' && c.kind === 'correction' && c.blocksNotes === true;
+}
+
 export interface SubmissionSummary {
   id: string;
   clientName: string;
@@ -284,6 +303,8 @@ export interface SubmissionSummary {
   clarificationStatus: 'open' | 'resolved' | null;
   /** Intent of an open flag: 'clarification' (question) or 'correction' (fix). */
   clarificationKind: ClarificationKind | null;
+  /** True when the open correction blocks the author from new notes. */
+  clarificationBlocksNotes: boolean;
 }
 
 export type ArchiveScope = 'staff' | 'nurse';
@@ -463,6 +484,9 @@ function mapDocToSummary(
         | undefined) ?? null,
     clarificationKind:
       ((data.clarification as { kind?: string } | undefined)?.kind as ClarificationKind | undefined) ?? null,
+    clarificationBlocksNotes: clarificationBlocksNotes(
+      (data.clarification as NoteClarification | undefined) ?? null,
+    ),
   };
 }
 

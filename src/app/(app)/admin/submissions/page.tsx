@@ -1342,6 +1342,14 @@ export default function SubmissionsPage() {
                                 </span>
                               )
                             )}
+                            {s.clarificationBlocksNotes && (
+                              <span
+                                style={flagBadgeBlocking}
+                                title="The author can't start or submit new notes until she amends this one."
+                              >
+                                Blocking author
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td style={tdStyle}>
@@ -1988,6 +1996,12 @@ const flagBadgeBlue: React.CSSProperties = {
   ...flagBadgeBase,
   background: '#e8eef4',
   color: '#1a3a5c',
+};
+
+const flagBadgeBlocking: React.CSSProperties = {
+  ...flagBadgeBase,
+  background: '#7f1d1d',
+  color: 'white',
 };
 
 const draftBadgeStyle: React.CSSProperties = {

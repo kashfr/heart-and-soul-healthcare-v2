@@ -270,7 +270,17 @@ service cloud.firestore {
     //   change nurseId or submittedAt (those are locked to the original).
     // Delete stays staff-only; nurses never delete.
     match /progressNotes/{noteId} {
+      // Corrections block: while a nurse has an open BLOCKING correction (or a
+      // manual admin block), she may not create new notes. Both flags live on
+      // her users doc and are Admin-SDK-only (users writes are denied to all
+      // clients), so this hard stop can't be forged off. Amending an existing
+      // note is an UPDATE and stays allowed — that's the fix path that lifts
+      // the block.
       allow create: if hasActiveProfile()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid))
+             .data.get('correctionsBlock', {}).get('active', false) != true
+        && get(/databases/$(database)/documents/users/$(request.auth.uid))
+             .data.get('manualNotesBlock', false) != true
         && incomingData().submittedAt == request.time
         && incomingData().status == 'submitted'
         && (!('nurseId' in incomingData()) || incomingData().nurseId == request.auth.uid);
@@ -318,6 +328,10 @@ service cloud.firestore {
             && resource.data.nurseId == request.auth.uid
             && incomingData().nurseId == resource.data.nurseId
             && incomingData().submittedAt == resource.data.submittedAt
+            // The clarification thread (incl. its blocksNotes flag) is written
+            // exclusively by the Admin SDK clarification routes — a nurse must
+            // not be able to edit or clear her own flag with a raw client write.
+            && incomingData().get('clarification', null) == resource.data.get('clarification', null)
             && incomingData().get('archivedAt', null) == resource.data.get('archivedAt', null)
             && incomingData().get('archivedBy', null) == resource.data.get('archivedBy', null)
             && incomingData().get('cosignedAt', null) == resource.data.get('cosignedAt', null)

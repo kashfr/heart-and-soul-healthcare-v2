@@ -29,6 +29,20 @@
       ]
     },
     {
+      "collectionGroup": "progressNotes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "nurseId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "clarification.status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "notifications",
       "queryScope": "COLLECTION",
       "fields": [

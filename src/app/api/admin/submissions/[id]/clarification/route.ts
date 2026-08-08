@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
 import { applyClarification, type ClarificationAction } from '@/lib/clarificationServer';
 
-const ACTIONS: ClarificationAction[] = ['flag', 'respond', 'resolve'];
+const ACTIONS: ClarificationAction[] = ['flag', 'respond', 'resolve', 'setBlock'];
 
 export async function POST(
   request: Request,
@@ -36,8 +36,10 @@ export async function POST(
   }
   const text = String(body?.text || '');
   const kind = body?.kind === 'correction' ? 'correction' : 'clarification';
+  // Only meaningful on 'flag' (correction kind) and 'setBlock'.
+  const blocksNotes = body?.blocksNotes === true;
 
-  const result = await applyClarification(id, caller, action, text, kind);
+  const result = await applyClarification(id, caller, action, text, kind, blocksNotes);
   if (!result.ok) {
     const status =
       result.reason === 'not-found' ? 404 : result.reason === 'forbidden' ? 403 : 409;

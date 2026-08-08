@@ -249,12 +249,32 @@ export interface CriticalVitalsSettings {
   enabled: boolean;
 }
 
+export interface CorrectionsSettings {
+  /**
+   * Default for the "block new notes until amended" checkbox when a reviewer
+   * flags a CORRECTION. The reviewer can uncheck per flag; this only sets the
+   * starting position.
+   */
+  blockByDefault: boolean;
+  /**
+   * The corrections reviewer (normally the RN supervisor). uid drives the
+   * server-side notifications when a nurse amends a blocked note; name and
+   * phone are DENORMALIZED display copies shown to blocked nurses on the gate
+   * ("Questions? Call …") — nurses can't read staff user docs, so the
+   * contact info must live in settings, which every signed-in user can read.
+   */
+  reviewerUid: string;
+  reviewerName: string;
+  reviewerPhone: string;
+}
+
 export interface AppSettings {
   submissions: SubmissionsSettings;
   cosign: CosignSettings;
   patient: PatientSettings;
   vitals: VitalsSettings;
   criticalVitals: CriticalVitalsSettings;
+  corrections: CorrectionsSettings;
   branding: BrandingSettings;
   emails: EmailsSettings;
   intake: IntakeSettings;
@@ -287,6 +307,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   criticalVitals: {
     enabled: true,
+  },
+  corrections: {
+    blockByDefault: true,
+    reviewerUid: '',
+    reviewerName: '',
+    reviewerPhone: '',
   },
   branding: {
     orgName: 'Heart and Soul Healthcare',
@@ -381,9 +407,23 @@ export function mergeWithDefaults(partial: unknown): AppSettings {
           ? (p.criticalVitals as CriticalVitalsSettings).enabled
           : DEFAULT_SETTINGS.criticalVitals.enabled,
     },
+    corrections: mergeCorrections(p.corrections),
     branding: mergeBranding(p.branding),
     emails: mergeEmails(p.emails),
     intake: mergeIntake(p.intake),
+  };
+}
+
+function mergeCorrections(input: unknown): CorrectionsSettings {
+  const src = (input ?? {}) as Partial<CorrectionsSettings>;
+  return {
+    blockByDefault:
+      typeof src.blockByDefault === 'boolean'
+        ? src.blockByDefault
+        : DEFAULT_SETTINGS.corrections.blockByDefault,
+    reviewerUid: typeof src.reviewerUid === 'string' ? src.reviewerUid.trim() : '',
+    reviewerName: typeof src.reviewerName === 'string' ? src.reviewerName.trim() : '',
+    reviewerPhone: typeof src.reviewerPhone === 'string' ? src.reviewerPhone.trim() : '',
   };
 }
 
