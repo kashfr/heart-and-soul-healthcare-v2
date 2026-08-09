@@ -124,7 +124,7 @@ export default function CorrectionsBlockGate() {
             </div>
             <div style={{ fontSize: 13, color: '#5c6b7a', marginTop: 2 }}>
               {blocking.length > 0
-                ? 'You can’t start or submit new progress notes until the note(s) below are corrected. Open each one, fix what the reviewer flagged, and save — the block lifts automatically as soon as your correction is saved.'
+                ? 'You can’t start or submit new progress notes until the note(s) below are corrected AND the block is removed by the nursing supervisor. Step 1: open each note, fix exactly what the reviewer flagged, and save. Step 2: call the number below so your correction can be verified and the block removed.'
                 : 'An administrator has paused your NEW-note documentation. You can still view and amend your existing notes and chart medications/treatments. Please contact the office.'}
             </div>
           </div>
@@ -167,7 +167,9 @@ export default function CorrectionsBlockGate() {
             <div style={{ fontSize: 13, color: '#2c3e50', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <Phone size={14} color="#0e7c4a" />
               <span>
-                Questions about a correction? Call{' '}
+                {blocking.length > 0
+                  ? 'After you save your corrections, call '
+                  : 'Questions? Call '}
                 <strong>{reviewerName || 'the nursing supervisor'}</strong>
                 {reviewerPhone ? (
                   <>
@@ -181,7 +183,9 @@ export default function CorrectionsBlockGate() {
                     )}
                   </>
                 ) : null}
-                .
+                {blocking.length > 0
+                  ? ' to have your correction verified and the block removed.'
+                  : '.'}
               </span>
             </div>
           ) : (

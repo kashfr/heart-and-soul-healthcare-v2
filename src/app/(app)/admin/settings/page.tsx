@@ -556,11 +556,12 @@ export default function AdminSettingsPage() {
           <h2 style={sectionTitleStyle}>Note corrections</h2>
           <p style={sectionSubStyle}>
             When a reviewer flags a note for CORRECTION, the flag can block its author from
-            starting or submitting any new progress notes until she amends that note. The
-            block lifts automatically the moment her amendment is saved, and the reviewer
-            below is notified to verify the fix and resolve the flag. Reviewers can also
-            remove or restore a block per note from the note&apos;s correction panel, and
-            admins can block a nurse manually from Staff &amp; Roles.
+            starting or submitting any new progress notes. The block is lifted only by a
+            person: when the nurse amends the note, the reviewer below is notified (email,
+            text, portal bell) to verify the fix actually addresses the flag, then removes
+            the block or resolves the correction from the note&apos;s panel. The nurse&apos;s
+            block screen tells her to call the reviewer after saving her correction.
+            Admins can also block or unblock a nurse manually from Staff &amp; Roles.
           </p>
 
           <Toggle

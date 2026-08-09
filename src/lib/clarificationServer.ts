@@ -223,7 +223,7 @@ async function notifyCorrectionAmended(params: {
 }): Promise<void> {
   try {
     const noteUrl = `https://www.heartandsoulhc.org/admin/submissions/${params.noteId}`;
-    const bellText = `${params.nurseName || 'A nurse'} amended a note flagged for correction. Review and resolve it.`;
+    const bellText = `${params.nurseName || 'A nurse'} amended a note flagged for correction. Her block stays on until you verify the fix and remove it.`;
 
     // Recipients: the configured reviewer + every active admin, deduped.
     // Each resolution step is isolated so one failure (settings fetch, the
@@ -285,7 +285,7 @@ async function notifyCorrectionAmended(params: {
       if (r.isReviewer && r.phone) {
         await sendSms(
           r.phone,
-          'Heart and Soul: a note flagged for correction was just amended by the nurse. Please review it in the portal: https://www.heartandsoulhc.org/login Reply STOP to opt out.',
+          'Heart and Soul: a nurse amended a note flagged for correction. Her block stays on until you verify the fix and remove it in the portal: https://www.heartandsoulhc.org/login Reply STOP to opt out.',
         );
       }
       await createPortalNotification(adminDb(), {
@@ -311,12 +311,16 @@ export interface AmendedEventResult {
 }
 
 /**
- * The nurse's "I fixed it" event, fired after she saves an AMENDMENT to a note
- * whose open correction blocks her. Verifies a real amendment just happened
- * (latest editHistory entry is hers and recent — a thread reply or a bare API
- * call cannot lift the block), then clears the note's blocksNotes, appends a
- * system line to the thread, recomputes her users-doc block, and notifies the
- * reviewer + admins. The flag itself stays OPEN for reviewer resolution.
+ * The nurse's "I amended it" event, fired after she saves an AMENDMENT to a
+ * note whose open correction blocks her. It does NOT lift the block — the
+ * system can verify THAT an amendment happened, but not that it fixed what
+ * was flagged (2026-08-09: a nurse lifted her block with an amendment that
+ * left the flagged verbiage untouched, back when this auto-lifted). The block
+ * is removed only by a human: the corrections reviewer or an admin, via
+ * Remove block / Mark resolved on the note's correction panel, typically
+ * after the nurse calls the number shown on her gate. This event's job is the
+ * paper trail + the nudge: verify a qualifying amendment exists, append a
+ * thread line, and notify the reviewer + admins to review and unblock.
  */
 export async function recordCorrectionAmended(
   noteId: string,
@@ -380,11 +384,12 @@ export async function recordCorrectionAmended(
     by: caller.uid,
     byName: name,
     byRole: caller.role,
-    text: 'Amended the note. The changes are listed in the amendment history below.',
+    text: 'Amended the note. The changes are listed in the amendment history below. Awaiting reviewer verification to lift the block.',
     at: Timestamp.now(),
   });
+  // Deliberately NOT touching blocksNotes and NOT recomputing the mirror:
+  // the block survives the amendment until a reviewer removes it.
   await docRef.update({
-    'clarification.blocksNotes': false,
     'clarification.thread': thread,
     'clarification.response': 'Amended the note.',
     'clarification.respondedBy': caller.uid,
@@ -392,18 +397,13 @@ export async function recordCorrectionAmended(
     'clarification.respondedByRole': caller.role,
     'clarification.respondedAt': FieldValue.serverTimestamp(),
   });
-  // The note-level flag is already cleared above; from here on nothing may
-  // fail the request (a 500 would read as "the fix didn't count" while the
-  // block is actually half-lifted). The safe recompute retries and logs;
-  // notify is best-effort by construction.
-  await recomputeCorrectionsBlockSafe(authorId);
   await notifyCorrectionAmended({
     noteId,
     nurseName: name,
     clientName: String(data.q3_clientName || ''),
     dateOfService: String(data.q6_dateofService || ''),
   });
-  return { ok: true, blockLifted: true };
+  return { ok: true, blockLifted: false };
 }
 
 export async function applyClarification(
