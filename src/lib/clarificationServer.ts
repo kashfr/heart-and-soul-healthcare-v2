@@ -150,22 +150,29 @@ async function notifyNurseOfFlag(params: {
  */
 export async function recomputeCorrectionsBlock(uid: string): Promise<void> {
   if (!uid) return;
+  // A TRANSACTION, not read-then-set: two near-simultaneous writers (a nurse
+  // amending two notes in two tabs, or an amendment racing a reviewer's
+  // setBlock/resolve) could otherwise interleave query and set so the LAST
+  // set persists a stale answer — and a stale mirror is invisible lockout
+  // (rule blocks, gate doesn't show) or silent non-enforcement. The
+  // transaction registers the queried docs, so a concurrent clarification
+  // write forces a retry with fresh data.
   // Composite index: progressNotes (nurseId ASC, clarification.status ASC).
-  const snap = await adminDb()
-    .collection('progressNotes')
-    .where('nurseId', '==', uid)
-    .where('clarification.status', '==', 'open')
-    .get();
-  const noteIds = snap.docs
-    .filter((d) => {
-      const c = (d.data().clarification || {}) as Record<string, unknown>;
-      return c.kind === 'correction' && c.blocksNotes === true;
-    })
-    .map((d) => d.id);
-  await adminDb()
-    .collection('users')
-    .doc(uid)
-    .set(
+  await adminDb().runTransaction(async (tx) => {
+    const snap = await tx.get(
+      adminDb()
+        .collection('progressNotes')
+        .where('nurseId', '==', uid)
+        .where('clarification.status', '==', 'open'),
+    );
+    const noteIds = snap.docs
+      .filter((d) => {
+        const c = (d.data().clarification || {}) as Record<string, unknown>;
+        return c.kind === 'correction' && c.blocksNotes === true;
+      })
+      .map((d) => d.id);
+    tx.set(
+      adminDb().collection('users').doc(uid),
       {
         correctionsBlock: {
           active: noteIds.length > 0,
@@ -175,6 +182,31 @@ export async function recomputeCorrectionsBlock(uid: string): Promise<void> {
       },
       { merge: true },
     );
+  });
+}
+
+/**
+ * recomputeCorrectionsBlock that never throws: one retry, then a loud log.
+ * Used on paths where the clarification write has ALREADY committed — a
+ * recompute failure there must not fail the request (the per-note flag is the
+ * source of truth and every later block-related call re-heals the mirror),
+ * and it must never strand the caller with a half-updated pair.
+ */
+async function recomputeCorrectionsBlockSafe(uid: string): Promise<void> {
+  try {
+    await recomputeCorrectionsBlock(uid);
+  } catch (first) {
+    try {
+      await recomputeCorrectionsBlock(uid);
+    } catch (second) {
+      console.error(
+        `CORRECTIONS BLOCK MIRROR STALE for uid ${uid} — recompute failed twice; ` +
+          'the users-doc correctionsBlock may disagree with the notes until the next block event.',
+        first,
+        second,
+      );
+    }
+  }
 }
 
 /**
@@ -190,36 +222,51 @@ async function notifyCorrectionAmended(params: {
   dateOfService: string;
 }): Promise<void> {
   try {
-    const settings = await getServerSettings();
-    const reviewerUid = settings.corrections.reviewerUid;
     const noteUrl = `https://www.heartandsoulhc.org/admin/submissions/${params.noteId}`;
     const bellText = `${params.nurseName || 'A nurse'} amended a note flagged for correction. Review and resolve it.`;
 
     // Recipients: the configured reviewer + every active admin, deduped.
+    // Each resolution step is isolated so one failure (settings fetch, the
+    // reviewer's user doc, the admins query) can't silently skip the rest of
+    // the fan-out.
     const recipients = new Map<string, { email: string; phone: string; name: string; isReviewer: boolean }>();
-    if (reviewerUid) {
-      const r = await adminDb().collection('users').doc(reviewerUid).get();
-      const u = r.data() || {};
-      recipients.set(reviewerUid, {
-        email: String(u.email || ''),
-        phone: String(u.phone || ''),
-        name: String(u.displayName || ''),
-        isReviewer: true,
-      });
+    let reviewerUid = '';
+    try {
+      reviewerUid = (await getServerSettings()).corrections.reviewerUid;
+    } catch (err) {
+      console.error('Correction-amended notify: settings fetch failed; notifying admins only.', err);
     }
-    const adminsSnap = await adminDb()
-      .collection('users')
-      .where('role', '==', 'admin')
-      .get();
-    for (const d of adminsSnap.docs) {
-      const u = d.data() || {};
-      if (u.active !== true || recipients.has(d.id)) continue;
-      recipients.set(d.id, {
-        email: String(u.email || ''),
-        phone: String(u.phone || ''),
-        name: String(u.displayName || ''),
-        isReviewer: false,
-      });
+    if (reviewerUid) {
+      try {
+        const r = await adminDb().collection('users').doc(reviewerUid).get();
+        const u = r.data() || {};
+        recipients.set(reviewerUid, {
+          email: String(u.email || ''),
+          phone: String(u.phone || ''),
+          name: String(u.displayName || ''),
+          isReviewer: true,
+        });
+      } catch (err) {
+        console.error('Correction-amended notify: reviewer lookup failed.', err);
+      }
+    }
+    try {
+      const adminsSnap = await adminDb()
+        .collection('users')
+        .where('role', '==', 'admin')
+        .get();
+      for (const d of adminsSnap.docs) {
+        const u = d.data() || {};
+        if (u.active !== true || recipients.has(d.id)) continue;
+        recipients.set(d.id, {
+          email: String(u.email || ''),
+          phone: String(u.phone || ''),
+          name: String(u.displayName || ''),
+          isReviewer: false,
+        });
+      }
+    } catch (err) {
+      console.error('Correction-amended notify: admins query failed.', err);
     }
 
     for (const [uid, r] of recipients) {
@@ -285,28 +332,45 @@ export async function recordCorrectionAmended(
   }
   const clar = (data.clarification || {}) as Record<string, unknown>;
   if (clar.status !== 'open' || clar.kind !== 'correction' || clar.blocksNotes !== true) {
+    // Self-heal: a prior call may have cleared blocksNotes and then failed
+    // before the mirror recompute (or the mirror is stale for any reason).
+    // Recomputing here makes a RETRY of this endpoint fix the invisible-
+    // lockout state instead of dead-ending on this early return.
+    await recomputeCorrectionsBlockSafe(authorId);
     return { ok: false, reason: 'no-block', message: 'This note has no blocking correction.' };
   }
 
-  // Proof of an actual fix: the newest editHistory entry must be the caller's
-  // and written within the last 15 minutes.
+  // Proof of an actual fix: an editHistory entry authored by the caller, with
+  // real field changes, made AFTER the block was raised (flaggedAt, or
+  // blockSetAt when a reviewer re-armed it later). Not a wall-clock window: a
+  // failed lift attempt shouldn't strand a real amendment made 20 minutes ago
+  // (re-saving identical content writes no new history entry, so she couldn't
+  // "just save again"). Archive toggles and other no-change entries never
+  // qualify.
+  const flaggedAt = clar.flaggedAt as Timestamp | undefined;
+  const blockSetAt = clar.blockSetAt as Timestamp | undefined;
+  const threshold = Math.max(flaggedAt?.toMillis?.() ?? 0, blockSetAt?.toMillis?.() ?? 0);
   const editsSnap = await docRef
     .collection('editHistory')
     .orderBy('editedAt', 'desc')
-    .limit(1)
+    .limit(10)
     .get();
-  const latest = editsSnap.docs[0]?.data();
-  const editedAt = latest?.editedAt as Timestamp | undefined;
-  const fresh =
-    latest &&
-    String(latest.editedBy || '') === caller.uid &&
-    editedAt &&
-    Date.now() - editedAt.toMillis() < 15 * 60 * 1000;
-  if (!fresh) {
+  const qualifying = editsSnap.docs.some((d) => {
+    const e = d.data();
+    const at = e.editedAt as Timestamp | undefined;
+    const changes = (e.changes || {}) as Record<string, unknown>;
+    return (
+      String(e.editedBy || '') === caller.uid &&
+      !!at &&
+      at.toMillis() > threshold &&
+      Object.keys(changes).length > 0
+    );
+  });
+  if (!qualifying) {
     return {
       ok: false,
       reason: 'no-amendment',
-      message: 'No recent amendment by you was found on this note. Save your correction first.',
+      message: 'No amendment by you since this correction was raised. Save your correction first.',
     };
   }
 
@@ -328,7 +392,11 @@ export async function recordCorrectionAmended(
     'clarification.respondedByRole': caller.role,
     'clarification.respondedAt': FieldValue.serverTimestamp(),
   });
-  await recomputeCorrectionsBlock(authorId);
+  // The note-level flag is already cleared above; from here on nothing may
+  // fail the request (a 500 would read as "the fix didn't count" while the
+  // block is actually half-lifted). The safe recompute retries and logs;
+  // notify is best-effort by construction.
+  await recomputeCorrectionsBlockSafe(authorId);
   await notifyCorrectionAmended({
     noteId,
     nurseName: name,
@@ -380,7 +448,17 @@ export async function applyClarification(
     const isCorrectionFlag = kind === 'correction';
     // A correction can BLOCK the author from new notes until she amends this
     // one. The reviewer's checkbox decides (default comes from settings on the
-    // client); a clarification (question) never blocks.
+    // client); a clarification (question) never blocks. A note with NO linked
+    // author (legacy/unclaimed nurseId) can't block anyone — silently writing
+    // blocksNotes there would show a "Blocking author" chip while enforcing
+    // nothing, so refuse loudly instead.
+    if (isCorrectionFlag && blocksNotes === true && !authorId) {
+      return fail(
+        noteId,
+        'forbidden',
+        'This note has no linked author account, so it cannot block anyone. Link the note to its nurse first (Maintenance), or flag it without the block.',
+      );
+    }
     const blocks = isCorrectionFlag && blocksNotes === true;
     await docRef.update({
       clarification: {
@@ -395,7 +473,7 @@ export async function applyClarification(
         flaggedAt: FieldValue.serverTimestamp(),
       },
     });
-    if (blocks) await recomputeCorrectionsBlock(authorId);
+    if (blocks) await recomputeCorrectionsBlockSafe(authorId);
     // Email the author so she learns about the flag without having to be in
     // the portal. Best-effort; the flag is already saved above.
     await notifyNurseOfFlag({
@@ -468,13 +546,20 @@ export async function applyClarification(
     if (!isOpen || clarification?.kind !== 'correction') {
       return fail(noteId, 'no-open-flag', 'Only an open correction can block new notes.');
     }
+    if (blocksNotes === true && !authorId) {
+      return fail(
+        noteId,
+        'forbidden',
+        'This note has no linked author account, so it cannot block anyone. Link the note to its nurse first (Maintenance).',
+      );
+    }
     await docRef.update({
       'clarification.blocksNotes': blocksNotes === true,
       'clarification.blockSetBy': caller.uid,
       'clarification.blockSetByName': name,
       'clarification.blockSetAt': FieldValue.serverTimestamp(),
     });
-    await recomputeCorrectionsBlock(authorId);
+    await recomputeCorrectionsBlockSafe(authorId);
     return { ok: true, noteId };
   }
 
@@ -483,6 +568,9 @@ export async function applyClarification(
     return fail(noteId, 'forbidden', 'Only RNs, supervisors, or admins can resolve a clarification.');
   }
   if (!isOpen) {
+    // Self-heal on retry: a prior resolve may have flipped the status and then
+    // failed before the mirror recompute (see recomputeCorrectionsBlockSafe).
+    await recomputeCorrectionsBlockSafe(authorId);
     return fail(noteId, 'no-open-flag', 'There is no open clarification to resolve.');
   }
   await docRef.update({
@@ -496,6 +584,6 @@ export async function applyClarification(
   });
   // Resolving may have been the nurse's last blocking note — recompute so her
   // gate lifts without waiting for anything else.
-  if (clarification?.blocksNotes === true) await recomputeCorrectionsBlock(authorId);
+  if (clarification?.blocksNotes === true) await recomputeCorrectionsBlockSafe(authorId);
   return { ok: true, noteId };
 }

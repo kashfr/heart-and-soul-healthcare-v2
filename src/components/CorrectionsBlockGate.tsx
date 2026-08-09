@@ -82,13 +82,29 @@ export default function CorrectionsBlockGate() {
   }, [pathname, blocking]);
   const onSubmittedPage = !!pathname && pathname.startsWith('/progress-note/submitted');
 
+  // A MANUAL-only block (no blocking corrections) stops NEW notes but its
+  // contract explicitly keeps the rest of her work available — amending
+  // existing notes, replying to clarifications, charting MAR/TAR doses. So
+  // the manual variant only overlays the new-documentation surfaces (the
+  // dashboard and the blank note form); the create rule + submit gate remain
+  // the enforcement everywhere. A corrections block keeps the full-portal
+  // overlay: the fix itself is the only sanctioned work.
+  const onNewNoteSurface =
+    pathname === '/admin' ||
+    (!!pathname &&
+      pathname.startsWith('/progress-note') &&
+      !onSubmittedPage &&
+      !searchParams?.get('edit'));
+  const manualOnly = blocking.length === 0 && manualBlock;
+
   if (
     effectiveRole !== 'nurse' ||
     !ready ||
     (blocking.length === 0 && !manualBlock) ||
     editingBlockedNote ||
     viewingBlockedNote ||
-    onSubmittedPage
+    onSubmittedPage ||
+    (manualOnly && !onNewNoteSurface)
   ) {
     return null;
   }
@@ -109,7 +125,7 @@ export default function CorrectionsBlockGate() {
             <div style={{ fontSize: 13, color: '#5c6b7a', marginTop: 2 }}>
               {blocking.length > 0
                 ? 'You can’t start or submit new progress notes until the note(s) below are corrected. Open each one, fix what the reviewer flagged, and save — the block lifts automatically as soon as your correction is saved.'
-                : 'An administrator has paused your new-note documentation. Please contact the office.'}
+                : 'An administrator has paused your NEW-note documentation. You can still view and amend your existing notes and chart medications/treatments. Please contact the office.'}
             </div>
           </div>
         </div>

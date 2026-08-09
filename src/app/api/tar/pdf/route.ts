@@ -273,8 +273,12 @@ export async function POST(request: Request) {
       if (!entry.tokens.includes(e.initials)) entry.tokens.push(e.initials);
       byUid.set(e.documentedBy, entry);
     }
-    const legendMap = new Map<string, string>();
-    for (const e of byUid.values()) legendMap.set(e.tokens.join(' / '), e.name);
+    // Array, not a map keyed by the token: two clinicians can derive the same
+    // initials, and a token-keyed map would drop one signer from the legend.
+    const legendEntries = Array.from(byUid.values()).map((e) => ({
+      initials: e.tokens.join(' / '),
+      name: e.name,
+    }));
 
     const element = React.createElement(TarPDF, {
       orgName: settings.branding.orgName || 'Heart and Soul Healthcare',
@@ -291,7 +295,7 @@ export async function POST(request: Request) {
         diet: String(c.diet || ''),
       },
       rows,
-      legend: Array.from(legendMap.entries()).map(([initials, name]) => ({ initials, name })),
+      legend: legendEntries,
       log,
       generatedAt: new Date().toLocaleString('en-US'),
       generatedBy: caller.profile.displayName || caller.email || '',

@@ -59,9 +59,24 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
   }
 
+  // Merge the payload over the STORED doc before validating. A stale admin
+  // tab loaded before a settings leaf existed (e.g. `corrections`) would
+  // otherwise submit a payload missing that leaf, and the merge-with-defaults
+  // inside validateSettings would silently reset it (wiping the corrections
+  // reviewer, for one). Top-level-leaf granularity is enough: the client
+  // always sends whole leaves.
+  let stored: Record<string, unknown> = {};
+  try {
+    const snap = await adminDb().doc(SETTINGS_DOC_PATH).get();
+    stored = (snap.data() as Record<string, unknown>) || {};
+  } catch (err) {
+    console.error('Settings PUT: stored-doc read failed; validating payload alone.', err);
+  }
+  const combined = { ...stored, ...(body as Record<string, unknown>) };
+
   let next;
   try {
-    next = validateSettings(body);
+    next = validateSettings(combined);
   } catch (err) {
     if (err instanceof SettingsValidationError) {
       return NextResponse.json(

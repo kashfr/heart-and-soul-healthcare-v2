@@ -99,6 +99,9 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
   const [changeReqMsg, setChangeReqMsg] = useState<string | null>(null);
   const [stagedChanges, setStagedChanges] = useState<MarChangeRequest[]>([]);
   const [chartOpen, setChartOpen] = useState(false);
+  // Re-pull the day's administrations after the chart closes (see the
+  // dayAdmins effect below).
+  const [dayAdminsRefresh, setDayAdminsRefresh] = useState(0);
   // Doses already documented for this client+date by ANYONE (other nurses,
   // earlier notes); powers the "Already documented" chip so two nurses on
   // overlapping shifts can't unknowingly double-dose. Fails open to [].
@@ -126,7 +129,11 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
     return () => {
       cancelled = true;
     };
-  }, [marPatientId, marDate, isEditMode, isLpnRn]);
+    // dayAdminsRefresh: bumped when the medication chart closes — a void or
+    // amendment made in the chart changes which slots count as "already
+    // documented", and stale priors would lock a reopened slot while the
+    // submit gate (which fetches fresh) demands it be charted.
+  }, [marPatientId, marDate, isEditMode, isLpnRn, dayAdminsRefresh]);
 
   // Live list of medication changes staged on THIS note (apply on submit).
   // New notes only; edits don't stage changes.
@@ -184,12 +191,14 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
   const marActiveCount = marActiveOrders.length;
 
   // Which MEDICATIONS variant to render (see the section comment below):
-  // full free-text boxes only in edit mode, when the orders fetch FAILED
-  // (downtime/paper record), or when the client genuinely has no orders on
-  // file. Everywhere else the structured MAR is the record and free text is a
-  // collapsed optional context note.
+  // full free-text boxes in edit mode, when the orders fetch FAILED
+  // (downtime/paper record), when NO roster client is bound yet (a free-text/
+  // not-yet-rostered client has no structured MAR to chart in, so hiding the
+  // boxes would leave meds nowhere at all), or when the bound client genuinely
+  // has no orders on file. Everywhere else the structured MAR is the record
+  // and free text is a collapsed optional context note.
   const marFreeTextMode =
-    !!isEditMode || marLoadError || (!!marPatientId && !marLoading && marActiveCount === 0);
+    !!isEditMode || marLoadError || !marPatientId || (!marLoading && marActiveCount === 0);
   const marSchedTextVal = String(watch('q43_scheduledMeds') || '');
   const marPrnTextVal = String(watch('q43_prnMeds') || '');
   const medNoteVisible = medNoteOpen || marSchedTextVal.trim() !== '';
@@ -875,7 +884,12 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
           patientId={marPatientId}
           patientName={marPatientName}
           initialDate={marDate}
-          onClose={() => setChartOpen(false)}
+          onClose={() => {
+            setChartOpen(false);
+            // Corrections/voids made in the chart must reflect in this page's
+            // "already documented" priors immediately.
+            setDayAdminsRefresh((k) => k + 1);
+          }}
           documenter={documenter}
         />
       )}
