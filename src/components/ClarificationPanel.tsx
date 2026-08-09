@@ -238,9 +238,10 @@ export default function ClarificationPanel({
                   style={{ marginTop: 2 }}
                 />
                 <span style={{ fontSize: 12.5, color: '#5c6b7a', lineHeight: 1.4 }}>
-                  Block new notes until this is amended. The author can&apos;t start or submit new
-                  progress notes until she amends this one; the block lifts automatically when her
-                  amendment is saved and you&apos;ll be notified to verify it.
+                  Block new notes until YOU clear it. The author can&apos;t start or submit new
+                  progress notes; when she amends this note you&apos;ll be notified to verify the
+                  fix, and the block stays on until you remove it (Remove block) or resolve this
+                  correction.
                 </span>
               </label>
             )}

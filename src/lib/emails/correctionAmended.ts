@@ -1,9 +1,10 @@
 /**
  * Notifies the corrections reviewer (and admins) when a nurse AMENDS a note
- * that was blocking her from new documentation. This is the "the fix happened,
- * please verify" signal: the block has already lifted automatically, so the
- * reviewer's remaining job is to review the amendment and mark the flag
- * resolved. Best-effort via Resend, same contract as clarificationFlag.ts.
+ * that is blocking her from new documentation. The block does NOT lift on its
+ * own — the reviewer must verify the amendment actually fixes what was
+ * flagged, then remove the block (or resolve the flag) from the note's
+ * correction panel. Best-effort via Resend, same contract as
+ * clarificationFlag.ts.
  */
 import { Resend } from 'resend';
 import { getServerSettings } from '../settingsServer';
@@ -72,7 +73,7 @@ export async function sendCorrectionAmendedNotice({
             <p style="margin:0 0 16px;background:#ecfdf5;border:1px solid #a7f3d0;padding:10px 12px;border-radius:6px;">
               <strong>${escapeHtml(clientName)}</strong> &middot; ${escapeHtml(dateOfService)}
             </p>
-            <p style="margin:0 0 12px;">The block on her new documentation has lifted automatically. Please review the amendment (every change is listed in the note's amendment history) and mark the correction resolved if it addresses your flag. If it does not, add a follow-up or restore the block from the note's correction panel.</p>
+            <p style="margin:0 0 12px;">Her block on new documentation is STILL IN PLACE. Please review the amendment (every change is listed in the note's amendment history). If it fixes what you flagged, remove the block or mark the correction resolved; both let her document again. If it does not, add a follow-up telling her exactly what still needs to change.</p>
           </td></tr>
           <tr><td align="center" style="padding:8px 32px 8px;">
             <a href="${noteUrl}" style="display:inline-block;background:#1a3a5c;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;font-size:15px;">Review the amendment</a>
@@ -92,7 +93,7 @@ ${nurseName} amended a progress note you flagged for correction:
 
 ${clientName} · ${dateOfService}
 
-The block on her new documentation has lifted automatically. Please review the amendment and mark the correction resolved if it addresses your flag. If it does not, add a follow-up or restore the block from the note's correction panel.
+Her block on new documentation is STILL IN PLACE. Please review the amendment. If it fixes what you flagged, remove the block or mark the correction resolved; both let her document again. If it does not, add a follow-up telling her exactly what still needs to change.
 
 Review the amendment: ${noteUrl}`;
 
