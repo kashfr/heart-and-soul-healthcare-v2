@@ -64,6 +64,7 @@ interface OrderDoc {
 
 interface AdminDoc {
   id: string;
+  voided: boolean;
   amends: string;
   amendmentReason: string;
   orderId: string;
@@ -185,15 +186,16 @@ export async function POST(request: Request) {
       };
     });
 
-    // A voided administration was removed as entered in error (mis-clicked
-    // slot/day): audit history, not part of the record, so it must not print —
-    // mirrors the voided-order filter above and resolveCurrentAdministrations
-    // on the web grid. Its slot prints blank (or with the corrected entry).
-    const liveAdminDocs = adminsSnap.docs.filter((d) => (d.data() || {}).voided !== true);
-    const admins: AdminDoc[] = liveAdminDocs.map((d) => {
+    // NOTE: voided (entered-in-error) docs are NOT pre-filtered here. The
+    // voided-chain drop happens inside resolveCurrentAdministrations, which
+    // needs the COMPLETE list: a voided correction's `amends` pointer is what
+    // keeps its superseded original suppressed. Pre-filtering would resurrect
+    // the original onto the printed record — the exact entry the void struck.
+    const admins: AdminDoc[] = adminsSnap.docs.map((d) => {
       const a = d.data() || {};
       return {
         id: d.id,
+        voided: a.voided === true,
         amends: String(a.amends || ''),
         amendmentReason: String(a.amendmentReason || ''),
         orderId: String(a.orderId || ''),
@@ -355,8 +357,12 @@ export async function POST(request: Request) {
     // nurse prints as one row even where historical docs carry differently-
     // formed initials (they were once free-typed; derived-only now). Every
     // distinct token she used is listed so each grid mark stays resolvable.
+    // Iterates the LIVE docs (adminsCurrent) so voided/superseded entries'
+    // tokens don't join the legend, and stays an ARRAY: two clinicians can
+    // legitimately derive the same initials, and a map keyed by the token
+    // would silently drop one signer from a legal document.
     const byUid = new Map<string, { name: string; tokens: string[] }>();
-    for (const a of admins) {
+    for (const a of adminsCurrent) {
       if (!a.documentedBy || !a.documentedByName || !a.initials) continue;
       const entry = byUid.get(a.documentedBy) || {
         name: `${a.documentedByName}${a.documentedByCredential ? `, ${a.documentedByCredential}` : ''}`,
@@ -365,8 +371,10 @@ export async function POST(request: Request) {
       if (!entry.tokens.includes(a.initials)) entry.tokens.push(a.initials);
       byUid.set(a.documentedBy, entry);
     }
-    const legendMap = new Map<string, string>();
-    for (const e of byUid.values()) legendMap.set(e.tokens.join(' / '), e.name);
+    const legendEntries = Array.from(byUid.values()).map((e) => ({
+      initials: e.tokens.join(' / '),
+      name: e.name,
+    }));
 
     const element = React.createElement(MarPDF, {
       orgName: settings.branding.orgName || 'Heart and Soul Healthcare',
@@ -383,7 +391,7 @@ export async function POST(request: Request) {
         diet: String(c.diet || ''),
       },
       rows,
-      legend: Array.from(legendMap.entries()).map(([initials, name]) => ({ initials, name })),
+      legend: legendEntries,
       log,
       generatedAt: new Date().toLocaleString('en-US'),
       generatedBy: caller.profile.displayName || caller.email || '',

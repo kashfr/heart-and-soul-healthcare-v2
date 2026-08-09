@@ -705,7 +705,8 @@ export type OutcomeFailureReason =
   | 'bad-status'
   | 'superseded'
   | 'already-recorded'
-  | 'missing-outcome';
+  | 'missing-outcome'
+  | 'voided';
 
 export interface OutcomeResult {
   ok: boolean;
@@ -760,6 +761,10 @@ export async function recordPrnOutcome(
       tx.get(col.where('amends', '==', adminId).limit(1)),
     ]);
     if (!fresh.exists) return 'not-found';
+    // Same guard the amend transaction has: a dose removed as entered-in-error
+    // is audit history — a result must not be stamped onto it (the form could
+    // be sitting open while an RN voids the dose concurrently).
+    if ((fresh.data() || {}).voided === true) return 'voided';
     if (!amended.empty) return 'superseded';
     if (String((fresh.data() || {}).outcome || '').trim()) return 'already-recorded';
     tx.update(ref, {
@@ -771,6 +776,13 @@ export async function recordPrnOutcome(
     return null;
   });
 
+  if (failure === 'voided') {
+    return {
+      ok: false,
+      reason: 'voided',
+      message: 'This entry was removed as entered in error; there is nothing to record a result on.',
+    };
+  }
   if (failure === 'superseded') {
     return {
       ok: false,
