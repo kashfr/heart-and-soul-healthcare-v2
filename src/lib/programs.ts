@@ -8,7 +8,8 @@
 //                  different audits, different reviewers.
 //   serviceLevel — what staffing and documentation cadence to expect. Oversight
 //                  only means roughly monthly RN visits; daily LPN means daily
-//                  notes and an active MAR.
+//                  notes and an active MAR; shift nursing means continuous
+//                  RN/LPN shift coverage, which is how GAPP is staffed.
 //
 // Collapsing them into one four-value field would force every consumer that
 // cares about only one axis to re-parse it, and would break the moment a
@@ -74,25 +75,43 @@ export interface ServiceLevelDef {
   label: string;
   full: string;
   /**
-   * Whether to show a badge on the roster. The overwhelming majority of clients
-   * are oversight only, so badging that would be noise on nearly every row; we
-   * badge the exception instead.
+   * Short badge text for the roster, or null to render no badge. Oversight only
+   * is the overwhelming majority of the NOW/COMP caseload, so badging it would
+   * put a chip on nearly every row and say nothing; we badge the exceptions.
    */
-  badge: boolean;
+  badge: string | null;
+  bg: string;
+  fg: string;
+  border: string;
 }
 
 export const SERVICE_LEVELS: ServiceLevelDef[] = [
   {
     id: 'rn-oversight',
     label: 'RN oversight only',
-    full: 'RN oversight only, no daily LPN staffing',
-    badge: false,
+    full: 'RN oversight only, no daily direct-care nursing',
+    badge: null,
+    bg: '#f4f5f7',
+    fg: '#4a5260',
+    border: '#dfe3e8',
   },
   {
     id: 'rn-lpn-daily',
     label: 'RN oversight + daily LPN',
     full: 'RN oversight plus daily LPN services',
-    badge: true,
+    badge: 'DAILY LPN',
+    bg: '#eae7fb',
+    fg: '#33296b',
+    border: '#cdc5ef',
+  },
+  {
+    id: 'skilled-nursing-shifts',
+    label: 'Daily skilled nursing shifts',
+    full: 'Daily skilled nursing shifts (RN/LPN shift coverage), the GAPP staffing model',
+    badge: 'SHIFT NURSING',
+    bg: '#e6f0fa',
+    fg: '#123a63',
+    border: '#bcd8f0',
   },
 ];
 

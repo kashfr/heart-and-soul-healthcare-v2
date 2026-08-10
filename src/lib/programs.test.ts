@@ -19,15 +19,28 @@ describe('program catalog', () => {
     expect(new Set(SERVICE_LEVELS.map((s) => s.id)).size).toBe(SERVICE_LEVELS.length);
   });
 
-  it('badges only the daily-LPN service level, so the common case stays quiet', () => {
-    expect(SERVICE_LEVELS.filter((s) => s.badge).map((s) => s.id)).toEqual(['rn-lpn-daily']);
+  it('carries all three staffing models', () => {
+    expect(SERVICE_LEVELS.map((s) => s.id)).toEqual([
+      'rn-oversight',
+      'rn-lpn-daily',
+      'skilled-nursing-shifts',
+    ]);
+  });
+
+  it('badges the exceptions but not oversight-only, so the common case stays quiet', () => {
+    expect(SERVICE_LEVELS.filter((s) => s.badge).map((s) => s.badge)).toEqual([
+      'DAILY LPN',
+      'SHIFT NURSING',
+    ]);
+    expect(getServiceLevel('rn-oversight')?.badge).toBeNull();
   });
 
   it('resolves known ids and returns undefined for anything else', () => {
     expect(getProgram('gapp')?.label).toBe('GAPP');
     expect(getProgram('nope')).toBeUndefined();
     expect(getProgram(undefined)).toBeUndefined();
-    expect(getServiceLevel('rn-lpn-daily')?.badge).toBe(true);
+    expect(getServiceLevel('rn-lpn-daily')?.badge).toBe('DAILY LPN');
+    expect(getServiceLevel('skilled-nursing-shifts')?.label).toBe('Daily skilled nursing shifts');
     expect(getServiceLevel(undefined)).toBeUndefined();
   });
 

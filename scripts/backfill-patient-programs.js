@@ -55,10 +55,9 @@ const APPLY = process.argv.includes('--apply');
 function classify(name) {
   if (SKIP.includes(name)) return null;
   const program = GAPP.includes(name) ? 'gapp' : 'now-comp';
-  // The oversight-only default was given for the NOW/COMP caseload only. GAPP is
-  // in-home skilled nursing, so defaulting those five to oversight-only would be
-  // inventing a staffing model. Program is set; service level is left for a human.
-  if (program === 'gapp') return { program };
+  // GAPP is staffed as daily skilled nursing shifts, confirmed by Kaheem
+  // 2026-08-10. The oversight-only default below applies to NOW/COMP only.
+  if (program === 'gapp') return { program, serviceLevel: 'skilled-nursing-shifts' };
   return {
     program,
     serviceLevel: DAILY_LPN.includes(name) ? 'rn-lpn-daily' : 'rn-oversight',
@@ -81,15 +80,15 @@ function classify(name) {
 
   let planned = 0;
   let skipped = 0;
-  console.log('name'.padEnd(26) + 'program'.padEnd(12) + 'service level'.padEnd(16) + 'action');
-  console.log('-'.repeat(74));
+  console.log('name'.padEnd(26) + 'program'.padEnd(12) + 'service level'.padEnd(24) + 'action');
+  console.log('-'.repeat(82));
 
   const writes = [];
   for (const d of snap.docs) {
     const p = d.data();
     const want = classify(p.name);
     if (!want) {
-      console.log(`${String(p.name).padEnd(26)}${'—'.padEnd(12)}${'—'.padEnd(16)}skip (test account)`);
+      console.log(`${String(p.name).padEnd(26)}${'—'.padEnd(12)}${'—'.padEnd(24)}skip (test account)`);
       skipped++;
       continue;
     }
@@ -100,7 +99,7 @@ function classify(name) {
     console.log(
       String(p.name).padEnd(26) +
         want.program.padEnd(12) +
-        (want.serviceLevel ?? 'NEEDS INPUT').padEnd(16) +
+        (want.serviceLevel ?? 'NEEDS INPUT').padEnd(24) +
         (same ? 'already set' : `set${note}`),
     );
     if (!same) {

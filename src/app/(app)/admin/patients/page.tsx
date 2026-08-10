@@ -478,8 +478,11 @@ export default function AdminPatientsPage() {
                           </span>
                         )}
                         {getServiceLevel(p.serviceLevel)?.badge && (
-                          <span style={dailyBadgeStyle} title={getServiceLevel(p.serviceLevel)!.full}>
-                            DAILY LPN
+                          <span
+                            style={serviceLevelBadgeStyle(p.serviceLevel)}
+                            title={getServiceLevel(p.serviceLevel)!.full}
+                          >
+                            {getServiceLevel(p.serviceLevel)!.badge}
                           </span>
                         )}
                         {p.requiresMar && <span style={marBadgeStyle} title="Requires a Medication Administration Record">MAR</span>}
@@ -913,18 +916,22 @@ const unclassifiedNoteStyle: React.CSSProperties = {
   borderRadius: 8,
   marginBottom: 12,
 };
-const dailyBadgeStyle: React.CSSProperties = {
-  display: 'inline-block',
-  background: '#eae7fb',
-  color: '#33296b',
-  fontSize: 10,
-  fontWeight: 700,
-  padding: '2px 6px',
-  borderRadius: 999,
-  letterSpacing: 0.4,
-  border: '1px solid #cdc5ef',
-  whiteSpace: 'nowrap',
-};
+/** Service-level chip, colored from the catalog like the program chip. */
+function serviceLevelBadgeStyle(id: string | undefined): React.CSSProperties {
+  const s = getServiceLevel(id);
+  return {
+    display: 'inline-block',
+    background: s?.bg ?? '#eee',
+    color: s?.fg ?? '#444',
+    border: `1px solid ${s?.border ?? '#ddd'}`,
+    fontSize: 10,
+    fontWeight: 700,
+    padding: '2px 6px',
+    borderRadius: 999,
+    letterSpacing: 0.4,
+    whiteSpace: 'nowrap',
+  };
+}
 /** Program chip, colored from the catalog so a new program needs no CSS here. */
 function programBadgeStyle(id: string | undefined): React.CSSProperties {
   const p = getProgram(id);
