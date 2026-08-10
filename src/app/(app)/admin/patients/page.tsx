@@ -15,6 +15,13 @@ import {
   savePatientClinical,
   updatePatient,
 } from '@/lib/patients';
+import {
+  PROGRAMS,
+  SERVICE_LEVELS,
+  getProgram,
+  getServiceLevel,
+  matchesClassification,
+} from '@/lib/programs';
 import { db } from '@/lib/firebase';
 import { authedFetch } from '@/lib/authedFetch';
 
@@ -44,6 +51,8 @@ const emptyPatient: Partial<Patient> = {
   mrn: '',
   requiresMar: false,
   hasFeedingTube: false,
+  program: '',
+  serviceLevel: '',
 };
 
 const STATES = [
@@ -82,6 +91,8 @@ export default function AdminPatientsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [query, setQuery] = useState('');
+  const [programFilter, setProgramFilter] = useState('');
+  const [levelFilter, setLevelFilter] = useState('');
   const [toast, setToast] = useState<string | null>(null);
   // Care team state — populated when the edit modal opens for an
   // existing patient. Lives separately from formData because the chip
@@ -199,6 +210,8 @@ export default function AdminPatientsPage() {
       mrn: patient.mrn ?? '',
       requiresMar: patient.requiresMar ?? false,
       hasFeedingTube: patient.hasFeedingTube ?? false,
+      program: patient.program ?? '',
+      serviceLevel: patient.serviceLevel ?? '',
     });
     setEditingId(patient.id || null);
     setFormOpen(true);
@@ -346,16 +359,25 @@ export default function AdminPatientsPage() {
   };
 
   const filtered = useMemo(() => {
-    if (!query.trim()) return patients;
-    const q = query.toLowerCase();
-    return patients.filter(
-      (p) =>
+    const q = query.trim().toLowerCase();
+    return patients.filter((p) => {
+      if (!matchesClassification(p, { program: programFilter, serviceLevel: levelFilter })) return false;
+      if (!q) return true;
+      return (
         p.name.toLowerCase().includes(q) ||
         p.diagnosis?.toLowerCase().includes(q) ||
         p.dob.includes(query) ||
         (p.mrn || '').includes(query.trim())
-    );
-  }, [patients, query]);
+      );
+    });
+  }, [patients, query, programFilter, levelFilter]);
+
+  // How many clients are still unclassified, so the gap is visible rather than
+  // silently folded into whichever filter happens to be selected.
+  const unclassified = useMemo(
+    () => patients.filter((p) => !p.program || !p.serviceLevel).length,
+    [patients],
+  );
 
   return (
     <div style={containerStyle}>
@@ -389,7 +411,36 @@ export default function AdminPatientsPage() {
               style={searchInputStyle}
             />
           </div>
+          <select
+            value={programFilter}
+            onChange={(e) => setProgramFilter(e.target.value)}
+            style={filterSelectStyle}
+            aria-label="Filter by program"
+          >
+            <option value="">All programs</option>
+            {PROGRAMS.map((pr) => (
+              <option key={pr.id} value={pr.id}>{pr.label}</option>
+            ))}
+          </select>
+          <select
+            value={levelFilter}
+            onChange={(e) => setLevelFilter(e.target.value)}
+            style={filterSelectStyle}
+            aria-label="Filter by service level"
+          >
+            <option value="">All service levels</option>
+            {SERVICE_LEVELS.map((sl) => (
+              <option key={sl.id} value={sl.id}>{sl.label}</option>
+            ))}
+          </select>
         </div>
+
+        {unclassified > 0 && (
+          <div style={unclassifiedNoteStyle}>
+            {unclassified} client{unclassified === 1 ? ' has' : 's have'} no program or service level set.
+            They appear only under &ldquo;All programs&rdquo; and &ldquo;All service levels&rdquo;.
+          </div>
+        )}
 
         {loading ? (
           <div style={emptyStyle}>Loading…</div>
@@ -418,6 +469,19 @@ export default function AdminPatientsPage() {
                     <td style={tdStyle}>
                       <div style={{ fontWeight: 600, color: '#2c3e50', display: 'flex', alignItems: 'center', gap: 6 }}>
                         {p.name}
+                        {getProgram(p.program) && (
+                          <span
+                            style={programBadgeStyle(p.program)}
+                            title={getProgram(p.program)!.full}
+                          >
+                            {getProgram(p.program)!.label}
+                          </span>
+                        )}
+                        {getServiceLevel(p.serviceLevel)?.badge && (
+                          <span style={dailyBadgeStyle} title={getServiceLevel(p.serviceLevel)!.full}>
+                            DAILY LPN
+                          </span>
+                        )}
                         {p.requiresMar && <span style={marBadgeStyle} title="Requires a Medication Administration Record">MAR</span>}
                         {p.hasFeedingTube && <span style={tubeBadgeStyle} title="Has a feeding tube (G-tube / GJ / J / NG)">FEEDING TUBE</span>}
                       </div>
@@ -550,6 +614,33 @@ export default function AdminPatientsPage() {
                 <div style={careTeamHeaderStyle}>MAR &amp; clinical details</div>
                 <div style={careTeamHelpStyle}>
                   The clinical fields below feed this client&apos;s Medication Administration Record and are visible only to staff and the client&apos;s assigned care team.
+                </div>
+
+                <div style={gridTwoStyle}>
+                  <Field label="Program">
+                    <select
+                      value={formData.program || ''}
+                      onChange={(e) => setFormData((f) => ({ ...f, program: e.target.value }))}
+                      style={selectStyle}
+                    >
+                      <option value="">—</option>
+                      {PROGRAMS.map((pr) => (
+                        <option key={pr.id} value={pr.id}>{pr.label} — {pr.full}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Service level">
+                    <select
+                      value={formData.serviceLevel || ''}
+                      onChange={(e) => setFormData((f) => ({ ...f, serviceLevel: e.target.value }))}
+                      style={selectStyle}
+                    >
+                      <option value="">—</option>
+                      {SERVICE_LEVELS.map((sl) => (
+                        <option key={sl.id} value={sl.id}>{sl.label}</option>
+                      ))}
+                    </select>
+                  </Field>
                 </div>
 
                 <label style={requiresMarRowStyle}>
@@ -772,7 +863,7 @@ const backLinkStyle: React.CSSProperties = { display: 'inline-flex', alignItems:
 const headerStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' };
 const titleStyle: React.CSSProperties = { fontSize: 26, color: '#2c3e50', margin: 0 };
 const subtitleStyle: React.CSSProperties = { fontSize: 13, color: '#7f8c8d', margin: '6px 0 0', maxWidth: 700 };
-const toolbarStyle: React.CSSProperties = { display: 'flex', gap: 10, marginBottom: 14 };
+const toolbarStyle: React.CSSProperties = { display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' };
 const searchWrapStyle: React.CSSProperties = { flex: 1, background: 'white', border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 12px', display: 'flex', gap: 8, alignItems: 'center' };
 const searchInputStyle: React.CSSProperties = { flex: 1, border: 'none', outline: 'none', fontSize: 14, background: 'transparent', fontFamily: 'inherit' };
 const emptyStyle: React.CSSProperties = { textAlign: 'center', padding: '48px 20px', background: 'white', borderRadius: 10, color: '#7f8c8d', fontSize: 14, border: '1px solid #e5e7eb' };
@@ -807,6 +898,49 @@ const selectStyle: React.CSSProperties = {
   backgroundSize: '14px',
   cursor: 'pointer',
 };
+const filterSelectStyle: React.CSSProperties = {
+  ...selectStyle,
+  width: 'auto',
+  minWidth: 170,
+  flexShrink: 0,
+};
+const unclassifiedNoteStyle: React.CSSProperties = {
+  background: '#fff8e6',
+  border: '1px solid #f0dca8',
+  color: '#6b5314',
+  fontSize: 12.5,
+  padding: '8px 12px',
+  borderRadius: 8,
+  marginBottom: 12,
+};
+const dailyBadgeStyle: React.CSSProperties = {
+  display: 'inline-block',
+  background: '#eae7fb',
+  color: '#33296b',
+  fontSize: 10,
+  fontWeight: 700,
+  padding: '2px 6px',
+  borderRadius: 999,
+  letterSpacing: 0.4,
+  border: '1px solid #cdc5ef',
+  whiteSpace: 'nowrap',
+};
+/** Program chip, colored from the catalog so a new program needs no CSS here. */
+function programBadgeStyle(id: string | undefined): React.CSSProperties {
+  const p = getProgram(id);
+  return {
+    display: 'inline-block',
+    background: p?.bg ?? '#eee',
+    color: p?.fg ?? '#444',
+    border: `1px solid ${p?.border ?? '#ddd'}`,
+    fontSize: 10,
+    fontWeight: 700,
+    padding: '2px 6px',
+    borderRadius: 999,
+    letterSpacing: 0.4,
+    whiteSpace: 'nowrap',
+  };
+}
 const gridTwoStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 };
 const toastStyle: React.CSSProperties = { position: 'fixed', bottom: 20, right: 20, background: '#2c3e50', color: 'white', padding: '10px 16px', borderRadius: 8, fontSize: 13, boxShadow: '0 8px 20px rgba(0,0,0,0.2)', zIndex: 1100 };
 

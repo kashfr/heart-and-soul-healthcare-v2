@@ -39,6 +39,21 @@ export interface Patient {
    * (gates UI surfaces; not the sensitive clinical sub-record).
    */
   hasFeedingTube?: boolean;
+  /**
+   * Payer program this client is enrolled in ('now-comp' | 'gapp' | 'edwp' |
+   * 'icwp'). Decides whose rulebook applies: NOW/COMP runs on the DBHDD manual
+   * and an ISP, GAPP on the GAPP In-Home Nursing manual and an Appendix T.
+   * See src/lib/programs.ts for the catalog. Directory-doc field like
+   * requiresMar — administrative, not the sensitive clinical sub-record, so the
+   * roster can filter on it without care-team gating.
+   */
+  program?: string;
+  /**
+   * Staffing model ('rn-oversight' | 'rn-lpn-daily'). Orthogonal to program:
+   * it sets the expected visit cadence and whether daily notes and an active
+   * MAR should exist.
+   */
+  serviceLevel?: string;
   createdAt?: unknown;
   /**
    * Care team — list of nurse uids who can read all progressNotes for
