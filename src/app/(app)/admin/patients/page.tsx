@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Search, Pencil, Trash2, X, UserPlus } from 'lucide-react';
+import { ArrowLeft, Plus, Search, Pencil, Trash2, X, UserPlus, AlertTriangle } from 'lucide-react';
 import { formatUSPhone } from '@/lib/phone';
 import { arrayUnion, arrayRemove, doc, updateDoc } from 'firebase/firestore';
 import {
@@ -22,6 +22,7 @@ import {
   getServiceLevel,
   matchesClassification,
 } from '@/lib/programs';
+import { reconcilePatient, worstSeverity, summarize, type Finding } from '@/lib/reconcile';
 import { db } from '@/lib/firebase';
 import { authedFetch } from '@/lib/authedFetch';
 
@@ -358,10 +359,32 @@ export default function AdminPatientsPage() {
     }
   };
 
+  // Reconciliation findings, keyed by patient id. Recomputed only when the
+  // roster changes; todayISO is memoized so the rules stay stable across
+  // re-renders rather than shifting under a midnight boundary mid-session.
+  const findings = useMemo(() => {
+    const m = new Map<string, Finding[]>();
+    for (const p of patients) {
+      if (!p.id) continue;
+      m.set(p.id, reconcilePatient(p, todayISO));
+    }
+    return m;
+  }, [patients, todayISO]);
+
+  const checkSummary = useMemo(() => summarize(patients, todayISO), [patients, todayISO]);
+
+  // "Needs attention" is its own filter rather than a sort, so the list can be
+  // narrowed to exactly the records that need a human.
+  const [attentionOnly, setAttentionOnly] = useState(false);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return patients.filter((p) => {
       if (!matchesClassification(p, { program: programFilter, serviceLevel: levelFilter })) return false;
+      if (attentionOnly) {
+        const w = p.id ? worstSeverity(findings.get(p.id) ?? []) : null;
+        if (w !== 'error' && w !== 'warn') return false;
+      }
       if (!q) return true;
       return (
         p.name.toLowerCase().includes(q) ||
@@ -370,14 +393,8 @@ export default function AdminPatientsPage() {
         (p.mrn || '').includes(query.trim())
       );
     });
-  }, [patients, query, programFilter, levelFilter]);
+  }, [patients, query, programFilter, levelFilter, attentionOnly, findings]);
 
-  // How many clients are still unclassified, so the gap is visible rather than
-  // silently folded into whichever filter happens to be selected.
-  const unclassified = useMemo(
-    () => patients.filter((p) => !p.program || !p.serviceLevel).length,
-    [patients],
-  );
 
   return (
     <div style={containerStyle}>
@@ -435,10 +452,29 @@ export default function AdminPatientsPage() {
           </select>
         </div>
 
-        {unclassified > 0 && (
-          <div style={unclassifiedNoteStyle}>
-            {unclassified} client{unclassified === 1 ? ' has' : 's have'} no program or service level set.
-            They appear only under &ldquo;All programs&rdquo; and &ldquo;All service levels&rdquo;.
+        {checkSummary.error + checkSummary.warn > 0 && (
+          <div style={checkNoteStyle}>
+            <span>
+              <strong>Record checks:</strong>{' '}
+              {checkSummary.error > 0 && (
+                <span style={{ color: '#8a1c1c', fontWeight: 700 }}>
+                  {checkSummary.error} need{checkSummary.error === 1 ? 's' : ''} correcting
+                </span>
+              )}
+              {checkSummary.error > 0 && checkSummary.warn > 0 && ', '}
+              {checkSummary.warn > 0 && (
+                <span>{checkSummary.warn} worth a look</span>
+              )}
+              {/* info-level findings are not actionable, so they count as fine here */}
+              <span style={{ color: '#6b7280' }}> · {checkSummary.clean + checkSummary.info} no action needed</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setAttentionOnly((v) => !v)}
+              style={attentionBtnStyle(attentionOnly)}
+            >
+              {attentionOnly ? 'Show all' : 'Show only these'}
+            </button>
           </div>
         )}
 
@@ -488,6 +524,12 @@ export default function AdminPatientsPage() {
                         {p.requiresMar && <span style={marBadgeStyle} title="Requires a Medication Administration Record">MAR</span>}
                         {p.hasFeedingTube && <span style={tubeBadgeStyle} title="Has a feeding tube (G-tube / GJ / J / NG)">FEEDING TUBE</span>}
                       </div>
+                      {(findings.get(p.id || '') ?? []).filter((f) => f.severity !== 'info').map((f) => (
+                        <div key={f.rule} style={findingStyle(f.severity)}>
+                          <AlertTriangle size={11} style={{ flexShrink: 0, marginTop: 2 }} />
+                          <span>{f.message}</span>
+                        </div>
+                      ))}
                     </td>
                     <td style={tdStyle}>{formatDOB(p.dob)}</td>
                     <td style={tdStyle}>
@@ -907,7 +949,7 @@ const filterSelectStyle: React.CSSProperties = {
   minWidth: 170,
   flexShrink: 0,
 };
-const unclassifiedNoteStyle: React.CSSProperties = {
+const checkNoteStyle: React.CSSProperties = {
   background: '#fff8e6',
   border: '1px solid #f0dca8',
   color: '#6b5314',
@@ -915,7 +957,38 @@ const unclassifiedNoteStyle: React.CSSProperties = {
   padding: '8px 12px',
   borderRadius: 8,
   marginBottom: 12,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 12,
+  flexWrap: 'wrap',
 };
+function attentionBtnStyle(on: boolean): React.CSSProperties {
+  return {
+    background: on ? '#6b5314' : 'transparent',
+    color: on ? '#fff' : '#6b5314',
+    border: '1px solid #d9bf7e',
+    borderRadius: 6,
+    padding: '3px 10px',
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    whiteSpace: 'nowrap',
+  };
+}
+function findingStyle(sev: string): React.CSSProperties {
+  return {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 5,
+    marginTop: 4,
+    fontSize: 11.5,
+    lineHeight: 1.35,
+    fontWeight: 500,
+    color: sev === 'error' ? '#8a1c1c' : '#7a5a12',
+  };
+}
 /** Service-level chip, colored from the catalog like the program chip. */
 function serviceLevelBadgeStyle(id: string | undefined): React.CSSProperties {
   const s = getServiceLevel(id);

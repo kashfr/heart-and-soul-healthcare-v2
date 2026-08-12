@@ -15,6 +15,7 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import type { PatientAuthorization } from './reconcile';
 
 export interface Patient {
   id?: string;
@@ -54,6 +55,14 @@ export interface Patient {
    * MAR should exist.
    */
   serviceLevel?: string;
+  /**
+   * Service authorization lines, mirrored from Therap. Only the fields that
+   * drive a decision are kept (code, frequency, amount, effective dates); the
+   * authorization itself stays the system of record. Feeds the reconciliation
+   * check that compares what is authorized against how the client is
+   * classified — see src/lib/reconcile.ts.
+   */
+  authorizations?: PatientAuthorization[];
   createdAt?: unknown;
   /**
    * Care team — list of nurse uids who can read all progressNotes for
