@@ -36,6 +36,17 @@ export interface ReconcileSubject {
   requiresMar?: boolean;
   assignedNurseIds?: string[];
   authorizations?: PatientAuthorization[];
+  /**
+   * 'YYYY-MM-DD' the day we actually began providing service. Unset means not
+   * started yet.
+   *
+   * An active authorization is NOT a proxy for this: authorizations are put in
+   * place proactively, often weeks before the first visit. Keying the
+   * "receives daily care but has no MAR" rules off the authorization produced
+   * false errors for Danielle Hall and Lahin Lalani, both authorized and
+   * neither started.
+   */
+  serviceStartedOn?: string;
 }
 
 export type Severity = 'error' | 'warn' | 'info';
@@ -75,15 +86,18 @@ export const EXPIRY_WARN_DAYS = 45;
  * Check one client. Returns an empty array when everything lines up.
  *
  * Rules that depend on someone actually being served (no MAR, no care team)
- * only fire when the client has an ACTIVE authorization. A client who has been
- * added but has not started yet legitimately has neither, and firing on them
- * would train people to ignore the warnings.
+ * only fire once serviceStartedOn has passed. An authorization is set up
+ * proactively and is not evidence of service, so a client who is authorized but
+ * has not started legitimately has neither, and firing on them would train
+ * people to ignore the warnings.
  */
 export function reconcilePatient(p: ReconcileSubject, today: string): Finding[] {
   const out: Finding[] = [];
   const auths = p.authorizations ?? [];
   const active = auths.filter((a) => isActive(a, today));
-  const started = active.length > 0;
+  const authActive = active.length > 0;
+  // Only an explicit start date means service is underway. See serviceStartedOn.
+  const started = Boolean(p.serviceStartedOn && p.serviceStartedOn <= today);
 
   if (!p.program || !p.serviceLevel) {
     out.push({
@@ -108,7 +122,7 @@ export function reconcilePatient(p: ReconcileSubject, today: string): Finding[] 
       }".`,
     });
   }
-  if (!authSaysDailyLpn && p.serviceLevel === 'rn-lpn-daily' && started) {
+  if (!authSaysDailyLpn && p.serviceLevel === 'rn-lpn-daily' && authActive) {
     out.push({
       rule: 'no-daily-lpn-auth',
       severity: 'error',
@@ -139,7 +153,7 @@ export function reconcilePatient(p: ReconcileSubject, today: string): Finding[] 
       severity: 'info',
       message: 'No service authorization recorded.',
     });
-  } else if (!started) {
+  } else if (!authActive) {
     const upcoming = auths.filter((a) => a.from && a.from > today);
     out.push(
       upcoming.length > 0

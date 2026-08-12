@@ -63,6 +63,13 @@ export interface Patient {
    * classified — see src/lib/reconcile.ts.
    */
   authorizations?: PatientAuthorization[];
+  /**
+   * 'YYYY-MM-DD' we actually began serving this client. Unset means not started.
+   * Deliberately separate from the authorization dates: authorizations are put
+   * in place proactively, sometimes weeks ahead, so an active authorization is
+   * not evidence that anyone has been in the home yet.
+   */
+  serviceStartedOn?: string;
   createdAt?: unknown;
   /**
    * Care team — list of nurse uids who can read all progressNotes for

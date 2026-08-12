@@ -16,6 +16,7 @@ const dailyLpn: ReconcileSubject = {
   serviceLevel: 'rn-lpn-daily',
   requiresMar: true,
   assignedNurseIds: ['nurse-1'],
+  serviceStartedOn: '2026-08-12',
   authorizations: [
     { serviceCode: 'NL1', frequency: 'Daily', amount: 3, from: '2026-08-12', to: '2027-02-11' },
     { serviceCode: 'NR1', frequency: 'Monthly', amount: 4, from: '2026-08-12', to: '2027-02-11' },
@@ -54,6 +55,7 @@ describe('reconcilePatient', () => {
       serviceLevel: 'skilled-nursing-shifts',
       requiresMar: false,
       assignedNurseIds: [],
+      serviceStartedOn: '2026-01-05',
       authorizations: [{ serviceCode: 'T1000', frequency: 'Daily', from: '2026-01-01', to: '2027-01-01' }],
     };
     expect(rules(gapp)).toEqual(expect.arrayContaining(['daily-care-no-mar', 'daily-care-no-care-team']));
@@ -73,6 +75,30 @@ describe('reconcilePatient', () => {
     expect(r).not.toContain('daily-care-no-care-team');
     expect(r).not.toContain('no-daily-lpn-auth');
     expect(r).toContain('authorization-not-started');
+  });
+
+  it('does not treat an active authorization as proof that service has started', () => {
+    // Danielle Hall's shape: authorized weeks ago, proactively, not yet serving.
+    const authorizedNotServing: ReconcileSubject = {
+      program: 'now-comp',
+      serviceLevel: 'rn-lpn-daily',
+      requiresMar: false,
+      assignedNurseIds: [],
+      authorizations: [{ serviceCode: 'NL1', frequency: 'Daily', from: '2026-07-21', to: '2027-07-20' }],
+    };
+    expect(reconcilePatient(authorizedNotServing, TODAY)).toEqual([]);
+  });
+
+  it('starts checking once the service start date has passed, but not before', () => {
+    const base: ReconcileSubject = {
+      program: 'now-comp',
+      serviceLevel: 'rn-lpn-daily',
+      requiresMar: false,
+      assignedNurseIds: [],
+      authorizations: [{ serviceCode: 'NL1', frequency: 'Daily', from: '2026-07-21', to: '2027-07-20' }],
+    };
+    expect(rules({ ...base, serviceStartedOn: '2026-08-13' })).toEqual([]);
+    expect(rules({ ...base, serviceStartedOn: '2026-08-12' })).toContain('daily-care-no-mar');
   });
 
   it('treats an authorization starting today as active', () => {
