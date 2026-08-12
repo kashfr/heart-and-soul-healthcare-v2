@@ -1,7 +1,8 @@
 // One-time backfill: classify every existing client by program + service level.
 //
-// The mapping below came from Kaheem on 2026-08-10. NOW/COMP is the default for
-// anyone not named in a GAPP list, and RN oversight only is the default service
+// The mapping below came from Kaheem on 2026-08-10 and was reconciled against
+// the Therap service authorizations on 2026-08-12. NOW/COMP is the default for
+// anyone not in the GAPP list, and RN oversight only is the default service
 // level, because the daily-LPN caseload is the short, explicitly-known list.
 //
 // Dry run (prints the plan, writes nothing):   node scripts/backfill-patient-programs.js
@@ -44,8 +45,19 @@ const GAPP = [
   'Piper Young',
 ];
 
-/** Clients staffed with daily LPN services on top of RN oversight. */
-const DAILY_LPN = ['Kimberly Guffey', 'Ann Torres', 'Danielle Hall', 'Joy Daughtrey'];
+/**
+ * Clients staffed with daily LPN services on top of RN oversight.
+ *
+ * Reconciled against the Therap service authorizations on 2026-08-12: an NL1
+ * (Nursing Services - LPN) line with Frequency: Daily is the authoritative
+ * marker. Guffey, Hall, Lalani and Torres all carry one. Lahin Lalani was
+ * initially classified oversight-only from conversation alone; his NL1 runs
+ * 08/12/2026 to 02/11/2027 at 3 hours daily, effective today.
+ *
+ * Joy Daughtrey is on this list on Kaheem's word rather than an authorization,
+ * because she has no authorization filed yet (new client, not yet started).
+ */
+const DAILY_LPN = ['Kimberly Guffey', 'Ann Torres', 'Danielle Hall', 'Joy Daughtrey', 'Lahin Lalani'];
 
 /** Test logins are deliberately left unclassified so they never skew a filter. */
 const SKIP = ['ZZ Test Client'];
