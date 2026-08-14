@@ -23,6 +23,7 @@ export const DOC_CATEGORIES = [
   'Plan of Care (485)',
   'Initial Assessment',
   'Supervisory Visit',
+  'RN Oversight',
   'Physician Orders',
   'Progress Note (scanned)',
   'Other',
