@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   CalendarClock,
   FolderOpen,
+  Stethoscope,
   TrendingUp,
 } from 'lucide-react';
 import { AuthGuard } from '@/components/AuthGuard';
@@ -74,8 +75,10 @@ const ClientCharts = dynamic(() => import('./ClientCharts'), {
 
 // Survey-readiness baselines for document currency. Georgia intervals vary by
 // service line, so these are STARTING points the compliance nurse will tune:
-// RN supervisory visits monthly, plan of care per 60-day cert period.
+// RN supervisory visits monthly, RN oversight monthly, plan of care per 60-day
+// cert period.
 const SUPERVISORY_MAX_DAYS = 30;
+const RN_OVERSIGHT_MAX_DAYS = 30;
 const POC_MAX_DAYS = 60;
 
 function todayISO(): string {
@@ -248,6 +251,13 @@ function ClientDashboardInner() {
       ),
     [documents, visits, today],
   );
+  // RN oversight is document-only evidence: unlike supervisory visits there is
+  // no 'rn-oversight' visit type on the schedule to cross-check against, so the
+  // uploaded form is the sole source.
+  const rnCurrency = useMemo(
+    () => documentCurrency(documents, 'RN Oversight', RN_OVERSIGHT_MAX_DAYS, today),
+    [documents, today],
+  );
   const pocCurrency = useMemo(
     () => documentCurrency(documents, 'Plan of Care (485)', POC_MAX_DAYS, today),
     [documents, today],
@@ -368,6 +378,11 @@ function ClientDashboardInner() {
   } else if (supCurrency.status === 'none') {
     alerts.push({ text: 'No supervisory visit on record', go: () => setTab('schedule') });
   }
+  if (rnCurrency.status === 'bad') {
+    alerts.push({ text: 'RN oversight overdue', go: () => setTab('documents') });
+  } else if (rnCurrency.status === 'none') {
+    alerts.push({ text: 'No RN oversight on file', go: () => setTab('documents') });
+  }
   if (pocCurrency.status === 'bad') {
     alerts.push({ text: 'Plan of care out of date', go: () => setTab('documents') });
   } else if (pocCurrency.status === 'none') {
@@ -382,6 +397,7 @@ function ClientDashboardInner() {
     orderCurrencySignal,
     adverseSignal,
     supCurrency.status,
+    rnCurrency.status,
     pocCurrency.status,
   ].filter((s) => s === 'bad').length;
 
@@ -711,6 +727,21 @@ function ClientDashboardInner() {
                     : `${fmtDate(supCurrency.newestDateISO)} · due every ${SUPERVISORY_MAX_DAYS}d (baseline)`
                 }
                 icon={<CalendarClock size={14} />}
+              />
+              <ReadinessCard
+                signal={rnCurrency.status}
+                title="RN oversight"
+                value={
+                  rnCurrency.status === 'none'
+                    ? 'No oversight form on file'
+                    : `Last oversight ${rnCurrency.daysSince}d ago`
+                }
+                detail={
+                  rnCurrency.status === 'none'
+                    ? `Upload the RN oversight form to track (${RN_OVERSIGHT_MAX_DAYS}-day baseline)`
+                    : `${fmtDate(rnCurrency.newestDateISO)} · due every ${RN_OVERSIGHT_MAX_DAYS}d (baseline)`
+                }
+                icon={<Stethoscope size={14} />}
               />
               <ReadinessCard
                 signal={pocCurrency.status}
