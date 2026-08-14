@@ -15,6 +15,7 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import type { PatientAuthorization } from './reconcile';
 
 export interface Patient {
   id?: string;
@@ -39,6 +40,40 @@ export interface Patient {
    * (gates UI surfaces; not the sensitive clinical sub-record).
    */
   hasFeedingTube?: boolean;
+  /**
+   * Payer program this client is enrolled in ('now-comp' | 'gapp' | 'edwp' |
+   * 'icwp'). Decides whose rulebook applies: NOW/COMP runs on the DBHDD manual
+   * and an ISP, GAPP on the GAPP In-Home Nursing manual and an Appendix T.
+   * See src/lib/programs.ts for the catalog. Directory-doc field like
+   * requiresMar — administrative, not the sensitive clinical sub-record, so the
+   * roster can filter on it without care-team gating.
+   */
+  program?: string;
+  /**
+   * Staffing model ('rn-oversight' | 'rn-lpn-daily'). Orthogonal to program:
+   * it sets the expected visit cadence and whether daily notes and an active
+   * MAR should exist.
+   */
+  serviceLevel?: string;
+  /**
+   * Service authorization lines, mirrored from Therap. Only the fields that
+   * drive a decision are kept (code, frequency, amount, effective dates); the
+   * authorization itself stays the system of record. Feeds the reconciliation
+   * check that compares what is authorized against how the client is
+   * classified — see src/lib/reconcile.ts.
+   */
+  authorizations?: PatientAuthorization[];
+  /**
+   * 'YYYY-MM-DD' official start of care: the date support coordination set us
+   * up to begin, the one carried on the ISP and the authorizations. Kept even
+   * when scheduling delays the first visit (Lahin Lalani started 08/12/2026 on
+   * paper while first contact was still pending) — from this date onward the
+   * record is expected to be service-ready, so the daily-care checks measure
+   * against it. Unset means no start date exists yet. Deliberately separate
+   * from the authorization window, which is often opened proactively before
+   * any start date is agreed.
+   */
+  serviceStartedOn?: string;
   createdAt?: unknown;
   /**
    * Care team — list of nurse uids who can read all progressNotes for

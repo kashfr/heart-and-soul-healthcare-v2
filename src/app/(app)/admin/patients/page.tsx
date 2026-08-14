@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Search, Pencil, Trash2, X, UserPlus } from 'lucide-react';
+import { ArrowLeft, Plus, Search, Pencil, Trash2, X, UserPlus, AlertTriangle } from 'lucide-react';
 import { formatUSPhone } from '@/lib/phone';
 import { arrayUnion, arrayRemove, doc, updateDoc } from 'firebase/firestore';
 import {
@@ -15,6 +15,14 @@ import {
   savePatientClinical,
   updatePatient,
 } from '@/lib/patients';
+import {
+  PROGRAMS,
+  SERVICE_LEVELS,
+  getProgram,
+  getServiceLevel,
+  matchesClassification,
+} from '@/lib/programs';
+import { reconcilePatient, worstSeverity, summarize, type Finding } from '@/lib/reconcile';
 import { db } from '@/lib/firebase';
 import { authedFetch } from '@/lib/authedFetch';
 
@@ -44,6 +52,9 @@ const emptyPatient: Partial<Patient> = {
   mrn: '',
   requiresMar: false,
   hasFeedingTube: false,
+  program: '',
+  serviceLevel: '',
+  serviceStartedOn: '',
 };
 
 const STATES = [
@@ -82,6 +93,8 @@ export default function AdminPatientsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [query, setQuery] = useState('');
+  const [programFilter, setProgramFilter] = useState('');
+  const [levelFilter, setLevelFilter] = useState('');
   const [toast, setToast] = useState<string | null>(null);
   // Care team state — populated when the edit modal opens for an
   // existing patient. Lives separately from formData because the chip
@@ -199,6 +212,9 @@ export default function AdminPatientsPage() {
       mrn: patient.mrn ?? '',
       requiresMar: patient.requiresMar ?? false,
       hasFeedingTube: patient.hasFeedingTube ?? false,
+      program: patient.program ?? '',
+      serviceLevel: patient.serviceLevel ?? '',
+      serviceStartedOn: patient.serviceStartedOn ?? '',
     });
     setEditingId(patient.id || null);
     setFormOpen(true);
@@ -345,17 +361,42 @@ export default function AdminPatientsPage() {
     }
   };
 
+  // Reconciliation findings, keyed by patient id. Recomputed only when the
+  // roster changes; todayISO is memoized so the rules stay stable across
+  // re-renders rather than shifting under a midnight boundary mid-session.
+  const findings = useMemo(() => {
+    const m = new Map<string, Finding[]>();
+    for (const p of patients) {
+      if (!p.id) continue;
+      m.set(p.id, reconcilePatient(p, todayISO));
+    }
+    return m;
+  }, [patients, todayISO]);
+
+  const checkSummary = useMemo(() => summarize(patients, todayISO), [patients, todayISO]);
+
+  // "Needs attention" is its own filter rather than a sort, so the list can be
+  // narrowed to exactly the records that need a human.
+  const [attentionOnly, setAttentionOnly] = useState(false);
+
   const filtered = useMemo(() => {
-    if (!query.trim()) return patients;
-    const q = query.toLowerCase();
-    return patients.filter(
-      (p) =>
+    const q = query.trim().toLowerCase();
+    return patients.filter((p) => {
+      if (!matchesClassification(p, { program: programFilter, serviceLevel: levelFilter })) return false;
+      if (attentionOnly) {
+        const w = p.id ? worstSeverity(findings.get(p.id) ?? []) : null;
+        if (w !== 'error' && w !== 'warn') return false;
+      }
+      if (!q) return true;
+      return (
         p.name.toLowerCase().includes(q) ||
         p.diagnosis?.toLowerCase().includes(q) ||
         p.dob.includes(query) ||
         (p.mrn || '').includes(query.trim())
-    );
-  }, [patients, query]);
+      );
+    });
+  }, [patients, query, programFilter, levelFilter, attentionOnly, findings]);
+
 
   return (
     <div style={containerStyle}>
@@ -389,7 +430,55 @@ export default function AdminPatientsPage() {
               style={searchInputStyle}
             />
           </div>
+          <select
+            value={programFilter}
+            onChange={(e) => setProgramFilter(e.target.value)}
+            style={filterSelectStyle}
+            aria-label="Filter by program"
+          >
+            <option value="">All programs</option>
+            {PROGRAMS.map((pr) => (
+              <option key={pr.id} value={pr.id}>{pr.label}</option>
+            ))}
+          </select>
+          <select
+            value={levelFilter}
+            onChange={(e) => setLevelFilter(e.target.value)}
+            style={filterSelectStyle}
+            aria-label="Filter by service level"
+          >
+            <option value="">All service levels</option>
+            {SERVICE_LEVELS.map((sl) => (
+              <option key={sl.id} value={sl.id}>{sl.label}</option>
+            ))}
+          </select>
         </div>
+
+        {checkSummary.error + checkSummary.warn > 0 && (
+          <div style={checkNoteStyle}>
+            <span>
+              <strong>Record checks:</strong>{' '}
+              {checkSummary.error > 0 && (
+                <span style={{ color: '#8a1c1c', fontWeight: 700 }}>
+                  {checkSummary.error} need{checkSummary.error === 1 ? 's' : ''} correcting
+                </span>
+              )}
+              {checkSummary.error > 0 && checkSummary.warn > 0 && ', '}
+              {checkSummary.warn > 0 && (
+                <span>{checkSummary.warn} worth a look</span>
+              )}
+              {/* info-level findings are not actionable, so they count as fine here */}
+              <span style={{ color: '#6b7280' }}> · {checkSummary.clean + checkSummary.info} no action needed</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setAttentionOnly((v) => !v)}
+              style={attentionBtnStyle(attentionOnly)}
+            >
+              {attentionOnly ? 'Show all' : 'Show only these'}
+            </button>
+          </div>
+        )}
 
         {loading ? (
           <div style={emptyStyle}>Loading…</div>
@@ -418,9 +507,31 @@ export default function AdminPatientsPage() {
                     <td style={tdStyle}>
                       <div style={{ fontWeight: 600, color: '#2c3e50', display: 'flex', alignItems: 'center', gap: 6 }}>
                         {p.name}
+                        {getProgram(p.program) && (
+                          <span
+                            style={programBadgeStyle(p.program)}
+                            title={getProgram(p.program)!.full}
+                          >
+                            {getProgram(p.program)!.label}
+                          </span>
+                        )}
+                        {getServiceLevel(p.serviceLevel)?.badge && (
+                          <span
+                            style={serviceLevelBadgeStyle(p.serviceLevel)}
+                            title={getServiceLevel(p.serviceLevel)!.full}
+                          >
+                            {getServiceLevel(p.serviceLevel)!.badge}
+                          </span>
+                        )}
                         {p.requiresMar && <span style={marBadgeStyle} title="Requires a Medication Administration Record">MAR</span>}
                         {p.hasFeedingTube && <span style={tubeBadgeStyle} title="Has a feeding tube (G-tube / GJ / J / NG)">FEEDING TUBE</span>}
                       </div>
+                      {(findings.get(p.id || '') ?? []).filter((f) => f.severity !== 'info').map((f) => (
+                        <div key={f.rule} style={findingStyle(f.severity)}>
+                          <AlertTriangle size={11} style={{ flexShrink: 0, marginTop: 2 }} />
+                          <span>{f.message}</span>
+                        </div>
+                      ))}
                     </td>
                     <td style={tdStyle}>{formatDOB(p.dob)}</td>
                     <td style={tdStyle}>
@@ -551,6 +662,47 @@ export default function AdminPatientsPage() {
                 <div style={careTeamHelpStyle}>
                   The clinical fields below feed this client&apos;s Medication Administration Record and are visible only to staff and the client&apos;s assigned care team.
                 </div>
+
+                <div style={gridTwoStyle}>
+                  <Field label="Program">
+                    <select
+                      value={formData.program || ''}
+                      onChange={(e) => setFormData((f) => ({ ...f, program: e.target.value }))}
+                      style={selectStyle}
+                    >
+                      <option value="">—</option>
+                      {PROGRAMS.map((pr) => (
+                        <option key={pr.id} value={pr.id}>{pr.label} — {pr.full}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Service level">
+                    <select
+                      value={formData.serviceLevel || ''}
+                      onChange={(e) => setFormData((f) => ({ ...f, serviceLevel: e.target.value }))}
+                      style={selectStyle}
+                    >
+                      <option value="">—</option>
+                      {SERVICE_LEVELS.map((sl) => (
+                        <option key={sl.id} value={sl.id}>{sl.label}</option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+
+                <Field label="Service start date (official start of care)">
+                  <input
+                    type="date"
+                    value={formData.serviceStartedOn || ''}
+                    onChange={(e) => setFormData((f) => ({ ...f, serviceStartedOn: e.target.value }))}
+                    style={inputStyle}
+                  />
+                  <div style={fieldHintStyle}>
+                    The start date set by support coordination — the one on the ISP and
+                    authorizations — even if scheduling delays the first visit. Leave blank until a
+                    start date exists; record checks for daily-care clients begin from this date.
+                  </div>
+                </Field>
 
                 <label style={requiresMarRowStyle}>
                   <input
@@ -772,7 +924,7 @@ const backLinkStyle: React.CSSProperties = { display: 'inline-flex', alignItems:
 const headerStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' };
 const titleStyle: React.CSSProperties = { fontSize: 26, color: '#2c3e50', margin: 0 };
 const subtitleStyle: React.CSSProperties = { fontSize: 13, color: '#7f8c8d', margin: '6px 0 0', maxWidth: 700 };
-const toolbarStyle: React.CSSProperties = { display: 'flex', gap: 10, marginBottom: 14 };
+const toolbarStyle: React.CSSProperties = { display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' };
 const searchWrapStyle: React.CSSProperties = { flex: 1, background: 'white', border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 12px', display: 'flex', gap: 8, alignItems: 'center' };
 const searchInputStyle: React.CSSProperties = { flex: 1, border: 'none', outline: 'none', fontSize: 14, background: 'transparent', fontFamily: 'inherit' };
 const emptyStyle: React.CSSProperties = { textAlign: 'center', padding: '48px 20px', background: 'white', borderRadius: 10, color: '#7f8c8d', fontSize: 14, border: '1px solid #e5e7eb' };
@@ -806,6 +958,90 @@ const selectStyle: React.CSSProperties = {
     "white url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\") no-repeat right 12px center",
   backgroundSize: '14px',
   cursor: 'pointer',
+};
+const filterSelectStyle: React.CSSProperties = {
+  ...selectStyle,
+  width: 'auto',
+  minWidth: 170,
+  flexShrink: 0,
+};
+const checkNoteStyle: React.CSSProperties = {
+  background: '#fff8e6',
+  border: '1px solid #f0dca8',
+  color: '#6b5314',
+  fontSize: 12.5,
+  padding: '8px 12px',
+  borderRadius: 8,
+  marginBottom: 12,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 12,
+  flexWrap: 'wrap',
+};
+function attentionBtnStyle(on: boolean): React.CSSProperties {
+  return {
+    background: on ? '#6b5314' : 'transparent',
+    color: on ? '#fff' : '#6b5314',
+    border: '1px solid #d9bf7e',
+    borderRadius: 6,
+    padding: '3px 10px',
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    whiteSpace: 'nowrap',
+  };
+}
+function findingStyle(sev: string): React.CSSProperties {
+  return {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 5,
+    marginTop: 4,
+    fontSize: 11.5,
+    lineHeight: 1.35,
+    fontWeight: 500,
+    color: sev === 'error' ? '#8a1c1c' : '#7a5a12',
+  };
+}
+/** Service-level chip, colored from the catalog like the program chip. */
+function serviceLevelBadgeStyle(id: string | undefined): React.CSSProperties {
+  const s = getServiceLevel(id);
+  return {
+    display: 'inline-block',
+    background: s?.bg ?? '#eee',
+    color: s?.fg ?? '#444',
+    border: `1px solid ${s?.border ?? '#ddd'}`,
+    fontSize: 10,
+    fontWeight: 700,
+    padding: '2px 6px',
+    borderRadius: 999,
+    letterSpacing: 0.4,
+    whiteSpace: 'nowrap',
+  };
+}
+/** Program chip, colored from the catalog so a new program needs no CSS here. */
+function programBadgeStyle(id: string | undefined): React.CSSProperties {
+  const p = getProgram(id);
+  return {
+    display: 'inline-block',
+    background: p?.bg ?? '#eee',
+    color: p?.fg ?? '#444',
+    border: `1px solid ${p?.border ?? '#ddd'}`,
+    fontSize: 10,
+    fontWeight: 700,
+    padding: '2px 6px',
+    borderRadius: 999,
+    letterSpacing: 0.4,
+    whiteSpace: 'nowrap',
+  };
+}
+const fieldHintStyle: React.CSSProperties = {
+  fontSize: 11.5,
+  color: '#8a8f98',
+  lineHeight: 1.4,
+  marginTop: 4,
 };
 const gridTwoStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 };
 const toastStyle: React.CSSProperties = { position: 'fixed', bottom: 20, right: 20, background: '#2c3e50', color: 'white', padding: '10px 16px', borderRadius: 8, fontSize: 13, boxShadow: '0 8px 20px rgba(0,0,0,0.2)', zIndex: 1100 };
