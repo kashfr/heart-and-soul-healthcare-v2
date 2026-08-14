@@ -362,6 +362,7 @@ describe('documentCurrency', () => {
     { id: 'a', category: 'Supervisory Visit', docDate: '2026-06-20', archived: false },
     { id: 'b', category: 'Supervisory Visit', docDate: '2026-05-01', archived: false },
     { id: 'c', category: 'Plan of Care (485)', docDate: '2026-05-10', archived: false },
+    { id: 'd', category: 'RN Oversight', docDate: '2026-06-14', archived: false },
   ];
 
   it('grades the NEWEST non-archived document in the category', () => {
@@ -377,6 +378,20 @@ describe('documentCurrency', () => {
     expect(documentCurrency(docs, 'Plan of Care (485)', 60, '2026-07-04').status).toBe('good');
     expect(documentCurrency(docs, 'Plan of Care (485)', 60, '2026-07-15').status).toBe('warn');
     expect(documentCurrency(docs, 'Plan of Care (485)', 60, '2026-08-01').status).toBe('bad');
+  });
+
+  it('tracks RN oversight on its own monthly clock, separate from supervisory', () => {
+    // RN oversight 6/14 → 20d at 7/4: good at 30d. The supervisory doc dated
+    // 6/20 must NOT satisfy it — the two are graded independently.
+    const c = documentCurrency(docs, 'RN Oversight', 30, '2026-07-04');
+    expect(c.status).toBe('good');
+    expect(c.newestDateISO).toBe('2026-06-14');
+    // 32d → past 30 but inside the 25% grace; 45d → bad.
+    expect(documentCurrency(docs, 'RN Oversight', 30, '2026-07-16').status).toBe('warn');
+    expect(documentCurrency(docs, 'RN Oversight', 30, '2026-07-29').status).toBe('bad');
+    // A client with only supervisory evidence has no oversight on file.
+    const supOnly = [{ id: 's', category: 'Supervisory Visit', docDate: '2026-06-20', archived: false }];
+    expect(documentCurrency(supOnly, 'RN Oversight', 30, '2026-07-04').status).toBe('none');
   });
 
   it('ignores archived documents and returns none when nothing qualifies', () => {
