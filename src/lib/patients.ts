@@ -64,10 +64,14 @@ export interface Patient {
    */
   authorizations?: PatientAuthorization[];
   /**
-   * 'YYYY-MM-DD' we actually began serving this client. Unset means not started.
-   * Deliberately separate from the authorization dates: authorizations are put
-   * in place proactively, sometimes weeks ahead, so an active authorization is
-   * not evidence that anyone has been in the home yet.
+   * 'YYYY-MM-DD' official start of care: the date support coordination set us
+   * up to begin, the one carried on the ISP and the authorizations. Kept even
+   * when scheduling delays the first visit (Lahin Lalani started 08/12/2026 on
+   * paper while first contact was still pending) — from this date onward the
+   * record is expected to be service-ready, so the daily-care checks measure
+   * against it. Unset means no start date exists yet. Deliberately separate
+   * from the authorization window, which is often opened proactively before
+   * any start date is agreed.
    */
   serviceStartedOn?: string;
   createdAt?: unknown;

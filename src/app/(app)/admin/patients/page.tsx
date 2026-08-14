@@ -54,6 +54,7 @@ const emptyPatient: Partial<Patient> = {
   hasFeedingTube: false,
   program: '',
   serviceLevel: '',
+  serviceStartedOn: '',
 };
 
 const STATES = [
@@ -213,6 +214,7 @@ export default function AdminPatientsPage() {
       hasFeedingTube: patient.hasFeedingTube ?? false,
       program: patient.program ?? '',
       serviceLevel: patient.serviceLevel ?? '',
+      serviceStartedOn: patient.serviceStartedOn ?? '',
     });
     setEditingId(patient.id || null);
     setFormOpen(true);
@@ -688,6 +690,20 @@ export default function AdminPatientsPage() {
                   </Field>
                 </div>
 
+                <Field label="Service start date (official start of care)">
+                  <input
+                    type="date"
+                    value={formData.serviceStartedOn || ''}
+                    onChange={(e) => setFormData((f) => ({ ...f, serviceStartedOn: e.target.value }))}
+                    style={inputStyle}
+                  />
+                  <div style={fieldHintStyle}>
+                    The start date set by support coordination — the one on the ISP and
+                    authorizations — even if scheduling delays the first visit. Leave blank until a
+                    start date exists; record checks for daily-care clients begin from this date.
+                  </div>
+                </Field>
+
                 <label style={requiresMarRowStyle}>
                   <input
                     type="checkbox"
@@ -1021,6 +1037,12 @@ function programBadgeStyle(id: string | undefined): React.CSSProperties {
     whiteSpace: 'nowrap',
   };
 }
+const fieldHintStyle: React.CSSProperties = {
+  fontSize: 11.5,
+  color: '#8a8f98',
+  lineHeight: 1.4,
+  marginTop: 4,
+};
 const gridTwoStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 };
 const toastStyle: React.CSSProperties = { position: 'fixed', bottom: 20, right: 20, background: '#2c3e50', color: 'white', padding: '10px 16px', borderRadius: 8, fontSize: 13, boxShadow: '0 8px 20px rgba(0,0,0,0.2)', zIndex: 1100 };
 

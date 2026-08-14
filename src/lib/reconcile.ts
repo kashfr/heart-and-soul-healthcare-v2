@@ -37,14 +37,14 @@ export interface ReconcileSubject {
   assignedNurseIds?: string[];
   authorizations?: PatientAuthorization[];
   /**
-   * 'YYYY-MM-DD' the day we actually began providing service. Unset means not
-   * started yet.
+   * 'YYYY-MM-DD' official start of care, as set by support coordination and
+   * carried on the ISP and authorizations. Not necessarily the first visit:
+   * scheduling can slip past it, and the date stands. From this date the record
+   * is expected to be service-ready, so the daily-care rules key off it.
    *
-   * An active authorization is NOT a proxy for this: authorizations are put in
-   * place proactively, often weeks before the first visit. Keying the
-   * "receives daily care but has no MAR" rules off the authorization produced
-   * false errors for Danielle Hall and Lahin Lalani, both authorized and
-   * neither started.
+   * An active authorization is NOT a proxy for this: authorizations are opened
+   * proactively, often weeks before a start date exists. Keying these rules off
+   * the authorization produced false errors on the first live run.
    */
   serviceStartedOn?: string;
 }
