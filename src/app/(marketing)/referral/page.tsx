@@ -168,12 +168,19 @@ export default function ReferralPage() {
 
   const isSelfReferral = formData.referralSource === 'self';
 
-  // Under GAPP's Family Caregiver Option a parent can be paid for personal care
-  // only, never for behavioral aide. So "GAPP + wants pay + behavioral/autism"
-  // is a dead end: block submission and redirect. Scoped to GAPP so it never
-  // blocks NOW/COMP or other referrals.
+  // The GAPP clinical questions only apply to GAPP referrals; NOW/COMP, ICWP,
+  // EDWP and private-pay inquiries never see them.
+  const showGappClinical = formData.programInterest === 'gapp';
+
+  // Under GAPP's Family Caregiver Option a parent can be paid for personal
+  // care only, never for behavioral aide. So "GAPP + wants pay +
+  // behavioral/autism" is a dead end: block submission and redirect. Scoped to
+  // GAPP — and only to GAPP — so a "yes" left over from before a program
+  // change never blocks NOW/COMP or other referrals, while no same-step
+  // control (like the referral-source dropdown) can lift the block without
+  // changing the answer that triggered it.
   const seekingPaidGapp =
-    formData.programInterest === 'gapp' &&
+    showGappClinical &&
     formData.seekingPaidCaregiver === 'yes';
   // What the structured answers say, and which GAPP service line they point to.
   // Same catalog and inference the GAPP site's form and the portal intake use.
@@ -221,10 +228,6 @@ export default function ReferralPage() {
     !!childAge &&
     childAge.years < YOUNG_PAID_CAREGIVER_AGE_YEARS;
 
-  // The GAPP clinical questions only apply to GAPP referrals; NOW/COMP, ICWP,
-  // EDWP and private-pay inquiries never see them.
-  const showGappClinical = formData.programInterest === 'gapp';
-
   // "None of these" is mutually exclusive with every real answer, both ways.
   const toggleMulti = (field: 'diagnoses' | 'equipment' | 'currentServices',
                        code: string, noneCode?: string) =>
@@ -264,9 +267,18 @@ export default function ReferralPage() {
       if (showGappClinical && formData.equipment.length === 0)
         missing.push('What your child needs at home');
       if (showGappClinical && !formData.behaviorRisk) missing.push('Behavior question');
-      if (!formData.seekingPaidCaregiver) missing.push('Paid caregiver question');
-      if (formData.seekingPaidCaregiver === 'yes' && !formData.careNeeds)
-        missing.push('What your child needs help with');
+      if (showGappClinical && !formData.seekingPaidCaregiver)
+        missing.push('Paid caregiver question');
+      if (
+        showGappClinical &&
+        formData.seekingPaidCaregiver === 'yes' &&
+        !formData.careNeeds
+      )
+        missing.push(
+          isSelfReferral
+            ? 'What you need help with'
+            : 'What your child needs help with'
+        );
     }
     return missing;
   };
@@ -382,13 +394,19 @@ export default function ReferralPage() {
           serviceNeeds: formData.serviceNeeds,
           urgency: formData.urgency,
           additionalNotes: formData.additionalNotes,
-          seekingPaidCaregiver: formData.seekingPaidCaregiver,
-          careNeeds: formData.careNeeds,
-          diagnoses: formData.diagnoses,
-          diagnosisOther: formData.diagnosisOther,
-          equipment: formData.equipment,
-          behaviorRisk: formData.behaviorRisk,
-          currentServices: formData.currentServices,
+          // GAPP-only screening answers are submitted only when their questions
+          // were actually shown. Form state is kept while editing (so toggling
+          // the program back restores answers), but answers given under GAPP
+          // must not ride along on a referral submitted for another program.
+          seekingPaidCaregiver: showGappClinical
+            ? formData.seekingPaidCaregiver
+            : '',
+          careNeeds: showGappClinical ? formData.careNeeds : '',
+          diagnoses: showGappClinical ? formData.diagnoses : [],
+          diagnosisOther: showGappClinical ? formData.diagnosisOther : '',
+          equipment: showGappClinical ? formData.equipment : [],
+          behaviorRisk: showGappClinical ? formData.behaviorRisk : '',
+          currentServices: showGappClinical ? formData.currentServices : [],
         },
       };
 
@@ -423,8 +441,9 @@ export default function ReferralPage() {
             (hasDiagnosis &&
               formData.equipment.length > 0 &&
               formData.behaviorRisk !== '')) &&
-          formData.seekingPaidCaregiver &&
-          (formData.seekingPaidCaregiver === 'no' || formData.careNeeds)
+          (!showGappClinical ||
+            (formData.seekingPaidCaregiver &&
+              (formData.seekingPaidCaregiver === 'no' || formData.careNeeds)))
         );
       default:
         return true;
@@ -440,11 +459,13 @@ export default function ReferralPage() {
     const value = formData[fieldName as keyof typeof formData];
     // Only flag required fields
     const requiredStep1 = ['programInterest', 'clientCounty', 'clientFirstName', 'clientLastName', 'clientDOB', 'clientPhone', 'clientSecondaryPhone', 'clientEmail'];
-    const requiredStep2 = ['referralSource', 'seekingPaidCaregiver'];
+    const requiredStep2 = showGappClinical
+      ? ['referralSource', 'seekingPaidCaregiver']
+      : ['referralSource'];
     if (step === 1 && requiredStep1.includes(fieldName)) return !value;
     if (step === 2 && requiredStep2.includes(fieldName)) return !value;
     if (step === 2 && fieldName === 'referrerName' && !isSelfReferral && formData.referralSource) return !value;
-    if (step === 2 && fieldName === 'careNeeds' && formData.seekingPaidCaregiver === 'yes') return !value;
+    if (step === 2 && fieldName === 'careNeeds' && showGappClinical && formData.seekingPaidCaregiver === 'yes') return !value;
     return false;
   };
 
@@ -1145,14 +1166,25 @@ export default function ReferralPage() {
                   </>
                 )}
 
-                {/* Paid-caregiver screening */}
+                {/* Paid-caregiver screening + CMO disclosure — GAPP only, like
+                    the clinical questions above. For self-referrals (the
+                    client filling the form for themselves) the question asks
+                    about a family member instead: a client cannot be their own
+                    paid caregiver. It stays asked — and required — for every
+                    GAPP referral so the behavioral hard-stop and the
+                    server-side review flags can't be sidestepped by a
+                    referral-source change. */}
+                {showGappClinical && (
+                <>
                 <div className={styles.sectionDivider} />
                 <h3 className={styles.subSectionTitle}>One more question</h3>
 
                 <div className={styles.formGridSingle}>
                   <div className="form-group">
                     <label htmlFor="seekingPaidCaregiver" className="form-label">
-                      Are you applying to be your child&apos;s paid caregiver? *
+                      {isSelfReferral
+                        ? 'Is a family member applying to be your paid caregiver? *'
+                        : "Are you applying to be your child's paid caregiver? *"}
                     </label>
                     <p
                       style={{
@@ -1162,16 +1194,35 @@ export default function ReferralPage() {
                         color: '#4b5563',
                       }}
                     >
-                      Your child&apos;s GAPP care (nursing or personal care) is the
-                      same whether or not a parent is paid to provide it. Being a paid
-                      family caregiver is a separate, limited option: it covers
-                      personal care only, your child must medically qualify for GAPP,
-                      and it is{' '}
-                      <strong>
-                        not available for autism, behavioral, or developmental needs
-                      </strong>
-                      . If you are unsure, choose No. It will not affect your
-                      child&apos;s application.
+                      {isSelfReferral ? (
+                        <>
+                          Your GAPP care (nursing or personal care) is the same
+                          whether or not a family member is paid to provide it.
+                          Being a paid family caregiver is a separate, limited
+                          option: it covers personal care only, you must medically
+                          qualify for GAPP, and it is{' '}
+                          <strong>
+                            not available for autism, behavioral, or developmental
+                            needs
+                          </strong>
+                          . If you are unsure, choose No. It will not affect your
+                          application.
+                        </>
+                      ) : (
+                        <>
+                          Your child&apos;s GAPP care (nursing or personal care) is
+                          the same whether or not a parent is paid to provide it.
+                          Being a paid family caregiver is a separate, limited
+                          option: it covers personal care only, your child must
+                          medically qualify for GAPP, and it is{' '}
+                          <strong>
+                            not available for autism, behavioral, or developmental
+                            needs
+                          </strong>
+                          . If you are unsure, choose No. It will not affect your
+                          child&apos;s application.
+                        </>
+                      )}
                     </p>
                     <select
                       id="seekingPaidCaregiver"
@@ -1191,7 +1242,9 @@ export default function ReferralPage() {
                     <>
                       <div className="form-group">
                         <label htmlFor="careNeeds" className="form-label">
-                          What does your child mainly need help with at home? *
+                          {isSelfReferral
+                            ? 'What do you mainly need help with at home? *'
+                            : 'What does your child mainly need help with at home? *'}
                         </label>
                         <select
                           id="careNeeds"
@@ -1357,10 +1410,9 @@ export default function ReferralPage() {
                       services, that they will be removed from their CMO if they
                       are in one. They need to know that they may not receive
                       some of the services that they were provided in their CMO."
-                      GAPP-only, and worded to make clear this form is a referral,
-                      not the Medicaid filing. */}
-                  {showGappClinical && (
-                    <div className={styles.cmoNotice}>
+                      GAPP-only (via the section gate above), and worded to make
+                      clear this form is a referral, not the Medicaid filing. */}
+                  <div className={styles.cmoNotice}>
                       <Info size={16} />
                       <div>
                         <strong>One thing to know before you apply.</strong>
@@ -1378,8 +1430,9 @@ export default function ReferralPage() {
                         </p>
                       </div>
                     </div>
-                  )}
                 </div>
+                </>
+                )}
               </div>
             )}
 
