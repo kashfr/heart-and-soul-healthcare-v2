@@ -20,6 +20,7 @@ import { hasCriticalVital } from './criticalVitals';
 import { normalizeName } from './levenshtein';
 import { noteIsActiveDuplicate } from './duplicateMatch';
 import { normalizeDateISO, sortNotesDesc, type DashboardNote } from './clientDashboardShared';
+import { formatDateUS } from './dateFormat';
 
 /**
  * All form fields from the 7-page progress note form.
@@ -809,18 +810,6 @@ export async function setSubmissionsArchive(
     });
   }
   await batch.commit();
-}
-
-/**
- * Convert YYYY-MM-DD to MM/DD/YYYY (US format)
- */
-function formatDateUS(dateStr: string): string {
-  if (!dateStr) return '';
-  const parts = dateStr.split('-');
-  if (parts.length === 3) {
-    return `${parts[1]}/${parts[2]}/${parts[0]}`;
-  }
-  return dateStr; // Return as-is if not in expected format
 }
 
 // toProgressNoteData removed: ProgressNotePDF now reads raw form data

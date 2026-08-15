@@ -7,6 +7,7 @@ import { createClickUpTask } from '@/lib/clickup';
 import { createReferral } from '@/lib/referrals';
 import { sendReferralConfirmation } from '@/lib/emails/referralConfirmation';
 import { paidCaregiverDiagnosisFlag, paidCaregiverAgeFlag } from '@/lib/diagnosisScreening';
+import { formatDateUS } from '@/lib/dateFormat';
 import {
   behaviorRiskLabel,
   composeDiagnosisText,
@@ -209,7 +210,7 @@ export async function processReferralSubmission(data: any) {
 
         <h3>Client Information</h3>
         <p><strong>Name:</strong> ${escapeHtml(client.firstName)} ${escapeHtml(client.lastName)}</p>
-        <p><strong>DOB:</strong> ${escapeHtml(client.dob)}</p>
+        <p><strong>DOB:</strong> ${escapeHtml(formatDateUS(client.dob ?? ''))}</p>
         <p><strong>Phone:</strong> ${escapeHtml(client.phone)}</p>
         <p><strong>Secondary Phone:</strong> ${escapeHtml(client.secondaryPhone || 'N/A')}</p>
         <p><strong>Email:</strong> ${escapeHtml(client.email)}</p>
@@ -281,7 +282,7 @@ export async function processReferralSubmission(data: any) {
           ...(inferred?.conflict
             ? [{ label: '⚠ Care need unclear', value: inferred.conflict }]
             : []),
-          { label: 'Date of birth', value: client.dob ?? '' },
+          { label: 'Date of birth', value: formatDateUS(client.dob ?? '') },
           { label: 'Secondary phone', value: client.secondaryPhone ?? '' },
           {
             label: 'Address',
@@ -358,7 +359,7 @@ export async function processReferralSubmission(data: any) {
     await addToGoogleSheet('Referral Submissions', {
       Date: new Date().toISOString(),
       'Client Name': `${client.firstName} ${client.lastName}`,
-      'Client DOB': client.dob,
+      'Client DOB': formatDateUS(client.dob ?? ''),
       'Client Phone': client.phone,
       'Client Secondary Phone': client.secondaryPhone,
       'Client Email': client.email,

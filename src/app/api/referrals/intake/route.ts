@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { timingSafeEqual } from 'node:crypto';
 import { createReferral, type ReferralInput } from '@/lib/referrals';
 import { sendReferralNotification } from '@/lib/emails/referralNotification';
+import { formatDateUS } from '@/lib/dateFormat';
 import { sendReferralConfirmation } from '@/lib/emails/referralConfirmation';
 import { paidCaregiverDiagnosisFlag, paidCaregiverAgeFlag } from '@/lib/diagnosisScreening';
 import {
@@ -165,7 +166,7 @@ function toReferralInput(payload: IncomingPayload): ReferralInput {
         ? [{ label: '⚠ Care need unclear', value: inferred.conflict }]
         : []),
       ...(catalogDrift ? [{ label: '⚠ Form version', value: catalogDrift }] : []),
-      { label: 'Date of birth', value: r.dob ?? '' },
+      { label: 'Date of birth', value: formatDateUS(r.dob ?? '') },
       { label: 'Age', value: ageLabel(r.dob) },
       { label: 'Address', value: address },
       { label: "Member's Medicaid ID", value: medicaid },
