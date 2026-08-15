@@ -168,13 +168,60 @@ export default function ReferralPage() {
 
   const isSelfReferral = formData.referralSource === 'self';
 
-  // Under GAPP's Family Caregiver Option a parent can be paid for personal care
-  // only, never for behavioral aide. So "GAPP + wants pay + behavioral/autism"
-  // is a dead end: block submission and redirect. Scoped to GAPP so it never
-  // blocks NOW/COMP or other referrals.
+  // The GAPP clinical questions only apply to GAPP referrals; NOW/COMP, ICWP,
+  // EDWP and private-pay inquiries never see them.
+  const showGappClinical = formData.programInterest === 'gapp';
+
+  // Under GAPP's Family Caregiver Option a parent can be paid for personal
+  // care only, never for behavioral aide. So "GAPP + wants pay +
+  // behavioral/autism" is a dead end: block submission and redirect. Scoped to
+  // GAPP — and only to GAPP — so a "yes" left over from before a program
+  // change never blocks NOW/COMP or other referrals, while no same-step
+  // control (like the referral-source dropdown) can lift the block without
+  // changing the answer that triggered it.
   const seekingPaidGapp =
-    formData.programInterest === 'gapp' &&
+    showGappClinical &&
     formData.seekingPaidCaregiver === 'yes';
+
+  // Paid-caregiver screening wording. The question is asked on every referral
+  // — visibility and validation never vary, so no dropdown change can dodge
+  // the screening — but the copy adapts on two axes: who is filling the form
+  // (referral source) and whether the program serves children (GAPP). Nobody
+  // is ever asked to be their own paid caregiver.
+  const sourceView: 'self' | 'family' | 'third' = isSelfReferral
+    ? 'self'
+    : formData.referralSource === 'family'
+    ? 'family'
+    : 'third';
+  const paidCaregiverQuestion =
+    sourceView === 'self'
+      ? showGappClinical
+        ? 'Is a family member applying to be your paid caregiver?'
+        : 'Is a family member or loved one applying to be your paid caregiver?'
+      : sourceView === 'family'
+      ? showGappClinical
+        ? "Are you applying to be your child's paid caregiver?"
+        : "Are you applying to be your loved one's paid caregiver?"
+      : showGappClinical
+      ? "Is a parent or family member applying to be the child's paid caregiver?"
+      : "Is a family member applying to be the client's paid caregiver?";
+  // Who the care is for, from the reader's point of view — used by the
+  // careNeeds follow-up and the validation banner.
+  const careSubject = showGappClinical
+    ? sourceView === 'family'
+      ? 'your child'
+      : 'the child'
+    : sourceView === 'family'
+    ? 'your loved one'
+    : 'the client';
+  const careNeedsLabel =
+    sourceView === 'self'
+      ? 'What do you mainly need help with at home?'
+      : `What does ${careSubject} mainly need help with at home?`;
+  const careNeedsMissingLabel =
+    sourceView === 'self'
+      ? 'What you need help with'
+      : `What ${careSubject} needs help with`;
   // What the structured answers say, and which GAPP service line they point to.
   // Same catalog and inference the GAPP site's form and the portal intake use.
   const structuredPicture = diagnosisPicture(
@@ -221,10 +268,6 @@ export default function ReferralPage() {
     !!childAge &&
     childAge.years < YOUNG_PAID_CAREGIVER_AGE_YEARS;
 
-  // The GAPP clinical questions only apply to GAPP referrals; NOW/COMP, ICWP,
-  // EDWP and private-pay inquiries never see them.
-  const showGappClinical = formData.programInterest === 'gapp';
-
   // "None of these" is mutually exclusive with every real answer, both ways.
   const toggleMulti = (field: 'diagnoses' | 'equipment' | 'currentServices',
                        code: string, noneCode?: string) =>
@@ -266,7 +309,7 @@ export default function ReferralPage() {
       if (showGappClinical && !formData.behaviorRisk) missing.push('Behavior question');
       if (!formData.seekingPaidCaregiver) missing.push('Paid caregiver question');
       if (formData.seekingPaidCaregiver === 'yes' && !formData.careNeeds)
-        missing.push('What your child needs help with');
+        missing.push(careNeedsMissingLabel);
     }
     return missing;
   };
@@ -382,13 +425,18 @@ export default function ReferralPage() {
           serviceNeeds: formData.serviceNeeds,
           urgency: formData.urgency,
           additionalNotes: formData.additionalNotes,
+          // The paid-caregiver pair is asked on every referral and always
+          // submits as answered. The clinical answers below are GAPP-only
+          // questions: form state is kept while editing (so toggling the
+          // program back restores them), but they must not ride along on a
+          // referral submitted for another program.
           seekingPaidCaregiver: formData.seekingPaidCaregiver,
           careNeeds: formData.careNeeds,
-          diagnoses: formData.diagnoses,
-          diagnosisOther: formData.diagnosisOther,
-          equipment: formData.equipment,
-          behaviorRisk: formData.behaviorRisk,
-          currentServices: formData.currentServices,
+          diagnoses: showGappClinical ? formData.diagnoses : [],
+          diagnosisOther: showGappClinical ? formData.diagnosisOther : '',
+          equipment: showGappClinical ? formData.equipment : [],
+          behaviorRisk: showGappClinical ? formData.behaviorRisk : '',
+          currentServices: showGappClinical ? formData.currentServices : [],
         },
       };
 
@@ -1145,14 +1193,20 @@ export default function ReferralPage() {
                   </>
                 )}
 
-                {/* Paid-caregiver screening */}
+                {/* Paid-caregiver screening — asked on EVERY referral, and
+                    always required, so the GAPP behavioral hard-stop and the
+                    server-side review flags can't be sidestepped by a program
+                    or referral-source change. Only the wording varies (see
+                    paidCaregiverQuestion): child-focused copy for GAPP,
+                    loved-one/client copy elsewhere, and nobody is ever asked
+                    to be their own paid caregiver. */}
                 <div className={styles.sectionDivider} />
                 <h3 className={styles.subSectionTitle}>One more question</h3>
 
                 <div className={styles.formGridSingle}>
                   <div className="form-group">
                     <label htmlFor="seekingPaidCaregiver" className="form-label">
-                      Are you applying to be your child&apos;s paid caregiver? *
+                      {paidCaregiverQuestion} *
                     </label>
                     <p
                       style={{
@@ -1162,16 +1216,58 @@ export default function ReferralPage() {
                         color: '#4b5563',
                       }}
                     >
-                      Your child&apos;s GAPP care (nursing or personal care) is the
-                      same whether or not a parent is paid to provide it. Being a paid
-                      family caregiver is a separate, limited option: it covers
-                      personal care only, your child must medically qualify for GAPP,
-                      and it is{' '}
-                      <strong>
-                        not available for autism, behavioral, or developmental needs
-                      </strong>
-                      . If you are unsure, choose No. It will not affect your
-                      child&apos;s application.
+                      {!showGappClinical ? (
+                        <>
+                          Some Georgia programs can pay a family member or another
+                          loved one who provides care. Who can be paid — and for
+                          which services — differs by program, so your answer
+                          simply helps us prepare the right conversation. If you
+                          are unsure, choose No. It will not affect the
+                          application.
+                        </>
+                      ) : sourceView === 'self' ? (
+                        <>
+                          Your GAPP care (nursing or personal care) is the same
+                          whether or not a family member is paid to provide it.
+                          Being a paid family caregiver is a separate, limited
+                          option: it covers personal care only, you must medically
+                          qualify for GAPP, and it is{' '}
+                          <strong>
+                            not available for autism, behavioral, or developmental
+                            needs
+                          </strong>
+                          . If you are unsure, choose No. It will not affect your
+                          application.
+                        </>
+                      ) : sourceView === 'family' ? (
+                        <>
+                          Your child&apos;s GAPP care (nursing or personal care) is
+                          the same whether or not a parent is paid to provide it.
+                          Being a paid family caregiver is a separate, limited
+                          option: it covers personal care only, your child must
+                          medically qualify for GAPP, and it is{' '}
+                          <strong>
+                            not available for autism, behavioral, or developmental
+                            needs
+                          </strong>
+                          . If you are unsure, choose No. It will not affect your
+                          child&apos;s application.
+                        </>
+                      ) : (
+                        <>
+                          The child&apos;s GAPP care (nursing or personal care) is
+                          the same whether or not a parent is paid to provide it.
+                          Being a paid family caregiver is a separate, limited
+                          option: it covers personal care only, the child must
+                          medically qualify for GAPP, and it is{' '}
+                          <strong>
+                            not available for autism, behavioral, or developmental
+                            needs
+                          </strong>
+                          . If unsure, choose No. It will not affect the
+                          application.
+                        </>
+                      )}
                     </p>
                     <select
                       id="seekingPaidCaregiver"
@@ -1191,7 +1287,7 @@ export default function ReferralPage() {
                     <>
                       <div className="form-group">
                         <label htmlFor="careNeeds" className="form-label">
-                          What does your child mainly need help with at home? *
+                          {careNeedsLabel} *
                         </label>
                         <select
                           id="careNeeds"
@@ -1283,7 +1379,12 @@ export default function ReferralPage() {
                         </div>
                       )}
 
+                      {/* ASD-program routing makes sense only for the programs
+                          that serve children/I-DD; an EDWP or ICWP adult with
+                          behavioral needs should not be pointed at ABA. */}
                       {!isPaidBehavioralBlock &&
+                        (showGappClinical ||
+                          formData.programInterest === 'now-comp') &&
                         formData.careNeeds === 'behavioral' && (
                           <div className={styles.countyNotice}>
                             <AlertCircle size={16} />
