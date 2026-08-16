@@ -93,6 +93,19 @@ const simple = (key: string) => (d: Record<string, string>) => has(d, key);
 /** A vital is filled by its own value OR the section-level "unable to obtain vitals" reason. */
 const vitalOr = (key: string) => (d: Record<string, string>) =>
   has(d, key) || has(d, 'q16_vitalsNotObtainedReason');
+/**
+ * True when the note was authored on form revision 2 or later (the QEPR
+ * update, Aug 2026). Notes submitted before the stamp existed have no
+ * q1_formRev, so rev-gated rules never flag them retroactively — an admin
+ * can open and amend an old note without being forced to invent answers for
+ * fields that didn't exist when the visit happened.
+ */
+const isRev2 = (d: Record<string, string>): boolean => Number(d['q1_formRev'] || '0') >= 2;
+/** QEPR rules bind only to DBHDD-waiver (NOW/COMP) clients — see programDocRequirements.ts. */
+const isNowComp = (d: Record<string, string>): boolean => d['q2_program'] === 'now-comp';
+/** RN-oversight confirmations apply only on an RN's visit to an oversight-model client. */
+const isRnOversightVisit = (d: Record<string, string>, cred: string): boolean =>
+  cred === 'RN' && d['q2_serviceLevel'] === 'rn-oversight';
 
 const RULES: Rule[] = [
   // --- Tab 1: Client & Shift (always) ---
@@ -158,6 +171,57 @@ const RULES: Rule[] = [
 
   // --- Tab 5: skilled-nursing narrative (LPN/RN only) ---
   { key: 'q39_interventionDetails', label: 'Intervention details narrative', tab: 5, applies: (_d, c) => isLpnRn(c), filled: simple('q39_interventionDetails') },
+
+  // --- Tab 5: individual's response to interventions (QEPR SG 4; rev-2 notes, all programs) ---
+  // Split out of the interventions narrative so the response can never be
+  // skipped — the surveyor cited notes that described interventions but not
+  // how the individual responded.
+  {
+    key: 'q39_individualResponse',
+    label: "Individual's response to interventions",
+    tab: 5,
+    applies: (d, c) => isLpnRn(c) && isRev2(d),
+    filled: simple('q39_individualResponse'),
+  },
+
+  // --- Tab 6: individual choice documentation (QEPR Choice FOA; NOW/COMP only) ---
+  {
+    key: 'q42_choicesMade',
+    label: 'Choices the individual made or declined',
+    tab: 6,
+    applies: (d) => isRev2(d) && isNowComp(d),
+    filled: simple('q42_choicesMade'),
+  },
+
+  // --- Tab 6: RN oversight confirmations (QEPR WH 13/14, Safety 4, SG 9-20; NOW/COMP + RN + oversight model) ---
+  {
+    key: 'q56_ordersReviewed',
+    label: 'RN oversight: physician orders reviewed',
+    tab: 6,
+    applies: (d, c) => isRev2(d) && isNowComp(d) && isRnOversightVisit(d, c),
+    filled: simple('q56_ordersReviewed'),
+  },
+  {
+    key: 'q56_marReviewed',
+    label: 'RN oversight: MAR reviewed',
+    tab: 6,
+    applies: (d, c) => isRev2(d) && isNowComp(d) && isRnOversightVisit(d, c),
+    filled: simple('q56_marReviewed'),
+  },
+  {
+    key: 'q56_equipReviewed',
+    label: 'RN oversight: adaptive equipment orders reviewed',
+    tab: 6,
+    applies: (d, c) => isRev2(d) && isNowComp(d) && isRnOversightVisit(d, c),
+    filled: simple('q56_equipReviewed'),
+  },
+  {
+    key: 'q56_apptsReviewed',
+    label: 'RN oversight: medical appointments reviewed',
+    tab: 6,
+    applies: (d, c) => isRev2(d) && isNowComp(d) && isRnOversightVisit(d, c),
+    filled: simple('q56_apptsReviewed'),
+  },
 
   // --- Tab 6: physician-notification details (only when notified = Yes) ---
   { key: 'q53_physicianName', label: 'Physician name', tab: 6, applies: (d) => d['q52_physicianNotify'] === 'Yes', filled: simple('q53_physicianName') },

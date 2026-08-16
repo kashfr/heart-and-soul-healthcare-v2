@@ -275,3 +275,65 @@ describe('flattenDraft', () => {
     expect(issues.map((i) => i.key)).toContain('q61_signature');
   });
 });
+
+// --- QEPR rev-2 rules (Aug 2026): program-aware, never retroactive ---
+describe('QEPR rev-2 required fields', () => {
+  const rev2NowComp = (): Record<string, string> => ({
+    ...completeRN(),
+    q1_formRev: '2',
+    q2_program: 'now-comp',
+    q2_serviceLevel: 'rn-lpn-daily',
+    q39_individualResponse: 'Smiled and vocalized during ROM; tolerated feeding without distress.',
+    q42_choicesMade: 'Chose to take meds with applesauce; declined afternoon walk.',
+  });
+
+  it('a complete rev-2 NOW/COMP note passes', () => {
+    expect(getIncompleteRequired(rev2NowComp())).toEqual([]);
+  });
+
+  it('legacy notes (no q1_formRev) are never flagged for the new fields', () => {
+    const legacy = completeRN(); // no formRev, no program, none of the new fields
+    expect(keys(legacy)).toEqual([]);
+  });
+
+  it('rev-2 note missing the individual response is flagged for any program', () => {
+    const d = rev2NowComp();
+    delete d.q39_individualResponse;
+    expect(keys(d)).toContain('q39_individualResponse');
+    const gapp: Record<string, string> = { ...d, q2_program: 'gapp' };
+    delete gapp.q42_choicesMade; // gapp never requires choices...
+    const gappKeys = keys(gapp);
+    expect(gappKeys).toContain('q39_individualResponse'); // ...but response is universal
+    expect(gappKeys).not.toContain('q42_choicesMade');
+  });
+
+  it('choices-made is required only for now-comp', () => {
+    const d = rev2NowComp();
+    delete d.q42_choicesMade;
+    expect(keys(d)).toContain('q42_choicesMade');
+    expect(keys({ ...d, q2_program: 'edwp' })).not.toContain('q42_choicesMade');
+    expect(keys({ ...d, q2_program: '' })).not.toContain('q42_choicesMade');
+  });
+
+  it('RN oversight confirmations apply only to RN + rn-oversight + now-comp', () => {
+    const oversight = { ...rev2NowComp(), q2_serviceLevel: 'rn-oversight' };
+    const missing = keys(oversight);
+    for (const k of ['q56_ordersReviewed', 'q56_marReviewed', 'q56_equipReviewed', 'q56_apptsReviewed']) {
+      expect(missing).toContain(k);
+    }
+    // Filled confirmations satisfy the rules.
+    const done = {
+      ...oversight,
+      q56_ordersReviewed: 'Yes',
+      q56_marReviewed: 'Yes',
+      q56_equipReviewed: 'N/A (no adaptive equipment)',
+      q56_apptsReviewed: 'No appointments since last visit',
+    };
+    expect(getIncompleteRequired(done)).toEqual([]);
+    // LPN on the same client: no oversight confirmations required.
+    const lpn = { ...oversight, q12_credential: 'LPN' };
+    expect(keys(lpn).filter((k) => k.startsWith('q56_'))).toEqual([]);
+    // Daily-LPN staffing model: RN visit but not an oversight visit.
+    expect(keys(rev2NowComp()).filter((k) => k.startsWith('q56_'))).toEqual([]);
+  });
+});

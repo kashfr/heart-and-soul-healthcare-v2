@@ -23,6 +23,7 @@ import CoSignModal from '@/components/CoSignModal';
 import ClarificationPanel from '@/components/ClarificationPanel';
 import type { SubmissionSummary } from '@/lib/submissions';
 import { buildFieldAmendments, type FieldVersion } from '@/lib/revisionFormat';
+import { programLabel } from '@/lib/programs';
 
 // Field key -> its prior values (oldest-first) for inline "struck old -> current"
 // rendering. Provided by the page; read by Field / TextBlock / VitalCard.
@@ -516,6 +517,9 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             <Field fieldKey="q10_primaryDiagnosis" label="Primary Diagnosis" value={data.q10_primaryDiagnosis} />
           </FieldRow>
           {hasValue(address) && <Field label="Address" value={address} />}
+          {hasValue(data.q2_program) && (
+            <Field fieldKey="q2_program" label="Program" value={programLabel(data.q2_program)} />
+          )}
         </ConditionalSection>
 
         {/* 2. SHIFT INFORMATION */}
@@ -801,10 +805,11 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         <GroupHeader title="Meds & Interventions" />
 
         {/* 13. SKILLED NURSING INTERVENTIONS (LPN/RN only) */}
-        {isLpnRn && anyHasValue(['q38_interventions', 'q39_interventionDetails', 'q40_skillJustification']) && (
+        {isLpnRn && anyHasValue(['q38_interventions', 'q39_interventionDetails', 'q39_individualResponse', 'q40_skillJustification']) && (
           <Section title="Skilled Nursing Interventions">
             {hasValue(data.q38_interventions) && <TextBlock fieldKey="q38_interventions" label="Interventions" value={data.q38_interventions} />}
             {hasValue(data.q39_interventionDetails) && <TextBlock fieldKey="q39_interventionDetails" label="Details" value={data.q39_interventionDetails} />}
+            {hasValue(data.q39_individualResponse) && <TextBlock fieldKey="q39_individualResponse" label="Individual's Response" value={data.q39_individualResponse} />}
             {hasValue(data.q40_skillJustification) && <TextBlock fieldKey="q40_skillJustification" label="Justification" value={data.q40_skillJustification} />}
           </Section>
         )}
@@ -868,6 +873,35 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           {hasValue(data.q41_educationMethod) && <Field fieldKey="q41_educationMethod" label="Method" value={data.q41_educationMethod} />}
           {hasValue(data.q41_teachback) && <Field fieldKey="q41_teachback" label="Teach-back" value={data.q41_teachback} />}
           {hasValue(data.q41_educationNotes) && <TextBlock fieldKey="q41_educationNotes" label="Notes" value={data.q41_educationNotes} />}
+        </ConditionalSection>
+
+        {/* 15b. INDIVIDUAL CHOICE & PREFERENCES (rev 2, QEPR Choice FOA) */}
+        <ConditionalSection
+          title="Individual Choice & Preferences"
+          keys={['q42_choicesMade', 'q42_choicesOffered', 'q42_choicesInfoProvided', 'q42_preferencesHonored']}
+          data={data}
+        >
+          {hasValue(data.q42_choicesMade) && <TextBlock fieldKey="q42_choicesMade" label="Choices Made or Declined" value={data.q42_choicesMade} />}
+          {hasValue(data.q42_choicesOffered) && <TextBlock fieldKey="q42_choicesOffered" label="Choices Offered" value={data.q42_choicesOffered} />}
+          {hasValue(data.q42_choicesInfoProvided) && <TextBlock fieldKey="q42_choicesInfoProvided" label="Healthcare Information Provided" value={data.q42_choicesInfoProvided} />}
+          {hasValue(data.q42_preferencesHonored) && <TextBlock fieldKey="q42_preferencesHonored" label="Preferences Honored" value={data.q42_preferencesHonored} />}
+        </ConditionalSection>
+
+        {/* 15c. RN OVERSIGHT REVIEW (rev 2; RN visits to rn-oversight NOW/COMP clients) */}
+        <ConditionalSection
+          title="RN Oversight Review"
+          keys={['q56_ordersReviewed', 'q56_marReviewed', 'q56_equipReviewed', 'q56_apptsReviewed', 'q56_oversightNotes']}
+          data={data}
+        >
+          <FieldRow>
+            {hasValue(data.q56_ordersReviewed) && <Field fieldKey="q56_ordersReviewed" label="Physician Orders Reviewed" value={data.q56_ordersReviewed} />}
+            {hasValue(data.q56_marReviewed) && <Field fieldKey="q56_marReviewed" label="MAR Reviewed" value={data.q56_marReviewed} />}
+          </FieldRow>
+          <FieldRow>
+            {hasValue(data.q56_equipReviewed) && <Field fieldKey="q56_equipReviewed" label="Adaptive Equipment Orders Reviewed" value={data.q56_equipReviewed} />}
+            {hasValue(data.q56_apptsReviewed) && <Field fieldKey="q56_apptsReviewed" label="Medical Appointments Reviewed" value={data.q56_apptsReviewed} />}
+          </FieldRow>
+          {hasValue(data.q56_oversightNotes) && <TextBlock fieldKey="q56_oversightNotes" label="Oversight Notes" value={data.q56_oversightNotes} />}
         </ConditionalSection>
 
         {/* 16. GOALS OF CARE (LPN/RN only) */}

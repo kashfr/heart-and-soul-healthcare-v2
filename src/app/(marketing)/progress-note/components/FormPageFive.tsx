@@ -72,6 +72,12 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
   useSyncExternalStore(radioSubscribe, radioGetSnapshot, radioGetSnapshot);
   const showAdverse = radioState['q43_medTolerance'] === ADVERSE_VALUE;
 
+  // Rev-2 gating for the QEPR fields (Aug 2026): every NEW note is rev 2; an
+  // edit is rev 2 only if the note was authored with the stamp. Keeps admins
+  // from being forced to invent answers when amending pre-QEPR notes. Mirrors
+  // the isRev2 gate in src/lib/noteValidation.ts.
+  const isRev2Note = !isEditMode || Number(watch('q1_formRev') || '0') >= 2;
+
   // Once the box appears it stays collapsible; default expanded so the nurse
   // sees the fields right after choosing "adverse reaction."
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -684,15 +690,37 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
         <div className={styles.row}>
           <div className={styles.f} style={{ flex: '1 1 100%' }}>
             <label className={styles.label} htmlFor="q39_interventionDetails">
-              Describe interventions performed, patient response, and any complications or changes in condition: *
+              Describe interventions performed and any complications or changes in condition: *
             </label>
             <textarea
               className={styles.textarea}
               id="q39_interventionDetails"
               {...register('q39_interventionDetails')}
               rows={6}
-              placeholder="Provide detailed notes on each intervention, how the patient responded, and any outcomes..."
+              placeholder="Provide detailed notes on each intervention and any outcomes or changes in condition..."
               required
+            />
+          </div>
+        </div>
+
+        {/* Individual's response, split out of the narrative above so it can't
+            be skipped — QEPR SG indicator 4 cited notes that described the
+            intervention but not how the individual responded. Required on
+            rev-2 notes for every program (it was already part of the required
+            narrative, so this adds no new burden); optional when editing a
+            legacy note that predates the field. */}
+        <div className={styles.row}>
+          <div className={styles.f} style={{ flex: '1 1 100%' }}>
+            <label className={styles.label} htmlFor="q39_individualResponse">
+              Individual&apos;s response to interventions/activities (verbal response, behavioral cues, or lack of response):{isRev2Note ? ' *' : ''}
+            </label>
+            <textarea
+              className={styles.textarea}
+              id="q39_individualResponse"
+              {...register('q39_individualResponse')}
+              rows={3}
+              placeholder='How did the individual respond? e.g. "tolerated tube feeding without distress", "smiled and vocalized during range of motion", "no verbal response; remained calm and attentive"...'
+              required={isRev2Note}
             />
           </div>
         </div>
