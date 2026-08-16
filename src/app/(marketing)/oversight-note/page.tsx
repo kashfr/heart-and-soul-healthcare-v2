@@ -119,12 +119,14 @@ export default function OversightNotePage() {
     setValue('q12_credential', 'RN');
   }, [profile, setValue]);
 
-  // Default roster: oversight-model NOW/COMP clients — the people this visit
-  // type exists for. The toggle reveals the full roster for edge cases.
+  // Default roster: every NOW/COMP client. All of them receive monthly RN
+  // oversight; serviceLevel only says whether daily LPN service sits on top,
+  // so it must NOT narrow this list. The toggle reveals other programs
+  // (GAPP and, later, EDWP/ICWP) for edge cases.
   const selectablePatients = useMemo(() => {
     const base = showAllClients
       ? patients
-      : patients.filter((p) => p.serviceLevel === 'rn-oversight');
+      : patients.filter((p) => p.program === 'now-comp');
     return [...base].sort((a, b) => a.name.localeCompare(b.name));
   }, [patients, showAllClients]);
 
@@ -278,7 +280,7 @@ export default function OversightNotePage() {
                   Individual *
                 </label>
                 <select
-                  className={styles.input}
+                  className={styles.select}
                   id="q3_clientName"
                   value={selectedPatientId || ''}
                   onChange={(e) => handleSelectPatient(e.target.value)}
@@ -287,17 +289,27 @@ export default function OversightNotePage() {
                   {selectablePatients.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
-                      {p.serviceLevel === 'rn-oversight' ? '' : '  (not oversight model)'}
+                      {p.program === 'now-comp' ? '' : `  (${p.program ? p.program.toUpperCase() : 'no program set'})`}
                     </option>
                   ))}
                 </select>
-                <label style={{ fontSize: 12, color: '#5c6b7a', display: 'block', marginTop: 4 }}>
+                <label
+                  style={{
+                    fontSize: 12,
+                    color: '#5c6b7a',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    marginTop: 12,
+                  }}
+                >
                   <input
                     type="checkbox"
                     checked={showAllClients}
                     onChange={(e) => setShowAllClients(e.target.checked)}
-                  />{' '}
-                  Show all clients (not only RN-oversight)
+                    style={{ margin: 0 }}
+                  />
+                  Show all clients (including other programs)
                 </label>
               </div>
               <div className={styles.f} style={{ flex: '1 1 35%' }}>
@@ -710,7 +722,6 @@ export default function OversightNotePage() {
                 <div className={styles.signaturePadControls}>
                   <button
                     type="button"
-                    className={styles.navBtn}
                     onClick={() => {
                       sigRef.current?.clear();
                       setValue('q61_signature', '');

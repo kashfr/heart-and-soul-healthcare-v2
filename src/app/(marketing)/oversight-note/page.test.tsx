@@ -67,13 +67,26 @@ describe('OversightNotePage', () => {
     });
   });
 
-  it('defaults the client list to rn-oversight clients only', async () => {
+  it('defaults the client list to every NOW/COMP client regardless of staffing model', async () => {
     render(<OversightNotePage />);
     await waitFor(() => {
       expect(screen.getByRole('option', { name: /Neal Kelly/ })).toBeInTheDocument();
     });
-    expect(screen.queryByRole('option', { name: /Ann Torres/ })).toBeNull();
+    // Every NOW/COMP client receives monthly RN oversight — a daily-LPN
+    // staffing model must not exclude anyone from this list.
+    expect(screen.getByRole('option', { name: /Ann Torres/ })).toBeInTheDocument();
+    // Other programs stay hidden until the toggle is checked.
     expect(screen.queryByRole('option', { name: /Tora Vinson/ })).toBeNull();
+  });
+
+  it('the toggle reveals clients from other programs, labeled with the program', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup();
+    render(<OversightNotePage />);
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: /Neal Kelly/ })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole('checkbox', { name: /Show all clients/i }));
+    expect(screen.getByRole('option', { name: /Tora Vinson\s+\(GAPP\)/ })).toBeInTheDocument();
   });
 
   it('blocks nurses whose credential is not RN', () => {
