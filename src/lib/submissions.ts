@@ -46,6 +46,14 @@ export interface ProgressNoteFormData {
   q11_nurseName: string;
   q12_credential: string;
 
+  // Note metadata (rev 2, Aug 2026 QEPR update). The revision stamp plus the
+  // client's payer program and service level at the time of writing. Absent
+  // on notes authored before rev 2 — noteValidation rules gate on that
+  // absence so old notes are never retroactively flagged incomplete.
+  q1_formRev?: string;
+  q2_program?: string;
+  q2_serviceLevel?: string;
+
   // Page 2: Client Status
   q13_orientationLevel: string;
   q14_behavior: string;
@@ -95,6 +103,12 @@ export interface ProgressNoteFormData {
   // Page 4: Skilled Nursing Interventions
   q38_interventions: string;
   q39_interventionDetails: string;
+  /**
+   * Rev 2 (QEPR SG indicator 4): the individual's response to interventions,
+   * split out of the q39 narrative so it can't be skipped. Distinct from the
+   * legacy q42_patientResponse below, which belonged to a retired revision.
+   */
+  q39_individualResponse?: string;
   q40_skillJustification: string;
   q41_patientEduc: string;
   q42_patientResponse: string;
@@ -120,6 +134,22 @@ export interface ProgressNoteFormData {
   q59_followupDetails: string;
   q60_nextShiftPlan: string;
   q60_endOfShiftNotes: string; // End-of-shift handoff "Additional Notes" — the single Additional Notes field
+
+  // Page 6 (rev 2, Aug 2026 QEPR update): individual choice & preferences.
+  // Shown per program (see programDocRequirements.ts); q42_choicesMade is
+  // required for NOW/COMP clients.
+  q42_choicesMade?: string;
+  q42_choicesOffered?: string;
+  q42_choicesInfoProvided?: string;
+  q42_preferencesHonored?: string;
+
+  // Page 6 (rev 2): RN oversight confirmations — only on an RN's visit to an
+  // rn-oversight NOW/COMP client.
+  q56_ordersReviewed?: string;
+  q56_marReviewed?: string;
+  q56_equipReviewed?: string;
+  q56_apptsReviewed?: string;
+  q56_oversightNotes?: string;
 
   // Page 7: Signature & Completion
   q61_signature: string;
@@ -632,6 +662,13 @@ const SKIP_DIFF_FIELDS = new Set([
   'archivedBy',
   'nurseArchivedAt',
   'nurseArchivedBy',
+  // Rev-2 note metadata (form revision + program stamps). Never clinical
+  // content; excluding them keeps a stamp backfill from ever reading as a
+  // clinical amendment in the audit trail or triggering the edit-reason
+  // prompt on an otherwise no-op edit.
+  'q1_formRev',
+  'q2_program',
+  'q2_serviceLevel',
 ]);
 
 function normalizeForDiff(v: unknown): string {

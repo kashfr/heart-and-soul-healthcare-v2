@@ -1134,10 +1134,11 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         <GroupHeader title="Meds & Interventions" />
 
         {/* 13. Skilled Nursing Interventions (LPN/RN only) */}
-        {isLpnRn && anyHasValue(data, ['q38_interventions', 'q39_interventionDetails', 'q40_skillJustification']) && (
+        {isLpnRn && anyHasValue(data, ['q38_interventions', 'q39_interventionDetails', 'q39_individualResponse', 'q40_skillJustification']) && (
           <SectionBreakable title="Skilled Nursing Interventions">
             {hasValue(data.q38_interventions) && <TextBlock fieldKey="q38_interventions" label="Interventions" value={data.q38_interventions} />}
             {hasValue(data.q39_interventionDetails) && <TextBlock fieldKey="q39_interventionDetails" label="Details" value={data.q39_interventionDetails} />}
+            {hasValue(data.q39_individualResponse) && <TextBlock fieldKey="q39_individualResponse" label="Individual's Response" value={data.q39_individualResponse} />}
             {hasValue(data.q40_skillJustification) && <TextBlock fieldKey="q40_skillJustification" label="Justification" value={data.q40_skillJustification} />}
           </SectionBreakable>
         )}
@@ -1199,6 +1200,27 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
             {hasValue(data.q41_educationMethod) && <Field fieldKey="q41_educationMethod" label="Method" value={data.q41_educationMethod} />}
             {hasValue(data.q41_teachback) && <Field fieldKey="q41_teachback" label="Teach-back" value={data.q41_teachback} />}
             {hasValue(data.q41_educationNotes) && <TextBlock fieldKey="q41_educationNotes" label="Notes" value={data.q41_educationNotes} />}
+          </Section>
+        )}
+
+        {/* 15b. Individual Choice & Preferences (rev 2, QEPR Choice FOA) */}
+        {anyHasValue(data, ['q42_choicesMade', 'q42_choicesOffered', 'q42_choicesInfoProvided', 'q42_preferencesHonored']) && (
+          <Section title="Individual Choice & Preferences">
+            {hasValue(data.q42_choicesMade) && <TextBlock fieldKey="q42_choicesMade" label="Choices Made or Declined" value={data.q42_choicesMade} />}
+            {hasValue(data.q42_choicesOffered) && <TextBlock fieldKey="q42_choicesOffered" label="Choices Offered" value={data.q42_choicesOffered} />}
+            {hasValue(data.q42_choicesInfoProvided) && <TextBlock fieldKey="q42_choicesInfoProvided" label="Healthcare Information Provided" value={data.q42_choicesInfoProvided} />}
+            {hasValue(data.q42_preferencesHonored) && <TextBlock fieldKey="q42_preferencesHonored" label="Preferences Honored" value={data.q42_preferencesHonored} />}
+          </Section>
+        )}
+
+        {/* 15c. RN Oversight Review (rev 2; RN visits to rn-oversight NOW/COMP clients) */}
+        {anyHasValue(data, ['q56_ordersReviewed', 'q56_marReviewed', 'q56_equipReviewed', 'q56_apptsReviewed', 'q56_oversightNotes']) && (
+          <Section title="RN Oversight Review">
+            {hasValue(data.q56_ordersReviewed) && <Field fieldKey="q56_ordersReviewed" label="Physician Orders Reviewed" value={data.q56_ordersReviewed} />}
+            {hasValue(data.q56_marReviewed) && <Field fieldKey="q56_marReviewed" label="MAR Reviewed" value={data.q56_marReviewed} />}
+            {hasValue(data.q56_equipReviewed) && <Field fieldKey="q56_equipReviewed" label="Adaptive Equipment Orders Reviewed" value={data.q56_equipReviewed} />}
+            {hasValue(data.q56_apptsReviewed) && <Field fieldKey="q56_apptsReviewed" label="Medical Appointments Reviewed" value={data.q56_apptsReviewed} />}
+            {hasValue(data.q56_oversightNotes) && <TextBlock fieldKey="q56_oversightNotes" label="Oversight Notes" value={data.q56_oversightNotes} />}
           </Section>
         )}
 

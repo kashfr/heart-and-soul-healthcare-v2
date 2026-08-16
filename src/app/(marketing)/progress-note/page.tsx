@@ -5,6 +5,12 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { Check, AlertTriangle, Loader2 } from 'lucide-react';
 import { getPatients, type Patient } from '@/lib/patients';
+import {
+  getNoteDocRequirements,
+  stripInapplicableQeprFields,
+  QEPR_NARRATIVE_FIELDS,
+  QEPR_OVERSIGHT_RADIOS,
+} from '@/lib/programDocRequirements';
 import { computeAgeString } from '@/lib/age';
 import { findNameCandidates, type RosterPatientLite, type MatchCandidate } from '@/lib/levenshtein';
 import { saveSubmission, getSubmission, updateSubmission, submissionExists, findDuplicateSubmission, computeSubmissionChanges, type ProgressNoteFormData, type DuplicateMatch } from '@/lib/submissions';
@@ -279,6 +285,101 @@ function ProgressNotePageInner() {
     return !!match?.requiresMar;
   }, [watchedClientName, patients]);
 
+  // The selected client's roster record (by linked patientId first, name
+  // fallback like clientRequiresMar). Drives the program-conditional QEPR
+  // sections: a GAPP note must not grow NOW/COMP fields and vice versa.
+  const watchedPatientId = watch('patientId');
+  const rosterClient = useMemo(() => {
+    const pid = String(watchedPatientId || '').trim();
+    if (pid) {
+      const byId = patients.find((p) => p.id === pid);
+      if (byId) return byId;
+    }
+    const typed = normalizeName(String(watchedClientName || ''));
+    if (!typed) return null;
+    return patients.find((p) => normalizeName(p.name) === typed) ?? null;
+  }, [watchedPatientId, watchedClientName, patients]);
+  // Which rulebook governs the QEPR sections. NEW notes follow the live
+  // roster record of the selected client. EDITS follow the note's own stored
+  // stamps: a note keeps the program it was written under even if the client
+  // later moved programs on the roster (e.g. aging out of GAPP into NOW/COMP)
+  // — otherwise reopening an old GAPP note would demand NOW/COMP answers for
+  // a visit that happened under GAPP rules. This mirrors how the RULES layer
+  // in noteValidation.ts gates on the stored q2_program.
+  const storedProgram = watch('q2_program');
+  const storedServiceLevel = watch('q2_serviceLevel');
+  const docReqs = useMemo(
+    () => getNoteDocRequirements(isEditMode ? storedProgram : rosterClient?.program),
+    [isEditMode, storedProgram, rosterClient],
+  );
+  const isRnOversightClient = isEditMode
+    ? storedServiceLevel === 'rn-oversight'
+    : rosterClient?.serviceLevel === 'rn-oversight';
+  // Whether this note's RN-oversight section is in play right now — used to
+  // strip any stale q56 answers from the submit payload below.
+  const oversightApplicable =
+    docReqs.rnOversight !== 'hidden' && credential === 'RN' && isRnOversightClient;
+
+  // Stamp NEW notes with the form revision and the client's program/service
+  // level so (a) noteValidation rules can gate on them, (b) drafts and the
+  // admin views know which rulebook the note was written under. NEVER in
+  // edit mode: an edit must not rewrite the note's history — a pre-QEPR note
+  // (no stamp) stays unstamped so it is never retroactively flagged, and a
+  // rev-2 note keeps the program it was written under (see docReqs above).
+  useEffect(() => {
+    if (!isEditMode) setValue('q1_formRev', '2');
+  }, [isEditMode, setValue]);
+  useEffect(() => {
+    if (isEditMode) return;
+    setValue('q2_program', rosterClient?.program || '');
+    setValue('q2_serviceLevel', rosterClient?.serviceLevel || '');
+  }, [rosterClient, isEditMode, setValue]);
+
+  // When the nurse switches the note to a DIFFERENT client mid-note, clear
+  // the QEPR narrative fields: they describe the previous client's choices
+  // and oversight review, and RHF/the radio store would otherwise carry them
+  // silently onto the new client's chart (worst case: a NOW/COMP client's
+  // narrative submitted inside a GAPP note whose sections aren't even
+  // rendered). First selection (prev = null) doesn't clear; edit mode never
+  // clears (the client on an existing note doesn't change).
+  const prevClientKeyRef = useRef<string | null>(null);
+  // Set by hydrateFromDraft: the first roster resolution after a draft resume
+  // is the draft's OWN client re-appearing, not a switch — it must not trip
+  // the has-content clear below even though prev is null at that moment.
+  const skipFirstSelectionClearRef = useRef(false);
+  useEffect(() => {
+    if (isEditMode) return;
+    const key = rosterClient ? rosterClient.id || normalizeName(rosterClient.name) : null;
+    // Transient null while a new name is being typed (patientId clears on the
+    // first keystroke, and a partial name matches nobody). Keep the remembered
+    // identity through the gap — nulling it here would make every real A->B
+    // switch look like a first selection and the clear below would never run.
+    if (!key) return;
+    const prev = prevClientKeyRef.current;
+    prevClientKeyRef.current = key;
+    if (prev === key) return;
+    if (!prev) {
+      if (skipFirstSelectionClearRef.current) {
+        skipFirstSelectionClearRef.current = false;
+        return;
+      }
+      // First roster resolution with no remembered identity. On a brand-new
+      // note nothing is filled in yet, so there is nothing to clear — but if
+      // QEPR narrative/answers already exist they were written under a
+      // free-text identity (or a resumed draft whose client is no longer on
+      // the roster) and must not silently attach to this roster client.
+      const vals = getValues();
+      const hasQeprContent =
+        QEPR_NARRATIVE_FIELDS.some((f) => String(vals[f] || '').trim() !== '') ||
+        String(vals.q56_oversightNotes || '').trim() !== '' ||
+        QEPR_OVERSIGHT_RADIOS.some((r) => !!radioState[r]);
+      if (!hasQeprContent) return;
+    }
+    for (const f of QEPR_NARRATIVE_FIELDS) setValue(f, '');
+    setValue('q56_oversightNotes', '');
+    for (const r of QEPR_OVERSIGHT_RADIOS) setRadio(r, '');
+  }, [rosterClient, isEditMode, setValue, getValues]);
+
   // One-time scrub of the legacy localStorage draft layer. It used to silently
   // rehydrate a previous session's note (unscoped to the signed-in user — a
   // cross-account PHI hazard on shared browsers). Clearing here purges stale
@@ -449,13 +550,32 @@ function ProgressNotePageInner() {
   useEffect(() => {
     if (isEditMode) return;
     clearMarAdmin();
+    // The DeselectableRadio store is the same class of module-level singleton:
+    // radios answered on a previously viewed note (including an abandoned
+    // ?edit= session reached by client-side navigation) would otherwise show
+    // up pre-checked on a fresh note and merge into its submission. A resumed
+    // draft re-seeds after its own clear in hydrateFromDraft.
+    clearRadioStorage();
     return () => clearMarAdmin();
   }, [isEditMode]);
 
   // Apply a loaded Firestore draft into the form (RHF + radios + checkboxes + page).
   const hydrateFromDraft = useCallback((draft: NoteDraft) => {
     prefillDoneRef.current = true; // resumed draft wins over any ?patient= deep link
+    // A ?patient= deep link may have prefilled a DIFFERENT client while the
+    // resume banner was pending. Forget that identity before restoring the
+    // draft, or the restore would read as a client switch and the clear
+    // effect would wipe the draft's own choice/oversight answers. The skip
+    // latch covers the has-content first-selection clear for the same reason:
+    // the draft's client re-resolving is not a switch.
+    prevClientKeyRef.current = null;
+    skipFirstSelectionClearRef.current = true;
     reset(draft.formValues as FormValues);
+    // reset() replaces the whole RHF store, which erases the q1_formRev='2'
+    // stamp the mount effect wrote (drafts saved before the QEPR update have
+    // no stamp in formValues, and the mount effect never re-runs). A draft is
+    // by definition a NEW note being finished on today's form, so re-stamp.
+    setValue('q1_formRev', '2');
     // Carry the draft's reserved submission id so a resume-then-submit
     // (or a retry after reload) overwrites the same note rather than
     // duplicating. Drafts written before this field fall back to '' and
@@ -702,6 +822,11 @@ function ProgressNotePageInner() {
 
     const loadEditData = async () => {
       try {
+        // Scrub radios left resident from a previously viewed note in this
+        // SPA session BEFORE the fetch, so the edit form never paints another
+        // note's answers pre-checked while this note loads. The post-load
+        // seeding below repopulates from this note's own stored values.
+        clearRadioStorage();
         const data = await getSubmission(editId);
         if (!data) {
           alert('Submission not found.');
@@ -743,11 +868,28 @@ function ProgressNotePageInner() {
         setTimeout(() => {
           if (!formRef.current) return;
 
+          // Replace the radio singleton, never union onto it: radios left
+          // resident from a previously viewed note in this SPA session would
+          // otherwise merge into THIS note's payload at save (the same
+          // cross-note leak class fixed for drafts and the MAR store).
+          clearRadioStorage();
+
           // Set radio buttons via global store
           for (const [key, value] of Object.entries(rawData)) {
             if (!value || key === 'submittedAt' || key === 'lastUpdatedAt' || key === 'status') continue;
             const radioEl = formRef.current?.querySelector(`input[type="radio"][name="${key}"]`);
             if (radioEl) setRadio(key, value);
+          }
+
+          // The RN-oversight radios render only after the note's stored
+          // q2_program/q2_serviceLevel stamps flow through docReqs, so they
+          // may not be in the DOM yet when this timer fires — seed their
+          // stored answers into the radio store by key instead of by DOM
+          // presence, or the section would come up unchecked (and the mirror
+          // effect would then blank the stored values on the first click).
+          for (const key of QEPR_OVERSIGHT_RADIOS) {
+            const value = rawData[key];
+            if (typeof value === 'string' && value) setRadio(key, value);
           }
 
           // Set checkboxes from comma-separated values
@@ -1492,6 +1634,17 @@ function ProgressNotePageInner() {
         values[name] = vals.join(', ');
       }
 
+      if (!isEditMode) {
+        // Guarantee the rev stamp on every new note (a resumed pre-QEPR draft
+        // can reach here without one), then drop any QEPR answers whose
+        // sections don't apply to THIS note — RHF and the radio store retain
+        // values after a mid-note client or credential switch unmounts their
+        // sections, and without this a previous client's choice/oversight
+        // narrative would ride along into the wrong chart.
+        values.q1_formRev = '2';
+        stripInapplicableQeprFields(values, docReqs, oversightApplicable);
+      }
+
       const submission = values;
 
       if (isEditMode && editId) {
@@ -2109,7 +2262,7 @@ function ProgressNotePageInner() {
         <div style={pageStyle(3)}><FormPageThree formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} clientHasFeedingTube={clientHasFeedingTube} giExpandSignal={giExpandSignal} errors={errors} /></div>
         <div style={pageStyle(4)}><FormPageFour formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} editMode={isEditMode} errors={errors} /></div>
         <div style={pageStyle(5)}><FormPageFive formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} isEditMode={isEditMode} clientRequiresMar={clientRequiresMar} documenter={user && profile ? { uid: user.uid, name: profile.displayName || user.email || '', credential: profile.credential || '' } : undefined} getNoteId={ensureSubmissionId} /></div>
-        <div style={pageStyle(6)}><FormPageSix formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} errors={errors} /></div>
+        <div style={pageStyle(6)}><FormPageSix formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} isEditMode={isEditMode} docReqs={docReqs} isRnOversightClient={isRnOversightClient} errors={errors} /></div>
         <div style={pageStyle(7)}><FormPageSeven formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} initialSignature={initialSignature} initialTotalHours={initialTotalHours} /></div>
 
         <div className={styles.navigationControls}>
