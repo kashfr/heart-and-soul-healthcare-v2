@@ -13,12 +13,24 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { getPatients, type Patient } from '@/lib/patients';
 import { computeAgeString } from '@/lib/age';
 import { formatDateUS } from '@/lib/dateFormat';
-import { saveSubmission, findDuplicateSubmission, type ProgressNoteFormData } from '@/lib/submissions';
+import {
+  saveSubmission,
+  updateSubmission,
+  getSubmission,
+  findDuplicateSubmission,
+  type ProgressNoteFormData,
+} from '@/lib/submissions';
+import {
+  saveOversightDraft,
+  loadOversightDraft,
+  clearOversightDraft,
+  type OversightDraft,
+} from '@/lib/drafts';
 import {
   OVERSIGHT_NOTE_TYPE,
   OVERSIGHT_APPT_ROWS,
@@ -26,13 +38,31 @@ import {
   getOversightIncomplete,
 } from '@/lib/oversightNote';
 import { useAuth } from '@/components/AuthProvider';
+import { authedFetch } from '@/lib/authedFetch';
 import SignatureCanvas, { type SignatureCanvasHandle } from '@/components/SignatureCanvas';
 import DeselectableRadio, {
   radioState,
+  setRadio,
   clearRadioStorage,
 } from '../progress-note/components/DeselectableRadio';
 import type { FormValues } from '../progress-note/types';
 import styles from '../progress-note/page.module.css';
+
+/**
+ * Whether `optionValue` is present in a comma-joined "a, b, c" string, without
+ * splitting — several education-topic values contain ", " themselves (e.g.
+ * "Maintaining personal health (diet, exercise, self-management)"), and a naive
+ * split shatters them so they silently fail to re-check on an amend.
+ */
+function joinedValueIncludes(joined: string, optionValue: string): boolean {
+  if (!joined || !optionValue) return false;
+  return (
+    joined === optionValue ||
+    joined.startsWith(optionValue + ', ') ||
+    joined.endsWith(', ' + optionValue) ||
+    joined.includes(', ' + optionValue + ', ')
+  );
+}
 
 /** Radio row rendered from an option list; the wrapper id is the rule key so
  *  the required-field scroll can find radio groups as well as inputs. */
@@ -88,6 +118,9 @@ function Area({
 
 export default function OversightNotePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const editId = searchParams.get('edit');
+  const isEditMode = !!editId;
   const { user, profile, role } = useAuth();
   const formRef = useRef<HTMLFormElement>(null!);
   const sigRef = useRef<SignatureCanvasHandle>(null);
@@ -102,6 +135,13 @@ export default function OversightNotePage() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [showAllClients, setShowAllClients] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [editLoaded, setEditLoaded] = useState(false);
+  const [pendingDraft, setPendingDraft] = useState<OversightDraft | null>(null);
+  const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null);
+  const [showEditReason, setShowEditReason] = useState(false);
+  const [initialSignature, setInitialSignature] = useState('');
+  const editReasonRef = useRef('');
+  const hydratedRef = useRef(false);
   const isNurse = role === 'nurse';
 
   // Fresh form: the radio store is a module-level singleton shared with the
@@ -119,10 +159,11 @@ export default function OversightNotePage() {
   // Prefill the RN identity like the shift note does. The credential is fixed:
   // this document type IS an RN oversight note.
   useEffect(() => {
-    if (!profile) return;
+    // Never in edit mode: the note keeps the RN who documented the visit.
+    if (isEditMode || !profile) return;
     if (profile.displayName) setValue('q11_nurseName', profile.displayName);
     setValue('q12_credential', 'RN');
-  }, [profile, setValue]);
+  }, [isEditMode, profile, setValue]);
 
   // Default roster: every NOW/COMP client. All of them receive monthly RN
   // oversight; serviceLevel only says whether daily LPN service sits on top,
@@ -149,6 +190,173 @@ export default function OversightNotePage() {
     },
     [patients, setValue],
   );
+
+  /** Apply a stored flat record (draft or submitted note) into all three stores. */
+  const hydrate = useCallback(
+    (flat: Record<string, unknown>, radios?: Record<string, string>, boxes?: Record<string, string[]>) => {
+      const radioKeys = new Set<string>(OVERSIGHT_RADIO_KEYS);
+      for (const [k, v] of Object.entries(flat)) {
+        if (v == null) continue;
+        // Radio answers live in the radio store only. An RHF mirror would be
+        // re-merged at submit and would resurrect an answer the nurse just
+        // deselected during the amend.
+        if (radioKeys.has(k)) continue;
+        if (typeof v === 'string') setValue(k, v);
+      }
+      if (typeof flat.q61_signature === 'string' && flat.q61_signature) {
+        setInitialSignature(flat.q61_signature);
+      }
+      clearRadioStorage();
+      const radioSource =
+        radios ??
+        Object.fromEntries(
+          OVERSIGHT_RADIO_KEYS.filter((k) => typeof flat[k] === 'string' && flat[k]).map((k) => [
+            k,
+            String(flat[k]),
+          ]),
+        );
+      for (const [k, v] of Object.entries(radioSource)) if (v) setRadio(k, v);
+      // Checkboxes are DOM-owned; apply after paint.
+      setTimeout(() => {
+        const form = formRef.current;
+        if (!form) return;
+        const boxNames = ['ov_educationTopics', 'ov_educationRecipients', 'ov_communication'];
+        for (const name of boxNames) {
+          // A resumed draft carries arrays; a stored note carries the joined
+          // string. Match without splitting either way.
+          const arr = boxes?.[name];
+          const joined = typeof flat[name] === 'string' ? String(flat[name]) : '';
+          if (!arr && !joined) continue;
+          form
+            .querySelectorAll<HTMLInputElement>(`input[type="checkbox"][name="${name}"]`)
+            .forEach((cb) => {
+              cb.checked = arr ? arr.includes(cb.value) : joinedValueIncludes(joined, cb.value);
+            });
+        }
+      }, 0);
+    },
+    [setValue],
+  );
+
+  // Edit mode: load the submitted note. Guard the document type so a shift
+  // note opened here can never be saved through the oversight rules.
+  useEffect(() => {
+    if (!isEditMode || !editId || hydratedRef.current) return;
+    hydratedRef.current = true;
+    draftLookupDoneRef.current = true; // no draft layer in edit mode
+    (async () => {
+      try {
+        const data = await getSubmission(editId);
+        if (!data) {
+          alert('Note not found.');
+          router.push('/admin/submissions');
+          return;
+        }
+        const flat = data as unknown as Record<string, unknown>;
+        if (flat.noteType !== OVERSIGHT_NOTE_TYPE) {
+          alert('That note is a shift progress note; open it from the progress note form.');
+          router.push(`/admin/submissions/${editId}`);
+          return;
+        }
+        hydrate(flat);
+        setEditLoaded(true);
+      } catch (err) {
+        console.error('Failed to load oversight note for editing:', err);
+        alert('The note could not be loaded.');
+      }
+    })();
+  }, [isEditMode, editId, hydrate, router]);
+
+  // New note: offer to resume an autosaved draft (never in edit mode).
+  useEffect(() => {
+    if (isEditMode || !user?.uid || hydratedRef.current) return;
+    loadOversightDraft(user.uid)
+      .then((d) => {
+        if (d && Object.keys(d.formValues || {}).length > 0) setPendingDraft(d);
+      })
+      .catch((err) => console.warn('Oversight draft lookup failed:', err))
+      // Autosave stays parked until this resolves either way — otherwise it
+      // could overwrite the stored draft with a blank form.
+      .finally(() => {
+        draftLookupDoneRef.current = true;
+      });
+  }, [isEditMode, user?.uid]);
+
+  const resumeDraft = useCallback(() => {
+    if (!pendingDraft) return;
+    hydratedRef.current = true;
+    hydrate(pendingDraft.formValues, pendingDraft.radioState, pendingDraft.checkboxState);
+    if (pendingDraft.submissionId) submissionIdRef.current = pendingDraft.submissionId;
+    setPendingDraft(null);
+  }, [pendingDraft, hydrate]);
+
+  const discardDraft = useCallback(() => {
+    setPendingDraft(null);
+    if (user?.uid) void clearOversightDraft(user.uid);
+  }, [user?.uid]);
+
+  // Autosave. Driven by RHF's change SUBSCRIPTION, never by render identity:
+  // no-arg watch() returns a fresh object every render, so using it as an
+  // effect dependency (with setDraftSavedAt re-rendering on success) produced
+  // a self-sustaining save loop that wrote to Firestore every 2.5s forever.
+  // Mutable gates live in refs so this effect's deps stay stable.
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasSubmittedRef = useRef(false);
+  const draftLookupDoneRef = useRef(false);
+  const pendingDraftRef = useRef(false);
+  useEffect(() => {
+    pendingDraftRef.current = !!pendingDraft;
+  }, [pendingDraft]);
+
+  const scheduleAutosave = useCallback(() => {
+    if (isEditMode || !user?.uid) return;
+    // Never before the stored-draft lookup resolves (we'd overwrite it with a
+    // blank form), never after submit (we'd resurrect the note we just
+    // filed), and never while the resume banner is still a live question.
+    if (!draftLookupDoneRef.current || pendingDraftRef.current || hasSubmittedRef.current) return;
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => {
+      if (hasSubmittedRef.current) return;
+      const values = getValues();
+      const filled = Object.entries(values).filter(
+        ([, v]) => typeof v === 'string' && v.trim() !== '',
+      );
+      // Identity-only prefill (name + credential) isn't worth a draft.
+      if (filled.length <= 2) return;
+      const form = formRef.current;
+      const checkboxState: Record<string, string[]> = {};
+      form?.querySelectorAll<HTMLInputElement>('input[type="checkbox"][name]').forEach((cb) => {
+        if (!checkboxState[cb.name]) checkboxState[cb.name] = [];
+        if (cb.checked) checkboxState[cb.name].push(cb.value);
+      });
+      void saveOversightDraft(user.uid, {
+        clientName: String(values.q3_clientName || ''),
+        dateOfService: String(values.q6_dateofService || ''),
+        submissionId: submissionIdRef.current || undefined,
+        formValues: values,
+        // Only this form's radios: the store is shared with the shift note.
+        radioState: Object.fromEntries(
+          OVERSIGHT_RADIO_KEYS.filter((k) => radioState[k]).map((k) => [k, radioState[k]]),
+        ),
+        checkboxState,
+      })
+        .then(() => setDraftSavedAt(new Date()))
+        .catch((err) => console.warn('Oversight draft autosave failed:', err));
+    }, 2500);
+  }, [isEditMode, user?.uid, getValues]);
+
+  useEffect(() => {
+    if (isEditMode) return;
+    const sub = watch(() => scheduleAutosave());
+    return () => sub.unsubscribe();
+  }, [watch, isEditMode, scheduleAutosave]);
+
+  // A pending debounced save must not outlive the page.
+  useEffect(() => {
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    };
+  }, []);
 
   // A nurse whose profile credential isn't RN cannot author an oversight
   // note; admins/supervisors can (they attest with their own signature).
@@ -211,8 +419,51 @@ export default function OversightNotePage() {
       return;
     }
 
+    if (isEditMode && editId) {
+      // An edit needs a reason for the audit trail, same as the shift note.
+      if (!editReasonRef.current.trim()) {
+        setShowEditReason(true);
+        return;
+      }
+      try {
+        setSubmitting(true);
+        if (!user || !role) throw new Error('You must be signed in to update a note.');
+        await updateSubmission(
+          editId,
+          values as unknown as Partial<ProgressNoteFormData>,
+          {
+            uid: user.uid,
+            displayName: profile?.displayName ?? user.displayName ?? user.email,
+            role,
+          },
+          editReasonRef.current.trim(),
+        );
+        editReasonRef.current = '';
+        // Tell the corrections workflow an amendment landed, exactly as the
+        // shift form does; without this a note blocking its author stays
+        // blocked. Non-fatal: an unblocked note answers 409.
+        try {
+          await authedFetch(`/api/admin/submissions/${editId}/amended`, { method: 'POST' });
+        } catch (err) {
+          console.warn('Correction-amended event failed (non-fatal):', err);
+        }
+        clearRadioStorage();
+        alert('Oversight note updated.');
+        window.location.href = `/admin/submissions/${editId}`;
+      } catch (err) {
+        console.error('Oversight note update failed:', err);
+        alert('The note could not be updated. Please check your connection and try again.');
+        setSubmitting(false);
+      }
+      return;
+    }
+
     try {
       setSubmitting(true);
+      // Stop autosave for good: a timer armed moments ago would otherwise
+      // fire after the draft is cleared and resurrect the filed note.
+      hasSubmittedRef.current = true;
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
 
       // One note per oversight visit: warn when this nurse already filed an
       // oversight note for this client and date (retries of THIS submission
@@ -228,6 +479,7 @@ export default function OversightNotePage() {
       });
       if (dup) {
         setSubmitting(false);
+        hasSubmittedRef.current = false; // she stays on the form; keep saving
         alert(
           `An oversight note for ${values.q3_clientName} on this date already exists. ` +
             'Open it from Submissions instead of filing a second note. If this is intentional ' +
@@ -241,12 +493,14 @@ export default function OversightNotePage() {
         submissionId: submissionIdRef.current || undefined,
       });
       clearRadioStorage();
+      if (user?.uid) await clearOversightDraft(user.uid).catch(() => {});
       const c = encodeURIComponent(String(values.q3_clientName || ''));
       const d = encodeURIComponent(String(values.q6_dateofService || ''));
       router.push(`/progress-note/submitted/${docId}?c=${c}&d=${d}&t=oversight`);
     } catch (err) {
       console.error('Oversight note submit failed:', err);
       alert('The note could not be submitted. Please check your connection and try again.');
+      hasSubmittedRef.current = false; // failed: resume protecting her work
       setSubmitting(false);
     }
   };
@@ -267,13 +521,58 @@ export default function OversightNotePage() {
   return (
     <div className={`${styles.container} ${styles.wrap}`}>
       <h1 style={{ textAlign: 'center', fontSize: 22, marginBottom: 2 }}>
-        RN Oversight Visit Note
+        RN Oversight Visit Note{isEditMode ? ' — Amend' : ''}
       </h1>
       <p style={{ textAlign: 'center', color: '#5c6b7a', fontSize: 13, marginTop: 0 }}>
         NOW/COMP nursing services, RN oversight model. One note per oversight visit.
       </p>
 
-      <form ref={formRef} onSubmit={handleSubmit} className={styles.form} noValidate>
+      {isEditMode && !editLoaded && (
+        <p style={{ textAlign: 'center', color: '#5c6b7a', fontSize: 13 }}>Loading the note…</p>
+      )}
+
+      {pendingDraft && (
+        <div
+          style={{
+            background: '#fff8e1',
+            border: '1px solid #ffe0a3',
+            borderRadius: 8,
+            padding: '12px 16px',
+            margin: '0 0 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            flexWrap: 'wrap',
+          }}
+        >
+          <span style={{ fontSize: 14, color: '#7c3a00', flex: '1 1 260px' }}>
+            You have an unfinished oversight note
+            {pendingDraft.clientName ? ` for ${pendingDraft.clientName}` : ''}
+            {pendingDraft.updatedAt ? `, last saved ${pendingDraft.updatedAt.toLocaleString()}` : ''}.
+          </span>
+          <button type="button" className={styles.navBtn} onClick={resumeDraft}>
+            Resume draft
+          </button>
+          <button type="button" className={styles.navBtn} onClick={discardDraft}>
+            Start fresh
+          </button>
+        </div>
+      )}
+
+      {!isEditMode && draftSavedAt && !pendingDraft && (
+        <p style={{ textAlign: 'center', color: '#7f8c8d', fontSize: 12, marginTop: 0 }}>
+          Draft saved {draftSavedAt.toLocaleTimeString()}
+        </p>
+      )}
+
+      <form
+        ref={formRef}
+        onSubmit={handleSubmit}
+        className={styles.form}
+        noValidate
+        // Typing before the note lands would be overwritten by hydrate().
+        style={isEditMode && !editLoaded ? { opacity: 0.5, pointerEvents: 'none' } : undefined}
+      >
         <div>
           {/* CLIENT & VISIT */}
           <div className={styles.section}>
@@ -733,6 +1032,7 @@ export default function OversightNotePage() {
                 <SignatureCanvas
                   ref={sigRef}
                   className={styles.signaturePad}
+                  initialSignature={initialSignature}
                   onChange={(dataUrl) => setValue('q61_signature', dataUrl)}
                 />
                 <div className={styles.signaturePadControls}>
@@ -757,12 +1057,67 @@ export default function OversightNotePage() {
           )}
 
           <div className={styles.navigationControls}>
-            <button type="submit" className={styles.submitBtn} disabled={submitting}>
-              {submitting ? 'Submitting…' : 'Submit Oversight Note'}
+            <button
+              type="submit"
+              className={styles.submitBtn}
+              disabled={submitting || (isEditMode && !editLoaded)}
+            >
+              {submitting
+                ? isEditMode
+                  ? 'Updating…'
+                  : 'Submitting…'
+                : isEditMode
+                  ? 'Update Oversight Note'
+                  : 'Submit Oversight Note'}
             </button>
           </div>
         </div>
       </form>
+
+      {showEditReason && (
+        <div className={`${styles.confirmModal} ${styles.active}`}>
+          <div className={styles.modalContent}>
+            <h2 style={{ color: '#7c3a00', marginTop: 0 }}>Why is this note being amended?</h2>
+            <p style={{ color: '#555', lineHeight: 1.6 }}>
+              The reason is recorded in the note&apos;s audit history alongside what changed.
+            </p>
+            <textarea
+              className={styles.textarea}
+              rows={3}
+              placeholder="e.g. corrected the visit time; added the physician's response"
+              onChange={(e) => {
+                editReasonRef.current = e.target.value;
+              }}
+            />
+            <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+              <button
+                type="button"
+                className={styles.submitBtn}
+                onClick={() => {
+                  if (!editReasonRef.current.trim()) {
+                    alert('Please enter a reason for the amendment.');
+                    return;
+                  }
+                  setShowEditReason(false);
+                  formRef.current?.requestSubmit();
+                }}
+              >
+                Save amendment
+              </button>
+              <button
+                type="button"
+                className={styles.navBtn}
+                onClick={() => {
+                  editReasonRef.current = '';
+                  setShowEditReason(false);
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

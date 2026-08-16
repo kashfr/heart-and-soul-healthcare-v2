@@ -425,18 +425,17 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             &larr; Back to Submissions
           </Link>
           <div style={{ display: 'flex', gap: 10 }}>
-            {canEdit && data.noteType !== 'rn-oversight-visit' && (
-              <Link href={`/progress-note?edit=${id}`} style={editBtnStyle}>
-                Amend
-              </Link>
-            )}
-            {canEdit && data.noteType === 'rn-oversight-visit' && (
-              <span
-                style={{ ...editBtnStyle, opacity: 0.5, cursor: 'not-allowed' }}
-                title="Editing oversight notes in-app is coming; contact the administrator for an amendment."
+            {canEdit && (
+              <Link
+                href={
+                  data.noteType === 'rn-oversight-visit'
+                    ? `/oversight-note?edit=${id}`
+                    : `/progress-note?edit=${id}`
+                }
+                style={editBtnStyle}
               >
                 Amend
-              </span>
+              </Link>
             )}
             <button
               onClick={handleDownloadPdf}

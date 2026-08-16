@@ -8,6 +8,7 @@
 
 import {
   doc,
+  updateDoc,
   collection,
   query,
   where,
@@ -80,21 +81,98 @@ const draftRef = (uid: string) => doc(db, 'noteDrafts', uid);
 /**
  * Upsert the draft keyed by uid. createdAt is only written on first save.
  */
+/**
+ * The RN oversight visit note's draft. Stored as a nested field on the SAME
+ * noteDrafts/{uid} document as the shift-note draft, because the security
+ * rules require the draft doc id to equal the author's uid (so a second doc
+ * or collection is impossible without a rules deploy, and Cloud Build ships
+ * only the app). Nesting keeps a nurse's shift draft and oversight draft
+ * alive at the same time.
+ */
+export interface OversightDraft {
+  clientName: string;
+  dateOfService: string;
+  submissionId?: string;
+  formValues: Record<string, unknown>;
+  radioState: Record<string, string>;
+  checkboxState: Record<string, string[]>;
+  updatedAt: Date | null;
+}
+
+/**
+ * True when a draft document still holds SHIFT-note content. A doc that only
+ * carries an `oversight` field (the shift draft was submitted, its oversight
+ * sibling survives) must not surface as a phantom shift draft in the resume
+ * banner or the admin In-Progress list.
+ */
+function hasShiftContent(data: Record<string, unknown>): boolean {
+  const fv = (data.formValues || {}) as Record<string, unknown>;
+  return Object.keys(fv).length > 0 || String(data.clientName || '').trim() !== '';
+}
+
+export async function saveOversightDraft(
+  uid: string,
+  payload: Omit<OversightDraft, 'updatedAt'>,
+): Promise<void> {
+  const value = { ...payload, updatedAt: serverTimestamp() };
+  try {
+    // updateDoc REPLACES the `oversight` value wholesale. setDoc(merge:true)
+    // would deep-merge it, so a key the nurse cleared (a deselected radio, a
+    // blanked field) would survive in Firestore and come back on resume.
+    // Shift-note fields are untouched either way.
+    await updateDoc(draftRef(uid), { nurseId: uid, oversight: value });
+  } catch {
+    // No draft document yet: create it. Nothing to preserve, so merge is safe.
+    await setDoc(draftRef(uid), { nurseId: uid, oversight: value }, { merge: true });
+  }
+}
+
+export async function loadOversightDraft(uid: string): Promise<OversightDraft | null> {
+  const snap = await getDoc(draftRef(uid));
+  if (!snap.exists()) return null;
+  const raw = snap.data().oversight as Record<string, unknown> | undefined;
+  if (!raw) return null;
+  const updatedAt = raw.updatedAt as Timestamp | null | undefined;
+  return {
+    clientName: String(raw.clientName || ''),
+    dateOfService: String(raw.dateOfService || ''),
+    submissionId: raw.submissionId ? String(raw.submissionId) : undefined,
+    formValues: (raw.formValues || {}) as Record<string, unknown>,
+    radioState: (raw.radioState || {}) as Record<string, string>,
+    checkboxState: (raw.checkboxState || {}) as Record<string, string[]>,
+    updatedAt: updatedAt ? updatedAt.toDate() : null,
+  };
+}
+
+/** Drop the oversight sub-draft, leaving any shift draft on the doc intact. */
+export async function clearOversightDraft(uid: string): Promise<void> {
+  const snap = await getDoc(draftRef(uid));
+  if (!snap.exists()) return;
+  await setDoc(draftRef(uid), { oversight: deleteField() }, { merge: true });
+}
+
 export async function saveDraft(payload: NoteDraftPayload): Promise<void> {
   const ref = draftRef(payload.nurseId);
   const existing = await getDoc(ref);
-  if (existing.exists()) {
+  // A doc can survive with only {nurseId} or an oversight sub-draft on it, so
+  // "does the doc exist" is not "has a shift draft" — check for real content
+  // or createdAt would never be stamped again after the first submit.
+  if (existing.exists() && hasShiftContent(existing.data())) {
     await setDoc(
       ref,
       { ...payload, updatedAt: serverTimestamp() },
       { merge: true }
     );
   } else {
-    await setDoc(ref, {
-      ...payload,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+    // merge:true is essential — a bare setDoc replaces the whole document and
+    // would delete the sibling `oversight` sub-draft, which is exactly what
+    // sits here when a nurse starts a shift note while holding an oversight
+    // draft (or after a submit left a {nurseId} husk).
+    await setDoc(
+      ref,
+      { ...payload, createdAt: serverTimestamp(), updatedAt: serverTimestamp() },
+      { merge: true },
+    );
   }
 }
 
@@ -142,6 +220,7 @@ function mapDraftDoc(id: string, data: Record<string, unknown>): NoteDraft {
 export async function loadDraft(uid: string): Promise<NoteDraft | null> {
   const snap = await getDoc(draftRef(uid));
   if (!snap.exists()) return null;
+  if (!hasShiftContent(snap.data())) return null; // oversight-only doc
   return mapDraftDoc(snap.id, snap.data());
 }
 
@@ -152,7 +231,9 @@ export async function loadDraft(uid: string): Promise<NoteDraft | null> {
  */
 export async function listDrafts(): Promise<NoteDraft[]> {
   const snap = await getDocs(collection(db, 'noteDrafts'));
-  const drafts = snap.docs.map((d) => mapDraftDoc(d.id, d.data()));
+  const drafts = snap.docs
+    .filter((d) => hasShiftContent(d.data()))
+    .map((d) => mapDraftDoc(d.id, d.data()));
   drafts.sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0));
   return drafts;
 }
@@ -170,7 +251,9 @@ export function subscribeDrafts(
   return onSnapshot(
     collection(db, 'noteDrafts'),
     (snap) => {
-      const drafts = snap.docs.map((d) => mapDraftDoc(d.id, d.data()));
+      const drafts = snap.docs
+        .filter((d) => hasShiftContent(d.data()))
+        .map((d) => mapDraftDoc(d.id, d.data()));
       drafts.sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0));
       cb(drafts);
     },
@@ -181,8 +264,33 @@ export function subscribeDrafts(
   );
 }
 
+/** Every shift-note field on a draft doc. Deleted field-by-field so the
+ *  sibling `oversight` sub-draft is never read, rewritten, or clobbered. */
+const SHIFT_DRAFT_FIELDS = [
+  'nurseName',
+  'clientName',
+  'dateOfService',
+  'currentPage',
+  'formValues',
+  'radioState',
+  'checkboxState',
+  'marAdminState',
+  'submissionId',
+  'dupRequest',
+  'createdAt',
+  'updatedAt',
+] as const;
+
 export async function deleteDraft(uid: string): Promise<void> {
-  await deleteDoc(draftRef(uid));
+  // ONE atomic write, no read: a read-then-overwrite would clobber an
+  // oversight sub-draft saved from another tab between the two round trips
+  // (the two drafts share this document because the rules key its id to the
+  // uid). Deleting the shift fields leaves at most a {nurseId} husk, which
+  // hasShiftContent() filters out of the resume banner and the admin list.
+  // nurseId is re-sent because the security rule requires it on every write.
+  const clear: Record<string, unknown> = { nurseId: uid };
+  for (const k of SHIFT_DRAFT_FIELDS) clear[k] = deleteField();
+  await setDoc(draftRef(uid), clear, { merge: true });
 }
 
 /** Remove the duplicate request from a draft (e.g. the nurse changed client/date). */
