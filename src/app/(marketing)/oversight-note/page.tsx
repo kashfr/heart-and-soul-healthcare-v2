@@ -16,7 +16,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { getPatients, type Patient } from '@/lib/patients';
-import { saveSubmission, type ProgressNoteFormData } from '@/lib/submissions';
+import { computeAgeString } from '@/lib/age';
+import { saveSubmission, findDuplicateSubmission, type ProgressNoteFormData } from '@/lib/submissions';
 import {
   OVERSIGHT_NOTE_TYPE,
   OVERSIGHT_APPT_ROWS,
@@ -85,6 +86,12 @@ export default function OversightNotePage() {
   const { user, profile, role } = useAuth();
   const formRef = useRef<HTMLFormElement>(null!);
   const sigRef = useRef<SignatureCanvasHandle>(null);
+  // Stable id for this form session: a retry after a network failure
+  // overwrites the same document instead of duplicating the note.
+  const submissionIdRef = useRef('');
+  if (!submissionIdRef.current && typeof crypto !== 'undefined') {
+    submissionIdRef.current = crypto.randomUUID();
+  }
   const { register, watch, setValue, getValues } = useForm<FormValues>();
 
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -128,6 +135,7 @@ export default function OversightNotePage() {
       setValue('patientId', id);
       setValue('q3_clientName', p?.name || '');
       setValue('q4_dateofBirth', p?.dob || '');
+      setValue('q5_ageYears', p?.dob ? computeAgeString(p.dob) : '');
       setValue('q10_primaryDiagnosis', p?.diagnosis || '');
       setValue('q2_program', p?.program || '');
       setValue('q2_serviceLevel', p?.serviceLevel || '');
@@ -166,6 +174,9 @@ export default function OversightNotePage() {
 
     values.noteType = OVERSIGHT_NOTE_TYPE;
     values.q1_formRev = '2';
+    // The signature is applied at the end of the visit; stamp the signed date
+    // from the visit date so the signature block never renders "Date Signed: --".
+    values.q62_shiftEndDate = String(values.q6_dateofService || '');
 
     const issues = getOversightIncomplete(values as Record<string, string>);
     if (issues.length > 0) {
@@ -184,15 +195,48 @@ export default function OversightNotePage() {
     }
     setMissing([]);
 
+    // A 12h/24h time-picker slip is the usual cause of an out-before-in
+    // window; oversight visits never span midnight, so hard-stop it.
+    if (String(values.ov_timeOut) <= String(values.ov_timeIn)) {
+      const target = document.getElementById('ov_timeOut');
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      alert('Time out must be after time in. Please check the visit times.');
+      return;
+    }
+
     try {
       setSubmitting(true);
+
+      // One note per oversight visit: warn when this nurse already filed an
+      // oversight note for this client and date (retries of THIS submission
+      // are excluded via the stable id, which also makes them overwrite
+      // instead of duplicate).
+      const dup = await findDuplicateSubmission({
+        nurseId: user?.uid || '',
+        dateOfService: String(values.q6_dateofService || ''),
+        patientId: String(values.patientId || '') || undefined,
+        clientName: String(values.q3_clientName || ''),
+        excludeId: submissionIdRef.current,
+        noteType: OVERSIGHT_NOTE_TYPE,
+      });
+      if (dup) {
+        setSubmitting(false);
+        alert(
+          `An oversight note for ${values.q3_clientName} on this date already exists. ` +
+            'Open it from Submissions instead of filing a second note. If this is intentional ' +
+            '(a second visit the same day), contact the administrator.',
+        );
+        return;
+      }
+
       const docId = await saveSubmission(values as unknown as ProgressNoteFormData, {
         nurseId: user?.uid || '',
+        submissionId: submissionIdRef.current || undefined,
       });
       clearRadioStorage();
       const c = encodeURIComponent(String(values.q3_clientName || ''));
       const d = encodeURIComponent(String(values.q6_dateofService || ''));
-      router.push(`/progress-note/submitted/${docId}?c=${c}&d=${d}`);
+      router.push(`/progress-note/submitted/${docId}?c=${c}&d=${d}&t=oversight`);
     } catch (err) {
       console.error('Oversight note submit failed:', err);
       alert('The note could not be submitted. Please check your connection and try again.');
@@ -202,7 +246,7 @@ export default function OversightNotePage() {
 
   if (rnGateBlocked) {
     return (
-      <div className={styles.formContainer} style={{ maxWidth: 640, margin: '40px auto' }}>
+      <div className={`${styles.container} ${styles.wrap}`} style={{ maxWidth: 640, margin: '40px auto' }}>
         <h1 style={{ fontSize: 20 }}>RN Oversight Visit Note</h1>
         <p style={{ lineHeight: 1.6, color: '#444' }}>
           This form documents Registered Nurse oversight visits and is limited to staff with an
@@ -214,7 +258,7 @@ export default function OversightNotePage() {
   }
 
   return (
-    <div className={styles.formContainer}>
+    <div className={`${styles.container} ${styles.wrap}`}>
       <h1 style={{ textAlign: 'center', fontSize: 22, marginBottom: 2 }}>
         RN Oversight Visit Note
       </h1>

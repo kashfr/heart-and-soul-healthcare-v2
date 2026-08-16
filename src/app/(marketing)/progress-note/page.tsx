@@ -828,6 +828,14 @@ function ProgressNotePageInner() {
         // seeding below repopulates from this note's own stored values.
         clearRadioStorage();
         const data = await getSubmission(editId);
+        // This editor is the SHIFT note form. An RN oversight visit note
+        // loaded here would render mostly-empty and be unsaveable behind the
+        // shift required-field gates — send the user back to the detail view.
+        if (data && data.noteType === 'rn-oversight-visit') {
+          alert('This is an RN oversight visit note; it cannot be edited in the progress note form.');
+          router.push(`/admin/submissions/${editId}`);
+          return;
+        }
         if (!data) {
           alert('Submission not found.');
           router.push('/admin/submissions');

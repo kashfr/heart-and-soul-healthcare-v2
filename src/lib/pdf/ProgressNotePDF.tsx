@@ -913,8 +913,8 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
           </Section>
         )}
 
-        {/* 2. Shift Information */}
-        {anyHasValue(data, ['q6_dateofService', 'q7_shiftStart', 'q62_shiftEndTime', 'q9_totalHours']) && (
+        {/* 2. Shift Information (shift notes only; oversight notes carry times in Visit Details) */}
+        {data.noteType !== 'rn-oversight-visit' && anyHasValue(data, ['q6_dateofService', 'q7_shiftStart', 'q62_shiftEndTime', 'q9_totalHours']) && (
           <Section title="Shift Information">
             <FieldRow>
               <FieldCol><Field fieldKey="q6_dateofService" label="Date of Service" value={fmtDate(data.q6_dateofService)} /></FieldCol>
@@ -977,13 +977,13 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
             {anyHasValue(data, ['ov_appt1_provider', 'ov_appt2_provider', 'ov_appt3_provider', 'ov_appt4_provider', 'ov_preventiveReviewed', 'ov_aims', 'ov_hospitalization', 'ov_apptsNotes']) && (
               <SectionBreakable title="Medical Appointments and Follow-Up">
                 {[1, 2, 3, 4].map((n) =>
-                  hasValue(data[`ov_appt${n}_provider`]) ? (
+                  anyHasValue(data, [`ov_appt${n}_provider`, `ov_appt${n}_date`, `ov_appt${n}_outcome`, `ov_appt${n}_followup`]) ? (
                     <TextBlock
                       key={n}
                       fieldKey={`ov_appt${n}_provider`}
                       label={`Appointment ${n}`}
                       value={[
-                        data[`ov_appt${n}_provider`],
+                        data[`ov_appt${n}_provider`] || '(provider not recorded)',
                         data[`ov_appt${n}_date`] && `on ${data[`ov_appt${n}_date`]}`,
                         data[`ov_appt${n}_outcome`] && `outcome: ${data[`ov_appt${n}_outcome`]}`,
                         data[`ov_appt${n}_followup`] && `follow-up: ${data[`ov_appt${n}_followup`]}`,

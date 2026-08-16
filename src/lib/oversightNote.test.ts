@@ -57,7 +57,7 @@ describe('getOversightIncomplete', () => {
     expect(keys).toEqual(['ov_interactions', 'ov_choicesMade']);
   });
 
-  it('requires the quarterly summary only when the quarterly review was completed', () => {
+  it('requires the quarterly summary when the review is completed OR the visit is a quarterly review', () => {
     const d = completeNote();
     d.ov_quarterly = 'Completed this visit';
     expect(getOversightIncomplete(d).map((i) => i.key)).toEqual(['ov_quarterlySummary']);
@@ -66,6 +66,10 @@ describe('getOversightIncomplete', () => {
     d.ov_quarterly = 'Not due this visit';
     delete d.ov_quarterlySummary;
     expect(getOversightIncomplete(d)).toEqual([]);
+    // Declaring the VISIT a quarterly review binds the summary too — a
+    // quarterly-review visit can't submit with "not due" and no summary.
+    d.ov_visitType = 'Quarterly review';
+    expect(getOversightIncomplete(d).map((i) => i.key)).toEqual(['ov_quarterlySummary']);
   });
 
   it('an empty form reports every unconditional requirement', () => {

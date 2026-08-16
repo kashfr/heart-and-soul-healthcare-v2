@@ -41,7 +41,10 @@ export function pdfFilenameFor(form: ProgressNoteFormData): string {
   const date = isoDate(form.q6_dateofService) || 'unknown-date';
   const client = sanitize(form.q3_clientName || 'client');
   const nurse = sanitize(form.q11_nurseName || 'nurse');
-  return `${date}_${client}_${nurse}.pdf`;
+  // Discriminate document types so a same-day shift note and oversight
+  // note for the same client/nurse can't collide inside one export.
+  const kind = form.noteType === 'rn-oversight-visit' ? '_oversight' : '';
+  return `${date}_${client}_${nurse}${kind}.pdf`;
 }
 
 async function fetchPdfForSubmission(id: string): Promise<{ form: ProgressNoteFormData; bytes: Uint8Array }> {

@@ -425,10 +425,18 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             &larr; Back to Submissions
           </Link>
           <div style={{ display: 'flex', gap: 10 }}>
-            {canEdit && (
+            {canEdit && data.noteType !== 'rn-oversight-visit' && (
               <Link href={`/progress-note?edit=${id}`} style={editBtnStyle}>
                 Amend
               </Link>
+            )}
+            {canEdit && data.noteType === 'rn-oversight-visit' && (
+              <span
+                style={{ ...editBtnStyle, opacity: 0.5, cursor: 'not-allowed' }}
+                title="Editing oversight notes in-app is coming; contact the administrator for an amendment."
+              >
+                Amend
+              </span>
             )}
             <button
               onClick={handleDownloadPdf}
@@ -526,7 +534,9 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           )}
         </ConditionalSection>
 
-        {/* 2. SHIFT INFORMATION */}
+        {/* 2. SHIFT INFORMATION (shift notes only — oversight notes carry
+            their date in the header and times in Visit Details) */}
+        {data.noteType !== 'rn-oversight-visit' && (
         <ConditionalSection
           title="Shift Information"
           keys={['q6_dateofService', 'q7_shiftStart', 'q62_shiftEndTime', 'q9_totalHours']}
@@ -539,6 +549,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           </FieldRow>
           {hasValue(data.q9_totalHours) && <Field fieldKey="q9_totalHours" label="Total Hours" value={data.q9_totalHours} />}
         </ConditionalSection>
+        )}
 
         {/* 3. NURSE / CAREGIVER */}
         <ConditionalSection
@@ -610,9 +621,9 @@ export default function SubmissionDetailPage({ params }: PageProps) {
               data={data}
             >
               {[1, 2, 3, 4].map((n) =>
-                hasValue(data[`ov_appt${n}_provider`]) ? (
+                anyHasValue([`ov_appt${n}_provider`, `ov_appt${n}_date`, `ov_appt${n}_outcome`, `ov_appt${n}_followup`]) ? (
                   <FieldRow key={n}>
-                    <Field fieldKey={`ov_appt${n}_provider`} label={`Appointment ${n}`} value={data[`ov_appt${n}_provider`]} />
+                    <Field fieldKey={`ov_appt${n}_provider`} label={`Appointment ${n}`} value={data[`ov_appt${n}_provider`] || '(provider not recorded)'} />
                     {hasValue(data[`ov_appt${n}_date`]) && <Field fieldKey={`ov_appt${n}_date`} label="Date" value={data[`ov_appt${n}_date`]} />}
                     {hasValue(data[`ov_appt${n}_outcome`]) && <Field fieldKey={`ov_appt${n}_outcome`} label="Outcome / Report" value={data[`ov_appt${n}_outcome`]} />}
                     {hasValue(data[`ov_appt${n}_followup`]) && <Field fieldKey={`ov_appt${n}_followup`} label="Follow-Up Needed" value={data[`ov_appt${n}_followup`]} />}

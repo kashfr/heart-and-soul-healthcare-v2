@@ -431,8 +431,10 @@ export async function findDuplicateSubmission(args: {
   patientId?: string;
   clientName?: string;
   excludeId?: string;
+  /** Document type to match within. '' / omitted = shift notes. Duplicates are per type. */
+  noteType?: string;
 }): Promise<DuplicateMatch | null> {
-  const { nurseId, dateOfService, patientId, clientName, excludeId } = args;
+  const { nurseId, dateOfService, patientId, clientName, excludeId, noteType } = args;
   if (!nurseId || !dateOfService) return null;
   // Need at least one identity signal to compare on.
   const normName = normalizeName(clientName || '');
@@ -450,7 +452,7 @@ export async function findDuplicateSubmission(args: {
   for (const d of snapshot.docs) {
     if (excludeId && d.id === excludeId) continue;
     const data = d.data();
-    if (!noteIsActiveDuplicate(data, { patientId, normName })) continue;
+    if (!noteIsActiveDuplicate(data, { patientId, normName, noteType })) continue;
 
     const submittedAt = data.submittedAt as Timestamp | null;
     return {

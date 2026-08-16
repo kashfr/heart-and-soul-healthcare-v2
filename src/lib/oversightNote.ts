@@ -84,8 +84,13 @@ const OVERSIGHT_RULES: OvRule[] = [
   { key: 'ov_quarterly', label: 'Quarterly review status' },
   {
     key: 'ov_quarterlySummary',
-    label: 'Quarterly data summary (required when the quarterly review is completed this visit)',
-    applies: (d) => d.ov_quarterly === 'Completed this visit',
+    label: 'Quarterly data summary (required for a quarterly review)',
+    // Either signal binds: marking the review completed in section 8, or
+    // declaring the visit itself a quarterly review up top. Otherwise a
+    // "Quarterly review" visit could submit with the review marked not due
+    // and no data summary — the exact self-contradiction QEPR flags.
+    applies: (d) =>
+      d.ov_quarterly === 'Completed this visit' || d.ov_visitType === 'Quarterly review',
   },
 
   // 9. Recommendations
