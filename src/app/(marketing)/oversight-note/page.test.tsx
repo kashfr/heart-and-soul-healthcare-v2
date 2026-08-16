@@ -110,3 +110,17 @@ describe('OversightNotePage', () => {
     expect(screen.getByText('CLIENT & VISIT')).toBeInTheDocument();
   });
 });
+
+describe('OversightNotePage — client details', () => {
+  it('renders the date of birth in US format', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup();
+    render(<OversightNotePage />);
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: /Neal Kelly/ })).toBeInTheDocument();
+    });
+    // Select by role — "Individual" also labels an education-recipient checkbox.
+    await user.selectOptions(screen.getByRole('combobox'), 'p1');
+    // Roster stores ISO (1985-06-07); nurses read US format.
+    expect(screen.getByDisplayValue('06/07/1985')).toBeInTheDocument();
+  });
+});

@@ -837,6 +837,15 @@ export default function SubmissionsPage() {
               {myDraft ? 'Resume draft' : 'New progress note'}
             </Link>
           )}
+          {/* RN oversight visit note — same gate the form enforces: an RN
+              credential, or an admin/supervisor signing in their own name. */}
+          {!isViewingAs &&
+            (profile?.credential === 'RN' || role === 'admin' || role === 'supervisor') && (
+              <Link href="/oversight-note" style={newNoteBtnStyle}>
+                <Plus size={16} />
+                New oversight note
+              </Link>
+            )}
         </div>
 
         <div style={tabsStyle} role="tablist" aria-label="Submissions view">

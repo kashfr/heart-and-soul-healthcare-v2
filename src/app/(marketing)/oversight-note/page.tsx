@@ -17,6 +17,7 @@ import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { getPatients, type Patient } from '@/lib/patients';
 import { computeAgeString } from '@/lib/age';
+import { formatDateUS } from '@/lib/dateFormat';
 import { saveSubmission, findDuplicateSubmission, type ProgressNoteFormData } from '@/lib/submissions';
 import {
   OVERSIGHT_NOTE_TYPE,
@@ -54,6 +55,7 @@ function Area({
   rows = 2,
   required = false,
   placeholder,
+  topGap = false,
 }: {
   id: string;
   label: string;
@@ -61,9 +63,12 @@ function Area({
   rows?: number;
   required?: boolean;
   placeholder?: string;
+  /** Extra space above — use when a checkbox row sits directly above this
+   *  field, since .checkRow has no bottom margin and .row has no top one. */
+  topGap?: boolean;
 }) {
   return (
-    <div className={styles.row}>
+    <div className={styles.row} style={topGap ? { marginTop: 16 } : undefined}>
       <div className={styles.f} style={{ flex: '1 1 100%' }}>
         <label className={styles.label} htmlFor={id}>
           {label}
@@ -314,7 +319,11 @@ export default function OversightNotePage() {
               </div>
               <div className={styles.f} style={{ flex: '1 1 35%' }}>
                 <label className={styles.label}>Date of birth</label>
-                <input className={styles.input} value={watch('q4_dateofBirth') || ''} readOnly />
+                <input
+                  className={styles.input}
+                  value={formatDateUS(watch('q4_dateofBirth') || '')}
+                  readOnly
+                />
               </div>
             </div>
 
@@ -625,7 +634,7 @@ export default function OversightNotePage() {
                 <input type="checkbox" name="ov_educationRecipients" value="Staff" /> Staff
               </label>
             </div>
-            <Area id="ov_educationOther" label="Other topics / details:" register={register} />
+            <Area id="ov_educationOther" label="Other topics / details:" register={register} topGap />
             <Area
               id="ov_educationResponse"
               label="Individual's response / understanding:"
@@ -705,7 +714,14 @@ export default function OversightNotePage() {
                 <input type="checkbox" name="ov_communication" value="N/A this visit" /> N/A this visit
               </label>
             </div>
-            <Area id="ov_nextVisit" label="Plan for next visit and target date:" register={register} required rows={1} />
+            <Area
+              id="ov_nextVisit"
+              label="Plan for next visit and target date:"
+              register={register}
+              required
+              rows={1}
+              topGap
+            />
           </div>
 
           {/* SIGNATURE */}
