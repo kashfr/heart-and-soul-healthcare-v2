@@ -315,25 +315,4 @@ describe('QEPR rev-2 required fields', () => {
     expect(keys({ ...d, q2_program: '' })).not.toContain('q42_choicesMade');
   });
 
-  it('RN oversight confirmations apply only to RN + rn-oversight + now-comp', () => {
-    const oversight = { ...rev2NowComp(), q2_serviceLevel: 'rn-oversight' };
-    const missing = keys(oversight);
-    for (const k of ['q56_ordersReviewed', 'q56_marReviewed', 'q56_equipReviewed', 'q56_apptsReviewed']) {
-      expect(missing).toContain(k);
-    }
-    // Filled confirmations satisfy the rules.
-    const done = {
-      ...oversight,
-      q56_ordersReviewed: 'Yes',
-      q56_marReviewed: 'Yes',
-      q56_equipReviewed: 'N/A (no adaptive equipment)',
-      q56_apptsReviewed: 'No appointments since last visit',
-    };
-    expect(getIncompleteRequired(done)).toEqual([]);
-    // LPN on the same client: no oversight confirmations required.
-    const lpn = { ...oversight, q12_credential: 'LPN' };
-    expect(keys(lpn).filter((k) => k.startsWith('q56_'))).toEqual([]);
-    // Daily-LPN staffing model: RN visit but not an oversight visit.
-    expect(keys(rev2NowComp()).filter((k) => k.startsWith('q56_'))).toEqual([]);
-  });
 });

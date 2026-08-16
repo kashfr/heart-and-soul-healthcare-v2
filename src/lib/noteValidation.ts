@@ -103,9 +103,6 @@ const vitalOr = (key: string) => (d: Record<string, string>) =>
 const isRev2 = (d: Record<string, string>): boolean => Number(d['q1_formRev'] || '0') >= 2;
 /** QEPR rules bind only to DBHDD-waiver (NOW/COMP) clients — see programDocRequirements.ts. */
 const isNowComp = (d: Record<string, string>): boolean => d['q2_program'] === 'now-comp';
-/** RN-oversight confirmations apply only on an RN's visit to an oversight-model client. */
-const isRnOversightVisit = (d: Record<string, string>, cred: string): boolean =>
-  cred === 'RN' && d['q2_serviceLevel'] === 'rn-oversight';
 
 const RULES: Rule[] = [
   // --- Tab 1: Client & Shift (always) ---
@@ -191,36 +188,6 @@ const RULES: Rule[] = [
     tab: 6,
     applies: (d) => isRev2(d) && isNowComp(d),
     filled: simple('q42_choicesMade'),
-  },
-
-  // --- Tab 6: RN oversight confirmations (QEPR WH 13/14, Safety 4, SG 9-20; NOW/COMP + RN + oversight model) ---
-  {
-    key: 'q56_ordersReviewed',
-    label: 'RN oversight: physician orders reviewed',
-    tab: 6,
-    applies: (d, c) => isRev2(d) && isNowComp(d) && isRnOversightVisit(d, c),
-    filled: simple('q56_ordersReviewed'),
-  },
-  {
-    key: 'q56_marReviewed',
-    label: 'RN oversight: MAR reviewed',
-    tab: 6,
-    applies: (d, c) => isRev2(d) && isNowComp(d) && isRnOversightVisit(d, c),
-    filled: simple('q56_marReviewed'),
-  },
-  {
-    key: 'q56_equipReviewed',
-    label: 'RN oversight: adaptive equipment orders reviewed',
-    tab: 6,
-    applies: (d, c) => isRev2(d) && isNowComp(d) && isRnOversightVisit(d, c),
-    filled: simple('q56_equipReviewed'),
-  },
-  {
-    key: 'q56_apptsReviewed',
-    label: 'RN oversight: medical appointments reviewed',
-    tab: 6,
-    applies: (d, c) => isRev2(d) && isNowComp(d) && isRnOversightVisit(d, c),
-    filled: simple('q56_apptsReviewed'),
   },
 
   // --- Tab 6: physician-notification details (only when notified = Yes) ---
