@@ -246,6 +246,10 @@ const RULES: Rule[] = [
  * in tab order. An empty array means "no required fields are missing."
  */
 export function getIncompleteRequired(flat: Record<string, string>): NoteIssue[] {
+  // These rules describe the SHIFT progress note. Other document types in the
+  // same collection (RN oversight visit notes) have their own rules — see
+  // src/lib/oversightNote.ts — and must never be scored against these.
+  if ((flat['noteType'] || '') === 'rn-oversight-visit') return [];
   const cred = (flat['q12_credential'] || '').trim();
   const issues: NoteIssue[] = [];
   for (const r of RULES) {

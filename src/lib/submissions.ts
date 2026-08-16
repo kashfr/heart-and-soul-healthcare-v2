@@ -53,6 +53,13 @@ export interface ProgressNoteFormData {
   q1_formRev?: string;
   q2_program?: string;
   q2_serviceLevel?: string;
+  /**
+   * Discriminates document types sharing this collection. Absent or empty =
+   * a shift progress note; 'rn-oversight-visit' = an RN oversight visit note
+   * (see src/lib/oversightNote.ts). Oversight notes reuse the identity keys
+   * above plus ov_-prefixed content fields.
+   */
+  noteType?: string;
 
   // Page 2: Client Status
   q13_orientationLevel: string;
@@ -311,6 +318,8 @@ export interface SubmissionSummary {
   id: string;
   clientName: string;
   nurseName: string;
+  /** Document type discriminator: '' = shift note, 'rn-oversight-visit' = RN oversight visit note. */
+  noteType: string;
   /** Author's clinical credential at submit time: HHA | CNA | LPN | RN. */
   credential: string;
   /** Author's Firebase uid (used by the cosign self-author guard + nurse-only filtering). */
@@ -493,6 +502,7 @@ function mapDocToSummary(
     id: d.id,
     clientName: (data.q3_clientName as string) || '',
     nurseName: (data.q11_nurseName as string) || '',
+    noteType: (data.noteType as string) || '',
     credential: (data.q12_credential as string) || '',
     nurseId: (data.nurseId as string) || '',
     diagnosis: (data.q10_primaryDiagnosis as string) || '',
@@ -662,13 +672,14 @@ const SKIP_DIFF_FIELDS = new Set([
   'archivedBy',
   'nurseArchivedAt',
   'nurseArchivedBy',
-  // Rev-2 note metadata (form revision + program stamps). Never clinical
-  // content; excluding them keeps a stamp backfill from ever reading as a
-  // clinical amendment in the audit trail or triggering the edit-reason
-  // prompt on an otherwise no-op edit.
+  // Rev-2 note metadata (form revision + program stamps + document type).
+  // Never clinical content; excluding them keeps a stamp backfill from ever
+  // reading as a clinical amendment in the audit trail or triggering the
+  // edit-reason prompt on an otherwise no-op edit.
   'q1_formRev',
   'q2_program',
   'q2_serviceLevel',
+  'noteType',
 ]);
 
 function normalizeForDiff(v: unknown): string {

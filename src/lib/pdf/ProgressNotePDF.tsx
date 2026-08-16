@@ -875,7 +875,11 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         <View style={s.header} fixed>
           <Text style={s.companyName}>{orgName}</Text>
           <Text style={s.companyTagline}>{tagline}</Text>
-          <Text style={s.formTitle}>Home Health Progress Note</Text>
+          <Text style={s.formTitle}>
+            {data.noteType === 'rn-oversight-visit'
+              ? 'RN Oversight Visit Note'
+              : 'Home Health Progress Note'}
+          </Text>
           <Text style={s.formDate}>
             Form Date: {fmtDate(data.q6_dateofService) || data.q6_dateofService || ''}
           </Text>
@@ -932,7 +936,109 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         )}
 
         {/* === GROUP 2: Status & Vitals === */}
-        <GroupHeader title="Status & Vitals" />
+        {/* RN Oversight Visit sections (noteType 'rn-oversight-visit' only) */}
+        {data.noteType === 'rn-oversight-visit' && (
+          <>
+            <GroupHeader title="RN Oversight Visit" />
+            {anyHasValue(data, ['ov_visitType', 'ov_timeIn', 'ov_timeOut', 'ov_location']) && (
+              <Section title="Visit Details">
+                {hasValue(data.ov_visitType) && <Field fieldKey="ov_visitType" label="Visit Type" value={data.ov_visitType} />}
+                {hasValue(data.ov_timeIn) && <Field fieldKey="ov_timeIn" label="Time In" value={data.ov_timeIn} />}
+                {hasValue(data.ov_timeOut) && <Field fieldKey="ov_timeOut" label="Time Out" value={data.ov_timeOut} />}
+                {hasValue(data.ov_location) && <Field fieldKey="ov_location" label="Location" value={data.ov_location} />}
+              </Section>
+            )}
+            {anyHasValue(data, ['ov_generalCondition', 'ov_interactions', 'ov_concerns']) && (
+              <SectionBreakable title="Individual Status and Observations">
+                {hasValue(data.ov_generalCondition) && <TextBlock fieldKey="ov_generalCondition" label="General Condition / Changes" value={data.ov_generalCondition} />}
+                {hasValue(data.ov_interactions) && <TextBlock fieldKey="ov_interactions" label="Conversations, Interactions, and Responses" value={data.ov_interactions} />}
+                {hasValue(data.ov_concerns) && <TextBlock fieldKey="ov_concerns" label="Concerns Voiced" value={data.ov_concerns} />}
+              </SectionBreakable>
+            )}
+            {anyHasValue(data, ['ov_hcpStatus', 'ov_hcpStaffTrained', 'ov_proxyPlan', 'ov_hcpNotes']) && (
+              <SectionBreakable title="Healthcare Plan">
+                {hasValue(data.ov_hcpStatus) && <Field fieldKey="ov_hcpStatus" label="HCP Review" value={data.ov_hcpStatus} />}
+                {hasValue(data.ov_hcpStaffTrained) && <Field fieldKey="ov_hcpStaffTrained" label="Staff Trained on HCP" value={data.ov_hcpStaffTrained} />}
+                {hasValue(data.ov_proxyPlan) && <Field fieldKey="ov_proxyPlan" label="Proxy Caregiver Teaching Plan" value={data.ov_proxyPlan} />}
+                {hasValue(data.ov_hcpNotes) && <TextBlock fieldKey="ov_hcpNotes" label="HCP Notes" value={data.ov_hcpNotes} />}
+              </SectionBreakable>
+            )}
+            {anyHasValue(data, ['ov_ordersVerified', 'ov_ordersRenewals', 'ov_marReviewed', 'ov_refillsTimely', 'ov_sideEffects', 'ov_equipOrders', 'ov_medsNotes']) && (
+              <SectionBreakable title="Physician Orders and Medications">
+                {hasValue(data.ov_ordersVerified) && <Field fieldKey="ov_ordersVerified" label="Orders Verified (All Meds)" value={data.ov_ordersVerified} />}
+                {hasValue(data.ov_ordersRenewals) && <Field fieldKey="ov_ordersRenewals" label="Renewals" value={data.ov_ordersRenewals} />}
+                {hasValue(data.ov_marReviewed) && <Field fieldKey="ov_marReviewed" label="MAR Reviewed" value={data.ov_marReviewed} />}
+                {hasValue(data.ov_refillsTimely) && <Field fieldKey="ov_refillsTimely" label="Refills Timely" value={data.ov_refillsTimely} />}
+                {hasValue(data.ov_sideEffects) && <Field fieldKey="ov_sideEffects" label="Side Effects / Effectiveness" value={data.ov_sideEffects} />}
+                {hasValue(data.ov_equipOrders) && <Field fieldKey="ov_equipOrders" label="Adaptive Equipment Orders" value={data.ov_equipOrders} />}
+                {hasValue(data.ov_medsNotes) && <TextBlock fieldKey="ov_medsNotes" label="Medication and Order Notes" value={data.ov_medsNotes} />}
+              </SectionBreakable>
+            )}
+            {anyHasValue(data, ['ov_appt1_provider', 'ov_appt2_provider', 'ov_appt3_provider', 'ov_appt4_provider', 'ov_preventiveReviewed', 'ov_aims', 'ov_hospitalization', 'ov_apptsNotes']) && (
+              <SectionBreakable title="Medical Appointments and Follow-Up">
+                {[1, 2, 3, 4].map((n) =>
+                  hasValue(data[`ov_appt${n}_provider`]) ? (
+                    <TextBlock
+                      key={n}
+                      fieldKey={`ov_appt${n}_provider`}
+                      label={`Appointment ${n}`}
+                      value={[
+                        data[`ov_appt${n}_provider`],
+                        data[`ov_appt${n}_date`] && `on ${data[`ov_appt${n}_date`]}`,
+                        data[`ov_appt${n}_outcome`] && `outcome: ${data[`ov_appt${n}_outcome`]}`,
+                        data[`ov_appt${n}_followup`] && `follow-up: ${data[`ov_appt${n}_followup`]}`,
+                      ]
+                        .filter(Boolean)
+                        .join('; ')}
+                    />
+                  ) : null,
+                )}
+                {hasValue(data.ov_preventiveReviewed) && <Field fieldKey="ov_preventiveReviewed" label="Preventive Care" value={data.ov_preventiveReviewed} />}
+                {hasValue(data.ov_aims) && <Field fieldKey="ov_aims" label="AIMS" value={data.ov_aims} />}
+                {hasValue(data.ov_hospitalization) && <Field fieldKey="ov_hospitalization" label="Hospitalization / ER" value={data.ov_hospitalization} />}
+                {hasValue(data.ov_apptsNotes) && <TextBlock fieldKey="ov_apptsNotes" label="Appointment Notes" value={data.ov_apptsNotes} />}
+              </SectionBreakable>
+            )}
+            {anyHasValue(data, ['ov_logsReviewed', 'ov_hrst', 'ov_dataFindings']) && (
+              <SectionBreakable title="Health Data and Tracking Logs">
+                {hasValue(data.ov_logsReviewed) && <Field fieldKey="ov_logsReviewed" label="Tracking Logs Reviewed" value={data.ov_logsReviewed} />}
+                {hasValue(data.ov_hrst) && <Field fieldKey="ov_hrst" label="HRST" value={data.ov_hrst} />}
+                {hasValue(data.ov_dataFindings) && <TextBlock fieldKey="ov_dataFindings" label="Findings / Trends" value={data.ov_dataFindings} />}
+              </SectionBreakable>
+            )}
+            {anyHasValue(data, ['ov_educationTopics', 'ov_educationRecipients', 'ov_educationOther', 'ov_educationResponse']) && (
+              <SectionBreakable title="Education Provided">
+                {hasValue(data.ov_educationTopics) && <TextBlock fieldKey="ov_educationTopics" label="Topics" value={data.ov_educationTopics} />}
+                {hasValue(data.ov_educationRecipients) && <Field fieldKey="ov_educationRecipients" label="Recipients" value={data.ov_educationRecipients} />}
+                {hasValue(data.ov_educationOther) && <TextBlock fieldKey="ov_educationOther" label="Other Topics / Details" value={data.ov_educationOther} />}
+                {hasValue(data.ov_educationResponse) && <TextBlock fieldKey="ov_educationResponse" label="Individual's Response / Understanding" value={data.ov_educationResponse} />}
+              </SectionBreakable>
+            )}
+            {anyHasValue(data, ['ov_choicesMade', 'ov_preferencesHonored', 'ov_goalsSupport']) && (
+              <SectionBreakable title="Choice and Person-Centered Care">
+                {hasValue(data.ov_choicesMade) && <TextBlock fieldKey="ov_choicesMade" label="Choices Offered, Made, or Declined" value={data.ov_choicesMade} />}
+                {hasValue(data.ov_preferencesHonored) && <TextBlock fieldKey="ov_preferencesHonored" label="Preferences Honored / Strengths" value={data.ov_preferencesHonored} />}
+                {hasValue(data.ov_goalsSupport) && <TextBlock fieldKey="ov_goalsSupport" label="Support Toward Goals, Hopes, and Dreams" value={data.ov_goalsSupport} />}
+              </SectionBreakable>
+            )}
+            {anyHasValue(data, ['ov_goalProgress', 'ov_quarterly', 'ov_quarterlySummary']) && (
+              <SectionBreakable title="Goal Progress">
+                {hasValue(data.ov_goalProgress) && <TextBlock fieldKey="ov_goalProgress" label="Progress on HCP / Plan of Care Goals" value={data.ov_goalProgress} />}
+                {hasValue(data.ov_quarterly) && <Field fieldKey="ov_quarterly" label="Quarterly Review" value={data.ov_quarterly} />}
+                {hasValue(data.ov_quarterlySummary) && <TextBlock fieldKey="ov_quarterlySummary" label="Quarterly Data Summary" value={data.ov_quarterlySummary} />}
+              </SectionBreakable>
+            )}
+            {anyHasValue(data, ['ov_actions', 'ov_communication', 'ov_nextVisit']) && (
+              <SectionBreakable title="Recommendations, Follow-Up, and Communication">
+                {hasValue(data.ov_actions) && <TextBlock fieldKey="ov_actions" label="Actions / Requests / Referrals" value={data.ov_actions} />}
+                {hasValue(data.ov_communication) && <Field fieldKey="ov_communication" label="Communication" value={data.ov_communication} />}
+                {hasValue(data.ov_nextVisit) && <Field fieldKey="ov_nextVisit" label="Next Visit Plan" value={data.ov_nextVisit} />}
+              </SectionBreakable>
+            )}
+          </>
+        )}
+
+        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Status & Vitals" />}
 
         {/* 4. Client Status */}
         {anyHasValue(data, [
@@ -1009,7 +1115,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         )}
 
         {/* === GROUP 3: Observations & Systems === */}
-        <GroupHeader title="Observations & Systems" />
+        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Observations & Systems" />}
 
         {/* 6. Observations */}
         {anyHasValue(data, [
@@ -1068,7 +1174,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         )}
 
         {/* === GROUP 4: Personal Care & Nutrition === */}
-        <GroupHeader title="Personal Care & Nutrition" />
+        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Personal Care & Nutrition" />}
 
         {/* 8b. Care Plan Tasks — plan-of-care charting. Renders from the
             careTasksMeta snapshot stored on the note, so it prints exactly
@@ -1131,7 +1237,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         )}
 
         {/* === GROUP 5: Meds & Interventions === */}
-        <GroupHeader title="Meds & Interventions" />
+        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Meds & Interventions" />}
 
         {/* 13. Skilled Nursing Interventions (LPN/RN only) */}
         {isLpnRn && anyHasValue(data, ['q38_interventions', 'q39_interventionDetails', 'q39_individualResponse', 'q40_skillJustification']) && (
@@ -1186,7 +1292,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         )}
 
         {/* === GROUP 6: Education & Notifications === */}
-        <GroupHeader title="Education & Notifications" />
+        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Education & Notifications" />}
 
         {/* 15. Education */}
         {anyHasValue(data, [
