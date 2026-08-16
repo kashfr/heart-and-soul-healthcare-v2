@@ -53,6 +53,13 @@ export interface ProgressNoteFormData {
   q1_formRev?: string;
   q2_program?: string;
   q2_serviceLevel?: string;
+  /**
+   * Discriminates document types sharing this collection. Absent or empty =
+   * a shift progress note; 'rn-oversight-visit' = an RN oversight visit note
+   * (see src/lib/oversightNote.ts). Oversight notes reuse the identity keys
+   * above plus ov_-prefixed content fields.
+   */
+  noteType?: string;
 
   // Page 2: Client Status
   q13_orientationLevel: string;
@@ -311,6 +318,8 @@ export interface SubmissionSummary {
   id: string;
   clientName: string;
   nurseName: string;
+  /** Document type discriminator: '' = shift note, 'rn-oversight-visit' = RN oversight visit note. */
+  noteType: string;
   /** Author's clinical credential at submit time: HHA | CNA | LPN | RN. */
   credential: string;
   /** Author's Firebase uid (used by the cosign self-author guard + nurse-only filtering). */
@@ -422,8 +431,10 @@ export async function findDuplicateSubmission(args: {
   patientId?: string;
   clientName?: string;
   excludeId?: string;
+  /** Document type to match within. '' / omitted = shift notes. Duplicates are per type. */
+  noteType?: string;
 }): Promise<DuplicateMatch | null> {
-  const { nurseId, dateOfService, patientId, clientName, excludeId } = args;
+  const { nurseId, dateOfService, patientId, clientName, excludeId, noteType } = args;
   if (!nurseId || !dateOfService) return null;
   // Need at least one identity signal to compare on.
   const normName = normalizeName(clientName || '');
@@ -441,7 +452,7 @@ export async function findDuplicateSubmission(args: {
   for (const d of snapshot.docs) {
     if (excludeId && d.id === excludeId) continue;
     const data = d.data();
-    if (!noteIsActiveDuplicate(data, { patientId, normName })) continue;
+    if (!noteIsActiveDuplicate(data, { patientId, normName, noteType })) continue;
 
     const submittedAt = data.submittedAt as Timestamp | null;
     return {
@@ -493,6 +504,7 @@ function mapDocToSummary(
     id: d.id,
     clientName: (data.q3_clientName as string) || '',
     nurseName: (data.q11_nurseName as string) || '',
+    noteType: (data.noteType as string) || '',
     credential: (data.q12_credential as string) || '',
     nurseId: (data.nurseId as string) || '',
     diagnosis: (data.q10_primaryDiagnosis as string) || '',
@@ -662,13 +674,14 @@ const SKIP_DIFF_FIELDS = new Set([
   'archivedBy',
   'nurseArchivedAt',
   'nurseArchivedBy',
-  // Rev-2 note metadata (form revision + program stamps). Never clinical
-  // content; excluding them keeps a stamp backfill from ever reading as a
-  // clinical amendment in the audit trail or triggering the edit-reason
-  // prompt on an otherwise no-op edit.
+  // Rev-2 note metadata (form revision + program stamps + document type).
+  // Never clinical content; excluding them keeps a stamp backfill from ever
+  // reading as a clinical amendment in the audit trail or triggering the
+  // edit-reason prompt on an otherwise no-op edit.
   'q1_formRev',
   'q2_program',
   'q2_serviceLevel',
+  'noteType',
 ]);
 
 function normalizeForDiff(v: unknown): string {

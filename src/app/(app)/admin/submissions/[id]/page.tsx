@@ -426,7 +426,14 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           </Link>
           <div style={{ display: 'flex', gap: 10 }}>
             {canEdit && (
-              <Link href={`/progress-note?edit=${id}`} style={editBtnStyle}>
+              <Link
+                href={
+                  data.noteType === 'rn-oversight-visit'
+                    ? `/oversight-note?edit=${id}`
+                    : `/progress-note?edit=${id}`
+                }
+                style={editBtnStyle}
+              >
                 Amend
               </Link>
             )}
@@ -461,7 +468,11 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         <div style={headerStyle}>
           <h1 style={companyNameStyle}>{appSettings.branding.orgName}</h1>
           <p style={taglineStyle}>{appSettings.branding.tagline}</p>
-          <h2 style={formTitleStyle}>HOME HEALTH PROGRESS NOTE</h2>
+          <h2 style={formTitleStyle}>
+            {data.noteType === 'rn-oversight-visit'
+              ? 'RN OVERSIGHT VISIT NOTE'
+              : 'HOME HEALTH PROGRESS NOTE'}
+          </h2>
           <p style={formDateStyle}>Form Date: {fmtDate(data.q6_dateofService) || data.q6_dateofService}</p>
           {(isNurse ? nurseArchived : staffArchived) && (
             <div style={archivedBadgeStyle} className="no-print">
@@ -522,7 +533,9 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           )}
         </ConditionalSection>
 
-        {/* 2. SHIFT INFORMATION */}
+        {/* 2. SHIFT INFORMATION (shift notes only — oversight notes carry
+            their date in the header and times in Visit Details) */}
+        {data.noteType !== 'rn-oversight-visit' && (
         <ConditionalSection
           title="Shift Information"
           keys={['q6_dateofService', 'q7_shiftStart', 'q62_shiftEndTime', 'q9_totalHours']}
@@ -535,6 +548,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           </FieldRow>
           {hasValue(data.q9_totalHours) && <Field fieldKey="q9_totalHours" label="Total Hours" value={data.q9_totalHours} />}
         </ConditionalSection>
+        )}
 
         {/* 3. NURSE / CAREGIVER */}
         <ConditionalSection
@@ -549,7 +563,124 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         </ConditionalSection>
 
         {/* === GROUP 2: Status & Vitals === */}
-        <GroupHeader title="Status & Vitals" />
+        {/* === RN OVERSIGHT VISIT (noteType 'rn-oversight-visit' only) === */}
+        {data.noteType === 'rn-oversight-visit' && (
+          <>
+            <GroupHeader title="RN Oversight Visit" />
+            <ConditionalSection title="Visit Details" keys={['ov_visitType', 'ov_timeIn', 'ov_timeOut', 'ov_location']} data={data}>
+              <FieldRow>
+                {hasValue(data.ov_visitType) && <Field fieldKey="ov_visitType" label="Visit Type" value={data.ov_visitType} />}
+                {hasValue(data.ov_timeIn) && <Field fieldKey="ov_timeIn" label="Time In" value={data.ov_timeIn} />}
+                {hasValue(data.ov_timeOut) && <Field fieldKey="ov_timeOut" label="Time Out" value={data.ov_timeOut} />}
+              </FieldRow>
+              {hasValue(data.ov_location) && <Field fieldKey="ov_location" label="Location" value={data.ov_location} />}
+            </ConditionalSection>
+
+            <ConditionalSection title="Individual Status and Observations" keys={['ov_generalCondition', 'ov_interactions', 'ov_concerns']} data={data}>
+              {hasValue(data.ov_generalCondition) && <TextBlock fieldKey="ov_generalCondition" label="General Condition / Changes" value={data.ov_generalCondition} />}
+              {hasValue(data.ov_interactions) && <TextBlock fieldKey="ov_interactions" label="Conversations, Interactions, and Responses" value={data.ov_interactions} />}
+              {hasValue(data.ov_concerns) && <TextBlock fieldKey="ov_concerns" label="Concerns Voiced" value={data.ov_concerns} />}
+            </ConditionalSection>
+
+            <ConditionalSection title="Healthcare Plan" keys={['ov_hcpStatus', 'ov_hcpStaffTrained', 'ov_proxyPlan', 'ov_hcpNotes']} data={data}>
+              <FieldRow>
+                {hasValue(data.ov_hcpStatus) && <Field fieldKey="ov_hcpStatus" label="HCP Review" value={data.ov_hcpStatus} />}
+                {hasValue(data.ov_hcpStaffTrained) && <Field fieldKey="ov_hcpStaffTrained" label="Staff Trained on HCP" value={data.ov_hcpStaffTrained} />}
+              </FieldRow>
+              {hasValue(data.ov_proxyPlan) && <Field fieldKey="ov_proxyPlan" label="Proxy Caregiver Teaching Plan" value={data.ov_proxyPlan} />}
+              {hasValue(data.ov_hcpNotes) && <TextBlock fieldKey="ov_hcpNotes" label="HCP Notes" value={data.ov_hcpNotes} />}
+            </ConditionalSection>
+
+            <ConditionalSection
+              title="Physician Orders and Medications"
+              keys={['ov_ordersVerified', 'ov_ordersRenewals', 'ov_marReviewed', 'ov_refillsTimely', 'ov_sideEffects', 'ov_equipOrders', 'ov_medsNotes']}
+              data={data}
+            >
+              <FieldRow>
+                {hasValue(data.ov_ordersVerified) && <Field fieldKey="ov_ordersVerified" label="Orders Verified (All Meds)" value={data.ov_ordersVerified} />}
+                {hasValue(data.ov_ordersRenewals) && <Field fieldKey="ov_ordersRenewals" label="Renewals" value={data.ov_ordersRenewals} />}
+              </FieldRow>
+              <FieldRow>
+                {hasValue(data.ov_marReviewed) && <Field fieldKey="ov_marReviewed" label="MAR Reviewed" value={data.ov_marReviewed} />}
+                {hasValue(data.ov_refillsTimely) && <Field fieldKey="ov_refillsTimely" label="Refills Timely" value={data.ov_refillsTimely} />}
+              </FieldRow>
+              <FieldRow>
+                {hasValue(data.ov_sideEffects) && <Field fieldKey="ov_sideEffects" label="Side Effects / Effectiveness" value={data.ov_sideEffects} />}
+                {hasValue(data.ov_equipOrders) && <Field fieldKey="ov_equipOrders" label="Adaptive Equipment Orders" value={data.ov_equipOrders} />}
+              </FieldRow>
+              {hasValue(data.ov_medsNotes) && <TextBlock fieldKey="ov_medsNotes" label="Medication and Order Notes" value={data.ov_medsNotes} />}
+            </ConditionalSection>
+
+            <ConditionalSection
+              title="Medical Appointments and Follow-Up"
+              keys={[
+                'ov_appt1_provider', 'ov_appt2_provider', 'ov_appt3_provider', 'ov_appt4_provider',
+                'ov_preventiveReviewed', 'ov_aims', 'ov_hospitalization', 'ov_apptsNotes',
+              ]}
+              data={data}
+            >
+              {[1, 2, 3, 4].map((n) =>
+                anyHasValue([`ov_appt${n}_provider`, `ov_appt${n}_date`, `ov_appt${n}_outcome`, `ov_appt${n}_followup`]) ? (
+                  <FieldRow key={n}>
+                    <Field fieldKey={`ov_appt${n}_provider`} label={`Appointment ${n}`} value={data[`ov_appt${n}_provider`] || '(provider not recorded)'} />
+                    {hasValue(data[`ov_appt${n}_date`]) && <Field fieldKey={`ov_appt${n}_date`} label="Date" value={data[`ov_appt${n}_date`]} />}
+                    {hasValue(data[`ov_appt${n}_outcome`]) && <Field fieldKey={`ov_appt${n}_outcome`} label="Outcome / Report" value={data[`ov_appt${n}_outcome`]} />}
+                    {hasValue(data[`ov_appt${n}_followup`]) && <Field fieldKey={`ov_appt${n}_followup`} label="Follow-Up Needed" value={data[`ov_appt${n}_followup`]} />}
+                  </FieldRow>
+                ) : null,
+              )}
+              <FieldRow>
+                {hasValue(data.ov_preventiveReviewed) && <Field fieldKey="ov_preventiveReviewed" label="Preventive Care" value={data.ov_preventiveReviewed} />}
+                {hasValue(data.ov_aims) && <Field fieldKey="ov_aims" label="AIMS" value={data.ov_aims} />}
+                {hasValue(data.ov_hospitalization) && <Field fieldKey="ov_hospitalization" label="Hospitalization / ER" value={data.ov_hospitalization} />}
+              </FieldRow>
+              {hasValue(data.ov_apptsNotes) && <TextBlock fieldKey="ov_apptsNotes" label="Appointment Notes" value={data.ov_apptsNotes} />}
+            </ConditionalSection>
+
+            <ConditionalSection title="Health Data and Tracking Logs" keys={['ov_logsReviewed', 'ov_hrst', 'ov_dataFindings']} data={data}>
+              <FieldRow>
+                {hasValue(data.ov_logsReviewed) && <Field fieldKey="ov_logsReviewed" label="Tracking Logs Reviewed" value={data.ov_logsReviewed} />}
+                {hasValue(data.ov_hrst) && <Field fieldKey="ov_hrst" label="HRST" value={data.ov_hrst} />}
+              </FieldRow>
+              {hasValue(data.ov_dataFindings) && <TextBlock fieldKey="ov_dataFindings" label="Findings / Trends" value={data.ov_dataFindings} />}
+            </ConditionalSection>
+
+            <ConditionalSection
+              title="Education Provided"
+              keys={['ov_educationTopics', 'ov_educationRecipients', 'ov_educationOther', 'ov_educationResponse']}
+              data={data}
+            >
+              {hasValue(data.ov_educationTopics) && <TextBlock fieldKey="ov_educationTopics" label="Topics" value={data.ov_educationTopics} />}
+              {hasValue(data.ov_educationRecipients) && <Field fieldKey="ov_educationRecipients" label="Recipients" value={data.ov_educationRecipients} />}
+              {hasValue(data.ov_educationOther) && <TextBlock fieldKey="ov_educationOther" label="Other Topics / Details" value={data.ov_educationOther} />}
+              {hasValue(data.ov_educationResponse) && <TextBlock fieldKey="ov_educationResponse" label="Individual's Response / Understanding" value={data.ov_educationResponse} />}
+            </ConditionalSection>
+
+            <ConditionalSection title="Choice and Person-Centered Care" keys={['ov_choicesMade', 'ov_preferencesHonored', 'ov_goalsSupport']} data={data}>
+              {hasValue(data.ov_choicesMade) && <TextBlock fieldKey="ov_choicesMade" label="Choices Offered, Made, or Declined" value={data.ov_choicesMade} />}
+              {hasValue(data.ov_preferencesHonored) && <TextBlock fieldKey="ov_preferencesHonored" label="Preferences Honored / Strengths" value={data.ov_preferencesHonored} />}
+              {hasValue(data.ov_goalsSupport) && <TextBlock fieldKey="ov_goalsSupport" label="Support Toward Goals, Hopes, and Dreams" value={data.ov_goalsSupport} />}
+            </ConditionalSection>
+
+            <ConditionalSection title="Goal Progress" keys={['ov_goalProgress', 'ov_quarterly', 'ov_quarterlySummary']} data={data}>
+              {hasValue(data.ov_goalProgress) && <TextBlock fieldKey="ov_goalProgress" label="Progress on HCP / Plan of Care Goals" value={data.ov_goalProgress} />}
+              {hasValue(data.ov_quarterly) && <Field fieldKey="ov_quarterly" label="Quarterly Review" value={data.ov_quarterly} />}
+              {hasValue(data.ov_quarterlySummary) && <TextBlock fieldKey="ov_quarterlySummary" label="Quarterly Data Summary" value={data.ov_quarterlySummary} />}
+            </ConditionalSection>
+
+            <ConditionalSection
+              title="Recommendations, Follow-Up, and Communication"
+              keys={['ov_actions', 'ov_communication', 'ov_nextVisit']}
+              data={data}
+            >
+              {hasValue(data.ov_actions) && <TextBlock fieldKey="ov_actions" label="Actions / Requests / Referrals" value={data.ov_actions} />}
+              {hasValue(data.ov_communication) && <Field fieldKey="ov_communication" label="Communication" value={data.ov_communication} />}
+              {hasValue(data.ov_nextVisit) && <Field fieldKey="ov_nextVisit" label="Next Visit Plan" value={data.ov_nextVisit} />}
+            </ConditionalSection>
+          </>
+        )}
+
+        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Status & Vitals" />}
 
         {/* 4. CLIENT STATUS */}
         <ConditionalSection
@@ -650,7 +781,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         </ConditionalSection>
 
         {/* === GROUP 3: Observations & Systems === */}
-        <GroupHeader title="Observations & Systems" />
+        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Observations & Systems" />}
 
         {/* 6. OBSERVATIONS */}
         <ConditionalSection
@@ -733,7 +864,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         )}
 
         {/* === GROUP 4: Personal Care & Nutrition === */}
-        <GroupHeader title="Personal Care & Nutrition" />
+        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Personal Care & Nutrition" />}
 
         {/* 8b. CARE PLAN TASKS — rendered from the note's stored snapshot */}
         {(() => {
@@ -802,7 +933,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         </ConditionalSection>
 
         {/* === GROUP 5: Meds & Interventions === */}
-        <GroupHeader title="Meds & Interventions" />
+        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Meds & Interventions" />}
 
         {/* 13. SKILLED NURSING INTERVENTIONS (LPN/RN only) */}
         {isLpnRn && anyHasValue(['q38_interventions', 'q39_interventionDetails', 'q39_individualResponse', 'q40_skillJustification']) && (
@@ -856,7 +987,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         )}
 
         {/* === GROUP 6: Education & Notifications === */}
-        <GroupHeader title="Education & Notifications" />
+        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Education & Notifications" />}
 
         {/* 15. EDUCATION */}
         <ConditionalSection
@@ -1245,6 +1376,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           id,
           clientName: data.q3_clientName || '',
           nurseName: data.q11_nurseName || '',
+          noteType: data.noteType || '',
           credential: data.q12_credential || '',
           nurseId: (data as Record<string, string>).nurseId || '',
           diagnosis: data.q10_primaryDiagnosis || '',

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Users, ClipboardList, UserCog, FileText, Pill, FilePlus, FileEdit, ShieldAlert, MessageCircleQuestion } from 'lucide-react';
+import { Users, ClipboardList, UserCog, FileText, Pill, FilePlus, FileEdit, ShieldAlert, MessageCircleQuestion, Stethoscope } from 'lucide-react';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { loadDraft, subscribePendingDupCount, type NoteDraft } from '@/lib/drafts';
 import { subscribeMyOpenClarifications } from '@/lib/clarifications';
@@ -140,8 +140,21 @@ export default function AdminDashboardPage() {
         allow: ['nurse', 'admin', 'supervisor'],
       };
 
+  // RN oversight visit note. Same credential logic the form enforces: an RN
+  // credential, or admin/supervisor signing in their own name.
+  const canAuthorOversight =
+    !isViewingAs && (effectiveCredential === 'RN' || role === 'admin' || role === 'supervisor');
+  const oversightCard: Card = {
+    href: '/oversight-note',
+    icon: <Stethoscope size={22} />,
+    title: 'RN oversight visit note',
+    description: 'Document a monthly RN oversight visit for a NOW/COMP client.',
+    allow: ['nurse', 'admin', 'supervisor'],
+  };
+
   const visibleCards = [
     ...(canAuthorNote ? [noteCard] : []),
+    ...(canAuthorOversight ? [oversightCard] : []),
     ...CARDS.filter((c) => role && c.allow.includes(role)),
   ];
   const kicker = role ? ROLE_KICKER[role] : '';

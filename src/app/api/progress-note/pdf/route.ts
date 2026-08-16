@@ -108,7 +108,8 @@ export async function POST(request: Request) {
 
     const clientName = sanitize(data.q3_clientName || 'client');
     const dateStr = isoFromAnyDate(data.q6_dateofService);
-    const filename = `Progress_Note_${clientName}_${dateStr}.pdf`;
+    const kind = data.noteType === 'rn-oversight-visit' ? 'Oversight_Note' : 'Progress_Note';
+    const filename = `${kind}_${clientName}_${dateStr}.pdf`;
 
     return new Response(new Uint8Array(buffer), {
       status: 200,

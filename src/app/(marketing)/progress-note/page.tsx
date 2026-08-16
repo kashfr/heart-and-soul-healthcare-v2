@@ -9,7 +9,6 @@ import {
   getNoteDocRequirements,
   stripInapplicableQeprFields,
   QEPR_NARRATIVE_FIELDS,
-  QEPR_OVERSIGHT_RADIOS,
 } from '@/lib/programDocRequirements';
 import { computeAgeString } from '@/lib/age';
 import { findNameCandidates, type RosterPatientLite, type MatchCandidate } from '@/lib/levenshtein';
@@ -307,18 +306,10 @@ function ProgressNotePageInner() {
   // a visit that happened under GAPP rules. This mirrors how the RULES layer
   // in noteValidation.ts gates on the stored q2_program.
   const storedProgram = watch('q2_program');
-  const storedServiceLevel = watch('q2_serviceLevel');
   const docReqs = useMemo(
     () => getNoteDocRequirements(isEditMode ? storedProgram : rosterClient?.program),
     [isEditMode, storedProgram, rosterClient],
   );
-  const isRnOversightClient = isEditMode
-    ? storedServiceLevel === 'rn-oversight'
-    : rosterClient?.serviceLevel === 'rn-oversight';
-  // Whether this note's RN-oversight section is in play right now — used to
-  // strip any stale q56 answers from the submit payload below.
-  const oversightApplicable =
-    docReqs.rnOversight !== 'hidden' && credential === 'RN' && isRnOversightClient;
 
   // Stamp NEW notes with the form revision and the client's program/service
   // level so (a) noteValidation rules can gate on them, (b) drafts and the
@@ -369,15 +360,12 @@ function ProgressNotePageInner() {
       // free-text identity (or a resumed draft whose client is no longer on
       // the roster) and must not silently attach to this roster client.
       const vals = getValues();
-      const hasQeprContent =
-        QEPR_NARRATIVE_FIELDS.some((f) => String(vals[f] || '').trim() !== '') ||
-        String(vals.q56_oversightNotes || '').trim() !== '' ||
-        QEPR_OVERSIGHT_RADIOS.some((r) => !!radioState[r]);
+      const hasQeprContent = QEPR_NARRATIVE_FIELDS.some(
+        (f) => String(vals[f] || '').trim() !== '',
+      );
       if (!hasQeprContent) return;
     }
     for (const f of QEPR_NARRATIVE_FIELDS) setValue(f, '');
-    setValue('q56_oversightNotes', '');
-    for (const r of QEPR_OVERSIGHT_RADIOS) setRadio(r, '');
   }, [rosterClient, isEditMode, setValue, getValues]);
 
   // One-time scrub of the legacy localStorage draft layer. It used to silently
@@ -828,6 +816,14 @@ function ProgressNotePageInner() {
         // seeding below repopulates from this note's own stored values.
         clearRadioStorage();
         const data = await getSubmission(editId);
+        // This editor is the SHIFT note form. An RN oversight visit note
+        // loaded here would render mostly-empty and be unsaveable behind the
+        // shift required-field gates — send the user back to the detail view.
+        if (data && data.noteType === 'rn-oversight-visit') {
+          alert('This is an RN oversight visit note; it cannot be edited in the progress note form.');
+          router.push(`/admin/submissions/${editId}`);
+          return;
+        }
         if (!data) {
           alert('Submission not found.');
           router.push('/admin/submissions');
@@ -879,17 +875,6 @@ function ProgressNotePageInner() {
             if (!value || key === 'submittedAt' || key === 'lastUpdatedAt' || key === 'status') continue;
             const radioEl = formRef.current?.querySelector(`input[type="radio"][name="${key}"]`);
             if (radioEl) setRadio(key, value);
-          }
-
-          // The RN-oversight radios render only after the note's stored
-          // q2_program/q2_serviceLevel stamps flow through docReqs, so they
-          // may not be in the DOM yet when this timer fires — seed their
-          // stored answers into the radio store by key instead of by DOM
-          // presence, or the section would come up unchecked (and the mirror
-          // effect would then blank the stored values on the first click).
-          for (const key of QEPR_OVERSIGHT_RADIOS) {
-            const value = rawData[key];
-            if (typeof value === 'string' && value) setRadio(key, value);
           }
 
           // Set checkboxes from comma-separated values
@@ -1642,7 +1627,7 @@ function ProgressNotePageInner() {
         // sections, and without this a previous client's choice/oversight
         // narrative would ride along into the wrong chart.
         values.q1_formRev = '2';
-        stripInapplicableQeprFields(values, docReqs, oversightApplicable);
+        stripInapplicableQeprFields(values, docReqs);
       }
 
       const submission = values;
@@ -2262,7 +2247,7 @@ function ProgressNotePageInner() {
         <div style={pageStyle(3)}><FormPageThree formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} clientHasFeedingTube={clientHasFeedingTube} giExpandSignal={giExpandSignal} errors={errors} /></div>
         <div style={pageStyle(4)}><FormPageFour formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} editMode={isEditMode} errors={errors} /></div>
         <div style={pageStyle(5)}><FormPageFive formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} isEditMode={isEditMode} clientRequiresMar={clientRequiresMar} documenter={user && profile ? { uid: user.uid, name: profile.displayName || user.email || '', credential: profile.credential || '' } : undefined} getNoteId={ensureSubmissionId} /></div>
-        <div style={pageStyle(6)}><FormPageSix formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} isEditMode={isEditMode} docReqs={docReqs} isRnOversightClient={isRnOversightClient} errors={errors} /></div>
+        <div style={pageStyle(6)}><FormPageSix formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} isEditMode={isEditMode} docReqs={docReqs} errors={errors} /></div>
         <div style={pageStyle(7)}><FormPageSeven formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} initialSignature={initialSignature} initialTotalHours={initialTotalHours} /></div>
 
         <div className={styles.navigationControls}>

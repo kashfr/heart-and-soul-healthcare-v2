@@ -19,7 +19,6 @@ interface HarnessProps {
   credential?: string;
   isEditMode?: boolean;
   docReqs: NoteDocRequirements;
-  isRnOversightClient?: boolean;
 }
 
 function Harness(props: HarnessProps) {
@@ -52,14 +51,12 @@ beforeEach(() => {
 });
 
 const CHOICE_SECTION = /INDIVIDUAL CHOICE & PREFERENCES/i;
-const OVERSIGHT_SECTION = /RN OVERSIGHT REVIEW/i;
 const ANE_TOPIC = /Abuse, neglect, and exploitation/i;
 
 describe('FormPageSix program-conditional sections', () => {
   it('GAPP: renders no QEPR sections — the pediatric note is unchanged', () => {
     render(<Harness credential="LPN" docReqs={getNoteDocRequirements('gapp')} />);
     expect(screen.queryByText(CHOICE_SECTION)).toBeNull();
-    expect(screen.queryByText(OVERSIGHT_SECTION)).toBeNull();
     expect(screen.queryByText(ANE_TOPIC)).toBeNull();
     // But the pre-existing education section is still there.
     expect(screen.getByText('EDUCATION PROVIDED')).toBeInTheDocument();
@@ -90,24 +87,6 @@ describe('FormPageSix program-conditional sections', () => {
     expect(document.getElementById('q42_choicesMade')).not.toBeRequired();
   });
 
-  it('RN oversight section renders only for RN + rn-oversight client on NOW/COMP', () => {
-    const nowComp = getNoteDocRequirements('now-comp');
-    const { unmount } = render(
-      <Harness credential="RN" docReqs={nowComp} isRnOversightClient />,
-    );
-    expect(screen.getByText(OVERSIGHT_SECTION)).toBeInTheDocument();
-    expect(screen.getByText(/MAR reviewed for accuracy and completion/i)).toBeInTheDocument();
-    unmount();
-
-    // LPN on the same client: hidden.
-    const lpn = render(<Harness credential="LPN" docReqs={nowComp} isRnOversightClient />);
-    expect(screen.queryByText(OVERSIGHT_SECTION)).toBeNull();
-    lpn.unmount();
-
-    // RN but a daily-LPN staffing model: hidden.
-    render(<Harness credential="RN" docReqs={nowComp} isRnOversightClient={false} />);
-    expect(screen.queryByText(OVERSIGHT_SECTION)).toBeNull();
-  });
 
   it('teach-back now offers a Declined option', () => {
     render(<Harness credential="LPN" docReqs={getNoteDocRequirements('gapp')} />);

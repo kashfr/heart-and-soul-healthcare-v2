@@ -837,6 +837,15 @@ export default function SubmissionsPage() {
               {myDraft ? 'Resume draft' : 'New progress note'}
             </Link>
           )}
+          {/* RN oversight visit note — same gate the form enforces: an RN
+              credential, or an admin/supervisor signing in their own name. */}
+          {!isViewingAs &&
+            (profile?.credential === 'RN' || role === 'admin' || role === 'supervisor') && (
+              <Link href="/oversight-note" style={newNoteBtnStyle}>
+                <Plus size={16} />
+                New oversight note
+              </Link>
+            )}
         </div>
 
         <div style={tabsStyle} role="tablist" aria-label="Submissions view">
@@ -1300,7 +1309,27 @@ export default function SubmissionsPage() {
                         <td style={tdStyle}>
                           {s.dateOfService}
                         </td>
-                        <td style={tdStyle}>{s.clientName}</td>
+                        <td style={tdStyle}>
+                          {s.clientName}
+                          {s.noteType === 'rn-oversight-visit' && (
+                            <span
+                              style={{
+                                marginLeft: 6,
+                                padding: '1px 6px',
+                                borderRadius: 4,
+                                fontSize: 10.5,
+                                fontWeight: 700,
+                                background: '#eef4fb',
+                                color: '#1a3a5c',
+                                border: '1px solid #c8def5',
+                                whiteSpace: 'nowrap',
+                              }}
+                              title="RN oversight visit note"
+                            >
+                              OVERSIGHT
+                            </span>
+                          )}
+                        </td>
                         <td style={tdStyle}>{s.nurseName}</td>
                         <td style={tdStyle}>
                           <span style={credentialBadge}>{s.credential}</span>

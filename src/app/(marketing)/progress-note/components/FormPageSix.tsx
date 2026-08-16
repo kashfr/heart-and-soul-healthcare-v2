@@ -12,18 +12,15 @@ interface FormPageSixProps extends FormPageProps {
   isEditMode?: boolean;
   /**
    * Program-conditional QEPR sections (see src/lib/programDocRequirements.ts).
-   * GAPP hides them all so the pediatric shift note is unchanged; NOW/COMP
-   * shows them with the choices-made field and RN-oversight confirmations
-   * required; EDWP/ICWP show them as optional.
+   * GAPP hides them so the pediatric shift note is unchanged; NOW/COMP shows
+   * them with the choices-made field required; EDWP/ICWP show them as optional.
    */
   docReqs: NoteDocRequirements;
-  /** True when the selected client is staffed as rn-oversight (monthly RN visits). */
-  isRnOversightClient?: boolean;
 }
 
 const getRadioSnapshotStr = () => String(radioGetSnapshot());
 
-export default function FormPageSix({ formRef, register, watch, setValue, control, credential, isEditMode, docReqs, isRnOversightClient, errors }: FormPageSixProps) {
+export default function FormPageSix({ formRef, register, watch, setValue, control, credential, isEditMode, docReqs, errors }: FormPageSixProps) {
   const isLpnRn = credential === 'LPN' || credential === 'RN';
 
   // Rev-2 gating for the QEPR fields (Aug 2026): every NEW note is rev 2; an
@@ -31,11 +28,6 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
   // note never demands answers the visit predates. Mirrors noteValidation.ts.
   const isRev2Note = !isEditMode || Number(watch('q1_formRev') || '0') >= 2;
   const choicesRequired = docReqs.choices === 'required' && isRev2Note;
-  // The oversight confirmations only bind on an RN's visit to an
-  // rn-oversight-model NOW/COMP client.
-  const oversightVisible =
-    docReqs.rnOversight !== 'hidden' && credential === 'RN' && !!isRnOversightClient;
-  const oversightRequired = oversightVisible && docReqs.rnOversight === 'required' && isRev2Note;
 
   // Subscribe to the global radio store so this component re-renders whenever
   // a radio changes — needed to drive the conditional-required logic on the
@@ -52,19 +44,6 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
     setValue('q52_physicianNotify', physicianNotified);
   }, [physicianNotified, setValue]);
 
-  // Same mirror-sync for the RN-oversight radios: the radios live in the
-  // global radio store, the hidden registered inputs are what trigger()
-  // validates and what the submit serializer reads first.
-  const oversightOrders = radioState['q56_ordersReviewed'] || '';
-  const oversightMar = radioState['q56_marReviewed'] || '';
-  const oversightEquip = radioState['q56_equipReviewed'] || '';
-  const oversightAppts = radioState['q56_apptsReviewed'] || '';
-  useEffect(() => {
-    setValue('q56_ordersReviewed', oversightOrders);
-    setValue('q56_marReviewed', oversightMar);
-    setValue('q56_equipReviewed', oversightEquip);
-    setValue('q56_apptsReviewed', oversightAppts);
-  }, [oversightOrders, oversightMar, oversightEquip, oversightAppts, setValue]);
 
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     educationDetails: false,
@@ -300,119 +279,6 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
         </div>
       )}
 
-      {/* Hidden RHF mirrors for the RN-oversight radios. Deliberately OUTSIDE
-          the conditional section and always mounted: RHF keeps validate rules
-          registered after an unmount (shouldUnregister defaults to false), so
-          a rule captured while the section was visible would go stale if the
-          nurse then switched credential. Mounted permanently, every render
-          re-registers with a fresh `oversightRequired` closure — when the
-          section is hidden the rules are satisfied vacuously. Same pattern as
-          the q52_physicianNotify mirror above. */}
-      <input
-        type="hidden"
-        {...register('q56_ordersReviewed', {
-          validate: (v) => !oversightRequired || !!v || 'Please confirm the physician-orders review.',
-        })}
-      />
-      <FieldError name="q56_ordersReviewed" errors={errors} />
-      <input
-        type="hidden"
-        {...register('q56_marReviewed', {
-          validate: (v) => !oversightRequired || !!v || 'Please confirm the MAR review.',
-        })}
-      />
-      <FieldError name="q56_marReviewed" errors={errors} />
-      <input
-        type="hidden"
-        {...register('q56_equipReviewed', {
-          validate: (v) => !oversightRequired || !!v || 'Please confirm the adaptive-equipment orders review.',
-        })}
-      />
-      <FieldError name="q56_equipReviewed" errors={errors} />
-      <input
-        type="hidden"
-        {...register('q56_apptsReviewed', {
-          validate: (v) => !oversightRequired || !!v || 'Please confirm the medical-appointments review.',
-        })}
-      />
-      <FieldError name="q56_apptsReviewed" errors={errors} />
-
-      {/* RN OVERSIGHT REVIEW — the per-visit confirmations behind QEPR
-          Whole Health 13/14 (orders + MAR), Safety 4 (adaptive equipment),
-          and the preventive/specialty appointment findings. Renders only for
-          an RN documenting an rn-oversight NOW/COMP client. */}
-      {oversightVisible && (
-        <div className={styles.section}>
-          <span className={styles.sectionLabel}>RN OVERSIGHT REVIEW (NOW/COMP)</span>
-
-          <div className={styles.row}>
-            <div className={styles.f} style={{ flex: '1 1 100%' }}>
-              <label className={styles.label}>
-                Physician orders reviewed for every current medication (each order or prescription dated within the last 12 months)?{oversightRequired ? ' *' : ''}
-              </label>
-              <div className={styles.radioRow}>
-                <label><DeselectableRadio name="q56_ordersReviewed" value="Yes" /> Yes</label>
-                <label><DeselectableRadio name="q56_ordersReviewed" value="No" /> No</label>
-                <label><DeselectableRadio name="q56_ordersReviewed" value="N/A (no medications)" /> N/A (no medications)</label>
-              </div>
-            </div>
-          </div>
-
-          <div className={styles.row}>
-            <div className={styles.f} style={{ flex: '1 1 100%' }}>
-              <label className={styles.label}>
-                MAR reviewed for accuracy and completion against each physician order?{oversightRequired ? ' *' : ''}
-              </label>
-              <div className={styles.radioRow}>
-                <label><DeselectableRadio name="q56_marReviewed" value="Yes" /> Yes</label>
-                <label><DeselectableRadio name="q56_marReviewed" value="No" /> No</label>
-                <label><DeselectableRadio name="q56_marReviewed" value="N/A (no MAR in place)" /> N/A (no MAR in place)</label>
-              </div>
-            </div>
-          </div>
-
-          <div className={styles.row}>
-            <div className={styles.f} style={{ flex: '1 1 100%' }}>
-              <label className={styles.label}>
-                Adaptive equipment / protective device orders reviewed (current order with rationale and instructions; use still justified)?{oversightRequired ? ' *' : ''}
-              </label>
-              <div className={styles.radioRow}>
-                <label><DeselectableRadio name="q56_equipReviewed" value="Yes" /> Yes</label>
-                <label><DeselectableRadio name="q56_equipReviewed" value="No" /> No</label>
-                <label><DeselectableRadio name="q56_equipReviewed" value="N/A (no adaptive equipment)" /> N/A (no adaptive equipment)</label>
-              </div>
-            </div>
-          </div>
-
-          <div className={styles.row}>
-            <div className={styles.f} style={{ flex: '1 1 100%' }}>
-              <label className={styles.label}>
-                Medical appointments since last visit reviewed (preventive and specialty), with follow-up recommendations noted?{oversightRequired ? ' *' : ''}
-              </label>
-              <div className={styles.radioRow}>
-                <label><DeselectableRadio name="q56_apptsReviewed" value="Yes" /> Yes</label>
-                <label><DeselectableRadio name="q56_apptsReviewed" value="No" /> No</label>
-                <label><DeselectableRadio name="q56_apptsReviewed" value="No appointments since last visit" /> No appointments since last visit</label>
-              </div>
-            </div>
-          </div>
-
-          <div className={styles.row}>
-            <div className={styles.f} style={{ flex: '1 1 100%' }}>
-              <label className={styles.label} htmlFor="q56_oversightNotes">
-                RN oversight notes (orders requested, follow-ups needed, recommendations made):
-              </label>
-              <textarea
-                className={styles.textarea}
-                id="q56_oversightNotes"
-                {...register('q56_oversightNotes')}
-                rows={3}
-                placeholder='e.g. "wheelchair order expires 9/12; renewal requested from Dr. Patel today", "dental exam completed 8/2, report requested from family"...'
-              />
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* GOALS OF CARE (LPN/RN only) */}
       <div style={{ display: isLpnRn ? 'block' : 'none' }}>

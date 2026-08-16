@@ -37,27 +37,18 @@ export interface NoteDocRequirements {
   qeprEducationTopics: 'optional' | 'hidden';
   /** "How the individual's preferences were honored" line (QEPR PCP 21). */
   preferences: 'optional' | 'hidden';
-  /**
-   * RN oversight confirmations (physician orders, MAR accuracy, adaptive
-   * equipment orders, appointments since last visit). Also gated at render
-   * time by credential === 'RN' and serviceLevel === 'rn-oversight'; this
-   * flag only says whether the client's program uses the section at all.
-   */
-  rnOversight: 'required' | 'hidden';
 }
 
 const NOW_COMP: NoteDocRequirements = {
   choices: 'required',
   qeprEducationTopics: 'optional',
   preferences: 'optional',
-  rnOversight: 'required',
 };
 
 const GAPP: NoteDocRequirements = {
   choices: 'hidden',
   qeprEducationTopics: 'hidden',
   preferences: 'hidden',
-  rnOversight: 'hidden',
 };
 
 /**
@@ -69,7 +60,6 @@ const DEFAULT_OPTIONAL: NoteDocRequirements = {
   choices: 'optional',
   qeprEducationTopics: 'optional',
   preferences: 'optional',
-  rnOversight: 'hidden',
 };
 
 export function getNoteDocRequirements(program?: string | null): NoteDocRequirements {
@@ -91,17 +81,6 @@ export const QEPR_NARRATIVE_FIELDS = [
   'q42_preferencesHonored',
 ] as const;
 
-/** The four RN-oversight confirmations, which live in the radio store. */
-export const QEPR_OVERSIGHT_RADIOS = [
-  'q56_ordersReviewed',
-  'q56_marReviewed',
-  'q56_equipReviewed',
-  'q56_apptsReviewed',
-] as const;
-
-/** Everything the RN-oversight section writes (radios + notes). */
-export const QEPR_OVERSIGHT_FIELDS = [...QEPR_OVERSIGHT_RADIOS, 'q56_oversightNotes'] as const;
-
 /**
  * Remove QEPR fields that do not apply to the note being submitted. RHF keeps
  * values after their inputs unmount (shouldUnregister defaults to false) and
@@ -114,14 +93,10 @@ export const QEPR_OVERSIGHT_FIELDS = [...QEPR_OVERSIGHT_RADIOS, 'q56_oversightNo
 export function stripInapplicableQeprFields(
   values: Record<string, string>,
   reqs: NoteDocRequirements,
-  oversightApplicable: boolean,
 ): void {
   if (reqs.choices === 'hidden') {
     for (const f of QEPR_NARRATIVE_FIELDS) delete values[f];
   } else if (reqs.preferences === 'hidden') {
     delete values.q42_preferencesHonored;
-  }
-  if (!oversightApplicable) {
-    for (const f of QEPR_OVERSIGHT_FIELDS) delete values[f];
   }
 }
