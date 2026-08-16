@@ -933,7 +933,13 @@ const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collap
 const thStyle: React.CSSProperties = { textAlign: 'left', padding: '12px 14px', borderBottom: '1px solid #e5e7eb', color: '#5c6b7a', fontWeight: 700, fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 };
 const tdStyle: React.CSSProperties = { padding: '12px 14px', borderBottom: '1px solid #f1f3f5', color: '#2c3e50' };
 const altRowStyle: React.CSSProperties = { background: '#fafbfc' };
-const ageBadgeStyle: React.CSSProperties = { display: 'inline-block', background: '#e8f4e8', color: '#2a7a2a', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999 };
+// whiteSpace: nowrap is load-bearing — without it "23 yrs" wraps into a
+// squished two-line circle when the Age column gets tight.
+const ageBadgeStyle: React.CSSProperties = {
+  display: 'inline-block', background: '#e7f6ec', color: '#1e7a3d',
+  fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 999,
+  whiteSpace: 'nowrap', lineHeight: 1.4,
+};
 const primaryBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#27ae60', color: 'white', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
 const secondaryBtnStyle: React.CSSProperties = { background: '#eef1f4', color: '#2c3e50', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const iconBtnStyle: React.CSSProperties = { background: 'transparent', border: 'none', padding: 6, margin: '0 2px', borderRadius: 4, cursor: 'pointer', color: '#5c6b7a' };
