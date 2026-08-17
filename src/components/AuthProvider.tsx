@@ -102,7 +102,10 @@ export function useEffectiveUser(): EffectiveUser {
     return {
       uid: viewingAs.uid,
       displayName: viewingAs.displayName,
-      role: 'nurse',
+      // The target's REAL role, so the preview renders their true experience
+      // (a VA's sidebar for a VA, a supervisor's for a supervisor). Hardcoding
+      // 'nurse' here made every non-nurse preview lie about access.
+      role: viewingAs.role,
       credential: viewingAs.credential ?? undefined,
       isViewingAs: true,
     };

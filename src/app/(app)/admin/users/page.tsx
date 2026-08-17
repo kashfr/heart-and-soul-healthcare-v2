@@ -14,7 +14,7 @@ import {
   Eye,
 } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
-import { useAuth } from '@/components/AuthProvider';
+import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { useViewAs } from '@/components/ImpersonationProvider';
 import type { Role } from '@/lib/auth';
 import { formatUSPhone } from '@/lib/phone';
@@ -79,8 +79,13 @@ const CREDENTIAL_OPTIONS: { value: string; label: string }[] = [
 ];
 
 export default function AdminUsersPage() {
-  const { user: currentUser, role: currentRole } = useAuth();
+  const { user: currentUser } = useAuth();
   const { startViewAs } = useViewAs();
+  // Render gating keys off the EFFECTIVE role so a supervisor preview shows
+  // the supervisor's variant (admin rows locked, no View-as buttons — which
+  // also prevents silently swapping the preview target mid-session). Writes
+  // are separately blocked during view-as by the authedFetch guard.
+  const { role: currentRole } = useEffectiveUser();
   const isSupervisor = currentRole === 'supervisor';
 
   // Admin-only "View as" (read-only impersonation for testing). Logs the session
@@ -92,7 +97,15 @@ export default function AdminUsersPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ targetUid: s.uid, targetName: s.displayName || s.email || '' }),
       }).catch(() => {}); // audit is best-effort; don't block the session on it
-      startViewAs({ uid: s.uid, displayName: s.displayName || s.email || 'Staff', credential: s.credential });
+      startViewAs({
+        uid: s.uid,
+        displayName: s.displayName || s.email || 'Staff',
+        credential: s.credential,
+        // The target's real role drives the preview's nav + surfaces. Rows
+        // without a role stored (shouldn't happen for active staff) preview
+        // as the least-privileged clinical role rather than failing open.
+        role: s.role ?? 'nurse',
+      });
       window.location.href = '/admin';
     } catch (err) {
       console.error('View-as failed:', err);

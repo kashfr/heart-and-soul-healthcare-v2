@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { ViewAsWriteBlock } from '@/components/ImpersonationProvider';
 import { useForm } from 'react-hook-form';
 import { Check, AlertTriangle, Loader2 } from 'lucide-react';
 import { getPatients, type Patient } from '@/lib/patients';
@@ -2893,7 +2894,9 @@ function ProgressNotePageInner() {
 export default function ProgressNotePage() {
   return (
     <Suspense fallback={<div style={{ textAlign: 'center', padding: '40px 20px' }}><p>Loading...</p></div>}>
-      <ProgressNotePageInner />
+      <ViewAsWriteBlock>
+        <ProgressNotePageInner />
+      </ViewAsWriteBlock>
     </Suspense>
   );
 }
