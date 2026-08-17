@@ -5,13 +5,14 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { useAuth } from '@/components/AuthProvider';
+import { safeLoginRedirect } from '@/lib/loginRedirect';
 
 type Mode = 'signIn' | 'reset';
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirect = searchParams.get('redirect') || '/admin';
+  const redirect = safeLoginRedirect(searchParams.get('redirect'));
   // Set when the /reset-password page couldn't auto-sign-in after a successful
   // reset (rare). Show a clear "you're all set, just sign in" banner.
   const justReset = searchParams.get('reset') === '1';
