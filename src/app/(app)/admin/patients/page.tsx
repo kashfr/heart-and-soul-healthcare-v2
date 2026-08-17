@@ -663,19 +663,22 @@ export default function AdminPatientsPage() {
                   The clinical fields below feed this client&apos;s Medication Administration Record and are visible only to staff and the client&apos;s assigned care team.
                 </div>
 
+                {/* Program gets its own full-width line (its option labels are
+                    long); Service level + start date share the next row. */}
+                <Field label="Program">
+                  <select
+                    value={formData.program || ''}
+                    onChange={(e) => setFormData((f) => ({ ...f, program: e.target.value }))}
+                    style={selectStyle}
+                  >
+                    <option value="">—</option>
+                    {PROGRAMS.map((pr) => (
+                      <option key={pr.id} value={pr.id}>{pr.label} — {pr.full}</option>
+                    ))}
+                  </select>
+                </Field>
+
                 <div style={gridTwoStyle}>
-                  <Field label="Program">
-                    <select
-                      value={formData.program || ''}
-                      onChange={(e) => setFormData((f) => ({ ...f, program: e.target.value }))}
-                      style={selectStyle}
-                    >
-                      <option value="">—</option>
-                      {PROGRAMS.map((pr) => (
-                        <option key={pr.id} value={pr.id}>{pr.label} — {pr.full}</option>
-                      ))}
-                    </select>
-                  </Field>
                   <Field label="Service level">
                     <select
                       value={formData.serviceLevel || ''}
@@ -688,21 +691,20 @@ export default function AdminPatientsPage() {
                       ))}
                     </select>
                   </Field>
+                  <Field label="Service start date (official start of care)">
+                    <input
+                      type="date"
+                      value={formData.serviceStartedOn || ''}
+                      onChange={(e) => setFormData((f) => ({ ...f, serviceStartedOn: e.target.value }))}
+                      style={inputStyle}
+                    />
+                  </Field>
                 </div>
-
-                <Field label="Service start date (official start of care)">
-                  <input
-                    type="date"
-                    value={formData.serviceStartedOn || ''}
-                    onChange={(e) => setFormData((f) => ({ ...f, serviceStartedOn: e.target.value }))}
-                    style={inputStyle}
-                  />
-                  <div style={fieldHintStyle}>
-                    The start date set by support coordination — the one on the ISP and
-                    authorizations — even if scheduling delays the first visit. Leave blank until a
-                    start date exists; record checks for daily-care clients begin from this date.
-                  </div>
-                </Field>
+                <div style={{ ...fieldHintStyle, marginTop: -6, marginBottom: 12 }}>
+                  The start date set by support coordination — the one on the ISP and
+                  authorizations — even if scheduling delays the first visit. Leave blank until a
+                  start date exists; record checks for daily-care clients begin from this date.
+                </div>
 
                 <label style={requiresMarRowStyle}>
                   <input
@@ -956,6 +958,11 @@ const tubeBadgeStyle: React.CSSProperties = { display: 'inline-block', backgroun
 // the site. Suppresses the macOS native double-arrow ⇅ for visual consistency.
 const selectStyle: React.CSSProperties = {
   ...inputStyle,
+  // Let the select shrink to its column instead of forcing the column to fit
+  // its longest option (min-width defaults to the content's width).
+  minWidth: 0,
+  width: '100%',
+  boxSizing: 'border-box',
   appearance: 'none',
   WebkitAppearance: 'none',
   MozAppearance: 'none',
@@ -1049,7 +1056,9 @@ const fieldHintStyle: React.CSSProperties = {
   lineHeight: 1.4,
   marginTop: 4,
 };
-const gridTwoStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 };
+// minmax(0, 1fr): plain 1fr lets a child's intrinsic width (e.g. the Program
+// select's long option text) blow the column past the modal edge.
+const gridTwoStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 12 };
 const toastStyle: React.CSSProperties = { position: 'fixed', bottom: 20, right: 20, background: '#2c3e50', color: 'white', padding: '10px 16px', borderRadius: 8, fontSize: 13, boxShadow: '0 8px 20px rgba(0,0,0,0.2)', zIndex: 1100 };
 
 // Care team styles. Used in the edit-patient modal's "Care team"
