@@ -77,7 +77,9 @@ export default function AdminDashboardPage() {
   const [pendingDup, setPendingDup] = useState(0);
   const [openClarifications, setOpenClarifications] = useState(0);
 
-  // Pending duplicate-note approvals (admin + supervisor only — real role).
+  // Pending duplicate-note approvals. Keyed to the EFFECTIVE role: a
+  // supervisor preview shows the banner the supervisor sees (the subscription
+  // itself runs with the real admin's read permissions either way).
   useEffect(() => {
     if (role !== 'admin' && role !== 'supervisor') return;
     const unsub = subscribePendingDupCount(setPendingDup);

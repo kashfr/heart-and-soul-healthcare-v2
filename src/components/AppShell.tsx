@@ -62,6 +62,13 @@ const NAV: NavItem[] = [
   { href: '/admin/agencies', label: 'Agencies', icon: <Handshake size={18} />, allow: ['admin', 'va'] },
 ];
 
+const VIEW_AS_ROLE_LABELS: Record<Role, string> = {
+  admin: 'Admin',
+  supervisor: 'Supervisor',
+  nurse: 'Nurse',
+  va: 'Virtual Assistant',
+};
+
 const viewAsBannerStyle: React.CSSProperties = {
   position: 'sticky',
   top: 0,
@@ -200,6 +207,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div style={viewAsBannerStyle} className="no-print">
           <span>
             👁 Viewing as <strong>{viewingAs.displayName}</strong>
+            {/* Role always, credential when they have one, so an RN supervisor
+                preview ("Supervisor · RN") can't be mistaken for an RN nurse's
+                ("Nurse · RN"). */}
+            {` · ${VIEW_AS_ROLE_LABELS[viewingAs.role] ?? viewingAs.role}`}
             {viewingAs.credential ? ` · ${viewingAs.credential}` : ''} (read-only)
           </span>
           <button

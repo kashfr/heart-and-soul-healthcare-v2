@@ -144,7 +144,7 @@ function ClientDashboardInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
-  const { uid, role } = useEffectiveUser();
+  const { uid, role, isViewingAs } = useEffectiveUser();
   const isNurse = role === 'nurse';
   // Care plan is a staff surface; a nurse deep-linking ?tab=careplan lands on
   // Overview instead of an editor she isn't meant to drive.
@@ -453,9 +453,13 @@ function ClientDashboardInner() {
                 )}
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <Link href={`/progress-note?patient=${patientId}`} style={secondaryActionStyle}>
-                  <FileText size={15} /> New progress note
-                </Link>
+                {/* Hidden during view-as: the note form blocks the session
+                    anyway (ViewAsWriteBlock), so don't offer a dead door. */}
+                {!isViewingAs && (
+                  <Link href={`/progress-note?patient=${patientId}`} style={secondaryActionStyle}>
+                    <FileText size={15} /> New progress note
+                  </Link>
+                )}
                 <Link href={marHref} style={primaryActionStyle}>
                   <Pill size={15} /> Open MAR
                 </Link>

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Search, X, RefreshCw, LayoutGrid, List } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
-import { useAuth } from '@/components/AuthProvider';
+import { useEffectiveUser } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
 import { type GappServiceKey } from '@/lib/georgia';
 import type { ServiceKey } from '@/lib/diagnosisCatalog';
@@ -26,8 +26,13 @@ type View = 'board' | 'table';
 const VIEW_KEY = 'referrals-view';
 
 export default function ReferralsPage() {
-  // Deleting referrals is admin-only; the VA gets the full workflow minus delete.
-  const { role } = useAuth();
+  // Deleting referrals is admin-only; the VA gets the full workflow minus
+  // delete. EFFECTIVE role, so a "View as Rosita" preview hides the delete
+  // affordances she never sees (and view-as targets are never admins, so this
+  // can only narrow). Board writes during a preview are separately refused by
+  // the authedFetch view-as guard, which the optimistic mutate runner
+  // surfaces as an alert + rollback.
+  const { role } = useEffectiveUser();
   const canDelete = role === 'admin';
   const [referrals, setReferrals] = useState<Referral[]>([]);
   const [staff, setStaff] = useState<StaffOption[]>([]);

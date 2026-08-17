@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { ViewAsWriteBlock } from '@/components/ImpersonationProvider';
 import { useForm } from 'react-hook-form';
 import { getPatients, type Patient } from '@/lib/patients';
 import { computeAgeString } from '@/lib/age';
@@ -116,7 +117,7 @@ function Area({
   );
 }
 
-export default function OversightNotePage() {
+function OversightNotePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editId = searchParams.get('edit');
@@ -1119,5 +1120,13 @@ export default function OversightNotePage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function OversightNotePage() {
+  return (
+    <ViewAsWriteBlock>
+      <OversightNotePageInner />
+    </ViewAsWriteBlock>
   );
 }

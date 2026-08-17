@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, ShieldCheck, Pencil, Ban } from 'lucide-react';
-import { useAuth } from '@/components/AuthProvider';
+import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import {
   getCareTasks,
   addCareTask,
@@ -35,6 +35,11 @@ import { withSelectChevron } from '@/lib/selectChevron';
  */
 export default function CarePlanSection({ patientId }: { patientId: string }) {
   const { user, profile, role } = useAuth();
+  // "View as" is read-only: a supervisor preview shows the task list exactly
+  // as the supervisor sees it, but approving/editing/discontinuing are live
+  // clinical writes (approved tasks render on progress notes and the TAR),
+  // so the action buttons are withheld and withBusy refuses to run.
+  const { isViewingAs } = useEffectiveUser();
 
   const [tasks, setTasks] = useState<CareTask[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -114,7 +119,7 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
   }, [active]);
 
   const withBusy = async (fn: () => Promise<void>) => {
-    if (!actor) return;
+    if (!actor || isViewingAs) return;
     setBusy(true);
     setError('');
     try {
@@ -236,16 +241,18 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
             <span style={pendingBannerStyle}> {pending.length} task{pending.length === 1 ? '' : 's'} pending RN approval.</span>
           )}
         </p>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {pending.length > 0 && (
-            <button type="button" style={approveBtnStyle} onClick={handleApprove} disabled={busy} title="Stamps your name, role, and the time on each pending task. Intended for the RN supervisor.">
-              <ShieldCheck size={15} /> Approve all pending ({pending.length})
+        {!isViewingAs && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {pending.length > 0 && (
+              <button type="button" style={approveBtnStyle} onClick={handleApprove} disabled={busy} title="Stamps your name, role, and the time on each pending task. Intended for the RN supervisor.">
+                <ShieldCheck size={15} /> Approve all pending ({pending.length})
+              </button>
+            )}
+            <button type="button" style={addBtnStyle} onClick={() => setAddOpen(true)} disabled={busy}>
+              <Plus size={15} /> Add tasks
             </button>
-          )}
-          <button type="button" style={addBtnStyle} onClick={() => setAddOpen(true)} disabled={busy}>
-            <Plus size={15} /> Add tasks
-          </button>
-        </div>
+          </div>
+        )}
       </div>
 
       {error && <div style={errorStyle}>{error}</div>}
@@ -284,19 +291,21 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
                       )}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                    {!t.approvedAt && (
-                      <button type="button" style={approveOneBtnStyle} onClick={() => handleApproveOne(t)} disabled={busy} title="Approve this task (stamps your name, role, and the time)">
-                        <ShieldCheck size={13} /> Approve
+                  {!isViewingAs && (
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      {!t.approvedAt && (
+                        <button type="button" style={approveOneBtnStyle} onClick={() => handleApproveOne(t)} disabled={busy} title="Approve this task (stamps your name, role, and the time)">
+                          <ShieldCheck size={13} /> Approve
+                        </button>
+                      )}
+                      <button type="button" style={iconBtnStyle} onClick={() => openEdit(t)} disabled={busy} title="Edit frequency / instructions">
+                        <Pencil size={14} />
                       </button>
-                    )}
-                    <button type="button" style={iconBtnStyle} onClick={() => openEdit(t)} disabled={busy} title="Edit frequency / instructions">
-                      <Pencil size={14} />
-                    </button>
-                    <button type="button" style={iconBtnDangerStyle} onClick={() => { setDcTarget(t); setDcReason(''); }} disabled={busy} title="Discontinue task">
-                      <Ban size={14} />
-                    </button>
-                  </div>
+                      <button type="button" style={iconBtnDangerStyle} onClick={() => { setDcTarget(t); setDcReason(''); }} disabled={busy} title="Discontinue task">
+                        <Ban size={14} />
+                      </button>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>

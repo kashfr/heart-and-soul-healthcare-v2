@@ -596,7 +596,7 @@ export default function SubmissionsPage() {
   const clearSelection = () => setSelected(new Set());
 
   const handleBulkArchive = async (action: 'archive' | 'restore') => {
-    if (!user || !role) return;
+    if (!user || !role || isViewingAs) return;
     if (selectedIds.length === 0) return;
     if (action === 'archive') {
       const msg = isNurse
@@ -1085,7 +1085,10 @@ export default function SubmissionsPage() {
           </div>
         )}
 
-        {selected.size > 0 && (
+        {/* Bulk actions stay hidden during view-as: archive/restore and
+            co-sign are live writes, and a "(read-only)" preview must not
+            offer them. */}
+        {!isViewingAs && selected.size > 0 && (
           <div style={bulkBarStyle}>
             <span style={{ fontWeight: 600, color: '#2c3e50' }}>
               {selected.size} selected
@@ -1172,6 +1175,7 @@ export default function SubmissionsPage() {
                       <input
                         type="checkbox"
                         checked={allOnPageSelected}
+                        disabled={isViewingAs}
                         ref={(el) => {
                           if (el) el.indeterminate = someOnPageSelected;
                         }}
@@ -1298,6 +1302,7 @@ export default function SubmissionsPage() {
                           <input
                             type="checkbox"
                             checked={isSelected}
+                            disabled={isViewingAs}
                             onChange={() => toggleRow(s.id)}
                             aria-label={`Select ${s.clientName} ${s.dateOfService}`}
                             style={checkboxStyle}

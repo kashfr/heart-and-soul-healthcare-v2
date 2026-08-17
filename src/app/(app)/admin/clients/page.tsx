@@ -108,10 +108,15 @@ function formatDOB(dob: string): string {
  */
 function ClientsRosterInner() {
   const router = useRouter();
-  const { uid, role } = useEffectiveUser();
+  const { uid, role, isViewingAs } = useEffectiveUser();
   const isNurse = role === 'nurse';
   // Staff = the tier that manages the roster (add/edit/delete, record checks).
   const isStaff = role === 'admin' || role === 'supervisor';
+  // "View as" is read-only by contract: a supervisor preview shows the staff
+  // table (faithful) but none of the write affordances — add/edit/delete and
+  // the care-team chips commit real Firestore writes as the real admin, so
+  // they must not be one accidental click away under a "(read-only)" banner.
+  const canManageRoster = isStaff && !isViewingAs;
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
@@ -263,7 +268,7 @@ function ClientsRosterInner() {
   };
 
   const handleRemove = async (patient: Patient) => {
-    if (!patient.id) return;
+    if (!canManageRoster || !patient.id) return;
     if (!window.confirm(`Remove ${patient.name} from the roster?`)) return;
     try {
       await removePatient(patient.id);
@@ -307,7 +312,7 @@ function ClientsRosterInner() {
   }, [eligibleStaff, careTeam, pickerQuery]);
 
   const handleAddNurse = async (uid: string) => {
-    if (!editingId || careTeam.includes(uid)) return;
+    if (!canManageRoster || !editingId || careTeam.includes(uid)) return;
     // A test login on a real client's care team grants PHI access to an
     // identity that isn't a real workforce member. Confirm rather than block:
     // test accounts legitimately belong on test clients.
@@ -346,7 +351,7 @@ function ClientsRosterInner() {
   };
 
   const handleRemoveNurse = async (uid: string) => {
-    if (!editingId) return;
+    if (!canManageRoster || !editingId) return;
     setSavingCareTeam(true);
     try {
       await updateDoc(doc(db, 'patients', editingId), {
@@ -373,6 +378,7 @@ function ClientsRosterInner() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManageRoster) return;
     if (!formData.name || !formData.dob) {
       showToast('Name and date of birth are required.');
       return;
@@ -476,7 +482,7 @@ function ClientsRosterInner() {
                 : `${patients.length} client${patients.length === 1 ? '' : 's'} in the roster. Click a client to open their dashboard. Nurses pick from this list on the progress-note form (free-form names are still allowed for new clients).`}
             </p>
           </div>
-          {isStaff && (
+          {canManageRoster && (
             <button onClick={handleOpenAdd} style={primaryBtnStyle}>
               <Plus size={16} /> Add patient
             </button>
@@ -569,7 +575,7 @@ function ClientsRosterInner() {
                   <th style={thStyle}>Diagnosis</th>
                   <th style={thStyle}>Location</th>
                   <th style={thStyle}>Charts</th>
-                  {isStaff && <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>}
+                  {canManageRoster && <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>}
                 </tr>
               </thead>
               <tbody>
@@ -644,7 +650,7 @@ function ClientsRosterInner() {
                         <Stethoscope size={12} /> TAR
                       </Link>
                     </td>
-                    {isStaff && (
+                    {canManageRoster && (
                       <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
                         <button
                           onClick={(e) => {
@@ -676,7 +682,7 @@ function ClientsRosterInner() {
         )}
       </div>
 
-      {formOpen && (
+      {formOpen && canManageRoster && (
         <div style={modalBackdropStyle} onClick={() => !submitting && setFormOpen(false)}>
           <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
             <div style={modalHeaderStyle}>
