@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Users, ClipboardList, UserCog, FileText, Pill, FilePlus, FileEdit, ShieldAlert, MessageCircleQuestion, Stethoscope } from 'lucide-react';
+import { Users, ClipboardList, UserCog, FileText, FilePlus, FileEdit, ShieldAlert, MessageCircleQuestion, Stethoscope } from 'lucide-react';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { loadDraft, subscribePendingDupCount, type NoteDraft } from '@/lib/drafts';
 import { subscribeMyOpenClarifications } from '@/lib/clarifications';
@@ -27,25 +27,21 @@ const CARDS: Card[] = [
     description: 'View and amend your submitted progress notes.',
     allow: ['nurse'],
   },
+  // One card for everything client-scoped (nav consolidation, Aug 2026): the
+  // roster opens each client's dashboard, with MAR/TAR pills per row; the
+  // add/edit modal and the med order book hang off it for staff.
   {
-    href: '/admin/patients',
+    href: '/admin/clients',
     icon: <Users size={22} />,
-    title: 'Patient Roster',
-    description: 'Add, edit, and remove patients. Nurses pick from this roster on the progress-note form.',
-    allow: ['admin', 'supervisor'],
+    title: 'Clients',
+    description: 'Open a client’s dashboard and jump to their MAR or TAR. Staff manage the roster here too.',
+    allow: ['admin', 'supervisor', 'nurse'],
   },
   {
     href: '/admin/submissions',
     icon: <ClipboardList size={22} />,
     title: 'Progress Note Submissions',
     description: 'View and manage all submitted progress notes across staff.',
-    allow: ['admin', 'supervisor'],
-  },
-  {
-    href: '/admin/records',
-    icon: <Pill size={22} />,
-    title: 'Records (MAR)',
-    description: 'Build and manage Medication Administration Records for clients who require one.',
     allow: ['admin', 'supervisor'],
   },
   {

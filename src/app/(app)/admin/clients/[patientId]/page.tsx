@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   CalendarClock,
   FolderOpen,
+  ListChecks,
   Stethoscope,
   TrendingUp,
 } from 'lucide-react';
@@ -28,6 +29,7 @@ import { getVisitsForPatient, type PatientVisit } from '@/lib/patientVisits';
 import DocumentsSection from './DocumentsSection';
 import VisitsSection from './VisitsSection';
 import QuickNotesSection from './QuickNotesSection';
+import CarePlanSection from './CarePlanSection';
 import { physicianAttributionPending, physicianOrderStale } from '@/lib/marShared';
 import {
   adverseEvents,
@@ -59,6 +61,10 @@ const TABS = [
   { key: 'trends', label: 'Trends' },
   { key: 'readiness', label: 'Survey readiness' },
   { key: 'documents', label: 'Documents' },
+  // Staff-only: the care-task editor that used to be the Care Plans sidebar
+  // tab (nav consolidation, Aug 2026). Hidden from nurses at render time and
+  // guarded in the tab resolver below.
+  { key: 'careplan', label: 'Care plan' },
 ] as const;
 type TabKey = (typeof TABS)[number]['key'];
 
@@ -138,12 +144,15 @@ function ClientDashboardInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
-  const tab: TabKey = isTabKey(tabParam) ? tabParam : 'overview';
+  const { uid, role } = useEffectiveUser();
+  const isNurse = role === 'nurse';
+  // Care plan is a staff surface; a nurse deep-linking ?tab=careplan lands on
+  // Overview instead of an editor she isn't meant to drive.
+  const tab: TabKey =
+    isTabKey(tabParam) && !(tabParam === 'careplan' && isNurse) ? tabParam : 'overview';
   const setTab = (next: TabKey) => {
     router.replace(next === 'overview' ? pathname : `${pathname}?tab=${next}`, { scroll: false });
   };
-  const { uid, role } = useEffectiveUser();
-  const isNurse = role === 'nurse';
   const { settings } = useSettings();
   // Writes (upload/archive) always act as the REAL signed-in user — the
   // Firestore create rule pins uploadedBy to auth.uid, so a view-as session
@@ -482,7 +491,7 @@ function ClientDashboardInner() {
 
           {/* Tab bar */}
           <div style={tabBarStyle} role="tablist" aria-label="Dashboard sections">
-            {TABS.map((t) => (
+            {TABS.filter((t) => t.key !== 'careplan' || !isNurse).map((t) => (
               <button
                 key={t.key}
                 type="button"
@@ -785,6 +794,16 @@ function ClientDashboardInner() {
               }}
               onToast={showToast}
             />
+          </section>
+          )}
+
+          {/* Care plan (staff-only tab; the old /admin/care-plan editor) */}
+          {tab === 'careplan' && !isNurse && (
+          <section style={sectionCardStyle}>
+            <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
+              <ListChecks size={16} /> Care plan
+            </div>
+            <CarePlanSection patientId={patientId} />
           </section>
           )}
 

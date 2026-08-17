@@ -303,8 +303,11 @@ export default function RecordDetailPage() {
     <div style={containerStyle}>
       <div style={wrapStyle}>
         <div style={{ marginBottom: 16 }}>
-          <Link href="/admin/records" style={backLinkStyle}>
-            <ArrowLeft size={14} /> Back to Records
+          {/* The Records roster merged into the Clients tab; this order book
+              is reached from the client dashboard's "Manage record" button,
+              so back goes to the dashboard. */}
+          <Link href={`/admin/clients/${patientId}`} style={backLinkStyle}>
+            <ArrowLeft size={14} /> Back to client dashboard
           </Link>
         </div>
 
@@ -315,7 +318,8 @@ export default function RecordDetailPage() {
         ) : (
           <>
             {/* MAR header; demographics from the roster, clinical PHI from the
-                care-team-gated sub-record. Edited on the Patients screen. */}
+                care-team-gated sub-record. Edited via the Clients roster's
+                edit modal (the ?edit deep link below). */}
             <header style={headerCardStyle}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
                 <div style={headerIconStyle}>
@@ -336,7 +340,7 @@ export default function RecordDetailPage() {
                   <Link href={`/admin/records/${patientId}/tar`} style={marLinkStyle}>
                     <CalendarDays size={14} /> Monthly TAR
                   </Link>
-                  <Link href={`/admin/patients?edit=${patientId}`} style={editHeaderLinkStyle}>
+                  <Link href={`/admin/clients?edit=${patientId}`} style={editHeaderLinkStyle}>
                     <Pencil size={13} /> Edit client details
                   </Link>
                 </div>
@@ -345,9 +349,9 @@ export default function RecordDetailPage() {
               {!patient.requiresMar && (
                 <div style={notFlaggedStyle}>
                   This client isn&apos;t marked <strong>Requires MAR</strong> yet. You can still build orders, but
-                  flag them on the{' '}
-                  <Link href="/admin/patients" style={inlineLinkStyle}>Patients</Link> screen so they appear in the
-                  Records list.
+                  flag them via{' '}
+                  <Link href={`/admin/clients?edit=${patientId}`} style={inlineLinkStyle}>Edit client details</Link>{' '}
+                  so the MAR badge shows on the roster.
                 </div>
               )}
 

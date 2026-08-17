@@ -214,10 +214,10 @@ export default function MonthlyTarPage() {
     <div style={containerStyle}>
       <div style={wrapStyle}>
         <Link
-          href={cameFromPicker ? '/admin/treatments' : `/admin/records/${patientId}`}
+          href={cameFromPicker ? '/admin/clients' : `/admin/records/${patientId}`}
           style={backLinkStyle}
         >
-          <ArrowLeft size={14} /> {cameFromPicker ? 'Back to Treatments' : 'Back to client record'}
+          <ArrowLeft size={14} /> {cameFromPicker ? 'Back to Clients' : 'Back to client record'}
         </Link>
 
         <div style={headerCardStyle}>

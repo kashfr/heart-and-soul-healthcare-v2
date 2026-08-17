@@ -125,8 +125,8 @@ export default function MonthlyMarPage() {
     profile?.role !== 'va' &&
     (profile?.credential === 'RN' || profile?.credential === 'LPN');
   // Adding / changing / discontinuing a med is within an RN/LPN's scope, and
-  // supervisors + admins may do it too; the med goes live immediately and the
-  // supervisor acknowledges it afterward. Admins get the button for visibility
+  // supervisors + admins may do it too; the med goes live immediately, with no
+  // approval or acknowledgment step. Admins get the button for visibility
   // (parity with what supervisors see); the server permits staff anyway. Uses
   // the REAL signed-in user, and is view-as guarded for the same reason
   // charting is: impersonation is read-only, so it must not reach a write.
@@ -370,11 +370,11 @@ export default function MonthlyMarPage() {
       <div style={wrapStyle}>
         <div style={{ marginBottom: 16 }}>
           <Link
-            href={cameFromPicker ? '/admin/mar' : `/admin/records/${patientId}`}
+            href={cameFromPicker ? '/admin/clients' : `/admin/records/${patientId}`}
             style={backLinkStyle}
           >
             <ArrowLeft size={14} />{' '}
-            {cameFromPicker ? 'Back to Medications' : 'Back to medication orders'}
+            {cameFromPicker ? 'Back to Clients' : 'Back to medication orders'}
           </Link>
         </div>
 

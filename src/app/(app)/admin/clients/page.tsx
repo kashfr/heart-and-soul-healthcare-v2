@@ -1,23 +1,145 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { LayoutDashboard, ChevronRight, Search } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import {
+  ArrowLeft,
+  Plus,
+  Search,
+  Pencil,
+  Trash2,
+  X,
+  UserPlus,
+  AlertTriangle,
+  Pill,
+  Stethoscope,
+} from 'lucide-react';
+import { formatUSPhone } from '@/lib/phone';
+import { arrayUnion, arrayRemove, doc, updateDoc } from 'firebase/firestore';
 import { AuthGuard } from '@/components/AuthGuard';
 import { useEffectiveUser } from '@/components/AuthProvider';
-import { getPatients, getPatientsForNurse, type Patient } from '@/lib/patients';
+import {
+  Patient,
+  PatientClinical,
+  addPatient,
+  getPatients,
+  getPatientsForNurse,
+  getPatientClinical,
+  removePatient,
+  savePatientClinical,
+  updatePatient,
+} from '@/lib/patients';
+import {
+  PROGRAMS,
+  SERVICE_LEVELS,
+  getProgram,
+  getServiceLevel,
+  matchesClassification,
+} from '@/lib/programs';
+import { reconcilePatient, worstSeverity, summarize, type Finding } from '@/lib/reconcile';
+import { db } from '@/lib/firebase';
+import { authedFetch } from '@/lib/authedFetch';
+
+// Shape returned by GET /api/admin/users — only the fields the care
+// team picker actually consumes.
+interface CareTeamStaff {
+  uid: string;
+  displayName: string | null;
+  email: string | null;
+  role: string;
+  credential: string | null;
+  active: boolean;
+  /** Declared test/QA login, not a real workforce member. A test account on a
+      real client's care team can read that chart's PHI with no business need,
+      so the picker badges it and confirms before adding. */
+  isTestAccount?: boolean;
+}
+
+const emptyPatient: Partial<Patient> = {
+  name: '',
+  dob: '',
+  diagnosis: '',
+  street: '',
+  city: '',
+  state: '',
+  zip: '',
+  mrn: '',
+  requiresMar: false,
+  hasFeedingTube: false,
+  program: '',
+  serviceLevel: '',
+  serviceStartedOn: '',
+};
+
+const STATES = [
+  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC',
+];
+
+function calculateAge(dob: string): string {
+  if (!dob) return '';
+  const birth = new Date(dob + 'T12:00:00');
+  const today = new Date();
+  let years = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) years--;
+  if (years >= 1) return `${years} yr${years !== 1 ? 's' : ''}`;
+  let months = (today.getFullYear() - birth.getFullYear()) * 12 + (today.getMonth() - birth.getMonth());
+  if (today.getDate() < birth.getDate()) months--;
+  if (months >= 1) return `${months} mo`;
+  const days = Math.floor((today.getTime() - birth.getTime()) / (1000 * 60 * 60 * 24));
+  return `${days} d`;
+}
+
+function formatDOB(dob: string): string {
+  if (!dob) return '';
+  const d = new Date(dob + 'T12:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
 /**
- * Client-dashboard entry point. Everyone on the care team lands here from the
- * "Clients" sidebar item: a nurse sees her assigned clients, staff see all.
- * Picking a client opens their dashboard (overview, survey-readiness baseline,
- * activity — charts/documents/visits arrive in later phases).
+ * The single client roster for the whole care team — the one sidebar entry
+ * for everything client-scoped. Staff see the full administrative table
+ * (record checks, add/edit modal, delete); a nurse sees only her assigned
+ * clients with none of the admin actions. Every row opens the client's
+ * dashboard, and the MAR/TAR pills jump straight to the monthly grids so a
+ * nurse charting a dose keeps the old two-click path the Medications /
+ * Treatments tabs used to provide.
  */
-function ClientsPickerInner() {
+function ClientsRosterInner() {
+  const router = useRouter();
   const { uid, role } = useEffectiveUser();
   const isNurse = role === 'nurse';
-  const [patients, setPatients] = useState<Patient[] | null>(null);
-  const [q, setQ] = useState('');
+  // Staff = the tier that manages the roster (add/edit/delete, record checks).
+  const isStaff = role === 'admin' || role === 'supervisor';
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [formOpen, setFormOpen] = useState(false);
+  const [formData, setFormData] = useState<Partial<Patient>>(emptyPatient);
+  // Sensitive clinical fields live in a separate care-team-gated sub-record,
+  // so they're tracked apart from the directory formData and saved alongside it.
+  const [clinical, setClinical] = useState<PatientClinical>({});
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [query, setQuery] = useState('');
+  const [programFilter, setProgramFilter] = useState('');
+  const [levelFilter, setLevelFilter] = useState('');
+  const [toast, setToast] = useState<string | null>(null);
+  // Care team state — populated when the edit modal opens for an
+  // existing patient. Lives separately from formData because the chip
+  // add/remove writes go to Firestore immediately (no Save-button
+  // gating) so the UI feels snappy and the changes survive a
+  // Cancel of the rest of the modal.
+  const [staffList, setStaffList] = useState<CareTeamStaff[]>([]);
+  const [careTeam, setCareTeam] = useState<string[]>([]);
+  const [savingCareTeam, setSavingCareTeam] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState('');
+
+  const todayISO = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }, []);
 
   useEffect(() => {
     // Wait until we know who's asking, so a nurse never briefly loads ALL
@@ -25,92 +147,1081 @@ function ClientsPickerInner() {
     if (!uid) return;
     let cancelled = false;
     (async () => {
-      const list = isNurse ? await getPatientsForNurse(uid) : await getPatients();
-      if (!cancelled) setPatients(list);
+      try {
+        const data = isNurse ? await getPatientsForNurse(uid) : await getPatients();
+        if (cancelled) return;
+        setPatients(data);
+        // Deep link: /admin/clients?edit=<patientId> opens that client's edit
+        // modal directly (used by the Records header's "Edit client details";
+        // /admin/patients?edit=... redirects here for old bookmarks). The
+        // modal is staff-only, but the param is stripped for everyone so a
+        // nurse following a stale bookmark doesn't carry ?edit around in her
+        // URL/history.
+        const editId = new URLSearchParams(window.location.search).get('edit');
+        if (editId) {
+          if (!isNurse) {
+            const target = data.find((p) => p.id === editId);
+            if (target) handleEdit(target);
+          }
+          window.history.replaceState(null, '', '/admin/clients');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     })();
     return () => {
       cancelled = true;
     };
-  }, [isNurse, uid]);
+  }, [uid, isNurse]);
 
-  const filtered = (patients || []).filter(
-    (p) => !q.trim() || (p.name || '').toLowerCase().includes(q.trim().toLowerCase()),
+  // Fetch the staff list lazily the first time the modal opens — it's
+  // only needed by the care team picker, which only renders in the
+  // edit flow. Cached for the rest of the page's lifetime.
+  useEffect(() => {
+    if (!formOpen || staffList.length > 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authedFetch('/api/admin/users');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setStaffList(data.users || []);
+      } catch (err) {
+        console.error('Failed to load staff list for care team:', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [formOpen, staffList.length]);
+
+  // Initialize the care-team chip list from the patient being edited.
+  // Resets on close + on add-patient (new patient has no team yet).
+  useEffect(() => {
+    if (!formOpen || !editingId) {
+      setCareTeam([]);
+      setPickerOpen(false);
+      setPickerQuery('');
+      return;
+    }
+    const patient = patients.find((p) => p.id === editingId);
+    setCareTeam(patient?.assignedNurseIds ?? []);
+  }, [formOpen, editingId, patients]);
+
+  // Load the sensitive clinical sub-record when editing; reset to blank for a
+  // brand-new patient (it gets written after the patient doc is created).
+  useEffect(() => {
+    if (!formOpen) return;
+    if (!editingId) {
+      setClinical({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const data = await getPatientClinical(editingId);
+      if (!cancelled) setClinical(data ?? {});
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [formOpen, editingId]);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2500);
+  };
+
+  const resetForm = () => {
+    setFormData(emptyPatient);
+    setClinical({});
+    setEditingId(null);
+  };
+
+  const handleOpenAdd = () => {
+    resetForm();
+    setFormOpen(true);
+  };
+
+  const handleEdit = (patient: Patient) => {
+    setFormData({
+      name: patient.name,
+      dob: patient.dob,
+      diagnosis: patient.diagnosis,
+      street: patient.street,
+      city: patient.city,
+      state: patient.state,
+      zip: patient.zip,
+      mrn: patient.mrn ?? '',
+      requiresMar: patient.requiresMar ?? false,
+      hasFeedingTube: patient.hasFeedingTube ?? false,
+      program: patient.program ?? '',
+      serviceLevel: patient.serviceLevel ?? '',
+      serviceStartedOn: patient.serviceStartedOn ?? '',
+    });
+    setEditingId(patient.id || null);
+    setFormOpen(true);
+  };
+
+  const handleRemove = async (patient: Patient) => {
+    if (!patient.id) return;
+    if (!window.confirm(`Remove ${patient.name} from the roster?`)) return;
+    try {
+      await removePatient(patient.id);
+      setPatients((prev) => prev.filter((p) => p.id !== patient.id));
+      showToast(`${patient.name} removed`);
+      if (editingId === patient.id) {
+        resetForm();
+        setFormOpen(false);
+      }
+    } catch {
+      showToast('Failed to remove patient.');
+    }
+  };
+
+  // Care-team helpers — kept right next to the modal handlers since
+  // they share editingId + patients state.
+  // Anyone who can author a note is a valid care-team member: that's
+  // staff with a credential set (RN/LPN/CNA/HHA) plus admins. Filters
+  // out inactive accounts so demoted users don't surface as options.
+  const eligibleStaff = useMemo(
+    () => staffList.filter((s) => s.active && (!!s.credential || s.role === 'admin')),
+    [staffList],
   );
+  const careTeamMembers = useMemo(
+    () =>
+      careTeam
+        .map((uid) => eligibleStaff.find((s) => s.uid === uid))
+        .filter((s): s is CareTeamStaff => !!s),
+    [careTeam, eligibleStaff],
+  );
+  const addableStaff = useMemo(() => {
+    const onTeam = new Set(careTeam);
+    const q = pickerQuery.trim().toLowerCase();
+    return eligibleStaff
+      .filter((s) => !onTeam.has(s.uid))
+      .filter((s) => {
+        if (!q) return true;
+        const hay = `${s.displayName || ''} ${s.email || ''} ${s.credential || ''}`.toLowerCase();
+        return hay.includes(q);
+      });
+  }, [eligibleStaff, careTeam, pickerQuery]);
+
+  const handleAddNurse = async (uid: string) => {
+    if (!editingId || careTeam.includes(uid)) return;
+    // A test login on a real client's care team grants PHI access to an
+    // identity that isn't a real workforce member. Confirm rather than block:
+    // test accounts legitimately belong on test clients.
+    const candidate = eligibleStaff.find((s) => s.uid === uid);
+    if (candidate?.isTestAccount) {
+      const ok = window.confirm(
+        `${candidate.displayName || 'This login'} is a TEST account, not a real staff member.\n\n` +
+          `Adding it to ${formData.name || 'this client'}'s care team lets it read this client's chart. Only do this for a test client.\n\n` +
+          'Add it anyway?',
+      );
+      if (!ok) return;
+    }
+    setSavingCareTeam(true);
+    try {
+      await updateDoc(doc(db, 'patients', editingId), {
+        assignedNurseIds: arrayUnion(uid),
+      });
+      setCareTeam((prev) => (prev.includes(uid) ? prev : [...prev, uid]));
+      // Keep the page's in-memory roster in sync so the chip count is
+      // right after the modal closes without a refetch.
+      setPatients((prev) =>
+        prev.map((p) =>
+          p.id === editingId
+            ? { ...p, assignedNurseIds: [...(p.assignedNurseIds || []), uid] }
+            : p,
+        ),
+      );
+      setPickerOpen(false);
+      setPickerQuery('');
+    } catch (err) {
+      console.error('Failed to add nurse to care team:', err);
+      showToast('Failed to add nurse.');
+    } finally {
+      setSavingCareTeam(false);
+    }
+  };
+
+  const handleRemoveNurse = async (uid: string) => {
+    if (!editingId) return;
+    setSavingCareTeam(true);
+    try {
+      await updateDoc(doc(db, 'patients', editingId), {
+        assignedNurseIds: arrayRemove(uid),
+      });
+      setCareTeam((prev) => prev.filter((u) => u !== uid));
+      setPatients((prev) =>
+        prev.map((p) =>
+          p.id === editingId
+            ? {
+                ...p,
+                assignedNurseIds: (p.assignedNurseIds || []).filter((u) => u !== uid),
+              }
+            : p,
+        ),
+      );
+    } catch (err) {
+      console.error('Failed to remove nurse from care team:', err);
+      showToast('Failed to remove nurse.');
+    } finally {
+      setSavingCareTeam(false);
+    }
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.name || !formData.dob) {
+      showToast('Name and date of birth are required.');
+      return;
+    }
+    try {
+      setSubmitting(true);
+      let savedId = editingId;
+      if (editingId) {
+        await updatePatient(editingId, formData);
+        setPatients((prev) =>
+          prev.map((p) => (p.id === editingId ? { ...(p as Patient), ...formData } : p))
+        );
+      } else {
+        savedId = await addPatient(formData as Patient);
+        setPatients((prev) => [...prev, { ...(formData as Patient), id: savedId as string }]);
+      }
+      // Persist the sensitive clinical fields to the care-team-gated sub-record.
+      if (savedId) {
+        await savePatientClinical(savedId, clinical);
+      }
+      showToast(`${formData.name} ${editingId ? 'updated' : 'added'}`);
+      resetForm();
+      setFormOpen(false);
+    } catch {
+      showToast('Failed to save. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Reconciliation findings, keyed by patient id. Staff-only: the record
+  // checks are a data-quality surface for the people who can fix the record.
+  // Recomputed only when the roster changes; todayISO is memoized so the
+  // rules stay stable across re-renders rather than shifting under a
+  // midnight boundary mid-session.
+  const findings = useMemo(() => {
+    const m = new Map<string, Finding[]>();
+    if (!isStaff) return m;
+    for (const p of patients) {
+      if (!p.id) continue;
+      m.set(p.id, reconcilePatient(p, todayISO));
+    }
+    return m;
+  }, [patients, todayISO, isStaff]);
+
+  const checkSummary = useMemo(
+    () => (isStaff ? summarize(patients, todayISO) : { error: 0, warn: 0, info: 0, clean: 0 }),
+    [patients, todayISO, isStaff],
+  );
+
+  // "Needs attention" is its own filter rather than a sort, so the list can be
+  // narrowed to exactly the records that need a human.
+  const [attentionOnly, setAttentionOnly] = useState(false);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return patients.filter((p) => {
+      if (!matchesClassification(p, { program: programFilter, serviceLevel: levelFilter })) return false;
+      if (attentionOnly) {
+        const w = p.id ? worstSeverity(findings.get(p.id) ?? []) : null;
+        if (w !== 'error' && w !== 'warn') return false;
+      }
+      if (!q) return true;
+      return (
+        p.name.toLowerCase().includes(q) ||
+        p.diagnosis?.toLowerCase().includes(q) ||
+        p.dob.includes(query) ||
+        (p.mrn || '').includes(query.trim())
+      );
+    });
+  }, [patients, query, programFilter, levelFilter, attentionOnly, findings]);
+
+  const openDashboard = (p: Patient) => {
+    if (p.id) router.push(`/admin/clients/${p.id}`);
+  };
+
+  // Pills use the /admin/mar + /admin/treatments grid routes for EVERY role
+  // (they sit outside the staff-only records layout guard, and staff can open
+  // them too): the shared grid keys its back link off the route, so arriving
+  // from these routes reads "Back to Clients" — returning whence you came —
+  // while the records-route twins keep pointing back at the order book for
+  // people who drilled in from "Manage record".
+  const marHrefFor = (p: Patient) => `/admin/mar/${p.id}`;
+  const tarHrefFor = (p: Patient) => `/admin/treatments/${p.id}`;
 
   return (
     <div style={containerStyle}>
-      <header style={headerStyle}>
-        <div style={iconStyle}>
-          <LayoutDashboard size={22} />
+      <div style={wrapStyle}>
+        <div style={{ marginBottom: 16 }}>
+          <Link href="/admin" style={backLinkStyle}>
+            <ArrowLeft size={14} /> Back to dashboard
+          </Link>
         </div>
-        <div>
-          <h1 style={titleStyle}>Clients</h1>
-          <p style={subStyle}>Select a client to open their dashboard.</p>
-        </div>
-      </header>
 
-      <div style={searchWrapStyle}>
-        <Search size={16} color="#94a3b8" />
-        <input
-          type="text"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search clients…"
-          style={searchInputStyle}
-          aria-label="Search clients"
-        />
+        <header style={headerStyle}>
+          <div>
+            <h1 style={titleStyle}>Clients</h1>
+            <p style={subtitleStyle}>
+              {isNurse
+                ? 'Your assigned clients. Click a client to open their dashboard, or jump straight to their MAR or TAR.'
+                : `${patients.length} client${patients.length === 1 ? '' : 's'} in the roster. Click a client to open their dashboard. Nurses pick from this list on the progress-note form (free-form names are still allowed for new clients).`}
+            </p>
+          </div>
+          {isStaff && (
+            <button onClick={handleOpenAdd} style={primaryBtnStyle}>
+              <Plus size={16} /> Add patient
+            </button>
+          )}
+        </header>
+
+        <div style={toolbarStyle}>
+          <div style={searchWrapStyle}>
+            <Search size={16} color="#7f8c8d" />
+            <input
+              type="text"
+              placeholder={isNurse ? 'Search your clients' : 'Search by name, diagnosis, DOB, or record #'}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              style={searchInputStyle}
+            />
+          </div>
+          {isStaff && (
+            <>
+              <select
+                value={programFilter}
+                onChange={(e) => setProgramFilter(e.target.value)}
+                style={filterSelectStyle}
+                aria-label="Filter by program"
+              >
+                <option value="">All programs</option>
+                {PROGRAMS.map((pr) => (
+                  <option key={pr.id} value={pr.id}>{pr.label}</option>
+                ))}
+              </select>
+              <select
+                value={levelFilter}
+                onChange={(e) => setLevelFilter(e.target.value)}
+                style={filterSelectStyle}
+                aria-label="Filter by service level"
+              >
+                <option value="">All service levels</option>
+                {SERVICE_LEVELS.map((sl) => (
+                  <option key={sl.id} value={sl.id}>{sl.label}</option>
+                ))}
+              </select>
+            </>
+          )}
+        </div>
+
+        {isStaff && checkSummary.error + checkSummary.warn > 0 && (
+          <div style={checkNoteStyle}>
+            <span>
+              <strong>Record checks:</strong>{' '}
+              {checkSummary.error > 0 && (
+                <span style={{ color: '#8a1c1c', fontWeight: 700 }}>
+                  {checkSummary.error} need{checkSummary.error === 1 ? 's' : ''} correcting
+                </span>
+              )}
+              {checkSummary.error > 0 && checkSummary.warn > 0 && ', '}
+              {checkSummary.warn > 0 && (
+                <span>{checkSummary.warn} worth a look</span>
+              )}
+              {/* info-level findings are not actionable, so they count as fine here */}
+              <span style={{ color: '#6b7280' }}> · {checkSummary.clean + checkSummary.info} no action needed</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setAttentionOnly((v) => !v)}
+              style={attentionBtnStyle(attentionOnly)}
+            >
+              {attentionOnly ? 'Show all' : 'Show only these'}
+            </button>
+          </div>
+        )}
+
+        {loading ? (
+          <div style={emptyStyle}>Loading…</div>
+        ) : filtered.length === 0 ? (
+          <div style={emptyStyle}>
+            {patients.length === 0
+              ? isNurse
+                ? 'You have no assigned clients yet. Ask your supervisor to add you to a care team.'
+                : 'No clients yet. Click "Add patient" to create your first record.'
+              : 'No clients match that search.'}
+          </div>
+        ) : (
+          <div style={tableWrapStyle}>
+            <table style={tableStyle}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>Name</th>
+                  <th style={thStyle}>DOB</th>
+                  <th style={thStyle}>Age</th>
+                  <th style={thStyle}>Diagnosis</th>
+                  <th style={thStyle}>Location</th>
+                  <th style={thStyle}>Charts</th>
+                  {isStaff && <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((p, i) => (
+                  <tr
+                    key={p.id}
+                    onClick={() => openDashboard(p)}
+                    style={{ ...(i % 2 === 1 ? altRowStyle : null), cursor: 'pointer' }}
+                    title={`Open ${p.name}'s dashboard`}
+                  >
+                    <td style={tdStyle}>
+                      <div style={{ fontWeight: 600, color: '#2c3e50', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        {/* Real link for middle-click / keyboard; the row's
+                            onClick covers the rest of the cell area. */}
+                        <Link
+                          href={`/admin/clients/${p.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          style={nameLinkStyle}
+                        >
+                          {p.name}
+                        </Link>
+                        {getProgram(p.program) && (
+                          <span
+                            style={programBadgeStyle(p.program)}
+                            title={getProgram(p.program)!.full}
+                          >
+                            {getProgram(p.program)!.label}
+                          </span>
+                        )}
+                        {getServiceLevel(p.serviceLevel)?.badge && (
+                          <span
+                            style={serviceLevelBadgeStyle(p.serviceLevel)}
+                            title={getServiceLevel(p.serviceLevel)!.full}
+                          >
+                            {getServiceLevel(p.serviceLevel)!.badge}
+                          </span>
+                        )}
+                        {p.requiresMar && <span style={marBadgeStyle} title="Requires a Medication Administration Record">MAR</span>}
+                        {p.hasFeedingTube && <span style={tubeBadgeStyle} title="Has a feeding tube (G-tube / GJ / J / NG)">FEEDING TUBE</span>}
+                      </div>
+                      {isStaff &&
+                        (findings.get(p.id || '') ?? []).filter((f) => f.severity !== 'info').map((f) => (
+                          <div key={f.rule} style={findingStyle(f.severity)}>
+                            <AlertTriangle size={11} style={{ flexShrink: 0, marginTop: 2 }} />
+                            <span>{f.message}</span>
+                          </div>
+                        ))}
+                    </td>
+                    <td style={tdStyle}>{formatDOB(p.dob)}</td>
+                    <td style={tdStyle}>
+                      <span style={ageBadgeStyle}>{calculateAge(p.dob)}</span>
+                    </td>
+                    <td style={tdStyle}>{p.diagnosis || <span style={{ color: '#aaa' }}>—</span>}</td>
+                    <td style={tdStyle}>
+                      {p.city && p.state ? `${p.city}, ${p.state}` : <span style={{ color: '#aaa' }}>—</span>}
+                    </td>
+                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                      <Link
+                        href={marHrefFor(p)}
+                        onClick={(e) => e.stopPropagation()}
+                        style={chartPillStyle}
+                        title={`Open ${p.name}'s monthly MAR${p.requiresMar ? '' : ' (no MAR on file)'}`}
+                      >
+                        <Pill size={12} /> MAR
+                      </Link>
+                      <Link
+                        href={tarHrefFor(p)}
+                        onClick={(e) => e.stopPropagation()}
+                        style={chartPillStyle}
+                        title={`Open ${p.name}'s monthly TAR`}
+                      >
+                        <Stethoscope size={12} /> TAR
+                      </Link>
+                    </td>
+                    {isStaff && (
+                      <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEdit(p);
+                          }}
+                          style={iconBtnStyle}
+                          aria-label={`Edit ${p.name}`}
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemove(p);
+                          }}
+                          style={{ ...iconBtnStyle, color: '#c44' }}
+                          aria-label={`Remove ${p.name}`}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      {patients === null ? (
-        <div style={emptyStyle}>Loading clients…</div>
-      ) : filtered.length === 0 ? (
-        <div style={emptyStyle}>
-          {patients.length === 0
-            ? isNurse
-              ? 'You have no assigned clients yet.'
-              : 'No clients found.'
-            : 'No clients match your search.'}
-        </div>
-      ) : (
-        <ul style={listStyle}>
-          {filtered.map((p) => (
-            <li key={p.id}>
-              <Link href={`/admin/clients/${p.id}`} style={rowStyle}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={nameStyle}>{p.name}</div>
-                  <div style={metaStyle}>
-                    {p.mrn ? `Record #${p.mrn}` : ''}
-                    {p.diagnosis ? `${p.mrn ? ' · ' : ''}${p.diagnosis}` : ''}
+      {formOpen && (
+        <div style={modalBackdropStyle} onClick={() => !submitting && setFormOpen(false)}>
+          <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
+            <div style={modalHeaderStyle}>
+              <h2 style={{ margin: 0, fontSize: 18, color: '#2c3e50' }}>
+                {editingId ? 'Edit patient' : 'Add patient'}
+              </h2>
+              <button onClick={() => setFormOpen(false)} style={closeBtnStyle} aria-label="Close">
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSave} style={{ padding: 20 }}>
+              <div style={gridTwoStyle}>
+                <Field label="Full name *">
+                  <input
+                    type="text"
+                    required
+                    value={formData.name || ''}
+                    onChange={(e) => setFormData((f) => ({ ...f, name: e.target.value }))}
+                    style={inputStyle}
+                    placeholder="Jane Doe"
+                  />
+                </Field>
+                <Field label="Date of birth *">
+                  <input
+                    type="date"
+                    required
+                    max={todayISO}
+                    value={formData.dob || ''}
+                    onChange={(e) => setFormData((f) => ({ ...f, dob: e.target.value }))}
+                    style={inputStyle}
+                  />
+                </Field>
+              </div>
+
+              <div style={gridTwoStyle}>
+                <Field label="Primary diagnosis">
+                  <input
+                    type="text"
+                    value={formData.diagnosis || ''}
+                    onChange={(e) => setFormData((f) => ({ ...f, diagnosis: e.target.value }))}
+                    style={inputStyle}
+                    placeholder="e.g., Seizure Disorder"
+                  />
+                </Field>
+                <Field label="Age">
+                  <div style={{ padding: '10px 0', fontWeight: 600, color: '#4a7cf7' }}>
+                    {formData.dob ? calculateAge(formData.dob) : '—'}
                   </div>
+                </Field>
+              </div>
+
+              <Field label="Street address">
+                <input
+                  type="text"
+                  value={formData.street || ''}
+                  onChange={(e) => setFormData((f) => ({ ...f, street: e.target.value }))}
+                  style={inputStyle}
+                  placeholder="123 Main St, Apt 4B"
+                />
+              </Field>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12 }}>
+                <Field label="City">
+                  <input
+                    type="text"
+                    value={formData.city || ''}
+                    onChange={(e) => setFormData((f) => ({ ...f, city: e.target.value }))}
+                    style={inputStyle}
+                  />
+                </Field>
+                <Field label="State">
+                  <select
+                    value={formData.state || ''}
+                    onChange={(e) => setFormData((f) => ({ ...f, state: e.target.value }))}
+                    style={selectStyle}
+                  >
+                    <option value="">—</option>
+                    {STATES.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Zip">
+                  <input
+                    type="text"
+                    maxLength={10}
+                    value={formData.zip || ''}
+                    onChange={(e) => setFormData((f) => ({ ...f, zip: e.target.value }))}
+                    style={inputStyle}
+                  />
+                </Field>
+              </div>
+
+              {/* MAR & clinical details. The Requires-MAR flag and record #
+                  are directory fields (formData); the rest are sensitive
+                  clinical PHI written to the care-team-gated sub-record. */}
+              <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #f1f3f5' }}>
+                <div style={careTeamHeaderStyle}>MAR &amp; clinical details</div>
+                <div style={careTeamHelpStyle}>
+                  The clinical fields below feed this client&apos;s Medication Administration Record and are visible only to staff and the client&apos;s assigned care team.
                 </div>
-                <ChevronRight size={18} color="#94a3b8" />
-              </Link>
-            </li>
-          ))}
-        </ul>
+
+                {/* Program gets its own full-width line (its option labels are
+                    long); Service level + start date share the next row. */}
+                <Field label="Program">
+                  <select
+                    value={formData.program || ''}
+                    onChange={(e) => setFormData((f) => ({ ...f, program: e.target.value }))}
+                    style={selectStyle}
+                  >
+                    <option value="">—</option>
+                    {PROGRAMS.map((pr) => (
+                      <option key={pr.id} value={pr.id}>{pr.label} — {pr.full}</option>
+                    ))}
+                  </select>
+                </Field>
+
+                <div style={gridTwoStyle}>
+                  <Field label="Service level">
+                    <select
+                      value={formData.serviceLevel || ''}
+                      onChange={(e) => setFormData((f) => ({ ...f, serviceLevel: e.target.value }))}
+                      style={selectStyle}
+                    >
+                      <option value="">—</option>
+                      {SERVICE_LEVELS.map((sl) => (
+                        <option key={sl.id} value={sl.id}>{sl.label}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Service start date (official start of care)">
+                    <input
+                      type="date"
+                      value={formData.serviceStartedOn || ''}
+                      onChange={(e) => setFormData((f) => ({ ...f, serviceStartedOn: e.target.value }))}
+                      style={inputStyle}
+                    />
+                  </Field>
+                </div>
+                <div style={{ ...fieldHintStyle, marginTop: -6, marginBottom: 12 }}>
+                  The start date set by support coordination — the one on the ISP and
+                  authorizations — even if scheduling delays the first visit. Leave blank until a
+                  start date exists; record checks for daily-care clients begin from this date.
+                </div>
+
+                <label style={requiresMarRowStyle}>
+                  <input
+                    type="checkbox"
+                    checked={!!formData.requiresMar}
+                    onChange={(e) => setFormData((f) => ({ ...f, requiresMar: e.target.checked }))}
+                  />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#2c3e50' }}>
+                    This client requires a MAR
+                  </span>
+                </label>
+
+                <label style={requiresMarRowStyle}>
+                  <input
+                    type="checkbox"
+                    checked={!!formData.hasFeedingTube}
+                    onChange={(e) => setFormData((f) => ({ ...f, hasFeedingTube: e.target.checked }))}
+                  />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#2c3e50' }}>
+                    This client has a feeding tube (G-tube / GJ / J / NG) — prompts tube-care charting on progress notes
+                  </span>
+                </label>
+
+                <div style={gridTwoStyle}>
+                  <Field label="Record # (auto-assigned)">
+                    <div style={{ padding: '10px 0', fontWeight: 600, color: '#4a7cf7' }}>
+                      {formData.mrn || (editingId ? '-' : 'Assigned on save')}
+                    </div>
+                  </Field>
+                  <Field label="Sex">
+                    <select
+                      value={clinical.sex || ''}
+                      onChange={(e) => setClinical((c) => ({ ...c, sex: e.target.value }))}
+                      style={selectStyle}
+                    >
+                      <option value="">—</option>
+                      <option value="Female">Female</option>
+                      <option value="Male">Male</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </Field>
+                </div>
+
+                <Field label="Allergies / adverse reactions">
+                  <textarea
+                    value={clinical.allergies || ''}
+                    onChange={(e) => setClinical((c) => ({ ...c, allergies: e.target.value }))}
+                    style={textareaStyle}
+                    placeholder="e.g., Penicillin (rash). Write NKDA if no known drug allergies."
+                  />
+                </Field>
+
+                <div style={gridTwoStyle}>
+                  <Field label="Attending physician">
+                    <input
+                      type="text"
+                      value={clinical.physicianName || ''}
+                      onChange={(e) => setClinical((c) => ({ ...c, physicianName: e.target.value }))}
+                      style={inputStyle}
+                      placeholder="Dr. Jane Smith"
+                    />
+                  </Field>
+                  <Field label="Physician phone">
+                    <input
+                      type="tel"
+                      value={clinical.physicianPhone || ''}
+                      onChange={(e) => setClinical((c) => ({ ...c, physicianPhone: formatUSPhone(e.target.value) }))}
+                      style={inputStyle}
+                      placeholder="(555) 123-4567"
+                    />
+                  </Field>
+                </div>
+
+                <Field label="Diet / special instructions">
+                  <textarea
+                    value={clinical.diet || ''}
+                    onChange={(e) => setClinical((c) => ({ ...c, diet: e.target.value }))}
+                    style={textareaStyle}
+                    placeholder="e.g., Mechanical soft, thickened liquids, upright positioning"
+                  />
+                </Field>
+              </div>
+
+              {/* Care team — visible only when editing an existing
+                  patient (a brand-new patient has no id yet to attach
+                  arrayUnion writes to). Chip add / remove writes go
+                  to Firestore immediately; no Save-button gating.
+                  Phase 3 of the care-team feature. */}
+              {editingId && (
+                <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #f1f3f5' }}>
+                  <div style={careTeamHeaderStyle}>Care team</div>
+                  <div style={careTeamHelpStyle}>
+                    Nurses on this list can read every progress note for this patient (regardless of who wrote it). They can&apos;t edit each other&apos;s notes.
+                  </div>
+                  <div style={chipsRowStyle}>
+                    {careTeamMembers.length === 0 ? (
+                      <span style={emptyCareTeamStyle}>No nurses assigned yet.</span>
+                    ) : (
+                      careTeamMembers.map((s) => (
+                        <span key={s.uid} style={chipStyle}>
+                          {s.displayName || s.email || '(no name)'}
+                          {s.isTestAccount && <span style={chipTestStyle}>Test</span>}
+                          {s.credential && (
+                            <span style={chipCredStyle}>{s.credential}</span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveNurse(s.uid)}
+                            disabled={savingCareTeam}
+                            style={chipRemoveBtnStyle}
+                            aria-label={`Remove ${s.displayName || 'nurse'}`}
+                            title="Remove from care team"
+                          >
+                            <X size={12} />
+                          </button>
+                        </span>
+                      ))
+                    )}
+                  </div>
+                  {pickerOpen ? (
+                    <div style={{ marginTop: 10 }}>
+                      <input
+                        type="text"
+                        placeholder="Type to search staff..."
+                        value={pickerQuery}
+                        onChange={(e) => setPickerQuery(e.target.value)}
+                        style={inputStyle}
+                        autoFocus
+                      />
+                      <div style={pickerListStyle}>
+                        {addableStaff.length === 0 ? (
+                          <div style={pickerEmptyStyle}>
+                            {eligibleStaff.length === 0
+                              ? 'Loading staff…'
+                              : 'No matches. Everyone eligible is already on the team.'}
+                          </div>
+                        ) : (
+                          addableStaff.map((s) => (
+                            <button
+                              key={s.uid}
+                              type="button"
+                              onClick={() => handleAddNurse(s.uid)}
+                              disabled={savingCareTeam}
+                              style={pickerItemStyle}
+                            >
+                              <span style={{ fontWeight: 600, color: '#2c3e50' }}>
+                                {s.displayName || s.email || '(no name)'}
+                              </span>
+                              {s.isTestAccount && <span style={chipTestStyle}>Test</span>}
+                              {s.credential && (
+                                <span style={pickerCredStyle}>{s.credential}</span>
+                              )}
+                              {s.role === 'admin' && !s.credential && (
+                                <span style={pickerCredStyle}>ADMIN</span>
+                              )}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPickerOpen(false);
+                          setPickerQuery('');
+                        }}
+                        style={pickerCloseStyle}
+                      >
+                        Done
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setPickerOpen(true)}
+                      style={addNurseBtnStyle}
+                      disabled={savingCareTeam}
+                    >
+                      <UserPlus size={14} /> Add nurse
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => setFormOpen(false)}
+                  disabled={submitting}
+                  style={secondaryBtnStyle}
+                >
+                  Cancel
+                </button>
+                <button type="submit" disabled={submitting} style={primaryBtnStyle}>
+                  {submitting ? 'Saving…' : editingId ? 'Update patient' : 'Save patient'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
+
+      {toast && <div style={toastStyle}>{toast}</div>}
     </div>
   );
 }
 
-export default function ClientsPickerPage() {
+export default function ClientsRosterPage() {
   return (
     <AuthGuard allow={['admin', 'supervisor', 'nurse']}>
-      <ClientsPickerInner />
+      <ClientsRosterInner />
     </AuthGuard>
   );
 }
 
-const NAVY = '#1a3a5c';
-const containerStyle: React.CSSProperties = { maxWidth: 720, margin: '0 auto', padding: 20 };
-const headerStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 16 };
-const iconStyle: React.CSSProperties = { width: 44, height: 44, borderRadius: 10, background: '#e8eef4', color: NAVY, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
-const titleStyle: React.CSSProperties = { fontSize: 22, color: NAVY, margin: 0 };
-const subStyle: React.CSSProperties = { fontSize: 13.5, color: '#64748b', margin: '4px 0 0' };
-const searchWrapStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', border: '1px solid #d0d7de', borderRadius: 8, background: 'white', marginBottom: 14 };
-const searchInputStyle: React.CSSProperties = { flex: 1, border: 'none', outline: 'none', fontSize: 14, fontFamily: 'inherit', color: '#2c3e50', background: 'transparent' };
-const emptyStyle: React.CSSProperties = { padding: '28px 16px', textAlign: 'center', color: '#7f8c8d', fontSize: 14, background: 'white', border: '1px solid #e5e7eb', borderRadius: 10 };
-const listStyle: React.CSSProperties = { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 };
-const rowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 14px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 10, textDecoration: 'none', color: '#1f2937' };
-const nameStyle: React.CSSProperties = { fontWeight: 700, fontSize: 15, color: '#1f2937' };
-const metaStyle: React.CSSProperties = { fontSize: 12.5, color: '#7f8c8d', marginTop: 2 };
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
+      <span style={{ fontSize: 12, fontWeight: 600, color: '#5c6b7a' }}>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+const containerStyle: React.CSSProperties = { minHeight: '70vh', background: '#f5f7fa', padding: '32px 20px' };
+const wrapStyle: React.CSSProperties = { maxWidth: 1180, margin: '0 auto' };
+const backLinkStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, color: '#27ae60', textDecoration: 'none', fontSize: 13, fontWeight: 600 };
+const headerStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' };
+const titleStyle: React.CSSProperties = { fontSize: 26, color: '#2c3e50', margin: 0 };
+const subtitleStyle: React.CSSProperties = { fontSize: 13, color: '#7f8c8d', margin: '6px 0 0', maxWidth: 700 };
+const toolbarStyle: React.CSSProperties = { display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' };
+const searchWrapStyle: React.CSSProperties = { flex: 1, background: 'white', border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 12px', display: 'flex', gap: 8, alignItems: 'center', minWidth: 220 };
+const searchInputStyle: React.CSSProperties = { flex: 1, border: 'none', outline: 'none', fontSize: 14, background: 'transparent', fontFamily: 'inherit' };
+const emptyStyle: React.CSSProperties = { textAlign: 'center', padding: '48px 20px', background: 'white', borderRadius: 10, color: '#7f8c8d', fontSize: 14, border: '1px solid #e5e7eb' };
+const tableWrapStyle: React.CSSProperties = { background: 'white', borderRadius: 10, border: '1px solid #e5e7eb', overflowX: 'auto' };
+const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 14 };
+const thStyle: React.CSSProperties = { textAlign: 'left', padding: '12px 14px', borderBottom: '1px solid #e5e7eb', color: '#5c6b7a', fontWeight: 700, fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 };
+const tdStyle: React.CSSProperties = { padding: '12px 14px', borderBottom: '1px solid #f1f3f5', color: '#2c3e50' };
+const altRowStyle: React.CSSProperties = { background: '#fafbfc' };
+// The client's name is the row's real link (middle-click, keyboard, SEO of
+// muscle memory); underline on none so it reads as a table cell, not a link
+// farm. Row hover affordance comes from the row cursor + title.
+const nameLinkStyle: React.CSSProperties = { color: '#2c3e50', textDecoration: 'none', fontWeight: 600 };
+// Quick-open pills to the monthly grids — the two-click charting path that
+// used to be the Medications/Treatments sidebar tabs.
+const chartPillStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  background: '#eef4fb',
+  color: '#1a3a5c',
+  border: '1px solid #c8def5',
+  borderRadius: 999,
+  padding: '4px 10px',
+  fontSize: 11.5,
+  fontWeight: 700,
+  textDecoration: 'none',
+  marginRight: 6,
+  letterSpacing: 0.3,
+};
+// whiteSpace: nowrap is load-bearing — without it "23 yrs" wraps into a
+// squished two-line circle when the Age column gets tight.
+const ageBadgeStyle: React.CSSProperties = {
+  display: 'inline-block', background: '#e7f6ec', color: '#1e7a3d',
+  fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 999,
+  whiteSpace: 'nowrap', lineHeight: 1.4,
+};
+const primaryBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#27ae60', color: 'white', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
+const secondaryBtnStyle: React.CSSProperties = { background: '#eef1f4', color: '#2c3e50', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
+const iconBtnStyle: React.CSSProperties = { background: 'transparent', border: 'none', padding: 6, margin: '0 2px', borderRadius: 4, cursor: 'pointer', color: '#5c6b7a' };
+const modalBackdropStyle: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 };
+const modalStyle: React.CSSProperties = { background: 'white', borderRadius: 10, width: '100%', maxWidth: 640, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 12px 40px rgba(0,0,0,0.25)' };
+const modalHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #f1f3f5' };
+const closeBtnStyle: React.CSSProperties = { background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#7f8c8d' };
+const inputStyle: React.CSSProperties = { padding: '10px 12px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit' };
+const textareaStyle: React.CSSProperties = { ...inputStyle, minHeight: 60, resize: 'vertical', lineHeight: 1.4 };
+const requiresMarRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, cursor: 'pointer' };
+const marBadgeStyle: React.CSSProperties = { display: 'inline-block', background: '#eef4fb', color: '#1a3a5c', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4, border: '1px solid #c8def5' };
+const tubeBadgeStyle: React.CSSProperties = { display: 'inline-block', background: '#fdf3e7', color: '#7a4a12', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4, border: '1px solid #f0d9b8', whiteSpace: 'nowrap' };
+// Same as inputStyle but with the custom chevron-down used everywhere else on
+// the site. Suppresses the macOS native double-arrow ⇅ for visual consistency.
+const selectStyle: React.CSSProperties = {
+  ...inputStyle,
+  // Let the select shrink to its column instead of forcing the column to fit
+  // its longest option (min-width defaults to the content's width).
+  minWidth: 0,
+  width: '100%',
+  boxSizing: 'border-box',
+  appearance: 'none',
+  WebkitAppearance: 'none',
+  MozAppearance: 'none',
+  paddingRight: 36,
+  background:
+    "white url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\") no-repeat right 12px center",
+  backgroundSize: '14px',
+  cursor: 'pointer',
+};
+const filterSelectStyle: React.CSSProperties = {
+  ...selectStyle,
+  width: 'auto',
+  minWidth: 170,
+  flexShrink: 0,
+};
+const checkNoteStyle: React.CSSProperties = {
+  background: '#fff8e6',
+  border: '1px solid #f0dca8',
+  color: '#6b5314',
+  fontSize: 12.5,
+  padding: '8px 12px',
+  borderRadius: 8,
+  marginBottom: 12,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 12,
+  flexWrap: 'wrap',
+};
+function attentionBtnStyle(on: boolean): React.CSSProperties {
+  return {
+    background: on ? '#6b5314' : 'transparent',
+    color: on ? '#fff' : '#6b5314',
+    border: '1px solid #d9bf7e',
+    borderRadius: 6,
+    padding: '3px 10px',
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    whiteSpace: 'nowrap',
+  };
+}
+function findingStyle(sev: string): React.CSSProperties {
+  return {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 5,
+    marginTop: 4,
+    fontSize: 11.5,
+    lineHeight: 1.35,
+    fontWeight: 500,
+    color: sev === 'error' ? '#8a1c1c' : '#7a5a12',
+  };
+}
+/** Service-level chip, colored from the catalog like the program chip. */
+function serviceLevelBadgeStyle(id: string | undefined): React.CSSProperties {
+  const s = getServiceLevel(id);
+  return {
+    display: 'inline-block',
+    background: s?.bg ?? '#eee',
+    color: s?.fg ?? '#444',
+    border: `1px solid ${s?.border ?? '#ddd'}`,
+    fontSize: 10,
+    fontWeight: 700,
+    padding: '2px 6px',
+    borderRadius: 999,
+    letterSpacing: 0.4,
+    whiteSpace: 'nowrap',
+  };
+}
+/** Program chip, colored from the catalog so a new program needs no CSS here. */
+function programBadgeStyle(id: string | undefined): React.CSSProperties {
+  const p = getProgram(id);
+  return {
+    display: 'inline-block',
+    background: p?.bg ?? '#eee',
+    color: p?.fg ?? '#444',
+    border: `1px solid ${p?.border ?? '#ddd'}`,
+    fontSize: 10,
+    fontWeight: 700,
+    padding: '2px 6px',
+    borderRadius: 999,
+    letterSpacing: 0.4,
+    whiteSpace: 'nowrap',
+  };
+}
+const fieldHintStyle: React.CSSProperties = {
+  fontSize: 11.5,
+  color: '#8a8f98',
+  lineHeight: 1.4,
+  marginTop: 4,
+};
+// minmax(0, 1fr): plain 1fr lets a child's intrinsic width (e.g. the Program
+// select's long option text) blow the column past the modal edge.
+const gridTwoStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 12 };
+const toastStyle: React.CSSProperties = { position: 'fixed', bottom: 20, right: 20, background: '#2c3e50', color: 'white', padding: '10px 16px', borderRadius: 8, fontSize: 13, boxShadow: '0 8px 20px rgba(0,0,0,0.2)', zIndex: 1100 };
+
+// Care team styles. Used in the edit-patient modal's "Care team"
+// section to render assigned nurses as chips + the add-nurse picker.
+const careTeamHeaderStyle: React.CSSProperties = { fontSize: 13, fontWeight: 700, color: '#2c3e50', marginBottom: 4 };
+const careTeamHelpStyle: React.CSSProperties = { fontSize: 12, color: '#7f8c8d', marginBottom: 10, lineHeight: 1.5 };
+const chipsRowStyle: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 };
+const emptyCareTeamStyle: React.CSSProperties = { fontSize: 13, color: '#7f8c8d', fontStyle: 'italic' };
+const chipStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#eef4fb', color: '#1a3a5c', padding: '6px 6px 6px 12px', borderRadius: 999, fontSize: 13, border: '1px solid #c8def5' };
+const chipCredStyle: React.CSSProperties = { fontSize: 10, fontWeight: 700, background: '#1a3a5c', color: 'white', padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4 };
+const chipTestStyle: React.CSSProperties = { fontSize: 10, fontWeight: 700, background: '#fdecea', color: '#a3261c', padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4, textTransform: 'uppercase' };
+const chipRemoveBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', color: '#1a3a5c', border: 'none', padding: 2, borderRadius: 999, cursor: 'pointer' };
+const addNurseBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', color: '#0e7c4a', border: '1px dashed #0e7c4a', padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
+const pickerListStyle: React.CSSProperties = { marginTop: 8, maxHeight: 200, overflowY: 'auto', border: '1px solid #e5eaf0', borderRadius: 6, background: 'white' };
+const pickerEmptyStyle: React.CSSProperties = { padding: '10px 12px', color: '#7f8c8d', fontSize: 13, fontStyle: 'italic' };
+const pickerItemStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', borderBottom: '1px solid #f1f3f5', padding: '10px 12px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' };
+const pickerCredStyle: React.CSSProperties = { fontSize: 10, fontWeight: 700, background: '#1a3a5c', color: 'white', padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4, marginLeft: 'auto' };
+const pickerCloseStyle: React.CSSProperties = { marginTop: 8, background: 'transparent', border: 'none', color: '#5c6b7a', fontSize: 13, fontWeight: 600, cursor: 'pointer', padding: '4px 0', fontFamily: 'inherit' };

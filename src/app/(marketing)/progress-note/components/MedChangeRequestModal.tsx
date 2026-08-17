@@ -239,8 +239,8 @@ export default function MedChangeRequestModal({
 
         <div style={{ padding: 18 }}>
           <p style={{ marginTop: 0, fontSize: 13, color: '#6b7280', lineHeight: 1.5 }}>
-            Record a medication change for <strong>{patientName}</strong> per a physician order. It applies when you
-            submit the note, and your supervisor reviews it afterward.
+            Record a medication change for <strong>{patientName}</strong> per a physician order. It takes effect on the
+            MAR when you submit this note, so check it against the order first.
           </p>
 
           <div style={tabRow}>
