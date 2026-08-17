@@ -207,7 +207,7 @@ export type RegimenField = (typeof REGIMEN_FIELDS)[number];
 export type MarChangeKind = 'correction' | 'regimen';
 
 /** Human labels for the regimen fields, for the "this will start a new order
- *  because X changed" hint and the review queue. */
+ *  because X changed" hint. */
 export const REGIMEN_FIELD_LABELS: Record<RegimenField, string> = {
   medName: 'medication',
   dose: 'dose',

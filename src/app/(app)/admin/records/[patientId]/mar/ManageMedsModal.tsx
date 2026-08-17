@@ -37,8 +37,10 @@ interface Props {
  * Add / change / discontinue a medication straight from the standalone MAR.
  * Unlike the note's MedChangeRequestModal (which stages onto a note and applies
  * at submit), this applies IMMEDIATELY via POST /api/mar/change: the order is
- * live at once and lands in the supervisor's acknowledgment queue. No note, no
- * dose-given shortcut (nurses chart doses by clicking the grid cell).
+ * live at once. Keeping the MAR current per a physician's order is within an
+ * LPN's scope, so there is no approval or acknowledgment step — the change is
+ * recorded for audit and that's it. No note, no dose-given shortcut (nurses
+ * chart doses by clicking the grid cell).
  */
 export default function ManageMedsModal({ patientId, patientName, activeOrders, onClose, onSaved }: Props) {
   const [mounted, setMounted] = useState(false);
@@ -215,7 +217,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
       }
       const summary =
         mode === 'add'
-          ? `Added ${medName.trim()}. It's live on the MAR now; your supervisor will acknowledge it.`
+          ? `Added ${medName.trim()}. It's live on the MAR now.`
           : mode === 'change'
             ? startsNewRegimen
               ? `Changed ${target?.medName || 'medication'}. The previous order was discontinued and the new one is live on the MAR.`
@@ -244,7 +246,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
         <div style={{ padding: 18 }}>
           <p style={{ marginTop: 0, fontSize: 13, color: '#6b7280', lineHeight: 1.5 }}>
             Add, change, or discontinue a medication for <strong>{patientName}</strong> per a physician order. It takes
-            effect immediately and your supervisor reviews it afterward.
+            effect on the MAR immediately, so check it against the order before you save.
           </p>
 
           <div style={tabRow}>

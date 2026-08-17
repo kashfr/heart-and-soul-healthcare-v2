@@ -35,8 +35,14 @@ export type { MarChangeKind, RegimenField };
 /**
  * 'voided' = the change that created this order was reverted, so the order is
  * treated as never having existed: it is kept for the audit trail but filtered
- * out of every MAR view (grid, PDF, order lists). Only reachable when nothing
- * was ever charted against it — see revertChange.
+ * out of every MAR view (grid, PDF, order lists).
+ *
+ * LEGACY, READ-ONLY: the admin revert feature that produced voided orders was
+ * removed in Aug 2026 (nurses fix mistakes directly — void/amend a dose, or
+ * correct/discontinue the order — and revert was staff-only, so it served no
+ * one). Nothing writes 'voided' any more, but orders reverted before then
+ * still carry it, so every read path MUST keep filtering it out. Dropping the
+ * filter would resurrect a withdrawn medication onto a live MAR.
  */
 export type MarOrderStatus = 'active' | 'discontinued' | 'voided';
 
@@ -519,14 +525,16 @@ export async function discontinueMarOrder(
  * Lifecycle: the nurse STAGES the change on her note (status 'staged', written
  * immediately so it survives a reload but takes no effect yet). When she
  * SUBMITS the note, an Admin SDK route APPLIES it (creates/discontinues the
- * order) and flips it to status 'applied' + reviewStatus 'pending'. The RN
- * supervisor then simply REVIEWS it (acknowledges); there is no approval gate,
- * since maintaining the MAR per orders is within the nurse's scope.
+ * order) and flips it to status 'applied'. There is no approval gate and no
+ * acknowledgment step, since maintaining the MAR per orders is within the
+ * nurse's scope; the record persists as the audit trail of what was changed.
  */
 export type MarChangeRequestType = 'add' | 'change' | 'discontinue';
 export type MarChangeRequestStatus = 'staged' | 'applied';
-/** 'reverted' takes the change out of the acknowledgment queue: it has been
- *  undone, so there is nothing left for the RN to acknowledge. */
+/** All LEGACY as of Aug 2026: 'pending' / 'reviewed' came from the supervisor
+ *  acknowledgment queue and 'reverted' from the admin revert, both since
+ *  removed. Nothing writes any of these now, but records predating the change
+ *  still carry them, so the union stays for reads. */
 export type MarReviewStatus = 'pending' | 'reviewed' | 'reverted';
 
 export interface ProposedMed {
@@ -576,16 +584,15 @@ export interface MarChangeRequest {
   changeKind?: MarChangeKind;
   updatedOrderId?: string; // the order edited in place, for a correction
   regimenFieldsChanged?: RegimenField[]; // what forced a new regimen
-  /** The documentation fields as they stood BEFORE a correction, so it can be
-   *  reverted without guessing. */
+  /** The documentation fields as they stood BEFORE a correction. */
   previousValues?: Record<string, unknown>;
-  // RN review (acknowledgment only; no approval).
+  // LEGACY, READ-ONLY. Nothing writes these any more: the supervisor review
+  // queue and the admin revert were both removed in Aug 2026. Records created
+  // before then still carry them, so they stay declared for reads.
   reviewStatus?: MarReviewStatus;
   reviewedBy?: string;
   reviewedByName?: string;
   reviewedAt?: unknown;
-  // Undo: set when a supervisor reverts an applied change. The request itself
-  // is kept, so the record shows what was done and that it was undone.
   revertedAt?: unknown;
   revertedBy?: string;
   revertedByName?: string;
@@ -732,34 +739,9 @@ export function subscribeStagedChanges(
   );
 }
 
-/** Live list of applied changes awaiting RN review (newest first). Staff-only.
- *  reviewStatus is only ever set to 'pending' once a change is applied, so this
- *  single-field query needs no composite index. */
-export function subscribePendingReviews(cb: (reqs: MarChangeRequest[]) => void): () => void {
-  const q = query(collection(db, 'marChangeRequests'), where('reviewStatus', '==', 'pending'));
-  return onSnapshot(
-    q,
-    (snap) => {
-      const items = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as MarChangeRequest[];
-      items.sort((a, b) => reqMillis(b.appliedAt) - reqMillis(a.appliedAt));
-      cb(items);
-    },
-    (err) => {
-      console.error('Pending-review subscription error:', err);
-      cb([]);
-    },
-  );
-}
-
-/** Live count of changes awaiting RN review, for the Records nav badge. */
-export function subscribePendingReviewCount(cb: (n: number) => void): () => void {
-  const q = query(collection(db, 'marChangeRequests'), where('reviewStatus', '==', 'pending'));
-  return onSnapshot(
-    q,
-    (snap) => cb(snap.size),
-    (err) => {
-      console.error('Pending-review count error:', err);
-      cb(0);
-    },
-  );
-}
+// The supervisor review queue that used to live here (subscribePendingReviews /
+// subscribePendingReviewCount) was retired in Aug 2026: keeping the MAR current
+// per a physician's order is within an LPN's scope, so acknowledging each change
+// was paperwork, not safety. It was never a gate — changes always applied
+// immediately. The change records themselves are unchanged and still carry who
+// applied what, when, why, and from which note.

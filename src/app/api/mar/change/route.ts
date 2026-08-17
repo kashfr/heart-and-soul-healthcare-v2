@@ -25,7 +25,8 @@ function serverToday(): string {
  * Add / change / discontinue a medication straight from the standalone MAR
  * (no progress note). Maintaining the MAR per physician orders is within an
  * RN/LPN's scope, and a supervisor may also do it; the change applies
- * immediately (no approval gate) and lands in the RN's acknowledgment queue.
+ * immediately (no approval gate, no acknowledgment step) and is recorded for
+ * audit.
  *
  * Because there's no note to imply scope, a NURSE may only manage a client she
  * is assigned to (assignedNurseIds). Staff (admin/supervisor) may manage any.

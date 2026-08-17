@@ -6,15 +6,10 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   HeartPulse,
-  Users,
   ClipboardList,
-  ListChecks,
   FileClock,
   UserCog,
   FileText,
-  Pill,
-  Stethoscope,
-  Tablets,
   Wrench,
   Settings,
   Handshake,
@@ -33,7 +28,6 @@ import CorrectionsBlockGate from './CorrectionsBlockGate';
 import type { Role } from '@/lib/auth';
 import { subscribePendingDupCount } from '@/lib/drafts';
 import { subscribeMyOpenClarifications } from '@/lib/clarifications';
-import { subscribePendingReviewCount } from '@/lib/mar';
 
 const COLLAPSE_KEY = 'app-shell-collapsed';
 
@@ -47,36 +41,19 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { href: '/admin', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
-  // Per-client dashboards for the whole care team: nurses see their assigned
-  // clients, staff see all. The client picker routes to /admin/clients/[id].
+  // THE client entry point (nav consolidation, Aug 2026): one role-scoped
+  // roster — staff get the full table with the add/edit modal and record
+  // checks, a nurse gets her assigned clients — and every row opens the
+  // client dashboard at /admin/clients/[id]. MAR/TAR grids hang off each row
+  // as quick-open pills, the care-plan editor is a dashboard tab, and the
+  // med order book is the dashboard's "Manage record". The old Medications /
+  // Treatments / Patients / Care Plans tabs redirect here (their per-patient
+  // grid routes survive for nurse access + old bookmarks).
   { href: '/admin/clients', label: 'Clients', icon: <HeartPulse size={18} />, allow: ['admin', 'supervisor', 'nurse'] },
-  // Always-on MAR and TAR. Open to staff as well as nurses: reaching a client's
-  // med or treatment record via Records -> client -> button is several clicks
-  // for a supervisor doing oversight across a caseload, and the TAR was
-  // effectively undiscoverable for staff because nothing in the sidebar named
-  // it. Both pickers already scope themselves — a nurse sees only her assigned
-  // clients, staff see the full roster — so widening the nav grants no access
-  // the role didn't already have.
-  {
-    href: '/admin/mar',
-    label: 'Medications',
-    icon: <Tablets size={18} />,
-    allow: ['admin', 'supervisor', 'nurse'],
-  },
-  // The TAR is the non-medication twin of the MAR, charting the ordered care on
-  // a client's plan (tube site care, wound care).
-  {
-    href: '/admin/treatments',
-    label: 'Treatments',
-    icon: <Stethoscope size={18} />,
-    allow: ['admin', 'supervisor', 'nurse'],
-  },
-  { href: '/admin/patients', label: 'Patients', icon: <Users size={18} />, allow: ['admin', 'supervisor'] },
-  { href: '/admin/records', label: 'Records', icon: <Pill size={18} />, allow: ['admin', 'supervisor'] },
-  // Per-client plan-of-care task lists (Option C): staff build the list, the
-  // RN supervisor approves it, progress notes chart against it (phase 2).
-  { href: '/admin/care-plan', label: 'Care Plans', icon: <ListChecks size={18} />, allow: ['admin', 'supervisor'] },
-  { href: '/admin/submissions', label: 'Submissions', icon: <ClipboardList size={18} /> },
+  // Notes are PHI and the VA role has no business need, so Submissions is
+  // gated to the clinical roles (and enforced by the route's own AuthGuard,
+  // not just hidden here). Revisit if a VA ever needs note access.
+  { href: '/admin/submissions', label: 'Submissions', icon: <ClipboardList size={18} />, allow: ['admin', 'supervisor', 'nurse'] },
   { href: '/admin/in-progress', label: 'In Progress', icon: <FileClock size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/users', label: 'Staff & Roles', icon: <UserCog size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/maintenance/link-notes', label: 'Maintenance', icon: <Wrench size={18} />, allow: ['admin'] },
@@ -160,15 +137,6 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => unsub();
   }, [role]);
 
-  // Live count of applied medication changes awaiting RN review, shown on the
-  // Records nav item. Admin + supervisor only (the tier that reviews them).
-  const [pendingMarReq, setPendingMarReq] = useState(0);
-  useEffect(() => {
-    if (role !== 'admin' && role !== 'supervisor') return;
-    const unsub = subscribePendingReviewCount(setPendingMarReq);
-    return () => unsub();
-  }, [role]);
-
   // Live count of the signed-in nurse's OPEN clarification requests, shown as a
   // badge on her Submissions nav item (and enforced by the blocking gate).
   const [openClarifications, setOpenClarifications] = useState(0);
@@ -201,9 +169,24 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const visibleNav = NAV.filter((item) => !item.allow || (role && item.allow.includes(role)));
 
+  // Client-scoped surfaces that lost their own sidebar slot in the nav
+  // consolidation still highlight the Clients item (and give the topbar a
+  // real title): the MAR/TAR grids, the med order book, and the legacy
+  // redirect stubs.
+  const CLIENT_SCOPED_PREFIXES = [
+    '/admin/clients',
+    '/admin/mar',
+    '/admin/treatments',
+    '/admin/records',
+    '/admin/care-plan',
+    '/admin/patients',
+  ];
   const isActive = (href: string) => {
     if (!pathname) return false;
     if (href === '/admin') return pathname === '/admin';
+    if (href === '/admin/clients') {
+      return CLIENT_SCOPED_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+    }
     return pathname === href || pathname.startsWith(`${href}/`);
   };
 
@@ -288,17 +271,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             const badgeCount =
               item.href === '/admin/in-progress'
                 ? pendingDup
-                : item.href === '/admin/records'
-                  ? pendingMarReq
-                  : item.href === '/admin/submissions'
-                    ? openClarifications
-                    : 0;
+                : item.href === '/admin/submissions'
+                  ? openClarifications
+                  : 0;
             const badgeTitle =
               item.href === '/admin/in-progress'
                 ? `${badgeCount} duplicate-note request${badgeCount === 1 ? '' : 's'} awaiting approval`
-                : item.href === '/admin/records'
-                  ? `${badgeCount} medication change${badgeCount === 1 ? '' : 's'} awaiting review`
-                  : `${badgeCount} note${badgeCount === 1 ? '' : 's'} needing your clarification`;
+                : `${badgeCount} note${badgeCount === 1 ? '' : 's'} needing your clarification`;
             const inner = (
               <>
                 <span className="app-shell-nav-icon">{item.icon}</span>
