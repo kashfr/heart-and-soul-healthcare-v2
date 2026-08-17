@@ -3,6 +3,7 @@
 import { useEffect, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from './AuthProvider';
+import { buildLoginRedirect } from '@/lib/loginRedirect';
 import type { Role } from '@/lib/auth';
 
 interface AuthGuardProps {
@@ -18,7 +19,7 @@ export function AuthGuard({ children, allow }: AuthGuardProps) {
   useEffect(() => {
     if (loading) return;
     if (!user) {
-      const params = new URLSearchParams({ redirect: pathname || '/' });
+      const params = new URLSearchParams({ redirect: buildLoginRedirect(pathname) });
       router.replace(`/login?${params.toString()}`);
     }
   }, [user, loading, router, pathname]);
