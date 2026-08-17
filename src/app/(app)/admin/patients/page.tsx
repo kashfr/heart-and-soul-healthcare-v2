@@ -25,21 +25,7 @@ import {
 import { reconcilePatient, worstSeverity, summarize, type Finding } from '@/lib/reconcile';
 import { db } from '@/lib/firebase';
 import { authedFetch } from '@/lib/authedFetch';
-
-// Shape returned by GET /api/admin/users — only the fields the care
-// team picker actually consumes.
-interface CareTeamStaff {
-  uid: string;
-  displayName: string | null;
-  email: string | null;
-  role: string;
-  credential: string | null;
-  active: boolean;
-  /** Declared test/QA login, not a real workforce member. A test account on a
-      real client's care team can read that chart's PHI with no business need,
-      so the picker badges it and confirms before adding. */
-  isTestAccount?: boolean;
-}
+import { resolveCareTeamMembers, type CareTeamStaff } from '@/lib/careTeam';
 
 const emptyPatient: Partial<Patient> = {
   name: '',
@@ -240,17 +226,18 @@ export default function AdminPatientsPage() {
   // they share editingId + patients state.
   // Anyone who can author a note is a valid care-team member: that's
   // staff with a credential set (RN/LPN/CNA/HHA) plus admins. Filters
-  // out inactive accounts so demoted users don't surface as options.
+  // out inactive accounts so demoted users don't surface as options —
+  // this list gates ADDING only. The chip list below resolves against
+  // the full staffList so already-assigned-but-deactivated members
+  // stay visible and removable instead of lingering unseen in
+  // assignedNurseIds.
   const eligibleStaff = useMemo(
     () => staffList.filter((s) => s.active && (!!s.credential || s.role === 'admin')),
     [staffList],
   );
   const careTeamMembers = useMemo(
-    () =>
-      careTeam
-        .map((uid) => eligibleStaff.find((s) => s.uid === uid))
-        .filter((s): s is CareTeamStaff => !!s),
-    [careTeam, eligibleStaff],
+    () => resolveCareTeamMembers(careTeam, staffList),
+    [careTeam, staffList],
   );
   const addableStaff = useMemo(() => {
     const onTeam = new Set(careTeam);
@@ -804,8 +791,17 @@ export default function AdminPatientsPage() {
                       <span style={emptyCareTeamStyle}>No nurses assigned yet.</span>
                     ) : (
                       careTeamMembers.map((s) => (
-                        <span key={s.uid} style={chipStyle}>
+                        <span
+                          key={s.uid}
+                          style={s.active ? chipStyle : chipInactiveStyle}
+                          title={
+                            s.active
+                              ? undefined
+                              : 'This account is deactivated. It keeps no chart access while inactive, but the assignment persists — remove it unless they are expected back on this team.'
+                          }
+                        >
                           {s.displayName || s.email || '(no name)'}
+                          {!s.active && <span style={chipInactiveBadgeStyle}>Inactive</span>}
                           {s.isTestAccount && <span style={chipTestStyle}>Test</span>}
                           {s.credential && (
                             <span style={chipCredStyle}>{s.credential}</span>
@@ -1068,6 +1064,8 @@ const careTeamHelpStyle: React.CSSProperties = { fontSize: 12, color: '#7f8c8d',
 const chipsRowStyle: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 };
 const emptyCareTeamStyle: React.CSSProperties = { fontSize: 13, color: '#7f8c8d', fontStyle: 'italic' };
 const chipStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#eef4fb', color: '#1a3a5c', padding: '6px 6px 6px 12px', borderRadius: 999, fontSize: 13, border: '1px solid #c8def5' };
+const chipInactiveStyle: React.CSSProperties = { ...chipStyle, background: '#f4f5f6', color: '#5c6b7a', border: '1px dashed #b8c2cc' };
+const chipInactiveBadgeStyle: React.CSSProperties = { fontSize: 10, fontWeight: 700, background: '#5c6b7a', color: 'white', padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4, textTransform: 'uppercase' };
 const chipCredStyle: React.CSSProperties = { fontSize: 10, fontWeight: 700, background: '#1a3a5c', color: 'white', padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4 };
 const chipTestStyle: React.CSSProperties = { fontSize: 10, fontWeight: 700, background: '#fdecea', color: '#a3261c', padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4, textTransform: 'uppercase' };
 const chipRemoveBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', color: '#1a3a5c', border: 'none', padding: 2, borderRadius: 999, cursor: 'pointer' };

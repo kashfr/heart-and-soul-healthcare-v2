@@ -652,7 +652,7 @@ function EditStaffModal({
   };
 
   const handleDeactivate = async () => {
-    if (!window.confirm(`Deactivate ${staff.displayName}? They'll be signed out immediately and unable to sign back in until reactivated.`))
+    if (!window.confirm(`Deactivate ${staff.displayName}? They'll be signed out immediately and unable to sign back in until reactivated. They'll also be removed from every client's care team — reactivating won't restore those assignments.`))
       return;
     setBusy('deactivate');
     setError(null);
