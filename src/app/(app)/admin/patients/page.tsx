@@ -90,6 +90,10 @@ export default function AdminPatientsPage() {
   // Sensitive clinical fields live in a separate care-team-gated sub-record,
   // so they're tracked apart from the directory formData and saved alongside it.
   const [clinical, setClinical] = useState<PatientClinical>({});
+  // True while that sub-record is being fetched for the edit modal; the
+  // clinical inputs are disabled until it lands so nothing typed early gets
+  // clobbered when the fetch resolves.
+  const [clinicalLoading, setClinicalLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [query, setQuery] = useState('');
@@ -168,16 +172,23 @@ export default function AdminPatientsPage() {
 
   // Load the sensitive clinical sub-record when editing; reset to blank for a
   // brand-new patient (it gets written after the patient doc is created).
+  // The clinical fields stay disabled until the fetch lands: on a slow
+  // connection an enabled-but-empty Allergies box invites typing over a record
+  // the editor hasn't seen yet, and the resolving fetch would wipe their input.
   useEffect(() => {
     if (!formOpen) return;
     if (!editingId) {
       setClinical({});
+      setClinicalLoading(false);
       return;
     }
     let cancelled = false;
+    setClinicalLoading(true);
     (async () => {
       const data = await getPatientClinical(editingId);
-      if (!cancelled) setClinical(data ?? {});
+      if (cancelled) return;
+      setClinical(data ?? {});
+      setClinicalLoading(false);
     })();
     return () => {
       cancelled = true;
@@ -347,8 +358,12 @@ export default function AdminPatientsPage() {
         savedId = await addPatient(formData as Patient);
         setPatients((prev) => [...prev, { ...(formData as Patient), id: savedId as string }]);
       }
-      // Persist the sensitive clinical fields to the care-team-gated sub-record.
-      if (savedId) {
+      // Persist the sensitive clinical fields to the care-team-gated
+      // sub-record — always the second write, after the patient doc. Skipped
+      // while the clinical fetch is still in flight: the fields were disabled,
+      // so there is nothing new to write, and merging the placeholder {} would
+      // only bump the sub-record's updatedAt misleadingly.
+      if (savedId && !clinicalLoading) {
         await savePatientClinical(savedId, clinical);
       }
       showToast(`${formData.name} ${editingId ? 'updated' : 'added'}`);
@@ -662,6 +677,11 @@ export default function AdminPatientsPage() {
                 <div style={careTeamHelpStyle}>
                   The clinical fields below feed this client&apos;s Medication Administration Record and are visible only to staff and the client&apos;s assigned care team.
                 </div>
+                {clinicalLoading && (
+                  <div style={clinicalLoadingNoteStyle} role="status">
+                    Loading this client&apos;s clinical record… the fields below unlock once it arrives.
+                  </div>
+                )}
 
                 {/* Program gets its own full-width line (its option labels are
                     long); Service level + start date share the next row. */}
@@ -738,7 +758,8 @@ export default function AdminPatientsPage() {
                     <select
                       value={clinical.sex || ''}
                       onChange={(e) => setClinical((c) => ({ ...c, sex: e.target.value }))}
-                      style={selectStyle}
+                      disabled={clinicalLoading}
+                      style={{ ...selectStyle, ...(clinicalLoading ? clinicalBusyStyle : null) }}
                     >
                       <option value="">—</option>
                       <option value="Female">Female</option>
@@ -752,8 +773,9 @@ export default function AdminPatientsPage() {
                   <textarea
                     value={clinical.allergies || ''}
                     onChange={(e) => setClinical((c) => ({ ...c, allergies: e.target.value }))}
-                    style={textareaStyle}
-                    placeholder="e.g., Penicillin (rash). Write NKDA if no known drug allergies."
+                    disabled={clinicalLoading}
+                    style={{ ...textareaStyle, ...(clinicalLoading ? clinicalBusyStyle : null) }}
+                    placeholder={clinicalLoading ? 'Loading…' : 'e.g., Penicillin (rash). Write NKDA if no known drug allergies.'}
                   />
                 </Field>
 
@@ -763,8 +785,9 @@ export default function AdminPatientsPage() {
                       type="text"
                       value={clinical.physicianName || ''}
                       onChange={(e) => setClinical((c) => ({ ...c, physicianName: e.target.value }))}
-                      style={inputStyle}
-                      placeholder="Dr. Jane Smith"
+                      disabled={clinicalLoading}
+                      style={{ ...inputStyle, ...(clinicalLoading ? clinicalBusyStyle : null) }}
+                      placeholder={clinicalLoading ? 'Loading…' : 'Dr. Jane Smith'}
                     />
                   </Field>
                   <Field label="Physician phone">
@@ -772,8 +795,9 @@ export default function AdminPatientsPage() {
                       type="tel"
                       value={clinical.physicianPhone || ''}
                       onChange={(e) => setClinical((c) => ({ ...c, physicianPhone: formatUSPhone(e.target.value) }))}
-                      style={inputStyle}
-                      placeholder="(555) 123-4567"
+                      disabled={clinicalLoading}
+                      style={{ ...inputStyle, ...(clinicalLoading ? clinicalBusyStyle : null) }}
+                      placeholder={clinicalLoading ? 'Loading…' : '(555) 123-4567'}
                     />
                   </Field>
                 </div>
@@ -782,8 +806,9 @@ export default function AdminPatientsPage() {
                   <textarea
                     value={clinical.diet || ''}
                     onChange={(e) => setClinical((c) => ({ ...c, diet: e.target.value }))}
-                    style={textareaStyle}
-                    placeholder="e.g., Mechanical soft, thickened liquids, upright positioning"
+                    disabled={clinicalLoading}
+                    style={{ ...textareaStyle, ...(clinicalLoading ? clinicalBusyStyle : null) }}
+                    placeholder={clinicalLoading ? 'Loading…' : 'e.g., Mechanical soft, thickened liquids, upright positioning'}
                   />
                 </Field>
               </div>
@@ -951,6 +976,11 @@ const modalHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'ce
 const closeBtnStyle: React.CSSProperties = { background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#7f8c8d' };
 const inputStyle: React.CSSProperties = { padding: '10px 12px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit' };
 const textareaStyle: React.CSSProperties = { ...inputStyle, minHeight: 60, resize: 'vertical', lineHeight: 1.4 };
+// Clinical inputs while the sub-record fetch is in flight — visibly dimmed so
+// "disabled" reads as "still loading", not "not applicable". The flat
+// background also drops selectStyle's chevron, which is fine while disabled.
+const clinicalBusyStyle: React.CSSProperties = { background: '#f5f7fa', color: '#9aa4ae', cursor: 'wait' };
+const clinicalLoadingNoteStyle: React.CSSProperties = { fontSize: 12.5, color: '#7f8c8d', fontStyle: 'italic', marginBottom: 12 };
 const requiresMarRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, cursor: 'pointer' };
 const marBadgeStyle: React.CSSProperties = { display: 'inline-block', background: '#eef4fb', color: '#1a3a5c', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4, border: '1px solid #c8def5' };
 const tubeBadgeStyle: React.CSSProperties = { display: 'inline-block', background: '#fdf3e7', color: '#7a4a12', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4, border: '1px solid #f0d9b8', whiteSpace: 'nowrap' };
