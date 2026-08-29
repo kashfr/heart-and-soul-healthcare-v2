@@ -156,7 +156,7 @@ export async function processContactSubmission(data: any) {
 
     // 2. Add to Google Sheet
     await addToGoogleSheet('Contact Submissions', {
-      Date: new Date().toISOString(),
+      Date: new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }),
       Name: name,
       Email: email,
       Phone: phone,
@@ -357,7 +357,7 @@ export async function processReferralSubmission(data: any) {
 
     // 2. Add to Google Sheet
     await addToGoogleSheet('Referral Submissions', {
-      Date: new Date().toISOString(),
+      Date: new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }),
       'Client Name': `${client.firstName} ${client.lastName}`,
       'Client DOB': formatDateUS(client.dob ?? ''),
       'Client Phone': client.phone,

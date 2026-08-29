@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Phone, Mail, Download, ShieldCheck, Clock, Ban, FileQuestion } from 'lucide-react';
+import { formatDateUS } from '@/lib/dateFormat';
 
 interface Detail {
   label: string;
@@ -140,7 +141,7 @@ function ReferralCard({ referral, token }: { referral: SharedReferral; token: st
           {rows.map((d, i) => (
             <tr key={i}>
               <td style={labelCell}>{d.label}</td>
-              <td style={valueCell}>{d.value ? d.value : <span style={{ color: '#9ca3af' }}>—</span>}</td>
+              <td style={valueCell}>{d.value ? formatDateUS(d.value) : <span style={{ color: '#9ca3af' }}>—</span>}</td>
             </tr>
           ))}
         </tbody>

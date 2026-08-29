@@ -6,6 +6,7 @@ import {
   Inbox, PhoneCall, Send, Share2, Copy, Check, Trash2, Plus, Stethoscope,
 } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
+import { formatDateUS } from '@/lib/dateFormat';
 import { buildShareUrl } from '@/lib/shareLink';
 import { GAPP_SERVICES, SERVICE_LABEL, serviceFromCareNeed, type GappServiceKey } from '@/lib/georgia';
 import type { ServiceKey } from '@/lib/diagnosisCatalog';
@@ -234,7 +235,7 @@ export default function ReferralDetail({
                 <tr key={i}>
                   <td style={detailLabelStyle}>{d.label}</td>
                   <td style={detailValueStyle}>
-                    {d.value ? d.value : <span style={{ color: '#9ca3af' }}>—</span>}
+                    {d.value ? formatDateUS(d.value) : <span style={{ color: '#9ca3af' }}>—</span>}
                   </td>
                 </tr>
               ))}

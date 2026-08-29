@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { Patient } from '@/lib/patients';
 import { findNameCandidates, type RosterPatientLite } from '@/lib/levenshtein';
 import { computeAgeString } from '@/lib/age';
+import { formatDateUS } from '@/lib/dateFormat';
 import type { FormPageProps } from '../types';
 import styles from '../page.module.css';
 
@@ -287,7 +288,7 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
                   Did you mean <span style={{ color: '#5a2a00' }}>{topFuzzy.patientName}</span>?
                 </div>
                 <div style={{ fontSize: 12, color: '#8c5a25', marginBottom: 10 }}>
-                  DOB {topFuzzy.patientDob} · {topFuzzy.reason}
+                  DOB {formatDateUS(topFuzzy.patientDob)} · {topFuzzy.reason}
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button
@@ -541,7 +542,7 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
             <p>
               Are you sure you want to select{' '}
               <strong>{selectedPatient.name}</strong> (DOB:{' '}
-              {selectedPatient.dob}, Age: {calculateAge(selectedPatient.dob)}
+              {formatDateUS(selectedPatient.dob)}, Age: {calculateAge(selectedPatient.dob)}
               )?
             </p>
             <p style={{ fontSize: '13px', color: '#666' }}>

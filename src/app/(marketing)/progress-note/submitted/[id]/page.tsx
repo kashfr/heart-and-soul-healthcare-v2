@@ -2,6 +2,7 @@
 
 import { use } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { formatDateUS } from '@/lib/dateFormat';
 import { Check } from 'lucide-react';
 
 /**
@@ -57,7 +58,7 @@ export default function SubmittedPage({ params }: { params: Promise<{ id: string
       </h1>
       <p style={{ color: '#555', lineHeight: 1.6, margin: '0 0 24px' }}>
         {clientName ? <><strong>{clientName}</strong>&apos;s note</> : 'The note'}
-        {dateOfService ? <> for <strong>{dateOfService}</strong></> : null} has been saved
+        {dateOfService ? <> for <strong>{formatDateUS(dateOfService)}</strong></> : null} has been saved
         successfully.
       </p>
 

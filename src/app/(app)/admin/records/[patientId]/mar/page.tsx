@@ -21,6 +21,7 @@ import {
 import { physicianAttributionPending } from '@/lib/marShared';
 import { authedFetch } from '@/lib/authedFetch';
 import { triggerDownload } from '@/lib/batchExport';
+import { formatMonthUSFile } from '@/lib/dateFormat';
 import { compareMarOrders, resolveCurrentAdministrations } from '@/lib/marShared';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import AdministerDoseModal from './AdministerDoseModal';
@@ -322,7 +323,7 @@ export default function MonthlyMarPage() {
       }
       const blob = await res.blob();
       const safeName = (patient?.name || 'client').replace(/[^a-zA-Z0-9-]+/g, '_');
-      triggerDownload(blob, `MAR_${safeName}_${month}.pdf`);
+      triggerDownload(blob, `MAR_${safeName}_${formatMonthUSFile(month)}.pdf`);
     } catch {
       setToast('Export failed.');
     } finally {

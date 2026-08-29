@@ -52,7 +52,7 @@ export async function sendEmailChangeRequestNotice({
   const orgName = settings.branding.orgName;
   const fromDisplay = settings.branding.fromEmailDisplay || orgName;
   const fromEmail = `${fromDisplay} <${FROM_ADDRESS}>`;
-  const subject = `Email-change approval needed — ${staffName}`;
+  const subject = `Email-change approval needed: ${staffName}`;
 
   const html = `<!doctype html>
 <html>

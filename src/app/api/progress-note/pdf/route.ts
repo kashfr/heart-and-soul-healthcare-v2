@@ -7,6 +7,7 @@ import { getEditHistoryServer } from '@/lib/editHistoryServer';
 import { buildFieldAmendments } from '@/lib/revisionFormat';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
 import { adminDb } from '@/lib/firebaseAdmin';
+import { formatDateUS, formatDateUSFile } from '@/lib/dateFormat';
 
 function sanitize(part: string): string {
   return (part || '').replace(/[^a-zA-Z0-9-]+/g, '_').replace(/^_+|_+$/g, '') || 'note';
@@ -27,7 +28,7 @@ function isoFromAnyDate(v: string | undefined): string {
 // clearly. Mirrors the on-screen displayOld.
 function displayOldPdf(v: unknown): string {
   if (v === null || v === undefined || v === '') return '(blank)';
-  if (typeof v === 'string') return v.startsWith('data:image/') ? '(signature image)' : v;
+  if (typeof v === 'string') return v.startsWith('data:image/') ? '(signature image)' : formatDateUS(v);
   try {
     return JSON.stringify(v);
   } catch {
@@ -109,7 +110,7 @@ export async function POST(request: Request) {
     const clientName = sanitize(data.q3_clientName || 'client');
     const dateStr = isoFromAnyDate(data.q6_dateofService);
     const kind = data.noteType === 'rn-oversight-visit' ? 'Oversight_Note' : 'Progress_Note';
-    const filename = `${kind}_${clientName}_${dateStr}.pdf`;
+    const filename = `${kind}_${clientName}_${formatDateUSFile(dateStr)}.pdf`;
 
     return new Response(new Uint8Array(buffer), {
       status: 200,

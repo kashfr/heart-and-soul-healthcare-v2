@@ -16,6 +16,7 @@ import {
 import { physicianAttributionPending } from '@/lib/marShared';
 import { authedFetch } from '@/lib/authedFetch';
 import { triggerDownload } from '@/lib/batchExport';
+import { formatMonthUSFile } from '@/lib/dateFormat';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import RecordTreatmentModal from './RecordTreatmentModal';
 
@@ -31,6 +32,11 @@ function shiftMonth(month: string, delta: number): string {
 function daysInMonth(month: string): number {
   const [y, m] = month.split('-').map(Number);
   return new Date(y, m, 0).getDate();
+}
+function formatDate(d?: string | null): string {
+  if (!d) return '';
+  const dt = new Date(d + 'T12:00:00');
+  return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 function monthLabel(month: string): string {
   const [y, m] = month.split('-').map(Number);
@@ -188,7 +194,7 @@ export default function MonthlyTarPage() {
       }
       const blob = await res.blob();
       const safeName = (patient?.name || 'client').replace(/[^a-zA-Z0-9-]+/g, '_');
-      triggerDownload(blob, `TAR_${safeName}_${month}.pdf`);
+      triggerDownload(blob, `TAR_${safeName}_${formatMonthUSFile(month)}.pdf`);
     } catch {
       setToast('Export failed.');
     } finally {
@@ -227,7 +233,7 @@ export default function MonthlyTarPage() {
               <h1 style={titleStyle}>Treatment Administration Record</h1>
               <div style={headerMetaStyle}>
                 {patient?.name || 'Client'}
-                {patient?.dob ? ` · DOB ${patient.dob}` : ''}
+                {patient?.dob ? ` · DOB ${formatDate(patient.dob)}` : ''}
                 {patient?.mrn ? ` · Record #${patient.mrn}` : ''}
               </div>
             </div>

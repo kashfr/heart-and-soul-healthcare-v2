@@ -8,6 +8,7 @@
  */
 import { Resend } from 'resend';
 import { getServerSettings } from '../settingsServer';
+import { formatDateUS } from '../dateFormat';
 
 const FROM_ADDRESS = 'notifications@heartandsoulhc.org';
 
@@ -56,7 +57,7 @@ export async function sendCorrectionAmendedNotice({
   const fromEmail = `${fromDisplay} <${FROM_ADDRESS}>`;
 
   const firstName = (recipientName || '').trim().split(/\s+/)[0] || 'there';
-  const subject = `Flagged note corrected: ${clientName} (${dateOfService})`;
+  const subject = `Flagged note corrected: ${clientName} (${formatDateUS(dateOfService)})`;
 
   const html = `<!doctype html>
 <html>
@@ -71,7 +72,7 @@ export async function sendCorrectionAmendedNotice({
             <p style="margin:0 0 12px;">Hi ${escapeHtml(firstName)},</p>
             <p style="margin:0 0 12px;">${escapeHtml(nurseName)} amended a progress note you flagged for correction:</p>
             <p style="margin:0 0 16px;background:#ecfdf5;border:1px solid #a7f3d0;padding:10px 12px;border-radius:6px;">
-              <strong>${escapeHtml(clientName)}</strong> &middot; ${escapeHtml(dateOfService)}
+              <strong>${escapeHtml(clientName)}</strong> &middot; ${escapeHtml(formatDateUS(dateOfService))}
             </p>
             <p style="margin:0 0 12px;">Her block on new documentation is STILL IN PLACE. Please review the amendment (every change is listed in the note's amendment history). If it fixes what you flagged, remove the block or mark the correction resolved; both let her document again. If it does not, add a follow-up telling her exactly what still needs to change.</p>
           </td></tr>
@@ -91,7 +92,7 @@ export async function sendCorrectionAmendedNotice({
 
 ${nurseName} amended a progress note you flagged for correction:
 
-${clientName} · ${dateOfService}
+${clientName} · ${formatDateUS(dateOfService)}
 
 Her block on new documentation is STILL IN PLACE. Please review the amendment. If it fixes what you flagged, remove the block or mark the correction resolved; both let her document again. If it does not, add a follow-up telling her exactly what still needs to change.
 

@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from 'react';
 import { CheckCircle2, ExternalLink, X } from 'lucide-react';
 import SignatureCanvas, { type SignatureCanvasHandle } from './SignatureCanvas';
 import { authedFetch } from '@/lib/authedFetch';
+import { formatDateUS } from '@/lib/dateFormat';
 import type { SubmissionSummary } from '@/lib/submissions';
 
 interface CoSignModalProps {
@@ -143,7 +144,7 @@ export default function CoSignModal({ notes, onClose, onSuccess }: CoSignModalPr
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, color: '#1a3a5c' }}>{n.clientName || '—'}</div>
                   <div style={{ fontSize: 12, color: '#5c6b7a' }}>
-                    {n.dateOfService || '—'} · {n.nurseName || '—'}{' '}
+                    {formatDateUS(n.dateOfService) || '—'} · {n.nurseName || '—'}{' '}
                     <span style={{ fontWeight: 600 }}>({n.credential || '—'})</span>
                   </div>
                 </div>

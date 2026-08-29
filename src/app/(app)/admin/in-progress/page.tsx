@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { subscribeDrafts, type NoteDraft } from '@/lib/drafts';
 import { findDuplicateSubmission } from '@/lib/submissions';
+import { formatDateUS } from '@/lib/dateFormat';
 import { authedFetch } from '@/lib/authedFetch';
 import {
   flattenDraft,
@@ -234,7 +235,7 @@ export default function InProgressPage() {
                     {draft.clientName || '(no client name yet)'}
                   </div>
                   <div style={{ fontSize: 13, color: '#6b7280' }}>
-                    {draft.nurseName || 'Unknown nurse'} · DOS {draft.dateOfService || '—'} · on Tab{' '}
+                    {draft.nurseName || 'Unknown nurse'} · DOS {formatDateUS(draft.dateOfService) || '—'} · on Tab{' '}
                     {draft.currentPage} ({NOTE_TAB_NAMES[draft.currentPage] ?? ''})
                   </div>
                 </div>
@@ -277,7 +278,7 @@ export default function InProgressPage() {
                       </div>
                       <p style={{ margin: '0 0 8px', fontSize: 13, lineHeight: 1.5 }}>
                         {draft.nurseName || 'This nurse'} is asking to submit a <strong>second</strong> note for{' '}
-                        <strong>{dupReq.clientName}</strong> on <strong>{dupReq.dateOfService}</strong> — a client already
+                        <strong>{dupReq.clientName}</strong> on <strong>{formatDateUS(dupReq.dateOfService)}</strong> — a client already
                         documented on that date.
                       </p>
                       <div style={{ fontSize: 13, marginBottom: 10 }}>
@@ -391,9 +392,9 @@ export default function InProgressPage() {
                     <div style={snapshotHeader}>Vitals &amp; key details entered</div>
                     <div style={snapshotGrid}>
                       <Detail label="Client" value={flat.q3_clientName} />
-                      <Detail label="Date of birth" value={flat.q4_dateofBirth} />
+                      <Detail label="Date of birth" value={formatDateUS(flat.q4_dateofBirth)} />
                       <Detail label="Credential" value={flat.q12_credential} />
-                      <Detail label="Date of service" value={flat.q6_dateofService} />
+                      <Detail label="Date of service" value={formatDateUS(flat.q6_dateofService)} />
                       {(flat.q16_vitalsNotObtainedReason || '').trim() !== '' && (
                         <Detail
                           label="Vitals not obtained"
@@ -439,7 +440,7 @@ export default function InProgressPage() {
                           ) : (
                             <div style={fullGrid}>
                               {entries.map(([k, v]) => (
-                                <Detail key={k} label={humanizeKey(k)} value={String(v)} />
+                                <Detail key={k} label={humanizeKey(k)} value={formatDateUS(String(v))} />
                               ))}
                               {signed && <Detail label="Signature" value="Signed" />}
                             </div>

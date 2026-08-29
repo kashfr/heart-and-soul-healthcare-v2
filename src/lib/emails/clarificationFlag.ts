@@ -7,6 +7,7 @@
  */
 import { Resend } from 'resend';
 import { getServerSettings } from '../settingsServer';
+import { formatDateUS } from '../dateFormat';
 
 const FROM_ADDRESS = 'notifications@heartandsoulhc.org';
 const LOGIN_URL = 'https://www.heartandsoulhc.org/login';
@@ -67,10 +68,10 @@ export async function sendClarificationFlagNotice({
   const firstName = (nurseName || '').trim().split(/\s+/)[0] || 'there';
 
   const subject = isFollowUp
-    ? `Follow-up on your note: ${clientName} (${dateOfService})`
+    ? `Follow-up on your note: ${clientName} (${formatDateUS(dateOfService)})`
     : isCorrection
-      ? `Action needed: a note needs correction for ${clientName} (${dateOfService})`
-      : `A note needs clarification: ${clientName} (${dateOfService})`;
+      ? `Action needed: a note needs correction for ${clientName} (${formatDateUS(dateOfService)})`
+      : `A note needs clarification: ${clientName} (${formatDateUS(dateOfService)})`;
 
   const lead = isFollowUp
     ? `${escapeHtml(reviewerName)} added a follow-up question on a note that is awaiting your reply:`
@@ -89,7 +90,7 @@ export async function sendClarificationFlagNotice({
             <p style="margin:0 0 12px;">Hi ${escapeHtml(firstName)},</p>
             <p style="margin:0 0 12px;">${lead}</p>
             <p style="margin:0 0 8px;background:#fff8ec;border:1px solid #f0d9a8;padding:10px 12px;border-radius:6px;">
-              <strong>${escapeHtml(clientName)}</strong> &middot; ${escapeHtml(dateOfService)}
+              <strong>${escapeHtml(clientName)}</strong> &middot; ${escapeHtml(formatDateUS(dateOfService))}
             </p>
             <p style="margin:0 0 4px;color:#5c6b7a;font-size:13px;">${escapeHtml(reviewerName)} wrote:</p>
             <p style="margin:0 0 16px;padding:10px 12px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:6px;white-space:pre-wrap;">${message ? escapeHtml(message) : '<em>(no message)</em>'}</p>
@@ -113,7 +114,7 @@ export async function sendClarificationFlagNotice({
 
 ${reviewerName} ${isFollowUp ? 'added a follow-up question on a note awaiting your reply' : `flagged one of your progress notes for ${noun}`}:
 
-${clientName} · ${dateOfService}
+${clientName} · ${formatDateUS(dateOfService)}
 
 ${reviewerName} wrote:
 ${message || '(no message)'}

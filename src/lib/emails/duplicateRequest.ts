@@ -6,6 +6,7 @@
  */
 import { Resend } from 'resend';
 import { getServerSettings } from '../settingsServer';
+import { formatDateUS } from '../dateFormat';
 
 const FROM_ADDRESS = 'notifications@heartandsoulhc.org';
 const IN_PROGRESS_URL = 'https://www.heartandsoulhc.org/admin/in-progress';
@@ -51,7 +52,7 @@ export async function sendDuplicateRequestNotice({
   const orgName = settings.branding.orgName;
   const fromDisplay = settings.branding.fromEmailDisplay || orgName;
   const fromEmail = `${fromDisplay} <${FROM_ADDRESS}>`;
-  const subject = `Duplicate-note approval needed — ${clientName} (${dateOfService})`;
+  const subject = `Duplicate-note approval needed: ${clientName} (${formatDateUS(dateOfService)})`;
 
   const html = `<!doctype html>
 <html>
@@ -65,7 +66,7 @@ export async function sendDuplicateRequestNotice({
           <tr><td style="padding:8px 32px 0;font-size:15px;line-height:1.6;color:#2c3e50;">
             <p style="margin:0 0 12px;"><strong>${escapeHtml(nurseName)}</strong> is asking to submit a <strong>second</strong> progress note for a client already documented on this date:</p>
             <p style="margin:0 0 8px;background:#fff8ec;border:1px solid #f0d9a8;padding:10px 12px;border-radius:6px;">
-              <strong>${escapeHtml(clientName)}</strong> &middot; ${escapeHtml(dateOfService)}
+              <strong>${escapeHtml(clientName)}</strong> &middot; ${escapeHtml(formatDateUS(dateOfService))}
             </p>
             <p style="margin:0 0 4px;color:#5c6b7a;font-size:13px;">Reason given:</p>
             <p style="margin:0 0 16px;padding:10px 12px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:6px;">${reason ? escapeHtml(reason) : '<em>(no reason given)</em>'}</p>
@@ -85,7 +86,7 @@ export async function sendDuplicateRequestNotice({
   </body>
 </html>`;
 
-  const text = `${nurseName} is asking to submit a second progress note for a client already documented on this date:\n\n${clientName} · ${dateOfService}\n\nReason: ${reason || '(none given)'}\n\nApprove or deny it on the In Progress screen: ${IN_PROGRESS_URL}`;
+  const text = `${nurseName} is asking to submit a second progress note for a client already documented on this date:\n\n${clientName} · ${formatDateUS(dateOfService)}\n\nReason: ${reason || '(none given)'}\n\nApprove or deny it on the In Progress screen: ${IN_PROGRESS_URL}`;
 
   try {
     const { error } = await resend.emails.send({ from: fromEmail, to, subject, html, text });
