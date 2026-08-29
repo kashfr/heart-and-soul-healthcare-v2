@@ -17,6 +17,14 @@ export default function FormPageSeven({ formRef, register, watch, setValue, cont
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const sigRef = useRef<SignatureCanvasHandle>(null);
   const [totalHours, setTotalHours] = useState<string>('');
+  // Live shift-window sanity check (owner request after two real incidents:
+  // a note submitted with end-before-start reading 0.00 hours, and a 19:30
+  // AM/PM typo that silently became an "overnight shift" and tripped the MAR
+  // dose gate with no pointer to the real error). 'invalid' = end <= start
+  // (blocks at submit; this is the early warning), 'long' = a legal but
+  // suspicious duration worth a second look (does NOT block — multi-day
+  // stretches are real here, e.g. a 32h weekend shift).
+  const [timeWarning, setTimeWarning] = useState<'' | 'invalid' | 'long'>('');
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     handoff: false,
   });
@@ -50,7 +58,12 @@ export default function FormPageSeven({ formRef, register, watch, setValue, cont
   const shiftEndDate = watch('q62_shiftEndDate');
   const shiftEndTime = watch('q62_shiftEndTime');
   useEffect(() => {
-    if (!shiftStartTime || !shiftEndTime) return;
+    // Clear the warning whenever a time field is blanked mid-edit; without
+    // this, the banner would keep rendering the OLD values (review finding).
+    if (!shiftStartTime || !shiftEndTime) {
+      setTimeWarning('');
+      return;
+    }
 
     // Preferred path: both dates present → exact elapsed time across days.
     if (dateOfService && shiftEndDate) {
@@ -59,17 +72,21 @@ export default function FormPageSeven({ formRef, register, watch, setValue, cont
       if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
         const diffH = (end.getTime() - start.getTime()) / 3_600_000;
         // End-before-start is a data-entry error; show 0 rather than a
-        // nonsensical negative until it's corrected.
+        // nonsensical negative until it's corrected — and SAY SO, loudly,
+        // right here where the nurse is looking. Submit also hard-blocks it.
+        setTimeWarning(diffH <= 0 ? 'invalid' : diffH > 16 ? 'long' : '');
         const hours = (diffH >= 0 ? diffH : 0).toFixed(2);
         setTotalHours(hours);
         setValue('q9_totalHours', hours);
         return;
       }
+      setTimeWarning('');
     }
 
     // Fallback (used only while a date field is still blank mid-entry): time-only
     // with a single-day overnight roll. Both dates are required to submit, so a
     // completed note always uses the exact datetime path above.
+    setTimeWarning('');
     const [startHour, startMin] = shiftStartTime.split(':').map(Number);
     const [endHour, endMin] = shiftEndTime.split(':').map(Number);
     if ([startHour, startMin, endHour, endMin].some((n) => Number.isNaN(n))) return;
@@ -267,6 +284,21 @@ export default function FormPageSeven({ formRef, register, watch, setValue, cont
             />
           </div>
         </div>
+        {timeWarning === 'invalid' && (
+          <div style={{ background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '10px 12px', fontSize: 13.5, lineHeight: 1.5, marginTop: 8, fontWeight: 600 }}>
+            The shift end ({shiftEndDate} {shiftEndTime}) is not after the shift start ({dateOfService} {shiftStartTime}),
+            so total hours cannot be calculated. If this was an overnight shift, set the Shift End Date to the
+            next day. Otherwise, correct the Shift Start Time (Page 1) or the end time above. The note cannot be
+            submitted until this is fixed.
+          </div>
+        )}
+        {timeWarning === 'long' && (
+          <div style={{ background: '#fff3e0', color: '#b45309', borderRadius: 6, padding: '10px 12px', fontSize: 13.5, lineHeight: 1.5, marginTop: 8, fontWeight: 600 }}>
+            This shift totals {totalHours} hours ({dateOfService} {shiftStartTime} to {shiftEndDate} {shiftEndTime}).
+            That may be correct for an extended stay, but a wrong AM/PM on the start time looks exactly like
+            this — please double-check before submitting.
+          </div>
+        )}
       </div>
 
       {/* CERTIFICATION */}
