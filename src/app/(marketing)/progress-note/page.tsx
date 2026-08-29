@@ -1246,6 +1246,41 @@ function ProgressNotePageInner() {
       }
     }
 
+    // The shift WINDOW itself must be possible: end datetime strictly after
+    // start datetime. Without this, an end-before-start entry submits with
+    // 0.00 total hours (real incident, 08/15: 20:30 -> 14:30 same day), and
+    // the requires-MAR gate silently reinterprets end<start as an overnight
+    // shift — turning an AM/PM typo into a wall of "missing doses" with no
+    // pointer at the actual error (real incident, 19:30 typed for 07:30).
+    // Overnight shifts remain legal: set the Shift End Date to the next day.
+    {
+      const startStr = String(getValues('q7_shiftStart') || '').trim();
+      const endTimeStr = String(getValues('q62_shiftEndTime') || '').trim();
+      if (dosStr && shiftEndStr && startStr && endTimeStr) {
+        const startDT = new Date(`${dosStr}T${startStr}`);
+        const endDT = new Date(`${shiftEndStr}T${endTimeStr}`);
+        if (
+          !Number.isNaN(startDT.getTime()) &&
+          !Number.isNaN(endDT.getTime()) &&
+          endDT.getTime() <= startDT.getTime()
+        ) {
+          setCurrentPage(activePages[activePages.length - 1]);
+          setTimeout(() => {
+            const el = formRef.current?.querySelector('#q62_shiftEndTime') as HTMLElement | null;
+            el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            (el as HTMLInputElement | null)?.focus();
+          }, 100);
+          alert(
+            `The shift end (${shiftEndStr} at ${endTimeStr}) is not after the shift start (${dosStr} at ${startStr}), ` +
+            'so total hours cannot be calculated.\n\n' +
+            'If this was an overnight shift, set the Shift End Date to the NEXT day.\n' +
+            'Otherwise, correct the Shift Start Time (Page 1) or the Shift End Time.'
+          );
+          return;
+        }
+      }
+    }
+
     // Client condition at shift end is a DeselectableRadio (stored in the
     // radio module store, not RHF) with no HTML `required` attribute, so the
     // required-field scan above can't see it. Enforce it explicitly like the
@@ -1486,10 +1521,22 @@ function ProgressNotePageInner() {
               if (gaps.length > 0) {
                 setCurrentPage(5);
                 window.scrollTo(0, 0);
+                // Say exactly which window the gate reasoned from, so a
+                // typo'd time is discoverable (real incident: 19:30 typed for
+                // 07:30 read as an overnight shift; the nurse had no pointer
+                // to the actual error).
+                const gateStart = String(getValues('q7_shiftStart') || '?');
+                const gateEnd = String(getValues('q62_shiftEndTime') || '?');
+                const endsNextDay = !!shiftEndDate && !!serviceDate && shiftEndDate > serviceDate;
+                const windowLabel = endsNextDay
+                  ? `${gateStart} to ${gateEnd} the next day`
+                  : gateEnd < gateStart
+                    ? `${gateStart} to ${gateEnd} (read as an OVERNIGHT shift because the end time is before the start time)`
+                    : `${gateStart} to ${gateEnd}`;
                 alert(
-                  `${marGateClient} requires a MAR, and these scheduled doses due during your shift haven't been documented yet:\n\n${gaps
+                  `${marGateClient} requires a MAR, and these scheduled doses due during your shift (${windowLabel}) haven't been documented yet:\n\n${gaps
                     .map((g) => `• ${g.medName} at ${g.slot}`)
-                    .join('\n')}\n\nMark each one given, held, or refused on the Medications tab before submitting.`
+                    .join('\n')}\n\nMark each one given, held, or refused on the Medications tab before submitting.\n\nIf that shift window looks wrong (for example an evening time typed instead of morning), fix the Shift Start Time on Page 1 or the Shift End on the signature page first \u2014 the required doses follow your shift window.`
                 );
                 return;
               }
