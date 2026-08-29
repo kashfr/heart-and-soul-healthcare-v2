@@ -2,7 +2,7 @@ import 'server-only';
 import { FieldValue, type DocumentData, type DocumentReference } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
 import type { AuthedCaller } from './adminAuthGuard';
-import { buildMarAdminFields, deriveInitials, parseValueOptions, regimenFieldsChanged } from './marShared';
+import { buildMarAdminFields, classifyDoseAgainstShiftSet, deriveInitials, parseValueOptions, regimenFieldsChanged } from './marShared';
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** Return `value` if it is an ISO YYYY-MM-DD date string, else `fallback`. Both
@@ -445,7 +445,7 @@ const AMENDABLE_STATUS = new Set(['given', 'held', 'refused']);
  */
 export async function amendMarAdministration(
   adminId: string,
-  input: { status: string; actualTime?: string; reason?: string; outcome?: string; prescriberNotified?: boolean; amendmentReason: string },
+  input: { status: string; actualTime?: string; reason?: string; outcome?: string; prescriberNotified?: boolean; administeredByType?: string; administratorName?: string; amendmentReason: string },
   caller: AuthedCaller,
 ): Promise<AmendResult> {
   const col = adminDb().collection('marAdministrations');
@@ -474,6 +474,12 @@ export async function amendMarAdministration(
   if (!amendmentReason) {
     return { ok: false, reason: 'missing-reason', message: 'A reason for the correction is required.' };
   }
+  if (
+    input.administeredByType !== undefined &&
+    !['nurse', 'family', 'responsibleParty', 'self', 'proxy'].includes(String(input.administeredByType))
+  ) {
+    return { ok: false, reason: 'bad-status', message: 'Unknown "Administered by" value.' };
+  }
 
   const scheduledTime = String(orig.scheduledTime || '');
   // PRN-ness must survive the rebuild or buildMarAdminFields blanks the dose's
@@ -483,6 +489,102 @@ export async function amendMarAdministration(
   const isPRN = scheduledTime === 'PRN' || scheduledTime === 'unscheduled' || orig.isPRN === true;
   const amenderName = caller.profile.displayName || caller.email || '';
   const givenStatus = status === 'given';
+  const effectiveByType =
+    input.administeredByType !== undefined
+      ? String(input.administeredByType)
+      : String(orig.administeredByType || 'nurse');
+  const effectiveByName =
+    input.administratorName !== undefined
+      ? String(input.administratorName)
+      : String(orig.administratorName || '');
+  if (
+    givenStatus &&
+    effectiveByType !== 'nurse' &&
+    effectiveByType !== 'self' &&
+    !effectiveByName.trim()
+  ) {
+    return {
+      ok: false,
+      reason: 'missing-reason',
+      message: 'Enter the name of the person who administered it.',
+    };
+  }
+  if (givenStatus && !String(input.actualTime || '').trim()) {
+    return { ok: false, reason: 'missing-reason', message: 'Enter the time the dose was given.' };
+  }
+
+  // Server-side shift-window check — the one the browser can't skip. A
+  // NURSE-GIVEN time must fall inside the GIVING nurse's documented shift
+  // window(s) for the record's date. The giver is the chain ROOT's documenter
+  // (an amendment's documenter is whoever corrected it, e.g. the supervisor);
+  // her windows include any approved second note for the date and the
+  // next-day tail of her previous day's overnight note. Verdicts other than a
+  // provable 'outside' pass — no note on file or unparseable times fail open
+  // (capture-time controls own prevention; corrections must stay possible).
+  if (givenStatus && effectiveByType === 'nurse') {
+    try {
+      let rootData: DocumentData = orig;
+      for (let hop = 0; hop < 20 && rootData.amends; hop += 1) {
+        const prev = await col.doc(String(rootData.amends)).get();
+        if (!prev.exists) break;
+        rootData = prev.data() || {};
+      }
+      const giverUid = String(rootData.documentedBy || '');
+      const patientId = String(orig.patientId || '');
+      const dateISO = String(orig.date || '');
+      if (giverUid && patientId && /^\d{4}-\d{2}-\d{2}$/.test(dateISO)) {
+        const prevDt = new Date(dateISO + 'T12:00:00');
+        prevDt.setDate(prevDt.getDate() - 1);
+        const prevISO = `${prevDt.getFullYear()}-${String(prevDt.getMonth() + 1).padStart(2, '0')}-${String(prevDt.getDate()).padStart(2, '0')}`;
+        const notesCol = adminDb().collection('progressNotes');
+        const forDate = (d: string) =>
+          notesCol
+            .where('nurseId', '==', giverUid)
+            .where('patientId', '==', patientId)
+            .where('q6_dateofService', '==', d)
+            .get();
+        const [snapDay, snapPrev] = await Promise.all([forDate(dateISO), forDate(prevISO)]);
+        const windows: Array<{ start: string; end: string; endsNextDay: boolean }> = [];
+        for (const d of snapDay.docs) {
+          const n = d.data();
+          if (String(n.status || '') === 'archived' || n.archivedAt) continue;
+          const start = String(n.q7_shiftStart || '').trim();
+          const end = String(n.q62_shiftEndTime || '').trim();
+          if (!start || !end) continue;
+          const endDate = String(n.q62_shiftEndDate || '').trim();
+          windows.push({ start, end, endsNextDay: !!endDate && endDate > dateISO });
+        }
+        for (const d of snapPrev.docs) {
+          const n = d.data();
+          if (String(n.status || '') === 'archived' || n.archivedAt) continue;
+          const start = String(n.q7_shiftStart || '').trim();
+          const end = String(n.q62_shiftEndTime || '').trim();
+          if (!start || !end) continue;
+          const endDate = String(n.q62_shiftEndDate || '').trim();
+          const overnight =
+            (!!endDate && endDate > prevISO) ||
+            (/^\d{2}:\d{2}$/.test(start) && /^\d{2}:\d{2}$/.test(end) && end < start);
+          if (overnight) windows.push({ start: '00:00', end, endsNextDay: false });
+        }
+        if (
+          windows.length > 0 &&
+          classifyDoseAgainstShiftSet(String(input.actualTime || ''), windows) === 'outside'
+        ) {
+          return {
+            ok: false,
+            reason: 'bad-status',
+            message:
+              'That time is outside the documenting nurse\'s shift window from her progress note. ' +
+              'A nurse-given dose must fall inside her shift. If a family member or caregiver gave it, ' +
+              'set "Administered by" accordingly; if the note\'s shift times are wrong, correct the note first.',
+          };
+        }
+      }
+    } catch (err) {
+      // Fail open: a lookup error must not block a legitimate correction.
+      console.error('Amend shift-window check failed (allowing):', err);
+    }
+  }
   const base = buildMarAdminFields(
     {
       orderId: String(orig.orderId || ''),
@@ -493,8 +595,11 @@ export async function amendMarAdministration(
       scheduledTime,
       status: status as 'given' | 'held' | 'refused',
       // Keep who physically gave it only when the corrected status is "given".
-      administeredByType: givenStatus ? String(orig.administeredByType || 'nurse') : 'nurse',
-      administratorName: givenStatus ? String(orig.administratorName || '') : '',
+      // An amendment may CHANGE it (the incident remediation: a dose wrongly
+      // attested as nurse-given is corrected to family-given, starring it on
+      // the MAR); omitted = carry the original forward.
+      administeredByType: givenStatus ? effectiveByType : 'nurse',
+      administratorName: givenStatus ? effectiveByName : '',
       actualTime: String(input.actualTime || ''),
       initials: deriveInitials(amenderName),
       reason: String(input.reason || ''),

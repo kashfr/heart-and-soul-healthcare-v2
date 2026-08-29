@@ -68,6 +68,9 @@ export interface DashboardNote {
   painScore: string;
   medTolerance: string; // q43 radio value
   physNotified: string; // q43_reactionPhysNotified ('Yes' | 'No' | '')
+  shiftStart: string; // q7_shiftStart 'HH:MM' ('' when absent)
+  shiftEnd: string; // q62_shiftEndTime
+  shiftEndDate: string; // q62_shiftEndDate ISO ('' when absent)
   addrLine1: string;
   city: string;
   state: string;
@@ -187,6 +190,7 @@ export function careTeamFromNotes(
 // ---------------------------------------------------------------------------
 // MAR compliance. Structural types mirror MarOrder / MarAdministration without
 // importing the Firebase-backed module.
+import { classifyDoseAgainstShiftSet } from './marShared';
 // ---------------------------------------------------------------------------
 
 export interface DashOrder {
@@ -211,6 +215,10 @@ export interface DashAdmin {
   status: string; // given | held | refused
   outcome?: string;
   prescriberNotified?: boolean;
+  documentedBy?: string;
+  administeredByType?: string;
+  actualTime?: string;
+  voided?: boolean;
 }
 
 function orderAppliesOnLite(o: DashOrder, date: string): boolean {
@@ -222,10 +230,12 @@ function orderAppliesOnLite(o: DashOrder, date: string): boolean {
 /** Live (non-superseded) records — local mirror of resolveCurrentAdministrations.
  *  Exported so callers (e.g. the activity feed) never render a corrected record
  *  alongside its correction. */
-export function currentAdmins<T extends { id?: string; amends?: string }>(list: T[]): T[] {
+export function currentAdmins<T extends { id?: string; amends?: string; voided?: boolean }>(
+  list: T[],
+): T[] {
   const superseded = new Set<string>();
   for (const r of list) if (r.amends) superseded.add(r.amends);
-  return list.filter((r) => !(r.id && superseded.has(r.id)));
+  return list.filter((r) => !(r.id && superseded.has(r.id)) && r.voided !== true);
 }
 
 /** A dose is PRN-ish when charted against the PRN slot OR as an unscheduled
@@ -628,4 +638,65 @@ export function groupVisitsByDate<T extends DashVisit>(visits: T[]): Map<string,
     list.sort((a, b) => (a.startTime || '99:99').localeCompare(b.startTime || '99:99'));
   }
   return map;
+}
+
+/**
+ * Doses attested as NURSE-GIVEN at times outside the documenting nurse's own
+ * shift window (from her note for that date), across [startISO..endISO].
+ * Powers the "Shift-window integrity" readiness card (owner request after a
+ * nurse repeatedly charted 22:00 doses on a shift ending mid-afternoon).
+ * Conservative by construction: only provable mismatches count — family/proxy
+ * doses, doses with no matching note, and unparseable times are all skipped
+ * (capture-time gates own prevention; this surface is for supervisor review).
+ */
+export function outOfWindowDoseCount(
+  admins: DashAdmin[],
+  notes: DashboardNote[],
+  startISO: string,
+  endISO: string,
+): number {
+  // ALL of a nurse's windows for a date (split-shift second notes included),
+  // plus the next-day TAIL of an overnight note (00:00 -> its end) indexed
+  // under the following date, so legitimate early-morning back-charting from
+  // an overnight shift is not counted.
+  const windowsByNurseDate = new Map<string, Array<{ start: string; end: string; endsNextDay: boolean }>>();
+  const push = (key: string, w: { start: string; end: string; endsNextDay: boolean }) => {
+    const list = windowsByNurseDate.get(key) || [];
+    list.push(w);
+    windowsByNurseDate.set(key, list);
+  };
+  const HHMM_RE = /^\d{2}:\d{2}$/;
+  for (const n of notes) {
+    if (!n.nurseId || !n.dateISO || !n.shiftStart || !n.shiftEnd) continue;
+    const endsNextDay = !!n.shiftEndDate && n.shiftEndDate > n.dateISO;
+    push(`${n.nurseId}|${n.dateISO}`, {
+      start: n.shiftStart,
+      end: n.shiftEnd,
+      endsNextDay,
+    });
+    const overnight =
+      endsNextDay || (HHMM_RE.test(n.shiftStart) && HHMM_RE.test(n.shiftEnd) && n.shiftEnd < n.shiftStart);
+    if (overnight) {
+      push(`${n.nurseId}|${shiftISO(n.dateISO, 1)}`, {
+        start: '00:00',
+        end: n.shiftEnd,
+        endsNextDay: false,
+      });
+    }
+  }
+  let count = 0;
+  for (const a of currentAdmins(admins)) {
+    if (a.status !== 'given') continue;
+    if (a.administeredByType && a.administeredByType !== 'nurse') continue;
+    if (!a.date || a.date < startISO || a.date > endISO) continue;
+    const ws = a.documentedBy ? windowsByNurseDate.get(`${a.documentedBy}|${a.date}`) : undefined;
+    if (!ws || ws.length === 0) continue;
+    const doseTime =
+      (a.actualTime || '').trim() ||
+      (a.scheduledTime && a.scheduledTime !== 'PRN' && a.scheduledTime !== 'unscheduled' ? a.scheduledTime : '');
+    if (classifyDoseAgainstShiftSet(doseTime, ws) === 'outside') {
+      count += 1;
+    }
+  }
+  return count;
 }

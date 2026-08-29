@@ -40,7 +40,7 @@ import {
   getStagedChangesForNote,
   orderAppliesOn,
 } from '@/lib/mar';
-import { computeRequiredDoseGaps, resolveCurrentAdministrations } from '@/lib/marShared';
+import { classifyDoseAgainstShift, computeRequiredDoseGaps, resolveCurrentAdministrations } from '@/lib/marShared';
 import {
   getAllMarAdmin,
   clearMarAdmin,
@@ -1416,6 +1416,29 @@ function ProgressNotePageInner() {
             if (!(m.reason || '').trim()) incomplete.push(`${med}: reason the PRN dose was given`);
             if (!(m.outcome || '').trim()) incomplete.push(`${med}: outcome / result of the PRN dose`);
           }
+          // A given PRN / one-off mark has no scheduled slot to fall back on,
+          // so a blank "Time given" would make the dose untimed on the legal
+          // record AND slip past the shift-window gate below ('' classifies
+          // as 'unknown'). Scheduled marks fall back to the slot, so only the
+          // slotless kinds are required here.
+          if (
+            m.status === 'given' &&
+            (isPrnMark || m.scheduledTime === 'unscheduled') &&
+            !(m.actualTime || '').trim()
+          ) {
+            incomplete.push(`${med}: time the dose was given`);
+          }
+          // A family/proxy dose is legal (starred on the MAR) but must say WHO
+          // gave it — an anonymous escape hatch would defeat the attestation.
+          if (
+            m.status === 'given' &&
+            m.administeredByType &&
+            m.administeredByType !== 'nurse' &&
+            m.administeredByType !== 'self' &&
+            !(m.administratorName || '').trim()
+          ) {
+            incomplete.push(`${med}: name of the person who administered it`);
+          }
         }
       }
       if (incomplete.length > 0) {
@@ -1425,6 +1448,57 @@ function ProgressNotePageInner() {
           `Please complete the medication documentation before submitting:\n\n${incomplete
             .map((m) => `• ${m}`)
             .join('\n')}\n\n(Expand "scheduled doses documented today" on the Medications page if a dose is collapsed.)`
+        );
+        return;
+      }
+    }
+
+    // Dose-vs-shift-window gate (owner request after a nurse repeatedly
+    // charted 22:00 doses as NURSE-GIVEN on a shift that ended mid-afternoon:
+    // an attestation of personally administering meds while not in the home).
+    // A nurse-given dose must fall inside her own shift window (60-minute
+    // grace; overnight shifts open-ended on the service day). Family/proxy
+    // administration stays legal via the Administered-by picker and is
+    // starred on the MAR. 'unknown' verdicts pass — missing/invalid times
+    // are owned by the required-field and shift-sanity gates.
+    if (!isEditMode) {
+      const gatePid = String(getValues('patientId') || '').trim();
+      const wShiftStart = String(getValues('q7_shiftStart') || '');
+      const wShiftEnd = String(getValues('q62_shiftEndTime') || '');
+      const wEndDate = String(getValues('q62_shiftEndDate') || '');
+      const wDos = String(getValues('q6_dateofService') || '');
+      const wNextDay = !!wEndDate && !!wDos && wEndDate > wDos;
+      const outside: string[] = [];
+      if (gatePid) {
+        for (const m of selectSubmittableMarks(getAllMarAdmin(), {
+          patientId: gatePid,
+          sessionId: submissionIdRef.current,
+        })) {
+          if (m.status !== 'given') continue;
+          if (m.administeredByType && m.administeredByType !== 'nurse') continue;
+          const doseTime =
+            (m.actualTime || '').trim() ||
+            (m.scheduledTime && m.scheduledTime !== 'PRN' && m.scheduledTime !== 'unscheduled'
+              ? m.scheduledTime
+              : '');
+          const verdict = classifyDoseAgainstShift({
+            doseTime,
+            shiftStart: wShiftStart,
+            shiftEnd: wShiftEnd,
+            shiftEndsNextDay: wNextDay,
+          });
+          if (verdict === 'outside') {
+            outside.push(`${m.medName || 'a medication'} at ${doseTime}`);
+          }
+        }
+      }
+      if (outside.length > 0) {
+        setCurrentPage(5);
+        window.scrollTo(0, 0);
+        alert(
+          `These doses are marked as given BY YOU at times outside your shift (${wShiftStart || '?'} to ${wShiftEnd || '?'}${wNextDay ? ' the next day' : ''}):\n\n${outside
+            .map((m) => `• ${m}`)
+            .join('\n')}\n\nYou can only attest to doses you personally administered during your shift.\n\n• If a family member or caregiver gave the dose, change "Administered by" on that dose (it will be starred on the MAR).\n• If you gave it and your shift times are wrong, fix the Shift Start (Page 1) or Shift End (signature page).\n• Otherwise, remove the mark.`
         );
         return;
       }

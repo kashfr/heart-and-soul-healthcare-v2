@@ -15,7 +15,7 @@ import {
   type MarChangeRequest,
   type MarAdministration,
 } from '@/lib/mar';
-import { doseTimeStatus, resolveCurrentAdministrations, type DoseTimeStatus } from '@/lib/marShared';
+import { classifyDoseAgainstShift, doseTimeStatus, resolveCurrentAdministrations, type DoseTimeStatus } from '@/lib/marShared';
 import MedChart from './MedChart';
 import {
   marAdminState,
@@ -91,6 +91,13 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
   useSyncExternalStore(marAdminSubscribe, marAdminGetSnapshot, marAdminGetSnapshot);
   const marPatientId = String(watch('patientId') || '').trim();
   const marDate = String(watch('q6_dateofService') || '');
+  // Shift window for the dose-vs-shift check (owner request: a nurse must not
+  // attest NURSE-GIVEN doses at times she was not in the home; family-given
+  // stays legal via the Administered-by picker and is starred on the MAR).
+  const shiftStartW = String(watch('q7_shiftStart') || '');
+  const shiftEndW = String(watch('q62_shiftEndTime') || '');
+  const shiftEndDateW = String(watch('q62_shiftEndDate') || '');
+  const shiftEndsNextDayW = !!shiftEndDateW && !!marDate && shiftEndDateW > marDate;
   const [marAllOrders, setMarAllOrders] = useState<MarOrder[]>([]);
   const [marLoading, setMarLoading] = useState(false);
   // A FAILED med-orders fetch (network, permissions) must never render as
@@ -407,6 +414,23 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
             )}
           </div>
         )}
+        {status === 'given' &&
+          isNurseAdmin &&
+          classifyDoseAgainstShift({
+            doseTime:
+              (opts.rec?.actualTime || '').trim() ||
+              (opts.scheduledSlot && opts.scheduledSlot !== 'PRN' ? opts.scheduledSlot : ''),
+            shiftStart: shiftStartW,
+            shiftEnd: shiftEndW,
+            shiftEndsNextDay: shiftEndsNextDayW,
+          }) === 'outside' && (
+            <div style={{ background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '8px 11px', fontSize: 12.5, lineHeight: 1.5, marginTop: 8, fontWeight: 600 }}>
+              This dose time is outside your shift ({shiftStartW || '?'} to {shiftEndW || '?'}
+              {shiftEndsNextDayW ? ' next day' : ''}). If a family member or caregiver gave it, change
+              &quot;Administered by&quot; above and it will be starred on the MAR. If you gave it, your shift
+              times must be wrong. The note cannot be submitted with a nurse-given dose outside your shift.
+            </div>
+          )}
 
         {/* A PRN ("as needed") dose must record WHY it was given this time, shown
             against the order's standing indication. Scheduled doses don't ask. */}

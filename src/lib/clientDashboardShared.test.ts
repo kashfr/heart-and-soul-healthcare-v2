@@ -17,6 +17,7 @@ import {
   marComplianceStats,
   normalizeDateISO,
   notesInWindow,
+  outOfWindowDoseCount,
   shiftISO,
   sortNotesDesc,
   timelinessStats,
@@ -49,6 +50,9 @@ function note(overrides: Partial<DashboardNote> = {}): DashboardNote {
     painScore: '',
     medTolerance: '',
     physNotified: '',
+    shiftStart: '',
+    shiftEnd: '',
+    shiftEndDate: '',
     addrLine1: '',
     city: '',
     state: '',
@@ -199,6 +203,18 @@ describe('marComplianceStats', () => {
     expect(s.pctGiven).toBe(25);
     expect(s.prnGiven).toBe(2);
     expect(s.prnPendingResult).toBe(1);
+  });
+
+  it('a voided (entered-in-error) dose is not a given dose: its slot goes back to undocumented', () => {
+    const withVoided: DashAdmin[] = [
+      ...admins,
+      // a5 voids nothing here — it IS the voided record: charted, then removed
+      // as entered in error and never re-charted.
+      { id: 'a5', orderId: 'o1', date: '2026-07-02', scheduledTime: '08:00', status: 'given', voided: true },
+    ];
+    const s = marComplianceStats(orders, withVoided, '2026-07-01', '2026-07-02', '2026-07-02');
+    expect(s.given).toBe(1); // a5 does not count
+    expect(s.undocumented).toBe(2); // its slot stays undocumented
   });
 
   it('never expects future doses and respects order windows', () => {
@@ -552,5 +568,65 @@ describe('marComplianceStats: prescriber notification (D.4.d)', () => {
     const s = marComplianceStats([order], admins, '2026-07-01', '2026-07-10', '2026-07-10');
     expect(s.refusedTotal).toBe(2);
     expect(s.refusedNoNotify).toBe(1);
+  });
+});
+
+describe('outOfWindowDoseCount', () => {
+  const n = (over: Partial<DashboardNote>): DashboardNote => note({ ...over });
+  const adm = (over: Partial<DashAdmin>): DashAdmin => ({
+    id: Math.random().toString(36).slice(2),
+    orderId: 'o1',
+    date: '2026-08-21',
+    scheduledTime: '22:00',
+    status: 'given',
+    documentedBy: 'uA',
+    administeredByType: 'nurse',
+    actualTime: '22:00',
+    ...over,
+  });
+  const dayNote = n({ nurseId: 'uA', dateISO: '2026-08-21', shiftStart: '08:45', shiftEnd: '14:45' });
+
+  it('counts the real incident: nurse-given 22:00 on an 08:45-14:45 shift', () => {
+    expect(outOfWindowDoseCount([adm({})], [dayNote], '2026-08-01', '2026-08-31')).toBe(1);
+  });
+
+  it('skips family/proxy doses, no-note days, unknown times, and out-of-range dates', () => {
+    expect(outOfWindowDoseCount([adm({ administeredByType: 'family' })], [dayNote], '2026-08-01', '2026-08-31')).toBe(0);
+    expect(outOfWindowDoseCount([adm({ documentedBy: 'uB' })], [dayNote], '2026-08-01', '2026-08-31')).toBe(0);
+    expect(outOfWindowDoseCount([adm({ actualTime: '', scheduledTime: 'PRN' })], [dayNote], '2026-08-01', '2026-08-31')).toBe(0);
+    expect(outOfWindowDoseCount([adm({})], [dayNote], '2026-07-01', '2026-07-31')).toBe(0);
+  });
+
+  it('inside-window and amended-away doses do not count', () => {
+    expect(outOfWindowDoseCount([adm({ actualTime: '10:00' })], [dayNote], '2026-08-01', '2026-08-31')).toBe(0);
+    const orig = adm({ id: 'x1' });
+    const corrected = adm({ id: 'x2', amends: 'x1', administeredByType: 'family' });
+    expect(outOfWindowDoseCount([orig, corrected], [dayNote], '2026-08-01', '2026-08-31')).toBe(0);
+  });
+
+  it('overnight note windows keep evening doses legal', () => {
+    const overnight = n({ nurseId: 'uA', dateISO: '2026-08-21', shiftStart: '19:30', shiftEnd: '07:30', shiftEndDate: '2026-08-22' });
+    expect(outOfWindowDoseCount([adm({})], [overnight], '2026-08-01', '2026-08-31')).toBe(0);
+  });
+
+  it('voided (entered-in-error) doses never count', () => {
+    expect(outOfWindowDoseCount([adm({ voided: true })], [dayNote], '2026-08-01', '2026-08-31')).toBe(1 - 1);
+  });
+
+  it("the previous day's overnight note covers next-day tail doses (the Sarah-Smith back-charting shape)", () => {
+    const overnight = n({ nurseId: 'uA', dateISO: '2026-08-20', shiftStart: '22:00', shiftEnd: '06:00', shiftEndDate: '2026-08-21' });
+    // 05:30 dose dated the 21st, documented by the overnight nurse: inside her tail.
+    expect(
+      outOfWindowDoseCount([adm({ date: '2026-08-21', scheduledTime: '05:30', actualTime: '05:30' })], [overnight], '2026-08-01', '2026-08-31'),
+    ).toBe(0);
+    // But a 22:00 dose dated the 21st is NOT covered by the tail alone.
+    expect(outOfWindowDoseCount([adm({ date: '2026-08-21' })], [overnight], '2026-08-01', '2026-08-31')).toBe(1);
+  });
+
+  it('an approved split-shift second note contributes a second window (no newest-wins)', () => {
+    const evening = n({ nurseId: 'uA', dateISO: '2026-08-21', shiftStart: '20:00', shiftEnd: '23:00' });
+    expect(outOfWindowDoseCount([adm({ actualTime: '22:00' })], [evening, dayNote], '2026-08-01', '2026-08-31')).toBe(0);
+    expect(outOfWindowDoseCount([adm({ actualTime: '10:00' })], [evening, dayNote], '2026-08-01', '2026-08-31')).toBe(0);
+    expect(outOfWindowDoseCount([adm({ actualTime: '17:00' })], [evening, dayNote], '2026-08-01', '2026-08-31')).toBe(1);
   });
 });

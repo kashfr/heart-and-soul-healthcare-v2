@@ -48,6 +48,7 @@ import {
   timelinessStats,
   upcomingVisits,
   type DashboardNote,
+  outOfWindowDoseCount,
 } from '@/lib/clientDashboardShared';
 
 // The dashboard grew to seven full sections; tabs keep each audience's view
@@ -335,6 +336,20 @@ function ClientDashboardInner() {
     adverse.length === 0 ? 'good' : adverse.every((e) => e.physNotified === 'Yes') ? 'warn' : 'bad';
   const physicianSignal: Signal =
     activeOrders.length === 0 ? 'none' : physicianPendingCount === 0 ? 'good' : 'bad';
+  // Nurse-given doses charted at times outside the documenting nurse's own
+  // shift window (60-minute grace) — supervisor review queue, warn tier:
+  // prevention now lives at capture, and legacy entries need amendment
+  // conversations (usually to family-given), not a red alarm.
+  const outOfWindow30 = useMemo(
+    () => outOfWindowDoseCount(admins, notes, start30, today),
+    [admins, notes, start30, today],
+  );
+  // Gate on ALL charted given doses — scheduled AND PRN/one-off — or a
+  // client whose only doses are PRN would show 'No doses charted' while an
+  // out-of-window PRN dose hides behind it.
+  const given30 = mar30.given + mar30.prnGiven;
+  const shiftIntegritySignal: Signal =
+    outOfWindow30 > 0 ? 'warn' : given30 === 0 ? 'none' : 'good';
   const orderCurrencySignal: Signal =
     activeOrders.length === 0 ? 'none' : staleOrderCount === 0 ? 'good' : 'bad';
   // Warn (not bad): the attestation checkbox is new, so historical refusals
@@ -713,6 +728,25 @@ function ClientDashboardInner() {
                       : 'Nothing to report'
                 }
                 href={mar30.refusedNoNotify > 0 ? marHref : undefined}
+              />
+              <ReadinessCard
+                signal={shiftIntegritySignal}
+                title="Shift-window integrity (30d)"
+                value={
+                  outOfWindow30 > 0
+                    ? `${outOfWindow30} dose${outOfWindow30 === 1 ? '' : 's'} outside the nurse's shift`
+                    : given30 === 0
+                      ? 'No doses charted'
+                      : 'All nurse-given doses within shifts'
+                }
+                detail={
+                  outOfWindow30 > 0
+                    ? 'Doses attested as nurse-given at times outside the documenting nurse\'s own shift window (60-minute grace). Review with the nurse: correct each dose from the MAR day view — a dose actually given by family is amended to family-given via "Administered by" (starred on the MAR); a wrong time is amended to the true time.'
+                    : given30 > 0
+                      ? 'Every nurse-given dose falls inside the shift its nurse documented'
+                      : ''
+                }
+                href={outOfWindow30 > 0 ? marHref : undefined}
               />
               <ReadinessCard
                 signal={adverseSignal}

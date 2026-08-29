@@ -81,6 +81,11 @@ export interface MarAdminFieldInput {
   value?: string;
   valueLabel?: string;
   valueUnit?: string;
+  // The nurse checked the explicit "no note on file — I personally
+  // administered this" attestation in the grid modal. Persisted so the record
+  // shows which control path admitted it. Meaningful only for a nurse-given
+  // dose; forced false otherwise.
+  noNoteAttestation?: boolean;
 }
 
 export interface MarAdminFieldMeta {
@@ -134,6 +139,7 @@ export function buildMarAdminFields(r: MarAdminFieldInput, meta: MarAdminFieldMe
     reason: r.status === 'given' && !isPRN ? '' : r.reason.trim(),
     outcome: r.status === 'given' && isPRN ? (r.outcome || '').trim() : '',
     prescriberNotified: r.status !== 'given' && r.prescriberNotified === true,
+    noNoteAttestation: r.status === 'given' && isNurse && r.noNoteAttestation === true,
     // A reading exists only where the check was actually performed. The label
     // and unit ride along so the number stays interpretable if the order that
     // defined them is later edited.
@@ -503,4 +509,76 @@ export function computeRequiredDoseGaps(opts: {
     gaps.push({ orderId: r.orderId, medName: r.medName, slot: r.slot });
   }
   return gaps;
+}
+
+/**
+ * Dose-vs-shift-window classifier (owner request after a real incident: a
+ * nurse working ~08:45-14:45 repeatedly charted 22:00 doses as nurse-given —
+ * attesting she administered meds at a time she was not in the home; the
+ * evening doses are in fact given by family, for which administeredByType
+ * 'family'/'responsibleParty' with the MAR star is the correct record).
+ *
+ * A dose time is judged against the nurse's shift [start - grace, end + grace]
+ * on the date of service. Overnight shifts (explicit next-day end, or
+ * end < start) have no upper bound on the service-day side, mirroring
+ * computeRequiredDoseGaps: the tail of an overnight shift falls on the NEXT
+ * calendar day, whose doses are charted under that next date.
+ *
+ * 'unknown' (any time unparseable) is NOT treated as outside — callers fail
+ * open, because a half-filled form must not block unrelated charting; the
+ * required-field and shift-sanity gates own missing/invalid times.
+ */
+export type DoseWindowVerdict = 'inside' | 'outside' | 'unknown';
+export const SHIFT_WINDOW_GRACE_MINUTES = 60;
+
+export function classifyDoseAgainstShift(opts: {
+  doseTime: string; // 'HH:MM' — the actual time when known, else the slot
+  shiftStart: string;
+  shiftEnd: string;
+  shiftEndsNextDay: boolean;
+  graceMinutes?: number;
+}): DoseWindowVerdict {
+  const dose = parseHHMM(opts.doseTime);
+  const start = parseHHMM(opts.shiftStart);
+  const end = parseHHMM(opts.shiftEnd);
+  if (dose === null || start === null) return 'unknown';
+  const grace = opts.graceMinutes ?? SHIFT_WINDOW_GRACE_MINUTES;
+  const lo = start - grace;
+  // A dose before the shift even starts is outside under BOTH the overnight
+  // and same-day interpretations, so the verdict doesn't need the end time.
+  // This lets the Page 5 warning fire during the normal forward fill, before
+  // the nurse has reached the shift-end fields on the last page.
+  if (dose < lo) return 'outside';
+  if (end === null) return 'unknown';
+  const overnight = opts.shiftEndsNextDay || end < start;
+  if (overnight) return 'inside';
+  return dose <= end + grace ? 'inside' : 'outside';
+}
+
+/**
+ * Verdict for a dose against a SET of shift windows (a nurse may have more
+ * than one for a date: an approved split-shift second note, or the next-day
+ * tail of the previous day's overnight note). 'inside' if ANY window contains
+ * the dose; 'unknown' if none does but any window is unparseable (fail open);
+ * 'outside' only when every window parsed and excluded it. Empty set is
+ * 'unknown' — the caller owns no-note handling.
+ */
+export function classifyDoseAgainstShiftSet(
+  doseTime: string,
+  windows: Array<{ start: string; end: string; endsNextDay: boolean }>,
+  graceMinutes?: number,
+): DoseWindowVerdict {
+  if (windows.length === 0) return 'unknown';
+  const verdicts = windows.map((w) =>
+    classifyDoseAgainstShift({
+      doseTime,
+      shiftStart: w.start,
+      shiftEnd: w.end,
+      shiftEndsNextDay: w.endsNextDay,
+      graceMinutes,
+    }),
+  );
+  if (verdicts.includes('inside')) return 'inside';
+  if (verdicts.includes('unknown')) return 'unknown';
+  return 'outside';
 }

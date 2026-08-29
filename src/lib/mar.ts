@@ -351,6 +351,9 @@ export interface MarAdministrationDraft {
   value?: string; // measurement, for a check-style order (e.g. gastric residual)
   valueLabel?: string;
   valueUnit?: string;
+  // Grid modal only: the nurse checked the no-note-on-file personal
+  // attestation, persisted so the record shows which control admitted it.
+  noNoteAttestation?: boolean;
 }
 
 export interface MarDocumenter {

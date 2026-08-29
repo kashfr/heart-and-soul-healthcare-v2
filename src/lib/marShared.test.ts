@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   amendmentChain,
   buildMarAdminFields,
+  classifyDoseAgainstShift,
+  classifyDoseAgainstShiftSet,
   compareMarOrders,
   computeRequiredDoseGaps,
   deriveInitials,
@@ -599,5 +601,57 @@ describe('describeRegimenChanges', () => {
     expect(describeRegimenChanges(['dose', 'route', 'scheduledTimes'])).toBe(
       'dose, route and scheduled times',
     );
+  });
+});
+
+describe('classifyDoseAgainstShift', () => {
+  const day = { shiftEndsNextDay: false };
+  it('the real incident: 22:00 dose on an 08:45-14:45 shift is outside', () => {
+    expect(classifyDoseAgainstShift({ doseTime: '22:00', shiftStart: '08:45', shiftEnd: '14:45', ...day })).toBe('outside');
+  });
+  it('inside the window, and within the 60-minute grace at both edges', () => {
+    expect(classifyDoseAgainstShift({ doseTime: '09:00', shiftStart: '08:45', shiftEnd: '14:45', ...day })).toBe('inside');
+    expect(classifyDoseAgainstShift({ doseTime: '08:00', shiftStart: '08:45', shiftEnd: '14:45', ...day })).toBe('inside'); // 45m early
+    expect(classifyDoseAgainstShift({ doseTime: '15:30', shiftStart: '08:45', shiftEnd: '14:45', ...day })).toBe('inside'); // 45m late
+    expect(classifyDoseAgainstShift({ doseTime: '07:30', shiftStart: '08:45', shiftEnd: '14:45', ...day })).toBe('outside'); // 75m early
+    expect(classifyDoseAgainstShift({ doseTime: '16:00', shiftStart: '08:45', shiftEnd: '14:45', ...day })).toBe('outside'); // 75m late
+  });
+  it('overnight shifts have no service-day upper bound (matches the dose gate)', () => {
+    expect(classifyDoseAgainstShift({ doseTime: '22:00', shiftStart: '19:30', shiftEnd: '07:30', shiftEndsNextDay: true })).toBe('inside');
+    expect(classifyDoseAgainstShift({ doseTime: '23:59', shiftStart: '19:30', shiftEnd: '16:30', shiftEndsNextDay: false })).toBe('inside'); // end<start implies overnight
+    expect(classifyDoseAgainstShift({ doseTime: '17:00', shiftStart: '19:30', shiftEnd: '07:30', shiftEndsNextDay: true })).toBe('outside'); // 2.5h before start
+    expect(classifyDoseAgainstShift({ doseTime: '18:45', shiftStart: '19:30', shiftEnd: '07:30', shiftEndsNextDay: true })).toBe('inside'); // 45m before start
+  });
+  it('custom grace and unparseable times', () => {
+    expect(classifyDoseAgainstShift({ doseTime: '15:30', shiftStart: '08:45', shiftEnd: '14:45', ...day, graceMinutes: 30 })).toBe('outside');
+    expect(classifyDoseAgainstShift({ doseTime: '', shiftStart: '08:45', shiftEnd: '14:45', ...day })).toBe('unknown');
+    expect(classifyDoseAgainstShift({ doseTime: '22:00', shiftStart: '', shiftEnd: '14:45', ...day })).toBe('unknown');
+    expect(classifyDoseAgainstShift({ doseTime: '22:00', shiftStart: '08:45', shiftEnd: 'garbage', ...day })).toBe('unknown');
+  });
+  it('a dose before the shift starts is outside even without a parseable end (early-edge, Page 5 forward fill)', () => {
+    expect(classifyDoseAgainstShift({ doseTime: '07:00', shiftStart: '08:45', shiftEnd: '', ...day })).toBe('outside');
+    expect(classifyDoseAgainstShift({ doseTime: '08:00', shiftStart: '08:45', shiftEnd: '', ...day })).toBe('unknown'); // within grace but end unknown
+  });
+});
+
+describe('classifyDoseAgainstShiftSet', () => {
+  const dayW = { start: '08:45', end: '14:45', endsNextDay: false };
+  const overnightW = { start: '19:30', end: '07:30', endsNextDay: true };
+  const tailW = { start: '00:00', end: '06:00', endsNextDay: false }; // prev-day overnight tail
+  it('inside if ANY window contains the dose (split shift / overnight tail)', () => {
+    expect(classifyDoseAgainstShiftSet('22:00', [dayW, overnightW])).toBe('inside');
+    expect(classifyDoseAgainstShiftSet('05:30', [tailW])).toBe('inside');
+    expect(classifyDoseAgainstShiftSet('06:45', [tailW])).toBe('inside'); // within grace of the tail end
+  });
+  it('outside only when every window parsed and excluded it', () => {
+    expect(classifyDoseAgainstShiftSet('22:00', [dayW])).toBe('outside');
+    expect(classifyDoseAgainstShiftSet('08:00', [tailW])).toBe('outside');
+    // A dose AFTER an unparseable-end window's start can't be proven outside it: fails open.
+    expect(classifyDoseAgainstShiftSet('20:00', [dayW, { start: '19:30', end: 'garbage', endsNextDay: false }])).toBe('unknown');
+    // But BEFORE that window's start (minus grace) it is provably outside both.
+    expect(classifyDoseAgainstShiftSet('17:00', [dayW, { start: '19:30', end: 'garbage', endsNextDay: false }])).toBe('outside');
+  });
+  it('empty set is unknown (the caller owns no-note handling)', () => {
+    expect(classifyDoseAgainstShiftSet('22:00', [])).toBe('unknown');
   });
 });
