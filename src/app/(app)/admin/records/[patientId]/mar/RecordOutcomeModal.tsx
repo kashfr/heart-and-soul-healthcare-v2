@@ -4,6 +4,7 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
+import { formatDateUS } from '@/lib/dateFormat';
 import type { MarAdministration } from '@/lib/mar';
 
 interface Props {
@@ -73,7 +74,7 @@ export default function RecordOutcomeModal({ admin, onClose, onSaved }: Props) {
               {admin.doseSnapshot ? ` ${admin.doseSnapshot}` : ''}
               {admin.unitsSnapshot ? ` ${admin.unitsSnapshot}` : ''} · PRN
               {admin.actualTime ? ` · given at ${admin.actualTime}` : ''}
-              {admin.date ? ` · ${admin.date}` : ''}
+              {admin.date ? ` · ${formatDateUS(admin.date)}` : ''}
             </div>
             {admin.reason && <div style={reasonLine}>Given for: {admin.reason}</div>}
           </div>

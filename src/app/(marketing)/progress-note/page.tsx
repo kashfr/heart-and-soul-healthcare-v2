@@ -14,6 +14,7 @@ import {
 import { computeAgeString } from '@/lib/age';
 import { findNameCandidates, type RosterPatientLite, type MatchCandidate } from '@/lib/levenshtein';
 import { saveSubmission, getSubmission, updateSubmission, submissionExists, findDuplicateSubmission, computeSubmissionChanges, type ProgressNoteFormData, type DuplicateMatch } from '@/lib/submissions';
+import { formatDateUS } from '@/lib/dateFormat';
 import { saveDraft, loadDraft, deleteDraft, clearDuplicateRequest, subscribeOwnDupRequest, type NoteDraft, type DuplicateRequest } from '@/lib/drafts';
 import { getCriticalFindings, summarizeFindings, type CriticalFinding } from '@/lib/criticalVitals';
 import { isBpRoutinelyRequired } from '@/lib/vitalRanges';
@@ -2269,7 +2270,7 @@ function ProgressNotePageInner() {
           return (
             <div style={{ ...base, background: '#fffbeb', borderColor: '#fde68a', color: '#92400e' }}>
               <strong>Approval requested.</strong> You can keep working on this note, but you can&apos;t
-              submit it until an admin or supervisor approves a second note for {req.clientName} on {req.dateOfService}.
+              submit it until an admin or supervisor approves a second note for {req.clientName} on {formatDateUS(req.dateOfService)}.
             </div>
           );
         }
@@ -2277,7 +2278,7 @@ function ProgressNotePageInner() {
           return (
             <div style={{ ...base, background: '#f0fdf4', borderColor: '#bbf7d0', color: '#166534' }}>
               <strong>Approved.</strong> {req.decidedByName ? `${req.decidedByName} approved` : 'A reviewer approved'} a
-              second note for {req.clientName} on {req.dateOfService}. You can submit this note.
+              second note for {req.clientName} on {formatDateUS(req.dateOfService)}. You can submit this note.
             </div>
           );
         }
@@ -2373,7 +2374,7 @@ function ProgressNotePageInner() {
             >
               {pendingPatientConfirm.candidate.patientName}{' '}
               <span style={{ color: '#5c6b7a', fontSize: 12 }}>
-                (DOB {pendingPatientConfirm.candidate.patientDob})
+                (DOB {formatDateUS(pendingPatientConfirm.candidate.patientDob)})
               </span>
             </p>
             <p style={{ color: '#666', fontSize: 13, lineHeight: 1.5, marginBottom: 20 }}>
@@ -2711,7 +2712,7 @@ function ProgressNotePageInner() {
                 }}
               >
                 <strong>{dupBlock.clientName || 'this client'}</strong> on{' '}
-                <strong>{dupBlock.dateOfService}</strong>
+                <strong>{formatDateUS(dupBlock.dateOfService)}</strong>
                 {dupBlock.submittedAt && (
                   <span style={{ color: '#5c6b7a', fontSize: 12, display: 'block', marginTop: 4 }}>
                     Submitted {dupBlock.submittedAt.toLocaleString()}

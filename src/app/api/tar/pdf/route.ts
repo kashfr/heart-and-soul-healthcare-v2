@@ -4,6 +4,7 @@ import { renderToBuffer, type DocumentProps } from '@react-pdf/renderer';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { getServerSettings } from '@/lib/settingsServer';
+import { formatDateUS, formatMonthUSFile } from '@/lib/dateFormat';
 import TarPDF, {
   type TarPdfCell,
   type TarPdfRow,
@@ -286,7 +287,7 @@ export async function POST(request: Request) {
       days,
       patient: {
         name: String(p.name || ''),
-        dob: String(p.dob || ''),
+        dob: formatDateUS(String(p.dob || '')),
         sex: String(c.sex || ''),
         recordNumber: String(p.mrn || ''),
         diagnosis: String(p.diagnosis || ''),
@@ -307,7 +308,7 @@ export async function POST(request: Request) {
     return new NextResponse(new Uint8Array(buffer), {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="TAR_${safeName}_${month}.pdf"`,
+        'Content-Disposition': `attachment; filename="TAR_${safeName}_${formatMonthUSFile(month)}.pdf"`,
       },
     });
   } catch (err) {

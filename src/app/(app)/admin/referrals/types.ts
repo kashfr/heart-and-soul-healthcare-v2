@@ -4,6 +4,7 @@
 // every write, so this copy is purely for rendering.
 
 import { serviceFromCareNeed } from '@/lib/georgia';
+import { formatDateUS } from '@/lib/dateFormat';
 import type { ServiceKey } from '@/lib/diagnosisCatalog';
 import {
   matchAgencies, qualifiedMatches, summarizePartnerMatches, type MatchableAgency,
@@ -300,7 +301,7 @@ export function downloadCsv(list: Referral[], context: CsvMatchContext) {
       r.assigneeName ?? '',
       r.submittedAt ? new Date(r.submittedAt).toLocaleString() : '',
       r.referrerName ?? '',
-      r.details.map((d) => `${d.label}: ${d.value}`).join(' | '),
+      r.details.map((d) => `${d.label}: ${formatDateUS(d.value)}`).join(' | '),
       fit?.label ?? '',
       // Blank (not 0) when there's no verdict, so "nothing matched" and
       // "couldn't be judged" stay distinguishable in the spreadsheet.
@@ -316,7 +317,11 @@ export function downloadCsv(list: Referral[], context: CsvMatchContext) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `referrals-${new Date().toISOString().slice(0, 10)}.csv`;
+  // Local date parts, not toISOString(): an evening export must not carry
+  // tomorrow's UTC date.
+  const now = new Date();
+  const stamp = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}-${now.getFullYear()}`;
+  a.download = `referrals-${stamp}.csv`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

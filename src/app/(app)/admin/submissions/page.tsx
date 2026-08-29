@@ -533,10 +533,14 @@ export default function SubmissionsPage() {
 
   const dateRange = useMemo(() => {
     if (selectedSubmissions.length === 0) return { start: null, end: null };
+    const isoKey = (d: string) => {
+      const m = d.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      return m ? `${m[3]}-${m[1]}-${m[2]}` : d;
+    };
     const dates = selectedSubmissions
       .map((s) => s.dateOfService)
       .filter(Boolean)
-      .sort();
+      .sort((a, b) => isoKey(a).localeCompare(isoKey(b)));
     return { start: dates[0] || null, end: dates[dates.length - 1] || null };
   }, [selectedSubmissions]);
 

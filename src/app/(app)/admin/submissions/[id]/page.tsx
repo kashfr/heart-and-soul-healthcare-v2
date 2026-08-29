@@ -14,6 +14,7 @@ import {
 import { needsCosign } from '@/lib/cosignClient';
 import { useSettings } from '@/components/SettingsProvider';
 import { pdfFilenameFor, triggerDownload } from '@/lib/batchExport';
+import { formatDateUS } from '@/lib/dateFormat';
 import { authedFetch } from '@/lib/authedFetch';
 import { getVitalRanges, getAgeGroupLabel } from '@/lib/vitalRanges';
 import { parseCareTaskCharting } from '@/lib/careTaskCharting';
@@ -623,7 +624,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
                 anyHasValue([`ov_appt${n}_provider`, `ov_appt${n}_date`, `ov_appt${n}_outcome`, `ov_appt${n}_followup`]) ? (
                   <FieldRow key={n}>
                     <Field fieldKey={`ov_appt${n}_provider`} label={`Appointment ${n}`} value={data[`ov_appt${n}_provider`] || '(provider not recorded)'} />
-                    {hasValue(data[`ov_appt${n}_date`]) && <Field fieldKey={`ov_appt${n}_date`} label="Date" value={data[`ov_appt${n}_date`]} />}
+                    {hasValue(data[`ov_appt${n}_date`]) && <Field fieldKey={`ov_appt${n}_date`} label="Date" value={fmtDate(data[`ov_appt${n}_date`])} />}
                     {hasValue(data[`ov_appt${n}_outcome`]) && <Field fieldKey={`ov_appt${n}_outcome`} label="Outcome / Report" value={data[`ov_appt${n}_outcome`]} />}
                     {hasValue(data[`ov_appt${n}_followup`]) && <Field fieldKey={`ov_appt${n}_followup`} label="Follow-Up Needed" value={data[`ov_appt${n}_followup`]} />}
                   </FieldRow>
@@ -1482,7 +1483,7 @@ function AmendedVersions({ fieldKey }: { fieldKey?: string }) {
  *  legible); a blank prior shows as "(blank)" so an added field is clear. */
 function displayOld(v: unknown): string {
   if (v === null || v === undefined || v === '') return '(blank)';
-  if (typeof v === 'string') return v.startsWith('data:image/') ? '(signature image)' : v;
+  if (typeof v === 'string') return v.startsWith('data:image/') ? '(signature image)' : formatDateUS(v);
   try {
     return JSON.stringify(v);
   } catch {

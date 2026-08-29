@@ -984,7 +984,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
                       label={`Appointment ${n}`}
                       value={[
                         data[`ov_appt${n}_provider`] || '(provider not recorded)',
-                        data[`ov_appt${n}_date`] && `on ${data[`ov_appt${n}_date`]}`,
+                        data[`ov_appt${n}_date`] && `on ${fmtDate(data[`ov_appt${n}_date`])}`,
                         data[`ov_appt${n}_outcome`] && `outcome: ${data[`ov_appt${n}_outcome`]}`,
                         data[`ov_appt${n}_followup`] && `follow-up: ${data[`ov_appt${n}_followup`]}`,
                       ]

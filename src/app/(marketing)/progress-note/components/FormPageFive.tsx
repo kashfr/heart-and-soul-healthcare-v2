@@ -17,6 +17,7 @@ import {
 } from '@/lib/mar';
 import { doseTimeStatus, resolveCurrentAdministrations, type DoseTimeStatus } from '@/lib/marShared';
 import MedChart from './MedChart';
+import { formatDateUS } from '@/lib/dateFormat';
 import {
   marAdminState,
   setMarAdmin,
@@ -762,7 +763,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
               marActiveCount > 0 ? (
                 <p style={marHintStyle}>
                   This client has {marActiveCount} active medication order{marActiveCount === 1 ? '' : 's'}, but none
-                  apply to the date of service{marDate ? ` (${marDate})` : ''}. Check the date of service on Page 1 and the
+                  apply to the date of service{marDate ? ` (${formatDateUS(marDate)})` : ''}. Check the date of service on Page 1 and the
                   order&apos;s start / end dates under Records; a shift dated before an order&apos;s start date won&apos;t show it.
                 </p>
               ) : clientRequiresMar ? (

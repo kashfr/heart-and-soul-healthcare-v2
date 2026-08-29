@@ -1,6 +1,7 @@
 'use client';
 
 import { Printer } from 'lucide-react';
+import { formatDateUS } from '@/lib/dateFormat';
 import { fieldRows, formatDate, SOURCE_LABEL, STAGE_LABEL, type Referral } from './types';
 
 /**
@@ -102,7 +103,7 @@ function ReferralPrintSheet({ referral }: { referral: Referral }) {
           {fieldRows(referral).map((d, i) => (
             <tr key={i}>
               <td style={printLabelCell}>{d.label}</td>
-              <td style={printValueCell}>{d.value || ''}</td>
+              <td style={printValueCell}>{d.value ? formatDateUS(d.value) : ''}</td>
             </tr>
           ))}
         </tbody>

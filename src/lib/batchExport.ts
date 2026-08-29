@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import { PDFDocument } from 'pdf-lib';
+import { formatDateUSFile } from './dateFormat';
 import { getSubmission } from './submissions';
 import { authedFetch } from './authedFetch';
 import type { ProgressNoteFormData } from './submissions';
@@ -44,7 +45,7 @@ export function pdfFilenameFor(form: ProgressNoteFormData): string {
   // Discriminate document types so a same-day shift note and oversight
   // note for the same client/nurse can't collide inside one export.
   const kind = form.noteType === 'rn-oversight-visit' ? '_oversight' : '';
-  return `${date}_${client}_${nurse}${kind}.pdf`;
+  return `${formatDateUSFile(date)}_${client}_${nurse}${kind}.pdf`;
 }
 
 async function fetchPdfForSubmission(id: string): Promise<{ form: ProgressNoteFormData; bytes: Uint8Array }> {
@@ -98,12 +99,15 @@ function dateRangeOf(forms: ProgressNoteFormData[]): { start: string | null; end
 
 function archiveFilename(range: { start: string | null; end: string | null }, ext: 'zip' | 'pdf'): string {
   if (range.start && range.end && range.start !== range.end) {
-    return `progress-notes-${range.start}_to_${range.end}.${ext}`;
+    return `progress-notes-${formatDateUSFile(range.start)}_to_${formatDateUSFile(range.end)}.${ext}`;
   }
   if (range.start) {
-    return `progress-notes-${range.start}.${ext}`;
+    return `progress-notes-${formatDateUSFile(range.start)}.${ext}`;
   }
-  const today = new Date().toISOString().slice(0, 10);
+  // Local date, not toISOString(): an evening export must not carry
+  // tomorrow's UTC date.
+  const now = new Date();
+  const today = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}-${now.getFullYear()}`;
   return `progress-notes-${today}.${ext}`;
 }
 
