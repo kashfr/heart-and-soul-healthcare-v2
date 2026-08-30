@@ -898,6 +898,9 @@ export async function getNotesForPatient(patientId: string): Promise<DashboardNo
         painScore: (data.q24_painScore as string) || '',
         medTolerance: (data.q43_medTolerance as string) || '',
         physNotified: (data.q43_reactionPhysNotified as string) || '',
+        shiftStart: (data.q7_shiftStart as string) || '',
+        shiftEnd: (data.q62_shiftEndTime as string) || '',
+        shiftEndDate: (data.q62_shiftEndDate as string) || '',
         addrLine1: (data.q200_addr_line1 as string) || '',
         city: (data.q200_city as string) || '',
         state: (data.q200_state as string) || '',
@@ -909,4 +912,70 @@ export async function getNotesForPatient(patientId: string): Promise<DashboardNo
     console.error('Error fetching notes for patient:', error);
     return [];
   }
+}
+
+/**
+ * Every documented shift window the signed-in nurse has for one client +
+ * date, from her own SUBMITTED progress notes. Used by the MAR grid's
+ * click-to-administer flow: a nurse-given dose must fall inside one of her
+ * windows, and when she has none on file the modal requires an explicit
+ * personal attestation instead (we cannot know her window).
+ *
+ * Returns ALL usable windows, not just the newest: an approved split-shift
+ * second note contributes a second window, and the previous day's overnight
+ * note contributes its next-day TAIL (represented as 00:00 -> its end time)
+ * so back-charting an early-morning dose from an overnight shift isn't
+ * false-flagged. [] = genuinely no note on file. THROWS on fetch failure so
+ * callers can tell "no note" from "couldn't check" and fail open.
+ */
+export interface ShiftWindow {
+  start: string; // 'HH:MM'
+  end: string; // 'HH:MM'
+  endsNextDay: boolean;
+  /** This window is the next-day tail of the previous day's overnight note. */
+  prevDayTail?: boolean;
+}
+
+const HHMM_RE = /^\d{2}:\d{2}$/;
+
+export async function getMyShiftWindowsForDate(
+  nurseId: string,
+  patientId: string,
+  dateISO: string,
+): Promise<ShiftWindow[]> {
+  const prev = new Date(dateISO + 'T12:00:00');
+  prev.setDate(prev.getDate() - 1);
+  const prevISO = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}-${String(prev.getDate()).padStart(2, '0')}`;
+  const forDate = (d: string) =>
+    getDocs(
+      query(
+        collection(db, 'progressNotes'),
+        where('nurseId', '==', nurseId),
+        where('patientId', '==', patientId),
+        where('q6_dateofService', '==', d),
+      ),
+    );
+  const [snapDay, snapPrev] = await Promise.all([forDate(dateISO), forDate(prevISO)]);
+  const windows: ShiftWindow[] = [];
+  for (const d of snapDay.docs) {
+    const data = d.data();
+    if ((data.status as string) === 'archived' || data.archivedAt) continue;
+    const start = String(data.q7_shiftStart || '').trim();
+    const end = String(data.q62_shiftEndTime || '').trim();
+    if (!start || !end) continue;
+    const endDate = String(data.q62_shiftEndDate || '').trim();
+    windows.push({ start, end, endsNextDay: !!endDate && endDate > dateISO });
+  }
+  for (const d of snapPrev.docs) {
+    const data = d.data();
+    if ((data.status as string) === 'archived' || data.archivedAt) continue;
+    const start = String(data.q7_shiftStart || '').trim();
+    const end = String(data.q62_shiftEndTime || '').trim();
+    if (!start || !end) continue;
+    const endDate = String(data.q62_shiftEndDate || '').trim();
+    const overnight =
+      (!!endDate && endDate > prevISO) || (HHMM_RE.test(start) && HHMM_RE.test(end) && end < start);
+    if (overnight) windows.push({ start: '00:00', end, endsNextDay: false, prevDayTail: true });
+  }
+  return windows;
 }

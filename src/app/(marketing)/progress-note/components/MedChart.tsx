@@ -13,6 +13,7 @@ import {
 } from '@/lib/mar';
 import { resolveCurrentAdministrations } from '@/lib/marShared';
 import { authedFetch } from '@/lib/authedFetch';
+import { withSelectChevron } from '@/lib/selectChevron';
 
 const ADMIN_BY_LABELS: Record<string, string> = {
   nurse: 'Nurse',
@@ -74,6 +75,8 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
   const [amendTime, setAmendTime] = useState('');
   const [amendReason, setAmendReason] = useState('');
   const [amendOutcome, setAmendOutcome] = useState('');
+  const [amendByType, setAmendByType] = useState('nurse');
+  const [amendByName, setAmendByName] = useState('');
   // Baseline the outcome loaded into the form, so we only SEND it when the
   // amender actually edited it — an untouched (possibly stale) value must not
   // overwrite a result recorded concurrently via /api/mar/outcome.
@@ -252,6 +255,8 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
     setAmendFor(a.id || null);
     setAmendStatus(a.status);
     setAmendTime(a.status === 'given' ? a.actualTime || '' : '');
+    setAmendByType(a.administeredByType || 'nurse');
+    setAmendByName(a.administratorName || '');
     setAmendReason(a.reason || '');
     setAmendOutcome(a.outcome || '');
     setAmendOutcomeOrig(a.outcome || '');
@@ -267,6 +272,19 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
       setAmendError('A reason for the correction is required.');
       return;
     }
+    if (amendStatus === 'given' && !amendTime) {
+      setAmendError('Enter the time the dose was given.');
+      return;
+    }
+    if (
+      amendStatus === 'given' &&
+      amendByType !== 'nurse' &&
+      amendByType !== 'self' &&
+      !amendByName.trim()
+    ) {
+      setAmendError('Enter the name of the person who administered it.');
+      return;
+    }
     setAmendBusy(true);
     setAmendError(null);
     try {
@@ -278,6 +296,12 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
           status: amendStatus,
           actualTime: amendStatus === 'given' ? amendTime : '',
           reason: amendReason,
+          // Who physically gave it: the incident-remediation path — a dose
+          // wrongly attested as nurse-given is corrected to family/proxy,
+          // which stars it on the MAR.
+          ...(amendStatus === 'given'
+            ? { administeredByType: amendByType, administratorName: amendByName }
+            : {}),
           // Send the outcome only when the amender actually CHANGED it in a
           // given-PRN correction; otherwise omit it so the server carries the
           // freshest stored value forward (and blanks it for non-given). PRN-ish
@@ -334,6 +358,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
           {a.status === 'given' ? `By ${givenByLabel(a)}` : a.reason ? `Reason: ${a.reason}` : ''}
           {a.status === 'given' && a.reason ? ` · for ${a.reason}` : ''}
           {a.administeredByType !== 'nurse' && a.documentedByName ? ` · documented by ${a.documentedByName}` : ''}
+          {a.noNoteAttestation ? ' · attested (no note was on file)' : ''}
         </div>
         {/* Result line whenever a given dose HAS one (matches the grid + PDF);
             the pending nag stays scoped to true PRN slots. */}
@@ -424,6 +449,30 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
               <label style={amendField}>
                 <span style={amendFieldLabel}>Time given</span>
                 <input type="time" value={amendTime} onChange={(e) => setAmendTime(e.target.value)} style={amendInput} />
+              </label>
+            )}
+            {amendStatus === 'given' && (
+              <label style={amendField}>
+                <span style={amendFieldLabel}>Administered by</span>
+                <select value={amendByType} onChange={(e) => setAmendByType(e.target.value)} style={amendSelect}>
+                  <option value="nurse">Nurse</option>
+                  <option value="family">Family member</option>
+                  <option value="responsibleParty">Responsible party</option>
+                  <option value="self">Client (self)</option>
+                  <option value="proxy">Proxy</option>
+                </select>
+              </label>
+            )}
+            {amendStatus === 'given' && amendByType !== 'nurse' && (
+              <label style={amendField}>
+                <span style={amendFieldLabel}>Administrator name</span>
+                <input
+                  type="text"
+                  value={amendByName}
+                  onChange={(e) => setAmendByName(e.target.value)}
+                  style={amendInput}
+                  placeholder="e.g., Jane Doe (daughter)"
+                />
               </label>
             )}
             {showDoseReason && (
@@ -694,6 +743,7 @@ const amendStatusActive: Record<'given' | 'held' | 'refused', CSSProperties> = {
 const amendField: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 };
 const amendFieldLabel: CSSProperties = { fontSize: 12, fontWeight: 600, color: '#5c6b7a' };
 const amendInput: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box' };
+const amendSelect: CSSProperties = withSelectChevron(amendInput);
 const amendErr: CSSProperties = { fontSize: 12.5, color: '#c0392b', marginBottom: 8 };
 const amendActions: CSSProperties = { display: 'flex', gap: 8, justifyContent: 'flex-end' };
 const amendCancel: CSSProperties = { background: 'white', color: '#374151', border: '1px solid #d0d7de', padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };

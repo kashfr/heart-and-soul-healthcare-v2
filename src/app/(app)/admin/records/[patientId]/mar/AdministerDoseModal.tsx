@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { parseValueOptions, writeMarAdministrations, type MarOrder } from '@/lib/mar';
-import { parseHHMM } from '@/lib/marShared';
+import { decideNurseDoseGate, parseHHMM } from '@/lib/marShared';
+import { getMyShiftWindowsForDate, type ShiftWindow } from '@/lib/submissions';
+import { formatDateUS } from '@/lib/dateFormat';
 import { withSelectChevron } from '@/lib/selectChevron';
 
 const ADMIN_BY_OPTIONS = [
@@ -72,6 +74,33 @@ export default function AdministerDoseModal({
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Dose-vs-shift check (owner request: a nurse must not attest NURSE-GIVEN
+  // doses at times she was not in the home). Her window comes from her own
+  // submitted note for this client+date; while it loads ('loading') the check
+  // fails open, with the submit-time state used at save. 'none' = no note on
+  // file, so we cannot know the window -> an explicit personal attestation is
+  // required instead. Family/proxy administration is exempt (that is the
+  // correct record for a dose given by mom, starred on the MAR).
+  const [shiftWindows, setShiftWindows] = useState<ShiftWindow[] | 'loading' | 'unavailable'>('loading');
+  const [attestConfirmed, setAttestConfirmed] = useState(false);
+  // The in-flight lookup, kept so save() can AWAIT it instead of racing it —
+  // 'unavailable' (the fetch itself failed) is the only state that fails open.
+  const windowsPromiseRef = useRef<Promise<ShiftWindow[] | 'unavailable'> | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setShiftWindows('loading');
+    setAttestConfirmed(false);
+    const p = getMyShiftWindowsForDate(documenter.uid, patientId, dateISO).catch(
+      () => 'unavailable' as const,
+    );
+    windowsPromiseRef.current = p;
+    void p.then((w) => {
+      if (!cancelled) setShiftWindows(w);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [documenter.uid, patientId, dateISO]);
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -113,6 +142,7 @@ export default function AdministerDoseModal({
     Math.abs(actualMinutes - slotMinutes) > 120;
 
   const save = async () => {
+    if (busy) return;
     if (!status) {
       setError(isCheck ? 'Choose Done, Held, or Refused.' : 'Choose Given, Held, or Refused.');
       return;
@@ -132,6 +162,63 @@ export default function AdministerDoseModal({
     if (needsReason && !reason.trim()) {
       setError(status === 'given' ? 'A PRN dose needs a reason (why it was given).' : 'A reason is required.');
       return;
+    }
+    if (status === 'given' && !isNurseAdmin && administeredByType !== 'self' && !administratorName.trim()) {
+      setError('Enter the name of the person who administered it (e.g., "Jane Doe (daughter)").');
+      return;
+    }
+    let noNoteAttested = false;
+    if (status === 'given' && isNurseAdmin) {
+      const doseTime = actualTime || (!isPRN ? slot : '');
+      let windows = shiftWindows;
+      if (windows === 'loading' && windowsPromiseRef.current) {
+        // Don't let a fast Save win the race against the lookup: wait for it.
+        setBusy(true);
+        windows = await windowsPromiseRef.current;
+        setBusy(false);
+      }
+      if (Array.isArray(windows)) {
+        const gate = decideNurseDoseGate(doseTime, windows);
+        if (gate === 'block') {
+          // Only same-date notes can block, so this text always has them.
+          const windowText = windows
+            .filter((w) => !w.prevDayTail)
+            .map((w) => `${w.start} to ${w.end}${w.endsNextDay ? ' the next day' : ''}`)
+            .join(' and ');
+          setError(
+            `Your shift on ${formatDateUS(dateISO)} was ${windowText} (from your progress note), but this ` +
+              `${isCheck ? 'check' : 'dose'} is recorded as ${isCheck ? 'performed' : 'given'} by YOU at ${doseTime}. ` +
+              `You can only attest to ${isCheck ? 'checks' : 'doses'} you personally performed during your shift. ` +
+              `If a family member or caregiver ${isCheck ? 'did it' : 'gave it'}, change "Administered by" above ` +
+              `(it will be starred on the MAR). If your note's shift times are wrong, correct the note first.`,
+          );
+          return;
+        }
+        if (gate === 'attest') {
+          if (!attestConfirmed) {
+            const tailEnd = windows
+              .filter((w) => w.prevDayTail)
+              .map((w) => w.end)
+              .sort()
+              .pop();
+            setError(
+              tailEnd
+                ? `You haven't submitted a note for this date yet — your previous night's note covers only ` +
+                    `until ${tailEnd}. If this ${isCheck ? 'check' : 'dose'} belongs to tonight's shift, check the ` +
+                    `attestation box to confirm you personally ${isCheck ? 'performed it' : 'administered it'}, ` +
+                    `or change "Administered by".`
+                : 'No progress note from you is on file for this date, so your shift window is unknown. ' +
+                    'Check the attestation box to confirm you personally ' +
+                    (isCheck ? 'performed this check' : 'administered this dose') +
+                    ', or change "Administered by".',
+            );
+            return;
+          }
+          noNoteAttested = true;
+        }
+      }
+      // 'unavailable' (lookup failed) fails open: we could not verify the
+      // window, and an infrastructure error must never block charting.
     }
     setBusy(true);
     setError(null);
@@ -155,6 +242,7 @@ export default function AdministerDoseModal({
             indication,
             outcome,
             prescriberNotified,
+            noNoteAttestation: noNoteAttested,
             value,
             valueLabel,
             valueUnit,
@@ -342,6 +430,28 @@ export default function AdministerDoseModal({
             as given at <strong>{actualTime}</strong>. If you meant a different scheduled time, cancel and
             click that row instead.
           </div>
+        )}
+
+        {status === 'given' &&
+          isNurseAdmin &&
+          Array.isArray(shiftWindows) &&
+          decideNurseDoseGate(actualTime || (!isPRN ? slot : ''), shiftWindows) === 'attest' && (
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 10, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={attestConfirmed}
+              onChange={(e) => setAttestConfirmed(e.target.checked)}
+              style={{ marginTop: 2 }}
+            />
+            <span style={{ fontSize: 12.5, color: '#5c6b7a', lineHeight: 1.4 }}>
+              {shiftWindows.some((w) => w.prevDayTail)
+                ? "You haven't submitted a note for this date yet, and this time is past your previous night's shift."
+                : 'No progress note from you is on file for this date, so your shift window is unknown.'}{' '}
+              I confirm I personally {isCheck ? 'performed this check' : 'administered this dose'} at{' '}
+              {actualTime || 'the time entered'} on {formatDateUS(dateISO)}.
+              (If a family member or caregiver {isCheck ? 'did it' : 'gave it'}, change &quot;Administered by&quot; above instead.)
+            </span>
+          </label>
         )}
 
         {error && <div style={errBox}>{error}</div>}

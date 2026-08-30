@@ -147,6 +147,12 @@ export default function MedChangeRequestModal({
         setError('Enter who administered the dose.');
         return;
       }
+      if (mode === 'add' && doseGiven && !doseTime) {
+        // A one-off dose has no scheduled slot to fall back on: without a
+        // time the record is untimed and the shift-window gate can't see it.
+        setError('Enter the time the dose was given.');
+        return;
+      }
     } else {
       if (!targetOrderId) {
         setError('Choose the medication to discontinue.');
