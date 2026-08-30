@@ -684,12 +684,27 @@ export function outOfWindowDoseCount(
       });
     }
   }
+  // The GIVING nurse is the chain root's documenter: an amendment re-stamps
+  // documentedBy to the amender (often a supervisor), whose shift windows say
+  // nothing about who gave the dose.
+  const byId = new Map<string, DashAdmin>();
+  for (const a of admins) if (a.id) byId.set(a.id, a);
+  const rootDocumenter = (a: DashAdmin): string => {
+    let cur: DashAdmin = a;
+    for (let hop = 0; hop < 20 && cur.amends; hop += 1) {
+      const prev = byId.get(cur.amends);
+      if (!prev) break;
+      cur = prev;
+    }
+    return cur.documentedBy || a.documentedBy || '';
+  };
   let count = 0;
   for (const a of currentAdmins(admins)) {
     if (a.status !== 'given') continue;
     if (a.administeredByType && a.administeredByType !== 'nurse') continue;
     if (!a.date || a.date < startISO || a.date > endISO) continue;
-    const ws = a.documentedBy ? windowsByNurseDate.get(`${a.documentedBy}|${a.date}`) : undefined;
+    const giver = rootDocumenter(a);
+    const ws = giver ? windowsByNurseDate.get(`${giver}|${a.date}`) : undefined;
     if (!ws || ws.length === 0) continue;
     const doseTime =
       (a.actualTime || '').trim() ||

@@ -623,6 +623,17 @@ describe('outOfWindowDoseCount', () => {
     expect(outOfWindowDoseCount([adm({ date: '2026-08-21' })], [overnight], '2026-08-01', '2026-08-31')).toBe(1);
   });
 
+  it("a supervisor amendment keeps the GIVING nurse's windows (chain root), not the amender's", () => {
+    // uA (day shift) charted 22:00; supervisor uSup amends it — still counts
+    // against uA's window even though the live record is documentedBy uSup.
+    const orig = adm({ id: 'r1' });
+    const supAmend = adm({ id: 'r2', amends: 'r1', documentedBy: 'uSup', actualTime: '22:00' });
+    expect(outOfWindowDoseCount([orig, supAmend], [dayNote], '2026-08-01', '2026-08-31')).toBe(1);
+    // And an amendment to an inside-window time clears it.
+    const fixAmend = adm({ id: 'r3', amends: 'r1', documentedBy: 'uSup', actualTime: '10:00' });
+    expect(outOfWindowDoseCount([orig, fixAmend], [dayNote], '2026-08-01', '2026-08-31')).toBe(0);
+  });
+
   it('an approved split-shift second note contributes a second window (no newest-wins)', () => {
     const evening = n({ nurseId: 'uA', dateISO: '2026-08-21', shiftStart: '20:00', shiftEnd: '23:00' });
     expect(outOfWindowDoseCount([adm({ actualTime: '22:00' })], [evening, dayNote], '2026-08-01', '2026-08-31')).toBe(0);

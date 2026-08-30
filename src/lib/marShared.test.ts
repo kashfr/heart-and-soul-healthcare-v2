@@ -4,6 +4,7 @@ import {
   buildMarAdminFields,
   classifyDoseAgainstShift,
   classifyDoseAgainstShiftSet,
+  decideNurseDoseGate,
   compareMarOrders,
   computeRequiredDoseGaps,
   deriveInitials,
@@ -653,5 +654,36 @@ describe('classifyDoseAgainstShiftSet', () => {
   });
   it('empty set is unknown (the caller owns no-note handling)', () => {
     expect(classifyDoseAgainstShiftSet('22:00', [])).toBe('unknown');
+  });
+});
+
+describe('decideNurseDoseGate', () => {
+  const dayNote = { start: '08:45', end: '14:45', endsNextDay: false };
+  const tonightNote = { start: '22:00', end: '06:00', endsNextDay: true };
+  const lastNightTail = { start: '00:00', end: '06:00', endsNextDay: false, prevDayTail: true };
+
+  it('the incident: same-date day note excludes a 22:00 dose -> block', () => {
+    expect(decideNurseDoseGate('22:00', [dayNote])).toBe('block');
+    expect(decideNurseDoseGate('22:00', [dayNote, lastNightTail])).toBe('block');
+  });
+
+  it('consecutive nights WITH tonight\'s note on file -> allow', () => {
+    expect(decideNurseDoseGate('22:00', [tonightNote, lastNightTail])).toBe('allow');
+  });
+
+  it("consecutive nights, tonight's note NOT yet submitted (tail-only) -> attest, never block", () => {
+    expect(decideNurseDoseGate('22:00', [lastNightTail])).toBe('attest');
+  });
+
+  it("tail covers early-morning back-charting -> allow without attestation", () => {
+    expect(decideNurseDoseGate('05:30', [lastNightTail])).toBe('allow');
+  });
+
+  it('no windows at all -> attest', () => {
+    expect(decideNurseDoseGate('22:00', [])).toBe('attest');
+  });
+
+  it('same-date note with unparseable times fails open -> allow', () => {
+    expect(decideNurseDoseGate('22:00', [{ start: '08:45', end: 'garbage', endsNextDay: false }])).toBe('allow');
   });
 });

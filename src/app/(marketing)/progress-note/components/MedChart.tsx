@@ -358,6 +358,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
           {a.status === 'given' ? `By ${givenByLabel(a)}` : a.reason ? `Reason: ${a.reason}` : ''}
           {a.status === 'given' && a.reason ? ` · for ${a.reason}` : ''}
           {a.administeredByType !== 'nurse' && a.documentedByName ? ` · documented by ${a.documentedByName}` : ''}
+          {a.noNoteAttestation ? ' · attested (no note was on file)' : ''}
         </div>
         {/* Result line whenever a given dose HAS one (matches the grid + PDF);
             the pending nag stays scoped to true PRN slots. */}

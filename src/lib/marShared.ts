@@ -582,3 +582,29 @@ export function classifyDoseAgainstShiftSet(
   if (verdicts.includes('unknown')) return 'unknown';
   return 'outside';
 }
+
+/**
+ * The capture-time decision for a NURSE-GIVEN dose, given every window we
+ * know about for its date. Principle: only a note DATED that same day is
+ * authoritative enough to hard-block; the previous night's tail is evidence
+ * that can ADMIT a dose (overnight back-charting) but never veto one — a
+ * nurse mid-way through tonight's shift hasn't written tonight's note yet,
+ * and her having worked last night must not leave her worse off than having
+ * no note at all.
+ *  - 'allow':  some window contains the dose, or a same-date window exists
+ *              but times are unparseable (fail open).
+ *  - 'block':  a same-date note exists and every parsed window excludes it.
+ *  - 'attest': no note dated this day (tails-only or nothing) and the tails
+ *              don't cover it — require the explicit personal attestation.
+ */
+export function decideNurseDoseGate(
+  doseTime: string,
+  windows: Array<{ start: string; end: string; endsNextDay: boolean; prevDayTail?: boolean }>,
+  graceMinutes?: number,
+): 'allow' | 'block' | 'attest' {
+  const verdict = classifyDoseAgainstShiftSet(doseTime, windows, graceMinutes);
+  if (verdict === 'inside') return 'allow';
+  const hasSameDateNote = windows.some((w) => !w.prevDayTail);
+  if (hasSameDateNote) return verdict === 'outside' ? 'block' : 'allow';
+  return 'attest';
+}

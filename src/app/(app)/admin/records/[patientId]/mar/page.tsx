@@ -348,6 +348,7 @@ export default function MonthlyMarPage() {
     }
     if (a.reason) bits.push(`Reason: ${a.reason}`);
     if (a.outcome) bits.push(`Result: ${a.outcome}`);
+    if (a.noNoteAttestation) bits.push('Attested (no note was on file)');
     return bits.join(' · ');
   };
 

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { parseValueOptions, writeMarAdministrations, type MarOrder } from '@/lib/mar';
-import { classifyDoseAgainstShiftSet, parseHHMM } from '@/lib/marShared';
+import { decideNurseDoseGate, parseHHMM } from '@/lib/marShared';
 import { getMyShiftWindowsForDate, type ShiftWindow } from '@/lib/submissions';
 import { formatDateUS } from '@/lib/dateFormat';
 import { withSelectChevron } from '@/lib/selectChevron';
@@ -177,13 +177,14 @@ export default function AdministerDoseModal({
         windows = await windowsPromiseRef.current;
         setBusy(false);
       }
-      if (Array.isArray(windows) && windows.length > 0) {
-        if (classifyDoseAgainstShiftSet(doseTime, windows) === 'outside') {
-          const windowText =
-            windows
-              .filter((w) => !w.prevDayTail)
-              .map((w) => `${w.start} to ${w.end}${w.endsNextDay ? ' the next day' : ''}`)
-              .join(' and ') || `until ${windows[0].end}`;
+      if (Array.isArray(windows)) {
+        const gate = decideNurseDoseGate(doseTime, windows);
+        if (gate === 'block') {
+          // Only same-date notes can block, so this text always has them.
+          const windowText = windows
+            .filter((w) => !w.prevDayTail)
+            .map((w) => `${w.start} to ${w.end}${w.endsNextDay ? ' the next day' : ''}`)
+            .join(' and ');
           setError(
             `Your shift on ${formatDateUS(dateISO)} was ${windowText} (from your progress note), but this ` +
               `${isCheck ? 'check' : 'dose'} is recorded as ${isCheck ? 'performed' : 'given'} by YOU at ${doseTime}. ` +
@@ -193,17 +194,28 @@ export default function AdministerDoseModal({
           );
           return;
         }
-      } else if (Array.isArray(windows) && windows.length === 0) {
-        if (!attestConfirmed) {
-          setError(
-            'No progress note from you is on file for this date, so your shift window is unknown. ' +
-              'Check the attestation box to confirm you personally ' +
-              (isCheck ? 'performed this check' : 'administered this dose') +
-              ', or change "Administered by".',
-          );
-          return;
+        if (gate === 'attest') {
+          if (!attestConfirmed) {
+            const tailEnd = windows
+              .filter((w) => w.prevDayTail)
+              .map((w) => w.end)
+              .sort()
+              .pop();
+            setError(
+              tailEnd
+                ? `You haven't submitted a note for this date yet — your previous night's note covers only ` +
+                    `until ${tailEnd}. If this ${isCheck ? 'check' : 'dose'} belongs to tonight's shift, check the ` +
+                    `attestation box to confirm you personally ${isCheck ? 'performed it' : 'administered it'}, ` +
+                    `or change "Administered by".`
+                : 'No progress note from you is on file for this date, so your shift window is unknown. ' +
+                    'Check the attestation box to confirm you personally ' +
+                    (isCheck ? 'performed this check' : 'administered this dose') +
+                    ', or change "Administered by".',
+            );
+            return;
+          }
+          noNoteAttested = true;
         }
-        noNoteAttested = true;
       }
       // 'unavailable' (lookup failed) fails open: we could not verify the
       // window, and an infrastructure error must never block charting.
@@ -420,7 +432,10 @@ export default function AdministerDoseModal({
           </div>
         )}
 
-        {status === 'given' && isNurseAdmin && Array.isArray(shiftWindows) && shiftWindows.length === 0 && (
+        {status === 'given' &&
+          isNurseAdmin &&
+          Array.isArray(shiftWindows) &&
+          decideNurseDoseGate(actualTime || (!isPRN ? slot : ''), shiftWindows) === 'attest' && (
           <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 10, cursor: 'pointer' }}>
             <input
               type="checkbox"
@@ -429,7 +444,9 @@ export default function AdministerDoseModal({
               style={{ marginTop: 2 }}
             />
             <span style={{ fontSize: 12.5, color: '#5c6b7a', lineHeight: 1.4 }}>
-              No progress note from you is on file for this date, so your shift window is unknown.
+              {shiftWindows.some((w) => w.prevDayTail)
+                ? "You haven't submitted a note for this date yet, and this time is past your previous night's shift."
+                : 'No progress note from you is on file for this date, so your shift window is unknown.'}{' '}
               I confirm I personally {isCheck ? 'performed this check' : 'administered this dose'} at{' '}
               {actualTime || 'the time entered'} on {formatDateUS(dateISO)}.
               (If a family member or caregiver {isCheck ? 'did it' : 'gave it'}, change &quot;Administered by&quot; above instead.)

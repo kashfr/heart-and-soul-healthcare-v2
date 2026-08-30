@@ -312,6 +312,10 @@ export interface MarAdministration {
   // superseded doc's id and `amendmentReason` records why. The amender signs the
   // new doc via documentedBy*/`at`, so the chain carries who-changed-what-when.
   amends?: string;
+  // The grid modal's no-note-on-file personal attestation admitted this
+  // nurse-given dose (no progress note dated that day existed at charting
+  // time). Persisted so review surfaces can show which control admitted it.
+  noNoteAttestation?: boolean;
   amendmentReason?: string;
   // Entered-in-error trail (the dose twin of a voided ORDER, see MarOrderStatus):
   // a mis-click charted a dose that never belonged on the record (wrong slot,

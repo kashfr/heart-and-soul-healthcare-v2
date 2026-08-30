@@ -2,7 +2,7 @@ import 'server-only';
 import { FieldValue, type DocumentData, type DocumentReference } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
 import type { AuthedCaller } from './adminAuthGuard';
-import { buildMarAdminFields, classifyDoseAgainstShiftSet, deriveInitials, parseValueOptions, regimenFieldsChanged } from './marShared';
+import { buildMarAdminFields, decideNurseDoseGate, deriveInitials, parseValueOptions, regimenFieldsChanged } from './marShared';
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** Return `value` if it is an ISO YYYY-MM-DD date string, else `fallback`. Both
@@ -544,7 +544,7 @@ export async function amendMarAdministration(
             .where('q6_dateofService', '==', d)
             .get();
         const [snapDay, snapPrev] = await Promise.all([forDate(dateISO), forDate(prevISO)]);
-        const windows: Array<{ start: string; end: string; endsNextDay: boolean }> = [];
+        const windows: Array<{ start: string; end: string; endsNextDay: boolean; prevDayTail?: boolean }> = [];
         for (const d of snapDay.docs) {
           const n = d.data();
           if (String(n.status || '') === 'archived' || n.archivedAt) continue;
@@ -564,12 +564,11 @@ export async function amendMarAdministration(
           const overnight =
             (!!endDate && endDate > prevISO) ||
             (/^\d{2}:\d{2}$/.test(start) && /^\d{2}:\d{2}$/.test(end) && end < start);
-          if (overnight) windows.push({ start: '00:00', end, endsNextDay: false });
+          if (overnight) windows.push({ start: '00:00', end, endsNextDay: false, prevDayTail: true });
         }
-        if (
-          windows.length > 0 &&
-          classifyDoseAgainstShiftSet(String(input.actualTime || ''), windows) === 'outside'
-        ) {
+        // Only a note DATED the record's own day can hard-reject; the prior
+        // night's tail admits but never vetoes (mirrors the capture modal).
+        if (decideNurseDoseGate(String(input.actualTime || ''), windows) === 'block') {
           return {
             ok: false,
             reason: 'bad-status',
@@ -615,6 +614,7 @@ export async function amendMarAdministration(
           : orig.prescriberNotified === true,
       isPRN,
       indication: String(orig.indicationSnapshot || ''),
+      noNoteAttestation: orig.noNoteAttestation === true,
     },
     {
       patientId: String(orig.patientId || ''),
