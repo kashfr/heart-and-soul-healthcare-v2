@@ -12,8 +12,15 @@ import {
   UserCheck,
   Lock,
   Eye,
+  Search,
 } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
+import {
+  staffMatchesQuery,
+  compareStaff,
+  type StaffSortKey,
+  type StaffSortDir,
+} from './staffListView';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { useViewAs } from '@/components/ImpersonationProvider';
 import type { Role } from '@/lib/auth';
@@ -117,6 +124,21 @@ export default function AdminUsersPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<StaffRow | null>(null);
   const [linkResult, setLinkResult] = useState<CreateResult | null>(null);
+  // Search + column sort are client-side views over the fetched list. Default
+  // is alphabetical by name — the API's createdAt ordering floated the newest
+  // hires to the top, which isn't how admins scan for a nurse.
+  const [query, setQuery] = useState('');
+  const [sortKey, setSortKey] = useState<StaffSortKey>('name');
+  const [sortDir, setSortDir] = useState<StaffSortDir>('asc');
+
+  const handleSort = (key: StaffSortKey) => {
+    if (key === sortKey) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  };
 
   const loadStaff = useCallback(async () => {
     try {
@@ -144,11 +166,15 @@ export default function AdminUsersPage() {
     const a: StaffRow[] = [];
     const d: StaffRow[] = [];
     for (const s of staff) {
+      if (!staffMatchesQuery(s, query)) continue;
       if (s.active) a.push(s);
       else d.push(s);
     }
+    const cmp = (x: StaffRow, y: StaffRow) => compareStaff(x, y, sortKey, sortDir);
+    a.sort(cmp);
+    d.sort(cmp);
     return { active: a, deactivated: d };
-  }, [staff]);
+  }, [staff, query, sortKey, sortDir]);
 
   const handleCreated = (created: CreateResult) => {
     setAddOpen(false);
@@ -183,17 +209,45 @@ export default function AdminUsersPage() {
 
         {listError && <div style={errorStyle}>{listError}</div>}
 
+        {!loading && staff.length > 0 && (
+          <div style={filterBarStyle}>
+            <div style={searchWrapStyle}>
+              <Search size={14} style={searchIconStyle} aria-hidden />
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search name, email, phone, role, credential…"
+                style={searchInputStyle}
+                aria-label="Search staff"
+              />
+            </div>
+            {query.trim() !== '' && (
+              <span style={matchCountStyle}>
+                {active.length + deactivated.length === 1
+                  ? '1 match'
+                  : `${active.length + deactivated.length} matches`}
+              </span>
+            )}
+          </div>
+        )}
+
         {loading ? (
           <div style={emptyStyle}>Loading…</div>
         ) : active.length === 0 ? (
           <div style={emptyStyle}>
-            No active staff. Click &ldquo;Add staff&rdquo; to create the first account.
+            {query.trim() !== ''
+              ? `No active staff match "${query.trim()}".${deactivated.length > 0 ? ' See the Deactivated section below.' : ''}`
+              : 'No active staff. Click "Add staff" to create the first account.'}
           </div>
         ) : (
           <StaffTable
             rows={active}
             currentUserUid={currentUser?.uid}
             callerRole={currentRole}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            onSort={handleSort}
             onEdit={setEditing}
             onViewAs={currentRole === 'admin' ? handleViewAs : undefined}
           />
@@ -209,6 +263,9 @@ export default function AdminUsersPage() {
               rows={deactivated}
               currentUserUid={currentUser?.uid}
               callerRole={currentRole}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              onSort={handleSort}
               onEdit={setEditing}
               muted
             />
@@ -244,6 +301,9 @@ function StaffTable({
   rows,
   currentUserUid,
   callerRole,
+  sortKey,
+  sortDir,
+  onSort,
   onEdit,
   onViewAs,
   muted,
@@ -251,21 +311,41 @@ function StaffTable({
   rows: StaffRow[];
   currentUserUid: string | undefined;
   callerRole: Role | null;
+  sortKey: StaffSortKey;
+  sortDir: StaffSortDir;
+  onSort: (key: StaffSortKey) => void;
   onEdit: (s: StaffRow) => void;
   onViewAs?: (s: StaffRow) => void;
   muted?: boolean;
 }) {
+  // Active column shows its direction; the rest carry a faint ↕ so every
+  // header reads as clickable, not just the one currently sorted.
+  const sortableTh = (key: StaffSortKey, label: string) => (
+    <th
+      style={sortableThStyle}
+      onClick={() => onSort(key)}
+      aria-sort={sortKey === key ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
+      title={`Sort by ${label.toLowerCase()}`}
+    >
+      {label}
+      {sortKey === key ? (
+        <span aria-hidden> {sortDir === 'asc' ? '↑' : '↓'}</span>
+      ) : (
+        <span aria-hidden style={{ color: '#c3ccd6' }}> ↕</span>
+      )}
+    </th>
+  );
   return (
     <div style={tableWrapStyle}>
       <table style={tableStyle}>
         <thead>
           <tr>
-            <th style={thStyle}>Name</th>
-            <th style={thStyle}>Email</th>
-            <th style={thStyle}>Phone</th>
-            <th style={thStyle}>Role</th>
-            <th style={thStyle}>Credential</th>
-            <th style={thStyle}>Status</th>
+            {sortableTh('name', 'Name')}
+            {sortableTh('email', 'Email')}
+            {sortableTh('phone', 'Phone')}
+            {sortableTh('role', 'Role')}
+            {sortableTh('credential', 'Credential')}
+            {sortableTh('status', 'Status')}
             <th style={{ ...thStyle, textAlign: 'right', width: 60 }}></th>
           </tr>
         </thead>
@@ -1066,6 +1146,14 @@ const emptyStyle: React.CSSProperties = { textAlign: 'center', padding: '48px 20
 const tableWrapStyle: React.CSSProperties = { background: 'white', borderRadius: 10, border: '1px solid #e5e7eb', overflowX: 'auto' };
 const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 14 };
 const thStyle: React.CSSProperties = { textAlign: 'left', padding: '12px 14px', borderBottom: '1px solid #e5e7eb', color: '#5c6b7a', fontWeight: 700, fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 };
+const sortableThStyle: React.CSSProperties = { ...thStyle, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' };
+// Search bar matches the Submissions screen's filter bar so the two admin
+// tables share one visual language.
+const filterBarStyle: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 10 };
+const searchWrapStyle: React.CSSProperties = { position: 'relative', flex: '1 1 260px', minWidth: 220, maxWidth: 420 };
+const searchIconStyle: React.CSSProperties = { position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#7f8c8d', pointerEvents: 'none' };
+const searchInputStyle: React.CSSProperties = { width: '100%', padding: '8px 10px 8px 30px', border: '1px solid #dfe5ec', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', background: 'white' };
+const matchCountStyle: React.CSSProperties = { fontSize: 12, color: '#7f8c8d', whiteSpace: 'nowrap' };
 const tdStyle: React.CSSProperties = { padding: '12px 14px', borderBottom: '1px solid #f1f3f5', color: '#2c3e50' };
 const phoneLinkStyle: React.CSSProperties = { color: '#1a73e8', textDecoration: 'none', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' };
 const altRowStyle: React.CSSProperties = { background: '#fafbfc' };
