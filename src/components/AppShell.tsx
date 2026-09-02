@@ -583,10 +583,14 @@ export function AppShell({ children }: { children: ReactNode }) {
             height: 100vh;
             transform: translateX(-100%);
             transition: transform 0.22s ease;
-            box-shadow: 4px 0 24px rgba(0,0,0,0.3);
           }
+          /* Shadow only while open. The closed drawer is merely translated
+             off-screen, so a shadow on the base class bleeds its blur back
+             into the left edge of the viewport — and onto every page of a
+             PDF printout, since letter width falls under this breakpoint. */
           .app-shell-sidebar--open {
             transform: translateX(0);
+            box-shadow: 4px 0 24px rgba(0,0,0,0.3);
           }
           .app-shell-backdrop {
             display: block;
