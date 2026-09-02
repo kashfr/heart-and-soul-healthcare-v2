@@ -11,7 +11,7 @@ import {
   type MarOrder,
   type MarAdministration,
 } from '@/lib/mar';
-import { resolveCurrentAdministrations } from '@/lib/marShared';
+import { resolveCurrentAdministrations, describeFrequency } from '@/lib/marShared';
 import { authedFetch } from '@/lib/authedFetch';
 import { withSelectChevron } from '@/lib/selectChevron';
 
@@ -600,7 +600,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
                       <div style={medMeta}>
                         {order.dose}
                         {order.units ? ` ${order.units}` : ''} · {order.route}
-                        {order.frequencyLabel ? ` · ${order.frequencyLabel}` : ''}
+                        {describeFrequency(order) ? ` · ${describeFrequency(order)}` : ''}
                       </div>
                     </div>
                     <button

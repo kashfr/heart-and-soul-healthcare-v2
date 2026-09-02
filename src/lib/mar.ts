@@ -56,6 +56,13 @@ export interface MarOrder {
   frequencyLabel: string; // free text, e.g. "BID", "Every morning"
   scheduledTimes: string[]; // 'HH:MM' 24h slots; empty for PRN
   isPRN: boolean;
+  /**
+   * PRN only: how often the med MAY be given when needed — "Every 4 hours
+   * (Q4H)" for an order written "Q4H PRN". Blank when the order sets no
+   * interval, and always blank on scheduled orders. describeFrequency() in
+   * marShared renders it with the label wherever the frequency is shown.
+   */
+  prnFrequencyLabel?: string;
   // Structured "what is this for" (e.g. "Moderate pain", "Fever > 101"). Most
   // important for PRN orders, where the nurse documents WHY each dose was given
   // against this standing indication. Snapshotted onto each administration.
@@ -126,6 +133,7 @@ export interface MarOrderInput {
   frequencyLabel: string;
   scheduledTimes: string[];
   isPRN: boolean;
+  prnFrequencyLabel?: string;
   indication?: string;
   valueLabel?: string;
   valueUnit?: string;
@@ -156,6 +164,7 @@ function normalizeInput(input: MarOrderInput) {
       ? []
       : Array.from(new Set(input.scheduledTimes.filter(Boolean))).sort(),
     isPRN: input.isPRN,
+    prnFrequencyLabel: input.isPRN ? input.prnFrequencyLabel?.trim() ?? '' : '',
     indication: input.indication?.trim() ?? '',
     valueLabel: input.valueLabel?.trim() ?? '',
     valueUnit: input.valueUnit?.trim() ?? '',
@@ -552,6 +561,7 @@ export interface ProposedMed {
   frequencyLabel: string;
   scheduledTimes: string[];
   isPRN: boolean;
+  prnFrequencyLabel?: string;
   indication: string;
   startDate: string;
   orderSignedDate: string;
@@ -627,6 +637,7 @@ function normalizeProposed(p: ProposedMed): ProposedMed {
     frequencyLabel: p.frequencyLabel.trim(),
     scheduledTimes: p.isPRN ? [] : Array.from(new Set(p.scheduledTimes.filter(Boolean))).sort(),
     isPRN: p.isPRN,
+    prnFrequencyLabel: p.isPRN ? p.prnFrequencyLabel?.trim() ?? '' : '',
     indication: p.indication.trim(),
     startDate: p.startDate,
     orderSignedDate: p.orderSignedDate?.trim() ?? '',

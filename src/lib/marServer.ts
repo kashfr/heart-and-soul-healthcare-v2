@@ -29,6 +29,7 @@ interface ProposedMedShape {
   frequencyLabel?: string;
   scheduledTimes?: string[];
   isPRN?: boolean;
+  prnFrequencyLabel?: string;
   indication?: string;
   valueLabel?: string;
   valueUnit?: string;
@@ -56,6 +57,7 @@ function orderFromProposed(
     frequencyLabel: String(p.frequencyLabel || ''),
     scheduledTimes: p.isPRN ? [] : Array.isArray(p.scheduledTimes) ? p.scheduledTimes : [],
     isPRN: !!p.isPRN,
+    prnFrequencyLabel: p.isPRN ? String(p.prnFrequencyLabel || '').trim() : '',
     indication: String(p.indication || ''),
     valueLabel: String(p.valueLabel || ''),
     valueUnit: String(p.valueUnit || ''),
@@ -160,6 +162,7 @@ async function applyChangeInBatch(
       frequencyLabel: p.frequencyLabel,
       scheduledTimes: p.scheduledTimes,
       isPRN: p.isPRN,
+      prnFrequencyLabel: p.prnFrequencyLabel,
       valueLabel: p.valueLabel,
       valueUnit: p.valueUnit,
     });
@@ -329,6 +332,7 @@ function cleanProposed(p: ProposedMedShape) {
     frequencyLabel: String(p.frequencyLabel || '').trim(),
     scheduledTimes: p.isPRN ? [] : Array.isArray(p.scheduledTimes) ? p.scheduledTimes.filter(Boolean) : [],
     isPRN: !!p.isPRN,
+    prnFrequencyLabel: p.isPRN ? String(p.prnFrequencyLabel || '').trim() : '',
     indication: String(p.indication || '').trim(),
     valueLabel: String(p.valueLabel || '').trim(),
     valueUnit: String(p.valueUnit || '').trim(),

@@ -4,7 +4,7 @@ import { renderToBuffer, type DocumentProps } from '@react-pdf/renderer';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { getServerSettings } from '@/lib/settingsServer';
-import { compareMarOrders, resolveCurrentAdministrations } from '@/lib/marShared';
+import { compareMarOrders, resolveCurrentAdministrations, describeFrequency } from '@/lib/marShared';
 import { formatDateUS, formatMonthUSFile } from '@/lib/dateFormat';
 import MarPDF, {
   type MarPdfCell,
@@ -56,6 +56,7 @@ interface OrderDoc {
   frequencyLabel: string;
   scheduledTimes: string[];
   isPRN: boolean;
+  prnFrequencyLabel: string; // PRN only: how often it may be given
   indication: string; // standing purpose — printed on PRN rows (manual D.6.b.ii.d)
   notes: string; // special instructions — printed on the MAR row (manual D.6.a.ii.e)
   startDate: string;
@@ -179,6 +180,7 @@ export async function POST(request: Request) {
         frequencyLabel: String(o.frequencyLabel || ''),
         scheduledTimes: Array.isArray(o.scheduledTimes) ? o.scheduledTimes.map(String) : [],
         isPRN: !!o.isPRN,
+        prnFrequencyLabel: String(o.prnFrequencyLabel || ''),
         indication: String(o.indication || ''),
         notes: String(o.notes || ''),
         startDate: String(o.startDate || ''),
@@ -281,7 +283,7 @@ export async function POST(request: Request) {
           medLine2: [
             [o.dose, o.units].filter(Boolean).join(' '),
             o.route,
-            o.frequencyLabel,
+            describeFrequency(o),
             o.status === 'discontinued' ? `D/C ${o.endDate ? shortDate(o.endDate) : ''}`.trim() : '',
           ]
             .filter(Boolean)
