@@ -170,6 +170,7 @@ export async function POST(request: Request) {
             frequencyLabel: String(rawProposed.frequencyLabel || ''),
             scheduledTimes,
             isPRN,
+            prnFrequencyLabel: isPRN ? String(rawProposed.prnFrequencyLabel || '') : '',
             indication: String(rawProposed.indication || ''),
             // Check-style order config (see MarOrder.valueLabel). These must be
             // forwarded: dropping them silently stripped the measurement from

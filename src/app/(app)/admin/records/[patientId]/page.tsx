@@ -21,8 +21,8 @@ import {
   type MarOrder,
   type MarActor,
 } from '@/lib/mar';
-import { MED_FREQUENCIES, PRN_FREQUENCY } from '@/lib/medFrequencies';
-import { looksLikeUnknownPhysician, physicianAttributionPending } from '@/lib/marShared';
+import { MED_FREQUENCIES, PRN_FREQUENCY, PRN_SUB_FREQUENCIES } from '@/lib/medFrequencies';
+import { looksLikeUnknownPhysician, physicianAttributionPending, describeFrequency } from '@/lib/marShared';
 
 interface OrderForm {
   medName: string;
@@ -30,6 +30,8 @@ interface OrderForm {
   units: string;
   route: string;
   frequencyLabel: string;
+  /** PRN only: how often it may be given, e.g. "Every 4 hours (Q4H)". */
+  prnFrequencyLabel: string;
   scheduledTimes: string[];
   isPRN: boolean;
   indication: string;
@@ -63,6 +65,7 @@ function emptyForm(): OrderForm {
     units: '',
     route: '',
     frequencyLabel: '',
+    prnFrequencyLabel: '',
     scheduledTimes: ['08:00'],
     isPRN: false,
     indication: '',
@@ -172,6 +175,7 @@ export default function RecordDetailPage() {
       units: o.units || '',
       route: o.route || '',
       frequencyLabel: o.isPRN ? PRN_FREQUENCY : o.frequencyLabel || '',
+      prnFrequencyLabel: o.isPRN ? o.prnFrequencyLabel || '' : '',
       scheduledTimes: o.scheduledTimes && o.scheduledTimes.length > 0 ? [...o.scheduledTimes] : ['08:00'],
       // Legacy rows could hold the PRN frequency label with isPRN false (the
       // old independent checkbox); trust the label so a re-save heals them.
@@ -248,6 +252,7 @@ export default function RecordDetailPage() {
         units: form.units,
         route: form.route,
         frequencyLabel: form.frequencyLabel,
+        prnFrequencyLabel: form.prnFrequencyLabel,
         scheduledTimes: form.scheduledTimes,
         isPRN: form.isPRN,
         indication: form.indication,
@@ -487,6 +492,8 @@ export default function RecordDetailPage() {
                         // Single PRN control (PR #77): the "As needed (PRN)"
                         // frequency IS the PRN switch; no separate checkbox.
                         isPRN: e.target.value === PRN_FREQUENCY,
+                        // The sub-frequency only qualifies a PRN order.
+                        prnFrequencyLabel: e.target.value === PRN_FREQUENCY ? f.prnFrequencyLabel : '',
                       }))
                     }
                     style={selectStyle}
@@ -506,6 +513,26 @@ export default function RecordDetailPage() {
                   </select>
                 </Field>
               </div>
+
+              {form.isPRN && (
+                <Field label="PRN frequency (how often it may be given)">
+                  <select
+                    value={form.prnFrequencyLabel}
+                    onChange={(e) => setForm((f) => ({ ...f, prnFrequencyLabel: e.target.value }))}
+                    style={selectStyle}
+                  >
+                    <option value="">No set interval</option>
+                    {PRN_SUB_FREQUENCIES.map((freq) => (
+                      <option key={freq} value={freq}>
+                        {freq}
+                      </option>
+                    ))}
+                  </select>
+                  <span style={indicationHintStyle}>
+                    Optional. Take it from the order: “Q4H PRN” is Every 4 hours (Q4H); “BID PRN” is Twice daily (BID).
+                  </span>
+                </Field>
+              )}
 
               {!form.isPRN && (
                 <div style={{ marginBottom: 12 }}>
@@ -765,7 +792,7 @@ export default function RecordDetailPage() {
               <div style={detailGridStyle}>
                 <DetailRow label="Dose" value={`${viewOrder.dose}${viewOrder.units ? ` ${viewOrder.units}` : ''}`} />
                 <DetailRow label="Route" value={viewOrder.route} />
-                <DetailRow label="Frequency" value={viewOrder.frequencyLabel} />
+                <DetailRow label="Frequency" value={describeFrequency(viewOrder)} />
                 <DetailRow label="Schedule" value={scheduleSummary(viewOrder)} />
                 <DetailRow label="Start date" value={formatDate(viewOrder.startDate)} />
                 <DetailRow
@@ -888,7 +915,7 @@ function OrderTable({
               >
                 <td style={tdStyle}>
                   <div style={{ fontWeight: 600, color: '#2c3e50' }}>{o.medName}</div>
-                  {o.frequencyLabel && <div style={subTextStyle}>{o.frequencyLabel}</div>}
+                  {describeFrequency(o) && <div style={subTextStyle}>{describeFrequency(o)}</div>}
                   {o.isPRN && <span style={prnBadgeStyle}>PRN</span>}
                   {!discontinued && physicianAttributionPending(o) && (
                     <span style={physicianNeededBadgeStyle} title="No ordering physician on this order yet; edit the order to add the name.">

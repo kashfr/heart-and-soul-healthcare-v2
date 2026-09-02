@@ -4,7 +4,7 @@ import { useState, type CSSProperties } from 'react';
 import { X, Plus, Clock } from 'lucide-react';
 import { stageChangeRequest, type MarOrder, type MarDocumenter, type MarChangeRequestType } from '@/lib/mar';
 import { setMarAdmin, unlistedMarAdminKey } from './marAdminStore';
-import { MED_FREQUENCIES, PRN_FREQUENCY } from '@/lib/medFrequencies';
+import { MED_FREQUENCIES, PRN_FREQUENCY, PRN_SUB_FREQUENCIES } from '@/lib/medFrequencies';
 import { looksLikeUnknownPhysician } from '@/lib/marShared';
 
 const ROUTES = ['PO (by mouth)', 'SL (sublingual)', 'Topical', 'Inhalation', 'Subcutaneous', 'IM', 'IV', 'Rectal', 'G-tube', 'J-tube', 'NG tube', 'Ophthalmic', 'Otic', 'Nasal'];
@@ -53,6 +53,9 @@ export default function MedChangeRequestModal({
   const [units, setUnits] = useState('');
   const [route, setRoute] = useState('');
   const [frequencyLabel, setFrequencyLabel] = useState('');
+  // PRN only: how often the med may be given ("Q4H PRN"). Shown once the
+  // frequency is PRN; the normalizers blank it on scheduled orders.
+  const [prnFrequencyLabel, setPrnFrequencyLabel] = useState('');
   // Single PRN control (PR #77): choosing the "As needed (PRN)" frequency IS
   // marking the med PRN; no separate checkbox to disagree with the dropdown.
   const isPRN = frequencyLabel === PRN_FREQUENCY;
@@ -94,6 +97,7 @@ export default function MedChangeRequestModal({
       setUnits(o.units || '');
       setRoute(o.route || '');
       setFrequencyLabel(o.isPRN ? PRN_FREQUENCY : o.frequencyLabel || '');
+      setPrnFrequencyLabel(o.isPRN ? o.prnFrequencyLabel || '' : '');
       setTimes(o.scheduledTimes && o.scheduledTimes.length > 0 ? [...o.scheduledTimes] : ['08:00']);
       setIndication(o.indication || '');
       setOrderingPhysician(o.orderingPhysician || '');
@@ -164,7 +168,7 @@ export default function MedChangeRequestModal({
     try {
       const proposedMed = {
         medName, dose, units, route, frequencyLabel,
-        scheduledTimes: times, isPRN, indication,
+        scheduledTimes: times, isPRN, prnFrequencyLabel, indication,
         startDate: mode === 'add' ? startDate : effectiveDate,
         orderingPhysician,
         orderSignedDate,
@@ -310,6 +314,16 @@ export default function MedChangeRequestModal({
                     </select>
                   </Field>
                 </div>
+
+                {isPRN && (
+                  <Field label="PRN frequency (how often it may be given)">
+                    <select value={prnFrequencyLabel} onChange={(e) => setPrnFrequencyLabel(e.target.value)} style={select}>
+                      <option value="">No set interval</option>
+                      {PRN_SUB_FREQUENCIES.map((freq) => <option key={freq} value={freq}>{freq}</option>)}
+                    </select>
+                    <span style={dateHint}>Optional. Take it from the order: “Q4H PRN” is Every 4 hours (Q4H); “BID PRN” is Twice daily (BID).</span>
+                  </Field>
+                )}
 
                 {!isPRN && (
                   <div style={{ marginBottom: 12 }}>

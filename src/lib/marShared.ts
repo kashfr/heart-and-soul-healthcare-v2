@@ -202,6 +202,7 @@ export const REGIMEN_FIELDS = [
   'frequencyLabel',
   'scheduledTimes',
   'isPRN',
+  'prnFrequencyLabel',
   'valueLabel',
   'valueUnit',
 ] as const;
@@ -222,6 +223,7 @@ export const REGIMEN_FIELD_LABELS: Record<RegimenField, string> = {
   frequencyLabel: 'frequency',
   scheduledTimes: 'scheduled times',
   isPRN: 'PRN/scheduled',
+  prnFrequencyLabel: 'PRN frequency',
   valueLabel: 'measurement',
   valueUnit: 'measurement unit',
 };
@@ -235,6 +237,7 @@ export interface RegimenComparable {
   frequencyLabel?: string;
   scheduledTimes?: string[];
   isPRN?: boolean;
+  prnFrequencyLabel?: string;
   valueLabel?: string;
   valueUnit?: string;
 }
@@ -278,12 +281,35 @@ export function regimenFieldsChanged(
     changed.push('frequencyLabel');
   }
   if (currentPRN !== proposedPRN) changed.push('isPRN');
+  // How often a PRN med MAY be given (Q4H PRN vs Q6H PRN) is a term of the
+  // physician's order, so moving it starts a new regimen. Compared only when
+  // both sides are PRN: a switch to or from PRN is already carried by isPRN,
+  // and a scheduled order never carries a sub-frequency.
+  if (currentPRN && proposedPRN && normText(current.prnFrequencyLabel) !== normText(proposed.prnFrequencyLabel)) {
+    changed.push('prnFrequencyLabel');
+  }
   if (normTimes(current.scheduledTimes, currentPRN) !== normTimes(proposed.scheduledTimes, proposedPRN)) {
     changed.push('scheduledTimes');
   }
   if (normText(current.valueLabel) !== normText(proposed.valueLabel)) changed.push('valueLabel');
   if (normText(current.valueUnit) !== normText(proposed.valueUnit)) changed.push('valueUnit');
   return changed;
+}
+
+/**
+ * The frequency as it should read on the MAR, the order book, and the printed
+ * record. A PRN order with a sub-frequency reads the way the order is written —
+ * "Every 4 hours (Q4H) as needed (PRN)" — so the interval isn't lost off the
+ * label. Everything else is the stored label as-is.
+ */
+export function describeFrequency(o: {
+  frequencyLabel?: string;
+  isPRN?: boolean;
+  prnFrequencyLabel?: string;
+}): string {
+  const sub = normText(o.prnFrequencyLabel);
+  if (o.isPRN === true && sub) return `${sub} as needed (PRN)`;
+  return normText(o.frequencyLabel);
 }
 
 /** Whether a proposed change edits documentation only, leaving the order (and

@@ -16,6 +16,7 @@ import {
   regimenFieldsChanged,
   isCorrectionOnly,
   describeRegimenChanges,
+  describeFrequency,
   parseHHMM,
   parseValueOptions,
   resolveCurrentAdministrations,
@@ -582,6 +583,23 @@ describe('regimenFieldsChanged', () => {
     expect(regimenFieldsChanged(prn, { ...prn, frequencyLabel: 'As needed (PRN)' })).toEqual([]);
   });
 
+  it('flags a change to how often a PRN med may be given', () => {
+    // "Q4H PRN" → "Q6H PRN" is a new order from the physician, not a detail edit.
+    const prn = { ...order, isPRN: true, scheduledTimes: [], frequencyLabel: 'As needed (PRN)', prnFrequencyLabel: 'Every 4 hours (Q4H)' };
+    expect(regimenFieldsChanged(prn, { ...prn, prnFrequencyLabel: 'Every 6 hours (Q6H)' })).toEqual(['prnFrequencyLabel']);
+    expect(regimenFieldsChanged(prn, { ...prn, prnFrequencyLabel: '' })).toEqual(['prnFrequencyLabel']);
+    expect(describeRegimenChanges(['prnFrequencyLabel'])).toBe('PRN frequency');
+  });
+
+  it('does not re-read a PRN sub-frequency as a change when nothing moved', () => {
+    const prn = { ...order, isPRN: true, scheduledTimes: [], frequencyLabel: 'As needed (PRN)', prnFrequencyLabel: 'Every 4 hours (Q4H)' };
+    expect(regimenFieldsChanged(prn, { ...prn, prnFrequencyLabel: ' Every 4 hours (Q4H) ' })).toEqual([]);
+  });
+
+  it('ignores a PRN sub-frequency on a scheduled order (it only qualifies PRN)', () => {
+    expect(regimenFieldsChanged(order, { ...order, prnFrequencyLabel: 'Every 4 hours (Q4H)' })).toEqual([]);
+  });
+
   it('flags a change to what a check-style order measures', () => {
     const check = { ...order, dose: '', units: '', valueLabel: 'Gastric residual', valueUnit: 'mL' };
     expect(regimenFieldsChanged(check, { ...check, valueUnit: 'cc' })).toEqual(['valueUnit']);
@@ -591,6 +609,30 @@ describe('regimenFieldsChanged', () => {
     // valueOptions is the charting picker, not a term of the physician's order.
     const check = { ...order, valueLabel: 'Gastric residual', valueUnit: 'mL' };
     expect(regimenFieldsChanged(check, { ...check })).toEqual([]);
+  });
+});
+
+describe('describeFrequency', () => {
+  it('reads a PRN order with a sub-frequency the way the order is written', () => {
+    expect(
+      describeFrequency({ frequencyLabel: 'As needed (PRN)', isPRN: true, prnFrequencyLabel: 'Every 4 hours (Q4H)' }),
+    ).toBe('Every 4 hours (Q4H) as needed (PRN)');
+    // Legacy PRN rows stored the bare label; the sub-frequency still wins.
+    expect(describeFrequency({ frequencyLabel: 'PRN', isPRN: true, prnFrequencyLabel: 'At bedtime' })).toBe(
+      'At bedtime as needed (PRN)',
+    );
+  });
+
+  it('falls back to the stored label without a sub-frequency', () => {
+    expect(describeFrequency({ frequencyLabel: 'As needed (PRN)', isPRN: true })).toBe('As needed (PRN)');
+    expect(describeFrequency({ frequencyLabel: 'Twice daily (BID)', isPRN: false })).toBe('Twice daily (BID)');
+    expect(describeFrequency({})).toBe('');
+  });
+
+  it('ignores a stray sub-frequency on a scheduled order', () => {
+    expect(
+      describeFrequency({ frequencyLabel: 'Twice daily (BID)', isPRN: false, prnFrequencyLabel: 'Every 4 hours (Q4H)' }),
+    ).toBe('Twice daily (BID)');
   });
 });
 

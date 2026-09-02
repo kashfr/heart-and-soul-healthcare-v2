@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Plus, Clock } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
-import { MED_FREQUENCIES, PRN_FREQUENCY } from '@/lib/medFrequencies';
+import { MED_FREQUENCIES, PRN_FREQUENCY, PRN_SUB_FREQUENCIES } from '@/lib/medFrequencies';
 import {
   looksLikeUnknownPhysician,
   physicianAttributionPending,
@@ -59,6 +59,9 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
   const [units, setUnits] = useState('');
   const [route, setRoute] = useState('');
   const [frequencyLabel, setFrequencyLabel] = useState('');
+  // PRN only: how often the med may be given ("Q4H PRN"). Shown once the
+  // frequency is PRN; the normalizers blank it on scheduled orders.
+  const [prnFrequencyLabel, setPrnFrequencyLabel] = useState('');
   const [times, setTimes] = useState<string[]>(['08:00']);
   const [indication, setIndication] = useState('');
   // Check-style order: records a measurement instead of an amount given (e.g.
@@ -93,7 +96,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
   const pendingRegimenChanges =
     mode === 'change' && changeTarget
       ? regimenFieldsChanged(changeTarget, {
-          medName, dose, units, route, frequencyLabel, isPRN, valueLabel, valueUnit,
+          medName, dose, units, route, frequencyLabel, isPRN, prnFrequencyLabel, valueLabel, valueUnit,
           scheduledTimes: times.filter(Boolean),
         })
       : [];
@@ -114,6 +117,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
       setUnits(o.units || '');
       setRoute(o.route || '');
       setFrequencyLabel(o.isPRN ? PRN_FREQUENCY : o.frequencyLabel || '');
+      setPrnFrequencyLabel(o.isPRN ? o.prnFrequencyLabel || '' : '');
       setTimes(o.scheduledTimes && o.scheduledTimes.length > 0 ? [...o.scheduledTimes] : ['08:00']);
       setIndication(o.indication || '');
       setValueLabel(o.valueLabel || '');
@@ -190,7 +194,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
       body.proposedMed = {
         medName, dose, units, route, frequencyLabel,
         scheduledTimes: times.filter(Boolean),
-        isPRN, indication, valueLabel, valueUnit, valueOptions, orderingPhysician, orderSignedDate,
+        isPRN, prnFrequencyLabel, indication, valueLabel, valueUnit, valueOptions, orderingPhysician, orderSignedDate,
         physicianPending: physicianUnknown && looksLikeUnknownPhysician(orderingPhysician),
         notes,
         startDate: mode === 'add' ? startDate : effectiveDate,
@@ -326,6 +330,16 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
                     </select>
                   </Field>
                 </div>
+
+                {isPRN && (
+                  <Field label="PRN frequency (how often it may be given)">
+                    <select value={prnFrequencyLabel} onChange={(e) => setPrnFrequencyLabel(e.target.value)} style={select}>
+                      <option value="">No set interval</option>
+                      {PRN_SUB_FREQUENCIES.map((freq) => <option key={freq} value={freq}>{freq}</option>)}
+                    </select>
+                    <span style={dateHint}>Optional. Take it from the order: “Q4H PRN” is Every 4 hours (Q4H); “BID PRN” is Twice daily (BID).</span>
+                  </Field>
+                )}
 
                 {!isPRN && (
                   <div style={{ marginBottom: 12 }}>

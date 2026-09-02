@@ -18,7 +18,7 @@ import {
   type MarOrder,
   type MarAdministration,
 } from '@/lib/mar';
-import { physicianAttributionPending } from '@/lib/marShared';
+import { physicianAttributionPending, describeFrequency } from '@/lib/marShared';
 import { authedFetch } from '@/lib/authedFetch';
 import { triggerDownload } from '@/lib/batchExport';
 import { formatMonthUSFile } from '@/lib/dateFormat';
@@ -484,7 +484,7 @@ export default function MonthlyMarPage() {
                           </div>
                           <div style={{ fontSize: 11, color: '#6b7280' }}>
                             {order.dose}{order.units ? ` ${order.units}` : ''} · {order.route}
-                            {order.frequencyLabel ? ` · ${order.frequencyLabel}` : ''}
+                            {describeFrequency(order) ? ` · ${describeFrequency(order)}` : ''}
                           </div>
                         </td>
                         <td style={{ ...gridTdStyle, ...timeColStyle, color: slot === 'PRN' ? '#b56a17' : '#1a3a5c' }}>
