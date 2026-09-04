@@ -3,10 +3,20 @@ import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
 import type { AuthedCaller } from './adminAuthGuard';
 import { sendClarificationFlagNotice } from './emails/clarificationFlag';
-import { sendCorrectionAmendedNotice } from './emails/correctionAmended';
+import { sendFlagActivityNotice } from './emails/flagActivity';
 import { sendSms } from './sms/sendSms';
 import { createPortalNotification } from './notificationsServer';
 import { getServerSettings } from './settingsServer';
+import { formatDateUS } from './dateFormat';
+import {
+  planFlagRecipients,
+  flagActivityBellText,
+  flagActivitySmsText,
+  flagActivityThreadLine,
+  type FlagActivityContext,
+  type FlagActivityEvent,
+  type FlagKind,
+} from './flagActivity';
 
 /** One entry in the append-only clarification conversation. */
 interface ThreadMessage {
@@ -210,119 +220,142 @@ async function recomputeCorrectionsBlockSafe(uid: string): Promise<void> {
 }
 
 /**
- * Fan out the "a blocked note was amended" event: the configured corrections
- * reviewer gets email + PHI-free SMS + a bell item, every active admin gets
- * email + bell (visibility so any of them can verify and resolve if the
- * reviewer is busy). Best-effort: never throws.
+ * Fan out "the author acted on a flagged note" — she amended it, or replied in
+ * the thread — to the people who need to see it: whoever raised the flag, the
+ * configured corrections reviewer, and every active admin (visibility so any
+ * of them can verify and resolve if the reviewer is busy). Each gets email +
+ * a bell item; the flagger and the reviewer also get a PHI-free text (the
+ * people expected to act promptly). The author herself is never on the list.
+ * Best-effort: never throws.
+ *
+ * Recipient rules live in planFlagRecipients (pure, unit-tested); this
+ * function only resolves user docs and sends. Each lookup is isolated so one
+ * failure (settings fetch, a user doc, the admins query) can't silently skip
+ * the rest of the fan-out.
  */
-async function notifyCorrectionAmended(params: {
+async function notifyReviewersOfFlagActivity(params: {
   noteId: string;
+  authorId: string;
+  flaggerUid: string;
+  event: FlagActivityEvent;
+  kind: FlagKind;
+  blocking: boolean;
   nurseName: string;
   clientName: string;
   dateOfService: string;
+  replyText?: string;
 }): Promise<void> {
   try {
     const noteUrl = `https://www.heartandsoulhc.org/admin/submissions/${params.noteId}`;
-    const bellText = `${params.nurseName || 'A nurse'} amended a note flagged for correction. Her block stays on until you verify the fix and remove it.`;
+    const ctx: FlagActivityContext = {
+      event: params.event,
+      kind: params.kind,
+      blocking: params.blocking,
+      nurseName: params.nurseName,
+      clientName: params.clientName,
+      dateOfService: formatDateUS(params.dateOfService),
+      replyText: params.replyText,
+    };
 
-    // Recipients: the configured reviewer + every active admin, deduped.
-    // Each resolution step is isolated so one failure (settings fetch, the
-    // reviewer's user doc, the admins query) can't silently skip the rest of
-    // the fan-out.
-    const recipients = new Map<string, { email: string; phone: string; name: string; isReviewer: boolean }>();
     let reviewerUid = '';
     try {
       reviewerUid = (await getServerSettings()).corrections.reviewerUid;
     } catch (err) {
-      console.error('Correction-amended notify: settings fetch failed; notifying admins only.', err);
-    }
-    if (reviewerUid) {
-      try {
-        const r = await adminDb().collection('users').doc(reviewerUid).get();
-        const u = r.data() || {};
-        recipients.set(reviewerUid, {
-          email: String(u.email || ''),
-          phone: String(u.phone || ''),
-          name: String(u.displayName || ''),
-          isReviewer: true,
-        });
-      } catch (err) {
-        console.error('Correction-amended notify: reviewer lookup failed.', err);
-      }
-    }
-    try {
-      const adminsSnap = await adminDb()
-        .collection('users')
-        .where('role', '==', 'admin')
-        .get();
-      for (const d of adminsSnap.docs) {
-        const u = d.data() || {};
-        if (u.active !== true || recipients.has(d.id)) continue;
-        recipients.set(d.id, {
-          email: String(u.email || ''),
-          phone: String(u.phone || ''),
-          name: String(u.displayName || ''),
-          isReviewer: false,
-        });
-      }
-    } catch (err) {
-      console.error('Correction-amended notify: admins query failed.', err);
+      console.error('Flag-activity notify: settings fetch failed; skipping the configured reviewer.', err);
     }
 
-    for (const [uid, r] of recipients) {
-      if (r.email) {
-        await sendCorrectionAmendedNotice({
-          to: r.email,
-          recipientName: r.name,
-          nurseName: params.nurseName,
-          clientName: params.clientName,
-          dateOfService: params.dateOfService,
-          noteUrl,
-        });
+    type Contact = { email: string; phone: string; name: string; active: boolean };
+    const toContact = (u: Record<string, unknown>): Contact => ({
+      email: String(u.email || ''),
+      phone: String(u.phone || ''),
+      name: String(u.displayName || ''),
+      // Same semantics as GET /api/admin/users: a missing flag means active.
+      active: u.active !== false,
+    });
+    const contacts = new Map<string, Contact>();
+    const adminUids: string[] = [];
+    try {
+      const adminsSnap = await adminDb().collection('users').where('role', '==', 'admin').get();
+      for (const d of adminsSnap.docs) {
+        const c = toContact(d.data() || {});
+        if (!c.active) continue;
+        adminUids.push(d.id);
+        contacts.set(d.id, c);
       }
-      // SMS only to the reviewer (the person expected to act promptly);
-      // admins get email + bell without the text-message noise. PHI-free.
-      if (r.isReviewer && r.phone) {
-        await sendSms(
-          r.phone,
-          'Heart and Soul: a nurse amended a note flagged for correction. Her block stays on until you verify the fix and remove it in the portal: https://www.heartandsoulhc.org/login Reply STOP to opt out.',
-        );
+    } catch (err) {
+      console.error('Flag-activity notify: admins query failed.', err);
+    }
+
+    const plan = planFlagRecipients({
+      flaggerUid: params.flaggerUid,
+      reviewerUid,
+      adminUids,
+      excludeUid: params.authorId,
+    });
+
+    for (const r of plan) {
+      let contact = contacts.get(r.uid);
+      if (!contact) {
+        try {
+          const snap = await adminDb().collection('users').doc(r.uid).get();
+          if (!snap.exists) continue; // flagger/reviewer account deleted: nothing to notify
+          contact = toContact(snap.data() || {});
+        } catch (err) {
+          console.error(`Flag-activity notify: user lookup failed for ${r.uid}.`, err);
+          continue;
+        }
+      }
+      // A deactivated flagger or reviewer gets nothing: the mailbox may be
+      // gone and the phone reassigned.
+      if (!contact.active) continue;
+      if (contact.email) {
+        await sendFlagActivityNotice({ ...ctx, to: contact.email, recipientName: contact.name, noteUrl });
+      }
+      if (r.sms && contact.phone) {
+        await sendSms(contact.phone, flagActivitySmsText(ctx));
       }
       await createPortalNotification(adminDb(), {
-        userId: uid,
-        kind: 'correction-amended',
-        text: bellText,
+        userId: r.uid,
+        kind: params.event === 'amended' ? 'correction-amended' : 'flag-reply',
+        text: flagActivityBellText(ctx),
         href: `/admin/submissions/${params.noteId}`,
       });
     }
   } catch (err) {
-    console.error('Failed to notify on correction amendment:', err);
+    console.error('Failed to notify reviewers of flag activity:', err);
   }
 }
 
-export type AmendedEventFailureReason = 'not-found' | 'forbidden' | 'no-block' | 'no-amendment';
+export type AmendedEventFailureReason = 'not-found' | 'forbidden' | 'no-open-flag' | 'no-amendment';
 
 export interface AmendedEventResult {
   ok: boolean;
   reason?: AmendedEventFailureReason;
   message?: string;
-  /** True when the caller's block state changed (last blocked note amended). */
+  /** Always false: a block is lifted only by a reviewer. Kept for the route's
+      response shape. */
   blockLifted?: boolean;
 }
 
 /**
- * The nurse's "I amended it" event, fired after she saves an AMENDMENT to a
- * note whose open correction blocks her. It does NOT lift the block — the
- * system can verify THAT an amendment happened, but not that it fixed what
- * was flagged (2026-08-09: a nurse lifted her block with an amendment that
- * left the flagged verbiage untouched, back when this auto-lifted). The block
- * is removed only by a human: the corrections reviewer or an admin, via
- * Remove block / Mark resolved on the note's correction panel, typically
- * after the nurse calls the number shown on her gate. This event's job is the
- * paper trail + the nudge: verify a qualifying amendment exists, append a
- * thread line, and notify the reviewer + admins to review and unblock.
+ * The author's "I amended it" event, fired by the note form after she saves an
+ * AMENDMENT to a note with an OPEN flag — a correction (blocking or advisory)
+ * or a clarification. The form fires it after every edit save; a note with no
+ * open flag answers 'no-open-flag' and nothing happens.
+ *
+ * It does NOT lift a block — the system can verify THAT an amendment happened,
+ * but not that it fixed what was flagged (2026-08-09: a nurse lifted her block
+ * with an amendment that left the flagged verbiage untouched, back when this
+ * auto-lifted). The block is removed only by a human: the corrections reviewer
+ * or an admin, via Remove block / Mark resolved on the note's correction
+ * panel, typically after the nurse calls the number shown on her gate. This
+ * event's job is the paper trail + the nudge: verify a qualifying amendment
+ * exists, append a thread line, and notify whoever flagged the note, the
+ * corrections reviewer, and admins. Until 2026-09 it fired only for BLOCKING
+ * corrections, so advisory corrections and clarifications were fixed in
+ * silence.
  */
-export async function recordCorrectionAmended(
+export async function recordFlaggedNoteAmended(
   noteId: string,
   caller: AuthedCaller,
 ): Promise<AmendedEventResult> {
@@ -335,17 +368,19 @@ export async function recordCorrectionAmended(
     return { ok: false, reason: 'forbidden', message: 'Only the note author can record a correction fix.' };
   }
   const clar = (data.clarification || {}) as Record<string, unknown>;
-  if (clar.status !== 'open' || clar.kind !== 'correction' || clar.blocksNotes !== true) {
+  if (clar.status !== 'open') {
     // Self-heal: a prior call may have cleared blocksNotes and then failed
     // before the mirror recompute (or the mirror is stale for any reason).
     // Recomputing here makes a RETRY of this endpoint fix the invisible-
     // lockout state instead of dead-ending on this early return.
     await recomputeCorrectionsBlockSafe(authorId);
-    return { ok: false, reason: 'no-block', message: 'This note has no blocking correction.' };
+    return { ok: false, reason: 'no-open-flag', message: 'This note has no open flag.' };
   }
+  const kind: FlagKind = clar.kind === 'correction' ? 'correction' : 'clarification';
+  const blocking = kind === 'correction' && clar.blocksNotes === true;
 
   // Proof of an actual fix: an editHistory entry authored by the caller, with
-  // real field changes, made AFTER the block was raised (flaggedAt, or
+  // real field changes, made AFTER the flag was raised (flaggedAt, or
   // blockSetAt when a reviewer re-armed it later). Not a wall-clock window: a
   // failed lift attempt shouldn't strand a real amendment made 20 minutes ago
   // (re-saving identical content writes no new history entry, so she couldn't
@@ -374,7 +409,7 @@ export async function recordCorrectionAmended(
     return {
       ok: false,
       reason: 'no-amendment',
-      message: 'No amendment by you since this correction was raised. Save your correction first.',
+      message: 'No amendment by you since this note was flagged. Save your correction first.',
     };
   }
 
@@ -384,7 +419,7 @@ export async function recordCorrectionAmended(
     by: caller.uid,
     byName: name,
     byRole: caller.role,
-    text: 'Amended the note. The changes are listed in the amendment history below. Awaiting reviewer verification to lift the block.',
+    text: flagActivityThreadLine('amended', blocking),
     at: Timestamp.now(),
   });
   // Deliberately NOT touching blocksNotes and NOT recomputing the mirror:
@@ -397,8 +432,13 @@ export async function recordCorrectionAmended(
     'clarification.respondedByRole': caller.role,
     'clarification.respondedAt': FieldValue.serverTimestamp(),
   });
-  await notifyCorrectionAmended({
+  await notifyReviewersOfFlagActivity({
     noteId,
+    authorId,
+    flaggerUid: String(clar.flaggedBy || ''),
+    event: 'amended',
+    kind,
+    blocking,
     nurseName: name,
     clientName: String(data.q3_clientName || ''),
     dateOfService: String(data.q6_dateofService || ''),
@@ -531,6 +571,23 @@ export async function applyClarification(
         reviewerName: name,
         message: trimmed,
         isFollowUp: true,
+      });
+    }
+    // The author's own reply is what the reviewer is waiting on, and until
+    // 2026-09 it reached no one outside the portal. Tell whoever flagged the
+    // note, the corrections reviewer, and admins.
+    if (isAuthor) {
+      await notifyReviewersOfFlagActivity({
+        noteId,
+        authorId,
+        flaggerUid: String(clarification?.flaggedBy || ''),
+        event: 'replied',
+        kind: clarification?.kind === 'correction' ? 'correction' : 'clarification',
+        blocking: clarification?.kind === 'correction' && clarification?.blocksNotes === true,
+        nurseName: name,
+        clientName: String(data.q3_clientName || ''),
+        dateOfService: String(data.q6_dateofService || ''),
+        replyText: trimmed,
       });
     }
     return { ok: true, noteId };

@@ -1787,12 +1787,13 @@ function ProgressNotePageInner() {
           editReasonRef.current.trim() || undefined,
         );
         editReasonRef.current = '';
-        // If this note's open correction is BLOCKING the author, tell the
-        // server an amendment landed: it verifies the editHistory entry,
-        // appends the thread line, and notifies the corrections reviewer to
-        // verify the fix. The block does NOT lift here — only a reviewer
-        // removes it (the gate tells the nurse to call after saving). Errors
-        // are non-fatal; a non-blocked note answers 409 'no-block'.
+        // If this note has an OPEN flag (a correction, blocking or advisory, or
+        // a clarification), tell the server an amendment landed: it verifies
+        // the editHistory entry, appends the thread line, and notifies whoever
+        // flagged it plus the corrections reviewer. A block does NOT lift here
+        // — only a reviewer removes it (the gate tells the nurse to call after
+        // saving). Errors are non-fatal; a note with no open flag answers 409
+        // 'no-open-flag'.
         try {
           await authedFetch(`/api/admin/submissions/${editId}/amended`, { method: 'POST' });
         } catch (err) {

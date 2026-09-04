@@ -441,8 +441,9 @@ function OversightNotePageInner() {
         );
         editReasonRef.current = '';
         // Tell the corrections workflow an amendment landed, exactly as the
-        // shift form does; without this a note blocking its author stays
-        // blocked. Non-fatal: an unblocked note answers 409.
+        // shift form does: if the note has an open flag, whoever raised it (plus
+        // the corrections reviewer) is notified. A block is lifted only by a
+        // reviewer. Non-fatal: a note with no open flag answers 409.
         try {
           await authedFetch(`/api/admin/submissions/${editId}/amended`, { method: 'POST' });
         } catch (err) {
