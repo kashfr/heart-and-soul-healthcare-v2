@@ -557,11 +557,16 @@ export default function AdminSettingsPage() {
           <p style={sectionSubStyle}>
             When a reviewer flags a note for CORRECTION, the flag can block its author from
             starting or submitting any new progress notes. The block is lifted only by a
-            person: when the nurse amends the note, the reviewer below is notified (email,
-            text, portal bell) to verify the fix actually addresses the flag, then removes
-            the block or resolves the correction from the note&apos;s panel. The nurse&apos;s
-            block screen tells her to call the reviewer after saving her correction.
-            Admins can also block or unblock a nurse manually from Staff &amp; Roles.
+            person, who verifies the fix actually addresses the flag, then removes the block
+            or resolves the correction from the note&apos;s panel. The nurse&apos;s block
+            screen tells her to call the reviewer after saving her correction. Admins can
+            also block or unblock a nurse manually from Staff &amp; Roles.
+          </p>
+          <p style={sectionSubStyle}>
+            Whenever a nurse amends or replies on ANY flagged note (correction or
+            clarification, blocking or not), the person who raised the flag, the reviewer
+            below, and every admin are notified by email and portal bell. The flagger and the
+            reviewer also get a text message.
           </p>
 
           <Toggle
@@ -574,7 +579,7 @@ export default function AdminSettingsPage() {
           <div style={{ ...fieldGridStyle, marginTop: 14 }}>
             <Field
               label="Corrections reviewer"
-              hint="The staff member (normally the RN supervisor) notified by email, text, and portal bell when a nurse amends a blocked note. Picking someone fills in the display name and phone below."
+              hint="The staff member (normally the RN supervisor) notified by email, text, and portal bell whenever a nurse amends or replies on a flagged note, in addition to whoever raised the flag. Also the person the blocked nurse is told to call. Picking someone fills in the display name and phone below."
             >
               {reviewerOptions.length > 0 ? (
                 <select
@@ -601,7 +606,7 @@ export default function AdminSettingsPage() {
                   }}
                   style={selectStyle}
                 >
-                  <option value="">Not set — no one is notified</option>
+                  <option value="">Not set — only the flagger and admins are notified</option>
                   {reviewerOptions.map((o) => (
                     <option key={o.uid} value={o.uid}>
                       {o.displayName}

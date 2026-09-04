@@ -11,7 +11,7 @@
  */
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from './firebase';
-import { clarificationMessages, clarificationAwaitsNurse, clarificationBlocksNotes, type NoteClarification, type ClarificationMessage, type ClarificationKind } from './submissions';
+import { clarificationMessages, clarificationAwaitsNurse, clarificationAwaitsReviewer, clarificationBlocksNotes, type NoteClarification, type ClarificationMessage, type ClarificationKind } from './submissions';
 import { hasCriticalVital } from './criticalVitals';
 
 export interface OpenClarification {
@@ -116,6 +116,36 @@ export function subscribeMyOpenClarifications(
     (err) => {
       console.error('Open-clarifications subscription failed:', err);
       cb([]);
+    },
+  );
+}
+
+/**
+ * Live count of OPEN flags waiting on a REVIEWER: the author has replied or
+ * amended and no reviewer has answered or resolved since. Powers the
+ * supervisor-side Submissions badge (the nurse-side badge above counts the
+ * inverse). The nurse-side badge alone left reviewers learning about replies
+ * only by opening the portal.
+ *
+ * Single-field equality on `clarification.status` (auto-indexed, no composite
+ * needed). Reading every note is staff-only by rule, so callers gate on role.
+ * Fails open to 0 so a query hiccup never shows a phantom count.
+ */
+export function subscribeOpenFlagsAwaitingReviewer(cb: (count: number) => void): () => void {
+  const q = query(collection(db, 'progressNotes'), where('clarification.status', '==', 'open'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      let n = 0;
+      snap.forEach((d) => {
+        const data = d.data() as Record<string, unknown>;
+        if (clarificationAwaitsReviewer(data.clarification as NoteClarification | undefined, String(data.nurseId || ''))) n++;
+      });
+      cb(n);
+    },
+    (err) => {
+      console.error('Open-flags subscription failed:', err);
+      cb(0);
     },
   );
 }

@@ -1,16 +1,16 @@
 import { NextResponse } from 'next/server';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
-import { recordCorrectionAmended } from '@/lib/clarificationServer';
+import { recordFlaggedNoteAmended } from '@/lib/clarificationServer';
 
 /**
  * POST /api/admin/submissions/[id]/amended
  *
- * Fired by the progress-note form right after the AUTHOR saves an amendment to
- * a note whose open correction blocks her from new documentation. The server
- * verifies a real, recent amendment exists (editHistory), lifts the note's
- * block, recomputes her users-doc block mirror, and notifies the corrections
- * reviewer + admins. Idempotent-ish: a second call finds no blocking
- * correction and no-ops with 'no-block'.
+ * Fired by the note forms right after the AUTHOR saves an amendment. If the
+ * note has an OPEN flag (a correction, blocking or advisory, or a
+ * clarification), the server verifies a real amendment exists (editHistory),
+ * appends a thread line, and notifies whoever flagged it plus the corrections
+ * reviewer and admins. It never lifts a block — only a reviewer does that.
+ * Idempotent-ish: a note with no open flag answers 409 'no-open-flag'.
  */
 export async function POST(
   request: Request,
@@ -28,7 +28,7 @@ export async function POST(
     throw err;
   }
 
-  const result = await recordCorrectionAmended(id, caller);
+  const result = await recordFlaggedNoteAmended(id, caller);
   if (!result.ok) {
     const status =
       result.reason === 'not-found' ? 404 : result.reason === 'forbidden' ? 403 : 409;

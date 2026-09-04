@@ -27,7 +27,7 @@ import ClarificationGate from './ClarificationGate';
 import CorrectionsBlockGate from './CorrectionsBlockGate';
 import type { Role } from '@/lib/auth';
 import { subscribePendingDupCount } from '@/lib/drafts';
-import { subscribeMyOpenClarifications } from '@/lib/clarifications';
+import { subscribeMyOpenClarifications, subscribeOpenFlagsAwaitingReviewer } from '@/lib/clarifications';
 
 const COLLAPSE_KEY = 'app-shell-collapsed';
 
@@ -158,6 +158,20 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => unsub();
   }, [role, effectiveUid]);
 
+  // Live count of OPEN flags waiting on a reviewer (the author replied or
+  // amended), shown on the Submissions nav item for admins + supervisors —
+  // the mirror image of the nurse's badge above. Reset in the cleanup so a
+  // supervisor previewing as a nurse (view-as) doesn't keep a stale count.
+  const [awaitingReview, setAwaitingReview] = useState(0);
+  useEffect(() => {
+    if (role !== 'admin' && role !== 'supervisor') return;
+    const unsub = subscribeOpenFlagsAwaitingReviewer(setAwaitingReview);
+    return () => {
+      unsub();
+      setAwaitingReview(0);
+    };
+  }, [role]);
+
   // Close the mobile drawer whenever the route changes.
   useEffect(() => {
     setMobileOpen(false);
@@ -283,12 +297,16 @@ export function AppShell({ children }: { children: ReactNode }) {
               item.href === '/admin/in-progress'
                 ? pendingDup
                 : item.href === '/admin/submissions'
-                  ? openClarifications
+                  ? role === 'nurse'
+                    ? openClarifications
+                    : awaitingReview
                   : 0;
             const badgeTitle =
               item.href === '/admin/in-progress'
                 ? `${badgeCount} duplicate-note request${badgeCount === 1 ? '' : 's'} awaiting approval`
-                : `${badgeCount} note${badgeCount === 1 ? '' : 's'} needing your clarification`;
+                : role === 'nurse'
+                  ? `${badgeCount} note${badgeCount === 1 ? '' : 's'} needing your clarification`
+                  : `${badgeCount} flagged note${badgeCount === 1 ? '' : 's'} with a nurse reply or amendment awaiting review`;
             const inner = (
               <>
                 <span className="app-shell-nav-icon">{item.icon}</span>
