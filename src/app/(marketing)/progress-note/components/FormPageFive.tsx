@@ -913,7 +913,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
         )}
 
         {marPatientId && (
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div id="mar-changes-anchor" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             {!isEditMode && (
               <button
                 type="button"

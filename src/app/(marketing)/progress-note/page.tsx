@@ -15,6 +15,7 @@ import { computeAgeString } from '@/lib/age';
 import { findNameCandidates, type RosterPatientLite, type MatchCandidate } from '@/lib/levenshtein';
 import { saveSubmission, getSubmission, updateSubmission, submissionExists, findDuplicateSubmission, computeSubmissionChanges, type ProgressNoteFormData, type DuplicateMatch } from '@/lib/submissions';
 import { formatDateUS } from '@/lib/dateFormat';
+import { SHIFT_CHANGE_KEYS } from '@/lib/shiftChange';
 import { saveDraft, loadDraft, deleteDraft, clearDuplicateRequest, subscribeOwnDupRequest, type NoteDraft, type DuplicateRequest } from '@/lib/drafts';
 import { getCriticalFindings, summarizeFindings, type CriticalFinding } from '@/lib/criticalVitals';
 import { isBpRoutinelyRequired } from '@/lib/vitalRanges';
@@ -131,6 +132,14 @@ function ProgressNotePageInner() {
   const [currentPage, setCurrentPageState] = useState(1);
   const setCurrentPage = (page: number) => {
     setCurrentPageState(page);
+  };
+  // "Go to medication changes" from the Page 2 MAR callout: jump to the
+  // Medications page and scroll to the add/change/discontinue box.
+  const goToMedChanges = () => {
+    setCurrentPage(5);
+    setTimeout(() => {
+      document.getElementById('mar-changes-anchor')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 60);
   };
   const [credential, setCredential] = useState<CredentialTier>('');
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -320,7 +329,7 @@ function ProgressNotePageInner() {
   // (no stamp) stays unstamped so it is never retroactively flagged, and a
   // rev-2 note keeps the program it was written under (see docReqs above).
   useEffect(() => {
-    if (!isEditMode) setValue('q1_formRev', '2');
+    if (!isEditMode) setValue('q1_formRev', '3');
   }, [isEditMode, setValue]);
   useEffect(() => {
     if (isEditMode) return;
@@ -561,11 +570,11 @@ function ProgressNotePageInner() {
     prevClientKeyRef.current = null;
     skipFirstSelectionClearRef.current = true;
     reset(draft.formValues as FormValues);
-    // reset() replaces the whole RHF store, which erases the q1_formRev='2'
+    // reset() replaces the whole RHF store, which erases the q1_formRev='3'
     // stamp the mount effect wrote (drafts saved before the QEPR update have
     // no stamp in formValues, and the mount effect never re-runs). A draft is
     // by definition a NEW note being finished on today's form, so re-stamp.
-    setValue('q1_formRev', '2');
+    setValue('q1_formRev', '3');
     // Carry the draft's reserved submission id so a resume-then-submit
     // (or a retry after reload) overwrites the same note rather than
     // duplicating. Drafts written before this field fall back to '' and
@@ -1749,7 +1758,7 @@ function ProgressNotePageInner() {
         // values after a mid-note client or credential switch unmounts their
         // sections, and without this a previous client's choice/oversight
         // narrative would ride along into the wrong chart.
-        values.q1_formRev = '2';
+        values.q1_formRev = '3';
         stripInapplicableQeprFields(values, docReqs);
       }
 
@@ -1799,6 +1808,18 @@ function ProgressNotePageInner() {
         } catch (err) {
           console.warn('Correction-amended event failed (non-fatal):', err);
         }
+        // An amendment can turn a "since your last shift" answer to Yes; the
+        // server dedups against the note's stamp, so firing on every save is
+        // safe and never rings twice.
+        try {
+          await authedFetch('/api/progress-note/shift-change-alert', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ noteId: editId }),
+          });
+        } catch (err) {
+          console.warn('Shift-change alert failed (non-fatal):', err);
+        }
         alert('Progress note updated successfully!');
         window.location.href = `/admin/submissions/${editId}`;
         return;
@@ -1827,6 +1848,34 @@ function ProgressNotePageInner() {
       skipCriticalRef.current = false;
 
       const submissionId = ensureSubmissionId();
+
+      // "Since your last shift" MAR reminder (new LPN/RN notes): she reported a
+      // medication change but staged no MAR change on this note. One confirm,
+      // never a hard stop — the family may report a change she cannot verify
+      // against a written order this shift, and the supervisor alert is the
+      // safety net. Skipped if the staged-change check itself fails.
+      if (
+        user &&
+        (credential === 'LPN' || credential === 'RN') &&
+        String(submission[SHIFT_CHANGE_KEYS.medChange] || '') === 'Yes'
+      ) {
+        let staged: unknown[] | null = null;
+        try {
+          staged = await getStagedChangesForNote(submissionId, user.uid);
+        } catch (err) {
+          console.warn('Staged-change check skipped (fetch failed):', err);
+        }
+        if (staged && staged.length === 0) {
+          const proceed = window.confirm(
+            'You reported a medication started, changed, or stopped since the last shift, but no medication change is recorded on this note.\n\nPress OK to submit anyway (your supervisor will be alerted to verify the MAR), or Cancel to go to the Medications page and record it.',
+          );
+          if (!proceed) {
+            setSubmitting(false);
+            goToMedChanges();
+            return;
+          }
+        }
+      }
       const clientNameVal = String(submission.q3_clientName || '');
       const dateOfServiceVal = String(submission.q6_dateofService || '');
 
@@ -1876,6 +1925,18 @@ function ProgressNotePageInner() {
           submission as unknown as ProgressNoteFormData,
           { ...(user ? { nurseId: user.uid } : {}), submissionId }
         );
+        // "Since your last shift" alert: if any answer was Yes, the server
+        // alerts the configured supervisor(s) — email + bell naming the client,
+        // PHI-free text. It re-reads the SAVED note (never trusts the browser)
+        // and dedups via a stamp on the note. Fire-and-forget: the note is
+        // already saved.
+        if (user) {
+          void authedFetch('/api/progress-note/shift-change-alert', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ noteId: docId }),
+          }).catch((err) => console.error('Shift-change alert failed:', err));
+        }
         // Self-healing care-team membership. Always fired post-save —
         // the endpoint handles BOTH the "patientId set by the form"
         // case AND the "nurse typed manually so patientId is empty but
@@ -2367,7 +2428,7 @@ function ProgressNotePageInner() {
 
       <form ref={formRef} onSubmit={handleSubmit} className={styles.form} noValidate>
         <div style={pageStyle(1)}><FormPageOne formRef={ref} register={register} watch={watch} setValue={setValue} control={control} onCredentialChange={handleCredentialChange} patients={patients} initialClientName={initialClientName} lockIdentity={isNurse && !isEditMode} /></div>
-        <div style={pageStyle(2)}><FormPageTwo formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} ageStr={watch('q5_ageYears')} dob={watch('q4_dateofBirth')} errors={errors} /></div>
+        <div style={pageStyle(2)}><FormPageTwo formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} ageStr={watch('q5_ageYears')} dob={watch('q4_dateofBirth')} errors={errors} isEditMode={isEditMode} onGoToMedChanges={goToMedChanges} /></div>
         <div style={pageStyle(3)}><FormPageThree formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} clientHasFeedingTube={clientHasFeedingTube} giExpandSignal={giExpandSignal} errors={errors} /></div>
         <div style={pageStyle(4)}><FormPageFour formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} editMode={isEditMode} errors={errors} /></div>
         <div style={pageStyle(5)}><FormPageFive formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} isEditMode={isEditMode} clientRequiresMar={clientRequiresMar} documenter={user && profile ? { uid: user.uid, name: profile.displayName || user.email || '', credential: profile.credential || '' } : undefined} getNoteId={ensureSubmissionId} /></div>

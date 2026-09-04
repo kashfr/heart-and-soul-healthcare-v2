@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useSyncExternalStore } from 'react';
 import type { FormPageProps } from '../types';
 import styles from '../page.module.css';
-import DeselectableRadio from './DeselectableRadio';
+import DeselectableRadio, { radioState, radioSubscribe, radioGetSnapshot } from './DeselectableRadio';
+import { SHIFT_CHANGE_KEYS } from '@/lib/shiftChange';
 import FieldError from './FieldError';
 import { rangeValidator, VITAL_RANGE as RANGE } from '../validators';
 import { getVitalRanges, getAgeGroupLabel, checkVitalRange, isBpRoutinelyRequired, type VitalKey } from '@/lib/vitalRanges';
@@ -12,7 +13,18 @@ interface FormPageTwoProps extends FormPageProps {
   credential?: string;
   ageStr?: string;
   dob?: string;
+  /** Editing a submitted note: the since-last-shift answers are required only
+      when the note carries the rev-3 stamp (never retroactively). */
+  isEditMode?: boolean;
+  /** Jump to the Medications page's add/change/discontinue box (LPN/RN). */
+  onGoToMedChanges?: () => void;
 }
+
+const getRadioSnapshotStr = () => String(radioGetSnapshot());
+
+const helperStyle: React.CSSProperties = { fontSize: '12px', color: '#666', marginTop: '4px', fontStyle: 'italic', lineHeight: 1.45 };
+const marCalloutStyle: React.CSSProperties = { background: '#fff7ed', border: '1px solid #f59e0b', color: '#7c2d12', borderRadius: 8, padding: '10px 12px', margin: '6px 0 12px', fontSize: 13.5, lineHeight: 1.5 };
+const marCalloutBtnStyle: React.CSSProperties = { display: 'inline-block', background: '#1a3a5c', color: 'white', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', marginTop: 8 };
 
 interface VitalAlert {
   vital: string;
@@ -29,13 +41,37 @@ const alertLabelStyle = {
   color: '#c62828',
 };
 
-export default function FormPageTwo({ formRef, register, watch, setValue, control, credential, ageStr, dob, errors }: FormPageTwoProps) {
+export default function FormPageTwo({ formRef, register, watch, setValue, control, credential, ageStr, dob, errors, isEditMode, onGoToMedChanges }: FormPageTwoProps) {
   const showVitals = credential !== 'HHA';
   const ageGroupLabel = getAgeGroupLabel(ageStr || '', dob);
   // BP is routinely required from age 3 (AAP). Under 3 it's optional — recorded
   // when clinically indicated/ordered — so we don't ask for a refusal reason.
   const bpRequired = isBpRoutinelyRequired(ageStr || '', dob);
   const [alerts, setAlerts] = useState<Record<string, VitalAlert>>({});
+
+  // --- Since your last shift (rev 3) ---
+  // Three required Yes/No radios plus Details required on any Yes. Radios live
+  // in the DeselectableRadio store, so subscribe to re-render on change and
+  // mirror each answer into a hidden RHF input that trigger() can validate and
+  // the submit scan can surface (the physician-notification pattern).
+  useSyncExternalStore(radioSubscribe, getRadioSnapshotStr, getRadioSnapshotStr);
+  const sinceHospital = radioState[SHIFT_CHANGE_KEYS.hospitalAdmission] || '';
+  const sinceEr = radioState[SHIFT_CHANGE_KEYS.erUrgentCare] || '';
+  const sinceMed = radioState[SHIFT_CHANGE_KEYS.medChange] || '';
+  const sinceAnyYes = sinceHospital === 'Yes' || sinceEr === 'Yes' || sinceMed === 'Yes';
+  // Required on every NEW note; an amendment of a note written before the
+  // section existed (no rev-3 stamp) is never asked to answer for that shift.
+  const isRev3Note = !isEditMode || Number(watch('q1_formRev') || '0') >= 3;
+  useEffect(() => {
+    setValue(SHIFT_CHANGE_KEYS.hospitalAdmission, sinceHospital);
+    setValue(SHIFT_CHANGE_KEYS.erUrgentCare, sinceEr);
+    setValue(SHIFT_CHANGE_KEYS.medChange, sinceMed);
+  }, [sinceHospital, sinceEr, sinceMed, setValue]);
+  const isLpnRn = credential === 'LPN' || credential === 'RN';
+  // One message per question so the submit-time "missing fields" list names
+  // each unanswered one instead of collapsing them into a single line.
+  const yesNoRule = (question: string) => (v: string) =>
+    !isRev3Note || v === 'Yes' || v === 'No' || `Since your last shift: answer Yes or No for ${question}.`;
 
   // O2 saturation has a HARD physical ceiling of 100% (and floor of 0). Unlike
   // the other vitals — where out-of-range is implausible-but-possible and only
@@ -167,6 +203,125 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
 
   return (
     <div>
+      {/* SINCE YOUR LAST SHIFT — interval screening, every program and credential.
+          Kept outside any collapsible so the required-field scan can see it. */}
+      <div className={styles.section}>
+        <span className={styles.sectionLabel}>SINCE YOUR LAST SHIFT</span>
+        <p style={helperStyle}>
+          Please verify with the family or caregiver. Ask about discharge papers and new prescriptions.
+          {isRev3Note ? ' All three answers are required.' : ''}
+        </p>
+
+        <div className={styles.row}>
+          <div className={styles.f}>
+            <label className={styles.label}>Any hospital admission(s)?{isRev3Note ? ' *' : ''}</label>
+            <div className={styles.radioRow}>
+              <label>
+                <DeselectableRadio name={SHIFT_CHANGE_KEYS.hospitalAdmission} value="Yes" />
+                Yes
+              </label>
+              <label>
+                <DeselectableRadio name={SHIFT_CHANGE_KEYS.hospitalAdmission} value="No" />
+                No
+              </label>
+            </div>
+            <input type="hidden" {...register(SHIFT_CHANGE_KEYS.hospitalAdmission, { validate: yesNoRule('hospital admission') })} />
+            <FieldError name={SHIFT_CHANGE_KEYS.hospitalAdmission} errors={errors} />
+          </div>
+          <div className={styles.f}>
+            <label className={styles.label}>Any urgent care or ER visit(s)?{isRev3Note ? ' *' : ''}</label>
+            <div className={styles.radioRow}>
+              <label>
+                <DeselectableRadio name={SHIFT_CHANGE_KEYS.erUrgentCare} value="Yes" />
+                Yes
+              </label>
+              <label>
+                <DeselectableRadio name={SHIFT_CHANGE_KEYS.erUrgentCare} value="No" />
+                No
+              </label>
+            </div>
+            <input type="hidden" {...register(SHIFT_CHANGE_KEYS.erUrgentCare, { validate: yesNoRule('urgent care or ER visit') })} />
+            <FieldError name={SHIFT_CHANGE_KEYS.erUrgentCare} errors={errors} />
+          </div>
+        </div>
+
+        <div className={styles.row}>
+          <div className={styles.f} style={{ flex: '1 1 100%' }}>
+            <label className={styles.label}>Any medication started, changed, or stopped?{isRev3Note ? ' *' : ''}</label>
+            <div className={styles.radioRow}>
+              <label>
+                <DeselectableRadio name={SHIFT_CHANGE_KEYS.medChange} value="Yes" />
+                Yes
+              </label>
+              <label>
+                <DeselectableRadio name={SHIFT_CHANGE_KEYS.medChange} value="No" />
+                No
+              </label>
+            </div>
+            <input type="hidden" {...register(SHIFT_CHANGE_KEYS.medChange, { validate: yesNoRule('medication started, changed, or stopped') })} />
+            <FieldError name={SHIFT_CHANGE_KEYS.medChange} errors={errors} />
+            <p style={helperStyle}>
+              Includes a new prescription; a dose, schedule, route, or form change; a medication the doctor
+              stopped or told the family to hold; and anything over-the-counter, vitamin, or as-needed the
+              family gave on their own. Look at the bottles for a new label.
+            </p>
+          </div>
+        </div>
+
+        {sinceMed === 'Yes' && (
+          <div style={marCalloutStyle} role="status">
+            <strong>Please update the MAR.</strong>{' '}
+            {isLpnRn ? (
+              <>
+                If you have the written order or discharge papers, record the change under &ldquo;Add, change,
+                or discontinue a medication&rdquo; on the Medications page so it is on the MAR when you submit.
+                If a medication was stopped or held and you do not have the order, do not give it, mark its
+                doses Held with the reason, and do not discontinue it on the MAR until the order is confirmed.
+                {onGoToMedChanges && (
+                  <>
+                    <br />
+                    <button type="button" onClick={onGoToMedChanges} style={marCalloutBtnStyle}>
+                      Go to medication changes
+                    </button>
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                Please let the supervising nurse know so the MAR can be updated. Your supervisor is also
+                notified when you submit. Do not give any medication that is not on the current MAR.
+              </>
+            )}
+          </div>
+        )}
+
+        {sinceAnyYes && (
+          <div className={styles.row}>
+            <div className={styles.f} style={{ flex: '1 1 100%' }}>
+              <label className={styles.label} htmlFor={SHIFT_CHANGE_KEYS.details}>
+                Details{isRev3Note ? ' *' : ''}
+              </label>
+              <textarea
+                className={styles.textarea}
+                style={isRev3Note ? { border: '2px solid #c62828', background: '#fff5f5' } : undefined}
+                id={SHIFT_CHANGE_KEYS.details}
+                {...register(SHIFT_CHANGE_KEYS.details, {
+                  validate: (v) => !isRev3Note || !sinceAnyYes || !!(v || '').trim() || 'Required when any answer above is Yes.',
+                })}
+                rows={4}
+                required={isRev3Note}
+                placeholder={
+                  sinceMed === 'Yes'
+                    ? 'For each medication: name; what happened (started / dose or schedule changed / stopped / on hold and until when / not sure); who ordered it and when; whether you saw the written order or discharge papers.'
+                    : 'Where and when, the reason, what was done, and any discharge instructions or new orders given to the family.'
+                }
+              />
+              <FieldError name={SHIFT_CHANGE_KEYS.details} errors={errors} />
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className={styles.section}>
         <span className={styles.sectionLabel}>STATUS AT BEGINNING OF SHIFT</span>
 

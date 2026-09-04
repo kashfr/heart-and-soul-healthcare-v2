@@ -23,6 +23,7 @@ import RevisionHistory from '@/components/RevisionHistory';
 import CoSignModal from '@/components/CoSignModal';
 import ClarificationPanel from '@/components/ClarificationPanel';
 import type { SubmissionSummary } from '@/lib/submissions';
+import { readShiftChange } from '@/lib/shiftChange';
 import { buildFieldAmendments, type FieldVersion } from '@/lib/revisionFormat';
 import { programLabel } from '@/lib/programs';
 
@@ -438,6 +439,15 @@ export default function SubmissionDetailPage({ params }: PageProps) {
                 Amend
               </Link>
             )}
+            {hasValue(data.patientId) && data.noteType !== 'rn-oversight-visit' && (
+              <Link
+                href={`/admin/records/${data.patientId}/mar`}
+                style={editBtnStyle}
+                title="Open this client's MAR to check the orders against what the note reports"
+              >
+                MAR
+              </Link>
+            )}
             <button
               onClick={handleDownloadPdf}
               disabled={downloadingPdf}
@@ -682,6 +692,22 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         )}
 
         {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Status & Vitals" />}
+
+        {/* 3b. SINCE YOUR LAST SHIFT (rev 3+) */}
+        <ConditionalSection
+          title="Since Your Last Shift"
+          keys={['q68_sinceHospitalAdmission', 'q68_sinceErUrgentCare', 'q68_sinceMedChange', 'q68_sinceDetails']}
+          data={data}
+        >
+          <FieldRow>
+            <Field fieldKey="q68_sinceHospitalAdmission" label="Hospital admission" value={data.q68_sinceHospitalAdmission} />
+            <Field fieldKey="q68_sinceErUrgentCare" label="Urgent care / ER visit" value={data.q68_sinceErUrgentCare} />
+            <Field fieldKey="q68_sinceMedChange" label="Medication started, changed, or stopped" value={data.q68_sinceMedChange} />
+          </FieldRow>
+          {hasValue(data.q68_sinceDetails) && (
+            <TextBlock fieldKey="q68_sinceDetails" label="Details" value={data.q68_sinceDetails} />
+          )}
+        </ConditionalSection>
 
         {/* 4. CLIENT STATUS */}
         <ConditionalSection
@@ -1373,6 +1399,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
       {/* Single-note co-sign modal. Built from the in-memory note so we can
           show the client/author summary without re-fetching anything. */}
       {cosignModalOpen && (() => {
+        const sinceLastShift = readShiftChange(data as Record<string, unknown>);
         const summary: SubmissionSummary = {
           id,
           clientName: data.q3_clientName || '',
@@ -1385,6 +1412,9 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           submittedAt: null,
           status: 'submitted',
           archivedAt: null,
+          hospitalAdmission: sinceLastShift.hospitalAdmission,
+          erUrgentCare: sinceLastShift.erUrgentCare,
+          medChangeReported: sinceLastShift.medChange,
           nurseArchivedAt: null,
           hasAbnormalVitals: false,
           hasCriticalVitals: false,

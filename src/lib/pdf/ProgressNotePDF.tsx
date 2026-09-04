@@ -1040,6 +1040,20 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
 
         {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Status & Vitals" />}
 
+        {/* 3b. Since Your Last Shift (rev 3+) */}
+        {anyHasValue(data, ['q68_sinceHospitalAdmission', 'q68_sinceErUrgentCare', 'q68_sinceMedChange', 'q68_sinceDetails']) && (
+          <Section title="Since Your Last Shift">
+            <FieldRow>
+              <FieldCol><Field fieldKey="q68_sinceHospitalAdmission" label="Hospital admission" value={data.q68_sinceHospitalAdmission} /></FieldCol>
+              <FieldCol><Field fieldKey="q68_sinceErUrgentCare" label="Urgent care / ER visit" value={data.q68_sinceErUrgentCare} /></FieldCol>
+              <FieldCol><Field fieldKey="q68_sinceMedChange" label="Medication started, changed, or stopped" value={data.q68_sinceMedChange} /></FieldCol>
+            </FieldRow>
+            {hasValue(data.q68_sinceDetails) && (
+              <TextBlock fieldKey="q68_sinceDetails" label="Details" value={data.q68_sinceDetails} />
+            )}
+          </Section>
+        )}
+
         {/* 4. Client Status */}
         {anyHasValue(data, [
           'q13_alertnessLevel', 'q13_orientationLevel', 'q14_behavior',

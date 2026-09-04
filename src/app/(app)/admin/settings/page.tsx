@@ -165,6 +165,15 @@ export default function AdminSettingsPage() {
     setDraft((prev) => ({ ...prev, corrections: { ...prev.corrections, [field]: value } }));
   };
 
+  const toggleShiftChangeRecipient = (uid: string, on: boolean) => {
+    setDirty(true);
+    setDraft((prev) => {
+      const cur = prev.shiftChangeAlerts.recipientUids;
+      const next = on ? Array.from(new Set([...cur, uid])) : cur.filter((u) => u !== uid);
+      return { ...prev, shiftChangeAlerts: { recipientUids: next } };
+    });
+  };
+
   const updateVitalRange = (
     group: VitalAgeGroupKey,
     vital: VitalRangeKey,
@@ -660,6 +669,57 @@ export default function AdminSettingsPage() {
               />
             </Field>
           </div>
+        </section>
+
+        {/* --- Shift-change alerts ("Since your last shift" on Page 2) --- */}
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Shift-change alerts</h2>
+          <p style={sectionSubStyle}>
+            Every progress note starts with three required questions about the time since the
+            nurse&apos;s last shift: any hospital admission, any urgent care or ER visit, and any
+            medication started, changed, or stopped. When a nurse answers Yes to any of them, the
+            people checked below are alerted by email and portal bell (naming the client, the
+            answers, and the nurse&apos;s details) and by a text message if they have a phone on
+            file. If no one is checked, the alert goes to the Corrections reviewer above.
+          </p>
+          {reviewerOptions.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {reviewerOptions.map((o) => {
+                const checked = draft.shiftChangeAlerts.recipientUids.includes(o.uid);
+                return (
+                  <label
+                    key={o.uid}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+                      background: checked ? '#eef4fb' : '#f8fafc', border: '1px solid #e5e7eb',
+                      borderRadius: 6, cursor: 'pointer', fontSize: 13.5, color: '#2c3e50',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => toggleShiftChangeRecipient(o.uid, e.target.checked)}
+                    />
+                    <span style={{ fontWeight: 600 }}>{o.displayName}</span>
+                    <span style={{ color: '#5c6b7a', fontSize: 12.5 }}>
+                      {o.credential ? `${o.credential}, ` : ''}{o.role}
+                      {o.phone ? ` · ${o.phone}` : ' · no phone on file (email + bell only)'}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ fontSize: 13.5, color: '#5c6b7a', padding: '9px 0' }}>
+              Staff list unavailable right now — reload to change the recipients.
+            </div>
+          )}
+          {draft.shiftChangeAlerts.recipientUids.length === 0 && (
+            <p style={{ ...sectionSubStyle, marginTop: 10, marginBottom: 0 }}>
+              Currently falling back to the Corrections reviewer
+              {draft.corrections.reviewerName ? ` (${draft.corrections.reviewerName})` : ''}.
+            </p>
+          )}
         </section>
 
         {/* --- Pediatric vital ranges (collapsed by default: the per-age-group
