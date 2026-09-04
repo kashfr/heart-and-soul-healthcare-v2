@@ -268,6 +268,18 @@ export interface CorrectionsSettings {
   reviewerPhone: string;
 }
 
+export interface ShiftChangeAlertsSettings {
+  /**
+   * Who is alerted (email + bell, plus a PHI-free text when they have a phone
+   * on file) when a nurse answers Yes to any "since your last shift" question
+   * on a progress note: hospital admission, urgent care / ER visit, or a
+   * medication started / changed / stopped. Staff uids. When EMPTY the alert
+   * falls back to the corrections reviewer, so it works before anyone has
+   * opened this section of Settings.
+   */
+  recipientUids: string[];
+}
+
 export interface AppSettings {
   submissions: SubmissionsSettings;
   cosign: CosignSettings;
@@ -275,6 +287,7 @@ export interface AppSettings {
   vitals: VitalsSettings;
   criticalVitals: CriticalVitalsSettings;
   corrections: CorrectionsSettings;
+  shiftChangeAlerts: ShiftChangeAlertsSettings;
   branding: BrandingSettings;
   emails: EmailsSettings;
   intake: IntakeSettings;
@@ -313,6 +326,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
     reviewerUid: '',
     reviewerName: '',
     reviewerPhone: '',
+  },
+  shiftChangeAlerts: {
+    recipientUids: [],
   },
   branding: {
     orgName: 'Heart and Soul Healthcare',
@@ -408,6 +424,7 @@ export function mergeWithDefaults(partial: unknown): AppSettings {
           : DEFAULT_SETTINGS.criticalVitals.enabled,
     },
     corrections: mergeCorrections(p.corrections),
+    shiftChangeAlerts: mergeShiftChangeAlerts(p.shiftChangeAlerts),
     branding: mergeBranding(p.branding),
     emails: mergeEmails(p.emails),
     intake: mergeIntake(p.intake),
@@ -425,6 +442,14 @@ function mergeCorrections(input: unknown): CorrectionsSettings {
     reviewerName: typeof src.reviewerName === 'string' ? src.reviewerName.trim() : '',
     reviewerPhone: typeof src.reviewerPhone === 'string' ? src.reviewerPhone.trim() : '',
   };
+}
+
+function mergeShiftChangeAlerts(input: unknown): ShiftChangeAlertsSettings {
+  const src = (input ?? {}) as Partial<ShiftChangeAlertsSettings>;
+  const uids = Array.isArray(src.recipientUids)
+    ? src.recipientUids.filter((u): u is string => typeof u === 'string').map((u) => u.trim()).filter(Boolean)
+    : [];
+  return { recipientUids: Array.from(new Set(uids)) };
 }
 
 function mergeIntake(input: unknown): IntakeSettings {
@@ -563,6 +588,17 @@ export function validateSettings(payload: unknown): AppSettings {
   const cos = (p.cosign ?? {}) as Partial<CosignSettings>;
   const pat = (p.patient ?? {}) as Partial<PatientSettings>;
   const vit = (p.vitals ?? {}) as Partial<VitalsSettings>;
+  const sca = (p.shiftChangeAlerts ?? {}) as Partial<ShiftChangeAlertsSettings>;
+
+  if (
+    sca.recipientUids !== undefined &&
+    (!Array.isArray(sca.recipientUids) || sca.recipientUids.some((u) => typeof u !== 'string'))
+  ) {
+    throw new SettingsValidationError(
+      'shiftChangeAlerts.recipientUids',
+      'recipientUids must be an array of staff uids.',
+    );
+  }
 
   if (sub.defaultSort !== undefined && !VALID_SORT_KEYS.includes(sub.defaultSort)) {
     throw new SettingsValidationError('submissions.defaultSort', 'Invalid sort key.');

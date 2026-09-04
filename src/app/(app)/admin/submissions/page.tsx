@@ -136,6 +136,8 @@ export default function SubmissionsPage() {
   const flagIncident = searchParams.get('inc') === '1';
   const flagPhysNotified = searchParams.get('phy') === '1';
   const flagNeedsCosign = searchParams.get('cosign') === '1';
+  const flagHospitalEr = searchParams.get('hosp') === '1';
+  const flagMedChange = searchParams.get('med') === '1';
   const page = Math.max(1, Number(searchParams.get('p') || '1'));
   // Current filter/sort state, carried to the note detail page so its
   // "Back to Submissions" returns to this exact filtered view.
@@ -281,7 +283,7 @@ export default function SubmissionsPage() {
     if (sessionStorage.getItem(RN_COSIGN_SESSION_KEY) === '1') return;
     const hasAnyFilter =
       qParam || credParam || nurseParam || datePreset ||
-      flagAbnormal || flagIncident || flagPhysNotified || flagNeedsCosign;
+      flagAbnormal || flagIncident || flagPhysNotified || flagNeedsCosign || flagHospitalEr || flagMedChange;
     if (hasAnyFilter) {
       sessionStorage.setItem(RN_COSIGN_SESSION_KEY, '1');
       return;
@@ -351,6 +353,8 @@ export default function SubmissionsPage() {
     flagIncident ||
     flagPhysNotified ||
     flagNeedsCosign ||
+    flagHospitalEr ||
+    flagMedChange ||
     sortParam !== subDefaults.defaultSort ||
     dirParam !== subDefaults.defaultDir;
 
@@ -369,6 +373,8 @@ export default function SubmissionsPage() {
       if (flagIncident && !s.hasIncident) return false;
       if (flagPhysNotified && !s.physicianNotified) return false;
       if (flagNeedsCosign && !needsCosign(s, requiredCosignCreds)) return false;
+      if (flagHospitalEr && !(s.hospitalAdmission || s.erUrgentCare)) return false;
+      if (flagMedChange && !s.medChangeReported) return false;
       if (rangeStart || rangeEnd) {
         const d = parseDateOfService(s.dateOfService);
         if (!d) return false;
@@ -386,6 +392,8 @@ export default function SubmissionsPage() {
     flagIncident,
     flagPhysNotified,
     flagNeedsCosign,
+    flagHospitalEr,
+    flagMedChange,
     rangeStart,
     rangeEnd,
   ]);
@@ -434,6 +442,8 @@ export default function SubmissionsPage() {
       if (flagIncident && !s.hasIncident) continue;
       if (flagPhysNotified && !s.physicianNotified) continue;
       if (flagNeedsCosign && !needsCosign(s, requiredCosignCreds)) continue;
+      if (flagHospitalEr && !(s.hospitalAdmission || s.erUrgentCare)) continue;
+      if (flagMedChange && !s.medChangeReported) continue;
       if (rangeStart || rangeEnd) {
         const d = parseDateOfService(s.dateOfService);
         if (!d) continue;
@@ -455,6 +465,8 @@ export default function SubmissionsPage() {
     flagIncident,
     flagPhysNotified,
     flagNeedsCosign,
+    flagHospitalEr,
+    flagMedChange,
     rangeStart,
     rangeEnd,
   ]);
@@ -519,6 +531,8 @@ export default function SubmissionsPage() {
       inc: null,
       phy: null,
       cosign: null,
+      hosp: null,
+      med: null,
       sort: null,
       dir: null,
       p: null,
@@ -1007,6 +1021,22 @@ export default function SubmissionsPage() {
             />
             Needs co-signature
           </label>
+          <label style={flagLabelStyle}>
+            <input
+              type="checkbox"
+              checked={flagHospitalEr}
+              onChange={(e) => updateParams({ hosp: e.target.checked ? '1' : null, p: null })}
+            />
+            Hospital / ER visit
+          </label>
+          <label style={flagLabelStyle}>
+            <input
+              type="checkbox"
+              checked={flagMedChange}
+              onChange={(e) => updateParams({ med: e.target.checked ? '1' : null, p: null })}
+            />
+            Med change reported
+          </label>
 
           <div style={{ flex: 1 }} />
 
@@ -1362,6 +1392,19 @@ export default function SubmissionsPage() {
                             {s.physicianNotified && (
                               <span style={flagBadgeBlue} title="Physician notified">
                                 Physician
+                              </span>
+                            )}
+                            {(s.hospitalAdmission || s.erUrgentCare) && (
+                              <span
+                                style={flagBadgeRed}
+                                title={`${[s.hospitalAdmission ? 'Hospital admission' : '', s.erUrgentCare ? 'Urgent care / ER visit' : ''].filter(Boolean).join(' · ')} since the last shift`}
+                              >
+                                Hospital/ER
+                              </span>
+                            )}
+                            {s.medChangeReported && (
+                              <span style={flagBadgeAmber} title="Medication started, changed, or stopped since the last shift — verify the MAR">
+                                Med change
                               </span>
                             )}
                             {needsCosign(s, requiredCosignCreds) && (

@@ -23,6 +23,7 @@ import { normalizeName } from './levenshtein';
 import { noteIsActiveDuplicate } from './duplicateMatch';
 import { normalizeDateISO, sortNotesDesc, type DashboardNote } from './clientDashboardShared';
 import { formatDateUS } from './dateFormat';
+import { readShiftChange } from './shiftChange';
 
 /**
  * All form fields from the 7-page progress note form.
@@ -160,6 +161,16 @@ export interface ProgressNoteFormData {
   q56_apptsReviewed?: string;
   q56_oversightNotes?: string;
 
+  // Page 2 (rev 3): "since your last shift" screening — required Yes/No
+  // answers for every credential and program, Details required on any Yes.
+  // See src/lib/shiftChange.ts.
+  q68_sinceHospitalAdmission?: string;
+  q68_sinceErUrgentCare?: string;
+  q68_sinceMedChange?: string;
+  q68_sinceDetails?: string;
+  /** Set (Admin SDK) once the supervisor alert for a Yes answer has gone out. */
+  shiftChangeAlertedAt?: Timestamp | null;
+
   // Page 7: Signature & Completion
   q61_signature: string;
   q62_shiftEndDate: string;
@@ -244,6 +255,10 @@ export interface SubmissionSummary {
   hasCriticalVitals: boolean;
   hasIncident: boolean;
   physicianNotified: boolean;
+  /** "Since your last shift" Yes answers (rev-3 notes; false on older notes). */
+  hospitalAdmission: boolean;
+  erUrgentCare: boolean;
+  medChangeReported: boolean;
   // --- RN co-signature (only populated for HHA/CNA/LPN notes once an RN signs off) ---
   cosignedAt: Date | null;
   cosignedByName: string;
@@ -409,6 +424,7 @@ function mapDocToSummary(
     incidentDetails || !NO_INCIDENT_VALUES.has(incidentType.toLowerCase())
   );
   const cosignedAt = data.cosignedAt as Timestamp | null | undefined;
+  const shiftChange = readShiftChange(data);
   return {
     id: d.id,
     clientName: (data.q3_clientName as string) || '',
@@ -426,6 +442,9 @@ function mapDocToSummary(
     hasCriticalVitals: hasCriticalVital(data),
     hasIncident,
     physicianNotified: String(data.q52_physicianNotify || '').toLowerCase() === 'yes',
+    hospitalAdmission: shiftChange.hospitalAdmission,
+    erUrgentCare: shiftChange.erUrgentCare,
+    medChangeReported: shiftChange.medChange,
     cosignedAt: cosignedAt ? cosignedAt.toDate() : null,
     cosignedByName: (data.cosignedByName as string) || '',
     cosignedCredential: (data.cosignedCredential as string) || '',
