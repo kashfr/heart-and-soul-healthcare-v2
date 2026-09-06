@@ -23,6 +23,7 @@ import RevisionHistory from '@/components/RevisionHistory';
 import CoSignModal from '@/components/CoSignModal';
 import ClarificationPanel from '@/components/ClarificationPanel';
 import type { SubmissionSummary } from '@/lib/submissions';
+import { clarificationTurn } from '@/lib/clarificationShared';
 import { readShiftChange } from '@/lib/shiftChange';
 import { buildFieldAmendments, type FieldVersion } from '@/lib/revisionFormat';
 import { programLabel } from '@/lib/programs';
@@ -1426,6 +1427,10 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           clarificationStatus: formData?.clarification?.status ?? null,
           clarificationKind: formData?.clarification?.kind ?? null,
           clarificationBlocksNotes: formData?.clarification?.blocksNotes === true,
+          clarificationTurn: clarificationTurn(
+            formData?.clarification ?? null,
+            (data as Record<string, string>).nurseId || undefined,
+          ),
         };
         return (
           <CoSignModal

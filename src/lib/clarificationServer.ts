@@ -318,7 +318,9 @@ async function notifyReviewersOfFlagActivity(params: {
         userId: r.uid,
         kind: params.event === 'amended' ? 'correction-amended' : 'flag-reply',
         text: flagActivityBellText(ctx),
-        href: `/admin/submissions/${params.noteId}`,
+        // Land on the note; its "Back to Submissions" then returns to the
+        // Flagged list (?flag=1) rather than the bare list.
+        href: `/admin/submissions/${params.noteId}?back=flag%3D1`,
       });
     }
   } catch (err) {

@@ -126,6 +126,36 @@ export function clarificationAwaitsReviewer(
   return last.byRole === 'nurse';
 }
 
+/** Whose move an OPEN flag is waiting on; null when there is no open flag. */
+export type ClarificationTurn = 'nurse' | 'reviewer' | null;
+
+/**
+ * Whose turn an open flag is on. 'reviewer' mirrors clarificationAwaitsReviewer
+ * (the author spoke last); every other open flag is the author's to answer,
+ * including a freshly raised flag with no reply yet. Drives the "Your reply
+ * needed" / "Nurse replied" hint on the Submissions rows so the Flagged
+ * filter, which lists every open flag, reconciles with the two nav badges
+ * that each count only one side.
+ */
+export function clarificationTurn(
+  c: NoteClarification | null | undefined,
+  authorId?: string,
+): ClarificationTurn {
+  if (!c || c.status !== 'open') return null;
+  return clarificationAwaitsReviewer(c, authorId) ? 'reviewer' : 'nurse';
+}
+
+/**
+ * Row hint for a turn, phrased for whoever is looking. The author sees her
+ * own obligation ("Your reply needed"); a reviewer, or a colleague viewing a
+ * care-team note, sees the state of the thread.
+ */
+export function clarificationTurnLabel(turn: ClarificationTurn, viewerIsAuthor: boolean): string {
+  if (turn === 'nurse') return viewerIsAuthor ? 'Your reply needed' : 'Waiting on nurse';
+  if (turn === 'reviewer') return viewerIsAuthor ? 'Waiting on reviewer' : 'Nurse replied';
+  return '';
+}
+
 /**
  * True when this note's flag currently blocks its author from new notes:
  * an OPEN correction with blocksNotes set. A clarification (question) never

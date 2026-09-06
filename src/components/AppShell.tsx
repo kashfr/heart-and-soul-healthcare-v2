@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
   HeartPulse,
@@ -106,6 +106,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { viewingAs, stopViewAs } = useViewAs();
   const { settings: appSettings } = useSettings();
   const pathname = usePathname();
+  const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   // Desktop sidebar collapse, persisted to localStorage so it survives
   // refreshes. Read lazily on first render; SSR has no window so it defaults
@@ -307,13 +308,34 @@ export function AppShell({ children }: { children: ReactNode }) {
                 : role === 'nurse'
                   ? `${badgeCount} note${badgeCount === 1 ? '' : 's'} needing your clarification`
                   : `${badgeCount} flagged note${badgeCount === 1 ? '' : 's'} with a nurse reply or amendment awaiting review`;
+            // Where a click on the count itself lands: the Submissions list with
+            // the Flagged filter on, which shows every open flag (both sides of
+            // the thread) with a per-row hint of whose turn it is.
+            const badgeHref = item.href === '/admin/submissions' ? '/admin/submissions?flag=1' : '';
             const inner = (
               <>
                 <span className="app-shell-nav-icon">{item.icon}</span>
                 <span className="app-shell-nav-label">{item.label}</span>
                 {item.disabled && <span className="app-shell-coming-soon">Soon</span>}
                 {badgeCount > 0 && (
-                  <span className="app-shell-nav-badge" title={badgeTitle}>
+                  <span
+                    className={badgeHref ? 'app-shell-nav-badge app-shell-nav-badge--link' : 'app-shell-nav-badge'}
+                    title={badgeHref ? `${badgeTitle}. Click to list them.` : badgeTitle}
+                    onClick={
+                      badgeHref
+                        ? (e) => {
+                            // The badge sits inside the nav Link. Swallow the click
+                            // so the Link doesn't also navigate to the bare list,
+                            // then go straight to the pre-filtered view the count
+                            // refers to.
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setMobileOpen(false);
+                            router.push(badgeHref);
+                          }
+                        : undefined
+                    }
+                  >
                     {badgeCount}
                   </span>
                 )}
@@ -481,6 +503,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           align-items: center;
           justify-content: center;
           line-height: 1;
+        }
+        .app-shell-nav-badge--link {
+          cursor: pointer;
+        }
+        .app-shell-nav-badge--link:hover {
+          background: #fbbf24;
         }
         /* In the collapsed rail the label is hidden; pin the badge to the
            icon's corner so the count still shows. */
