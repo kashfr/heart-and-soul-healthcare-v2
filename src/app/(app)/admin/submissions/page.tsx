@@ -9,6 +9,7 @@ import {
   getNurseAccessibleSubmissions,
   setSubmissionsArchive,
   needsCosign,
+  clarificationTurnLabel,
   type ArchiveView,
   type SubmissionSummary,
 } from '@/lib/submissions';
@@ -138,6 +139,7 @@ export default function SubmissionsPage() {
   const flagNeedsCosign = searchParams.get('cosign') === '1';
   const flagHospitalEr = searchParams.get('hosp') === '1';
   const flagMedChange = searchParams.get('med') === '1';
+  const flagOpen = searchParams.get('flag') === '1';
   const page = Math.max(1, Number(searchParams.get('p') || '1'));
   // Current filter/sort state, carried to the note detail page so its
   // "Back to Submissions" returns to this exact filtered view.
@@ -283,7 +285,7 @@ export default function SubmissionsPage() {
     if (sessionStorage.getItem(RN_COSIGN_SESSION_KEY) === '1') return;
     const hasAnyFilter =
       qParam || credParam || nurseParam || datePreset ||
-      flagAbnormal || flagIncident || flagPhysNotified || flagNeedsCosign || flagHospitalEr || flagMedChange;
+      flagAbnormal || flagIncident || flagPhysNotified || flagNeedsCosign || flagHospitalEr || flagMedChange || flagOpen;
     if (hasAnyFilter) {
       sessionStorage.setItem(RN_COSIGN_SESSION_KEY, '1');
       return;
@@ -355,6 +357,7 @@ export default function SubmissionsPage() {
     flagNeedsCosign ||
     flagHospitalEr ||
     flagMedChange ||
+    flagOpen ||
     sortParam !== subDefaults.defaultSort ||
     dirParam !== subDefaults.defaultDir;
 
@@ -375,6 +378,7 @@ export default function SubmissionsPage() {
       if (flagNeedsCosign && !needsCosign(s, requiredCosignCreds)) return false;
       if (flagHospitalEr && !(s.hospitalAdmission || s.erUrgentCare)) return false;
       if (flagMedChange && !s.medChangeReported) return false;
+      if (flagOpen && s.clarificationStatus !== 'open') return false;
       if (rangeStart || rangeEnd) {
         const d = parseDateOfService(s.dateOfService);
         if (!d) return false;
@@ -394,6 +398,7 @@ export default function SubmissionsPage() {
     flagNeedsCosign,
     flagHospitalEr,
     flagMedChange,
+    flagOpen,
     rangeStart,
     rangeEnd,
   ]);
@@ -444,6 +449,7 @@ export default function SubmissionsPage() {
       if (flagNeedsCosign && !needsCosign(s, requiredCosignCreds)) continue;
       if (flagHospitalEr && !(s.hospitalAdmission || s.erUrgentCare)) continue;
       if (flagMedChange && !s.medChangeReported) continue;
+      if (flagOpen && s.clarificationStatus !== 'open') continue;
       if (rangeStart || rangeEnd) {
         const d = parseDateOfService(s.dateOfService);
         if (!d) continue;
@@ -467,6 +473,7 @@ export default function SubmissionsPage() {
     flagNeedsCosign,
     flagHospitalEr,
     flagMedChange,
+    flagOpen,
     rangeStart,
     rangeEnd,
   ]);
@@ -533,6 +540,7 @@ export default function SubmissionsPage() {
       cosign: null,
       hosp: null,
       med: null,
+      flag: null,
       sort: null,
       dir: null,
       p: null,
@@ -1037,6 +1045,14 @@ export default function SubmissionsPage() {
             />
             Med change reported
           </label>
+          <label style={flagLabelStyle} title="Notes with an open correction or clarification flag">
+            <input
+              type="checkbox"
+              checked={flagOpen}
+              onChange={(e) => updateParams({ flag: e.target.checked ? '1' : null, p: null })}
+            />
+            Flagged
+          </label>
 
           <div style={{ flex: 1 }} />
 
@@ -1423,6 +1439,27 @@ export default function SubmissionsPage() {
                                 </span>
                               )
                             )}
+                            {s.clarificationStatus === 'open' && s.clarificationTurn && (() => {
+                              // Whose move the thread is on. The Flagged filter lists
+                              // every open flag while each nav badge counts one side,
+                              // so this hint is what reconciles the two numbers.
+                              const viewerIsAuthor = isNurse && s.nurseId === effectiveUid;
+                              const myTurn = viewerIsAuthor
+                                ? s.clarificationTurn === 'nurse'
+                                : !isNurse && s.clarificationTurn === 'reviewer';
+                              return (
+                                <span
+                                  style={myTurn ? flagTurnMine : flagTurnOther}
+                                  title={
+                                    s.clarificationTurn === 'nurse'
+                                      ? 'No reply from the nurse since the last reviewer message'
+                                      : 'The nurse replied or amended; no reviewer has answered or resolved since'
+                                  }
+                                >
+                                  {clarificationTurnLabel(s.clarificationTurn, viewerIsAuthor)}
+                                </span>
+                              );
+                            })()}
                             {s.clarificationBlocksNotes && (
                               <span
                                 style={flagBadgeBlocking}
@@ -2077,6 +2114,26 @@ const flagBadgeBlue: React.CSSProperties = {
   ...flagBadgeBase,
   background: '#e8eef4',
   color: '#1a3a5c',
+};
+
+// Turn hints ride next to the Needs correction / clarification badge: outlined
+// rather than filled so they read as a status, not another flag.
+const flagTurnBase: React.CSSProperties = {
+  ...flagBadgeBase,
+  fontWeight: 600,
+  background: 'transparent',
+};
+
+const flagTurnMine: React.CSSProperties = {
+  ...flagTurnBase,
+  border: '1px solid #f0b429',
+  color: '#8a4b00',
+};
+
+const flagTurnOther: React.CSSProperties = {
+  ...flagTurnBase,
+  border: '1px solid #d0d7de',
+  color: '#57606a',
 };
 
 const flagBadgeBlocking: React.CSSProperties = {

@@ -14,8 +14,8 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import type { Role } from './auth';
-import { clarificationBlocksNotes } from './clarificationShared';
-import type { NoteClarification, ClarificationKind } from './clarificationShared';
+import { clarificationBlocksNotes, clarificationTurn } from './clarificationShared';
+import type { NoteClarification, ClarificationKind, ClarificationTurn } from './clarificationShared';
 import { db } from './firebase';
 import { hasAnyAbnormalVital, type VitalRangesOverride } from './vitalRanges';
 import { hasCriticalVital } from './criticalVitals';
@@ -231,8 +231,10 @@ export {
   clarificationAwaitsNurse,
   clarificationAwaitsReviewer,
   clarificationBlocksNotes,
+  clarificationTurn,
+  clarificationTurnLabel,
 } from './clarificationShared';
-export type { ClarificationKind, ClarificationMessage, NoteClarification } from './clarificationShared';
+export type { ClarificationKind, ClarificationMessage, ClarificationTurn, NoteClarification } from './clarificationShared';
 
 export interface SubmissionSummary {
   id: string;
@@ -269,6 +271,8 @@ export interface SubmissionSummary {
   clarificationKind: ClarificationKind | null;
   /** True when the open correction blocks the author from new notes. */
   clarificationBlocksNotes: boolean;
+  /** Whose reply an open flag is waiting on ('nurse' | 'reviewer'); null when none is open. */
+  clarificationTurn: ClarificationTurn;
 }
 
 export type ArchiveScope = 'staff' | 'nurse';
@@ -457,6 +461,10 @@ function mapDocToSummary(
       ((data.clarification as { kind?: string } | undefined)?.kind as ClarificationKind | undefined) ?? null,
     clarificationBlocksNotes: clarificationBlocksNotes(
       (data.clarification as NoteClarification | undefined) ?? null,
+    ),
+    clarificationTurn: clarificationTurn(
+      (data.clarification as NoteClarification | undefined) ?? null,
+      (data.nurseId as string) || undefined,
     ),
   };
 }
