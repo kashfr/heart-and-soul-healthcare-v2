@@ -2,7 +2,16 @@ import 'server-only';
 import { FieldValue, type DocumentData, type DocumentReference } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
 import type { AuthedCaller } from './adminAuthGuard';
-import { buildMarAdminFields, decideNurseDoseGate, deriveInitials, parseValueOptions, regimenFieldsChanged } from './marShared';
+import {
+  buildMarAdminFields,
+  decideNurseDoseGate,
+  deriveInitials,
+  isSameDayAmendable,
+  parseValueOptions,
+  regimenFields,
+  regimenFieldsChanged,
+} from './marShared';
+import { agencyDayISO } from './clientDashboardShared';
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** Return `value` if it is an ISO YYYY-MM-DD date string, else `fallback`. Both
@@ -10,6 +19,20 @@ const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
  *  applyChangeInBatch), so a crafted change request can't store a garbage date
  *  on a real order and silently mis-schedule a med (dates are compared as raw
  *  strings by orderAppliesOn / orderOverlapsRange). */
+/** Has any dose been charted against one of these orders? Read against the
+ *  append-only administrations collection, so a voided (entered-in-error) dose
+ *  still counts: it was charted under those terms, and the terms stay. */
+async function ordersHaveDoses(orderIds: string[]): Promise<boolean> {
+  const ids = orderIds.filter(Boolean);
+  if (ids.length === 0) return false;
+  const snap = await adminDb()
+    .collection('marAdministrations')
+    .where('orderId', 'in', ids.slice(0, 10))
+    .limit(1)
+    .get();
+  return !snap.empty;
+}
+
 function isoOr(value: unknown, fallback: string): string {
   const s = String(value || '');
   return ISO_DATE_RE.test(s) ? s : fallback;
@@ -118,12 +141,16 @@ function correctionFields(p: ProposedMedShape) {
  * target order is missing OR belongs to a different patient (a guard so a
  * client can't act on another client's order by id).
  */
+/** What a change actually did to the record, so the UI can say so truthfully. */
+export type ChangeKind = 'add' | 'correction' | 'amendment' | 'regimen' | 'discontinue';
+
 async function applyChangeInBatch(
   reqRef: DocumentReference,
   data: DocumentData,
   caller: AuthedCaller,
   today: string,
-): Promise<boolean> {
+): Promise<false | { changeKind: ChangeKind }> {
+  let outcome: ChangeKind;
   const reviewStamp = { status: 'applied', appliedAt: FieldValue.serverTimestamp() };
   const patientId = String(data.patientId || '');
   const patientRef = patientId ? adminDb().collection('patients').doc(patientId) : null;
@@ -138,6 +165,7 @@ async function applyChangeInBatch(
     );
     if (patientRef) batch.set(patientRef, { requiresMar: true }, { merge: true });
     batch.update(reqRef, { ...reviewStamp, createdOrderId: orderRef.id });
+    outcome = 'add';
   } else if (data.type === 'change') {
     const oldId = String(data.targetOrderId || '');
     if (!oldId) return false;
@@ -186,6 +214,48 @@ async function applyChangeInBatch(
         // shows what the order said before the edit.
         previousValues: correctionFields(old as ProposedMedShape),
       });
+      outcome = 'correction';
+    } else if (
+      isSameDayAmendable({
+        createdDayISO: createdDayOf(old.createdAt),
+        today,
+        hasDoses: await ordersHaveDoses([oldId]),
+      })
+    ) {
+      // SAME-DAY AMENDMENT: the order was entered today and nothing has been
+      // charted against it, so the nurse is correcting her own entry rather
+      // than changing a regimen anyone was given. Rewrite the order in place.
+      // The request still records exactly which regimen fields moved and what
+      // they were before. See isSameDayAmendable for why both conditions are
+      // required.
+      batch.update(oldRef, {
+        ...regimenFields({
+          medName: p.medName,
+          dose: p.dose,
+          units: p.units,
+          route: p.route,
+          frequencyLabel: p.frequencyLabel,
+          scheduledTimes: p.scheduledTimes,
+          isPRN: p.isPRN,
+          valueLabel: p.valueLabel,
+          valueUnit: p.valueUnit,
+        }),
+        ...correctionFields(p),
+        lastEditedAt: FieldValue.serverTimestamp(),
+        lastEditedBy: caller.uid,
+        lastEditedByName: caller.profile.displayName || '',
+      });
+      batch.update(reqRef, {
+        ...reviewStamp,
+        changeKind: 'amendment',
+        regimenFieldsChanged: regimenChanges,
+        updatedOrderId: oldId,
+        previousValues: {
+          ...regimenFields(old as ProposedMedShape),
+          ...correctionFields(old as ProposedMedShape),
+        },
+      });
+      outcome = 'amendment';
     } else {
       // REGIMEN CHANGE: the terms of administration moved, so the old order is
       // discontinued and a replacement starts on the effective date. Each
@@ -217,6 +287,7 @@ async function applyChangeInBatch(
         regimenFieldsChanged: regimenChanges,
         createdOrderId: newRef.id,
       });
+      outcome = 'regimen';
     }
   } else if (data.type === 'discontinue') {
     const orderId = String(data.targetOrderId || '');
@@ -238,12 +309,22 @@ async function applyChangeInBatch(
       discontinueReason: String(data.reason || '').trim(),
     });
     batch.update(reqRef, reviewStamp);
+    outcome = 'discontinue';
   } else {
     return false;
   }
 
   await batch.commit();
-  return true;
+  return { changeKind: outcome };
+}
+
+/** Agency calendar day an order was created on, from its Firestore Timestamp. */
+function createdDayOf(createdAt: unknown): string | null {
+  const d =
+    createdAt && typeof (createdAt as { toDate?: () => Date }).toDate === 'function'
+      ? (createdAt as { toDate: () => Date }).toDate()
+      : null;
+  return d ? agencyDayISO(d) : null;
 }
 
 /**
@@ -316,6 +397,7 @@ export interface StandaloneChangeResult {
   ok: boolean;
   reqId?: string;
   createdOrderId?: string;
+  changeKind?: ChangeKind;
   reason?: StandaloneChangeFailure;
   message?: string;
 }
@@ -413,7 +495,15 @@ export async function applyStandaloneChange(
     return { ok: false, reason: 'error', message: 'Failed to apply the change. Please try again.' };
   }
   const fresh = await reqRef.get();
-  return { ok: true, reqId: reqRef.id, createdOrderId: String((fresh.data() || {}).createdOrderId || '') };
+  const f = fresh.data() || {};
+  return {
+    ok: true,
+    reqId: reqRef.id,
+    createdOrderId: String(f.createdOrderId || ''),
+    changeKind:
+      (f.changeKind as ChangeKind | undefined) ??
+      (f.type === 'add' ? 'add' : f.type === 'discontinue' ? 'discontinue' : undefined),
+  };
 }
 
 // ---------------------------------------------------------------------------

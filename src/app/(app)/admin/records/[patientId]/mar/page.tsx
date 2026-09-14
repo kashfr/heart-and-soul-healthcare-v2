@@ -772,6 +772,7 @@ export default function MonthlyMarPage() {
           patientId={patientId}
           patientName={patient.name}
           activeOrders={orders.filter((o) => o.status === 'active')}
+          orderIdsWithDoses={new Set(admins.map((a) => a.orderId))}
           onClose={() => setManageMeds(false)}
           onSaved={(summary) => {
             setToast(summary);

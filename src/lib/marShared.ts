@@ -312,6 +312,66 @@ export function describeFrequency(o: {
   return normText(o.frequencyLabel);
 }
 
+/**
+ * The regimen half of an order, as a plain snapshot. The counterpart of the
+ * server's correctionFields(): together they are everything a change request
+ * must remember about an order to be able to put it back.
+ */
+export function regimenFields(o: RegimenComparable): {
+  medName: string;
+  dose: string;
+  units: string;
+  route: string;
+  frequencyLabel: string;
+  scheduledTimes: string[];
+  isPRN: boolean;
+  valueLabel: string;
+  valueUnit: string;
+} {
+  const isPRN = o.isPRN === true;
+  return {
+    medName: String(o.medName || ''),
+    dose: String(o.dose || ''),
+    units: String(o.units || ''),
+    route: String(o.route || ''),
+    frequencyLabel: String(o.frequencyLabel || ''),
+    scheduledTimes: isPRN ? [] : Array.from(new Set((o.scheduledTimes || []).filter(Boolean))).sort(),
+    isPRN,
+    valueLabel: String(o.valueLabel || ''),
+    valueUnit: String(o.valueUnit || ''),
+  };
+}
+
+/**
+ * SAME-DAY AMENDMENT. A regimen change normally discontinues the order and
+ * starts a replacement, so each charted dose stays tied to the terms it was
+ * given under. That is the right record when the terms genuinely moved. It is
+ * the wrong record when the nurse is still standing at the desk fixing her own
+ * entry: an order entered at 3:11 with the wrong route and corrected at 3:12
+ * would otherwise read, forever, as a medication that was discontinued.
+ *
+ * So a regimen change AMENDS the order in place when the order was entered
+ * today (agency calendar day) and nothing has been charted against it yet. Both
+ * conditions are load-bearing. "Today" is the boundary a surveyor will accept
+ * without a second question; and once a dose exists, the terms it was given
+ * under are part of that dose's record and can no longer be rewritten.
+ *
+ * The change request is still logged either way. What changes is only whether
+ * the MAR shows one corrected row or a stopped row and a new one.
+ */
+export function isSameDayAmendable(args: {
+  /** Agency-day the order was created on ('YYYY-MM-DD'), or null if unknown. */
+  createdDayISO: string | null;
+  /** Agency-day the change is being made on. */
+  today: string;
+  /** Whether any administration has been charted against the order. */
+  hasDoses: boolean;
+}): boolean {
+  if (args.hasDoses) return false;
+  if (!args.createdDayISO || !/^\d{4}-\d{2}-\d{2}$/.test(args.createdDayISO)) return false;
+  return args.createdDayISO === args.today;
+}
+
 /** Whether a proposed change edits documentation only, leaving the order (and
  *  the MAR row) intact. */
 export function isCorrectionOnly(current: RegimenComparable, proposed: RegimenComparable): boolean {
