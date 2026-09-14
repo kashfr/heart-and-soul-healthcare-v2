@@ -14,6 +14,8 @@ import {
   physicianAttributionPending,
   physicianOrderStale,
   regimenFieldsChanged,
+  regimenFields,
+  isSameDayAmendable,
   isCorrectionOnly,
   describeRegimenChanges,
   describeFrequency,
@@ -727,5 +729,62 @@ describe('decideNurseDoseGate', () => {
 
   it('same-date note with unparseable times fails open -> allow', () => {
     expect(decideNurseDoseGate('22:00', [{ start: '08:45', end: 'garbage', endsNextDay: false }])).toBe('allow');
+  });
+});
+
+describe('isSameDayAmendable', () => {
+  const today = '2026-09-14';
+
+  it('amends in place when the order was entered today and nothing was charted', () => {
+    expect(isSameDayAmendable({ createdDayISO: '2026-09-14', today, hasDoses: false })).toBe(true);
+  });
+
+  it('never amends once a dose exists, even on the same day', () => {
+    // The dose was given under the entered terms; those terms are now part of its record.
+    expect(isSameDayAmendable({ createdDayISO: '2026-09-14', today, hasDoses: true })).toBe(false);
+  });
+
+  it('falls back to discontinue-and-replace for anything entered before today', () => {
+    expect(isSameDayAmendable({ createdDayISO: '2026-09-13', today, hasDoses: false })).toBe(false);
+    expect(isSameDayAmendable({ createdDayISO: '2026-07-24', today, hasDoses: false })).toBe(false);
+  });
+
+  it('treats an unknown or malformed creation day as not amendable', () => {
+    expect(isSameDayAmendable({ createdDayISO: null, today, hasDoses: false })).toBe(false);
+    expect(isSameDayAmendable({ createdDayISO: '09/14/2026', today, hasDoses: false })).toBe(false);
+  });
+});
+
+describe('regimenFields', () => {
+  it('snapshots exactly the regimen half, normalizing times and blanking them for PRN', () => {
+    expect(
+      regimenFields({
+        medName: 'Isosource 1.5 Cal',
+        dose: '200',
+        units: 'mL',
+        route: 'PO (by mouth)',
+        frequencyLabel: 'Every 5 hours',
+        scheduledTimes: ['13:00', '08:00', '08:00', ''],
+        isPRN: false,
+        valueLabel: '',
+        valueUnit: '',
+      }),
+    ).toEqual({
+      medName: 'Isosource 1.5 Cal',
+      dose: '200',
+      units: 'mL',
+      route: 'PO (by mouth)',
+      frequencyLabel: 'Every 5 hours',
+      scheduledTimes: ['08:00', '13:00'],
+      isPRN: false,
+      valueLabel: '',
+      valueUnit: '',
+    });
+    expect(regimenFields({ isPRN: true, scheduledTimes: ['08:00'] }).scheduledTimes).toEqual([]);
+  });
+
+  it('round-trips with regimenFieldsChanged: a snapshot of an order changes nothing', () => {
+    const order = { medName: 'Keppra', dose: '10', units: 'mL', route: 'G-tube', frequencyLabel: 'BID', scheduledTimes: ['08:00', '20:00'], isPRN: false };
+    expect(regimenFieldsChanged(order, regimenFields(order))).toEqual([]);
   });
 });

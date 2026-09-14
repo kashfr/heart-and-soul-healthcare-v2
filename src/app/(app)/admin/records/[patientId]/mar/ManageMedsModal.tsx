@@ -13,6 +13,7 @@ import {
 } from '@/lib/marShared';
 import { DEFAULT_ML_VALUE_OPTIONS, parseValueOptions } from '@/lib/mar';
 import type { MarOrder, MarChangeRequestType } from '@/lib/mar';
+import { agencyDayISO } from '@/lib/clientDashboardShared';
 
 const ROUTES = ['PO (by mouth)', 'SL (sublingual)', 'Topical', 'Inhalation', 'Subcutaneous', 'IM', 'IV', 'Rectal', 'G-tube', 'J-tube', 'NG tube', 'Ophthalmic', 'Otic', 'Nasal'];
 const UNITS = ['mg', 'mcg', 'g', 'mL', 'units', 'mEq', 'tablet(s)', 'capsule(s)', 'puff(s)', 'drop(s)', 'patch(es)', 'spray(s)', '%'];
@@ -29,6 +30,9 @@ interface Props {
   patientId: string;
   patientName: string;
   activeOrders: MarOrder[];
+  /** Orders that already have at least one charted dose (drives the same-day
+   *  amendment notice; the server re-checks before writing). */
+  orderIdsWithDoses: Set<string>;
   onClose: () => void;
   onSaved: (summary: string) => void;
 }
@@ -42,7 +46,7 @@ interface Props {
  * recorded for audit and that's it. No note, no dose-given shortcut (nurses
  * chart doses by clicking the grid cell).
  */
-export default function ManageMedsModal({ patientId, patientName, activeOrders, onClose, onSaved }: Props) {
+export default function ManageMedsModal({ patientId, patientName, activeOrders, orderIdsWithDoses, onClose, onSaved }: Props) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -100,7 +104,17 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
           scheduledTimes: times.filter(Boolean),
         })
       : [];
-  const startsNewRegimen = pendingRegimenChanges.length > 0;
+  const regimenMoved = pendingRegimenChanges.length > 0;
+  // Same-day amendment (mirrors isSameDayAmendable on the server): an order
+  // entered today with nothing charted against it is corrected in place, so a
+  // wrong route fixed a minute later never reads as a discontinued med.
+  const createdToday = (() => {
+    const c = changeTarget?.createdAt as { toDate?: () => Date } | undefined;
+    return !!c && typeof c.toDate === 'function' && agencyDayISO(c.toDate()) === agencyDayISO(new Date());
+  })();
+  const amendsInPlace =
+    regimenMoved && createdToday && !!changeTarget?.id && !orderIdsWithDoses.has(changeTarget.id);
+  const startsNewRegimen = regimenMoved && !amendsInPlace;
 
   const setTimeAt = (i: number, v: string) => setTimes((t) => t.map((x, idx) => (idx === i ? v : x)));
   const addTime = () => setTimes((t) => [...t, '']);
@@ -213,8 +227,10 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
+      // The server decides what the change actually did (amend in place vs
+      // discontinue-and-replace); the summary reports that, not our guess.
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
         setError(data?.error || 'Failed to apply the change. Please try again.');
         setSubmitting(false);
         return;
@@ -223,9 +239,11 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
         mode === 'add'
           ? `Added ${medName.trim()}. It's live on the MAR now.`
           : mode === 'change'
-            ? startsNewRegimen
-              ? `Changed ${target?.medName || 'medication'}. The previous order was discontinued and the new one is live on the MAR.`
-              : `Updated the details on ${target?.medName || 'medication'}. The order is unchanged on the MAR.`
+            ? data?.changeKind === 'amendment'
+              ? `Corrected today's entry for ${target?.medName || 'medication'}. It was updated in place; nothing was discontinued.`
+              : data?.changeKind === 'regimen' || (data?.changeKind == null && startsNewRegimen)
+                ? `Changed ${target?.medName || 'medication'}. The previous order was discontinued and the new one is live on the MAR.`
+                : `Updated the details on ${target?.medName || 'medication'}. The order is unchanged on the MAR.`
             : `Discontinued ${target?.medName || 'medication'}.`;
       onSaved(summary);
       onClose();
@@ -286,7 +304,13 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
                 )}
                 {mode === 'change' && changeTarget && (
                   <p style={startsNewRegimen ? regimenNoticeStyle : correctionNoticeStyle}>
-                    {startsNewRegimen ? (
+                    {amendsInPlace ? (
+                      <>
+                        <strong>This corrects today&apos;s entry in place.</strong> This order was entered today and
+                        nothing has been charted against it yet, so your change to the{' '}
+                        {describeRegimenChanges(pendingRegimenChanges)} updates it directly. Nothing is discontinued.
+                      </>
+                    ) : startsNewRegimen ? (
                       <>
                         <strong>This starts a new order.</strong> You changed the{' '}
                         {describeRegimenChanges(pendingRegimenChanges)}, so the current order is discontinued on the
