@@ -14,6 +14,7 @@ import {
   Wrench,
   Settings,
   Handshake,
+  ArrowLeftRight,
   Menu,
   X,
   PanelLeftClose,
@@ -29,6 +30,7 @@ import CorrectionsBlockGate from './CorrectionsBlockGate';
 import type { Role } from '@/lib/auth';
 import { subscribePendingDupCount } from '@/lib/drafts';
 import { subscribeMyOpenClarifications, subscribeOpenFlagsAwaitingReviewer } from '@/lib/clarifications';
+import { subscribePendingHandoffs } from '@/lib/handoffs';
 
 const COLLAPSE_KEY = 'app-shell-collapsed';
 
@@ -55,6 +57,10 @@ const NAV: NavItem[] = [
   // gated to the clinical roles (and enforced by the route's own AuthGuard,
   // not just hidden here). Revisit if a VA ever needs note access.
   { href: '/admin/submissions', label: 'Submissions', icon: <ClipboardList size={18} />, allow: ['admin', 'supervisor', 'nurse'] },
+  // Nurse-to-nurse cross communication: a nurse's inbox of unacknowledged
+  // posts (badge = how many are waiting on her); staff see every post with
+  // its acknowledgment status.
+  { href: '/admin/handoffs', label: 'Handoffs', icon: <ArrowLeftRight size={18} />, allow: ['admin', 'supervisor', 'nurse'] },
   { href: '/admin/in-progress', label: 'In Progress', icon: <FileClock size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/users', label: 'Staff & Roles', icon: <UserCog size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/maintenance/link-notes', label: 'Maintenance', icon: <Wrench size={18} />, allow: ['admin'] },
@@ -174,6 +180,18 @@ export function AppShell({ children }: { children: ReactNode }) {
       setAwaitingReview(0);
     };
   }, [role]);
+
+  // Live count of handoffs still waiting on the signed-in nurse (badge on
+  // the Handoffs nav item). Nurses only: staff are never recipients.
+  const [pendingHandoffs, setPendingHandoffs] = useState(0);
+  useEffect(() => {
+    if (role !== 'nurse' || !effectiveUid) return;
+    const unsub = subscribePendingHandoffs(effectiveUid, (items) => setPendingHandoffs(items.length));
+    return () => {
+      unsub();
+      setPendingHandoffs(0);
+    };
+  }, [role, effectiveUid]);
 
   // Close the mobile drawer whenever the route changes.
   useEffect(() => {
@@ -297,7 +315,9 @@ export function AppShell({ children }: { children: ReactNode }) {
               .filter(Boolean)
               .join(' ');
             const badgeCount =
-              item.href === '/admin/in-progress'
+              item.href === '/admin/handoffs'
+                ? pendingHandoffs
+                : item.href === '/admin/in-progress'
                 ? pendingDup
                 : item.href === '/admin/submissions'
                   ? role === 'nurse'
@@ -305,7 +325,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                     : awaitingReview
                   : 0;
             const badgeTitle =
-              item.href === '/admin/in-progress'
+              item.href === '/admin/handoffs'
+                ? `${badgeCount} handoff${badgeCount === 1 ? '' : 's'} waiting for your acknowledgment`
+                : item.href === '/admin/in-progress'
                 ? `${badgeCount} duplicate-note request${badgeCount === 1 ? '' : 's'} awaiting approval`
                 : role === 'nurse'
                   ? `${badgeCount} note${badgeCount === 1 ? '' : 's'} needing your clarification`

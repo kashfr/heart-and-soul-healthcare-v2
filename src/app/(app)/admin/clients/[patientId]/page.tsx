@@ -29,6 +29,7 @@ import { getVisitsForPatient, type PatientVisit } from '@/lib/patientVisits';
 import DocumentsSection from './DocumentsSection';
 import VisitsSection from './VisitsSection';
 import QuickNotesSection from './QuickNotesSection';
+import HandoffBoardSection from './HandoffBoardSection';
 import SeizureLogSection from './SeizureLogSection';
 import CarePlanSection from './CarePlanSection';
 import { physicianAttributionPending, physicianOrderStale } from '@/lib/marShared';
@@ -598,6 +599,18 @@ function ClientDashboardInner() {
                 actor={{ uid: user?.uid || '', name: profile?.displayName || user?.email || '' }}
                 onToast={showToast}
               />
+              {/* Handoff board: nurse-to-nurse messages on this client, with
+                  read receipts. Posting is for staff or an assigned nurse (the
+                  API re-checks); acknowledging is the real user's own action. */}
+              {realRole !== 'va' && (
+              <HandoffBoardSection
+                key={`ho-${patientId}`}
+                patientId={patientId}
+                actor={{ uid: isViewingAs ? '' : user?.uid || '', name: profile?.displayName || user?.email || '' }}
+                canPost={!isViewingAs && canUploadDocs}
+                onToast={showToast}
+              />
+              )}
               {/* Seizure log: only for clients flagged hasSeizureDisorder. */}
               {patient?.hasSeizureDisorder && (
                 <SeizureLogSection key={`sz-${patientId}`} patientId={patientId} patientName={patient.name} patientDob={patient.dob || ''} />

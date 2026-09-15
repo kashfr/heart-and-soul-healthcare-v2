@@ -170,6 +170,10 @@ export default function FormPageSeven({ formRef, register, watch, setValue, cont
               rows={4}
               placeholder="Document continuing care needs, precautions, patient progress, and recommendations"
             />
+            <span style={{ fontSize: 12, color: '#5c6b7a', lineHeight: 1.45, marginTop: 4 }}>
+              When you submit, this plan is posted to the client&apos;s handoff board and the other nurses on the
+              care team are notified to read and acknowledge it.
+            </span>
           </div>
         </div>
       </div>

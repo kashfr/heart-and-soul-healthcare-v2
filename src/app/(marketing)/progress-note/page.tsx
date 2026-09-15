@@ -45,6 +45,8 @@ import {
 import { classifyDoseAgainstShift, computeRequiredDoseGaps, resolveCurrentAdministrations } from '@/lib/marShared';
 import { seizureGaps } from '@/lib/seizureShared';
 import { writeSeizureEvents } from '@/lib/seizures';
+import { postHandoff } from '@/lib/handoffs';
+import { isSubstantiveHandoffText } from '@/lib/handoffShared';
 import {
   getAllMarAdmin,
   clearMarAdmin,
@@ -2073,6 +2075,28 @@ function ProgressNotePageInner() {
               });
             } catch (err) {
               console.error('Failed to write seizure events:', err);
+            }
+          }
+        }
+
+        // Handoff: the next-shift plan becomes a post on the client's handoff
+        // board, addressed to every other nurse on the care team (computed
+        // server-side, idempotent per note). New notes only — an amendment
+        // must not re-ring every colleague. Best-effort like the writes above.
+        if (!isEditMode) {
+          const hoPid = String(getValues('patientId') || '').trim();
+          const plan = String(getValues('q60_nextShiftPlan') || '');
+          if (hoPid && isSubstantiveHandoffText(plan)) {
+            try {
+              await postHandoff({
+                patientId: hoPid,
+                text: plan,
+                source: 'note',
+                sourceNoteId: docId,
+                shiftDate: String(submission.q6_dateofService || ''),
+              });
+            } catch (err) {
+              console.error('Failed to post handoff from note:', err);
             }
           }
         }
