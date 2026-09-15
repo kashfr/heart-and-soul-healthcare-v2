@@ -266,7 +266,7 @@ function ConsentForm() {
               </p>
               <div className={styles.grid3}>
                 <div className="form-group">
-                  <label className="form-label" htmlFor="careCoordinatorName">Care Coordinator / Case Manager</label>
+                  <label className="form-label" htmlFor="careCoordinatorName">Care Coordinator</label>
                   <input id="careCoordinatorName" name="careCoordinatorName" className="form-input" value={form.careCoordinatorName} onChange={onText} />
                 </div>
                 <div className="form-group">

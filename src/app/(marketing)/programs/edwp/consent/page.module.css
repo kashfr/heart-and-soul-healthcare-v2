@@ -97,6 +97,24 @@
   gap: 0 var(--space-5);
 }
 
+/* Inputs in a row line up along the bottom even when one label wraps to a
+   second line: the label takes whatever height it needs at the top, the
+   control (and any error under it) is pushed to the bottom of the cell. */
+.grid2 > :global(.form-group),
+.grid3 > :global(.form-group) {
+  display: flex;
+  flex-direction: column;
+}
+
+.grid2 > :global(.form-group) > :global(.form-input),
+.grid3 > :global(.form-group) > :global(.form-input) {
+  margin-top: auto;
+  /* Same rendered height for text and date inputs: a native date control
+     runs a couple of pixels taller, which shows once inputs bottom-align. */
+  height: 3rem;
+  line-height: 1.5;
+}
+
 .optional {
   font-weight: 400;
   color: var(--color-gray-500);
