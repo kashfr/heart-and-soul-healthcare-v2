@@ -539,11 +539,6 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Seizure log: one record per seizure, written by the progress-note
-    // submit (client SDK) for the nurse's own note. Append-only like MAR
-    // administrations; `amends` is reserved for a future superseding-record
-    // correction flow. Read access mirrors quickNotes (staff, or an assigned
-    // nurse for that client).
     // Handoffs: nurse-to-nurse cross communication on a client. Created ONLY
     // server-side (POST /api/handoffs computes the recipient list from the
     // care team and writes the bells). The post is immutable; the single
@@ -574,6 +569,11 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Seizure log: one record per seizure, written by the progress-note
+    // submit (client SDK) for the nurse's own note. Append-only like MAR
+    // administrations; `amends` is reserved for a future superseding-record
+    // correction flow. Read access mirrors quickNotes (staff, or an assigned
+    // nurse for that client).
     match /seizureEvents/{eventId} {
       allow read: if isStaff()
         || (isNurse()
