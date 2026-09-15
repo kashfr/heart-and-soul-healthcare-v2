@@ -192,6 +192,7 @@ export default function EDWPPage() {
         goalImage="/images/edwp-goal.png"
         goalImageAlt="Senior staying safely at home with CCSP and SOURCE services through the EDWP program in Georgia"
         imageAspectRatio="1/1"
+        extraCta={{ href: '/programs/edwp/consent', label: 'Sign the Consent Form' }}
       />
     </>
   );

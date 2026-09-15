@@ -9,6 +9,7 @@ import {
   ClipboardList,
   FileClock,
   UserCog,
+  FileSignature,
   FileText,
   Wrench,
   Settings,
@@ -60,6 +61,7 @@ const NAV: NavItem[] = [
   { href: '/admin/settings', label: 'Settings', icon: <Settings size={18} />, allow: ['admin'] },
   { href: '/admin/referrals', label: 'Referrals', icon: <FileText size={18} />, allow: ['admin', 'va'] },
   { href: '/admin/agencies', label: 'Agencies', icon: <Handshake size={18} />, allow: ['admin', 'va'] },
+  { href: '/admin/edwp-consents', label: 'EDWP Consents', icon: <FileSignature size={18} />, allow: ['admin', 'va'] },
 ];
 
 const VIEW_AS_ROLE_LABELS: Record<Role, string> = {
