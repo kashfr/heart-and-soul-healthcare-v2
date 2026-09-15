@@ -19,3 +19,14 @@ export function buildShareUrl(token: string): string {
  * sent then serves the current list. Public state information; no PHI.
  */
 export const PROVIDER_LIST_URL = `${SHARE_SITE_URL}/docs/gapp-provider-list.pdf`;
+
+/**
+ * Public EDWP consent form, with the invite token that ties a signed form back
+ * to the staff member who sent it. Production origin for the same reason as
+ * share links: the email must open from anywhere, and the invite lives in the
+ * production database.
+ */
+export function buildEdwpConsentUrl(inviteToken?: string): string {
+  const base = `${SHARE_SITE_URL}/programs/edwp/consent`;
+  return inviteToken ? `${base}?invite=${encodeURIComponent(inviteToken)}` : base;
+}

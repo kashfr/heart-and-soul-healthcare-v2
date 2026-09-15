@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { LucideIcon, ArrowRight, Phone, CheckCircle, ExternalLink } from 'lucide-react';
+import { LucideIcon, ArrowRight, Phone, CheckCircle, ExternalLink, FileSignature } from 'lucide-react';
 import { ScrollReveal, StaggerContainer, StaggerItem } from '@/components/animations';
 import styles from './ProgramPageTemplate.module.css';
 
@@ -36,6 +36,8 @@ interface ProgramPageTemplateProps {
   goalImageAlt?: string;
   imageAspectRatio?: string;
   goalImage?: string;
+  /** Optional third CTA button, e.g. a program-specific form to complete online. */
+  extraCta?: { href: string; label: string };
 }
 
 export default function ProgramPageTemplate({
@@ -48,6 +50,7 @@ export default function ProgramPageTemplate({
   services,
   faqs,
   officialResources,
+  extraCta,
   accentColor = 'teal',
   populationImage,
   populationImageAlt,
@@ -232,6 +235,11 @@ export default function ProgramPageTemplate({
               <Link href="/contact" className="btn btn-secondary btn-lg">
                 <Phone size={20} /> Contact Us
               </Link>
+              {extraCta && (
+                <Link href={extraCta.href} className="btn btn-secondary btn-lg">
+                  <FileSignature size={20} /> {extraCta.label}
+                </Link>
+              )}
             </div>
           </ScrollReveal>
         </div>

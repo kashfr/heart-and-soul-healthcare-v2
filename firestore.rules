@@ -551,6 +551,16 @@ service cloud.firestore {
       allow create, delete: if false;
     }
 
+    // EDWP consent forms and the "please sign" invites staff send. Written by
+    // the public intake route and read by the admin routes, all through the
+    // Admin SDK; the signature image and Medicaid ID never go browser-to-DB.
+    match /edwpConsents/{consentId} {
+      allow read, write: if false;
+    }
+    match /edwpConsentInvites/{inviteId} {
+      allow read, write: if false;
+    }
+
     // Default deny
     match /{document=**} {
       allow read, write: if false;
