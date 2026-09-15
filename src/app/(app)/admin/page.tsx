@@ -7,6 +7,7 @@ import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { loadDraft, subscribePendingDupCount, type NoteDraft } from '@/lib/drafts';
 import { subscribeMyOpenClarifications } from '@/lib/clarifications';
 import type { Role } from '@/lib/auth';
+import HandoffInbox, { HandoffInboxTitle } from '@/components/HandoffInbox';
 
 interface Card {
   href: string;
@@ -76,6 +77,7 @@ export default function AdminDashboardPage() {
   const [myDraft, setMyDraft] = useState<NoteDraft | null>(null);
   const [pendingDup, setPendingDup] = useState(0);
   const [openClarifications, setOpenClarifications] = useState(0);
+  const [pendingHandoffs, setPendingHandoffs] = useState(0);
 
   // Pending duplicate-note approvals. Keyed to the EFFECTIVE role: a
   // supervisor preview shows the banner the supervisor sees (the subscription
@@ -203,6 +205,18 @@ export default function AdminDashboardPage() {
           </Link>
         )}
 
+        {/* Handoff inbox: the first thing a nurse sees after signing in.
+            Hidden entirely when nothing is waiting (compact mode). */}
+        {role === 'nurse' && effectiveUid && (
+          <section style={{ ...handoffPanelStyle, display: pendingHandoffs > 0 ? 'block' : 'none' }}>
+            <div style={handoffPanelTitleStyle}>
+              <HandoffInboxTitle count={pendingHandoffs} />
+              <Link href="/admin/handoffs" style={handoffAllLinkStyle}>All handoffs</Link>
+            </div>
+            <HandoffInbox uid={effectiveUid} readOnly={isViewingAs} compact onCountChange={setPendingHandoffs} />
+          </section>
+        )}
+
         <section style={gridStyle}>
           {visibleCards.map((c) => (
             <NavCard key={c.href + c.title} {...c} />
@@ -306,6 +320,31 @@ const clarificationBannerStyle: React.CSSProperties = {
   borderRadius: 10,
   padding: '14px 18px',
   marginBottom: 16,
+};
+
+const handoffPanelStyle: React.CSSProperties = {
+  background: 'white',
+  border: '1px solid #dbe3ec',
+  borderRadius: 12,
+  padding: '16px 18px',
+  marginBottom: 20,
+};
+
+const handoffPanelTitleStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 10,
+  fontWeight: 700,
+  fontSize: 15,
+  color: '#1a3a5c',
+  marginBottom: 12,
+};
+
+const handoffAllLinkStyle: React.CSSProperties = {
+  fontSize: 12.5,
+  fontWeight: 700,
+  color: '#1a3a5c',
 };
 
 const cardStyle: React.CSSProperties = {

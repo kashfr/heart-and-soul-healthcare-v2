@@ -544,6 +544,36 @@ service cloud.firestore {
     // administrations; `amends` is reserved for a future superseding-record
     // correction flow. Read access mirrors quickNotes (staff, or an assigned
     // nurse for that client).
+    // Handoffs: nurse-to-nurse cross communication on a client. Created ONLY
+    // server-side (POST /api/handoffs computes the recipient list from the
+    // care team and writes the bells). The post is immutable; the single
+    // permitted client write is a recipient acknowledging her OWN copy —
+    // remove exactly herself from pendingIds and stamp acks.{uid} with the
+    // server time, nothing else. That acknowledgment is the read receipt
+    // that makes this a clinical handoff rather than a chat message.
+    match /handoffs/{handoffId} {
+      // The inbox query filters on pendingIds and the history query on
+      // recipientIds; each needs its OWN clause here because the rules engine
+      // proves list queries from the query's constraints alone (it can't know
+      // pendingIds is a subset of recipientIds).
+      allow read: if isStaff()
+        || (isNurse()
+            && (request.auth.uid in resource.data.pendingIds
+                || request.auth.uid in resource.data.recipientIds
+                || resource.data.authorId == request.auth.uid
+                || (resource.data.get('patientId', null) != null
+                    && get(/databases/$(database)/documents/patients/$(resource.data.patientId))
+                         .data.get('assignedNurseIds', []).hasAny([request.auth.uid]))));
+      allow create: if false;
+      allow update: if hasActiveProfile()
+        && resource.data.get('pendingIds', []).hasAny([request.auth.uid])
+        && incomingData().diff(resource.data).affectedKeys().hasOnly(['pendingIds', 'acks'])
+        && incomingData().pendingIds == resource.data.pendingIds.removeAll([request.auth.uid])
+        && incomingData().acks.diff(resource.data.get('acks', {})).affectedKeys() == [request.auth.uid].toSet()
+        && incomingData().acks[request.auth.uid] == request.time;
+      allow delete: if false;
+    }
+
     match /seizureEvents/{eventId} {
       allow read: if isStaff()
         || (isNurse()
