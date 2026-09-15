@@ -8,6 +8,7 @@ import {
   StyleSheet,
 } from '@react-pdf/renderer';
 import { getVitalRanges, getAgeGroupLabel, type VitalRangesOverride } from '@/lib/vitalRanges';
+import { formatDuration, readSeizureEntries, seizureDurationSeconds, sortSeizuresByStart } from '../seizureShared';
 import { parseCareTaskCharting } from '@/lib/careTaskCharting';
 
 /**
@@ -692,6 +693,47 @@ function TextBlock({ label, value, fieldKey }: { label: string; value: string | 
   );
 }
 
+/** Seizure log entries (q69_seizure{n}_*), one numbered block per seizure,
+ *  chronological. Prints nothing for notes that used the legacy single block
+ *  (those fields print through the Neurological field list above). */
+function SeizureLogBlock({ data }: { data: ProgressNoteFormData }) {
+  if (String(data.q30_seizureEvent || '') !== 'Yes') return null;
+  const entries = sortSeizuresByStart(readSeizureEntries(data as unknown as Record<string, unknown>));
+  if (entries.length === 0) return null;
+  const line = (label: string, value: string) =>
+    hasValue(value) ? (
+      <View style={s.systemFieldRow}>
+        <Text style={s.systemFieldLabel}>{label}:</Text>
+        <View style={s.fieldValueWrap}>
+          <Text style={s.systemFieldValue}>{value}</Text>
+        </View>
+      </View>
+    ) : null;
+  return (
+    <View>
+      <Text style={[s.systemFieldLabel, { marginTop: 4, fontFamily: 'Helvetica-Bold' }]}>
+        Seizure log: {entries.length} seizure{entries.length === 1 ? '' : 's'} this shift
+      </Text>
+      {entries.map((e, i) => (
+        <View key={e.index} style={{ marginLeft: 8, marginTop: 3 }} wrap={false}>
+          <Text style={[s.systemFieldLabel, { fontFamily: 'Helvetica-Bold' }]}>Seizure {i + 1}</Text>
+          {line('Time', `${e.startTime || '?'}${e.endTime ? ` to ${e.endTime}` : ''}${seizureDurationSeconds(e) !== null ? ` (${formatDuration(seizureDurationSeconds(e))})` : ''}`)}
+          {line('Type', e.seizureType)}
+          {line('Witnessed by', e.witnessedBy)}
+          {line('Observed', e.observations)}
+          {line('Interventions', e.interventions)}
+          {line('Rescue medication', e.rescueMed ? `${e.rescueMed}${e.rescueMedTime ? ` at ${e.rescueMedTime}` : ''}` : '')}
+          {line('Emergency response', e.response)}
+          {line('After the seizure', `${e.postState}${e.minutesToBaseline ? ` (${e.minutesToBaseline} min to baseline)` : ''}`.trim())}
+          {line('Physician notified', e.physicianNotified ? `${e.physicianNotified}${e.physicianNotifiedTime ? ` at ${e.physicianNotifiedTime}` : ''}` : '')}
+          {line('Family notified', e.familyNotified)}
+          {line('Notes', e.notes)}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function SystemField({ label, value, fieldKey }: { label: string; value: string | undefined; fieldKey?: string }) {
   if (!hasValue(value)) return null;
   return (
@@ -1181,6 +1223,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
                   {sys.fields.map((f) => (
                     <SystemField key={f.key} fieldKey={f.key} label={f.label} value={data[f.key]} />
                   ))}
+                  {sys.name === 'Neurological' && <SeizureLogBlock data={data} />}
                 </View>
               );
             })}

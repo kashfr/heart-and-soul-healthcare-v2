@@ -539,6 +539,33 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Seizure log: one record per seizure, written by the progress-note
+    // submit (client SDK) for the nurse's own note. Append-only like MAR
+    // administrations; `amends` is reserved for a future superseding-record
+    // correction flow. Read access mirrors quickNotes (staff, or an assigned
+    // nurse for that client).
+    match /seizureEvents/{eventId} {
+      allow read: if isStaff()
+        || (isNurse()
+            && resource.data.get('patientId', null) != null
+            && get(/databases/$(database)/documents/patients/$(resource.data.patientId))
+                 .data.get('assignedNurseIds', []).hasAny([request.auth.uid]));
+      allow create: if (isStaff()
+              || (isNurse()
+                  && get(/databases/$(database)/documents/patients/$(incomingData().patientId))
+                       .data.get('assignedNurseIds', []).hasAny([request.auth.uid])))
+        && incomingData().patientId is string && incomingData().patientId.size() > 0
+        && incomingData().date is string && incomingData().date.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        && incomingData().sourceNoteId is string && incomingData().sourceNoteId.size() > 0
+        && incomingData().documentedBy == request.auth.uid
+        && incomingData().documentedByName is string && incomingData().documentedByName.size() > 0
+        && incomingData().startTime is string
+        && incomingData().seizureType is string
+        && incomingData().createdAt == request.time;
+      allow update: if false;
+      allow delete: if false;
+    }
+
     // In-portal notifications (the bell). Written ONLY server-side (Admin
     // SDK: visit assign/cancel/restore + the day-of reminder cron), so client
     // create/delete are denied. A user reads only her own and may flip ONLY

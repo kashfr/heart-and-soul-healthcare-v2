@@ -29,6 +29,7 @@ import { getVisitsForPatient, type PatientVisit } from '@/lib/patientVisits';
 import DocumentsSection from './DocumentsSection';
 import VisitsSection from './VisitsSection';
 import QuickNotesSection from './QuickNotesSection';
+import SeizureLogSection from './SeizureLogSection';
 import CarePlanSection from './CarePlanSection';
 import { physicianAttributionPending, physicianOrderStale } from '@/lib/marShared';
 import {
@@ -597,6 +598,10 @@ function ClientDashboardInner() {
                 actor={{ uid: user?.uid || '', name: profile?.displayName || user?.email || '' }}
                 onToast={showToast}
               />
+              {/* Seizure log: only for clients flagged hasSeizureDisorder. */}
+              {patient?.hasSeizureDisorder && (
+                <SeizureLogSection key={`sz-${patientId}`} patientId={patientId} patientName={patient.name} patientDob={patient.dob || ''} />
+              )}
             </>
           )}
 

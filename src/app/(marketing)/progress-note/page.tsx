@@ -43,6 +43,8 @@ import {
   orderAppliesOn,
 } from '@/lib/mar';
 import { classifyDoseAgainstShift, computeRequiredDoseGaps, resolveCurrentAdministrations } from '@/lib/marShared';
+import { seizureGaps } from '@/lib/seizureShared';
+import { writeSeizureEvents } from '@/lib/seizures';
 import {
   getAllMarAdmin,
   clearMarAdmin,
@@ -290,7 +292,8 @@ function ProgressNotePageInner() {
     const match = patients.find((p) => normalizeName(p.name) === typed);
     return !!match?.hasSeizureDisorder;
   }, [watchedClientName, patients]);
-  void clientHasSeizureDisorder; // consumed by the seizure-log section (next PR)
+  // Bumped by the seizure submit gate so Page 3 force-opens Neurological.
+  const [neuroExpandSignal, setNeuroExpandSignal] = useState(0);
 
   // Roster-driven MAR requirement: when the client is flagged requiresMar,
   // Page 5 escalates its "no meds on file" hint to a hard warning and submit is
@@ -1378,6 +1381,42 @@ function ProgressNotePageInner() {
       }
     }
 
+    // Seizure attestation gate (clients flagged hasSeizureDisorder). Every
+    // note must attest "No seizure noted" or log each seizure with its
+    // required fields. The Yes/No is a DeselectableRadio (invisible to the
+    // DOM scan) and the blocks live in the collapsible Neurological section,
+    // so enforce here from any tab, same escort as the tube gate. New notes
+    // only: historical notes predate the log. LPN/RN only, like the tube
+    // gate: the System Assessments block is read-only for HHA/CNA, so
+    // gating them would lock their notes out entirely.
+    if (!isEditMode && clientHasSeizureDisorder && (credential === 'LPN' || credential === 'RN')) {
+      const gateData: Record<string, unknown> = { ...(getValues() as Record<string, unknown>) };
+      for (const [k, v] of Object.entries(radioState)) {
+        if (v) gateData[k] = v;
+      }
+      const gaps = seizureGaps(gateData);
+      if (gaps.length > 0) {
+        setCurrentPage(3);
+        setNeuroExpandSignal((n) => n + 1);
+        const firstTarget = gaps[0].targetId;
+        setTimeout(() => {
+          const el = formRef.current?.querySelector(`#${firstTarget}`) as HTMLElement | null;
+          el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          if (el && (el.tagName === 'SELECT' || el.tagName === 'INPUT')) {
+            (el as HTMLInputElement).focus();
+          }
+        }, 150);
+        alert(
+          `This client has a seizure disorder, and the seizure log isn't complete:\n\n${gaps
+            .map((g) => `• ${g.label}`)
+            .join('\n')}\n\n` +
+            `We've opened the Neurological section on the Observations tab and taken you there. ` +
+            `Answer "No seizure noted" if none occurred, or add one entry per seizure.`,
+        );
+        return;
+      }
+    }
+
     // Care plan task gate. Every task presented from the client's approved
     // plan needs an answer — 'N/A' always satisfies, so this demands an
     // answer, never a claim of care. Statuses live in the radio store (the
@@ -2011,6 +2050,33 @@ function ProgressNotePageInner() {
           }
         }
 
+        // Seizure log records: one append-only seizureEvents doc per seizure
+        // block on the note (batched). Best-effort post-save like the MAR
+        // marks — the note itself is the record; a failed log write is logged.
+        if (user && profile) {
+          const szPid = String(getValues('patientId') || '').trim();
+          const szValues: Record<string, unknown> = { ...(getValues() as Record<string, unknown>) };
+          for (const [k, v] of Object.entries(radioState)) {
+            if (v) szValues[k] = v;
+          }
+          if (szPid) {
+            try {
+              await writeSeizureEvents(szValues, {
+                patientId: szPid,
+                date: String(submission.q6_dateofService || ''),
+                sourceNoteId: docId,
+                documenter: {
+                  uid: user.uid,
+                  name: profile.displayName || user.email || '',
+                  credential: profile.credential || '',
+                },
+              });
+            } catch (err) {
+              console.error('Failed to write seizure events:', err);
+            }
+          }
+        }
+
         // Apply any medication changes (add/change/discontinue) the nurse staged
         // on this note. Best-effort post-save, like the care-team add above —
         // the note is already saved, so a failure here is logged, not fatal.
@@ -2438,7 +2504,7 @@ function ProgressNotePageInner() {
       <form ref={formRef} onSubmit={handleSubmit} className={styles.form} noValidate>
         <div style={pageStyle(1)}><FormPageOne formRef={ref} register={register} watch={watch} setValue={setValue} control={control} onCredentialChange={handleCredentialChange} patients={patients} initialClientName={initialClientName} lockIdentity={isNurse && !isEditMode} /></div>
         <div style={pageStyle(2)}><FormPageTwo formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} ageStr={watch('q5_ageYears')} dob={watch('q4_dateofBirth')} errors={errors} isEditMode={isEditMode} onGoToMedChanges={goToMedChanges} /></div>
-        <div style={pageStyle(3)}><FormPageThree formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} clientHasFeedingTube={clientHasFeedingTube} giExpandSignal={giExpandSignal} errors={errors} /></div>
+        <div style={pageStyle(3)}><FormPageThree formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} clientHasFeedingTube={clientHasFeedingTube} giExpandSignal={giExpandSignal} clientHasSeizureDisorder={clientHasSeizureDisorder} neuroExpandSignal={neuroExpandSignal} errors={errors} /></div>
         <div style={pageStyle(4)}><FormPageFour formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} editMode={isEditMode} errors={errors} /></div>
         <div style={pageStyle(5)}><FormPageFive formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} isEditMode={isEditMode} clientRequiresMar={clientRequiresMar} documenter={user && profile ? { uid: user.uid, name: profile.displayName || user.email || '', credential: profile.credential || '' } : undefined} getNoteId={ensureSubmissionId} /></div>
         <div style={pageStyle(6)}><FormPageSix formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} isEditMode={isEditMode} docReqs={docReqs} errors={errors} /></div>

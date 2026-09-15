@@ -15,6 +15,7 @@ import { needsCosign } from '@/lib/cosignClient';
 import { useSettings } from '@/components/SettingsProvider';
 import { pdfFilenameFor, triggerDownload } from '@/lib/batchExport';
 import { formatDateUS } from '@/lib/dateFormat';
+import { formatDuration, readSeizureEntries, seizureDurationSeconds, sortSeizuresByStart } from '@/lib/seizureShared';
 import { authedFetch } from '@/lib/authedFetch';
 import { getVitalRanges, getAgeGroupLabel } from '@/lib/vitalRanges';
 import { parseCareTaskCharting } from '@/lib/careTaskCharting';
@@ -884,6 +885,36 @@ export default function SubmissionDetailPage({ params }: PageProps) {
                         </div>
                       ) : null
                     )}
+                    {sys.name === 'Neurological' &&
+                      String(data.q30_seizureEvent || '') === 'Yes' &&
+                      sortSeizuresByStart(readSeizureEntries(data as unknown as Record<string, unknown>)).map((e, i) => {
+                        const dur = seizureDurationSeconds(e);
+                        const rows: Array<[string, string]> = [
+                          ['Time', `${e.startTime || '?'}${e.endTime ? ` to ${e.endTime}` : ''}${dur !== null ? ` (${formatDuration(dur)})` : ''}`],
+                          ['Type', e.seizureType],
+                          ['Witnessed by', e.witnessedBy],
+                          ['Observed', e.observations],
+                          ['Interventions', e.interventions],
+                          ['Rescue medication', e.rescueMed ? `${e.rescueMed}${e.rescueMedTime ? ` at ${e.rescueMedTime}` : ''}` : ''],
+                          ['Emergency response', e.response],
+                          ['After the seizure', `${e.postState}${e.minutesToBaseline ? ` (${e.minutesToBaseline} min to baseline)` : ''}`.trim()],
+                          ['Physician notified', e.physicianNotified ? `${e.physicianNotified}${e.physicianNotifiedTime ? ` at ${e.physicianNotifiedTime}` : ''}` : ''],
+                          ['Family notified', e.familyNotified],
+                          ['Notes', e.notes],
+                        ];
+                        return (
+                          <div key={e.index} style={{ marginTop: 8, paddingLeft: 10, borderLeft: '3px solid #ddd6fe' }}>
+                            <div style={{ fontWeight: 700, fontSize: 13, color: '#4c1d95' }}>Seizure {i + 1}</div>
+                            {rows.map(([label, value]) =>
+                              hasValue(value) ? (
+                                <div key={label} style={{ padding: '2px 0', fontSize: 14 }}>
+                                  <span style={fieldLabelStyle}>{label}:</span> {value}
+                                </div>
+                              ) : null,
+                            )}
+                          </div>
+                        );
+                      })}
                   </div>
                 </div>
               );
