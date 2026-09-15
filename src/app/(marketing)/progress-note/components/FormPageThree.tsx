@@ -6,6 +6,7 @@ import styles from '../page.module.css';
 import DeselectableRadio, { radioState, radioSubscribe, radioGetSnapshot } from './DeselectableRadio';
 import FieldError from './FieldError';
 import { rangeValidator } from '../validators';
+import SeizureLogSection from './SeizureLogSection';
 
 const getGlobalSnapshotStr = () => String(radioGetSnapshot());
 
@@ -16,9 +17,14 @@ interface FormPageThreeProps extends FormPageProps {
   clientHasFeedingTube?: boolean;
   /** Increment to force the GI section open (submit-gate "take me there"). */
   giExpandSignal?: number;
+  /** Roster client is flagged hasSeizureDisorder: the seizure attestation is
+   *  required and the Neurological section pre-opens. */
+  clientHasSeizureDisorder?: boolean;
+  /** Increment to force the Neurological section open (seizure submit gate). */
+  neuroExpandSignal?: number;
 }
 
-export default function FormPageThree({ formRef, register, watch, setValue, control, credential, clientHasFeedingTube, giExpandSignal, errors }: FormPageThreeProps) {
+export default function FormPageThree({ formRef, register, watch, setValue, control, credential, clientHasFeedingTube, giExpandSignal, clientHasSeizureDisorder, neuroExpandSignal, errors }: FormPageThreeProps) {
   const showSystemAssessments = credential === 'LPN' || credential === 'RN';
   // Subscribe to radio state so the tube care & feeding block reveals when
   // "Feeding Tube Present" flips to Yes (same pattern as FormPageFour's
@@ -80,6 +86,14 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
       setExpandedSections((prev) => ({ ...prev, gi: true }));
     }
   }, [giExpandSignal]);
+
+  // Same two escorts for the seizure log inside Neurological.
+  useEffect(() => {
+    if (clientHasSeizureDisorder) setExpandedSections((prev) => ({ ...prev, neuro: true }));
+  }, [clientHasSeizureDisorder]);
+  useEffect(() => {
+    if (neuroExpandSignal) setExpandedSections((prev) => ({ ...prev, neuro: true }));
+  }, [neuroExpandSignal]);
 
   return (
     <div>
@@ -628,55 +642,12 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                 </select>
               </div>
             </div>
-            <div className={styles.row}>
-              <div className={styles.f}>
-                <label className={styles.label}>Seizure Event this shift?</label>
-                <div className={styles.radioRow}>
-                  <label>
-                    <DeselectableRadio name="q30_seizureEvent" value="Yes" />
-                    Yes
-                  </label>
-                  <label>
-                    <DeselectableRadio name="q30_seizureEvent" value="No" />
-                    No
-                  </label>
-                </div>
-              </div>
-            </div>
-            <div className={styles.row}>
-              <div className={styles.f}>
-                <label className={styles.label} htmlFor="q30_seizureOnset">Onset Time</label>
-                <input className={styles.input} type="time" id="q30_seizureOnset" {...register('q30_seizureOnset')} />
-              </div>
-              <div className={styles.f}>
-                <label className={styles.label} htmlFor="q30_seizureEnd">End Time</label>
-                <input className={styles.input} type="time" id="q30_seizureEnd" {...register('q30_seizureEnd')} />
-              </div>
-              <div className={styles.f}>
-                <label className={styles.label} htmlFor="q30_seizureDuration">Duration (min)</label>
-                <input
-                  className={styles.input}
-                  type="number"
-                  id="q30_seizureDuration"
-                  {...register('q30_seizureDuration', {
-                    validate: rangeValidator(0, 60, 'Must be 0–60 min'),
-                  })}
-                />
-                <FieldError name="q30_seizureDuration" errors={errors} />
-              </div>
-            </div>
-            <div className={styles.row}>
-              <div className={styles.f} style={{ flex: '1 1 100%' }}>
-                <label className={styles.label} htmlFor="q30_seizureDescription">During Seizure Description</label>
-                <textarea className={styles.textarea} id="q30_seizureDescription" {...register('q30_seizureDescription')} rows={2} />
-              </div>
-            </div>
-            <div className={styles.row}>
-              <div className={styles.f} style={{ flex: '1 1 100%' }}>
-                <label className={styles.label} htmlFor="q30_postIctal">Post-ictal Status</label>
-                <textarea className={styles.textarea} id="q30_postIctal" {...register('q30_postIctal')} rows={2} />
-              </div>
-            </div>
+            {/* Seizure log: the Yes/No attestation plus one block per seizure.
+                Replaces the single-seizure block (legacy q30_seizureOnset /
+                q30_seizureEnd / q30_seizureDuration / q30_seizureDescription /
+                q30_postIctal stay readable on old notes; new notes write
+                q69_seizure{n}_* and a seizureEvents record per seizure). */}
+            <SeizureLogSection register={register} watch={watch} setValue={setValue} required={!!clientHasSeizureDisorder} />
             <div className={styles.row}>
               <div className={styles.f} style={{ flex: '1 1 100%' }}>
                 <label className={styles.label} htmlFor="q30_neuroNotes">Notes</label>
