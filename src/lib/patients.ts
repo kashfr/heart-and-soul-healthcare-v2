@@ -41,6 +41,16 @@ export interface Patient {
    */
   hasFeedingTube?: boolean;
   /**
+   * Whether this client has a seizure disorder (epilepsy, Lennox-Gastaut,
+   * seizures by history). Set deliberately by a nurse; NOT derived from the
+   * diagnosis text or the medication list (both proved unreliable: three of
+   * four seizure clients had no seizure diagnosis on their record, and a
+   * benzodiazepine on the MAR may be for mood). Drives the seizure log and
+   * the per-shift seizure attestation on progress notes. Directory-doc flag
+   * like hasFeedingTube.
+   */
+  hasSeizureDisorder?: boolean;
+  /**
    * Payer program this client is enrolled in ('now-comp' | 'gapp' | 'edwp' |
    * 'icwp'). Decides whose rulebook applies: NOW/COMP runs on the DBHDD manual
    * and an ISP, GAPP on the GAPP In-Home Nursing manual and an Appendix T.

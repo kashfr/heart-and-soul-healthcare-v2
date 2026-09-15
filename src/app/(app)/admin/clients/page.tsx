@@ -67,6 +67,7 @@ const emptyPatient: Partial<Patient> = {
   mrn: '',
   requiresMar: false,
   hasFeedingTube: false,
+  hasSeizureDisorder: false,
   program: '',
   serviceLevel: '',
   serviceStartedOn: '',
@@ -259,6 +260,7 @@ function ClientsRosterInner() {
       mrn: patient.mrn ?? '',
       requiresMar: patient.requiresMar ?? false,
       hasFeedingTube: patient.hasFeedingTube ?? false,
+      hasSeizureDisorder: patient.hasSeizureDisorder ?? false,
       program: patient.program ?? '',
       serviceLevel: patient.serviceLevel ?? '',
       serviceStartedOn: patient.serviceStartedOn ?? '',
@@ -615,6 +617,7 @@ function ClientsRosterInner() {
                         )}
                         {p.requiresMar && <span style={marBadgeStyle} title="Requires a Medication Administration Record">MAR</span>}
                         {p.hasFeedingTube && <span style={tubeBadgeStyle} title="Has a feeding tube (G-tube / GJ / J / NG)">FEEDING TUBE</span>}
+                        {p.hasSeizureDisorder && <span style={seizureBadgeStyle} title="Has a seizure disorder: seizure log and per-shift seizure attestation apply">SEIZURE</span>}
                       </div>
                       {isStaff &&
                         (findings.get(p.id || '') ?? []).filter((f) => f.severity !== 'info').map((f) => (
@@ -850,6 +853,17 @@ function ClientsRosterInner() {
                   />
                   <span style={{ fontSize: 13, fontWeight: 600, color: '#2c3e50' }}>
                     This client has a feeding tube (G-tube / GJ / J / NG) — prompts tube-care charting on progress notes
+                  </span>
+                </label>
+
+                <label style={requiresMarRowStyle}>
+                  <input
+                    type="checkbox"
+                    checked={!!formData.hasSeizureDisorder}
+                    onChange={(e) => setFormData((f) => ({ ...f, hasSeizureDisorder: e.target.checked }))}
+                  />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#2c3e50' }}>
+                    This client has a seizure disorder — enables the seizure log and requires a seizure attestation on every progress note
                   </span>
                 </label>
 
@@ -1107,6 +1121,7 @@ const inputStyle: React.CSSProperties = { padding: '10px 12px', border: '1px sol
 const textareaStyle: React.CSSProperties = { ...inputStyle, minHeight: 60, resize: 'vertical', lineHeight: 1.4 };
 const requiresMarRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, cursor: 'pointer' };
 const marBadgeStyle: React.CSSProperties = { display: 'inline-block', background: '#eef4fb', color: '#1a3a5c', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4, border: '1px solid #c8def5' };
+const seizureBadgeStyle: React.CSSProperties = { display: 'inline-block', background: '#ede9fe', color: '#4c1d95', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4, border: '1px solid #ddd6fe', whiteSpace: 'nowrap' };
 const tubeBadgeStyle: React.CSSProperties = { display: 'inline-block', background: '#fdf3e7', color: '#7a4a12', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4, border: '1px solid #f0d9b8', whiteSpace: 'nowrap' };
 // Same as inputStyle but with the custom chevron-down used everywhere else on
 // the site. Suppresses the macOS native double-arrow ⇅ for visual consistency.

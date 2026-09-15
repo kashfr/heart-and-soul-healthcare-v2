@@ -282,6 +282,15 @@ function ProgressNotePageInner() {
     const match = patients.find((p) => normalizeName(p.name) === typed);
     return !!match?.hasFeedingTube;
   }, [watchedClientName, patients]);
+  // Same roster match for the seizure-disorder flag: gates the seizure log
+  // section and the per-shift "no seizure noted" attestation (next PR).
+  const clientHasSeizureDisorder = useMemo(() => {
+    const typed = normalizeName(String(watchedClientName || ''));
+    if (!typed) return false;
+    const match = patients.find((p) => normalizeName(p.name) === typed);
+    return !!match?.hasSeizureDisorder;
+  }, [watchedClientName, patients]);
+  void clientHasSeizureDisorder; // consumed by the seizure-log section (next PR)
 
   // Roster-driven MAR requirement: when the client is flagged requiresMar,
   // Page 5 escalates its "no meds on file" hint to a hard warning and submit is
