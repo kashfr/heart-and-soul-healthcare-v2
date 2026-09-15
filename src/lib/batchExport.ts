@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import { PDFDocument } from 'pdf-lib';
 import { formatDateUSFile } from './dateFormat';
+import { compareChronological, isoDate } from './batchExportShared';
 import { getSubmission } from './submissions';
 import { authedFetch } from './authedFetch';
 import type { ProgressNoteFormData } from './submissions';
@@ -25,17 +26,6 @@ const CONCURRENCY = 3;
 
 function sanitize(part: string): string {
   return part.replace(/[^a-zA-Z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
-}
-
-function isoDate(s: string): string | null {
-  // Input may be YYYY-MM-DD already or MM/DD/YYYY
-  if (!s) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  const parts = s.split('/');
-  if (parts.length === 3) {
-    return `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
-  }
-  return null;
 }
 
 export function pdfFilenameFor(form: ProgressNoteFormData): string {
@@ -87,10 +77,14 @@ async function fetchAllWithPool(
 
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, ids.length) }, worker));
 
-  // Preserve input order for downstream merge (alphabetic/date ordering handled by caller)
-  results.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+  // Chronological, oldest first: the export's order is a property of the
+  // export, not of how the notes were selected. (Before this, results kept the
+  // caller's id order, and the caller passed a Set in checkbox-click order, so
+  // "select all" on the default newest-first list produced newest-first PDFs.)
+  results.sort(compareChronological);
   return results;
 }
+
 
 function dateRangeOf(forms: ProgressNoteFormData[]): { start: string | null; end: string | null } {
   const dates = forms.map((f) => isoDate(f.q6_dateofService)).filter((d): d is string => !!d).sort();
