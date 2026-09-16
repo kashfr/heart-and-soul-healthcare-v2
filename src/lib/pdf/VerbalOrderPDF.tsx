@@ -14,18 +14,18 @@ const CORAL = '#DE5B4A';
 const INK = '#1f2937';
 const MUTED = '#6b7280';
 const RULE = '#d1d5db';
-const LOGO_W = 130;
+const LOGO_W = 110;
 
 const s = StyleSheet.create({
-  page: { paddingTop: 28, paddingBottom: 40, paddingHorizontal: 48, fontSize: 9.5, fontFamily: 'Helvetica', color: INK },
+  page: { paddingTop: 22, paddingBottom: 34, paddingHorizontal: 48, fontSize: 9.5, fontFamily: 'Helvetica', color: INK },
   header: { alignItems: 'center', marginBottom: 4 },
-  logo: { width: LOGO_W, height: LOGO_W / BRAND_LOGO_ASPECT, marginBottom: 6 },
+  logo: { width: LOGO_W, height: LOGO_W / BRAND_LOGO_ASPECT, marginBottom: 4 },
   company: { fontSize: 10, fontFamily: 'Helvetica-Bold' },
   contact: { fontSize: 8, color: MUTED, marginTop: 2 },
-  headerRule: { borderBottomWidth: 1.5, borderBottomColor: CORAL, marginTop: 6, marginBottom: 8 },
+  headerRule: { borderBottomWidth: 1.5, borderBottomColor: CORAL, marginTop: 5, marginBottom: 6 },
   title: { fontSize: 15, fontFamily: 'Helvetica-Bold', textAlign: 'center' },
-  subtitle: { fontSize: 8.5, color: MUTED, textAlign: 'center', marginTop: 2, marginBottom: 8 },
-  sectionHeading: { fontSize: 9.5, fontFamily: 'Helvetica-Bold', marginTop: 8, marginBottom: 4, paddingBottom: 2, borderBottomWidth: 0.75, borderBottomColor: CORAL },
+  subtitle: { fontSize: 8.5, color: MUTED, textAlign: 'center', marginTop: 2, marginBottom: 6 },
+  sectionHeading: { fontSize: 9.5, fontFamily: 'Helvetica-Bold', marginTop: 6, marginBottom: 3, paddingBottom: 2, borderBottomWidth: 0.75, borderBottomColor: CORAL },
   grid: { borderWidth: 0.5, borderColor: RULE },
   row: { flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: RULE },
   rowLast: { flexDirection: 'row' },
@@ -33,23 +33,23 @@ const s = StyleSheet.create({
   cellLast: { paddingVertical: 4, paddingHorizontal: 6 },
   label: { fontSize: 7.5, color: MUTED, marginBottom: 1.5 },
   value: { fontSize: 9.5 },
-  orderBox: { borderWidth: 0.5, borderColor: RULE, padding: 8, minHeight: 84, marginTop: 4 },
+  orderBox: { borderWidth: 0.5, borderColor: RULE, padding: 8, minHeight: 64, marginTop: 3 },
   orderText: { fontSize: 10.5, lineHeight: 1.45 },
-  readBack: { marginTop: 5, fontSize: 8.5, fontFamily: 'Helvetica-Oblique', color: MUTED },
-  sigGrid: { flexDirection: 'row', marginTop: 6 },
+  readBack: { marginTop: 4, fontSize: 8.5, fontFamily: 'Helvetica-Oblique', color: MUTED },
+  sigGrid: { flexDirection: 'row', marginTop: 4 },
   sigCol: { flex: 1, paddingRight: 16 },
-  sigImage: { width: 170, height: 46, borderBottomWidth: 0.75, borderBottomColor: INK },
-  sigLine: { height: 46, borderBottomWidth: 0.75, borderBottomColor: INK },
+  sigImage: { width: 170, height: 38, borderBottomWidth: 0.75, borderBottomColor: INK },
+  sigLine: { height: 34, borderBottomWidth: 0.75, borderBottomColor: INK },
   sigCaption: { fontSize: 7.5, color: MUTED, marginTop: 3 },
   sigValue: { fontSize: 9.5, marginTop: 2 },
   instruction: { fontSize: 9, lineHeight: 1.4, marginBottom: 4 },
-  esignRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6, padding: 6, borderWidth: 0.5, borderColor: RULE, backgroundColor: '#f8fafc' },
-  qr: { width: 62, height: 62, marginRight: 10 },
+  esignRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4, padding: 5, borderWidth: 0.5, borderColor: RULE, backgroundColor: '#f8fafc' },
+  qr: { width: 54, height: 54, marginRight: 10 },
   esignText: { flex: 1, fontSize: 8.5, lineHeight: 1.4, color: INK },
-  officeRow: { flexDirection: 'row', marginTop: 4 },
+  officeRow: { flexDirection: 'row', marginTop: 2 },
   officeCol: { flex: 1, paddingRight: 12 },
-  officeLine: { height: 22, borderBottomWidth: 0.75, borderBottomColor: INK },
-  footer: { position: 'absolute', bottom: 20, left: 48, right: 48, fontSize: 7, color: '#9ca3af', textAlign: 'center' },
+  officeLine: { height: 18, borderBottomWidth: 0.75, borderBottomColor: INK },
+  footer: { position: 'absolute', bottom: 16, left: 48, right: 48, fontSize: 7, color: '#9ca3af', textAlign: 'center' },
 });
 
 function Cell({ label, value, flex = 1, last = false }: { label: string; value: string; flex?: number; last?: boolean }) {
@@ -135,7 +135,7 @@ export default function VerbalOrderPDF({ order, returnFax, esignUrl, esignQrData
             <Text style={s.sigValue}>{order.nurseName}{order.nurseCredential ? `, ${order.nurseCredential}` : ''}</Text>
           </View>
           <View style={s.sigCol}>
-            <View style={{ height: 46, justifyContent: 'flex-end' }}>
+            <View style={{ height: 38, justifyContent: 'flex-end' }}>
               <Text style={s.sigValue}>{formatDateUS(order.takenDate)}</Text>
             </View>
             <Text style={s.sigCaption}>Date</Text>
@@ -150,7 +150,7 @@ export default function VerbalOrderPDF({ order, returnFax, esignUrl, esignQrData
                 // eslint-disable-next-line jsx-a11y/alt-text
                 <Image src={signed.physicianSignature} style={s.sigImage} />
               ) : (
-                <View style={{ height: 46, justifyContent: 'flex-end' }}>
+                <View style={{ height: 38, justifyContent: 'flex-end' }}>
                   <Text style={s.sigValue}>{signed.method === 'fax' ? 'Signed copy on file (returned by fax)' : 'Signed copy on file'}</Text>
                 </View>
               )}
@@ -158,7 +158,7 @@ export default function VerbalOrderPDF({ order, returnFax, esignUrl, esignQrData
               <Text style={s.sigValue}>{signed.physicianPrintedName || order.physicianName}</Text>
             </View>
             <View style={s.sigCol}>
-              <View style={{ height: 46, justifyContent: 'flex-end' }}>
+              <View style={{ height: 38, justifyContent: 'flex-end' }}>
                 <Text style={s.sigValue}>{formatDateUS(signed.signedDate)}</Text>
               </View>
               <Text style={s.sigCaption}>Date signed</Text>
