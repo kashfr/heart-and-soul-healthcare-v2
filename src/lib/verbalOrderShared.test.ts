@@ -91,4 +91,9 @@ describe('candidateOrdersForInboundFax', () => {
     expect(candidateOrdersForInboundFax('14045550101', orders)).toEqual(['a']);
     expect(candidateOrdersForInboundFax('unknown', orders)).toEqual([]);
   });
+  it('checks both caller ID and remote ID (cloud fax carriers put the real number in the remote ID)', () => {
+    expect(candidateOrdersForInboundFax(['5034367151', '4045550101'], orders)).toEqual(['a']);
+    expect(candidateOrdersForInboundFax(['', '4045550101'], orders)).toEqual(['a']);
+    expect(candidateOrdersForInboundFax(['5034367151', ''], orders)).toEqual([]);
+  });
 });

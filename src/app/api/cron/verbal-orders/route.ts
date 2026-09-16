@@ -64,7 +64,7 @@ export async function GET(request: Request) {
         summary.inboundSeen++;
         if (!fax.faxDetailsId) continue;
         const seenRef = db.collection('verbalOrderInbound').doc(fax.faxDetailsId);
-        const candidates = candidateOrdersForInboundFax(fax.callerId || fax.remoteId, open);
+        const candidates = candidateOrdersForInboundFax([fax.callerId, fax.remoteId], open);
         // create() is the race guard: two overlapping sweeps can't both record
         // (and bell) the same fax.
         try {
