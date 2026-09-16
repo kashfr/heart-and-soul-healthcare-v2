@@ -15,6 +15,7 @@ import {
   Settings,
   Handshake,
   ArrowLeftRight,
+  PhoneCall,
   Menu,
   X,
   PanelLeftClose,
@@ -61,6 +62,10 @@ const NAV: NavItem[] = [
   // posts (badge = how many are waiting on her); staff see every post with
   // its acknowledgment status.
   { href: '/admin/handoffs', label: 'Handoffs', icon: <ArrowLeftRight size={18} />, allow: ['admin', 'supervisor', 'nurse'] },
+  // Telephone physician orders: a nurse takes one, the physician is faxed
+  // the authentication form, the office tracks it until the signed copy is
+  // on file.
+  { href: '/admin/verbal-orders', label: 'Verbal Orders', icon: <PhoneCall size={18} />, allow: ['admin', 'supervisor', 'nurse'] },
   { href: '/admin/in-progress', label: 'In Progress', icon: <FileClock size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/users', label: 'Staff & Roles', icon: <UserCog size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/maintenance/link-notes', label: 'Maintenance', icon: <Wrench size={18} />, allow: ['admin'] },

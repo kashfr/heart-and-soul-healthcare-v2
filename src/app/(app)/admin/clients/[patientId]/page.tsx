@@ -30,6 +30,7 @@ import DocumentsSection from './DocumentsSection';
 import VisitsSection from './VisitsSection';
 import QuickNotesSection from './QuickNotesSection';
 import HandoffBoardSection from './HandoffBoardSection';
+import VerbalOrdersSection from './VerbalOrdersSection';
 import SeizureLogSection from './SeizureLogSection';
 import CarePlanSection from './CarePlanSection';
 import { physicianAttributionPending, physicianOrderStale } from '@/lib/marShared';
@@ -241,6 +242,10 @@ function ClientDashboardInner() {
   const physicianPendingCount = activeOrders.filter((o) => physicianAttributionPending(o)).length;
   // D.1 second half: the signed order itself must be dated within 12 months.
   const staleOrderCount = activeOrders.filter((o) => physicianOrderStale(o, today)).length;
+  // Verbal orders whose signed copy hasn't come back: no signed order behind
+  // the med yet, whatever its start date says. Counted separately so the
+  // tile can say "awaiting signature" rather than "older than 12 months".
+  const pendingVerbalCount = activeOrders.filter((o) => o.verbalOrderPending === true).length;
 
   const mar30 = useMemo(
     () => marComplianceStats(orders, admins, start30, today, today),
@@ -353,7 +358,7 @@ function ClientDashboardInner() {
   const shiftIntegritySignal: Signal =
     outOfWindow30 > 0 ? 'warn' : given30 === 0 ? 'none' : 'good';
   const orderCurrencySignal: Signal =
-    activeOrders.length === 0 ? 'none' : staleOrderCount === 0 ? 'good' : 'bad';
+    activeOrders.length === 0 ? 'none' : staleOrderCount > 0 ? 'bad' : pendingVerbalCount > 0 ? 'warn' : 'good';
   // Warn (not bad): the attestation checkbox is new, so historical refusals
   // all read as un-notified; treat as follow-up work, not a red alarm.
   const notifySignal: Signal =
@@ -394,6 +399,12 @@ function ClientDashboardInner() {
     alerts.push({
       text: `${staleOrderCount} medication order${staleOrderCount === 1 ? '' : 's'} older than 12 months (renewal needed)`,
       go: () => router.push(marHref),
+    });
+  }
+  if (pendingVerbalCount > 0) {
+    alerts.push({
+      text: `${pendingVerbalCount} verbal order${pendingVerbalCount === 1 ? '' : 's'} awaiting the physician's signature`,
+      go: () => router.push('/admin/verbal-orders'),
     });
   }
   if (adverseSignal === 'bad') {
@@ -611,6 +622,11 @@ function ClientDashboardInner() {
                 onToast={showToast}
               />
               )}
+              {/* Verbal orders: telephone orders and their signature status. Taking
+                  one needs an RN/LPN credential (the form and API both re-check). */}
+              {realRole !== 'va' && (
+                <VerbalOrdersSection key={`vo-${patientId}`} patientId={patientId} canTake={!isViewingAs && (realStaff || ['RN', 'LPN'].includes(profile?.credential || ''))} />
+              )}
               {/* Seizure log: only for clients flagged hasSeizureDisorder. */}
               {patient?.hasSeizureDisorder && (
                 <SeizureLogSection key={`sz-${patientId}`} patientId={patientId} patientName={patient.name} patientDob={patient.dob || ''} />
@@ -715,13 +731,17 @@ function ClientDashboardInner() {
                 value={
                   activeOrders.length === 0
                     ? 'No active medications'
-                    : staleOrderCount === 0
-                      ? 'All orders within 12 months'
-                      : `${staleOrderCount} order${staleOrderCount === 1 ? '' : 's'} need renewal`
+                    : staleOrderCount > 0
+                      ? `${staleOrderCount} order${staleOrderCount === 1 ? '' : 's'} need renewal`
+                      : pendingVerbalCount > 0
+                        ? `${pendingVerbalCount} verbal order${pendingVerbalCount === 1 ? '' : 's'} awaiting signature`
+                        : 'All orders within 12 months'
                 }
                 detail={
                   staleOrderCount > 0
                     ? 'DBHDD D.1: a signed physician order dated within the past year must back every med. Get the renewal, then update "Physician order signed on" for each flagged med.'
+                    : pendingVerbalCount > 0
+                      ? 'A telephone order is on the MAR but the physician has not returned the signed authentication yet. Track it under Verbal orders.'
                     : activeOrders.length > 0
                       ? 'Every active order has a signed date within the past year'
                       : ''

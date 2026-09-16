@@ -115,6 +115,11 @@ export interface MarOrder {
   // (supersedesOrderId -> what it replaced) on the same effective date.
   supersedesOrderId?: string;
   supersededByOrderId?: string;
+  /** Set when this order came in by telephone: the verbalOrders record, and
+   *  whether the physician's signature is still outstanding. Cleared to false
+   *  (and orderSignedDate filled) when the signed copy is received. */
+  verbalOrderId?: string;
+  verbalOrderPending?: boolean;
 }
 
 // Who is performing the write (stamped onto the doc for the audit trail).

@@ -35,6 +35,10 @@ interface Props {
   orderIdsWithDoses: Set<string>;
   onClose: () => void;
   onSaved: (summary: string) => void;
+  /** Verbal-order flow: hands back what was applied so the verbal order can
+   *  link to it, prefills the ordering physician, and hides the signed-date
+   *  field (a verbal order is unsigned by definition until the fax returns). */
+  verbalOrder?: { physicianName: string; onApplied: (r: { changeRequestId: string; type: MarChangeRequestType; medName: string }) => void };
 }
 
 /**
@@ -46,7 +50,7 @@ interface Props {
  * recorded for audit and that's it. No note, no dose-given shortcut (nurses
  * chart doses by clicking the grid cell).
  */
-export default function ManageMedsModal({ patientId, patientName, activeOrders, orderIdsWithDoses, onClose, onSaved }: Props) {
+export default function ManageMedsModal({ patientId, patientName, activeOrders, orderIdsWithDoses, onClose, onSaved, verbalOrder }: Props) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -75,7 +79,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
   const [valueUnit, setValueUnit] = useState('');
   // Allowed readings, comma-separated; becomes the charting dropdown.
   const [valueOptions, setValueOptions] = useState('');
-  const [orderingPhysician, setOrderingPhysician] = useState('');
+  const [orderingPhysician, setOrderingPhysician] = useState(verbalOrder?.physicianName || '');
   const [orderSignedDate, setOrderSignedDate] = useState('');
   // Honest escape hatch: the nurse can flag the physician as unknown at entry
   // time instead of typing junk like "N/A"; the RN fills the name in later.
@@ -245,6 +249,11 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
                 ? `Changed ${target?.medName || 'medication'}. The previous order was discontinued and the new one is live on the MAR.`
                 : `Updated the details on ${target?.medName || 'medication'}. The order is unchanged on the MAR.`
             : `Discontinued ${target?.medName || 'medication'}.`;
+      verbalOrder?.onApplied({
+        changeRequestId: String(data?.reqId || reqIdRef.current),
+        type: mode,
+        medName: (mode === 'discontinue' ? target?.medName : medName.trim()) || '',
+      });
       onSaved(summary);
       onClose();
     } catch {
@@ -476,10 +485,14 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
                   </Field>
                 </div>
 
+                {verbalOrder ? (
+                  <span style={{ ...dateHint, display: 'block', marginBottom: 12 }}>Verbal order: the signed date is filled in automatically when the physician&apos;s signed copy comes back.</span>
+                ) : (
                 <Field label="Physician order signed on">
                   <input type="date" value={orderSignedDate} onChange={(e) => setOrderSignedDate(e.target.value)} style={{ ...input, maxWidth: 200 }} />
                   <span style={dateHint}>Blank = the start/effective date. Update when the annual renewal comes in; orders older than 12 months are flagged.</span>
                 </Field>
+                )}
 
                 <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: -4, marginBottom: 12, cursor: 'pointer' }}>
                   <input

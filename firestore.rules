@@ -574,6 +574,28 @@ service cloud.firestore {
     // administrations; `amends` is reserved for a future superseding-record
     // correction flow. Read access mirrors quickNotes (staff, or an assigned
     // nurse for that client).
+    // Verbal (telephone) physician orders. Written ONLY through the Admin
+    // SDK (/api/verbal-orders and the cron sweep): the record, its fax state,
+    // and the physician's signature all come from the server. Read: staff,
+    // the nurse who took it, or a nurse on the client's care team. The e-sign
+    // token map and the inbound-fax ledger are server-only.
+    match /verbalOrders/{orderId} {
+      allow read: if isStaff()
+        || (isNurse()
+            && (resource.data.nurseId == request.auth.uid
+                || (resource.data.get('patientId', null) != null
+                    && get(/databases/$(database)/documents/patients/$(resource.data.patientId))
+                         .data.get('assignedNurseIds', []).hasAny([request.auth.uid]))));
+      allow create, update, delete: if false;
+    }
+    match /verbalOrderSignTokens/{token} {
+      allow read, write: if false;
+    }
+    match /verbalOrderInbound/{faxId} {
+      allow read: if isStaff();
+      allow write: if false;
+    }
+
     match /seizureEvents/{eventId} {
       allow read: if isStaff()
         || (isNurse()
