@@ -193,14 +193,21 @@ export function verbalOrderBellText(kind: 'taken' | 'fax-failed' | 'fax-returned
   }
 }
 
-/** Inbound-fax matcher: which open orders could this fax be the signed copy of? */
+/**
+ * Inbound-fax matcher: which open orders could this fax be the signed copy of?
+ * Fax services report two sender numbers: the line's caller ID and the
+ * machine's own "remote ID" header. Cloud fax providers (MetroFax, for one)
+ * send a carrier number as caller ID and put the real fax number in the
+ * remote ID, so both are checked.
+ */
 export function candidateOrdersForInboundFax(
-  callerIdRaw: string,
+  senderNumbers: string | string[],
   openOrders: Pick<VerbalOrder, 'id' | 'physicianFax' | 'status'>[],
 ): string[] {
-  const from = normalizeUSFaxNumber(callerIdRaw);
-  if (!from) return [];
+  const raws = Array.isArray(senderNumbers) ? senderNumbers : [senderNumbers];
+  const froms = new Set(raws.map(normalizeUSFaxNumber).filter(Boolean));
+  if (froms.size === 0) return [];
   return openOrders
-    .filter((o) => o.status !== 'signed' && normalizeUSFaxNumber(o.physicianFax) === from)
+    .filter((o) => o.status !== 'signed' && froms.has(normalizeUSFaxNumber(o.physicianFax)))
     .map((o) => o.id);
 }
