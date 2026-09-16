@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Users, ClipboardList, UserCog, FileText, FilePlus, FileEdit, ShieldAlert, MessageCircleQuestion, Stethoscope } from 'lucide-react';
+import { Users, ClipboardList, UserCog, FileText, FilePlus, FileEdit, ShieldAlert, MessageCircleQuestion, Stethoscope, PhoneCall } from 'lucide-react';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { loadDraft, subscribePendingDupCount, type NoteDraft } from '@/lib/drafts';
 import { subscribeMyOpenClarifications } from '@/lib/clarifications';
@@ -152,9 +152,24 @@ export default function AdminDashboardPage() {
     allow: ['nurse', 'admin', 'supervisor'],
   };
 
+  // Verbal orders: taking one needs an RN/LPN credential (or staff); the
+  // queue itself is readable by every clinical role.
+  const canTakeVerbalOrder =
+    !isViewingAs && (effectiveCredential === 'RN' || effectiveCredential === 'LPN' || role === 'admin' || role === 'supervisor');
+  const verbalOrderCard: Card = {
+    href: canTakeVerbalOrder ? '/admin/verbal-orders/new' : '/admin/verbal-orders',
+    icon: <PhoneCall size={22} />,
+    title: canTakeVerbalOrder ? 'Take a verbal order' : 'Verbal orders',
+    description: canTakeVerbalOrder
+      ? 'Record a physician\'s telephone order, sign it, and fax the physician for signature in one step.'
+      : 'See the verbal orders you have taken and whether the physician has signed them.',
+    allow: ['nurse', 'admin', 'supervisor'],
+  };
+
   const visibleCards = [
     ...(canAuthorNote ? [noteCard] : []),
     ...(canAuthorOversight ? [oversightCard] : []),
+    ...(role !== 'va' ? [verbalOrderCard] : []),
     ...CARDS.filter((c) => role && c.allow.includes(role)),
   ];
   const kicker = role ? ROLE_KICKER[role] : '';

@@ -917,6 +917,11 @@ function OrderTable({
                   <div style={{ fontWeight: 600, color: '#2c3e50' }}>{o.medName}</div>
                   {describeFrequency(o) && <div style={subTextStyle}>{describeFrequency(o)}</div>}
                   {o.isPRN && <span style={prnBadgeStyle}>PRN</span>}
+                  {!discontinued && o.verbalOrderPending && (
+                    <span style={physicianNeededBadgeStyle} title="Taken as a verbal order; the physician's signed copy has not come back yet.">
+                      Verbal, awaiting signature
+                    </span>
+                  )}
                   {!discontinued && physicianAttributionPending(o) && (
                     <span style={physicianNeededBadgeStyle} title="No ordering physician on this order yet; edit the order to add the name.">
                       Physician needed

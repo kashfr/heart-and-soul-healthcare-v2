@@ -722,6 +722,31 @@ export default function AdminSettingsPage() {
           )}
         </section>
 
+        {/* --- Verbal orders --- */}
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Verbal orders</h2>
+          <p style={sectionSubStyle}>
+            When a nurse takes a telephone order, the physician is faxed an authentication form to sign and
+            return. An order still unsigned after the first number of days is marked overdue on the queue and
+            re-faxed once; after the second it rings the admin bell. The return fax number is printed on the
+            form; leave it blank to use the portal&apos;s SRFax number.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+            <Field label="Overdue after (days)">
+              <input type="number" min={1} max={365} value={draft.verbalOrders.overdueDays} style={inputStyle}
+                onChange={(e) => setDraft((prev) => ({ ...prev, verbalOrders: { ...prev.verbalOrders, overdueDays: Number(e.target.value) || 1 } }))} />
+            </Field>
+            <Field label="Escalate after (days)">
+              <input type="number" min={1} max={365} value={draft.verbalOrders.escalateDays} style={inputStyle}
+                onChange={(e) => setDraft((prev) => ({ ...prev, verbalOrders: { ...prev.verbalOrders, escalateDays: Number(e.target.value) || 1 } }))} />
+            </Field>
+            <Field label="Return fax number (optional)">
+              <input type="tel" placeholder="(470) 235-1891" value={draft.verbalOrders.returnFax} style={inputStyle}
+                onChange={(e) => setDraft((prev) => ({ ...prev, verbalOrders: { ...prev.verbalOrders, returnFax: e.target.value.replace(/\D/g, '').slice(0, 10) } }))} />
+            </Field>
+          </div>
+        </section>
+
         {/* --- Pediatric vital ranges (collapsed by default: the per-age-group
             grid is by far the longest block on this page) --- */}
         <section style={sectionStyle}>

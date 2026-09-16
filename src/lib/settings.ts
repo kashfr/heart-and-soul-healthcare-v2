@@ -280,7 +280,22 @@ export interface ShiftChangeAlertsSettings {
   recipientUids: string[];
 }
 
+/**
+ * Verbal (telephone) physician orders. An order the physician has not signed
+ * shows as overdue on the queue after overdueDays and rings the admin bell
+ * after escalateDays; the cron re-faxes once at overdueDays. returnFax is
+ * the number printed on the authentication form for the physician to fax
+ * the signed copy back to (the SRFax number the portal polls); blank falls
+ * back to the SRFAX_FAX_NUMBER env var.
+ */
+export interface VerbalOrdersSettings {
+  overdueDays: number;
+  escalateDays: number;
+  returnFax: string;
+}
+
 export interface AppSettings {
+  verbalOrders: VerbalOrdersSettings;
   submissions: SubmissionsSettings;
   cosign: CosignSettings;
   patient: PatientSettings;
@@ -301,6 +316,7 @@ export interface AppSettings {
  * refactor for anyone who hasn't customized.
  */
 export const DEFAULT_SETTINGS: AppSettings = {
+  verbalOrders: { overdueDays: 14, escalateDays: 30, returnFax: '' },
   submissions: {
     defaultSort: 'dateOfService',
     defaultDir: 'desc',
@@ -425,6 +441,7 @@ export function mergeWithDefaults(partial: unknown): AppSettings {
     },
     corrections: mergeCorrections(p.corrections),
     shiftChangeAlerts: mergeShiftChangeAlerts(p.shiftChangeAlerts),
+    verbalOrders: mergeVerbalOrders(p.verbalOrders),
     branding: mergeBranding(p.branding),
     emails: mergeEmails(p.emails),
     intake: mergeIntake(p.intake),
@@ -442,6 +459,19 @@ function mergeCorrections(input: unknown): CorrectionsSettings {
     reviewerName: typeof src.reviewerName === 'string' ? src.reviewerName.trim() : '',
     reviewerPhone: typeof src.reviewerPhone === 'string' ? src.reviewerPhone.trim() : '',
   };
+}
+
+function mergeVerbalOrders(input: unknown): VerbalOrdersSettings {
+  const src = (input ?? {}) as Partial<VerbalOrdersSettings>;
+  const d = DEFAULT_SETTINGS.verbalOrders;
+  const clampDays = (v: unknown, fallback: number) => {
+    const n = typeof v === 'number' ? Math.round(v) : Number.NaN;
+    return Number.isFinite(n) && n >= 1 && n <= 365 ? n : fallback;
+  };
+  const overdueDays = clampDays(src.overdueDays, d.overdueDays);
+  const escalateDays = Math.max(overdueDays, clampDays(src.escalateDays, d.escalateDays));
+  const returnFax = typeof src.returnFax === 'string' ? src.returnFax.replace(/\D/g, '').slice(-10) : '';
+  return { overdueDays, escalateDays, returnFax: returnFax.length === 10 ? returnFax : '' };
 }
 
 function mergeShiftChangeAlerts(input: unknown): ShiftChangeAlertsSettings {
