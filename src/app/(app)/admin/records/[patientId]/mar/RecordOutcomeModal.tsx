@@ -6,6 +6,9 @@ import { X } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { formatDateUS } from '@/lib/dateFormat';
 import type { MarAdministration } from '@/lib/mar';
+import { escortToField, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
+
+const OUTCOME_FIELD_ID = 'ro-field-outcome';
 
 interface Props {
   admin: MarAdministration; // the given PRN dose awaiting its result
@@ -22,6 +25,9 @@ interface Props {
 export default function RecordOutcomeModal({ admin, onClose, onSaved }: Props) {
   const [outcome, setOutcome] = useState('');
   const [busy, setBusy] = useState(false);
+  // The field's own problem sits under it; the save failure (no field) stays
+  // next to the buttons.
+  const [outcomeError, setOutcomeError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [mounted, setMounted] = useState(false);
@@ -35,12 +41,14 @@ export default function RecordOutcomeModal({ admin, onClose, onSaved }: Props) {
   }, [onClose]);
 
   const save = async () => {
+    setError(null);
     if (!outcome.trim()) {
-      setError('Describe the result of the dose.');
+      setOutcomeError('Describe the result of the dose.');
+      escortToField(OUTCOME_FIELD_ID);
       return;
     }
     setBusy(true);
-    setError(null);
+    setOutcomeError(null);
     try {
       const res = await authedFetch('/api/mar/outcome', {
         method: 'POST',
@@ -83,22 +91,23 @@ export default function RecordOutcomeModal({ admin, onClose, onSaved }: Props) {
           </button>
         </div>
 
-        <label style={field}>
+        <label id={OUTCOME_FIELD_ID} style={field}>
           <span style={fieldLabel}>Outcome / result *</span>
           <textarea
             value={outcome}
-            onChange={(e) => setOutcome(e.target.value)}
-            style={textarea}
+            onChange={(e) => { setOutcome(e.target.value); setOutcomeError(null); }}
+            style={outcomeError ? { ...textarea, ...FIELD_ERROR_STYLE } : textarea}
             placeholder="e.g., pain decreased from 6/10 to 2/10 within 45 min"
             autoFocus
           />
+          <FieldError message={outcomeError} />
           <span style={hint}>
             What happened after the dose (recheck 30-60 min). This completes the PRN record; later
             changes go through the amend flow.
           </span>
         </label>
 
-        {error && <div style={errBox}>{error}</div>}
+        {error && <div style={errBox} role="alert">{error}</div>}
 
         <div style={actions}>
           <button type="button" style={cancelBtn} onClick={onClose} disabled={busy}>

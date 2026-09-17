@@ -454,6 +454,11 @@ function ProgressNotePageInner() {
         key.startsWith('q55_') || key.startsWith('q41_overallCarePlan')
       );
       lpnRnRadioKeys.forEach(key => setRadio(key, null));
+      // The seizure attestation lives in the read-only (for HHA/CNA) System
+      // Assessments block; a lingering "Yes" with a half-filled entry would
+      // block the note with no way to fix it. Clearing the answer wipes the
+      // entries too (SeizureLogSection's effect).
+      setRadio('q30_seizureEvent', null);
     }
   };
 
@@ -1383,35 +1388,56 @@ function ProgressNotePageInner() {
       }
     }
 
-    // Seizure attestation gate (clients flagged hasSeizureDisorder). Every
-    // note must attest "No seizure noted" or log each seizure with its
-    // required fields. The Yes/No is a DeselectableRadio (invisible to the
-    // DOM scan) and the blocks live in the collapsible Neurological section,
-    // so enforce here from any tab, same escort as the tube gate. New notes
-    // only: historical notes predate the log. LPN/RN only, like the tube
-    // gate: the System Assessments block is read-only for HHA/CNA, so
-    // gating them would lock their notes out entirely.
-    if (!isEditMode && clientHasSeizureDisorder && (credential === 'LPN' || credential === 'RN')) {
+    // Seizure gate, two layers, new notes only (historical notes predate the
+    // log):
+    //  1. Attestation: a client flagged hasSeizureDisorder must have "No
+    //     seizure noted" or a logged seizure on every note. LPN/RN only, like
+    //     the tube gate: the System Assessments block is read-only for
+    //     HHA/CNA, so demanding the answer would lock their notes out.
+    //  2. Completeness: whenever the answer is "Yes", every seizure entry
+    //     needs its required fields, for ANY credential and ANY client. A
+    //     half-filled seizure must never submit just because the roster flag
+    //     is off.
+    // The Yes/No is a DeselectableRadio (invisible to the DOM scan) and the
+    // blocks live in the collapsible Neurological section (skipped by the
+    // scan while collapsed), so enforce here from any tab. Escort mirrors the
+    // required-field scan: open the section, scroll, red-outline, focus.
+    if (!isEditMode) {
+      const seizureAttestationRequired =
+        clientHasSeizureDisorder && (credential === 'LPN' || credential === 'RN');
       const gateData: Record<string, unknown> = { ...(getValues() as Record<string, unknown>) };
       for (const [k, v] of Object.entries(radioState)) {
         if (v) gateData[k] = v;
       }
-      const gaps = seizureGaps(gateData);
+      const gaps = seizureGaps(gateData, { attestationRequired: seizureAttestationRequired });
       if (gaps.length > 0) {
         setCurrentPage(3);
         setNeuroExpandSignal((n) => n + 1);
         const firstTarget = gaps[0].targetId;
         setTimeout(() => {
           const el = formRef.current?.querySelector(`#${firstTarget}`) as HTMLElement | null;
-          el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          if (el && (el.tagName === 'SELECT' || el.tagName === 'INPUT')) {
-            (el as HTMLInputElement).focus();
-          }
+          if (!el) return;
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // Same red outline the required-field scan paints, so the nurse
+          // sees WHICH box, not just which section. Clears once she edits it
+          // (a wrapper row clears on the click that answers its radio).
+          const isInput = el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA';
+          const clearEvents: string[] = isInput ? ['input', 'change'] : ['click', 'change'];
+          el.style.border = '2px solid #c62828';
+          el.style.background = '#fff5f5';
+          const clearHighlight = () => {
+            el.style.border = '';
+            el.style.background = '';
+            for (const ev of clearEvents) el.removeEventListener(ev, clearHighlight);
+          };
+          for (const ev of clearEvents) el.addEventListener(ev, clearHighlight);
+          if (isInput) (el as HTMLInputElement).focus();
         }, 150);
+        const lead = clientHasSeizureDisorder
+          ? `This client has a seizure disorder, and the seizure log isn't complete:`
+          : `You answered "Yes" to a seizure event, and the seizure log isn't complete:`;
         alert(
-          `This client has a seizure disorder, and the seizure log isn't complete:\n\n${gaps
-            .map((g) => `• ${g.label}`)
-            .join('\n')}\n\n` +
+          `${lead}\n\n${gaps.map((g) => `• ${g.label}`).join('\n')}\n\n` +
             `We've opened the Neurological section on the Observations tab and taken you there. ` +
             `Answer "No seizure noted" if none occurred, or add one entry per seizure.`,
         );
@@ -2528,7 +2554,7 @@ function ProgressNotePageInner() {
       <form ref={formRef} onSubmit={handleSubmit} className={styles.form} noValidate>
         <div style={pageStyle(1)}><FormPageOne formRef={ref} register={register} watch={watch} setValue={setValue} control={control} onCredentialChange={handleCredentialChange} patients={patients} initialClientName={initialClientName} lockIdentity={isNurse && !isEditMode} /></div>
         <div style={pageStyle(2)}><FormPageTwo formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} ageStr={watch('q5_ageYears')} dob={watch('q4_dateofBirth')} errors={errors} isEditMode={isEditMode} onGoToMedChanges={goToMedChanges} /></div>
-        <div style={pageStyle(3)}><FormPageThree formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} clientHasFeedingTube={clientHasFeedingTube} giExpandSignal={giExpandSignal} clientHasSeizureDisorder={clientHasSeizureDisorder} neuroExpandSignal={neuroExpandSignal} errors={errors} /></div>
+        <div style={pageStyle(3)}><FormPageThree formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} clientHasFeedingTube={clientHasFeedingTube} giExpandSignal={giExpandSignal} clientHasSeizureDisorder={clientHasSeizureDisorder} neuroExpandSignal={neuroExpandSignal} errors={errors} isEditMode={isEditMode} /></div>
         <div style={pageStyle(4)}><FormPageFour formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} editMode={isEditMode} errors={errors} /></div>
         <div style={pageStyle(5)}><FormPageFive formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} isEditMode={isEditMode} clientRequiresMar={clientRequiresMar} documenter={user && profile ? { uid: user.uid, name: profile.displayName || user.email || '', credential: profile.credential || '' } : undefined} getNoteId={ensureSubmissionId} /></div>
         <div style={pageStyle(6)}><FormPageSix formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} isEditMode={isEditMode} docReqs={docReqs} errors={errors} /></div>

@@ -14,6 +14,7 @@ import {
 } from '@/lib/patientVisits';
 import { overdueVisits, recentResolvedVisits, scheduledBeyond, upcomingVisits } from '@/lib/clientDashboardShared';
 import VisitsCalendar from './VisitsCalendar';
+import { escortToField, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
 
 function todayISO(): string {
   const d = new Date();
@@ -288,6 +289,7 @@ function AddVisitModal({
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dateError, setDateError] = useState<string | null>(null);
 
   // A supervisory visit is performed by an RN supervisor, not the client's
   // case nurse — so the assignee pool swaps with the visit type. Supervisors
@@ -306,10 +308,13 @@ function AddVisitModal({
   const assignPool: AssigneeOption[] = supervisory ? (supervisors ?? []) : careTeam;
 
   const save = async () => {
+    if (busy) return;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      setError('Pick the visit date.');
+      setDateError('Pick the visit date.');
+      escortToField('visit-date');
       return;
     }
+    setDateError(null);
     setBusy(true);
     setError(null);
     const pick = assignPool.find((m) => m.uid === nurseUid);
@@ -340,9 +345,19 @@ function AddVisitModal({
         <div style={sheetTitleStyle}>Schedule a visit</div>
 
         <div style={grid2Style}>
-          <label style={fieldStyle}>
+          <label style={fieldStyle} id="visit-date">
             <span style={fieldLabelStyle}>Date *</span>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inputStyle} />
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => {
+                setDate(e.target.value);
+                if (dateError) setDateError(null);
+              }}
+              style={{ ...inputStyle, ...(dateError ? FIELD_ERROR_STYLE : null) }}
+              aria-invalid={!!dateError}
+            />
+            <FieldError message={dateError} />
           </label>
           <label style={fieldStyle}>
             <span style={fieldLabelStyle}>Start time</span>

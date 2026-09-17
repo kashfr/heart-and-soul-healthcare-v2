@@ -14,6 +14,14 @@ import {
 import { resolveCurrentAdministrations, describeFrequency } from '@/lib/marShared';
 import { authedFetch } from '@/lib/authedFetch';
 import { withSelectChevron } from '@/lib/selectChevron';
+import { escortToField, firstErrorKey, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
+
+/** Fields the "correct this entry" form can reject, top to bottom. */
+type AmendField = 'amendTime' | 'amendByName' | 'amendWhy';
+type AmendErrors = Partial<Record<AmendField, string>>;
+const AMEND_FIELD_ORDER: readonly AmendField[] = ['amendTime', 'amendByName', 'amendWhy'];
+const amendFieldId = (k: AmendField) => `mc-amend-${k}`;
+const VOID_REASON_ID = 'mc-void-reason';
 
 const ADMIN_BY_LABELS: Record<string, string> = {
   nurse: 'Nurse',
@@ -88,13 +96,26 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
   const [amendNotifiedOrig, setAmendNotifiedOrig] = useState(false);
   const [amendWhy, setAmendWhy] = useState('');
   const [amendBusy, setAmendBusy] = useState(false);
+  // Per-field problems sit under their fields; the server's answer (no field)
+  // stays next to the buttons.
+  const [amendFieldErrors, setAmendFieldErrors] = useState<AmendErrors>({});
   const [amendError, setAmendError] = useState<string | null>(null);
+  const clearAmendErr = (...keys: AmendField[]) =>
+    setAmendFieldErrors((cur) => {
+      if (!keys.some((k) => cur[k])) return cur;
+      const next = { ...cur };
+      for (const k of keys) delete next[k];
+      return next;
+    });
+  const amendHi = (k: AmendField): CSSProperties => (amendFieldErrors[k] ? FIELD_ERROR_STYLE : {});
   // Remove-as-entered-in-error state. A void differs from an amend: the entry
   // should never have existed (mis-clicked slot/day), so it is struck from the
   // live record and its slot reopens rather than being corrected in place.
   const [voidFor, setVoidFor] = useState<string | null>(null);
   const [voidWhy, setVoidWhy] = useState('');
   const [voidBusy, setVoidBusy] = useState(false);
+  // The reason field's own problem, and the server's answer near the buttons.
+  const [voidWhyError, setVoidWhyError] = useState<string | null>(null);
   const [voidError, setVoidError] = useState<string | null>(null);
 
   // Render into a portal on document.body: standard full-screen-overlay hygiene
@@ -222,12 +243,14 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
 
   const saveVoid = async (a: MarAdministration) => {
     if (!a.id) return;
+    setVoidError(null);
     if (!voidWhy.trim()) {
-      setVoidError('A reason is required (e.g., clicked the wrong time row).');
+      setVoidWhyError('A reason is required (e.g., clicked the wrong time row).');
+      escortToField(VOID_REASON_ID);
       return;
     }
     setVoidBusy(true);
-    setVoidError(null);
+    setVoidWhyError(null);
     try {
       const res = await authedFetch('/api/mar/void', {
         method: 'POST',
@@ -264,17 +287,19 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
     setAmendNotifiedOrig(a.prescriberNotified === true);
     setAmendWhy('');
     setAmendError(null);
+    setAmendFieldErrors({});
   };
 
   const saveAmend = async (a: MarAdministration) => {
     if (!a.id) return;
+    setAmendError(null);
+    // Collect every problem, outline each field, and escort to the first.
+    const e: AmendErrors = {};
     if (!amendWhy.trim()) {
-      setAmendError('A reason for the correction is required.');
-      return;
+      e.amendWhy = 'A reason for the correction is required.';
     }
     if (amendStatus === 'given' && !amendTime) {
-      setAmendError('Enter the time the dose was given.');
-      return;
+      e.amendTime = 'Enter the time the dose was given.';
     }
     if (
       amendStatus === 'given' &&
@@ -282,11 +307,15 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
       amendByType !== 'self' &&
       !amendByName.trim()
     ) {
-      setAmendError('Enter the name of the person who administered it.');
+      e.amendByName = 'Enter the name of the person who administered it.';
+    }
+    setAmendFieldErrors(e);
+    const first = firstErrorKey(AMEND_FIELD_ORDER, e);
+    if (first) {
+      escortToField(amendFieldId(first));
       return;
     }
     setAmendBusy(true);
-    setAmendError(null);
     try {
       const res = await authedFetch('/api/mar/amend', {
         method: 'POST',
@@ -389,6 +418,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
                 setVoidFor(a.id || null);
                 setVoidWhy('');
                 setVoidError(null);
+                setVoidWhyError(null);
               }}
             >
               Remove — entered in error
@@ -404,19 +434,20 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
               slot reopens so it can be charted correctly. To change what the entry says (given vs
               held, the time), use <em>Correct this entry</em> instead.
             </div>
-            <label style={amendField}>
+            <label id={VOID_REASON_ID} style={amendField}>
               <span style={amendFieldLabel}>Why is this entry being removed? *</span>
               <input
                 type="text"
                 value={voidWhy}
-                onChange={(e) => setVoidWhy(e.target.value)}
-                style={amendInput}
+                onChange={(e) => { setVoidWhy(e.target.value); setVoidWhyError(null); }}
+                style={voidWhyError ? { ...amendInput, ...FIELD_ERROR_STYLE } : amendInput}
                 placeholder="e.g., clicked the 20:00 row while charting the 08:00 dose"
               />
+              <FieldError message={voidWhyError} />
             </label>
-            {voidError && <div style={amendErr}>{voidError}</div>}
+            {voidError && <div style={amendErr} role="alert">{voidError}</div>}
             <div style={amendActions}>
-              <button type="button" style={amendCancel} onClick={() => setVoidFor(null)} disabled={voidBusy}>
+              <button type="button" style={amendCancel} onClick={() => { setVoidFor(null); setVoidWhyError(null); }} disabled={voidBusy}>
                 Cancel
               </button>
               <button
@@ -438,7 +469,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
                 <button
                   key={s}
                   type="button"
-                  onClick={() => setAmendStatus(s)}
+                  onClick={() => { setAmendStatus(s); clearAmendErr('amendTime', 'amendByName'); }}
                   style={amendStatus === s ? amendStatusActive[s] : amendStatusBtn}
                 >
                   {statusLabel(s)}
@@ -446,15 +477,21 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
               ))}
             </div>
             {amendStatus === 'given' && (
-              <label style={amendField}>
+              <label id={amendFieldId('amendTime')} style={amendField}>
                 <span style={amendFieldLabel}>Time given</span>
-                <input type="time" value={amendTime} onChange={(e) => setAmendTime(e.target.value)} style={amendInput} />
+                <input
+                  type="time"
+                  value={amendTime}
+                  onChange={(e) => { setAmendTime(e.target.value); clearAmendErr('amendTime'); }}
+                  style={{ ...amendInput, ...amendHi('amendTime') }}
+                />
+                <FieldError message={amendFieldErrors.amendTime} />
               </label>
             )}
             {amendStatus === 'given' && (
               <label style={amendField}>
                 <span style={amendFieldLabel}>Administered by</span>
-                <select value={amendByType} onChange={(e) => setAmendByType(e.target.value)} style={amendSelect}>
+                <select value={amendByType} onChange={(e) => { setAmendByType(e.target.value); clearAmendErr('amendByName'); }} style={amendSelect}>
                   <option value="nurse">Nurse</option>
                   <option value="family">Family member</option>
                   <option value="responsibleParty">Responsible party</option>
@@ -464,15 +501,16 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
               </label>
             )}
             {amendStatus === 'given' && amendByType !== 'nurse' && (
-              <label style={amendField}>
+              <label id={amendFieldId('amendByName')} style={amendField}>
                 <span style={amendFieldLabel}>Administrator name</span>
                 <input
                   type="text"
                   value={amendByName}
-                  onChange={(e) => setAmendByName(e.target.value)}
-                  style={amendInput}
+                  onChange={(e) => { setAmendByName(e.target.value); clearAmendErr('amendByName'); }}
+                  style={{ ...amendInput, ...amendHi('amendByName') }}
                   placeholder="e.g., Jane Doe (daughter)"
                 />
+                <FieldError message={amendFieldErrors.amendByName} />
               </label>
             )}
             {showDoseReason && (
@@ -514,17 +552,18 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
                 </span>
               </label>
             )}
-            <label style={amendField}>
+            <label id={amendFieldId('amendWhy')} style={amendField}>
               <span style={amendFieldLabel}>Reason for this correction *</span>
               <input
                 type="text"
                 value={amendWhy}
-                onChange={(e) => setAmendWhy(e.target.value)}
-                style={amendInput}
+                onChange={(e) => { setAmendWhy(e.target.value); clearAmendErr('amendWhy'); }}
+                style={{ ...amendInput, ...amendHi('amendWhy') }}
                 placeholder="e.g., marked given by mistake; the dose was actually held"
               />
+              <FieldError message={amendFieldErrors.amendWhy} />
             </label>
-            {amendError && <div style={amendErr}>{amendError}</div>}
+            {amendError && <div style={amendErr} role="alert">{amendError}</div>}
             <div style={amendActions}>
               <button type="button" style={amendCancel} onClick={() => setAmendFor(null)} disabled={amendBusy}>
                 Cancel

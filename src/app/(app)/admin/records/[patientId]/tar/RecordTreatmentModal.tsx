@@ -11,6 +11,13 @@ import {
   type TarStatus,
 } from '@/lib/tarShared';
 import type { CareTask } from '@/lib/careTasks';
+import { escortToField, firstErrorKey, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
+
+type TreatmentField = 'performerName' | 'reason';
+type TreatmentErrors = Partial<Record<TreatmentField, string>>;
+/** Top to bottom on the sheet (the performer row sits above the reason). */
+const FIELD_ORDER: readonly TreatmentField[] = ['performerName', 'reason'];
+const fieldId = (k: TreatmentField) => `tar-field-${k}`;
 
 interface Props {
   patientId: string;
@@ -55,18 +62,34 @@ export default function RecordTreatmentModal({
   const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+  // Per-field problems sit under their fields; the save failure (no field)
+  // stays next to the buttons.
+  const [errors, setErrors] = useState<TreatmentErrors>({});
   const [error, setError] = useState<string | null>(null);
+  const clearErr = (...keys: TreatmentField[]) =>
+    setErrors((cur) => {
+      if (!keys.some((k) => cur[k])) return cur;
+      const next = { ...cur };
+      for (const k of keys) delete next[k];
+      return next;
+    });
+  const hi = (k: TreatmentField): CSSProperties => (errors[k] ? FIELD_ERROR_STYLE : {});
 
   const needsPerformerName = status === 'done' && performedByType !== 'nurse';
 
   const save = async () => {
     setError(null);
+    const e: TreatmentErrors = {};
     if (status === 'not-done' && !reason.trim()) {
-      setError('Choose why the treatment was not carried out.');
-      return;
+      e.reason = 'Choose why the treatment was not carried out.';
     }
     if (needsPerformerName && !performerName.trim()) {
-      setError('Enter the name of the person who performed the treatment.');
+      e.performerName = 'Enter the name of the person who performed the treatment.';
+    }
+    setErrors(e);
+    const first = firstErrorKey(FIELD_ORDER, e);
+    if (first) {
+      escortToField(fieldId(first));
       return;
     }
     setSaving(true);
@@ -139,7 +162,7 @@ export default function RecordTreatmentModal({
               <button
                 key={value}
                 type="button"
-                onClick={() => setStatus(value)}
+                onClick={() => { setStatus(value); clearErr('reason', 'performerName'); }}
                 style={status === value ? segActive : seg}
               >
                 {text}
@@ -156,7 +179,7 @@ export default function RecordTreatmentModal({
                 <select
                   id="tar-performer"
                   value={performedByType}
-                  onChange={(e) => setPerformedByType(e.target.value as TarPerformerType)}
+                  onChange={(e) => { setPerformedByType(e.target.value as TarPerformerType); clearErr('performerName'); }}
                   style={select}
                 >
                   {TAR_PERFORMER_TYPES.map((p) => (
@@ -170,30 +193,32 @@ export default function RecordTreatmentModal({
               </div>
             </div>
             {needsPerformerName && (
-              <div style={field}>
+              <div id={fieldId('performerName')} style={field}>
                 <label style={label} htmlFor="tar-performer-name">Name of person who performed it *</label>
                 <input
                   id="tar-performer-name"
                   type="text"
                   value={performerName}
-                  onChange={(e) => setPerformerName(e.target.value)}
-                  style={input}
+                  onChange={(e) => { setPerformerName(e.target.value); clearErr('performerName'); }}
+                  style={{ ...input, ...hi('performerName') }}
                   placeholder="e.g., Paula Krone (mother)"
                 />
+                <FieldError message={errors.performerName} />
               </div>
             )}
           </>
         )}
 
         {status === 'not-done' && (
-          <div style={field}>
+          <div id={fieldId('reason')} style={field}>
             <label style={label} htmlFor="tar-reason">Reason not carried out *</label>
-            <select id="tar-reason" value={reason} onChange={(e) => setReason(e.target.value)} style={select}>
+            <select id="tar-reason" value={reason} onChange={(e) => { setReason(e.target.value); clearErr('reason'); }} style={{ ...select, ...hi('reason') }}>
               <option value="">Select a reason…</option>
               {TAR_NOT_DONE_REASONS.map((r) => (
                 <option key={r} value={r}>{r}</option>
               ))}
             </select>
+            <FieldError message={errors.reason} />
           </div>
         )}
 
@@ -219,7 +244,7 @@ export default function RecordTreatmentModal({
           </div>
         </div>
 
-        {error && <div style={errorBox}>{error}</div>}
+        {error && <div style={errorBox} role="alert">{error}</div>}
 
         <div style={actions}>
           <button type="button" onClick={onClose} style={cancelBtn} disabled={saving}>Cancel</button>

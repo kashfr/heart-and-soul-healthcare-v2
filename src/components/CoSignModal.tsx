@@ -6,6 +6,14 @@ import SignatureCanvas, { type SignatureCanvasHandle } from './SignatureCanvas';
 import { authedFetch } from '@/lib/authedFetch';
 import { formatDateUS } from '@/lib/dateFormat';
 import type { SubmissionSummary } from '@/lib/submissions';
+import { escortToField, firstErrorKey, FieldError, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
+
+/** What the sign button can refuse over: unreviewed notes (batch only) and
+ *  a blank signature, in the order they appear on the sheet. */
+type CoSignField = 'reviewed' | 'signature';
+type CoSignErrors = Partial<Record<CoSignField, string>>;
+const FIELD_ORDER: readonly CoSignField[] = ['reviewed', 'signature'];
+const fieldId = (k: CoSignField) => `cosign-field-${k}`;
 
 interface CoSignModalProps {
   /** Notes the RN is co-signing. One = per-note endpoint, many = batch endpoint. */
@@ -29,7 +37,17 @@ export default function CoSignModal({ notes, onClose, onSuccess }: CoSignModalPr
   const sigRef = useRef<SignatureCanvasHandle>(null);
   const [signature, setSignature] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Per-field problems sit under their fields; the server's answer (no field)
+  // stays next to the buttons.
+  const [errors, setErrors] = useState<CoSignErrors>({});
   const [error, setError] = useState<string | null>(null);
+  const clearErr = (k: CoSignField) =>
+    setErrors((cur) => {
+      if (!cur[k]) return cur;
+      const next = { ...cur };
+      delete next[k];
+      return next;
+    });
   const [partialFailures, setPartialFailures] = useState<
     { id: string; reason: string; message: string }[]
   >([]);
@@ -43,16 +61,26 @@ export default function CoSignModal({ notes, onClose, onSuccess }: CoSignModalPr
     () => (isBatch ? notes.every((n) => reviewed[n.id]) : true),
     [isBatch, notes, reviewed]
   );
-  const canSubmit = !submitting && !!signature && allReviewed;
-
   const handleClear = () => {
     sigRef.current?.clear();
     setSignature('');
   };
 
   const handleSubmit = async () => {
+    if (submitting) return;
+    // The button stays enabled so the click can explain itself: outline
+    // what is missing, say so under it, and scroll to the first problem.
+    const e: CoSignErrors = {};
+    if (isBatch && !allReviewed) {
+      e.reviewed = 'Tick the "Reviewed" box on every note before signing.';
+    }
     if (!signature) {
-      setError('Please draw your signature before submitting.');
+      e.signature = 'Please draw your signature before submitting.';
+    }
+    setErrors(e);
+    const first = firstErrorKey(FIELD_ORDER, e);
+    if (first) {
+      escortToField(fieldId(first));
       return;
     }
     setSubmitting(true);
@@ -123,7 +151,7 @@ export default function CoSignModal({ notes, onClose, onSuccess }: CoSignModalPr
             {isBatch ? ' to all selected notes' : ''} and cannot be undone.
           </p>
 
-          <div style={noteListStyle}>
+          <div id={fieldId('reviewed')} style={errors.reviewed ? { ...noteListStyle, ...FIELD_ERROR_WRAP_STYLE } : noteListStyle}>
             {notes.map((n) => (
               <div key={n.id} style={noteRowStyle}>
                 {isBatch && (
@@ -131,9 +159,10 @@ export default function CoSignModal({ notes, onClose, onSuccess }: CoSignModalPr
                     <input
                       type="checkbox"
                       checked={!!reviewed[n.id]}
-                      onChange={(e) =>
-                        setReviewed((prev) => ({ ...prev, [n.id]: e.target.checked }))
-                      }
+                      onChange={(e) => {
+                        setReviewed((prev) => ({ ...prev, [n.id]: e.target.checked }));
+                        clearErr('reviewed');
+                      }}
                       disabled={submitting}
                     />
                     <span style={{ fontSize: 12, color: '#475569', fontWeight: 600 }}>
@@ -162,6 +191,7 @@ export default function CoSignModal({ notes, onClose, onSuccess }: CoSignModalPr
               </div>
             ))}
           </div>
+          <FieldError message={errors.reviewed} />
           {isBatch && !allReviewed && (
             <p style={{ margin: '8px 0 0', fontSize: 12, color: '#92400e' }}>
               Tick the &quot;Reviewed&quot; box on every note before signing. Open them in new
@@ -171,12 +201,15 @@ export default function CoSignModal({ notes, onClose, onSuccess }: CoSignModalPr
 
           <div style={{ marginTop: 16 }}>
             <label style={labelStyle}>Your signature *</label>
-            <div style={canvasFrameStyle}>
+            <div id={fieldId('signature')} style={errors.signature ? { ...canvasFrameStyle, ...FIELD_ERROR_WRAP_STYLE, padding: 4 } : canvasFrameStyle}>
               <SignatureCanvas
                 ref={sigRef}
                 width={500}
                 height={150}
-                onChange={setSignature}
+                onChange={(v) => {
+                  setSignature(v);
+                  if (v) clearErr('signature');
+                }}
                 disabled={submitting}
                 className=""
               />
@@ -189,9 +222,10 @@ export default function CoSignModal({ notes, onClose, onSuccess }: CoSignModalPr
             >
               Clear signature
             </button>
+            <FieldError message={errors.signature} />
           </div>
 
-          {error && <div style={errorBoxStyle}>{error}</div>}
+          {error && <div style={errorBoxStyle} role="alert">{error}</div>}
 
           {partialFailures.length > 0 && (
             <div style={errorBoxStyle}>
@@ -215,15 +249,8 @@ export default function CoSignModal({ notes, onClose, onSuccess }: CoSignModalPr
           </button>
           <button
             onClick={handleSubmit}
-            disabled={!canSubmit}
-            style={{ ...primaryBtnStyle, opacity: canSubmit ? 1 : 0.6, cursor: canSubmit ? 'pointer' : 'not-allowed' }}
-            title={
-              !signature
-                ? 'Draw your signature first'
-                : isBatch && !allReviewed
-                  ? 'Tick the Reviewed box on every note first'
-                  : ''
-            }
+            disabled={submitting}
+            style={{ ...primaryBtnStyle, opacity: submitting ? 0.6 : 1, cursor: submitting ? 'not-allowed' : 'pointer' }}
             type="button"
           >
             {submitting ? (

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { StickyNote, Plus, ChevronDown, ChevronUp, ChevronRight, AlertTriangle, X } from 'lucide-react';
+import { escortToField, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
 import {
   addQuickNote,
   getQuickNote,
@@ -314,6 +315,7 @@ function AddQuickNoteModal({
   const [aboutDate, setAboutDate] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [textError, setTextError] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -321,7 +323,12 @@ function AddQuickNoteModal({
   }, []);
 
   const save = async () => {
-    if (!text.trim() || busy) return;
+    if (busy) return;
+    if (!text.trim()) {
+      setTextError('Write the note before saving.');
+      escortToField('quick-note-text');
+      return;
+    }
     setBusy(true);
     setError('');
     const chosen: QuickNoteCategory = category || 'other';
@@ -361,17 +368,22 @@ function AddQuickNoteModal({
 
         {error && <div style={errBoxStyle}>{error}</div>}
 
-        <div style={fieldStyle}>
+        <div style={fieldStyle} id="quick-note-text">
           <textarea
             ref={textareaRef}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value);
+              if (textError) setTextError('');
+            }}
             placeholder="What do you want to note about this client?"
             rows={4}
             maxLength={4000}
-            style={textareaStyle}
+            style={{ ...textareaStyle, ...(textError ? FIELD_ERROR_STYLE : null) }}
             disabled={busy}
+            aria-invalid={!!textError}
           />
+          <FieldError message={textError} />
         </div>
 
         <div style={fieldStyle}>
@@ -421,9 +433,9 @@ function AddQuickNoteModal({
           </button>
           <button
             type="button"
-            style={{ ...saveBtnStyle, opacity: !text.trim() || busy ? 0.55 : 1 }}
+            style={{ ...saveBtnStyle, opacity: busy ? 0.55 : 1 }}
             onClick={() => void save()}
-            disabled={!text.trim() || busy}
+            disabled={busy}
           >
             {busy ? 'Saving…' : 'Save note'}
           </button>

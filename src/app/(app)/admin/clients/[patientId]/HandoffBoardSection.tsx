@@ -6,6 +6,7 @@ import { acknowledgeHandoff, getHandoffsForPatient, postHandoff, type Handoff } 
 import { HANDOFF_TEXT_MAX, isAcknowledgedBy, isPendingFor, summarizeAcks } from '@/lib/handoffShared';
 import { fmtWhen } from '@/components/HandoffInbox';
 import { formatDateUS } from '@/lib/dateFormat';
+import { escortToField, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
 
 /**
  * The client's handoff board (dashboard Overview). Unlike quick notes, the
@@ -190,6 +191,7 @@ function PostHandoffModal({
   const [urgent, setUrgent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [textError, setTextError] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -197,7 +199,12 @@ function PostHandoffModal({
   }, []);
 
   const save = async () => {
-    if (!text.trim() || busy) return;
+    if (busy) return;
+    if (!text.trim()) {
+      setTextError('Write the handoff before posting.');
+      escortToField('handoff-post-text');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -226,17 +233,22 @@ function PostHandoffModal({
 
         {error && <div style={errBoxStyle}>{error}</div>}
 
-        <div style={fieldStyle}>
+        <div style={fieldStyle} id="handoff-post-text">
           <textarea
             ref={textareaRef}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value);
+              if (textError) setTextError('');
+            }}
             placeholder="What does the next nurse need to know?"
             rows={5}
             maxLength={HANDOFF_TEXT_MAX}
-            style={textareaStyle}
+            style={{ ...textareaStyle, ...(textError ? FIELD_ERROR_STYLE : null) }}
             disabled={busy}
+            aria-invalid={!!textError}
           />
+          <FieldError message={textError} />
         </div>
 
         <label style={urgentRowLabelStyle}>
@@ -251,9 +263,9 @@ function PostHandoffModal({
           <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={busy}>Cancel</button>
           <button
             type="button"
-            style={{ ...saveBtnStyle, opacity: !text.trim() || busy ? 0.55 : 1 }}
+            style={{ ...saveBtnStyle, opacity: busy ? 0.55 : 1 }}
             onClick={() => void save()}
-            disabled={!text.trim() || busy}
+            disabled={busy}
           >
             {busy ? 'Posting…' : 'Post handoff'}
           </button>

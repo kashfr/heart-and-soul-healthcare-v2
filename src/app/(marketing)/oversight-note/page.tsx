@@ -40,6 +40,7 @@ import {
 } from '@/lib/oversightNote';
 import { useAuth } from '@/components/AuthProvider';
 import { authedFetch } from '@/lib/authedFetch';
+import { escortToField, FieldError, FIELD_ERROR_STYLE, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
 import SignatureCanvas, { type SignatureCanvasHandle } from '@/components/SignatureCanvas';
 import DeselectableRadio, {
   radioState,
@@ -67,14 +68,27 @@ function joinedValueIncludes(joined: string, optionValue: string): boolean {
 
 /** Radio row rendered from an option list; the wrapper id is the rule key so
  *  the required-field scroll can find radio groups as well as inputs. */
-function RadioRow({ name, options }: { name: string; options: string[] }) {
+function RadioRow({
+  name,
+  options,
+  error,
+  onPick,
+}: {
+  name: string;
+  options: string[];
+  error?: string;
+  onPick?: () => void;
+}) {
   return (
-    <div className={styles.radioRow} id={name}>
-      {options.map((o) => (
-        <label key={o}>
-          <DeselectableRadio name={name} value={o} /> {o}
-        </label>
-      ))}
+    <div id={name} onClickCapture={onPick}>
+      <div className={styles.radioRow} style={error ? FIELD_ERROR_WRAP_STYLE : undefined}>
+        {options.map((o) => (
+          <label key={o}>
+            <DeselectableRadio name={name} value={o} /> {o}
+          </label>
+        ))}
+      </div>
+      <FieldError message={error} />
     </div>
   );
 }
@@ -87,6 +101,7 @@ function Area({
   required = false,
   placeholder,
   topGap = false,
+  error,
 }: {
   id: string;
   label: string;
@@ -97,6 +112,7 @@ function Area({
   /** Extra space above — use when a checkbox row sits directly above this
    *  field, since .checkRow has no bottom margin and .row has no top one. */
   topGap?: boolean;
+  error?: string;
 }) {
   return (
     <div className={styles.row} style={topGap ? { marginTop: 16 } : undefined}>
@@ -110,12 +126,47 @@ function Area({
           id={id}
           rows={rows}
           placeholder={placeholder}
+          style={error ? FIELD_ERROR_STYLE : undefined}
+          aria-invalid={!!error}
           {...register(id)}
         />
+        <FieldError message={error} />
       </div>
     </div>
   );
 }
+
+/** Per-field wording for a blocked submit. Anything not listed falls back to
+ *  "<rule label> is required." so a new rule still gets a message. */
+const OVERSIGHT_FIELD_MESSAGES: Record<string, string> = {
+  q3_clientName: 'Select the individual from the roster.',
+  q6_dateofService: 'Enter the date of the visit.',
+  ov_timeIn: 'Enter the time you arrived.',
+  ov_timeOut: 'Enter the time you left.',
+  ov_location: 'Enter where the visit took place.',
+  ov_visitType: 'Choose the visit type.',
+  q11_nurseName: 'Enter the RN name.',
+  ov_generalCondition: 'Describe the general condition and any changes since the last visit.',
+  ov_interactions: "Describe the conversations and the individual's responses during this visit.",
+  ov_hcpStatus: 'Choose whether the HCP is current or needs updates.',
+  ov_hcpStaffTrained: 'Choose whether staff were trained on the HCP.',
+  ov_ordersVerified: 'Choose whether every medication has a current physician order.',
+  ov_marReviewed: 'Choose whether the MAR was reviewed.',
+  ov_equipOrders: 'Choose whether adaptive equipment orders are current.',
+  ov_preventiveReviewed: 'Choose whether preventive care was reviewed.',
+  ov_aims: 'Choose the AIMS assessment status.',
+  ov_hospitalization: 'Choose the hospitalization / ER status.',
+  ov_logsReviewed: 'Choose whether tracking logs were reviewed.',
+  ov_hrst: 'Choose the HRST status.',
+  ov_educationResponse: "Describe the individual's response to the education provided.",
+  ov_choicesMade: 'Describe the choices the individual made or declined this visit.',
+  ov_goalProgress: 'Describe progress on the HCP / plan of care goals.',
+  ov_quarterly: 'Choose whether the quarterly review was completed this visit.',
+  ov_quarterlySummary: 'Write the quarterly data summary; it is required for a quarterly review.',
+  ov_actions: 'Describe the actions taken, orders requested, or referrals made.',
+  ov_nextVisit: 'Enter the plan and target date for the next visit.',
+  q61_signature: 'Sign the note before submitting.',
+};
 
 function OversightNotePageInner() {
   const router = useRouter();
@@ -364,10 +415,34 @@ function OversightNotePageInner() {
   const rnGateBlocked = isNurse && profile?.credential !== 'RN';
 
   const [missing, setMissing] = useState<string[]>([]);
+  /** Per-field messages from the last blocked submit, keyed by rule key / DOM id. */
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  /** A rejection from the server (duplicate, network) shown beside the buttons. */
+  const [submitError, setSubmitError] = useState('');
+  const [editReasonError, setEditReasonError] = useState('');
+
+  const clearFieldError = useCallback((key: string) => {
+    setFieldErrors((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }, []);
+
+  // Editing a field clears its message right away (RHF text inputs and the
+  // signature, which lands through setValue; radios clear from RadioRow).
+  useEffect(() => {
+    const sub = watch((_values, info) => {
+      if (info.name) clearFieldError(String(info.name));
+    });
+    return () => sub.unsubscribe();
+  }, [watch, clearFieldError]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!formRef.current || submitting) return;
+    setSubmitError('');
 
     // Merge the three stores into the flat record, shift-note style.
     const values = getValues();
@@ -397,16 +472,10 @@ function OversightNotePageInner() {
     const issues = getOversightIncomplete(values as Record<string, string>);
     if (issues.length > 0) {
       setMissing(issues.map((i) => i.label));
-      const target = document.getElementById(issues[0].key);
-      target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      alert(
-        'Please complete the required fields:\n\n' +
-          issues
-            .slice(0, 8)
-            .map((i) => '• ' + i.label)
-            .join('\n') +
-          (issues.length > 8 ? `\n…and ${issues.length - 8} more` : ''),
-      );
+      const errs: Record<string, string> = {};
+      for (const i of issues) errs[i.key] = OVERSIGHT_FIELD_MESSAGES[i.key] || `${i.label} is required.`;
+      setFieldErrors(errs);
+      escortToField(issues[0].key);
       return;
     }
     setMissing([]);
@@ -414,15 +483,16 @@ function OversightNotePageInner() {
     // A 12h/24h time-picker slip is the usual cause of an out-before-in
     // window; oversight visits never span midnight, so hard-stop it.
     if (String(values.ov_timeOut) <= String(values.ov_timeIn)) {
-      const target = document.getElementById('ov_timeOut');
-      target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      alert('Time out must be after time in. Please check the visit times.');
+      setFieldErrors({ ov_timeOut: 'Time out must be after time in. Check the visit times.' });
+      escortToField('ov_timeOut');
       return;
     }
+    setFieldErrors({});
 
     if (isEditMode && editId) {
       // An edit needs a reason for the audit trail, same as the shift note.
       if (!editReasonRef.current.trim()) {
+        setEditReasonError('');
         setShowEditReason(true);
         return;
       }
@@ -454,7 +524,7 @@ function OversightNotePageInner() {
         window.location.href = `/admin/submissions/${editId}`;
       } catch (err) {
         console.error('Oversight note update failed:', err);
-        alert('The note could not be updated. Please check your connection and try again.');
+        setSubmitError('The note could not be updated. Please check your connection and try again.');
         setSubmitting(false);
       }
       return;
@@ -482,7 +552,7 @@ function OversightNotePageInner() {
       if (dup) {
         setSubmitting(false);
         hasSubmittedRef.current = false; // she stays on the form; keep saving
-        alert(
+        setSubmitError(
           `An oversight note for ${values.q3_clientName} on this date already exists. ` +
             'Open it from Submissions instead of filing a second note. If this is intentional ' +
             '(a second visit the same day), contact the administrator.',
@@ -501,11 +571,14 @@ function OversightNotePageInner() {
       router.push(`/progress-note/submitted/${docId}?c=${c}&d=${d}&t=oversight`);
     } catch (err) {
       console.error('Oversight note submit failed:', err);
-      alert('The note could not be submitted. Please check your connection and try again.');
+      setSubmitError('The note could not be submitted. Please check your connection and try again.');
       hasSubmittedRef.current = false; // failed: resume protecting her work
       setSubmitting(false);
     }
   };
+
+  const fe = (k: string) => fieldErrors[k];
+  const hi = (k: string) => (fieldErrors[k] ? FIELD_ERROR_STYLE : undefined);
 
   if (rnGateBlocked) {
     return (
@@ -590,6 +663,8 @@ function OversightNotePageInner() {
                   id="q3_clientName"
                   value={selectedPatientId || ''}
                   onChange={(e) => handleSelectPatient(e.target.value)}
+                  style={hi('q3_clientName')}
+                  aria-invalid={!!fe('q3_clientName')}
                 >
                   <option value="">Select a client…</option>
                   {selectablePatients.map((p) => (
@@ -599,6 +674,7 @@ function OversightNotePageInner() {
                     </option>
                   ))}
                 </select>
+                <FieldError message={fe('q3_clientName')} />
                 <label
                   style={{
                     fontSize: 12,
@@ -637,20 +713,25 @@ function OversightNotePageInner() {
                   className={styles.input}
                   type="date"
                   id="q6_dateofService"
+                  style={hi('q6_dateofService')}
+                  aria-invalid={!!fe('q6_dateofService')}
                   {...register('q6_dateofService')}
                 />
+                <FieldError message={fe('q6_dateofService')} />
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="ov_timeIn">
                   Time in *
                 </label>
-                <input className={styles.input} type="time" id="ov_timeIn" {...register('ov_timeIn')} />
+                <input className={styles.input} type="time" id="ov_timeIn" style={hi('ov_timeIn')} aria-invalid={!!fe('ov_timeIn')} {...register('ov_timeIn')} />
+                <FieldError message={fe('ov_timeIn')} />
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="ov_timeOut">
                   Time out *
                 </label>
-                <input className={styles.input} type="time" id="ov_timeOut" {...register('ov_timeOut')} />
+                <input className={styles.input} type="time" id="ov_timeOut" style={hi('ov_timeOut')} aria-invalid={!!fe('ov_timeOut')} {...register('ov_timeOut')} />
+                <FieldError message={fe('ov_timeOut')} />
               </div>
             </div>
 
@@ -663,12 +744,15 @@ function OversightNotePageInner() {
                   className={styles.input}
                   id="ov_location"
                   placeholder="e.g. individual's home"
+                  style={hi('ov_location')}
+                  aria-invalid={!!fe('ov_location')}
                   {...register('ov_location')}
                 />
+                <FieldError message={fe('ov_location')} />
               </div>
               <div className={styles.f} style={{ flex: '1 1 40%' }}>
                 <label className={styles.label}>Visit type *</label>
-                <RadioRow name="ov_visitType" options={['Routine oversight', 'Quarterly review']} />
+                <RadioRow name="ov_visitType" error={fe('ov_visitType')} onPick={() => clearFieldError('ov_visitType')} options={['Routine oversight', 'Quarterly review']} />
               </div>
             </div>
 
@@ -681,8 +765,11 @@ function OversightNotePageInner() {
                   className={styles.input}
                   id="q11_nurseName"
                   readOnly={isNurse}
+                  style={hi('q11_nurseName')}
+                  aria-invalid={!!fe('q11_nurseName')}
                   {...register('q11_nurseName')}
                 />
+                <FieldError message={fe('q11_nurseName')} />
               </div>
               <div className={styles.f} style={{ flex: '1 1 35%' }}>
                 <label className={styles.label}>Credential</label>
@@ -696,6 +783,7 @@ function OversightNotePageInner() {
             <span className={styles.sectionLabel}>1. INDIVIDUAL STATUS AND OBSERVATIONS</span>
             <Area
               id="ov_generalCondition"
+              error={fe('ov_generalCondition')}
               label="General condition and any changes since last visit:"
               register={register}
               required
@@ -703,6 +791,7 @@ function OversightNotePageInner() {
             />
             <Area
               id="ov_interactions"
+              error={fe('ov_interactions')}
               label="Conversations, interactions, and the individual's responses during this visit:"
               register={register}
               required
@@ -711,6 +800,7 @@ function OversightNotePageInner() {
             />
             <Area
               id="ov_concerns"
+              error={fe('ov_concerns')}
               label="Concerns voiced by the individual, family, or staff:"
               register={register}
             />
@@ -724,6 +814,8 @@ function OversightNotePageInner() {
                 <label className={styles.label}>HCP reviewed *</label>
                 <RadioRow
                   name="ov_hcpStatus"
+                  error={fe('ov_hcpStatus')}
+                  onPick={() => clearFieldError('ov_hcpStatus')}
                   options={['Current; reflects present condition', 'Updates needed (describe in notes)']}
                 />
               </div>
@@ -733,6 +825,8 @@ function OversightNotePageInner() {
                 <label className={styles.label}>Staff trained on the HCP before implementation *</label>
                 <RadioRow
                   name="ov_hcpStaffTrained"
+                  error={fe('ov_hcpStaffTrained')}
+                  onPick={() => clearFieldError('ov_hcpStaffTrained')}
                   options={['Yes; training dates verified in record', 'Training needed', 'N/A']}
                 />
               </div>
@@ -742,10 +836,10 @@ function OversightNotePageInner() {
                 <label className={styles.label}>
                   Detailed teaching plan and skills checklist for proxy caregivers
                 </label>
-                <RadioRow name="ov_proxyPlan" options={['In place', 'Needed', 'N/A']} />
+                <RadioRow name="ov_proxyPlan" error={fe('ov_proxyPlan')} onPick={() => clearFieldError('ov_proxyPlan')} options={['In place', 'Needed', 'N/A']} />
               </div>
             </div>
-            <Area id="ov_hcpNotes" label="HCP notes:" register={register} />
+            <Area id="ov_hcpNotes" error={fe('ov_hcpNotes')} label="HCP notes:" register={register} />
           </div>
 
           {/* 3. ORDERS & MEDICATIONS */}
@@ -757,7 +851,7 @@ function OversightNotePageInner() {
                   Current physician order or prescription verified for EVERY medication (each dated
                   within the last 12 months) *
                 </label>
-                <RadioRow name="ov_ordersVerified" options={['Yes', 'No', 'N/A (no medications)']} />
+                <RadioRow name="ov_ordersVerified" error={fe('ov_ordersVerified')} onPick={() => clearFieldError('ov_ordersVerified')} options={['Yes', 'No', 'N/A (no medications)']} />
               </div>
             </div>
             <div className={styles.row}>
@@ -765,6 +859,8 @@ function OversightNotePageInner() {
                 <label className={styles.label}>Orders needing renewal</label>
                 <RadioRow
                   name="ov_ordersRenewals"
+                  error={fe('ov_ordersRenewals')}
+                  onPick={() => clearFieldError('ov_ordersRenewals')}
                   options={['None needed', 'Identified and requested (list in notes)']}
                 />
               </div>
@@ -774,13 +870,13 @@ function OversightNotePageInner() {
                 <label className={styles.label}>
                   MAR reviewed for accuracy and completion against each physician order *
                 </label>
-                <RadioRow name="ov_marReviewed" options={['Yes', 'No', 'N/A (no MAR)']} />
+                <RadioRow name="ov_marReviewed" error={fe('ov_marReviewed')} onPick={() => clearFieldError('ov_marReviewed')} options={['Yes', 'No', 'N/A (no MAR)']} />
               </div>
             </div>
             <div className={styles.row}>
               <div className={styles.f} style={{ flex: '1 1 100%' }}>
                 <label className={styles.label}>Medications filled and refilled timely; no gaps</label>
-                <RadioRow name="ov_refillsTimely" options={['Yes', 'Concern (describe in notes)', 'N/A']} />
+                <RadioRow name="ov_refillsTimely" error={fe('ov_refillsTimely')} onPick={() => clearFieldError('ov_refillsTimely')} options={['Yes', 'Concern (describe in notes)', 'N/A']} />
               </div>
             </div>
             <div className={styles.row}>
@@ -788,6 +884,8 @@ function OversightNotePageInner() {
                 <label className={styles.label}>Side effects and effectiveness monitored</label>
                 <RadioRow
                   name="ov_sideEffects"
+                  error={fe('ov_sideEffects')}
+                  onPick={() => clearFieldError('ov_sideEffects')}
                   options={['Monitored; none observed', 'Concern communicated to physician', 'N/A']}
                 />
               </div>
@@ -798,11 +896,12 @@ function OversightNotePageInner() {
                   Adaptive equipment / protective device orders current, with rationale and
                   instructions; use still justified *
                 </label>
-                <RadioRow name="ov_equipOrders" options={['Yes', 'No', 'N/A (no adaptive equipment)']} />
+                <RadioRow name="ov_equipOrders" error={fe('ov_equipOrders')} onPick={() => clearFieldError('ov_equipOrders')} options={['Yes', 'No', 'N/A (no adaptive equipment)']} />
               </div>
             </div>
             <Area
               id="ov_medsNotes"
+              error={fe('ov_medsNotes')}
               label="Medication and order notes (renewals requested, gaps found, physician contacts):"
               register={register}
             />
@@ -849,6 +948,8 @@ function OversightNotePageInner() {
                 </label>
                 <RadioRow
                   name="ov_preventiveReviewed"
+                  error={fe('ov_preventiveReviewed')}
+                  onPick={() => clearFieldError('ov_preventiveReviewed')}
                   options={['Reviewed; current or requested', 'Gaps identified (describe in notes)']}
                 />
               </div>
@@ -858,7 +959,7 @@ function OversightNotePageInner() {
                 <label className={styles.label}>
                   AIMS assessment within the last 6 months (antipsychotic medication) *
                 </label>
-                <RadioRow name="ov_aims" options={['Completed', 'Due (requested)', 'N/A']} />
+                <RadioRow name="ov_aims" error={fe('ov_aims')} onPick={() => clearFieldError('ov_aims')} options={['Completed', 'Due (requested)', 'N/A']} />
               </div>
             </div>
             <div className={styles.row}>
@@ -866,11 +967,13 @@ function OversightNotePageInner() {
                 <label className={styles.label}>Hospitalization or ER visit since last visit *</label>
                 <RadioRow
                   name="ov_hospitalization"
+                  error={fe('ov_hospitalization')}
+                  onPick={() => clearFieldError('ov_hospitalization')}
                   options={['None', 'Yes; discharge follow-up completed', 'Yes; follow-up in progress']}
                 />
               </div>
             </div>
-            <Area id="ov_apptsNotes" label="Appointment notes:" register={register} />
+            <Area id="ov_apptsNotes" error={fe('ov_apptsNotes')} label="Appointment notes:" register={register} />
           </div>
 
           {/* 5. HEALTH DATA */}
@@ -881,16 +984,16 @@ function OversightNotePageInner() {
                 <label className={styles.label}>
                   Tracking logs reviewed this month (seizure, bowel, intake/output, other per HCP) *
                 </label>
-                <RadioRow name="ov_logsReviewed" options={['Yes', 'N/A (no logs in place)']} />
+                <RadioRow name="ov_logsReviewed" error={fe('ov_logsReviewed')} onPick={() => clearFieldError('ov_logsReviewed')} options={['Yes', 'N/A (no logs in place)']} />
               </div>
             </div>
             <div className={styles.row}>
               <div className={styles.f} style={{ flex: '1 1 100%' }}>
                 <label className={styles.label}>HRST *</label>
-                <RadioRow name="ov_hrst" options={['Current', 'Updated this visit', 'N/A']} />
+                <RadioRow name="ov_hrst" error={fe('ov_hrst')} onPick={() => clearFieldError('ov_hrst')} options={['Current', 'Updated this visit', 'N/A']} />
               </div>
             </div>
-            <Area id="ov_dataFindings" label="Findings / trends:" register={register} />
+            <Area id="ov_dataFindings" error={fe('ov_dataFindings')} label="Findings / trends:" register={register} />
           </div>
 
           {/* 6. EDUCATION */}
@@ -935,9 +1038,10 @@ function OversightNotePageInner() {
                 <input type="checkbox" name="ov_educationRecipients" value="Staff" /> Staff
               </label>
             </div>
-            <Area id="ov_educationOther" label="Other topics / details:" register={register} topGap />
+            <Area id="ov_educationOther" error={fe('ov_educationOther')} label="Other topics / details:" register={register} topGap />
             <Area
               id="ov_educationResponse"
+              error={fe('ov_educationResponse')}
               label="Individual's response / understanding:"
               register={register}
               required
@@ -950,6 +1054,7 @@ function OversightNotePageInner() {
             <span className={styles.sectionLabel}>7. CHOICE AND PERSON-CENTERED CARE</span>
             <Area
               id="ov_choicesMade"
+              error={fe('ov_choicesMade')}
               label="Choices offered, and choices the individual made or declined this visit:"
               register={register}
               required
@@ -957,11 +1062,13 @@ function OversightNotePageInner() {
             />
             <Area
               id="ov_preferencesHonored"
+              error={fe('ov_preferencesHonored')}
               label="How known preferences were honored; strengths observed:"
               register={register}
             />
             <Area
               id="ov_goalsSupport"
+              error={fe('ov_goalsSupport')}
               label="Support toward the individual's health-related goals, hopes, and dreams:"
               register={register}
             />
@@ -972,6 +1079,7 @@ function OversightNotePageInner() {
             <span className={styles.sectionLabel}>8. GOAL PROGRESS</span>
             <Area
               id="ov_goalProgress"
+              error={fe('ov_goalProgress')}
               label="Progress on HCP / plan of care goals observed this visit:"
               register={register}
               required
@@ -981,12 +1089,15 @@ function OversightNotePageInner() {
                 <label className={styles.label}>Quarterly review *</label>
                 <RadioRow
                   name="ov_quarterly"
+                  error={fe('ov_quarterly')}
+                  onPick={() => clearFieldError('ov_quarterly')}
                   options={['Completed this visit', 'Not due this visit']}
                 />
               </div>
             </div>
             <Area
               id="ov_quarterlySummary"
+              error={fe('ov_quarterlySummary')}
               label="Quarterly data summary (data reviewed, trends, progress toward goals; required when completed this visit):"
               register={register}
               rows={3}
@@ -998,6 +1109,7 @@ function OversightNotePageInner() {
             <span className={styles.sectionLabel}>9. RECOMMENDATIONS, FOLLOW-UP, AND COMMUNICATION</span>
             <Area
               id="ov_actions"
+              error={fe('ov_actions')}
               label="Actions taken, orders or records requested, referrals made:"
               register={register}
               required
@@ -1017,6 +1129,7 @@ function OversightNotePageInner() {
             </div>
             <Area
               id="ov_nextVisit"
+              error={fe('ov_nextVisit')}
               label="Plan for next visit and target date:"
               register={register}
               required
@@ -1031,12 +1144,18 @@ function OversightNotePageInner() {
             <div className={styles.row}>
               <div className={styles.f} style={{ flex: '1 1 100%' }} id="q61_signature">
                 <label className={styles.label}>Sign below *</label>
-                <SignatureCanvas
-                  ref={sigRef}
-                  className={styles.signaturePad}
-                  initialSignature={initialSignature}
-                  onChange={(dataUrl) => setValue('q61_signature', dataUrl)}
-                />
+                <div style={fe('q61_signature') ? FIELD_ERROR_WRAP_STYLE : undefined}>
+                  <SignatureCanvas
+                    ref={sigRef}
+                    className={styles.signaturePad}
+                    initialSignature={initialSignature}
+                    onChange={(dataUrl) => {
+                      setValue('q61_signature', dataUrl);
+                      if (dataUrl) clearFieldError('q61_signature');
+                    }}
+                  />
+                </div>
+                <FieldError message={fe('q61_signature')} />
                 <div className={styles.signaturePadControls}>
                   <button
                     type="button"
@@ -1055,6 +1174,11 @@ function OversightNotePageInner() {
           {missing.length > 0 && (
             <p style={{ color: '#c62828', fontSize: 13 }}>
               Missing required fields: {missing.join('; ')}
+            </p>
+          )}
+          {submitError && (
+            <p role="alert" style={{ color: '#b3261e', fontSize: 13, background: '#fdeaea', borderRadius: 6, padding: '8px 11px' }}>
+              {submitError}
             </p>
           )}
 
@@ -1083,23 +1207,32 @@ function OversightNotePageInner() {
             <p style={{ color: '#555', lineHeight: 1.6 }}>
               The reason is recorded in the note&apos;s audit history alongside what changed.
             </p>
-            <textarea
-              className={styles.textarea}
-              rows={3}
-              placeholder="e.g. corrected the visit time; added the physician's response"
-              onChange={(e) => {
-                editReasonRef.current = e.target.value;
-              }}
-            />
+            <div id="ov_editReason">
+              <textarea
+                className={styles.textarea}
+                rows={3}
+                placeholder="e.g. corrected the visit time; added the physician's response"
+                autoFocus
+                style={editReasonError ? FIELD_ERROR_STYLE : undefined}
+                aria-invalid={!!editReasonError}
+                onChange={(e) => {
+                  editReasonRef.current = e.target.value;
+                  if (editReasonError) setEditReasonError('');
+                }}
+              />
+              <FieldError message={editReasonError} />
+            </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
               <button
                 type="button"
                 className={styles.submitBtn}
                 onClick={() => {
                   if (!editReasonRef.current.trim()) {
-                    alert('Please enter a reason for the amendment.');
+                    setEditReasonError('Enter the reason for the amendment.');
+                    escortToField('ov_editReason');
                     return;
                   }
+                  setEditReasonError('');
                   setShowEditReason(false);
                   formRef.current?.requestSubmit();
                 }}
@@ -1111,6 +1244,7 @@ function OversightNotePageInner() {
                 className={styles.navBtn}
                 onClick={() => {
                   editReasonRef.current = '';
+                  setEditReasonError('');
                   setShowEditReason(false);
                 }}
               >

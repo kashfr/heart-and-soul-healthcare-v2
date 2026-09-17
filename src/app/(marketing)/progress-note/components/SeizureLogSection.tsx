@@ -30,6 +30,9 @@ interface Props {
   setValue: UseFormSetValue<FormValues>;
   /** Roster client is flagged hasSeizureDisorder: the attestation is required. */
   required: boolean;
+  /** Mark the per-seizure inputs required (new notes). Off in edit mode so a
+   *  legacy note with an old-format seizure entry can still be amended. */
+  entriesRequired?: boolean;
 }
 
 /**
@@ -39,7 +42,7 @@ interface Props {
  * ordinary form value so drafts, resume, edit mode, and the PDF need no new
  * plumbing; the submit handler writes one seizureEvents record per block.
  */
-export default function SeizureLogSection({ register, watch, setValue, required }: Props) {
+export default function SeizureLogSection({ register, watch, setValue, required, entriesRequired = true }: Props) {
   useSyncExternalStore(radioSubscribe, getGlobalSnapshotStr, getGlobalSnapshotStr);
   const answer = radioState['q30_seizureEvent'] || '';
   const count = Math.max(0, Math.min(MAX_SEIZURES_PER_NOTE, Number(watch(SEIZURE_COUNT_KEY)) || 0));
@@ -116,6 +119,12 @@ export default function SeizureLogSection({ register, watch, setValue, required 
             const dur = seizureDurationSeconds(e);
             const rescue = e.interventions.includes('Rescue medication given');
             const escalated = !!e.response && e.response !== 'None needed';
+            // These cards only exist while the attestation is "Yes", so the
+            // `required` flags below mean "required once a seizure is logged".
+            // They let the submit handler's DOM scan catch a half-filled card
+            // (and escort to the exact box) whenever Neurological is open;
+            // the seizureGaps store gate is the backstop when it is collapsed
+            // and also owns the either/or end-time-or-duration rule.
             return (
               <div key={e.index} style={card}>
                 <div style={cardHead}>
@@ -129,7 +138,7 @@ export default function SeizureLogSection({ register, watch, setValue, required 
                 <div className={styles.row}>
                   <div className={styles.f}>
                     <label className={styles.label} htmlFor={k('startTime')}>Start time *</label>
-                    <input className={styles.input} type="time" id={k('startTime')} {...register(k('startTime'))} />
+                    <input className={styles.input} type="time" id={k('startTime')} required={entriesRequired} {...register(k('startTime'))} />
                   </div>
                   <div className={styles.f}>
                     <label className={styles.label} htmlFor={k('endTime')}>End time</label>
@@ -145,14 +154,14 @@ export default function SeizureLogSection({ register, watch, setValue, required 
                 <div className={styles.row}>
                   <div className={styles.f}>
                     <label className={styles.label} htmlFor={k('seizureType')}>Seizure type *</label>
-                    <select className={styles.select} id={k('seizureType')} {...register(k('seizureType'))}>
+                    <select className={styles.select} id={k('seizureType')} required={entriesRequired} {...register(k('seizureType'))}>
                       <option value="">Select...</option>
                       {SEIZURE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </div>
                   <div className={styles.f}>
                     <label className={styles.label} htmlFor={k('witnessedBy')}>Witnessed by *</label>
-                    <select className={styles.select} id={k('witnessedBy')} {...register(k('witnessedBy'))}>
+                    <select className={styles.select} id={k('witnessedBy')} required={entriesRequired} {...register(k('witnessedBy'))}>
                       <option value="">Select...</option>
                       {SEIZURE_WITNESS.map((t) => <option key={t} value={t}>{t}</option>)}
                     </select>
@@ -191,7 +200,7 @@ export default function SeizureLogSection({ register, watch, setValue, required 
                   <div className={styles.row}>
                     <div className={styles.f}>
                       <label className={styles.label} htmlFor={k('rescueMed')}>Rescue medication and dose *</label>
-                      <input className={styles.input} type="text" id={k('rescueMed')} placeholder="e.g. Diastat 10 mg rectal" {...register(k('rescueMed'))} />
+                      <input className={styles.input} type="text" id={k('rescueMed')} placeholder="e.g. Diastat 10 mg rectal" required={entriesRequired} {...register(k('rescueMed'))} />
                       <div style={hintSmall}>Also chart the dose on the Medications page so it is on the MAR.</div>
                     </div>
                     <div className={styles.f}>
@@ -226,7 +235,7 @@ export default function SeizureLogSection({ register, watch, setValue, required 
                 <div className={styles.row}>
                   <div className={styles.f}>
                     <label className={styles.label} htmlFor={k('physicianNotified')}>Physician notified?{escalated ? ' *' : ''}</label>
-                    <select className={styles.select} id={k('physicianNotified')} {...register(k('physicianNotified'))}>
+                    <select className={styles.select} id={k('physicianNotified')} required={entriesRequired && escalated} {...register(k('physicianNotified'))}>
                       <option value="">Select...</option>
                       <option value="Yes">Yes</option>
                       <option value="No">No</option>
