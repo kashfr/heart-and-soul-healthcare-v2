@@ -15,6 +15,7 @@ import MatchSuggestions from './MatchSuggestions';
 import FitBadge from './FitBadge';
 import PartnerMatchBadge from './PartnerMatchBadge';
 import { usePartnerAgencies } from './PartnerAgenciesProvider';
+import { applyFieldErrors, escortToField, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
 import {
   fieldRows, formatDateTime, formatRelative, serviceForReferral,
   REFERRAL_STAGES, STAGE_ACCENT, STAGE_LABEL, SOURCE_LABEL,
@@ -46,6 +47,7 @@ export default function ReferralDetail({
   const [noteText, setNoteText] = useState('');
   const [noteType, setNoteType] = useState<'note' | 'contact'>('note');
   const [savingNote, setSavingNote] = useState(false);
+  const [noteError, setNoteError] = useState<string | null>(null);
   const [activityError, setActivityError] = useState<string | null>(null);
 
   const loadActivity = useCallback(async () => {
@@ -70,8 +72,14 @@ export default function ReferralDetail({
   }, [loadActivity, referral.updatedAt]);
 
   const addNote = async () => {
+    if (savingNote) return;
     const text = noteText.trim();
-    if (!text || savingNote) return;
+    setNoteError(null);
+    if (!text) {
+      setNoteError(noteType === 'note' ? 'Type the note before adding it.' : 'Describe the call or outreach attempt before logging it.');
+      escortToField(NOTE_FIELD_ID);
+      return;
+    }
     setSavingNote(true);
     try {
       const res = await authedFetch(`/api/admin/referrals/${referral.id}/activity`, {
@@ -86,7 +94,8 @@ export default function ReferralDetail({
       if (data.entry) setActivity((prev) => [data.entry, ...prev]);
       setNoteText('');
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Could not add note.');
+      setNoteError(err instanceof Error && err.message ? err.message : 'Could not add the note. Please try again.');
+      escortToField(NOTE_FIELD_ID);
     } finally {
       setSavingNote(false);
     }
@@ -282,28 +291,32 @@ export default function ReferralDetail({
                 <PhoneCall size={13} /> Log contact
               </button>
             </div>
-            <textarea
-              value={noteText}
-              onChange={(e) => setNoteText(e.target.value)}
-              onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') addNote();
-              }}
-              placeholder={
-                noteType === 'note'
-                  ? 'Add a note about this referral…'
-                  : 'Log a call or outreach attempt…'
-              }
-              rows={2}
-              style={textareaStyle}
-            />
+            <div id={NOTE_FIELD_ID}>
+              <textarea
+                value={noteText}
+                onChange={(e) => { setNoteText(e.target.value); setNoteError(null); }}
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') addNote();
+                }}
+                placeholder={
+                  noteType === 'note'
+                    ? 'Add a note about this referral…'
+                    : 'Log a call or outreach attempt…'
+                }
+                rows={2}
+                style={{ ...textareaStyle, ...(noteError ? FIELD_ERROR_STYLE : null) }}
+                aria-invalid={!!noteError}
+              />
+              <FieldError message={noteError} />
+            </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <button
                 onClick={addNote}
-                disabled={!noteText.trim() || savingNote}
+                disabled={savingNote}
                 style={{
                   ...addNoteBtnStyle,
-                  opacity: !noteText.trim() || savingNote ? 0.55 : 1,
-                  cursor: !noteText.trim() || savingNote ? 'not-allowed' : 'pointer',
+                  opacity: savingNote ? 0.55 : 1,
+                  cursor: savingNote ? 'not-allowed' : 'pointer',
                 }}
               >
                 <Send size={14} /> {savingNote ? 'Adding…' : 'Add'}
@@ -405,6 +418,10 @@ const EXPIRY_OPTIONS = [
 
 // Email check used when staging a multi-agency recipient before it's added.
 const SHARE_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const NOTE_FIELD_ID = 'referral-note-text';
+type ShareField = 'agency' | 'email';
+const SHARE_FIELD_ORDER: readonly ShareField[] = ['agency', 'email'];
+const shareFieldId = (k: ShareField) => `referral-share-${k}`;
 
 function SharePanel({
   referralId,
@@ -435,6 +452,10 @@ function SharePanel({
   const [move, setMove] = useState(true);
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<ShareField, string>>>({});
+  const clearFieldError = (k: ShareField) => {
+    if (fieldErrors[k]) setFieldErrors((prev) => ({ ...prev, [k]: undefined }));
+  };
   const [created, setCreated] = useState<{ count: number; emailsSent: number; failed: number } | null>(null);
   const [copiedShareId, setCopiedShareId] = useState<string | null>(null);
   // Saved partner agencies (shared directory, fetched once for the screen)
@@ -454,25 +475,32 @@ function SharePanel({
 
   const onAgencyName = (value: string) => {
     setAgency(value);
+    clearFieldError('agency');
     const match = agencies.find((a) => a.name.toLowerCase() === value.trim().toLowerCase());
-    if (match) setEmail(match.email);
+    if (match) {
+      setEmail(match.email);
+      clearFieldError('email');
+    }
+  };
+
+  /** Problems with the staging row (agency + email inputs). */
+  const stagingErrors = (n: string, e: string): Partial<Record<ShareField, string>> => {
+    const errs: Partial<Record<ShareField, string>> = {};
+    if (!n) errs.agency = 'Enter the partner agency name.';
+    if (!e) errs.email = 'Enter the partner agency email.';
+    else if (!SHARE_EMAIL_RE.test(e)) errs.email = 'Enter a valid email address, like intake@agency.org.';
+    else if (recipients.some((r) => r.email === e)) errs.email = 'That agency is already added to this share.';
+    return errs;
   };
 
   const addRecipient = () => {
     const n = agency.trim();
     const e = email.trim().toLowerCase();
-    if (!n || !SHARE_EMAIL_RE.test(e)) {
-      setFormError('Enter an agency name and a valid email before adding.');
-      return;
-    }
-    if (recipients.some((r) => r.email === e)) {
-      setFormError('That agency is already added.');
-      return;
-    }
+    setFormError(null);
+    if (!applyFieldErrors(stagingErrors(n, e), SHARE_FIELD_ORDER, setFieldErrors, shareFieldId)) return;
     setRecipients((prev) => [...prev, { name: n, email: e }]);
     setAgency('');
     setEmail('');
-    setFormError(null);
   };
   const removeRecipient = (idx: number) =>
     setRecipients((prev) => prev.filter((_, i) => i !== idx));
@@ -503,15 +531,20 @@ function SharePanel({
     let list = recipients;
     const n = agency.trim();
     const e = email.trim().toLowerCase();
-    if (n && SHARE_EMAIL_RE.test(e) && !recipients.some((r) => r.email === e)) {
+    setFormError(null);
+    const alreadyAdded = !!e && recipients.some((r) => r.email === e);
+    if ((n || e) && !alreadyAdded) {
+      // A partly filled staging row is a mistake waiting to be sent without
+      // that agency: point at what is missing rather than silently dropping it.
+      // (An agency typed again after being added is simply skipped.)
+      if (!applyFieldErrors(stagingErrors(n, e), SHARE_FIELD_ORDER, setFieldErrors, shareFieldId)) return;
       list = [...recipients, { name: n, email: e }];
     }
     if (list.length === 0) {
-      setFormError('Add at least one agency.');
+      applyFieldErrors({ agency: 'Add at least one agency to share with.' }, SHARE_FIELD_ORDER, setFieldErrors, shareFieldId);
       return;
     }
     setCreating(true);
-    setFormError(null);
     setCreated(null);
     try {
       const res = await authedFetch(`/api/admin/referrals/${referralId}/shares`, {
@@ -537,7 +570,7 @@ function SharePanel({
       // Refresh the board so the new "Shared" badge and any stage move show up.
       onChanged?.();
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Could not create shares.');
+      setFormError(err instanceof Error && err.message ? err.message : 'Could not create the shares. Please try again.');
     } finally {
       setCreating(false);
     }
@@ -608,13 +641,14 @@ function SharePanel({
         <div style={shareFormBox}>
           <MatchSuggestions
             matches={suggestions}
-            onPick={(a) =>
+            onPick={(a) => {
+              clearFieldError('agency');
               setRecipients((prev) =>
                 prev.some((r) => r.email === a.email.toLowerCase())
                   ? prev
                   : [...prev, { name: a.name, email: a.email.toLowerCase() }]
-              )
-            }
+              );
+            }}
           />
           {recipients.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -635,27 +669,35 @@ function SharePanel({
           )}
           <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
-              <input
-                value={agency}
-                onChange={(e) => onAgencyName(e.target.value)}
-                placeholder="Partner agency name"
-                style={shareInput}
-                list="referral-agency-options"
-                autoComplete="off"
-              />
+              <div id={shareFieldId('agency')}>
+                <input
+                  value={agency}
+                  onChange={(e) => onAgencyName(e.target.value)}
+                  placeholder="Partner agency name"
+                  style={{ ...shareInput, ...(fieldErrors.agency ? FIELD_ERROR_STYLE : null) }}
+                  aria-invalid={!!fieldErrors.agency}
+                  list="referral-agency-options"
+                  autoComplete="off"
+                />
+                <FieldError message={fieldErrors.agency} />
+              </div>
               <datalist id="referral-agency-options">
                 {agencies.map((a) => (
                   <option key={a.id} value={a.name} />
                 ))}
               </datalist>
-              <input
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addRecipient(); } }}
-                placeholder="Partner email"
-                type="email"
-                style={shareInput}
-              />
+              <div id={shareFieldId('email')}>
+                <input
+                  value={email}
+                  onChange={(e) => { setEmail(e.target.value); clearFieldError('email'); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addRecipient(); } }}
+                  placeholder="Partner email"
+                  type="email"
+                  style={{ ...shareInput, ...(fieldErrors.email ? FIELD_ERROR_STYLE : null) }}
+                  aria-invalid={!!fieldErrors.email}
+                />
+                <FieldError message={fieldErrors.email} />
+              </div>
             </div>
             <button type="button" onClick={addRecipient} style={addAgencyBtn} title="Add another agency to this share">
               <Plus size={14} /> Add
@@ -673,12 +715,12 @@ function SharePanel({
             </select>
             <div style={{ flex: 1 }} />
             <button
-              onClick={() => { setShowForm(false); setFormError(null); setRecipients([]); setAgency(''); setEmail(''); }}
+              onClick={() => { setShowForm(false); setFormError(null); setFieldErrors({}); setRecipients([]); setAgency(''); setEmail(''); }}
               style={shareCancelBtn}
             >
               Cancel
             </button>
-            <button onClick={submit} disabled={creating || sendCount === 0} style={shareSubmitBtn}>
+            <button onClick={submit} disabled={creating} style={shareSubmitBtn}>
               {creating ? 'Sending…' : sendCount <= 1 ? 'Create & email link' : `Create & email ${sendCount} links`}
             </button>
           </div>
@@ -688,7 +730,7 @@ function SharePanel({
               Move to Referred Out (mark as handed off)
             </label>
           )}
-          {formError && <div style={{ color: '#b3261e', fontSize: 12.5 }}>{formError}</div>}
+          {formError && <div role="alert" style={{ color: '#b3261e', fontSize: 12.5, fontWeight: 600 }}>{formError}</div>}
         </div>
       )}
 

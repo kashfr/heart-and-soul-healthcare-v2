@@ -6,8 +6,10 @@ import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { useAuth } from '@/components/AuthProvider';
 import { safeLoginRedirect } from '@/lib/loginRedirect';
+import { escortToField, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
 
 type Mode = 'signIn' | 'reset';
+const RESET_EMAIL_ID = 'login-field-reset-email';
 
 function LoginForm() {
   const router = useRouter();
@@ -24,6 +26,8 @@ function LoginForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resetSentTo, setResetSentTo] = useState<string | null>(null);
+  // The reset flow's only input, so its problem sits on the field, not in a banner.
+  const [emailError, setEmailError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && user) {
@@ -34,6 +38,7 @@ function LoginForm() {
   const switchMode = (next: Mode) => {
     setMode(next);
     setError(null);
+    setEmailError(null);
     setResetSentTo(null);
   };
 
@@ -65,9 +70,15 @@ function LoginForm() {
 
   const handleReset = async (e: FormEvent) => {
     e.preventDefault();
-    setSubmitting(true);
     setError(null);
+    setEmailError(null);
     const target = email.trim();
+    if (!target || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(target)) {
+      setEmailError('Please enter a valid email address.');
+      escortToField(RESET_EMAIL_ID);
+      return;
+    }
+    setSubmitting(true);
     try {
       // Server route sends our own branded reset email pointing at the
       // /reset-password page. It always responds OK unless the email is
@@ -79,7 +90,8 @@ function LoginForm() {
       });
       if (res.status === 400) {
         const data = await res.json().catch(() => ({}));
-        setError(data.error || 'Please enter a valid email address.');
+        setEmailError(data.error || 'Please enter a valid email address.');
+        escortToField(RESET_EMAIL_ID);
         setSubmitting(false);
         return;
       }
@@ -162,18 +174,23 @@ function LoginForm() {
               link to set a new password.
             </p>
 
-            <form onSubmit={handleReset} style={formStyle}>
-              <label style={labelStyle}>
+            <form onSubmit={handleReset} style={formStyle} noValidate>
+              <label style={labelStyle} id={RESET_EMAIL_ID}>
                 Email
                 <input
                   type="email"
                   required
                   autoComplete="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  style={inputStyle}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (emailError) setEmailError(null);
+                  }}
+                  style={{ ...inputStyle, ...(emailError ? FIELD_ERROR_STYLE : {}) }}
+                  aria-invalid={!!emailError}
                   placeholder="you@heartandsoulhc.org"
                 />
+                <FieldError message={emailError} />
               </label>
 
               {error && <div style={errorStyle}>{error}</div>}

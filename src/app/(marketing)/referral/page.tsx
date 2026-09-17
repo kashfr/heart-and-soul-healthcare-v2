@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { formatUSPhone } from '@/lib/phone';
+import { escortToField, FieldError, FIELD_ERROR_WRAP_STYLE, firstErrorKey } from '@/lib/formEscort';
 import { YOUNG_PAID_CAREGIVER_AGE_YEARS } from '@/lib/diagnosisScreening';
 import {
   BEHAVIOR_RISK_OPTIONS,
@@ -36,6 +37,35 @@ import { processReferralSubmission } from '@/app/actions';
 import { ScrollReveal } from '@/components/animations';
 import { motion, AnimatePresence } from 'framer-motion';
 import styles from './page.module.css';
+
+// The required fields, in display order across both steps, so a blocked
+// "Next" or "Submit" escorts to the topmost problem.
+type ReferralField =
+  | 'programInterest' | 'clientCounty' | 'clientFirstName' | 'clientLastName' | 'clientDOB' | 'clientPhone' | 'clientSecondaryPhone' | 'clientEmail'
+  | 'referralSource' | 'referrerName' | 'diagnoses' | 'equipment' | 'behaviorRisk' | 'seekingPaidCaregiver' | 'careNeeds';
+type ReferralFieldErrors = Partial<Record<ReferralField, string>>;
+const FIELD_ORDER: ReferralField[] = [
+  'programInterest', 'clientCounty', 'clientFirstName', 'clientLastName', 'clientDOB', 'clientPhone', 'clientSecondaryPhone', 'clientEmail',
+  'referralSource', 'referrerName', 'diagnoses', 'equipment', 'behaviorRisk', 'seekingPaidCaregiver', 'careNeeds',
+];
+// Banner labels (the careNeeds label depends on who is filling the form).
+const FIELD_LABEL: Record<Exclude<ReferralField, 'careNeeds'>, string> = {
+  programInterest: 'Program of Interest',
+  clientCounty: 'County',
+  clientFirstName: 'First Name',
+  clientLastName: 'Last Name',
+  clientDOB: 'Date of Birth',
+  clientPhone: 'Phone Number',
+  clientSecondaryPhone: 'Secondary Phone Number',
+  clientEmail: 'Email Address',
+  referralSource: 'Referral Source',
+  referrerName: 'Referrer Name',
+  diagnoses: "Your child's diagnosis",
+  equipment: 'What your child needs at home',
+  behaviorRisk: 'Behavior question',
+  seekingPaidCaregiver: 'Paid caregiver question',
+};
+const fieldId = (k: ReferralField) => `ref-field-${k}`;
 
 // County data organized by tier
 const primaryCounties = [
@@ -288,30 +318,48 @@ export default function ReferralPage() {
   const hasDiagnosis =
     formData.diagnoses.length > 0 || formData.diagnosisOther.trim().length > 0;
 
+  // The missing required fields for the current step, keyed by field, each
+  // with the message shown directly under it. Same rules as isStepValid.
+  const getFieldErrors = (): ReferralFieldErrors => {
+    const errs: ReferralFieldErrors = {};
+    if (step === 1) {
+      if (!formData.programInterest) errs.programInterest = 'Please select a program.';
+      if (!formData.clientCounty) errs.clientCounty = 'Please select a county.';
+      if (!formData.clientFirstName) errs.clientFirstName = 'Please enter the first name.';
+      if (!formData.clientLastName) errs.clientLastName = 'Please enter the last name.';
+      if (!formData.clientDOB) errs.clientDOB = 'Please enter the date of birth.';
+      if (!formData.clientPhone) errs.clientPhone = 'Please enter a phone number.';
+      if (!formData.clientSecondaryPhone) errs.clientSecondaryPhone = 'Please enter a secondary phone number.';
+      if (!formData.clientEmail) errs.clientEmail = 'Please enter an email address.';
+    } else if (step === 2) {
+      if (!formData.referralSource) errs.referralSource = 'Please tell us who is making this referral.';
+      if (!isSelfReferral && formData.referralSource && !formData.referrerName) errs.referrerName = 'Please enter your name.';
+      if (showGappClinical && !hasDiagnosis) errs.diagnoses = 'Check at least one diagnosis, or describe it under Other.';
+      if (showGappClinical && formData.equipment.length === 0) errs.equipment = 'Check everything that applies, or the option that says none.';
+      if (showGappClinical && !formData.behaviorRisk) errs.behaviorRisk = 'Please choose an answer.';
+      if (!formData.seekingPaidCaregiver) errs.seekingPaidCaregiver = 'Please answer Yes or No.';
+      if (formData.seekingPaidCaregiver === 'yes' && !formData.careNeeds) errs.careNeeds = 'Please choose an answer.';
+    }
+    return errs;
+  };
+  const labelFor = (k: ReferralField): string => (k === 'careNeeds' ? careNeedsMissingLabel : FIELD_LABEL[k]);
+
   // Returns list of missing required field labels for the current step
   const getMissingFields = (): string[] => {
-    const missing: string[] = [];
-    if (step === 1) {
-      if (!formData.programInterest) missing.push('Program of Interest');
-      if (!formData.clientCounty) missing.push('County');
-      if (!formData.clientFirstName) missing.push('First Name');
-      if (!formData.clientLastName) missing.push('Last Name');
-      if (!formData.clientDOB) missing.push('Date of Birth');
-      if (!formData.clientPhone) missing.push('Phone Number');
-      if (!formData.clientSecondaryPhone) missing.push('Secondary Phone Number');
-      if (!formData.clientEmail) missing.push('Email Address');
-    } else if (step === 2) {
-      if (!formData.referralSource) missing.push('Referral Source');
-      if (!isSelfReferral && formData.referralSource && !formData.referrerName) missing.push('Referrer Name');
-      if (showGappClinical && !hasDiagnosis) missing.push("Your child's diagnosis");
-      if (showGappClinical && formData.equipment.length === 0)
-        missing.push('What your child needs at home');
-      if (showGappClinical && !formData.behaviorRisk) missing.push('Behavior question');
-      if (!formData.seekingPaidCaregiver) missing.push('Paid caregiver question');
-      if (formData.seekingPaidCaregiver === 'yes' && !formData.careNeeds)
-        missing.push(careNeedsMissingLabel);
-    }
-    return missing;
+    const errs = getFieldErrors();
+    return FIELD_ORDER.filter((k) => errs[k]).map(labelFor);
+  };
+
+  // Recomputed from the live form data, so a field's message clears as soon
+  // as the user fixes it while the others stay put.
+  const fieldErrors: ReferralFieldErrors = showValidation ? getFieldErrors() : {};
+  const fieldMessage = (k: ReferralField) => fieldErrors[k];
+
+  // Show every problem on the step and take the user to the first one.
+  const surfaceProblems = () => {
+    setShowValidation(true);
+    const first = firstErrorKey(FIELD_ORDER, getFieldErrors());
+    if (first) escortToField(fieldId(first));
   };
 
   // Attempt to proceed — if invalid, show validation messages instead
@@ -320,7 +368,7 @@ export default function ReferralPage() {
       setShowValidation(false);
       nextStep();
     } else {
-      setShowValidation(true);
+      surfaceProblems();
     }
   };
 
@@ -333,7 +381,7 @@ export default function ReferralPage() {
     }
     if (!isStepValid()) {
       e.preventDefault();
-      setShowValidation(true);
+      surfaceProblems();
       return;
     }
     setShowValidation(false);
@@ -346,9 +394,6 @@ export default function ReferralPage() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-
-    // Clear validation when user starts filling fields
-    if (showValidation) setShowValidation(false);
 
     // Auto-format phone number fields
     if (name === 'clientPhone' || name === 'clientSecondaryPhone' || name === 'referrerPhone') {
@@ -483,18 +528,7 @@ export default function ReferralPage() {
   const prevStep = () => { setShowValidation(false); setStep(1); };
 
   // Check if a specific field should show a validation error
-  const isFieldInvalid = (fieldName: string): boolean => {
-    if (!showValidation) return false;
-    const value = formData[fieldName as keyof typeof formData];
-    // Only flag required fields
-    const requiredStep1 = ['programInterest', 'clientCounty', 'clientFirstName', 'clientLastName', 'clientDOB', 'clientPhone', 'clientSecondaryPhone', 'clientEmail'];
-    const requiredStep2 = ['referralSource', 'seekingPaidCaregiver'];
-    if (step === 1 && requiredStep1.includes(fieldName)) return !value;
-    if (step === 2 && requiredStep2.includes(fieldName)) return !value;
-    if (step === 2 && fieldName === 'referrerName' && !isSelfReferral && formData.referralSource) return !value;
-    if (step === 2 && fieldName === 'careNeeds' && formData.seekingPaidCaregiver === 'yes') return !value;
-    return false;
-  };
+  const isFieldInvalid = (fieldName: ReferralField): boolean => !!fieldErrors[fieldName];
 
   // Get counties for the selected program
   const counties = formData.programInterest ? getCountiesForProgram(formData.programInterest) : null;
@@ -620,7 +654,7 @@ export default function ReferralPage() {
 
                 {/* Program Selection — first so county can filter */}
                 <div className={styles.formGridSingle}>
-                  <div className="form-group">
+                  <div className="form-group" id={fieldId('programInterest')}>
                     <label htmlFor="programInterest" className="form-label">Program of Interest *</label>
                     <select
                       id="programInterest"
@@ -635,6 +669,7 @@ export default function ReferralPage() {
                         <option key={prog.value} value={prog.value}>{prog.label}</option>
                       ))}
                     </select>
+                    <FieldError message={fieldMessage('programInterest')} />
                   </div>
                   <div className={styles.programDescription}>
                     <AnimatePresence mode="wait">
@@ -680,7 +715,7 @@ export default function ReferralPage() {
 
                 {/* County Selection — dynamic based on program */}
                 <div className={styles.countySection}>
-                  <div className="form-group">
+                  <div className="form-group" id={fieldId('clientCounty')}>
                     <label htmlFor="clientCounty" className="form-label">County *</label>
                     <select
                       id="clientCounty"
@@ -715,6 +750,7 @@ export default function ReferralPage() {
                     {!formData.programInterest && (
                       <span className="form-helper">Please select a program above to see available counties</span>
                     )}
+                    <FieldError message={fieldMessage('clientCounty')} />
                   </div>
                   {formData.clientCounty === 'other' && (
                     <div className={styles.countyNotice}>
@@ -729,7 +765,7 @@ export default function ReferralPage() {
 
                 {/* Client Details */}
                 <div className={styles.formGrid}>
-                  <div className="form-group">
+                  <div className="form-group" id={fieldId('clientFirstName')}>
                     <label htmlFor="clientFirstName" className="form-label">First Name *</label>
                     <input
                       type="text"
@@ -741,8 +777,9 @@ export default function ReferralPage() {
                       onChange={handleChange}
                       required
                     />
+                    <FieldError message={fieldMessage('clientFirstName')} />
                   </div>
-                  <div className="form-group">
+                  <div className="form-group" id={fieldId('clientLastName')}>
                     <label htmlFor="clientLastName" className="form-label">Last Name *</label>
                     <input
                       type="text"
@@ -754,8 +791,9 @@ export default function ReferralPage() {
                       onChange={handleChange}
                       required
                     />
+                    <FieldError message={fieldMessage('clientLastName')} />
                   </div>
-                  <div className="form-group">
+                  <div className="form-group" id={fieldId('clientDOB')}>
                     <label htmlFor="clientDOB" className="form-label">Date of Birth *</label>
                     <input
                       type="date"
@@ -768,6 +806,7 @@ export default function ReferralPage() {
                       min={minDOB}
                       required
                     />
+                    <FieldError message={fieldMessage('clientDOB')} />
                     {showChildAge && (
                       <p style={{ marginTop: '0.5rem', fontSize: '0.9rem', color: '#374151' }}>
                         Child&apos;s age:{' '}
@@ -775,7 +814,7 @@ export default function ReferralPage() {
                       </p>
                     )}
                   </div>
-                  <div className="form-group">
+                  <div className="form-group" id={fieldId('clientPhone')}>
                     <label htmlFor="clientPhone" className="form-label">Phone Number *</label>
                     <input
                       type="tel"
@@ -787,8 +826,9 @@ export default function ReferralPage() {
                       onChange={handleChange}
                       required
                     />
+                    <FieldError message={fieldMessage('clientPhone')} />
                   </div>
-                  <div className="form-group">
+                  <div className="form-group" id={fieldId('clientSecondaryPhone')}>
                     <label htmlFor="clientSecondaryPhone" className="form-label">Secondary Phone Number *</label>
                     <input
                       type="tel"
@@ -800,9 +840,10 @@ export default function ReferralPage() {
                       onChange={handleChange}
                       required
                     />
+                    <FieldError message={fieldMessage('clientSecondaryPhone')} />
                     <span className="form-helper">Alternate contact number (e.g., caregiver, family member)</span>
                   </div>
-                  <div className="form-group">
+                  <div className="form-group" id={fieldId('clientEmail')}>
                     <label htmlFor="clientEmail" className="form-label">Email Address *</label>
                     <input
                       type="email"
@@ -814,6 +855,7 @@ export default function ReferralPage() {
                       onChange={handleChange}
                       required
                     />
+                    <FieldError message={fieldMessage('clientEmail')} />
                   </div>
                   <div className="form-group">
                     <label htmlFor="clientAddress" className="form-label">Street Address</label>
@@ -889,7 +931,7 @@ export default function ReferralPage() {
 
                 <div className={styles.formGridSingle}>
                   {/* Referral Source */}
-                  <div className="form-group">
+                  <div className="form-group" id={fieldId('referralSource')}>
                     <label htmlFor="referralSource" className="form-label">Who is making this referral? *</label>
                     <select
                       id="referralSource"
@@ -904,6 +946,7 @@ export default function ReferralPage() {
                         <option key={source.value} value={source.value}>{source.label}</option>
                       ))}
                     </select>
+                    <FieldError message={fieldMessage('referralSource')} />
                   </div>
 
                   {/* Self-referral notice */}
@@ -917,7 +960,7 @@ export default function ReferralPage() {
                   {/* Referrer fields — only show if NOT self-referral */}
                   {!isSelfReferral && formData.referralSource && (
                     <>
-                      <div className="form-group">
+                      <div className="form-group" id={fieldId('referrerName')}>
                         <label htmlFor="referrerName" className="form-label">Your Name *</label>
                         <input
                           type="text"
@@ -929,6 +972,7 @@ export default function ReferralPage() {
                           onChange={handleChange}
                           required
                         />
+                        <FieldError message={fieldMessage('referrerName')} />
                       </div>
                       <div className="form-group">
                         <label htmlFor="referrerPhone" className="form-label">Your Phone</label>
@@ -1077,7 +1121,7 @@ export default function ReferralPage() {
                     </p>
 
                     <div className={styles.formGridSingle}>
-                      <div className="form-group">
+                      <div className="form-group" id={fieldId('diagnoses')}>
                         <label className="form-label">
                           What has your child been diagnosed with? *
                         </label>
@@ -1108,24 +1152,23 @@ export default function ReferralPage() {
                           name="diagnosisOther"
                           type="text"
                           className={`form-input ${
-                            isFieldInvalid('diagnosisOther') && !hasDiagnosis
-                              ? styles.fieldError
-                              : ''
+                            isFieldInvalid('diagnoses') ? styles.fieldError : ''
                           }`}
                           placeholder="Anything not listed above"
                           value={formData.diagnosisOther}
                           onChange={handleChange}
                         />
+                        <FieldError message={fieldMessage('diagnoses')} />
                       </div>
 
-                      <div className="form-group">
+                      <div className="form-group" id={fieldId('equipment')}>
                         <label className="form-label">
                           Which of these does your child need at home? *
                         </label>
                         <p className={styles.checkboxHint}>
                           Check everything that applies.
                         </p>
-                        <div className={styles.checkboxGroup}>
+                        <div className={styles.checkboxGroup} style={isFieldInvalid('equipment') ? FIELD_ERROR_WRAP_STYLE : undefined}>
                           {EQUIPMENT_OPTIONS.map((opt) => (
                             <label key={opt.code} className={styles.checkboxRow}>
                               <input
@@ -1139,9 +1182,10 @@ export default function ReferralPage() {
                             </label>
                           ))}
                         </div>
+                        <FieldError message={fieldMessage('equipment')} />
                       </div>
 
-                      <div className="form-group">
+                      <div className="form-group" id={fieldId('behaviorRisk')}>
                         <label htmlFor="behaviorRisk" className="form-label">
                           Does your child have behaviors that put them or others at
                           risk, or that stop daily activities? *
@@ -1165,6 +1209,7 @@ export default function ReferralPage() {
                             </option>
                           ))}
                         </select>
+                        <FieldError message={fieldMessage('behaviorRisk')} />
                       </div>
 
                       <div className="form-group">
@@ -1204,7 +1249,7 @@ export default function ReferralPage() {
                 <h3 className={styles.subSectionTitle}>One more question</h3>
 
                 <div className={styles.formGridSingle}>
-                  <div className="form-group">
+                  <div className="form-group" id={fieldId('seekingPaidCaregiver')}>
                     <label htmlFor="seekingPaidCaregiver" className="form-label">
                       {paidCaregiverQuestion} *
                     </label>
@@ -1281,11 +1326,12 @@ export default function ReferralPage() {
                       <option value="no">No</option>
                       <option value="yes">Yes</option>
                     </select>
+                    <FieldError message={fieldMessage('seekingPaidCaregiver')} />
                   </div>
 
                   {formData.seekingPaidCaregiver === 'yes' && (
                     <>
-                      <div className="form-group">
+                      <div className="form-group" id={fieldId('careNeeds')}>
                         <label htmlFor="careNeeds" className="form-label">
                           {careNeedsLabel} *
                         </label>
@@ -1309,6 +1355,7 @@ export default function ReferralPage() {
                           </option>
                           <option value="unsure">Not sure</option>
                         </select>
+                        <FieldError message={fieldMessage('careNeeds')} />
                       </div>
 
                       {isPaidBehavioralBlock && (
@@ -1531,6 +1578,9 @@ export default function ReferralPage() {
                   >
                     <Send size={20} /> {isSubmitting ? 'Submitting...' : 'Submit Referral'}
                   </button>
+                  {isPaidBehavioralBlock && (
+                    <FieldError message="This referral cannot be submitted as answered: under GAPP a parent cannot be paid for behavioral or autism care. See the note above for the ASD Program, or change the paid caregiver answer if it was a mistake." />
+                  )}
                 </div>
               )}
             </div>

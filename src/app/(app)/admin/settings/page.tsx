@@ -6,6 +6,7 @@ import { ArrowLeft, Save, RotateCcw, Plus, X, Eye, Send } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
 import { authedFetch } from '@/lib/authedFetch';
+import { escortToField, FieldError, firstErrorKey, FIELD_ERROR_STYLE } from '@/lib/formEscort';
 import {
   DEFAULT_SETTINGS,
   ALL_COSIGNABLE_CREDENTIALS,
@@ -35,6 +36,80 @@ import { GA_COUNTIES, GAPP_SERVICES, normalizeCounty, type GappServiceKey } from
  * value from `draft`, render an input bound to setDraft, save the
  * whole `draft` shape via PUT /api/admin/settings.
  */
+/** Dotted settings path -> DOM id for the escort. */
+const settingsFieldId = (key: string) => `settings-${key.replace(/[^A-Za-z0-9]+/g, '-')}`;
+
+const isWholeNumberBetween = (n: unknown, lo: number, hi: number) =>
+  typeof n === 'number' && Number.isInteger(n) && n >= lo && n <= hi;
+
+/**
+ * Client-side mirror of validateSettings (src/lib/settings.ts) for the rules an
+ * admin can actually trip from this page, keyed by the same dotted field paths
+ * the server returns in its { error, field } response. Built in page order so
+ * the first key is the topmost problem.
+ */
+function validateSettingsDraft(d: AppSettings): Record<string, string> {
+  const errs: Record<string, string> = {};
+  if (!isWholeNumberBetween(d.submissions.pageSize, 5, 100)) {
+    errs['submissions.pageSize'] = 'Enter a whole number of rows between 5 and 100.';
+  }
+  const vo = d.verbalOrders;
+  if (!isWholeNumberBetween(vo.overdueDays, 1, 365)) {
+    errs['verbalOrders.overdueDays'] = 'Enter a whole number of days from 1 to 365.';
+  }
+  if (!isWholeNumberBetween(vo.escalateDays, 1, 365)) {
+    errs['verbalOrders.escalateDays'] = 'Enter a whole number of days from 1 to 365.';
+  } else if (isWholeNumberBetween(vo.overdueDays, 1, 365) && vo.escalateDays < vo.overdueDays) {
+    errs['verbalOrders.escalateDays'] = `Escalation must come at or after the overdue mark (${vo.overdueDays} days).`;
+  }
+  if (vo.returnFax && !/^\d{10}$/.test(vo.returnFax)) {
+    errs['verbalOrders.returnFax'] = 'Enter a 10-digit fax number, or leave it blank to use the portal\'s SRFax number.';
+  }
+  for (const group of ALL_VITAL_AGE_GROUPS) {
+    const overrides = d.vitals.rangesByAgeGroup[group];
+    if (!overrides) continue;
+    for (const vital of ALL_VITAL_RANGE_KEYS) {
+      const pair = overrides[vital];
+      if (!pair) continue;
+      const key = `vitals.rangesByAgeGroup.${group}.${vital}`;
+      if (!Number.isFinite(pair.low) || !Number.isFinite(pair.high)) {
+        errs[key] = `Enter both a low and a high number for ${VITAL_LABELS[vital]}.`;
+      } else if (pair.low > pair.high) {
+        errs[key] = `The ${VITAL_LABELS[vital]} low (${pair.low}) cannot be higher than the high (${pair.high}).`;
+      }
+    }
+  }
+  if (!d.branding.orgName.trim()) errs['branding.orgName'] = 'Enter the organization name. It appears on every PDF and email.';
+  else if (d.branding.orgName.length > 80) errs['branding.orgName'] = 'Keep the organization name to 80 characters.';
+  if (d.branding.tagline.length > 120) errs['branding.tagline'] = 'Keep the tagline to 120 characters.';
+  if (d.branding.fromEmailDisplay.length > 80) errs['branding.fromEmailDisplay'] = 'Keep the from-email display name to 80 characters.';
+  const SUBJECT_LABELS: Record<keyof AppSettings['emails']['subjects'], string> = {
+    staffInviteWelcome: 'staff invite (welcome)',
+    staffInviteResend: 'staff invite (resend)',
+    emailChanged: 'email-changed notice',
+  };
+  for (const key of Object.keys(SUBJECT_LABELS) as (keyof AppSettings['emails']['subjects'])[]) {
+    const v = d.emails.subjects[key];
+    if (!v.trim()) errs[`emails.subjects.${key}`] = `Enter a subject line for the ${SUBJECT_LABELS[key]} email.`;
+    else if (v.length > 200) errs[`emails.subjects.${key}`] = 'Keep the subject line to 200 characters.';
+  }
+  const PL_LABELS: Record<keyof ProviderListEmailSettings, string> = {
+    subject: 'subject', phone: 'callback number', intro: 'opening', explainer: 'list introduction',
+    ctaLabel: 'button label', closing: 'closing', signOff: 'sign-off',
+  };
+  const PL_LIMITS: Record<keyof ProviderListEmailSettings, number> = {
+    subject: 200, phone: 40, ctaLabel: 80, signOff: 120, intro: 2000, explainer: 2000, closing: 2000,
+  };
+  for (const key of ['subject', 'phone', 'intro', 'explainer', 'ctaLabel', 'closing', 'signOff'] as (keyof ProviderListEmailSettings)[]) {
+    const v = d.emails.providerList[key];
+    const path = `emails.providerList.${key}`;
+    if (!v.trim()) errs[path] = `Enter the ${PL_LABELS[key]}. This email cannot go out with it blank.`;
+    else if (v.length > PL_LIMITS[key]) errs[path] = `Keep the ${PL_LABELS[key]} to ${PL_LIMITS[key]} characters.`;
+    else if (key === 'subject' && /\{\{\s*childName\s*\}\}/.test(v)) errs[path] = 'The subject cannot include {{childName}}. Subject lines must stay free of client names.';
+  }
+  return errs;
+}
+
 export default function AdminSettingsPage() {
   const { role, loading: authLoading } = useAuth();
   const { settings, ready, refresh } = useSettings();
@@ -94,6 +169,8 @@ export default function AdminSettingsPage() {
   // starts editing. Once they make a change, the dirty draft "wins"
   // and we don't clobber their input on a background refresh.
   const [dirty, setDirty] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [saveError, setSaveError] = useState<string | null>(null);
   useEffect(() => {
     if (!dirty) setDraft(settings);
   }, [settings, dirty]);
@@ -124,11 +201,43 @@ export default function AdminSettingsPage() {
     );
   }
 
+  const clearFieldError = (key: string) => {
+    if (fieldErrors[key]) setFieldErrors((prev) => ({ ...prev, [key]: '' }));
+  };
+  const clearFieldErrorsUnder = (prefix: string) => {
+    if (Object.keys(fieldErrors).some((k) => k.startsWith(prefix) && fieldErrors[k])) {
+      setFieldErrors((prev) => Object.fromEntries(Object.entries(prev).map(([k, v]) => [k, k.startsWith(prefix) ? '' : v])));
+    }
+  };
+  /** Red outline for a field the last save rejected. */
+  const hi = (key: string): React.CSSProperties | undefined => (fieldErrors[key] ? FIELD_ERROR_STYLE : undefined);
+
+  /** Store the errors, open the collapsed section if needed, and escort to the first one. */
+  const showFieldErrors = (errs: Record<string, string>): boolean => {
+    setFieldErrors(errs);
+    const first = firstErrorKey<string>([], errs);
+    if (!first) return true;
+    // A server `field` the page has no input for (list-type settings such as
+    // intake counties) would otherwise point at nothing: show its message.
+    if (!document.getElementById(settingsFieldId(first))) {
+      setFieldErrors({});
+      setSaveError(errs[first]);
+      return false;
+    }
+    const count = Object.values(errs).filter(Boolean).length;
+    setSaveError(count === 1 ? 'Fix the highlighted field below, then save again.' : `Fix the ${count} highlighted fields below, then save again.`);
+    const needsVitals = first.startsWith('vitals.') && !vitalsOpen;
+    if (needsVitals) setVitalsOpen(true);
+    window.setTimeout(() => escortToField(settingsFieldId(first)), needsVitals ? 80 : 0);
+    return false;
+  };
+
   const updateSubmissions = <K extends keyof AppSettings['submissions']>(
     key: K,
     value: AppSettings['submissions'][K],
   ) => {
     setDirty(true);
+    clearFieldError(`submissions.${key}`);
     setDraft((prev) => ({
       ...prev,
       submissions: { ...prev.submissions, [key]: value },
@@ -181,6 +290,7 @@ export default function AdminSettingsPage() {
     value: number,
   ) => {
     setDirty(true);
+    clearFieldError(`vitals.rangesByAgeGroup.${group}.${vital}`);
     setDraft((prev) => {
       const existingGroup = prev.vitals.rangesByAgeGroup[group] ?? {};
       const existingPair = existingGroup[vital] ?? { low: 0, high: 0 };
@@ -201,6 +311,7 @@ export default function AdminSettingsPage() {
 
   const clearVitalOverridesForGroup = (group: VitalAgeGroupKey) => {
     setDirty(true);
+    clearFieldErrorsUnder(`vitals.rangesByAgeGroup.${group}.`);
     setDraft((prev) => {
       const next = { ...prev.vitals.rangesByAgeGroup };
       delete next[group];
@@ -213,6 +324,7 @@ export default function AdminSettingsPage() {
     value: AppSettings['branding'][K],
   ) => {
     setDirty(true);
+    clearFieldError(`branding.${key}`);
     setDraft((prev) => ({
       ...prev,
       branding: { ...prev.branding, [key]: value },
@@ -224,6 +336,7 @@ export default function AdminSettingsPage() {
     value: string,
   ) => {
     setDirty(true);
+    clearFieldError(`emails.subjects.${key}`);
     setDraft((prev) => ({
       ...prev,
       emails: {
@@ -238,6 +351,7 @@ export default function AdminSettingsPage() {
     value: string,
   ) => {
     setDirty(true);
+    clearFieldError(`emails.providerList.${key}`);
     setDraft((prev) => ({
       ...prev,
       emails: {
@@ -330,6 +444,13 @@ export default function AdminSettingsPage() {
   };
 
   const handleSave = async () => {
+    if (saving) return;
+    setSaveError(null);
+    if (!dirty) {
+      setSaveError('Nothing has changed since the last save.');
+      return;
+    }
+    if (!showFieldErrors(validateSettingsDraft(draft))) return;
     setSaving(true);
     try {
       const res = await authedFetch('/api/admin/settings', {
@@ -338,8 +459,10 @@ export default function AdminSettingsPage() {
         body: JSON.stringify(draft),
       });
       if (!res.ok) {
-        const err = (await res.json().catch(() => ({}))) as { error?: string };
-        showToast('err', err.error || `Save failed (${res.status})`);
+        const err = (await res.json().catch(() => ({}))) as { error?: string; field?: string };
+        const message = err.error || `The server rejected the save (${res.status}).`;
+        if (err.field) showFieldErrors({ [err.field]: message });
+        else setSaveError(message);
         return;
       }
       await refresh();
@@ -353,9 +476,10 @@ export default function AdminSettingsPage() {
         /* sessionStorage unavailable — non-fatal */
       }
       setDirty(false);
+      setFieldErrors({});
       showToast('ok', 'Settings saved');
     } catch {
-      showToast('err', 'Network error — try again.');
+      setSaveError('The save did not reach the server. Check your connection and try again.');
     } finally {
       setSaving(false);
     }
@@ -363,6 +487,8 @@ export default function AdminSettingsPage() {
 
   const handleResetToDefaults = () => {
     setDirty(true);
+    setFieldErrors({});
+    setSaveError(null);
     setDraft(DEFAULT_SETTINGS);
   };
 
@@ -397,12 +523,18 @@ export default function AdminSettingsPage() {
               type="button"
               onClick={handleSave}
               style={primaryBtnStyle}
-              disabled={saving || !dirty}
+              disabled={saving}
             >
               <Save size={14} /> {saving ? 'Saving…' : dirty ? 'Save changes' : 'Saved'}
             </button>
           </div>
         </header>
+
+        {saveError && (
+          <div role="alert" style={saveErrorBannerStyle}>
+            {saveError}
+          </div>
+        )}
 
         {!ready && (
           <div style={infoBannerStyle}>
@@ -467,6 +599,8 @@ export default function AdminSettingsPage() {
             <Field
               label="Rows per page"
               hint="Between 5 and 100. The pagination uses this to chunk the table."
+              id={settingsFieldId('submissions.pageSize')}
+              error={fieldErrors['submissions.pageSize']}
             >
               <input
                 type="number"
@@ -478,7 +612,8 @@ export default function AdminSettingsPage() {
                   const n = parseInt(e.target.value, 10);
                   if (Number.isFinite(n)) updateSubmissions('pageSize', n);
                 }}
-                style={inputStyle}
+                style={{ ...inputStyle, ...hi('submissions.pageSize') }}
+                aria-invalid={!!fieldErrors['submissions.pageSize']}
               />
             </Field>
           </div>
@@ -732,17 +867,30 @@ export default function AdminSettingsPage() {
             form; leave it blank to use the portal&apos;s SRFax number.
           </p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-            <Field label="Overdue after (days)">
-              <input type="number" min={1} max={365} value={draft.verbalOrders.overdueDays} style={inputStyle}
-                onChange={(e) => setDraft((prev) => ({ ...prev, verbalOrders: { ...prev.verbalOrders, overdueDays: Number(e.target.value) || 1 } }))} />
+            <Field label="Overdue after (days)" id={settingsFieldId('verbalOrders.overdueDays')} error={fieldErrors['verbalOrders.overdueDays']}>
+              <input type="number" min={1} max={365} value={draft.verbalOrders.overdueDays} style={{ ...inputStyle, ...hi('verbalOrders.overdueDays') }} aria-invalid={!!fieldErrors['verbalOrders.overdueDays']}
+                onChange={(e) => {
+                  clearFieldError('verbalOrders.overdueDays');
+                  clearFieldError('verbalOrders.escalateDays');
+                  setDraft((prev) => ({ ...prev, verbalOrders: { ...prev.verbalOrders, overdueDays: Number(e.target.value) || 1 } }));
+                  setDirty(true);
+                }} />
             </Field>
-            <Field label="Escalate after (days)">
-              <input type="number" min={1} max={365} value={draft.verbalOrders.escalateDays} style={inputStyle}
-                onChange={(e) => setDraft((prev) => ({ ...prev, verbalOrders: { ...prev.verbalOrders, escalateDays: Number(e.target.value) || 1 } }))} />
+            <Field label="Escalate after (days)" id={settingsFieldId('verbalOrders.escalateDays')} error={fieldErrors['verbalOrders.escalateDays']}>
+              <input type="number" min={1} max={365} value={draft.verbalOrders.escalateDays} style={{ ...inputStyle, ...hi('verbalOrders.escalateDays') }} aria-invalid={!!fieldErrors['verbalOrders.escalateDays']}
+                onChange={(e) => {
+                  clearFieldError('verbalOrders.escalateDays');
+                  setDraft((prev) => ({ ...prev, verbalOrders: { ...prev.verbalOrders, escalateDays: Number(e.target.value) || 1 } }));
+                  setDirty(true);
+                }} />
             </Field>
-            <Field label="Return fax number (optional)">
-              <input type="tel" placeholder="(470) 235-1891" value={draft.verbalOrders.returnFax} style={inputStyle}
-                onChange={(e) => setDraft((prev) => ({ ...prev, verbalOrders: { ...prev.verbalOrders, returnFax: e.target.value.replace(/\D/g, '').slice(0, 10) } }))} />
+            <Field label="Return fax number (optional)" id={settingsFieldId('verbalOrders.returnFax')} error={fieldErrors['verbalOrders.returnFax']}>
+              <input type="tel" placeholder="(470) 235-1891" value={draft.verbalOrders.returnFax} style={{ ...inputStyle, ...hi('verbalOrders.returnFax') }} aria-invalid={!!fieldErrors['verbalOrders.returnFax']}
+                onChange={(e) => {
+                  clearFieldError('verbalOrders.returnFax');
+                  setDraft((prev) => ({ ...prev, verbalOrders: { ...prev.verbalOrders, returnFax: e.target.value.replace(/\D/g, '').slice(0, 10) } }));
+                  setDirty(true);
+                }} />
             </Field>
           </div>
         </section>
@@ -837,14 +985,17 @@ export default function AdminSettingsPage() {
                     {ALL_VITAL_RANGE_KEYS.map((vital) => {
                       const pair = groupOverrides[vital];
                       const def = getDefaultVitalRange(group, vital);
+                      const vitalKey = `vitals.rangesByAgeGroup.${group}.${vital}`;
                       return (
                         <div
                           key={vital}
+                          id={settingsFieldId(vitalKey)}
                           style={{
                             border: '1px solid #e5e7eb',
                             borderRadius: 6,
                             padding: '8px 10px',
                             background: 'white',
+                            ...hi(vitalKey),
                           }}
                         >
                           <div
@@ -884,6 +1035,7 @@ export default function AdminSettingsPage() {
                               style={smallNumberInputStyle}
                             />
                           </div>
+                          <FieldError message={fieldErrors[vitalKey]} />
                         </div>
                       );
                     })}
@@ -913,37 +1065,46 @@ export default function AdminSettingsPage() {
             <Field
               label="Organization name"
               hint="Used in the sidebar, PDF header, detail-view header, and email bodies."
+              id={settingsFieldId('branding.orgName')}
+              error={fieldErrors['branding.orgName']}
             >
               <input
                 type="text"
                 value={draft.branding.orgName}
                 onChange={(e) => updateBranding('orgName', e.target.value)}
                 maxLength={80}
-                style={inputStyle}
+                style={{ ...inputStyle, ...hi('branding.orgName') }}
+                aria-invalid={!!fieldErrors['branding.orgName']}
               />
             </Field>
             <Field
               label="Tagline"
               hint="Subtitle under the org name on PDFs and the detail-view header."
+              id={settingsFieldId('branding.tagline')}
+              error={fieldErrors['branding.tagline']}
             >
               <input
                 type="text"
                 value={draft.branding.tagline}
                 onChange={(e) => updateBranding('tagline', e.target.value)}
                 maxLength={120}
-                style={inputStyle}
+                style={{ ...inputStyle, ...hi('branding.tagline') }}
+                aria-invalid={!!fieldErrors['branding.tagline']}
               />
             </Field>
             <Field
               label="From-email display name"
               hint="Shown to recipients before the email address. Leave blank to fall back to the organization name."
+              id={settingsFieldId('branding.fromEmailDisplay')}
+              error={fieldErrors['branding.fromEmailDisplay']}
             >
               <input
                 type="text"
                 value={draft.branding.fromEmailDisplay}
                 onChange={(e) => updateBranding('fromEmailDisplay', e.target.value)}
                 maxLength={80}
-                style={inputStyle}
+                style={{ ...inputStyle, ...hi('branding.fromEmailDisplay') }}
+                aria-invalid={!!fieldErrors['branding.fromEmailDisplay']}
               />
             </Field>
           </div>
@@ -956,34 +1117,39 @@ export default function AdminSettingsPage() {
             configured separately in Firebase Console → Authentication → Templates.
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <Field label="Staff invite (welcome)">
+            <Field label="Staff invite (welcome)" id={settingsFieldId('emails.subjects.staffInviteWelcome')} error={fieldErrors['emails.subjects.staffInviteWelcome']}>
               <input
                 type="text"
                 value={draft.emails.subjects.staffInviteWelcome}
                 onChange={(e) => updateEmailSubject('staffInviteWelcome', e.target.value)}
                 maxLength={200}
-                style={inputStyle}
+                style={{ ...inputStyle, ...hi('emails.subjects.staffInviteWelcome') }}
+                aria-invalid={!!fieldErrors['emails.subjects.staffInviteWelcome']}
               />
             </Field>
-            <Field label="Staff invite (resend / fresh link)">
+            <Field label="Staff invite (resend / fresh link)" id={settingsFieldId('emails.subjects.staffInviteResend')} error={fieldErrors['emails.subjects.staffInviteResend']}>
               <input
                 type="text"
                 value={draft.emails.subjects.staffInviteResend}
                 onChange={(e) => updateEmailSubject('staffInviteResend', e.target.value)}
                 maxLength={200}
-                style={inputStyle}
+                style={{ ...inputStyle, ...hi('emails.subjects.staffInviteResend') }}
+                aria-invalid={!!fieldErrors['emails.subjects.staffInviteResend']}
               />
             </Field>
             <Field
               label="Email-changed security notice"
               hint="Sent to the OLD address when admin changes a staff member's email."
+              id={settingsFieldId('emails.subjects.emailChanged')}
+              error={fieldErrors['emails.subjects.emailChanged']}
             >
               <input
                 type="text"
                 value={draft.emails.subjects.emailChanged}
                 onChange={(e) => updateEmailSubject('emailChanged', e.target.value)}
                 maxLength={200}
-                style={inputStyle}
+                style={{ ...inputStyle, ...hi('emails.subjects.emailChanged') }}
+                aria-invalid={!!fieldErrors['emails.subjects.emailChanged']}
               />
             </Field>
           </div>
@@ -1095,67 +1261,76 @@ export default function AdminSettingsPage() {
             <Field
               label="Subject"
               hint="Client names are not allowed here: subject lines are visible in notification previews."
+              id={settingsFieldId('emails.providerList.subject')}
+              error={fieldErrors['emails.providerList.subject']}
             >
               <input
                 type="text"
                 value={draft.emails.providerList.subject}
                 onChange={(e) => updateProviderListCopy('subject', e.target.value)}
                 maxLength={200}
-                style={inputStyle}
+                style={{ ...inputStyle, ...hi('emails.providerList.subject') }}
+                aria-invalid={!!fieldErrors['emails.providerList.subject']}
               />
             </Field>
-            <Field label="Callback number" hint="Shown in the body and used for {{phone}}.">
+            <Field label="Callback number" hint="Shown in the body and used for {{phone}}." id={settingsFieldId('emails.providerList.phone')} error={fieldErrors['emails.providerList.phone']}>
               <input
                 type="text"
                 value={draft.emails.providerList.phone}
                 onChange={(e) => updateProviderListCopy('phone', e.target.value)}
                 maxLength={40}
-                style={{ ...inputStyle, maxWidth: 220 }}
+                style={{ ...inputStyle, maxWidth: 220, ...hi('emails.providerList.phone') }}
+                aria-invalid={!!fieldErrors['emails.providerList.phone']}
               />
             </Field>
-            <Field label="Opening" hint="First thing they read, above the list link.">
+            <Field label="Opening" hint="First thing they read, above the list link." id={settingsFieldId('emails.providerList.intro')} error={fieldErrors['emails.providerList.intro']}>
               <textarea
                 value={draft.emails.providerList.intro}
                 onChange={(e) => updateProviderListCopy('intro', e.target.value)}
                 maxLength={2000}
                 rows={3}
-                style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }}
+                style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5, ...hi('emails.providerList.intro') }}
+                aria-invalid={!!fieldErrors['emails.providerList.intro']}
               />
             </Field>
-            <Field label="Introducing the list" hint="Sits directly above the button.">
+            <Field label="Introducing the list" hint="Sits directly above the button." id={settingsFieldId('emails.providerList.explainer')} error={fieldErrors['emails.providerList.explainer']}>
               <textarea
                 value={draft.emails.providerList.explainer}
                 onChange={(e) => updateProviderListCopy('explainer', e.target.value)}
                 maxLength={2000}
                 rows={3}
-                style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }}
+                style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5, ...hi('emails.providerList.explainer') }}
+                aria-invalid={!!fieldErrors['emails.providerList.explainer']}
               />
             </Field>
-            <Field label="Button label">
+            <Field label="Button label" id={settingsFieldId('emails.providerList.ctaLabel')} error={fieldErrors['emails.providerList.ctaLabel']}>
               <input
                 type="text"
                 value={draft.emails.providerList.ctaLabel}
                 onChange={(e) => updateProviderListCopy('ctaLabel', e.target.value)}
                 maxLength={80}
-                style={{ ...inputStyle, maxWidth: 340 }}
+                style={{ ...inputStyle, maxWidth: 340, ...hi('emails.providerList.ctaLabel') }}
+                aria-invalid={!!fieldErrors['emails.providerList.ctaLabel']}
               />
             </Field>
-            <Field label="Closing" hint="Everything after the button.">
+            <Field label="Closing" hint="Everything after the button." id={settingsFieldId('emails.providerList.closing')} error={fieldErrors['emails.providerList.closing']}>
               <textarea
                 value={draft.emails.providerList.closing}
                 onChange={(e) => updateProviderListCopy('closing', e.target.value)}
                 maxLength={2000}
                 rows={4}
-                style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }}
+                style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5, ...hi('emails.providerList.closing') }}
+                aria-invalid={!!fieldErrors['emails.providerList.closing']}
               />
             </Field>
-            <Field label="Sign-off">
+            <Field label="Sign-off" id={settingsFieldId('emails.providerList.signOff')} error={fieldErrors['emails.providerList.signOff']}>
               <input
                 type="text"
                 value={draft.emails.providerList.signOff}
                 onChange={(e) => updateProviderListCopy('signOff', e.target.value)}
                 maxLength={120}
-                style={{ ...inputStyle, maxWidth: 340 }}
+                style={{ ...inputStyle, maxWidth: 340, ...hi('emails.providerList.signOff') }}
+                aria-invalid={!!fieldErrors['emails.providerList.signOff']}
               />
             </Field>
           </div>
@@ -1250,15 +1425,20 @@ function Field({
   label,
   hint,
   children,
+  id,
+  error,
 }: {
   label: string;
   hint?: string;
   children: React.ReactNode;
+  id?: string;
+  error?: string;
 }) {
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+    <label id={id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <span style={{ fontSize: 12, fontWeight: 600, color: '#5c6b7a' }}>{label}</span>
       {children}
+      <FieldError message={error} />
       {hint && <span style={{ fontSize: 11, color: '#7f8c8d' }}>{hint}</span>}
     </label>
   );
@@ -1465,6 +1645,16 @@ const toastOkStyle: React.CSSProperties = {
 const toastErrStyle: React.CSSProperties = {
   ...toastOkStyle,
   background: '#c62828',
+};
+const saveErrorBannerStyle: React.CSSProperties = {
+  margin: '0 0 16px',
+  padding: '10px 14px',
+  borderRadius: 8,
+  background: '#fdecea',
+  border: '1px solid #f3b6b0',
+  color: '#b3261e',
+  fontSize: 13,
+  fontWeight: 600,
 };
 const smallNumberInputStyle: React.CSSProperties = {
   width: '100%',

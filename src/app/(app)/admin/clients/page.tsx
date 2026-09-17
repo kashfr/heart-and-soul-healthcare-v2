@@ -40,6 +40,11 @@ import {
 import { reconcilePatient, worstSeverity, summarize, type Finding } from '@/lib/reconcile';
 import { db } from '@/lib/firebase';
 import { authedFetch } from '@/lib/authedFetch';
+import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
+
+type ClientField = 'name' | 'dob';
+const CLIENT_FIELD_ORDER: readonly ClientField[] = ['name', 'dob'];
+const clientFieldId = (k: ClientField) => `client-form-${k}`;
 
 // Shape returned by GET /api/admin/users — only the fields the care
 // team picker actually consumes.
@@ -127,6 +132,8 @@ function ClientsRosterInner() {
   const [clinical, setClinical] = useState<PatientClinical>({});
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<ClientField, string>>>({});
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [programFilter, setProgramFilter] = useState('');
   const [levelFilter, setLevelFilter] = useState('');
@@ -241,6 +248,12 @@ function ClientsRosterInner() {
     setFormData(emptyPatient);
     setClinical({});
     setEditingId(null);
+    setFieldErrors({});
+    setSaveError(null);
+  };
+
+  const clearFieldError = (k: ClientField) => {
+    if (fieldErrors[k]) setFieldErrors((e) => ({ ...e, [k]: undefined }));
   };
 
   const handleOpenAdd = () => {
@@ -266,6 +279,8 @@ function ClientsRosterInner() {
       serviceStartedOn: patient.serviceStartedOn ?? '',
     });
     setEditingId(patient.id || null);
+    setFieldErrors({});
+    setSaveError(null);
     setFormOpen(true);
   };
 
@@ -380,11 +395,15 @@ function ClientsRosterInner() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canManageRoster) return;
-    if (!formData.name || !formData.dob) {
-      showToast('Name and date of birth are required.');
-      return;
-    }
+    if (!canManageRoster || submitting) return;
+    const errs: Partial<Record<ClientField, string>> = {};
+    if (!(formData.name || '').trim()) errs.name = 'Enter the client\'s full name.';
+    const dob = formData.dob || '';
+    if (!dob) errs.dob = 'Enter the client\'s date of birth.';
+    else if (!/^\d{4}-\d{2}-\d{2}$/.test(dob) || Number.isNaN(new Date(dob + 'T12:00:00').getTime())) errs.dob = 'Enter a valid date of birth.';
+    else if (dob > todayISO) errs.dob = 'The date of birth cannot be in the future.';
+    setSaveError(null);
+    if (!applyFieldErrors(errs, CLIENT_FIELD_ORDER, setFieldErrors, clientFieldId)) return;
     try {
       setSubmitting(true);
       let savedId = editingId;
@@ -404,8 +423,8 @@ function ClientsRosterInner() {
       showToast(`${formData.name} ${editingId ? 'updated' : 'added'}`);
       resetForm();
       setFormOpen(false);
-    } catch {
-      showToast('Failed to save. Please try again.');
+    } catch (err) {
+      setSaveError(err instanceof Error && err.message ? `Could not save the client: ${err.message}` : 'Could not save the client. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -697,26 +716,32 @@ function ClientsRosterInner() {
               </button>
             </div>
 
-            <form onSubmit={handleSave} style={{ padding: 20 }}>
+            <form onSubmit={handleSave} noValidate style={{ padding: 20 }}>
               <div style={gridTwoStyle}>
-                <Field label="Full name *">
+                <Field label="Full name *" id={clientFieldId('name')} error={fieldErrors.name}>
                   <input
                     type="text"
-                    required
                     value={formData.name || ''}
-                    onChange={(e) => setFormData((f) => ({ ...f, name: e.target.value }))}
-                    style={inputStyle}
+                    onChange={(e) => {
+                      setFormData((f) => ({ ...f, name: e.target.value }));
+                      clearFieldError('name');
+                    }}
+                    style={{ ...inputStyle, ...(fieldErrors.name ? FIELD_ERROR_STYLE : null) }}
+                    aria-invalid={!!fieldErrors.name}
                     placeholder="Jane Doe"
                   />
                 </Field>
-                <Field label="Date of birth *">
+                <Field label="Date of birth *" id={clientFieldId('dob')} error={fieldErrors.dob}>
                   <input
                     type="date"
-                    required
                     max={todayISO}
                     value={formData.dob || ''}
-                    onChange={(e) => setFormData((f) => ({ ...f, dob: e.target.value }))}
-                    style={inputStyle}
+                    onChange={(e) => {
+                      setFormData((f) => ({ ...f, dob: e.target.value }));
+                      clearFieldError('dob');
+                    }}
+                    style={{ ...inputStyle, ...(fieldErrors.dob ? FIELD_ERROR_STYLE : null) }}
+                    aria-invalid={!!fieldErrors.dob}
                   />
                 </Field>
               </div>
@@ -1027,6 +1052,10 @@ function ClientsRosterInner() {
                 </div>
               )}
 
+              {saveError && (
+                <div role="alert" style={saveErrorStyle}>{saveError}</div>
+              )}
+
               <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
                 <button
                   type="button"
@@ -1058,14 +1087,17 @@ export default function ClientsRosterPage() {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children, id, error }: { label: string; children: React.ReactNode; id?: string; error?: string }) {
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
+    <label id={id} style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
       <span style={{ fontSize: 12, fontWeight: 600, color: '#5c6b7a' }}>{label}</span>
       {children}
+      <FieldError message={error} />
     </label>
   );
 }
+
+const saveErrorStyle: React.CSSProperties = { marginTop: 16, padding: '10px 12px', borderRadius: 8, background: '#fdecea', border: '1px solid #f3b6b0', color: '#b3261e', fontSize: 13, fontWeight: 600 };
 
 const containerStyle: React.CSSProperties = { minHeight: '70vh', background: '#f5f7fa', padding: '32px 20px' };
 const wrapStyle: React.CSSProperties = { maxWidth: 1180, margin: '0 auto' };

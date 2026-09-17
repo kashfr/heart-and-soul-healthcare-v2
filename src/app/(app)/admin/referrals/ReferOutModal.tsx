@@ -8,6 +8,14 @@ import { matchAgencies, topSuggestions } from '@/lib/agencyMatch';
 import { PROVIDER_LIST_URL } from '@/lib/shareLink';
 import MatchSuggestions from './MatchSuggestions';
 import { usePartnerAgencies } from './PartnerAgenciesProvider';
+import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
+
+type ReferOutField = 'agency' | 'email' | 'familyEmail';
+const FIELD_ORDER: readonly ReferOutField[] = ['agency', 'email', 'familyEmail'];
+const fieldId = (k: ReferOutField) => `refer-out-${k}`;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Server messages about delivery (not the address itself) belong on the banner.
+const DELIVERY_FAILURE_RE = /could not be sent|failed to send|could not create/i;
 
 // Required capture when a referral is dragged into "Referred Out" without ever
 // being shared. We record which agency it was handed off to (a manual share
@@ -37,6 +45,10 @@ export default function ReferOutModal({
   const [email, setEmail] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<ReferOutField, string>>>({});
+  const clearFieldError = (k: ReferOutField) => {
+    if (fieldErrors[k]) setFieldErrors((prev) => ({ ...prev, [k]: undefined }));
+  };
   // 'agency' = record which partner took the client (default); 'providerList' =
   // no partner matches, so email the family the official GAPP provider list.
   const [mode, setMode] = useState<'agency' | 'providerList'>('agency');
@@ -48,18 +60,22 @@ export default function ReferOutModal({
 
   const onAgencyName = (value: string) => {
     setAgency(value);
+    clearFieldError('agency');
     const match = agencies.find((a) => a.name.toLowerCase() === value.trim().toLowerCase());
-    if (match) setEmail(match.email);
+    if (match) {
+      setEmail(match.email);
+      clearFieldError('email');
+    }
   };
 
   const submit = async () => {
     if (saving) return;
-    if (!agency.trim()) {
-      setError('Enter the agency you referred this client to.');
-      return;
-    }
-    setSaving(true);
     setError(null);
+    const errs: Partial<Record<ReferOutField, string>> = {};
+    if (!agency.trim()) errs.agency = 'Enter the agency you referred this client to.';
+    if (email.trim() && !EMAIL_RE.test(email.trim())) errs.email = 'Enter a valid agency email, or leave it blank.';
+    if (!applyFieldErrors(errs, FIELD_ORDER, setFieldErrors, fieldId)) return;
+    setSaving(true);
     try {
       const res = await authedFetch(`/api/admin/referrals/${referralId}/shares`, {
         method: 'POST',
@@ -73,7 +89,9 @@ export default function ReferOutModal({
       if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
       onDone();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not record the referral.');
+      const message = e instanceof Error && e.message ? e.message : 'Could not record the referral. Please try again.';
+      if (/email/i.test(message) && !DELIVERY_FAILURE_RE.test(message)) applyFieldErrors({ email: message }, FIELD_ORDER, setFieldErrors, fieldId);
+      else setError(message);
       setSaving(false);
     }
   };
@@ -83,12 +101,14 @@ export default function ReferOutModal({
   // card. The server sends first and records only on success.
   const submitProviderList = async (noEmail: boolean) => {
     if (saving) return;
-    if (!noEmail && !familyEmail.trim()) {
-      setError('Enter the family email, or use the no-email option below.');
-      return;
+    setError(null);
+    if (!noEmail) {
+      const errs: Partial<Record<ReferOutField, string>> = {};
+      if (!familyEmail.trim()) errs.familyEmail = 'Enter the family email, or use the no-email option below.';
+      else if (!EMAIL_RE.test(familyEmail.trim())) errs.familyEmail = 'Enter a valid email address, like name@example.com.';
+      if (!applyFieldErrors(errs, FIELD_ORDER, setFieldErrors, fieldId)) return;
     }
     setSaving(true);
-    setError(null);
     try {
       const res = await authedFetch(`/api/admin/referrals/${referralId}/provider-list`, {
         method: 'POST',
@@ -98,7 +118,9 @@ export default function ReferOutModal({
       if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
       onDone();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not send the provider list.');
+      const message = e instanceof Error && e.message ? e.message : 'Could not send the provider list. Please try again.';
+      if (!noEmail && /email/i.test(message) && !DELIVERY_FAILURE_RE.test(message)) applyFieldErrors({ familyEmail: message }, FIELD_ORDER, setFieldErrors, fieldId);
+      else setError(message);
       setSaving(false);
     }
   };
@@ -135,7 +157,7 @@ export default function ReferOutModal({
                 </div>
                 None of your saved agencies {county ? `covers ${county}` : 'match this referral'}.
                 You can email the family the official GAPP provider list instead.
-                <button type="button" onClick={() => { setMode('providerList'); setError(null); }} style={noMatchBtn}>
+                <button type="button" onClick={() => { setMode('providerList'); setError(null); setFieldErrors({}); }} style={noMatchBtn}>
                   Email the provider list
                 </button>
               </div>
@@ -143,38 +165,46 @@ export default function ReferOutModal({
 
             <MatchSuggestions
               matches={suggestions}
-              onPick={(a) => { setAgency(a.name); setEmail(a.email); setError(null); }}
+              onPick={(a) => { setAgency(a.name); setEmail(a.email); setError(null); setFieldErrors({}); }}
             />
 
-            <input
-              value={agency}
-              onChange={(e) => onAgencyName(e.target.value)}
-              placeholder="Agency name (required)"
-              style={input}
-              list="referout-agency-options"
-              autoComplete="off"
-              autoFocus
-            />
+            <div id={fieldId('agency')}>
+              <input
+                value={agency}
+                onChange={(e) => onAgencyName(e.target.value)}
+                placeholder="Agency name (required)"
+                style={{ ...input, ...(fieldErrors.agency ? FIELD_ERROR_STYLE : null) }}
+                aria-invalid={!!fieldErrors.agency}
+                list="referout-agency-options"
+                autoComplete="off"
+                autoFocus
+              />
+              <FieldError message={fieldErrors.agency} />
+            </div>
             <datalist id="referout-agency-options">
               {agencies.map((a) => <option key={a.id} value={a.name} />)}
             </datalist>
-            <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
-              placeholder="Agency email (optional)"
-              type="email"
-              style={input}
-            />
+            <div id={fieldId('email')}>
+              <input
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); clearFieldError('email'); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+                placeholder="Agency email (optional)"
+                type="email"
+                style={{ ...input, ...(fieldErrors.email ? FIELD_ERROR_STYLE : null) }}
+                aria-invalid={!!fieldErrors.email}
+              />
+              <FieldError message={fieldErrors.email} />
+            </div>
 
-            {error && <div style={{ color: '#b3261e', fontSize: 13 }}>{error}</div>}
+            {error && <div role="alert" style={{ color: '#b3261e', fontSize: 13, fontWeight: 600 }}>{error}</div>}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 6 }}>
               <button onClick={onClose} style={ghostBtn}>Cancel</button>
               <button
                 onClick={submit}
-                disabled={saving || !agency.trim()}
-                style={{ ...primaryBtn, opacity: saving || !agency.trim() ? 0.55 : 1 }}
+                disabled={saving}
+                style={{ ...primaryBtn, opacity: saving ? 0.55 : 1 }}
               >
                 {saving ? 'Saving…' : 'Move to Referred Out'}
               </button>
@@ -186,7 +216,7 @@ export default function ReferOutModal({
             {!(agencies.length > 0 && suggestions.length === 0) && (
               <button
                 type="button"
-                onClick={() => { setMode('providerList'); setError(null); }}
+                onClick={() => { setMode('providerList'); setError(null); setFieldErrors({}); }}
                 style={modeSwitchLink}
               >
                 No agency can take this? Email the family the GAPP provider list instead.
@@ -201,24 +231,28 @@ export default function ReferOutModal({
               to Referred Out.
             </div>
 
-            <input
-              value={familyEmail}
-              onChange={(e) => setFamilyEmail(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') submitProviderList(false); }}
-              placeholder="Family email"
-              type="email"
-              style={input}
-              autoFocus
-            />
+            <div id={fieldId('familyEmail')}>
+              <input
+                value={familyEmail}
+                onChange={(e) => { setFamilyEmail(e.target.value); clearFieldError('familyEmail'); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') submitProviderList(false); }}
+                placeholder="Family email"
+                type="email"
+                style={{ ...input, ...(fieldErrors.familyEmail ? FIELD_ERROR_STYLE : null) }}
+                aria-invalid={!!fieldErrors.familyEmail}
+                autoFocus
+              />
+              <FieldError message={fieldErrors.familyEmail} />
+            </div>
 
-            {error && <div style={{ color: '#b3261e', fontSize: 13 }}>{error}</div>}
+            {error && <div role="alert" style={{ color: '#b3261e', fontSize: 13, fontWeight: 600 }}>{error}</div>}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 6 }}>
               <button onClick={onClose} style={ghostBtn}>Cancel</button>
               <button
                 onClick={() => submitProviderList(false)}
-                disabled={saving || !familyEmail.trim()}
-                style={{ ...primaryBtn, opacity: saving || !familyEmail.trim() ? 0.55 : 1 }}
+                disabled={saving}
+                style={{ ...primaryBtn, opacity: saving ? 0.55 : 1 }}
               >
                 {saving ? 'Sending…' : 'Email list & move to Referred Out'}
               </button>
@@ -244,7 +278,7 @@ export default function ReferOutModal({
 
             <button
               type="button"
-              onClick={() => { setMode('agency'); setError(null); }}
+              onClick={() => { setMode('agency'); setError(null); setFieldErrors({}); }}
               style={modeSwitchLink}
             >
               Back to recording an agency instead

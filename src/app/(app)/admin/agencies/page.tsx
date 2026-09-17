@@ -3,7 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Search, X, RefreshCw, Plus, Pencil, Trash2, Mail, Phone } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
-import { formatUSPhone } from '@/lib/phone';
+import { formatUSPhone, isValidUSPhone } from '@/lib/phone';
+import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
+
+type AgencyField = 'name' | 'email' | 'phone';
+const AGENCY_FIELD_ORDER: readonly AgencyField[] = ['name', 'email', 'phone'];
+const agencyFieldId = (k: AgencyField) => `agency-form-${k}`;
+const AGENCY_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 import { GA_COUNTIES, GAPP_SERVICES, SERVICE_SHORT, normalizeCounty, type GappServiceKey } from '@/lib/georgia';
 
 interface PartnerAgency {
@@ -252,6 +258,10 @@ function AgencyForm({
   const [services, setServices] = useState<string[]>(agency?.services ?? []);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<AgencyField, string>>>({});
+  const clearFieldError = (k: AgencyField) => {
+    if (fieldErrors[k]) setFieldErrors((prev) => ({ ...prev, [k]: undefined }));
+  };
 
   const addCounty = () => {
     const c = normalizeCounty(countyInput);
@@ -268,9 +278,15 @@ function AgencyForm({
     setServices((prev) => (prev.includes(key) ? prev.filter((s) => s !== key) : [...prev, key]));
 
   const submit = async () => {
-    if (!name.trim() || !email.trim() || saving) return;
-    setSaving(true);
+    if (saving) return;
     setErr(null);
+    const errs: Partial<Record<AgencyField, string>> = {};
+    if (!name.trim()) errs.name = 'Enter the agency name.';
+    if (!email.trim()) errs.email = 'Enter the agency email.';
+    else if (!AGENCY_EMAIL_RE.test(email.trim())) errs.email = 'Enter a valid email address, like intake@agency.org.';
+    if (phone.trim() && !isValidUSPhone(phone)) errs.phone = 'Enter a 10-digit US phone number, or leave it blank.';
+    if (!applyFieldErrors(errs, AGENCY_FIELD_ORDER, setFieldErrors, agencyFieldId)) return;
+    setSaving(true);
     try {
       const body = {
         name: name.trim(), email: email.trim(), phone: phone.trim(),
@@ -285,7 +301,10 @@ function AgencyForm({
       if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
       onSaved(data.agency);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not save agency.');
+      const message = e instanceof Error && e.message ? e.message : 'Could not save the agency. Please try again.';
+      if (/email/i.test(message)) applyFieldErrors({ email: message }, AGENCY_FIELD_ORDER, setFieldErrors, agencyFieldId);
+      else if (/agency name/i.test(message)) applyFieldErrors({ name: message }, AGENCY_FIELD_ORDER, setFieldErrors, agencyFieldId);
+      else setErr(message);
     } finally {
       setSaving(false);
     }
@@ -301,10 +320,16 @@ function AgencyForm({
           <button onClick={onClose} style={closeBtnStyle} aria-label="Close"><X size={18} /></button>
         </div>
         <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <Field label="Agency name *"><input value={name} onChange={(e) => setName(e.target.value)} style={inp} autoFocus /></Field>
-          <Field label="Email *"><input value={email} onChange={(e) => setEmail(e.target.value)} type="email" style={inp} /></Field>
+          <Field label="Agency name *" id={agencyFieldId('name')} error={fieldErrors.name}>
+            <input value={name} onChange={(e) => { setName(e.target.value); clearFieldError('name'); }} style={{ ...inp, ...(fieldErrors.name ? FIELD_ERROR_STYLE : null) }} aria-invalid={!!fieldErrors.name} autoFocus />
+          </Field>
+          <Field label="Email *" id={agencyFieldId('email')} error={fieldErrors.email}>
+            <input value={email} onChange={(e) => { setEmail(e.target.value); clearFieldError('email'); }} type="email" style={{ ...inp, ...(fieldErrors.email ? FIELD_ERROR_STYLE : null) }} aria-invalid={!!fieldErrors.email} />
+          </Field>
           <div style={{ display: 'flex', gap: 12 }}>
-            <Field label="Phone"><input type="tel" value={phone} onChange={(e) => setPhone(formatUSPhone(e.target.value))} placeholder="(XXX) XXX-XXXX" style={inp} /></Field>
+            <Field label="Phone" id={agencyFieldId('phone')} error={fieldErrors.phone}>
+              <input type="tel" value={phone} onChange={(e) => { setPhone(formatUSPhone(e.target.value)); clearFieldError('phone'); }} placeholder="(XXX) XXX-XXXX" style={{ ...inp, ...(fieldErrors.phone ? FIELD_ERROR_STYLE : null) }} aria-invalid={!!fieldErrors.phone} />
+            </Field>
             <Field label="Contact person"><input value={contactName} onChange={(e) => setContactName(e.target.value)} style={inp} /></Field>
           </div>
 
@@ -366,14 +391,14 @@ function AgencyForm({
           </Field>
 
           <Field label="Notes"><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} style={{ ...inp, resize: 'vertical' }} /></Field>
-          {err && <div style={{ color: '#b3261e', fontSize: 13 }}>{err}</div>}
+          {err && <div role="alert" style={{ color: '#b3261e', fontSize: 13, fontWeight: 600 }}>{err}</div>}
         </div>
         <div style={modalFooterStyle}>
           <button onClick={onClose} style={ghostBtnStyle}>Cancel</button>
           <button
             onClick={submit}
-            disabled={saving || !name.trim() || !email.trim()}
-            style={{ ...primaryBtnStyle, opacity: saving || !name.trim() || !email.trim() ? 0.55 : 1 }}
+            disabled={saving}
+            style={{ ...primaryBtnStyle, opacity: saving ? 0.55 : 1 }}
           >
             {saving ? 'Saving…' : agency ? 'Save changes' : 'Add agency'}
           </button>
@@ -387,19 +412,24 @@ function Field({
   label,
   hint,
   children,
+  id,
+  error,
 }: {
   label: string;
   /** Optional right-aligned counter/annotation, e.g. "19 counties". */
   hint?: string;
   children: React.ReactNode;
+  id?: string;
+  error?: string;
 }) {
   return (
-    <label style={{ display: 'block', flex: 1 }}>
+    <label id={id} style={{ display: 'block', flex: 1 }}>
       <span style={fieldLabelRowStyle}>
         <span>{label}</span>
         {hint && <span style={fieldHintStyle}>{hint}</span>}
       </span>
       {children}
+      <FieldError message={error} />
     </label>
   );
 }
