@@ -190,6 +190,18 @@ export function effectiveIncidentRequired(r: Pick<MedErrorReport, 'incidentRepor
   return r.review ? r.review.incidentReportRequired : r.incidentReportRequired;
 }
 
+/**
+ * A narrative box must say something. Placeholder answers ("N/A", "none",
+ * "nothing") and one-word entries are refused: a surveyor reading "n/a" as
+ * a corrective action is worse than a blank.
+ */
+export function isSubstantiveText(raw: string, minLength = 20): boolean {
+  const t = (raw || '').trim();
+  if (t.length < minLength) return false;
+  const norm = t.toLowerCase().replace(/[.\s!]+$/g, '');
+  return !['n/a', 'na', 'none', 'nothing', 'no', 'unknown', 'not applicable', 'nothing done', 'no action', 'no change', '-', '--'].includes(norm);
+}
+
 export function validateMedErrorInput(input: MedErrorInput, nowLocal: string): MedErrorFieldErrors {
   const e: MedErrorFieldErrors = {};
   if (!input.patientId.trim()) e.patientId = 'Choose the client.';
@@ -211,8 +223,8 @@ export function validateMedErrorInput(input: MedErrorInput, nowLocal: string): M
   else if (desc.length > MED_ERROR_TEXT_MAX) e.description = `Keep the description under ${MED_ERROR_TEXT_MAX} characters.`;
   if (!input.responsibleType) e.responsibleType = 'Say who administered or was responsible for the dose.';
   if (!input.harm) e.harm = "Describe the client's condition after the error.";
-  if (!input.clientCondition.trim()) e.clientCondition = "Note the client's condition and any symptoms, even if none.";
-  if (!input.actionsTaken.trim()) e.actionsTaken = 'Note what was done in response.';
+  if (!isSubstantiveText(input.clientCondition)) e.clientCondition = "Describe the client's condition in a sentence, even when unchanged: for example 'Alert, no distress, vitals at baseline.' Placeholders like N/A are not accepted.";
+  if (!isSubstantiveText(input.actionsTaken)) e.actionsTaken = 'Say what was done in response, even if it was only monitoring or a call: for example \'Physician advised to skip the next dose; client monitored for 2 hours.\' Placeholders like N/A are not accepted.';
   for (const [k, n] of [['physician', input.physician], ['guardian', input.guardian], ['supervisor', input.supervisor]] as const) {
     if (!n.notified || !n.at) continue;
     if (!isLocalDateTime(n.at)) e[`${k}At`] = 'Enter a valid date and time.';

@@ -7,7 +7,7 @@ import { AlertTriangle, Check, Clock, Download, Plus, RefreshCw, ShieldAlert, X 
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
 import { fetchMedErrorPdf, getAllMedErrors, getMyMedErrors, markIncidentReportFiled, reviewMedErrorReport, type MedErrorReport } from '@/lib/medErrors';
-import { effectiveIncidentRequired } from '@/lib/medErrorShared';
+import { effectiveIncidentRequired, isSubstantiveText } from '@/lib/medErrorShared';
 import { formatLocalDateTimeUS, medErrorHarmLabel, medErrorOutcomeLabel, medErrorResponsibleLabel, medErrorTypeLabel } from '@/lib/medErrorShared';
 import { formatDateUS } from '@/lib/dateFormat';
 
@@ -146,7 +146,7 @@ function Inner() {
                   <div style={textStyle}>{r.description.length > 240 ? `${r.description.slice(0, 240)}…` : r.description}</div>
                   <div style={actionsRowStyle}>
                     <button type="button" style={smallBtnStyle} onClick={() => setOpenReport(r)}>Open</button>
-                    <button type="button" style={smallBtnStyle} onClick={() => void download(r)}><Download size={13} /> PDF</button>
+                    <button type="button" style={smallBtnStyle} onClick={() => void download(r)}><Download size={13} /> Download PDF</button>
                   </div>
                 </li>
               ))}
@@ -160,6 +160,7 @@ function Inner() {
           report={openReport}
           canReview={isReviewer && !isViewingAs && openReport.status !== 'reviewed' && openReport.reporterId !== (user?.uid || '')}
           canMarkFiled={isStaff && !isViewingAs}
+          onDownload={() => void download(openReport)}
           onClose={() => setOpenReport(null)}
           onReviewed={() => {
             setOpenReport(null);
@@ -189,7 +190,7 @@ function notifText(n: { notified: boolean; name: string; at: string }): string {
   return n.notified ? `${n.name || 'Yes'}${n.at ? `, ${formatLocalDateTimeUS(n.at)}` : ''}` : 'Not notified';
 }
 
-function ReportDetail({ report: r, canReview, canMarkFiled, onClose, onReviewed, onFiled }: { report: MedErrorReport; canReview: boolean; canMarkFiled: boolean; onClose: () => void; onReviewed: () => void; onFiled: () => void }) {
+function ReportDetail({ report: r, canReview, canMarkFiled, onClose, onReviewed, onFiled, onDownload }: { report: MedErrorReport; canReview: boolean; canMarkFiled: boolean; onClose: () => void; onReviewed: () => void; onFiled: () => void; onDownload: () => void }) {
   const [findings, setFindings] = useState('');
   const [filedLater, setFiledLater] = useState('');
   const [filingBusy, setFilingBusy] = useState(false);
@@ -212,8 +213,12 @@ function ReportDetail({ report: r, canReview, canMarkFiled, onClose, onReviewed,
   const [err, setErr] = useState('');
 
   const save = async () => {
-    if (!findings.trim() || !corrective.trim()) {
-      setErr('Findings and corrective action are required.');
+    if (!isSubstantiveText(findings)) {
+      setErr('Findings must say what the review found, in at least a sentence. Placeholders like N/A are not accepted.');
+      return;
+    }
+    if (!isSubstantiveText(corrective)) {
+      setErr('Corrective action must say what will change, in at least a sentence. If no action is needed, say why.');
       return;
     }
     setBusy(true);
@@ -230,9 +235,12 @@ function ReportDetail({ report: r, canReview, canMarkFiled, onClose, onReviewed,
   return (
     <div style={backdropStyle} onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
       <div style={sheetStyle}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
           <div style={sheetTitleStyle}>Medication error report</div>
-          <button type="button" onClick={onClose} style={closeBtnStyle} aria-label="Close" disabled={busy}><X size={16} /></button>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <button type="button" style={smallBtnStyle} onClick={onDownload} title="Opens the report as a PDF for the binder or an incident packet"><Download size={13} /> Download PDF</button>
+            <button type="button" onClick={onClose} style={closeBtnStyle} aria-label="Close" disabled={busy}><X size={16} /></button>
+          </div>
         </div>
         <div style={detailGridStyle}>
           <Field label="Client" value={r.patientName} />
@@ -280,9 +288,9 @@ function ReportDetail({ report: r, canReview, canMarkFiled, onClose, onReviewed,
           <div style={reviewBoxStyle}>
             <div style={{ fontWeight: 700, color: NAVY, marginBottom: 8 }}>Nursing review</div>
             {err && <div style={errBoxStyle}>{err}</div>}
-            <label style={fieldStyle}><span style={labelStyle}>Findings *</span><textarea value={findings} onChange={(e) => setFindings(e.target.value)} rows={3} style={textareaStyle} disabled={busy} /></label>
+            <label style={fieldStyle}><span style={labelStyle}>Findings *</span><textarea value={findings} onChange={(e) => setFindings(e.target.value)} rows={3} style={textareaStyle} placeholder="What the review established: what was ordered, what happened, and why. Example: 'Mother gave a second 500 mg dose from the bottle at 8:15 AM, not realizing the organizer dose had been given at 8:00.'" disabled={busy} /></label>
             <label style={fieldStyle}><span style={labelStyle}>Root cause</span><textarea value={rootCause} onChange={(e) => setRootCause(e.target.value)} rows={2} style={textareaStyle} disabled={busy} /></label>
-            <label style={fieldStyle}><span style={labelStyle}>Corrective action *</span><textarea value={corrective} onChange={(e) => setCorrective(e.target.value)} rows={2} style={textareaStyle} disabled={busy} /></label>
+            <label style={fieldStyle}><span style={labelStyle}>Corrective action *</span><textarea value={corrective} onChange={(e) => setCorrective(e.target.value)} rows={2} style={textareaStyle} placeholder="What changes so it does not recur. Example: 'Family re-instructed to give only from the organizer; nurse to verify the organizer at each visit.'" disabled={busy} /></label>
             <label style={checkRowStyle}><input type="checkbox" checked={incident} onChange={(e) => setIncident(e.target.checked)} disabled={busy} /><span><strong>DBHDD incident report required.</strong> {r.incidentReportRequired ? 'Flagged automatically from the harm level or error type; uncheck only with the reason in your findings.' : 'Check if your review finds this meets the reporting criteria.'}</span></label>
             {incident && (
               <label style={{ ...fieldStyle, marginTop: 8 }}><span style={labelStyle}>Incident report filed on (leave blank if not yet)</span><input type="date" value={filedDate} onChange={(e) => setFiledDate(e.target.value)} style={{ ...inputStyle, maxWidth: 200 }} disabled={busy} /></label>

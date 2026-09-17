@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   EMPTY_MED_ERROR_INPUT,
   effectiveIncidentRequired,
+  isSubstantiveText,
   formatLocalDateTimeUS,
   incidentReportRequired,
   medErrorBellText,
@@ -25,11 +26,11 @@ const good: MedErrorInput = {
   responsibleType: 'family',
   responsibleName: 'Mother',
   harm: 'none',
-  clientCondition: 'No seizure activity. Alert, baseline.',
+  clientCondition: 'No seizure activity. Alert, at baseline.',
   physician: { notified: false, name: '', at: '' },
   guardian: { notified: true, name: 'Mother', at: '2026-09-16T19:05' },
   supervisor: { notified: true, name: 'Souz Payne, RN', at: '2026-09-16T19:10' },
-  actionsTaken: 'Supervisor advised to give the dose now and monitor.',
+  actionsTaken: 'Supervisor advised to give the dose now and monitor for drowsiness.',
   reporterSignature: 'data:image/png;base64,AAAA',
 };
 
@@ -77,6 +78,16 @@ describe('stricter rules', () => {
   it('effectiveIncidentRequired prefers the review', () => {
     expect(effectiveIncidentRequired({ incidentReportRequired: true, review: null })).toBe(true);
     expect(effectiveIncidentRequired({ incidentReportRequired: true, review: { incidentReportRequired: false } as never })).toBe(false);
+  });
+});
+
+describe('isSubstantiveText', () => {
+  it('rejects placeholders and one-word answers in condition and actions', () => {
+    for (const v of ['N/A', 'n/a', 'none', 'None.', 'nothing', 'Unknown', 'no action', 'ok']) {
+      expect(validateMedErrorInput({ ...good, clientCondition: v }, NOW).clientCondition).toBeTruthy();
+      expect(validateMedErrorInput({ ...good, actionsTaken: v }, NOW).actionsTaken).toBeTruthy();
+    }
+    expect(isSubstantiveText('Alert, no distress, vitals at baseline.')).toBe(true);
   });
 });
 
