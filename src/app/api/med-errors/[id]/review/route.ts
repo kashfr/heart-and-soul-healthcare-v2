@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
 import { getServerSettings } from '@/lib/settingsServer';
 import { getMedError, medErrorRecipients, notifyMedError, reviewMedError } from '@/lib/medErrorServer';
+import { isSubstantiveText } from '@/lib/medErrorShared';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -48,8 +49,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const correctiveAction = String(body.correctiveAction || '').trim().slice(0, 4000);
   const incidentReportRequired = body.incidentReportRequired === true;
   const incidentReportFiledDate = String(body.incidentReportFiledDate || '').trim();
-  if (!findings) return NextResponse.json({ error: 'Findings are required.' }, { status: 400 });
-  if (!correctiveAction) return NextResponse.json({ error: 'Corrective action is required.' }, { status: 400 });
+  if (!isSubstantiveText(findings)) return NextResponse.json({ error: 'Findings must say what the review found, in at least a sentence. Placeholders like N/A are not accepted.' }, { status: 400 });
+  if (!isSubstantiveText(correctiveAction)) return NextResponse.json({ error: 'Corrective action must say what will change, in at least a sentence. If the review found no action is needed, say why.' }, { status: 400 });
   if (incidentReportFiledDate && !/^\d{4}-\d{2}-\d{2}$/.test(incidentReportFiledDate)) return NextResponse.json({ error: 'Incident report date must be YYYY-MM-DD.' }, { status: 400 });
 
   const r = await reviewMedError({ id, caller, findings, rootCause, correctiveAction, incidentReportRequired, incidentReportFiledDate });
