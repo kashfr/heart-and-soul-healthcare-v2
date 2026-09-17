@@ -3,12 +3,14 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { AlertTriangle, Check, Clock, Download, FileSignature, Inbox, PhoneCall, Plus, RefreshCw, Send, X } from 'lucide-react';
+import { AlertTriangle, Check, Clock, Download, Eye, FileSignature, Inbox, PhoneCall, Plus, RefreshCw, Send, X } from 'lucide-react';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
 import {
+  fetchInboundFaxPdf,
   fetchVerbalOrderPdf,
   getAllVerbalOrders,
+  ignoreInboundFax,
   getMyVerbalOrders,
   getUnmatchedInboundFaxes,
   recordVerbalOrderSignedByOffice,
@@ -113,6 +115,28 @@ function VerbalOrdersInner() {
     }
   };
 
+  const previewFax = async (f: UnmatchedInboundFax) => {
+    try {
+      const blob = await fetchInboundFaxPdf(f.id);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener');
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch {
+      showToast('The fax could not be loaded.');
+    }
+  };
+
+  const dismissFax = async (f: UnmatchedInboundFax) => {
+    if (!window.confirm('Dismiss this fax as not a signed verbal order? It stays in the SRFax inbox; it just leaves this list.')) return;
+    const r = await ignoreInboundFax(f.id);
+    if (r.ok) {
+      showToast('Fax dismissed.');
+      reload();
+    } else {
+      showToast(r.error || 'Could not dismiss the fax.');
+    }
+  };
+
   const resend = async (o: VerbalOrder) => {
     setBusyId(o.id);
     const r = await resendVerbalOrderFax(o.id);
@@ -154,16 +178,20 @@ function VerbalOrdersInner() {
           <section style={{ ...cardStyle, borderColor: '#f0c8c4', background: '#fffafa' }}>
             <div style={sectionTitleStyle}><Inbox size={16} /> Faxes that need matching <span style={countChipWarnStyle}>{inbound.length}</span></div>
             <p style={{ ...mutedStyle, marginBottom: 10 }}>
-              These came in on the portal fax line but could not be tied to exactly one open verbal order by the sender&apos;s number.
-              Match each to its order, or leave it if it is not a signed order (it stays in the SRFax inbox).
+              These came in on the portal fax line. Preview each one, then match it to its order. Dismiss anything that is
+              not a signed verbal order; it stays in the SRFax inbox for the office.
             </p>
             <ul style={listStyle}>
               {inbound.map((f) => (
                 <li key={f.id} style={rowStyle}>
                   <div style={rowHeadStyle}>
-                    <span style={{ fontWeight: 700, color: '#2c3e50' }}>From {formatUSFaxNumber(f.callerId) || f.remoteId || 'unknown sender'}</span>
-                    <span style={metaStyle}>{f.receivedAt} · {f.pages} page{f.pages === 1 ? '' : 's'}</span>
-                    <button type="button" style={{ ...smallBtnStyle, marginLeft: 'auto' }} onClick={() => setMatchFax(f)}>Match to an order</button>
+                    <span style={{ fontWeight: 700, color: '#2c3e50' }}>From {formatUSFaxNumber(f.remoteId) || formatUSFaxNumber(f.callerId) || 'unknown sender'}</span>
+                    <span style={metaStyle}>{f.receivedAt} · {f.pages} page{f.pages === 1 ? '' : 's'}{f.candidateOrderIds.length ? ' · sender matches an open order' : ''}</span>
+                    <span style={{ display: 'inline-flex', gap: 6, marginLeft: 'auto', flexWrap: 'wrap' }}>
+                      <button type="button" style={smallBtnStyle} onClick={() => void previewFax(f)}><Eye size={13} /> Preview</button>
+                      <button type="button" style={{ ...smallBtnStyle, background: '#e6f6ec', color: '#1e7a44', borderColor: '#bfe3cc' }} onClick={() => setMatchFax(f)}><FileSignature size={13} /> Match to an order</button>
+                      <button type="button" style={{ ...smallBtnStyle, color: '#5c6b7a' }} onClick={() => void dismissFax(f)}><X size={13} /> Not a signed order</button>
+                    </span>
                   </div>
                 </li>
               ))}
@@ -262,6 +290,7 @@ function VerbalOrdersInner() {
           fax={matchFax}
           openOrders={orders.filter((o) => o.status !== 'signed')}
           onClose={() => setMatchFax(null)}
+          onPreview={() => void previewFax(matchFax)}
           onPick={(o) => {
             setMatchFax(null);
             setSignModal({ order: o, fax: matchFax });
@@ -354,7 +383,7 @@ function RecordSignatureModal({ order, fax, onClose, onDone }: { order: VerbalOr
   );
 }
 
-function MatchFaxModal({ fax, openOrders, onClose, onPick }: { fax: UnmatchedInboundFax; openOrders: VerbalOrder[]; onClose: () => void; onPick: (o: VerbalOrder) => void }) {
+function MatchFaxModal({ fax, openOrders, onClose, onPick, onPreview }: { fax: UnmatchedInboundFax; openOrders: VerbalOrder[]; onClose: () => void; onPick: (o: VerbalOrder) => void; onPreview: () => void }) {
   const suggested = openOrders.filter((o) => fax.candidateOrderIds.includes(o.id));
   const rest = openOrders.filter((o) => !fax.candidateOrderIds.includes(o.id));
   const Row = ({ o }: { o: VerbalOrder }) => (
@@ -370,7 +399,11 @@ function MatchFaxModal({ fax, openOrders, onClose, onPick }: { fax: UnmatchedInb
           <div style={sheetTitleStyle}>Which order is this fax for?</div>
           <button type="button" onClick={onClose} style={closeBtnStyle} aria-label="Close"><X size={16} /></button>
         </div>
-        <div style={sheetHintStyle}>From {formatUSFaxNumber(fax.callerId) || fax.remoteId || 'unknown'} · {fax.receivedAt} · {fax.pages} page{fax.pages === 1 ? '' : 's'}</div>
+        <div style={{ ...sheetHintStyle, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span>From {formatUSFaxNumber(fax.remoteId) || formatUSFaxNumber(fax.callerId) || 'unknown'} · {fax.receivedAt} · {fax.pages} page{fax.pages === 1 ? '' : 's'}</span>
+          <button type="button" style={smallBtnStyle} onClick={onPreview}><Eye size={13} /> Preview the fax</button>
+        </div>
+        <div style={{ ...mutedStyle, marginBottom: 10 }}>Open the preview and check the client name and order on the page before choosing.</div>
         {suggested.length > 0 && (
           <>
             <div style={labelStyle}>Same physician fax number</div>
