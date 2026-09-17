@@ -521,6 +521,9 @@ export function physicianAttributionPending(order: {
  * said "use the date on the physician's order"). When a renewal comes in, the
  * RN updates orderSignedDate; the readiness tile stops counting it.
  */
+/** Canonical administration routes (same list the MAR order forms offer). */
+export const MED_ROUTES = ['PO (by mouth)', 'SL (sublingual)', 'Topical', 'Inhalation', 'Subcutaneous', 'IM', 'IV', 'Rectal', 'G-tube', 'J-tube', 'NG tube', 'Ophthalmic', 'Otic', 'Nasal'] as const;
+
 export const PHYSICIAN_ORDER_MAX_AGE_DAYS = 365;
 
 /** Days since the order was last signed (per orderSignedDate, falling back to
