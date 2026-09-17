@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { AlertTriangle, ArrowLeftRight, Check, ClipboardList } from 'lucide-react';
 import { acknowledgeHandoff, subscribePendingHandoffs, type Handoff } from '@/lib/handoffs';
 import { formatDateUS } from '@/lib/dateFormat';
+import { FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
 
 /**
  * The nurse's handoff inbox: every post from a colleague that she has not
@@ -30,7 +31,8 @@ export default function HandoffInbox({
 }) {
   const [items, setItems] = useState<Handoff[] | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [error, setError] = useState('');
+  /** The row whose acknowledgment failed, so the message sits on that card. */
+  const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
   const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
@@ -53,12 +55,13 @@ export default function HandoffInbox({
   const ack = async (h: Handoff) => {
     if (!h.id || readOnly || busyId) return;
     setBusyId(h.id);
-    setError('');
+    setRowError(null);
     try {
       await acknowledgeHandoff(h.id, uid);
     } catch (err) {
       console.error('Handoff acknowledge failed:', err);
-      setError("The acknowledgment couldn't be saved. Check your connection and try again.");
+      setRowError({ id: h.id, message: "The acknowledgment couldn't be saved. Check your connection and try again." });
+      document.getElementById(`handoff-${h.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     } finally {
       setBusyId(null);
     }
@@ -84,12 +87,12 @@ export default function HandoffInbox({
 
   return (
     <div>
-      {error && <div style={errBoxStyle}>{error}</div>}
       <ul style={listStyle}>
         {items.map((h) => {
           const hot = h.id === highlightId;
+          const failed = rowError && rowError.id === h.id ? rowError.message : '';
           return (
-            <li key={h.id} id={`handoff-${h.id}`} style={{ ...cardStyle, ...(h.urgent ? urgentCardStyle : null), ...(hot ? hotStyle : null) }}>
+            <li key={h.id} id={`handoff-${h.id}`} style={{ ...cardStyle, ...(h.urgent ? urgentCardStyle : null), ...(hot ? hotStyle : null), ...(failed ? FIELD_ERROR_STYLE : null) }}>
               <div style={cardHeadStyle}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
                   {h.urgent && (
@@ -113,6 +116,7 @@ export default function HandoffInbox({
                 )}
               </div>
               <div style={textStyle}>{h.text}</div>
+              {failed && <FieldError message={failed} />}
               <div style={cardFootStyle}>
                 {readOnly ? (
                   <span style={mutedStyle}>Acknowledgment is the nurse&apos;s own action.</span>

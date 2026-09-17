@@ -95,6 +95,38 @@ describe('seizureGaps (submit gate for flagged clients)', () => {
   });
 });
 
+describe('seizureGaps with attestationRequired: false (unflagged client, or HHA/CNA)', () => {
+  const relaxed = { attestationRequired: false };
+  it('a blank Yes/No is not a gap', () => {
+    expect(seizureGaps({}, relaxed)).toEqual([]);
+    expect(seizureGaps({ q30_seizureEvent: '' }, relaxed)).toEqual([]);
+  });
+  it('"No" is still a complete attestation', () => {
+    expect(seizureGaps({ q30_seizureEvent: 'No' }, relaxed)).toEqual([]);
+  });
+  it('"Yes" with no entries is still blocked', () => {
+    expect(seizureGaps({ q30_seizureEvent: 'Yes', q69_seizureCount: '0' }, relaxed)[0].label).toMatch(/At least one seizure/);
+  });
+  it('"Yes" holds every entry to the same required fields as a flagged client', () => {
+    const half = { q30_seizureEvent: 'Yes', q69_seizureCount: '1', ...entry(1, { startTime: '16:15' }) };
+    expect(seizureGaps(half, relaxed)).toEqual(seizureGaps(half));
+    expect(seizureGaps(half, relaxed).map((g) => g.label)).toEqual([
+      'Seizure 1: end time or duration in seconds',
+      'Seizure 1: seizure type',
+      'Seizure 1: witnessed by',
+    ]);
+    expect(seizureGaps({ q30_seizureEvent: 'Yes', q69_seizureCount: '1', ...complete(1) }, relaxed)).toEqual([]);
+  });
+  it('conditional rules (rescue med name, physician after 911/ER) still apply', () => {
+    const v = { q30_seizureEvent: 'Yes', q69_seizureCount: '1', ...complete(1, { interventions: 'Rescue medication given', response: 'Called 911' }) };
+    expect(seizureGaps(v, relaxed).map((g) => g.targetId)).toEqual([seizureFieldKey(1, 'rescueMed'), seizureFieldKey(1, 'physicianNotified')]);
+  });
+  it('omitting the option keeps the attestation required (existing callers unchanged)', () => {
+    expect(seizureGaps({})).toHaveLength(1);
+    expect(seizureGaps({}, {})).toHaveLength(1);
+  });
+});
+
 describe('seizureAdvisories', () => {
   const e = (i: number, sec: string) => readSeizureEntries({ q69_seizureCount: String(i), ...Object.assign({}, ...Array.from({ length: i }, (_, k) => complete(k + 1, { durationSeconds: sec }))) });
   it('flags a 5-minute seizure and a 3-seizure cluster; silent otherwise', () => {

@@ -22,6 +22,7 @@ import {
 } from '@/lib/careTaskCatalog';
 import { looksLikeUnknownPhysician } from '@/lib/marShared';
 import { withSelectChevron } from '@/lib/selectChevron';
+import { escortToField, FieldError, FIELD_ERROR_STYLE, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
 
 /**
  * Per-client care task editor (Option C), rendered as the staff-only
@@ -53,6 +54,7 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
   const [customLevel, setCustomLevel] = useState<CareTaskLevel>('any');
   const [customFrequency, setCustomFrequency] = useState<string>('Every shift');
   const [customInstructions, setCustomInstructions] = useState('');
+  const [pickError, setPickError] = useState('');
 
   // Edit modal
   const [editTarget, setEditTarget] = useState<CareTask | null>(null);
@@ -69,6 +71,7 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
   // Discontinue modal
   const [dcTarget, setDcTarget] = useState<CareTask | null>(null);
   const [dcReason, setDcReason] = useState('');
+  const [dcReasonError, setDcReasonError] = useState('');
 
   const actor: CareTaskActor | null = user
     ? { uid: user.uid, displayName: profile?.displayName || user.email || '', role: role || '' }
@@ -133,8 +136,14 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
     }
   };
 
-  const handleAdd = () =>
-    withBusy(async () => {
+  const handleAdd = () => {
+    if (pickedCount === 0) {
+      setPickError('Check at least one task, or type a custom task name.');
+      escortToField('care-task-picker');
+      return;
+    }
+    setPickError('');
+    return withBusy(async () => {
       if (!actor) return;
       const keys = Object.keys(picked).filter((k) => picked[k]);
       for (const key of keys) {
@@ -173,6 +182,7 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
       setCustomInstructions('');
       setAddOpen(false);
     });
+  };
 
   const openEdit = (t: CareTask) => {
     setEditTarget(t);
@@ -206,13 +216,20 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
       setEditTarget(null);
     });
 
-  const handleDiscontinue = () =>
-    withBusy(async () => {
+  const handleDiscontinue = () => {
+    if (!dcReason.trim()) {
+      setDcReasonError('Enter the reason this task is being discontinued.');
+      escortToField('care-task-dc-reason');
+      return;
+    }
+    setDcReasonError('');
+    return withBusy(async () => {
       if (!actor || !dcTarget?.id || !dcReason.trim()) return;
       await discontinueCareTask(dcTarget.id, dcReason.trim(), actor);
       setDcTarget(null);
       setDcReason('');
     });
+  };
 
   const handleApprove = () =>
     withBusy(async () => {
@@ -301,7 +318,7 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
                       <button type="button" style={iconBtnStyle} onClick={() => openEdit(t)} disabled={busy} title="Edit frequency / instructions">
                         <Pencil size={14} />
                       </button>
-                      <button type="button" style={iconBtnDangerStyle} onClick={() => { setDcTarget(t); setDcReason(''); }} disabled={busy} title="Discontinue task">
+                      <button type="button" style={iconBtnDangerStyle} onClick={() => { setDcTarget(t); setDcReason(''); setDcReasonError(''); }} disabled={busy} title="Discontinue task">
                         <Ban size={14} />
                       </button>
                     </div>
@@ -342,7 +359,7 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
               catalog default; edit any task after adding. New tasks are marked pending until
               the RN supervisor approves them.
             </p>
-            <div style={catalogScrollStyle}>
+            <div id="care-task-picker" style={{ ...catalogScrollStyle, ...(pickError ? FIELD_ERROR_WRAP_STYLE : null) }}>
               {CARE_TASK_CATALOG.map((cat) => {
                 const available = cat.tasks.filter((t) => !activeCatalogKeys.has(t.key));
                 if (available.length === 0) return null;
@@ -354,7 +371,10 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
                         <input
                           type="checkbox"
                           checked={!!picked[t.key]}
-                          onChange={(e) => setPicked((p) => ({ ...p, [t.key]: e.target.checked }))}
+                          onChange={(e) => {
+                            setPicked((p) => ({ ...p, [t.key]: e.target.checked }));
+                            if (pickError) setPickError('');
+                          }}
                         />
                         <span style={{ flex: 1 }}>{t.name}</span>
                         <span style={t.level === 'skilled' ? skilledChipStyle : anyChipStyle}>
@@ -371,7 +391,10 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
                 <input
                   type="text"
                   value={customName}
-                  onChange={(e) => setCustomName(e.target.value)}
+                  onChange={(e) => {
+                    setCustomName(e.target.value);
+                    if (pickError) setPickError('');
+                  }}
                   placeholder="Task name as it should appear on the note…"
                   style={inputStyle}
                 />
@@ -400,11 +423,12 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
                 />
               </div>
             </div>
+            <FieldError message={pickError} />
             <div style={modalActionsStyle}>
-              <button type="button" style={secondaryBtnStyle} onClick={() => setAddOpen(false)} disabled={busy}>
+              <button type="button" style={secondaryBtnStyle} onClick={() => { setAddOpen(false); setPickError(''); }} disabled={busy}>
                 Cancel
               </button>
-              <button type="button" style={addBtnStyle} onClick={handleAdd} disabled={busy || pickedCount === 0}>
+              <button type="button" style={addBtnStyle} onClick={handleAdd} disabled={busy}>
                 {busy ? 'Saving…' : `Add ${pickedCount || ''} task${pickedCount === 1 ? '' : 's'}`}
               </button>
             </div>
@@ -502,16 +526,23 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
             <h2 style={modalTitleStyle}>Discontinue task</h2>
             <p style={modalSubStyle}>{dcTarget.name}</p>
             <label style={fieldLabelStyle}>Reason *</label>
-            <input
-              type="text"
-              value={dcReason}
-              onChange={(e) => setDcReason(e.target.value)}
-              style={inputStyle}
-              placeholder="e.g. No longer ordered, condition resolved…"
-            />
+            <div id="care-task-dc-reason">
+              <input
+                type="text"
+                value={dcReason}
+                onChange={(e) => {
+                  setDcReason(e.target.value);
+                  if (dcReasonError) setDcReasonError('');
+                }}
+                style={{ ...inputStyle, ...(dcReasonError ? FIELD_ERROR_STYLE : null) }}
+                aria-invalid={!!dcReasonError}
+                placeholder="e.g. No longer ordered, condition resolved…"
+              />
+              <FieldError message={dcReasonError} />
+            </div>
             <div style={modalActionsStyle}>
-              <button type="button" style={secondaryBtnStyle} onClick={() => setDcTarget(null)} disabled={busy}>Cancel</button>
-              <button type="button" style={dangerBtnStyle} onClick={handleDiscontinue} disabled={busy || !dcReason.trim()}>
+              <button type="button" style={secondaryBtnStyle} onClick={() => { setDcTarget(null); setDcReasonError(''); }} disabled={busy}>Cancel</button>
+              <button type="button" style={dangerBtnStyle} onClick={handleDiscontinue} disabled={busy}>
                 {busy ? 'Saving…' : 'Discontinue'}
               </button>
             </div>

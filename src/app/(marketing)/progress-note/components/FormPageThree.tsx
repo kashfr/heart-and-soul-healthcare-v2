@@ -20,11 +20,13 @@ interface FormPageThreeProps extends FormPageProps {
   /** Roster client is flagged hasSeizureDisorder: the seizure attestation is
    *  required and the Neurological section pre-opens. */
   clientHasSeizureDisorder?: boolean;
+  /** Editing a saved note: legacy seizure entries must not block an unrelated edit. */
+  isEditMode?: boolean;
   /** Increment to force the Neurological section open (seizure submit gate). */
   neuroExpandSignal?: number;
 }
 
-export default function FormPageThree({ formRef, register, watch, setValue, control, credential, clientHasFeedingTube, giExpandSignal, clientHasSeizureDisorder, neuroExpandSignal, errors }: FormPageThreeProps) {
+export default function FormPageThree({ formRef, register, watch, setValue, control, credential, clientHasFeedingTube, giExpandSignal, clientHasSeizureDisorder, isEditMode, neuroExpandSignal, errors }: FormPageThreeProps) {
   const showSystemAssessments = credential === 'LPN' || credential === 'RN';
   // Subscribe to radio state so the tube care & feeding block reveals when
   // "Feeding Tube Present" flips to Yes (same pattern as FormPageFour's
@@ -647,7 +649,7 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                 q30_seizureEnd / q30_seizureDuration / q30_seizureDescription /
                 q30_postIctal stay readable on old notes; new notes write
                 q69_seizure{n}_* and a seizureEvents record per seizure). */}
-            <SeizureLogSection register={register} watch={watch} setValue={setValue} required={!!clientHasSeizureDisorder} />
+            <SeizureLogSection register={register} watch={watch} setValue={setValue} required={!!clientHasSeizureDisorder} entriesRequired={!isEditMode} />
             <div className={styles.row}>
               <div className={styles.f} style={{ flex: '1 1 100%' }}>
                 <label className={styles.label} htmlFor="q30_neuroNotes">Notes</label>

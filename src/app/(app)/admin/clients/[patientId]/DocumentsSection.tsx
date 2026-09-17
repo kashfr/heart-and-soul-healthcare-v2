@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Archive, ArchiveRestore, ExternalLink, FileText, FileUp, Image as ImageIcon } from 'lucide-react';
+import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
 import {
   ALLOWED_DOC_TYPES,
   DOC_CATEGORIES,
@@ -202,6 +203,10 @@ export default function DocumentsSection({
   );
 }
 
+type UploadField = 'file' | 'category' | 'docDate';
+const UPLOAD_FIELD_ORDER: readonly UploadField[] = ['file', 'category', 'docDate'];
+const uploadFieldId = (k: UploadField) => `doc-upload-${k}`;
+
 function UploadDocumentModal({
   patientId,
   uploader,
@@ -219,27 +224,28 @@ function UploadDocumentModal({
   const [docDate, setDocDate] = useState(todayISO());
   const [pct, setPct] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<UploadField, string>>>({});
   const fileInput = useRef<HTMLInputElement>(null);
+
+  const clearFieldError = (k: UploadField) => {
+    if (fieldErrors[k]) setFieldErrors((e) => ({ ...e, [k]: undefined }));
+  };
 
   const pickFile = (f: File | null) => {
     setFile(f);
     if (f && !title.trim()) setTitle(f.name.replace(/\.[^.]+$/, ''));
     setError(null);
+    if (f) clearFieldError('file');
   };
 
   const save = async () => {
-    if (!file) {
-      setError('Choose a file to upload.');
-      return;
-    }
-    if (!category) {
-      setError('Choose a document category.');
-      return;
-    }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(docDate)) {
-      setError('Enter the date on the document.');
-      return;
-    }
+    if (pct !== null) return;
+    const errs: Partial<Record<UploadField, string>> = {};
+    if (!file) errs.file = 'Choose a file to upload.';
+    if (!category) errs.category = 'Choose a document category.';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(docDate)) errs.docDate = 'Enter the date on the document.';
+    if (!applyFieldErrors(errs, UPLOAD_FIELD_ORDER, setFieldErrors, uploadFieldId)) return;
+    if (!file || !category) return;
     setError(null);
     setPct(0);
     try {
@@ -264,7 +270,8 @@ function UploadDocumentModal({
 
         <button
           type="button"
-          style={dropZoneStyle}
+          id={uploadFieldId('file')}
+          style={{ ...dropZoneStyle, ...(fieldErrors.file ? FIELD_ERROR_WRAP_STYLE : null) }}
           onClick={() => fileInput.current?.click()}
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
@@ -280,6 +287,7 @@ function UploadDocumentModal({
           )}
           <span style={dropHintStyle}>PDF, image, or Word document · 20 MB max</span>
         </button>
+        <FieldError message={fieldErrors.file} />
         <input
           ref={fileInput}
           type="file"
@@ -288,9 +296,17 @@ function UploadDocumentModal({
           onChange={(e) => pickFile(e.target.files?.[0] || null)}
         />
 
-        <label style={fieldStyle}>
+        <label style={fieldStyle} id={uploadFieldId('category')}>
           <span style={fieldLabelStyle}>Category *</span>
-          <select value={category} onChange={(e) => setCategory(e.target.value as DocCategory)} style={selectStyle}>
+          <select
+            value={category}
+            onChange={(e) => {
+              setCategory(e.target.value as DocCategory);
+              clearFieldError('category');
+            }}
+            style={{ ...selectStyle, ...(fieldErrors.category ? FIELD_ERROR_STYLE : null) }}
+            aria-invalid={!!fieldErrors.category}
+          >
             <option value="">Select a category…</option>
             {DOC_CATEGORIES.map((c) => (
               <option key={c} value={c}>
@@ -298,12 +314,23 @@ function UploadDocumentModal({
               </option>
             ))}
           </select>
+          <FieldError message={fieldErrors.category} />
         </label>
 
         <div style={grid2Style}>
-          <label style={fieldStyle}>
+          <label style={fieldStyle} id={uploadFieldId('docDate')}>
             <span style={fieldLabelStyle}>Date on the document *</span>
-            <input type="date" value={docDate} onChange={(e) => setDocDate(e.target.value)} style={inputStyle} />
+            <input
+              type="date"
+              value={docDate}
+              onChange={(e) => {
+                setDocDate(e.target.value);
+                clearFieldError('docDate');
+              }}
+              style={{ ...inputStyle, ...(fieldErrors.docDate ? FIELD_ERROR_STYLE : null) }}
+              aria-invalid={!!fieldErrors.docDate}
+            />
+            <FieldError message={fieldErrors.docDate} />
             <span style={hintStyle}>Drives the currency tracking (e.g. the supervisory visit date, the plan-of-care start date).</span>
           </label>
           <label style={fieldStyle}>

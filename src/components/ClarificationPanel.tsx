@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { MessageCircleQuestion, CheckCircle2, Ban } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
+import { escortToField, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
 import { useSettings } from '@/components/SettingsProvider';
 import { clarificationMessages, clarificationBlocksNotes, type NoteClarification } from '@/lib/submissions';
 import type { Role } from '@/lib/auth';
@@ -52,6 +53,7 @@ export default function ClarificationPanel({
   const [busy, setBusy] = useState(false);
   const [blockBusy, setBlockBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [textError, setTextError] = useState<string | null>(null);
 
   const isOpen = clarification?.status === 'open';
   const isResolved = clarification?.status === 'resolved';
@@ -62,6 +64,13 @@ export default function ClarificationPanel({
   if (!clarification && !canReview) return null;
 
   async function submit(action: 'flag' | 'respond' | 'resolve') {
+    if (busy) return;
+    if (action !== 'resolve' && !text.trim()) {
+      setTextError(action === 'flag' ? 'Type what you want to send first.' : 'Type your reply first.');
+      escortToField('clarification-composer');
+      return;
+    }
+    setTextError(null);
     setBusy(true);
     setError(null);
     try {
@@ -135,14 +144,14 @@ export default function ClarificationPanel({
             <button
               type="button"
               style={secondaryBtn}
-              onClick={() => { setFlagKind('clarification'); setMode('flag'); }}
+              onClick={() => { setFlagKind('clarification'); setMode('flag'); setTextError(null); }}
             >
               Flag for clarification
             </button>
             <button
               type="button"
               style={correctionBtn}
-              onClick={() => { setFlagKind('correction'); setMode('flag'); }}
+              onClick={() => { setFlagKind('correction'); setMode('flag'); setTextError(null); }}
             >
               Flag a correction
             </button>
@@ -183,12 +192,12 @@ export default function ClarificationPanel({
         {isOpen && mode === null && (
           <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
             {(isAuthor || canReview) && (
-              <button type="button" style={secondaryBtn} onClick={() => setMode('respond')}>
+              <button type="button" style={secondaryBtn} onClick={() => { setMode('respond'); setTextError(null); }}>
                 {clarificationMessages(clarification).length > 1 ? 'Add a reply' : 'Respond'}
               </button>
             )}
             {canReview && (
-              <button type="button" style={primaryBtn} onClick={() => setMode('resolve')}>
+              <button type="button" style={primaryBtn} onClick={() => { setMode('resolve'); setTextError(null); }}>
                 Mark resolved
               </button>
             )}
@@ -212,10 +221,14 @@ export default function ClarificationPanel({
 
         {/* Composer (flag / respond / resolve all share it). */}
         {mode && (
-          <div style={{ marginTop: 10 }}>
+          <div style={{ marginTop: 10 }} id="clarification-composer">
             <textarea
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => {
+                setText(e.target.value);
+                if (textError) setTextError(null);
+              }}
+              aria-invalid={!!textError}
               autoFocus
               rows={3}
               placeholder={
@@ -227,8 +240,9 @@ export default function ClarificationPanel({
                     ? 'Add your reply…'
                     : 'Optional note on how this was resolved…'
               }
-              style={textareaStyle}
+              style={{ ...textareaStyle, ...(textError ? FIELD_ERROR_STYLE : null) }}
             />
+            <FieldError message={textError} />
             {mode === 'flag' && flagKind === 'correction' && (
               <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 8, cursor: 'pointer' }}>
                 <input
@@ -254,6 +268,7 @@ export default function ClarificationPanel({
                   setMode(null);
                   setText('');
                   setError(null);
+                  setTextError(null);
                 }}
                 disabled={busy}
               >
@@ -263,11 +278,9 @@ export default function ClarificationPanel({
                 type="button"
                 style={{
                   ...primaryBtn,
-                  ...(busy || (mode !== 'resolve' && !text.trim())
-                    ? { opacity: 0.5, cursor: 'not-allowed' }
-                    : {}),
+                  ...(busy ? { opacity: 0.5, cursor: 'not-allowed' } : {}),
                 }}
-                disabled={busy || (mode !== 'resolve' && !text.trim())}
+                disabled={busy}
                 onClick={() => submit(mode)}
               >
                 {busy

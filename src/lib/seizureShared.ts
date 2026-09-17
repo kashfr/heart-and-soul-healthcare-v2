@@ -140,20 +140,34 @@ export interface SeizureGap {
   targetId: string;
 }
 
+export interface SeizureGapOptions {
+  /**
+   * Whether the Yes/No attestation itself must be answered (true for a client
+   * flagged hasSeizureDisorder charted by an LPN/RN). When false, a blank
+   * answer is fine, but a "Yes" is still held to every per-seizure check:
+   * a half-filled seizure entry never submits, whatever the roster flag says.
+   * Defaults to true.
+   */
+  attestationRequired?: boolean;
+}
+
 /**
- * The submit gate for a flagged client. Returns the list of what is missing;
- * empty means the note may submit. Pure so it is unit-testable.
- *  - The Yes/No must be answered.
+ * The seizure submit gate. Returns the list of what is missing; empty means
+ * the note may submit. Pure so it is unit-testable.
+ *  - The Yes/No must be answered (only when `attestationRequired`).
  *  - Yes needs at least one seizure with start time, end time (or a typed
  *    duration), type, and witnessed-by. Everything else is optional.
  *  - "Rescue medication given" as an intervention needs the med name.
  *  - Called 911 / ER needs physician-notified answered.
  */
-export function seizureGaps(values: Record<string, unknown>): SeizureGap[] {
+export function seizureGaps(values: Record<string, unknown>, opts: SeizureGapOptions = {}): SeizureGap[] {
+  const { attestationRequired = true } = opts;
   const gaps: SeizureGap[] = [];
   const answer = String(values.q30_seizureEvent || '');
   if (answer !== 'Yes' && answer !== 'No') {
-    gaps.push({ label: 'Seizure event this shift? (answer "No" to attest no seizure was noted)', targetId: 'q30_seizureEventRow' });
+    if (attestationRequired) {
+      gaps.push({ label: 'Seizure event this shift? (answer "No" to attest no seizure was noted)', targetId: 'q30_seizureEventRow' });
+    }
     return gaps;
   }
   if (answer === 'No') return gaps;

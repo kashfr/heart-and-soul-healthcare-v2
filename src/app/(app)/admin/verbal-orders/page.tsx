@@ -20,6 +20,7 @@ import {
 } from '@/lib/verbalOrders';
 import { formatUSFaxNumber, verbalOrderAgeDays, verbalOrderStatusLabel, verbalOrderUrgency, type VerbalOrderUrgency } from '@/lib/verbalOrderShared';
 import { formatDateUS } from '@/lib/dateFormat';
+import { escortToField, FieldError, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
 
 /**
  * /admin/verbal-orders
@@ -316,18 +317,21 @@ function RecordSignatureModal({ order, fax, onClose, onDone }: { order: VerbalOr
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [fileError, setFileError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
   const save = async () => {
+    if (busy) return;
+    if (file && file.type !== 'application/pdf') {
+      setFileError('The signed copy must be a PDF.');
+      escortToField('vo-signed-copy');
+      return;
+    }
+    setFileError('');
     setBusy(true);
     setErr('');
     let signedPdfBase64: string | undefined;
     if (file) {
-      if (file.type !== 'application/pdf') {
-        setErr('The signed copy must be a PDF.');
-        setBusy(false);
-        return;
-      }
       const buf = await file.arrayBuffer();
       let bin = '';
       const bytes = new Uint8Array(buf);
@@ -358,7 +362,6 @@ function RecordSignatureModal({ order, fax, onClose, onDone }: { order: VerbalOr
         <div style={{ ...mutedStyle, marginBottom: 10 }}>
           <strong>{order.patientName}</strong> · {order.physicianName} · taken {formatDateUS(order.takenDate)}
         </div>
-        {err && <div style={errBoxStyle}>{err}</div>}
         <label style={fieldStyle}>
           <span style={labelStyle}>Date the physician signed *</span>
           <input type="date" value={signedDate} min={order.takenDate} max={todayISO()} onChange={(e) => setSignedDate(e.target.value)} style={{ ...inputStyle, maxWidth: 200 }} disabled={busy} />
@@ -368,12 +371,27 @@ function RecordSignatureModal({ order, fax, onClose, onDone }: { order: VerbalOr
           <input type="text" value={printedName} onChange={(e) => setPrintedName(e.target.value)} style={inputStyle} disabled={busy} />
         </label>
         {!fax && (
-          <label style={fieldStyle}>
+          <label style={fieldStyle} id="vo-signed-copy">
             <span style={labelStyle}>Signed copy (PDF, optional)</span>
-            <input ref={fileRef} type="file" accept="application/pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} disabled={busy} style={{ fontSize: 13 }} />
+            <div style={fileError ? FIELD_ERROR_WRAP_STYLE : undefined}>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="application/pdf"
+                onChange={(e) => {
+                  setFile(e.target.files?.[0] || null);
+                  if (fileError) setFileError('');
+                }}
+                disabled={busy}
+                style={{ fontSize: 13 }}
+                aria-invalid={!!fileError}
+              />
+            </div>
+            <FieldError message={fileError} />
             <span style={hintStyle}>Without a file, the completed form is generated from the record and filed instead.</span>
           </label>
         )}
+        {err && <div style={errBoxStyle} role="alert">{err}</div>}
         <div style={actionsStyle}>
           <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={busy}>Cancel</button>
           <button type="button" style={{ ...saveBtnStyle, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Record signature'}</button>
@@ -386,8 +404,11 @@ function RecordSignatureModal({ order, fax, onClose, onDone }: { order: VerbalOr
 function MatchFaxModal({ fax, openOrders, onClose, onPick, onPreview }: { fax: UnmatchedInboundFax; openOrders: VerbalOrder[]; onClose: () => void; onPick: (o: VerbalOrder) => void; onPreview: () => void }) {
   const suggested = openOrders.filter((o) => fax.candidateOrderIds.includes(o.id));
   const rest = openOrders.filter((o) => !fax.candidateOrderIds.includes(o.id));
+  // Picking a row is not filing: the office confirms the match first, so a
+  // mis-click on the wrong client never lands a fax on the wrong chart.
+  const [pending, setPending] = useState<VerbalOrder | null>(null);
   const Row = ({ o }: { o: VerbalOrder }) => (
-    <button type="button" style={pickRowStyle} onClick={() => onPick(o)}>
+    <button type="button" style={{ ...pickRowStyle, ...(pending?.id === o.id ? { borderColor: NAVY, background: '#e8eef4' } : null) }} onClick={() => setPending(o)}>
       <span style={{ fontWeight: 700, color: '#2c3e50' }}>{o.patientName}</span>
       <span style={metaStyle}>{o.physicianName} · fax {formatUSFaxNumber(o.physicianFax)} · taken {formatDateUS(o.takenDate)}</span>
     </button>
@@ -399,6 +420,20 @@ function MatchFaxModal({ fax, openOrders, onClose, onPick, onPreview }: { fax: U
           <div style={sheetTitleStyle}>Which order is this fax for?</div>
           <button type="button" onClick={onClose} style={closeBtnStyle} aria-label="Close"><X size={16} /></button>
         </div>
+        {pending ? (
+          <>
+            <div style={{ ...mutedStyle, marginBottom: 12 }}>
+              File this fax as the signed order for <strong>{pending.patientName}</strong>, {pending.physicianName}?
+              <br />
+              Taken {formatDateUS(pending.takenDate)} · fax {formatUSFaxNumber(pending.physicianFax)}
+            </div>
+            <div style={actionsStyle}>
+              <button type="button" style={cancelBtnStyle} onClick={() => setPending(null)}>Cancel</button>
+              <button type="button" style={saveBtnStyle} onClick={() => onPick(pending)}>Confirm</button>
+            </div>
+          </>
+        ) : (
+        <>
         <div style={{ ...sheetHintStyle, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span>From {formatUSFaxNumber(fax.remoteId) || formatUSFaxNumber(fax.callerId) || 'unknown'} · {fax.receivedAt} · {fax.pages} page{fax.pages === 1 ? '' : 's'}</span>
           <button type="button" style={smallBtnStyle} onClick={onPreview}><Eye size={13} /> Preview the fax</button>
@@ -415,6 +450,8 @@ function MatchFaxModal({ fax, openOrders, onClose, onPick, onPreview }: { fax: U
         <div style={actionsStyle}>
           <button type="button" style={cancelBtnStyle} onClick={onClose}>Close</button>
         </div>
+        </>
+        )}
       </div>
     </div>
   );

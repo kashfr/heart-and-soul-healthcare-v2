@@ -11,9 +11,19 @@ import {
   regimenFieldsChanged,
   describeRegimenChanges,
 } from '@/lib/marShared';
-import { DEFAULT_ML_VALUE_OPTIONS, parseValueOptions } from '@/lib/mar';
+import { DEFAULT_ML_VALUE_OPTIONS } from '@/lib/mar';
 import type { MarOrder, MarChangeRequestType } from '@/lib/mar';
 import { agencyDayISO } from '@/lib/clientDashboardShared';
+import { escortToField, firstErrorKey, FieldError, FIELD_ERROR_STYLE, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
+import {
+  MED_CHANGE_FIELD_ORDER,
+  medChangeServerErrorField,
+  validateMedChangeForm,
+  type MedChangeField,
+  type MedChangeFieldErrors,
+} from '@/lib/medChangeValidation';
+
+const fieldId = (k: MedChangeField) => `mm-field-${k}`;
 
 const ROUTES = ['PO (by mouth)', 'SL (sublingual)', 'Topical', 'Inhalation', 'Subcutaneous', 'IM', 'IV', 'Rectal', 'G-tube', 'J-tube', 'NG tube', 'Ophthalmic', 'Otic', 'Nasal'];
 const UNITS = ['mg', 'mcg', 'g', 'mL', 'units', 'mEq', 'tablet(s)', 'capsule(s)', 'puff(s)', 'drop(s)', 'patch(es)', 'spray(s)', '%'];
@@ -56,7 +66,23 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
 
   const [mode, setMode] = useState<MarChangeRequestType>('add');
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
+  // Per-field problems (outlined and explained where they sit) and the
+  // server's answer when it names no field, shown next to the buttons.
+  const [errors, setErrors] = useState<MedChangeFieldErrors>({});
+  const [submitError, setSubmitError] = useState('');
+  const clearErr = (...keys: MedChangeField[]) =>
+    setErrors((cur) => {
+      if (!keys.some((k) => cur[k])) return cur;
+      const next = { ...cur };
+      for (const k of keys) delete next[k];
+      return next;
+    });
+  const hi = (k: MedChangeField): CSSProperties => (errors[k] ? FIELD_ERROR_STYLE : {});
+  const switchMode = (m: MarChangeRequestType) => {
+    setMode(m);
+    setErrors({});
+    setSubmitError('');
+  };
   // Stable per-submission id (set on first submit, reused on retry) so a
   // double-click or network retry is de-duped server-side into one order.
   const reqIdRef = useRef('');
@@ -149,53 +175,31 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
   };
 
   const handleSubmit = async () => {
-    setError('');
-    if (!reason.trim()) {
-      setError('A reason is required.');
-      return;
-    }
-    if (mode === 'add' || mode === 'change') {
-      if (mode === 'change' && !targetOrderId) {
-        setError('Choose the medication to change.');
-        return;
-      }
-      // A check records a reading rather than an amount, so it needs no dose or
-      // units — requiring them would force junk values onto the order.
-      const isCheck = !!valueLabel.trim();
-      if (!medName.trim() || !route.trim()) {
-        setError(isCheck ? 'Name and route are required.' : 'Medication, dose, units, and route are required.');
-        return;
-      }
-      if (!isCheck && (!dose.trim() || !units.trim())) {
-        setError('Medication, dose, units, and route are required.');
-        return;
-      }
-      if (isCheck && parseValueOptions(valueOptions).length < 2) {
-        setError('Add at least two allowed readings so the nurse picks from a list instead of typing.');
-        return;
-      }
-      if (orderSignedDate && orderSignedDate > todayISO()) {
-        setError('"Physician order signed on" cannot be a future date.');
-        return;
-      }
-      if (!physicianUnknown && looksLikeUnknownPhysician(orderingPhysician)) {
-        setError(
-          orderingPhysician.trim()
-            ? 'Enter the ordering physician\'s actual name (placeholders like "N/A" don\'t document the order). If you don\'t know it right now, check the box below to flag it for follow-up.'
-            : 'Ordering physician is required; this change reflects a physician order. If you don\'t know it right now, check the box below to flag it for follow-up.',
-        );
-        return;
-      }
-      if (!isPRN && times.filter(Boolean).length === 0) {
-        setError('Add at least one scheduled time, or choose the "As needed (PRN)" frequency.');
-        return;
-      }
-      if (isPRN && !indication.trim()) {
-        setError('Add an indication: PRN doses are documented against what the med is for.');
-        return;
-      }
-    } else if (!targetOrderId) {
-      setError('Choose the medication to discontinue.');
+    setSubmitError('');
+    // The same gates the server enforces, collected per field so every
+    // problem is outlined at once and the first one is scrolled into view.
+    const fieldErrors = validateMedChangeForm({
+      mode,
+      reason,
+      targetOrderId,
+      medName,
+      dose,
+      units,
+      route,
+      isPRN,
+      times,
+      indication,
+      orderingPhysician,
+      orderSignedDate,
+      physicianUnknown,
+      valueLabel,
+      valueOptions,
+      today: todayISO(),
+    });
+    setErrors(fieldErrors);
+    const first = firstErrorKey(MED_CHANGE_FIELD_ORDER, fieldErrors);
+    if (first) {
+      escortToField(fieldId(first));
       return;
     }
 
@@ -235,7 +239,16 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
       // discontinue-and-replace); the summary reports that, not our guess.
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data?.error || 'Failed to apply the change. Please try again.');
+        const message = String(data?.error || 'Failed to apply the change. Please try again.');
+        // Land the rejection on the field it is about when it names one;
+        // otherwise it belongs next to the buttons.
+        const field = medChangeServerErrorField(message);
+        if (field) {
+          setErrors({ [field]: message });
+          escortToField(fieldId(field));
+        } else {
+          setSubmitError(message);
+        }
         setSubmitting(false);
         return;
       }
@@ -257,7 +270,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
       onSaved(summary);
       onClose();
     } catch {
-      setError('Failed to apply the change. Please try again.');
+      setSubmitError('Failed to apply the change. Please try again.');
       setSubmitting(false);
     }
   };
@@ -281,18 +294,27 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
           </p>
 
           <div style={tabRow}>
-            <button type="button" onClick={() => setMode('add')} style={mode === 'add' ? tabActive : tab}>Add</button>
-            <button type="button" onClick={() => setMode('change')} style={mode === 'change' ? tabActive : tab}>Change</button>
-            <button type="button" onClick={() => setMode('discontinue')} style={mode === 'discontinue' ? tabActive : tab}>Discontinue</button>
+            <button type="button" onClick={() => switchMode('add')} style={mode === 'add' ? tabActive : tab}>Add</button>
+            <button type="button" onClick={() => switchMode('change')} style={mode === 'change' ? tabActive : tab}>Change</button>
+            <button type="button" onClick={() => switchMode('discontinue')} style={mode === 'discontinue' ? tabActive : tab}>Discontinue</button>
           </div>
 
           <div>
             {(mode === 'change' || mode === 'discontinue') && (
-              <Field label={mode === 'change' ? 'Medication to change *' : 'Medication to discontinue *'}>
+              <Field id={fieldId('targetOrderId')} error={errors.targetOrderId} label={mode === 'change' ? 'Medication to change *' : 'Medication to discontinue *'}>
                 <select
                   value={targetOrderId}
-                  onChange={(e) => (mode === 'change' ? pickChangeTarget(e.target.value) : setTargetOrderId(e.target.value))}
-                  style={select}
+                  onChange={(e) => {
+                    if (mode === 'change') {
+                      pickChangeTarget(e.target.value);
+                      // The prefill rewrites every med field, so their errors are stale.
+                      setErrors((cur) => (cur.reason ? { reason: cur.reason } : {}));
+                    } else {
+                      setTargetOrderId(e.target.value);
+                      clearErr('targetOrderId');
+                    }
+                  }}
+                  style={{ ...select, ...hi('targetOrderId') }}
                 >
                   <option value="">Select a medication…</option>
                   {activeOrders.map((o) => (
@@ -334,27 +356,27 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
                     )}
                   </p>
                 )}
-                <Field label="Medication name *">
-                  <input type="text" value={medName} onChange={(e) => setMedName(e.target.value)} style={input} placeholder="e.g., Acetaminophen" />
+                <Field id={fieldId('medName')} error={errors.medName} label="Medication name *">
+                  <input type="text" value={medName} onChange={(e) => { setMedName(e.target.value); clearErr('medName'); }} style={{ ...input, ...hi('medName') }} placeholder="e.g., Acetaminophen" />
                 </Field>
                 <div style={grid2}>
-                  <Field label="Dose *">
-                    <input type="text" value={dose} onChange={(e) => setDose(e.target.value)} style={input} placeholder="e.g., 500" />
+                  <Field id={fieldId('dose')} error={errors.dose} label="Dose *">
+                    <input type="text" value={dose} onChange={(e) => { setDose(e.target.value); clearErr('dose'); }} style={{ ...input, ...hi('dose') }} placeholder="e.g., 500" />
                   </Field>
-                  <Field label="Units *">
-                    <input type="text" list="mm-units" value={units} onChange={(e) => setUnits(e.target.value)} style={input} placeholder="e.g., mg" />
+                  <Field id={fieldId('units')} error={errors.units} label="Units *">
+                    <input type="text" list="mm-units" value={units} onChange={(e) => { setUnits(e.target.value); clearErr('units'); }} style={{ ...input, ...hi('units') }} placeholder="e.g., mg" />
                     <datalist id="mm-units">{UNITS.map((u) => <option key={u} value={u} />)}</datalist>
                   </Field>
                 </div>
                 <div style={grid2}>
-                  <Field label="Route *">
-                    <select value={route} onChange={(e) => setRoute(e.target.value)} style={select}>
+                  <Field id={fieldId('route')} error={errors.route} label="Route *">
+                    <select value={route} onChange={(e) => { setRoute(e.target.value); clearErr('route'); }} style={{ ...select, ...hi('route') }}>
                       <option value="">Select route…</option>
                       {ROUTES.map((r) => <option key={r} value={r}>{r}</option>)}
                     </select>
                   </Field>
                   <Field label="Frequency">
-                    <select value={frequencyLabel} onChange={(e) => setFrequencyLabel(e.target.value)} style={select}>
+                    <select value={frequencyLabel} onChange={(e) => { setFrequencyLabel(e.target.value); clearErr('times', 'indication'); }} style={select}>
                       <option value="">Select frequency…</option>
                       {frequencyLabel && !MED_FREQUENCIES.includes(frequencyLabel as (typeof MED_FREQUENCIES)[number]) && (
                         <option value={frequencyLabel}>{frequencyLabel} (current)</option>
@@ -375,13 +397,13 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
                 )}
 
                 {!isPRN && (
-                  <div style={{ marginBottom: 12 }}>
+                  <div id={fieldId('times')} style={errors.times ? { marginBottom: 12, ...FIELD_ERROR_WRAP_STYLE } : { marginBottom: 12 }}>
                     <div style={fieldLabel}>Scheduled times</div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {times.map((t, i) => (
                         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <Clock size={15} color="#7f8c8d" />
-                          <input type="time" value={t} onChange={(e) => setTimeAt(i, e.target.value)} style={{ ...input, maxWidth: 150 }} />
+                          <input type="time" value={t} onChange={(e) => { setTimeAt(i, e.target.value); clearErr('times'); }} style={{ ...input, maxWidth: 150 }} />
                           {times.length > 1 && (
                             <button type="button" onClick={() => removeTime(i)} style={removeTimeBtn} aria-label="Remove time"><X size={14} /></button>
                           )}
@@ -389,15 +411,16 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
                       ))}
                     </div>
                     <button type="button" onClick={addTime} style={addTimeBtn}><Plus size={13} /> Add time</button>
+                    <FieldError message={errors.times} />
                   </div>
                 )}
 
-                <Field label={isPRN ? 'Indication (what it’s given for) *' : 'Indication (what it’s for)'}>
+                <Field id={fieldId('indication')} error={errors.indication} label={isPRN ? 'Indication (what it’s given for) *' : 'Indication (what it’s for)'}>
                   <input
                     type="text"
                     value={indication}
-                    onChange={(e) => setIndication(e.target.value)}
-                    style={input}
+                    onChange={(e) => { setIndication(e.target.value); clearErr('indication'); }}
+                    style={{ ...input, ...hi('indication') }}
                     placeholder={isPRN ? 'e.g., Moderate pain (4-6/10)' : 'e.g., Hypertension'}
                   />
                 </Field>
@@ -411,7 +434,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
                     <input
                       type="text"
                       value={valueLabel}
-                      onChange={(e) => setValueLabel(e.target.value)}
+                      onChange={(e) => { setValueLabel(e.target.value); clearErr('dose', 'units', 'medName', 'route', 'valueOptions'); }}
                       style={input}
                       placeholder="e.g., Gastric residual"
                     />
@@ -431,12 +454,12 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
                   <>
                     {/* The nurse PICKS a reading rather than typing one: a
                         mistyped clinical value is a real safety risk. */}
-                    <Field label="Allowed readings (the nurse picks from these) *">
+                    <Field id={fieldId('valueOptions')} error={errors.valueOptions} label="Allowed readings (the nurse picks from these) *">
                       <input
                         type="text"
                         value={valueOptions}
-                        onChange={(e) => setValueOptions(e.target.value)}
-                        style={input}
+                        onChange={(e) => { setValueOptions(e.target.value); clearErr('valueOptions'); }}
+                        style={{ ...input, ...hi('valueOptions') }}
                         placeholder="0, 5, 10, 15, 20, 25, 30, 50, 100…"
                       />
                     </Field>
@@ -446,7 +469,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
                       {valueUnit.trim().toLowerCase() === 'ml' && (
                         <button
                           type="button"
-                          onClick={() => setValueOptions(DEFAULT_ML_VALUE_OPTIONS.join(', '))}
+                          onClick={() => { setValueOptions(DEFAULT_ML_VALUE_OPTIONS.join(', ')); clearErr('valueOptions'); }}
                           style={{ background: 'none', border: 'none', padding: 0, color: '#1a73c4', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit' }}
                         >
                           Use the standard mL scale
@@ -480,16 +503,16 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
                         : 'Use the date on the physician’s order; a past date is OK if you’re documenting late.'}
                     </span>
                   </Field>
-                  <Field label="Ordering physician *">
-                    <input type="text" value={orderingPhysician} onChange={(e) => setOrderingPhysician(e.target.value)} style={input} placeholder="Dr. ..." />
+                  <Field id={fieldId('orderingPhysician')} error={errors.orderingPhysician} label="Ordering physician *">
+                    <input type="text" value={orderingPhysician} onChange={(e) => { setOrderingPhysician(e.target.value); clearErr('orderingPhysician'); }} style={{ ...input, ...hi('orderingPhysician') }} placeholder="Dr. ..." />
                   </Field>
                 </div>
 
                 {verbalOrder ? (
                   <span style={{ ...dateHint, display: 'block', marginBottom: 12 }}>Verbal order: the signed date is filled in automatically when the physician&apos;s signed copy comes back.</span>
                 ) : (
-                <Field label="Physician order signed on">
-                  <input type="date" value={orderSignedDate} onChange={(e) => setOrderSignedDate(e.target.value)} style={{ ...input, maxWidth: 200 }} />
+                <Field id={fieldId('orderSignedDate')} error={errors.orderSignedDate} label="Physician order signed on">
+                  <input type="date" value={orderSignedDate} onChange={(e) => { setOrderSignedDate(e.target.value); clearErr('orderSignedDate'); }} style={{ ...input, maxWidth: 200, ...hi('orderSignedDate') }} />
                   <span style={dateHint}>Blank = the start/effective date. Update when the annual renewal comes in; orders older than 12 months are flagged.</span>
                 </Field>
                 )}
@@ -498,7 +521,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
                   <input
                     type="checkbox"
                     checked={physicianUnknown}
-                    onChange={(e) => setPhysicianUnknown(e.target.checked)}
+                    onChange={(e) => { setPhysicianUnknown(e.target.checked); clearErr('orderingPhysician'); }}
                     style={{ marginTop: 2 }}
                   />
                   <span style={{ fontSize: 12.5, color: '#5c6b7a', lineHeight: 1.4 }}>
@@ -520,12 +543,12 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
               </Field>
             )}
 
-            <Field label="Reason *">
-              <textarea value={reason} onChange={(e) => setReason(e.target.value)} style={textarea}
+            <Field id={fieldId('reason')} error={errors.reason} label="Reason *">
+              <textarea value={reason} onChange={(e) => { setReason(e.target.value); clearErr('reason'); }} style={{ ...textarea, ...hi('reason') }}
                 placeholder={mode === 'discontinue' ? 'Why is it being discontinued?' : 'Why is this being added/changed? (e.g., new physician order)'} />
             </Field>
 
-            {error && <div style={errorBox}>{error}</div>}
+            {submitError && <div style={errorBox} role="alert">{submitError}</div>}
 
             <div style={{ display: 'flex', gap: 10, marginTop: 8, justifyContent: 'flex-end' }}>
               <button type="button" onClick={onClose} disabled={submitting} style={secondaryBtn}>Cancel</button>
@@ -541,11 +564,13 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+/** `id` is the escort target; `error` renders the message under the control. */
+function Field({ label, id, error, children }: { label: string; id?: string; error?: string; children: React.ReactNode }) {
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12, minWidth: 0 }}>
+    <label id={id} style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12, minWidth: 0 }}>
       <span style={fieldLabel}>{label}</span>
       {children}
+      <FieldError message={error} />
     </label>
   );
 }
