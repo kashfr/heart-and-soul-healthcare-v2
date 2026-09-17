@@ -166,10 +166,22 @@ export default function AdminDashboardPage() {
     allow: ['nurse', 'admin', 'supervisor'],
   };
 
+  const canFileMedError = !isViewingAs && (!!effectiveCredential || role === 'admin' || role === 'supervisor');
+  const medErrorCard: Card = {
+    href: canFileMedError ? '/admin/med-errors/new' : '/admin/med-errors',
+    icon: <ShieldAlert size={22} />,
+    title: canFileMedError ? 'Report a medication error' : 'Medication errors',
+    description: canFileMedError
+      ? 'Report any medication error you discover, whether or not you were involved. The nursing supervisor reviews it.'
+      : 'Medication error reports and their reviews.',
+    allow: ['nurse', 'admin', 'supervisor'],
+  };
+
   const visibleCards = [
     ...(canAuthorNote ? [noteCard] : []),
     ...(canAuthorOversight ? [oversightCard] : []),
     ...(role !== 'va' ? [verbalOrderCard] : []),
+    ...(role !== 'va' ? [medErrorCard] : []),
     ...CARDS.filter((c) => role && c.allow.includes(role)),
   ];
   const kicker = role ? ROLE_KICKER[role] : '';

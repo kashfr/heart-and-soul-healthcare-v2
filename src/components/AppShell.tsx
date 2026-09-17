@@ -16,6 +16,7 @@ import {
   Handshake,
   ArrowLeftRight,
   PhoneCall,
+  ShieldAlert,
   Menu,
   X,
   PanelLeftClose,
@@ -66,6 +67,9 @@ const NAV: NavItem[] = [
   // the authentication form, the office tracks it until the signed copy is
   // on file.
   { href: '/admin/verbal-orders', label: 'Verbal Orders', icon: <PhoneCall size={18} />, allow: ['admin', 'supervisor', 'nurse'] },
+  // Medication error reports: filed by any clinical credential, reviewed by
+  // the RN supervisor; the DBHDD incident-report flag lives here.
+  { href: '/admin/med-errors', label: 'Med Errors', icon: <ShieldAlert size={18} />, allow: ['admin', 'supervisor', 'nurse'] },
   { href: '/admin/in-progress', label: 'In Progress', icon: <FileClock size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/users', label: 'Staff & Roles', icon: <UserCog size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/maintenance/link-notes', label: 'Maintenance', icon: <Wrench size={18} />, allow: ['admin'] },

@@ -596,6 +596,28 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Medication error reports. Written ONLY through the Admin SDK
+    // (/api/med-errors files, /api/med-errors/[id]/review adds the nursing
+    // review). Immutable once filed. Read: staff, the reporter, or a nurse on
+    // the client's care team.
+    // Reviewers (an RN, or the configured corrections reviewer) read every
+    // report so the review queue and bell deep links work for a nurse-role
+    // reviewer; both clauses are independent of resource.data, so the staff
+    // style orderBy-only query is provable for them too.
+    match /medErrorReports/{reportId} {
+      allow read: if isStaff()
+        || (isNurse()
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('credential', '') == 'RN')
+        || (isNurse()
+            && get(/databases/$(database)/documents/settings/global).data.get('corrections', {}).get('reviewerUid', '') == request.auth.uid)
+        || (isNurse()
+            && (resource.data.reporterId == request.auth.uid
+                || (resource.data.get('patientId', null) != null
+                    && get(/databases/$(database)/documents/patients/$(resource.data.patientId))
+                         .data.get('assignedNurseIds', []).hasAny([request.auth.uid]))));
+      allow create, update, delete: if false;
+    }
+
     match /seizureEvents/{eventId} {
       allow read: if isStaff()
         || (isNurse()

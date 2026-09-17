@@ -31,6 +31,7 @@ import VisitsSection from './VisitsSection';
 import QuickNotesSection from './QuickNotesSection';
 import HandoffBoardSection from './HandoffBoardSection';
 import VerbalOrdersSection from './VerbalOrdersSection';
+import MedErrorsSection from './MedErrorsSection';
 import SeizureLogSection from './SeizureLogSection';
 import CarePlanSection from './CarePlanSection';
 import { physicianAttributionPending, physicianOrderStale } from '@/lib/marShared';
@@ -626,6 +627,10 @@ function ClientDashboardInner() {
                   one needs an RN/LPN credential (the form and API both re-check). */}
               {realRole !== 'va' && (
                 <VerbalOrdersSection key={`vo-${patientId}`} patientId={patientId} canTake={!isViewingAs && (realStaff || ['RN', 'LPN'].includes(profile?.credential || ''))} />
+              )}
+              {/* Medication error reports: anyone with a clinical credential (or staff) can file. */}
+              {realRole !== 'va' && (
+                <MedErrorsSection key={`me-${patientId}`} patientId={patientId} canFile={!isViewingAs && (realStaff || !!profile?.credential)} />
               )}
               {/* Seizure log: only for clients flagged hasSeizureDisorder. */}
               {patient?.hasSeizureDisorder && (
