@@ -146,7 +146,7 @@ function Inner() {
                   <div style={textStyle}>{r.description.length > 240 ? `${r.description.slice(0, 240)}…` : r.description}</div>
                   <div style={actionsRowStyle}>
                     <button type="button" style={smallBtnStyle} onClick={() => setOpenReport(r)}>Open</button>
-                    <button type="button" style={smallBtnStyle} onClick={() => void download(r)}><Download size={13} /> PDF</button>
+                    <button type="button" style={smallBtnStyle} onClick={() => void download(r)}><Download size={13} /> Download PDF</button>
                   </div>
                 </li>
               ))}
@@ -160,6 +160,7 @@ function Inner() {
           report={openReport}
           canReview={isReviewer && !isViewingAs && openReport.status !== 'reviewed' && openReport.reporterId !== (user?.uid || '')}
           canMarkFiled={isStaff && !isViewingAs}
+          onDownload={() => void download(openReport)}
           onClose={() => setOpenReport(null)}
           onReviewed={() => {
             setOpenReport(null);
@@ -189,7 +190,7 @@ function notifText(n: { notified: boolean; name: string; at: string }): string {
   return n.notified ? `${n.name || 'Yes'}${n.at ? `, ${formatLocalDateTimeUS(n.at)}` : ''}` : 'Not notified';
 }
 
-function ReportDetail({ report: r, canReview, canMarkFiled, onClose, onReviewed, onFiled }: { report: MedErrorReport; canReview: boolean; canMarkFiled: boolean; onClose: () => void; onReviewed: () => void; onFiled: () => void }) {
+function ReportDetail({ report: r, canReview, canMarkFiled, onClose, onReviewed, onFiled, onDownload }: { report: MedErrorReport; canReview: boolean; canMarkFiled: boolean; onClose: () => void; onReviewed: () => void; onFiled: () => void; onDownload: () => void }) {
   const [findings, setFindings] = useState('');
   const [filedLater, setFiledLater] = useState('');
   const [filingBusy, setFilingBusy] = useState(false);
@@ -234,9 +235,12 @@ function ReportDetail({ report: r, canReview, canMarkFiled, onClose, onReviewed,
   return (
     <div style={backdropStyle} onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
       <div style={sheetStyle}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
           <div style={sheetTitleStyle}>Medication error report</div>
-          <button type="button" onClick={onClose} style={closeBtnStyle} aria-label="Close" disabled={busy}><X size={16} /></button>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <button type="button" style={smallBtnStyle} onClick={onDownload} title="Opens the report as a PDF for the binder or an incident packet"><Download size={13} /> Download PDF</button>
+            <button type="button" onClick={onClose} style={closeBtnStyle} aria-label="Close" disabled={busy}><X size={16} /></button>
+          </div>
         </div>
         <div style={detailGridStyle}>
           <Field label="Client" value={r.patientName} />
