@@ -10,6 +10,7 @@ import MedErrorPDF from './pdf/MedErrorPDF';
 import {
   incidentReportRequired,
   medErrorBellText,
+  type MedErrorBellKind,
   type MedErrorInput,
   type MedErrorReport,
   type MedErrorReview,
@@ -232,7 +233,7 @@ export async function medErrorRecipients(excludeUid: string): Promise<string[]> 
   return Array.from(uids);
 }
 
-export async function notifyMedError(kind: 'filed' | 'incident' | 'reviewed', report: MedErrorReport, recipients: string[]): Promise<number> {
+export async function notifyMedError(kind: MedErrorBellKind, report: MedErrorReport, recipients: string[]): Promise<number> {
   const db = adminDb();
   const text = medErrorBellText(kind, report);
   let n = 0;

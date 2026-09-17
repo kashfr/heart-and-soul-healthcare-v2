@@ -111,5 +111,6 @@ describe('formatting', () => {
     const r = { patientName: 'ZZ Test Client', reporterName: 'Test Nurse', medName: 'Keppra', errorType: 'omitted' as const };
     expect(medErrorBellText('filed', r)).toContain('ZZ Test Client');
     expect(medErrorBellText('incident', r)).toContain('incident report');
+    expect(medErrorBellText('filed-incident', r)).toContain('by Test Nurse; may require a DBHDD incident report');
   });
 });

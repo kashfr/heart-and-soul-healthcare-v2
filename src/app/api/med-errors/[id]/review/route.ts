@@ -62,6 +62,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const recipients = await medErrorRecipients(caller.uid);
       if (fresh.reporterId && fresh.reporterId !== caller.uid) recipients.push(fresh.reporterId);
       await notifyMedError('reviewed', fresh, Array.from(new Set(recipients)));
+      // The reviewer raised the incident flag the form did not: that is a new
+      // filing obligation for the office, so it gets its own bell.
+      if (incidentReportRequired && !fresh.incidentReportRequired) await notifyMedError('incident', fresh, await medErrorRecipients(caller.uid));
     }
   } catch (err) {
     console.error('Med error: review notifications failed:', err);

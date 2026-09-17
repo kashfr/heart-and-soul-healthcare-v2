@@ -114,8 +114,8 @@ export async function POST(request: Request) {
     const report = await getMedError(created.id);
     if (report) {
       const recipients = await medErrorRecipients(caller.uid);
-      await notifyMedError('filed', report, recipients);
-      if (created.incident) await notifyMedError('incident', report, recipients);
+      // One bell, not two: the incident flag rides on the filing bell.
+      await notifyMedError(created.incident ? 'filed-incident' : 'filed', report, recipients);
     }
   } catch (err) {
     console.error('Med error: notifications failed (report is saved):', err);
