@@ -9,8 +9,12 @@ import {
   signInWithEmailAndPassword,
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
+import { escortToField, FieldError, FIELD_ERROR_STYLE, firstErrorKey } from '@/lib/formEscort';
 
 type Status = 'verifying' | 'ready' | 'invalid' | 'saving' | 'done';
+type ResetField = 'password' | 'confirm';
+const FIELD_ORDER: ResetField[] = ['password', 'confirm'];
+const fieldId = (k: ResetField) => `rp-field-${k}`;
 
 function ResetPasswordForm() {
   const router = useRouter();
@@ -26,6 +30,7 @@ function ResetPasswordForm() {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<ResetField, string>>>({});
 
   // Validate the one-time code up front so we can greet the user by account
   // and fail fast on an expired/used link.
@@ -52,12 +57,13 @@ function ResetPasswordForm() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.');
-      return;
-    }
-    if (password !== confirm) {
-      setError('The two passwords do not match.');
+    const errs: Partial<Record<ResetField, string>> = {};
+    if (password.length < 8) errs.password = 'Password must be at least 8 characters.';
+    if (password !== confirm) errs.confirm = 'Passwords do not match.';
+    setFieldErrors(errs);
+    const first = firstErrorKey(FIELD_ORDER, errs);
+    if (first) {
+      escortToField(fieldId(first));
       return;
     }
     setStatus('saving');
@@ -115,8 +121,8 @@ function ResetPasswordForm() {
               Choose a new password for <strong>{email}</strong>. We&apos;ll sign you in right after.
             </p>
 
-            <form onSubmit={handleSubmit} style={formStyle}>
-              <label style={labelStyle}>
+            <form onSubmit={handleSubmit} style={formStyle} noValidate>
+              <label style={labelStyle} id={fieldId('password')}>
                 New password
                 <input
                   type="password"
@@ -124,22 +130,32 @@ function ResetPasswordForm() {
                   autoComplete="new-password"
                   autoFocus
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  style={inputStyle}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setFieldErrors((prev) => (prev.password ? { ...prev, password: undefined } : prev));
+                  }}
+                  style={{ ...inputStyle, ...(fieldErrors.password ? FIELD_ERROR_STYLE : {}) }}
+                  aria-invalid={!!fieldErrors.password}
                   placeholder="At least 8 characters"
                 />
+                <FieldError message={fieldErrors.password} />
               </label>
 
-              <label style={labelStyle}>
+              <label style={labelStyle} id={fieldId('confirm')}>
                 Confirm new password
                 <input
                   type="password"
                   required
                   autoComplete="new-password"
                   value={confirm}
-                  onChange={(e) => setConfirm(e.target.value)}
-                  style={inputStyle}
+                  onChange={(e) => {
+                    setConfirm(e.target.value);
+                    setFieldErrors((prev) => (prev.confirm ? { ...prev, confirm: undefined } : prev));
+                  }}
+                  style={{ ...inputStyle, ...(fieldErrors.confirm ? FIELD_ERROR_STYLE : {}) }}
+                  aria-invalid={!!fieldErrors.confirm}
                 />
+                <FieldError message={fieldErrors.confirm} />
               </label>
 
               {error && <div style={errorStyle}>{error}</div>}

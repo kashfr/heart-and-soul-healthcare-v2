@@ -11,6 +11,12 @@ import { assessReferralFit, type ReferralFit } from '@/lib/referralFit';
 import { useSettings } from '@/components/SettingsProvider';
 import MatchSuggestions from './MatchSuggestions';
 import { usePartnerAgencies } from './PartnerAgenciesProvider';
+import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
+
+type BulkShareField = 'agency' | 'email';
+const BULK_SHARE_FIELD_ORDER: readonly BulkShareField[] = ['agency', 'email'];
+const bulkShareFieldId = (k: BulkShareField) => `bulk-share-${k}`;
+const BULK_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 import {
   downloadCsv, formatDate, initials, matchInputFor,
   REFERRAL_STAGES, STAGE_ACCENT, STAGE_LABEL, SOURCE_LABEL,
@@ -358,12 +364,21 @@ function BulkShareModal({
   const [move, setMove] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<BulkShareField, string>>>({});
   const [result, setResult] = useState<{ createdCount: number; failedCount: number; movedCount: number; emailSent: boolean } | null>(null);
+
+  const clearFieldError = (k: BulkShareField) => {
+    if (fieldErrors[k]) setFieldErrors((prev) => ({ ...prev, [k]: undefined }));
+  };
 
   const onAgencyName = (value: string) => {
     setAgency(value);
+    clearFieldError('agency');
     const match = agencies.find((a) => a.name.toLowerCase() === value.trim().toLowerCase());
-    if (match) setEmail(match.email);
+    if (match) {
+      setEmail(match.email);
+      clearFieldError('email');
+    }
   };
 
   // Smart-match across the whole batch: rank agencies by how many of the
@@ -376,9 +391,14 @@ function BulkShareModal({
   );
 
   const submit = async () => {
-    if (!agency.trim() || !email.trim() || sending) return;
-    setSending(true);
+    if (sending) return;
     setError(null);
+    const errs: Partial<Record<BulkShareField, string>> = {};
+    if (!agency.trim()) errs.agency = 'Enter the partner agency name.';
+    if (!email.trim()) errs.email = 'Enter the partner agency email.';
+    else if (!BULK_EMAIL_RE.test(email.trim())) errs.email = 'Enter a valid email address, like intake@agency.org.';
+    if (!applyFieldErrors(errs, BULK_SHARE_FIELD_ORDER, setFieldErrors, bulkShareFieldId)) return;
+    setSending(true);
     try {
       const res = await authedFetch('/api/admin/referrals/bulk-share', {
         method: 'POST',
@@ -399,7 +419,9 @@ function BulkShareModal({
         emailSent: !!data.emailSent,
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not share referrals.');
+      const message = e instanceof Error && e.message ? e.message : 'Could not share the referrals. Please try again.';
+      if (/email/i.test(message)) applyFieldErrors({ email: message }, BULK_SHARE_FIELD_ORDER, setFieldErrors, bulkShareFieldId);
+      else setError(message);
     } finally {
       setSending(false);
     }
@@ -440,27 +462,35 @@ function BulkShareModal({
           <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
             <MatchSuggestions
               matches={suggestions}
-              onPick={(a) => { setAgency(a.name); setEmail(a.email); setError(null); }}
+              onPick={(a) => { setAgency(a.name); setEmail(a.email); setError(null); setFieldErrors({}); }}
             />
-            <input
-              value={agency}
-              onChange={(e) => onAgencyName(e.target.value)}
-              placeholder="Partner agency name"
-              style={modalInputStyle}
-              list="bulk-agency-options"
-              autoComplete="off"
-              autoFocus
-            />
+            <div id={bulkShareFieldId('agency')}>
+              <input
+                value={agency}
+                onChange={(e) => onAgencyName(e.target.value)}
+                placeholder="Partner agency name"
+                style={{ ...modalInputStyle, ...(fieldErrors.agency ? FIELD_ERROR_STYLE : null) }}
+                aria-invalid={!!fieldErrors.agency}
+                list="bulk-agency-options"
+                autoComplete="off"
+                autoFocus
+              />
+              <FieldError message={fieldErrors.agency} />
+            </div>
             <datalist id="bulk-agency-options">
               {agencies.map((a) => <option key={a.id} value={a.name} />)}
             </datalist>
-            <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Partner email"
-              type="email"
-              style={modalInputStyle}
-            />
+            <div id={bulkShareFieldId('email')}>
+              <input
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); clearFieldError('email'); }}
+                placeholder="Partner email"
+                type="email"
+                style={{ ...modalInputStyle, ...(fieldErrors.email ? FIELD_ERROR_STYLE : null) }}
+                aria-invalid={!!fieldErrors.email}
+              />
+              <FieldError message={fieldErrors.email} />
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 13, color: '#5c6b7a' }}>Expires in</span>
               <select value={expiry} onChange={(e) => setExpiry(Number(e.target.value))} style={modalSelectStyle}>
@@ -471,13 +501,13 @@ function BulkShareModal({
               <input type="checkbox" checked={move} onChange={(e) => setMove(e.target.checked)} />
               Move {n === 1 ? 'it' : 'them'} to Referred Out (mark as handed off)
             </label>
-            {error && <div style={{ color: '#b3261e', fontSize: 13 }}>{error}</div>}
+            {error && <div role="alert" style={{ color: '#b3261e', fontSize: 13, fontWeight: 600 }}>{error}</div>}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 6 }}>
               <button onClick={onClose} style={ghostBtnStyle}>Cancel</button>
               <button
                 onClick={submit}
-                disabled={sending || !agency.trim() || !email.trim()}
-                style={{ ...modalPrimaryStyle, opacity: sending || !agency.trim() || !email.trim() ? 0.55 : 1 }}
+                disabled={sending}
+                style={{ ...modalPrimaryStyle, opacity: sending ? 0.55 : 1 }}
               >
                 {sending ? 'Sending…' : `Create & email ${n} link${n === 1 ? '' : 's'}`}
               </button>

@@ -4,7 +4,12 @@ import { useState } from 'react';
 import { Phone, Mail, Clock, Check } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { authedFetch } from '@/lib/authedFetch';
-import { formatUSPhone } from '@/lib/phone';
+import { formatUSPhone, isValidUSPhone } from '@/lib/phone';
+import { escortToField, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_FIELD_ID = 'profile-phone';
+const EMAIL_FIELD_ID = 'profile-new-email';
 
 export default function MyProfilePage() {
   // Always the REAL signed-in user (never the impersonated nurse): you only
@@ -38,9 +43,21 @@ export default function MyProfilePage() {
   const phoneDirty = phone.trim() !== (profile.phone || '');
 
   const savePhone = async () => {
-    setPhoneBusy(true);
+    if (phoneBusy) return;
     setPhoneErr(null);
     setPhoneMsg(null);
+    const trimmed = phone.trim();
+    if (!phoneDirty) {
+      setPhoneErr('The phone number has not changed.');
+      escortToField(PHONE_FIELD_ID);
+      return;
+    }
+    if (trimmed && !isValidUSPhone(trimmed)) {
+      setPhoneErr('Enter a 10-digit US phone number, or clear the field to remove it.');
+      escortToField(PHONE_FIELD_ID);
+      return;
+    }
+    setPhoneBusy(true);
     try {
       const res = await authedFetch('/api/me/profile', {
         method: 'PATCH',
@@ -52,15 +69,28 @@ export default function MyProfilePage() {
       if (typeof data.phone === 'string') setPhone(data.phone);
       setPhoneMsg('Phone number saved.');
     } catch (err) {
-      setPhoneErr(err instanceof Error ? err.message : 'Could not save.');
+      setPhoneErr(err instanceof Error && err.message ? err.message : 'Could not save the phone number. Please try again.');
+      escortToField(PHONE_FIELD_ID);
     } finally {
       setPhoneBusy(false);
     }
   };
 
   const submitEmailRequest = async () => {
-    setEmailBusy(true);
+    if (emailBusy) return;
     setEmailErr(null);
+    const trimmed = newEmail.trim();
+    const current = (profile.email || user.email || '').toLowerCase();
+    let problem: string | null = null;
+    if (!trimmed) problem = 'Enter the new email address you want to sign in with.';
+    else if (!EMAIL_RE.test(trimmed)) problem = 'Enter a valid email address, like name@example.com.';
+    else if (trimmed.toLowerCase() === current) problem = 'That is already your login email. Enter a different address.';
+    if (problem) {
+      setEmailErr(problem);
+      escortToField(EMAIL_FIELD_ID);
+      return;
+    }
+    setEmailBusy(true);
     try {
       const res = await authedFetch('/api/me/profile', {
         method: 'PATCH',
@@ -72,7 +102,8 @@ export default function MyProfilePage() {
       setReason('');
       // The pending banner appears automatically via the live profile subscription.
     } catch (err) {
-      setEmailErr(err instanceof Error ? err.message : 'Could not submit request.');
+      setEmailErr(err instanceof Error && err.message ? err.message : 'Could not submit the request. Please try again.');
+      escortToField(EMAIL_FIELD_ID);
     } finally {
       setEmailBusy(false);
     }
@@ -125,22 +156,25 @@ export default function MyProfilePage() {
             <Phone size={16} color="#1a3a5c" />
             <h2 style={sectionTitleStyle}>Phone number</h2>
           </div>
-          <input
-            type="tel"
-            value={phone}
-            onChange={(e) => { setPhone(formatUSPhone(e.target.value)); setPhoneMsg(null); setPhoneErr(null); }}
-            placeholder="(555) 123-4567"
-            style={inputStyle}
-            aria-label="Phone number"
-          />
-          {phoneErr && <div style={errStyle}>{phoneErr}</div>}
+          <div id={PHONE_FIELD_ID}>
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => { setPhone(formatUSPhone(e.target.value)); setPhoneMsg(null); setPhoneErr(null); }}
+              placeholder="(555) 123-4567"
+              style={{ ...inputStyle, ...(phoneErr ? FIELD_ERROR_STYLE : null) }}
+              aria-invalid={!!phoneErr}
+              aria-label="Phone number"
+            />
+            <FieldError message={phoneErr} />
+          </div>
           {phoneMsg && <div style={okStyle}><Check size={13} /> {phoneMsg}</div>}
           <div style={{ marginTop: 10 }}>
             <button
               type="button"
               onClick={savePhone}
-              disabled={phoneBusy || !phoneDirty}
-              style={{ ...primaryBtn, ...(phoneBusy || !phoneDirty ? disabledBtn : {}) }}
+              disabled={phoneBusy}
+              style={{ ...primaryBtn, ...(phoneBusy ? disabledBtn : {}) }}
             >
               {phoneBusy ? 'Saving…' : 'Save phone'}
             </button>
@@ -182,14 +216,18 @@ export default function MyProfilePage() {
           ) : (
             <>
               <div style={labelStyle}>New email address</div>
-              <input
-                type="email"
-                value={newEmail}
-                onChange={(e) => { setNewEmail(e.target.value); setEmailErr(null); }}
-                placeholder="you@example.com"
-                style={inputStyle}
-                aria-label="New email address"
-              />
+              <div id={EMAIL_FIELD_ID}>
+                <input
+                  type="email"
+                  value={newEmail}
+                  onChange={(e) => { setNewEmail(e.target.value); setEmailErr(null); }}
+                  placeholder="you@example.com"
+                  style={{ ...inputStyle, ...(emailErr ? FIELD_ERROR_STYLE : null) }}
+                  aria-invalid={!!emailErr}
+                  aria-label="New email address"
+                />
+                <FieldError message={emailErr} />
+              </div>
               <div style={{ ...labelStyle, marginTop: 12 }}>Reason (optional)</div>
               <textarea
                 value={reason}
@@ -199,13 +237,12 @@ export default function MyProfilePage() {
                 style={textareaStyle}
                 aria-label="Reason for email change"
               />
-              {emailErr && <div style={errStyle}>{emailErr}</div>}
               <div style={{ marginTop: 10 }}>
                 <button
                   type="button"
                   onClick={submitEmailRequest}
-                  disabled={emailBusy || !newEmail.trim()}
-                  style={{ ...primaryBtn, ...(emailBusy || !newEmail.trim() ? disabledBtn : {}) }}
+                  disabled={emailBusy}
+                  style={{ ...primaryBtn, ...(emailBusy ? disabledBtn : {}) }}
                 >
                   {emailBusy ? 'Submitting…' : 'Request email change'}
                 </button>

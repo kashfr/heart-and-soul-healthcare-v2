@@ -8,10 +8,14 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { createElement } from 'react';
 
-export const FIELD_ERROR_STYLE: CSSProperties = { borderColor: '#b3261e', boxShadow: '0 0 0 3px rgba(179,38,30,0.15)' };
+// The `border` shorthand (not `borderColor`) matters: most base styles set
+// `border: '1px solid ...'`, and when React drops a `borderColor` key it writes
+// '' which leaves the border with no colour at all. Toggling the same shorthand
+// key means React re-applies the base value when the error clears.
+export const FIELD_ERROR_STYLE: CSSProperties = { border: '1px solid #b3261e', boxShadow: '0 0 0 3px rgba(179,38,30,0.15)' };
 
 /** Style for a wrapper (a chip group, a canvas frame) rather than an input. */
-export const FIELD_ERROR_WRAP_STYLE: CSSProperties = { ...FIELD_ERROR_STYLE, borderWidth: 1, borderStyle: 'solid', borderRadius: 8, padding: 8 };
+export const FIELD_ERROR_WRAP_STYLE: CSSProperties = { ...FIELD_ERROR_STYLE, borderRadius: 8, padding: 8 };
 
 export const FIELD_ERROR_TEXT_STYLE: CSSProperties = { fontSize: 12.5, color: '#b3261e', fontWeight: 600, marginTop: 4, lineHeight: 1.4 };
 

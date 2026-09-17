@@ -4,6 +4,7 @@ import { Suspense, useEffect, useRef, useState, type CSSProperties } from 'react
 import { useSearchParams } from 'next/navigation';
 import { AlertCircle, CheckCircle, FileSignature, ShieldCheck } from 'lucide-react';
 import SignatureCanvas, { type SignatureCanvasHandle } from '@/components/SignatureCanvas';
+import { escortToField, FieldError, FIELD_ERROR_STYLE, FIELD_ERROR_WRAP_STYLE, firstErrorKey } from '@/lib/formEscort';
 
 /**
  * Public physician e-sign page. Reached only by the one-time link and QR code
@@ -11,6 +12,12 @@ import SignatureCanvas, { type SignatureCanvasHandle } from '@/components/Signat
  * captures the physician's printed name and signature. Signing here closes
  * the order the same way a returned fax does, so nothing needs faxing back.
  */
+type SignField = 'printedName' | 'signature' | 'attest';
+type SignFieldErrors = Partial<Record<SignField, string>>;
+// Display order on the page, so the escort lands on the topmost problem.
+const FIELD_ORDER: SignField[] = ['printedName', 'signature', 'attest'];
+const fieldId = (k: SignField) => `vo-field-${k}`;
+
 interface OrderView {
   patientName: string;
   patientDob: string;
@@ -42,6 +49,7 @@ function Inner() {
   const [honeypot, setHoneypot] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<SignFieldErrors>({});
   const sigRef = useRef<SignatureCanvasHandle>(null);
 
   useEffect(() => {
@@ -66,11 +74,21 @@ function Inner() {
     };
   }, [token]);
 
+  const clearFieldError = (k: SignField) =>
+    setFieldErrors((prev) => (prev[k] ? { ...prev, [k]: undefined } : prev));
+
   const submit = async () => {
     setError('');
-    if (!printedName.trim()) return setError('Please type your name as it should appear on the order.');
-    if (!attest) return setError('Please confirm that you reviewed the order.');
-    if (!signature) return setError('Please sign in the box.');
+    const errs: SignFieldErrors = {};
+    if (!printedName.trim()) errs.printedName = 'Please type your name as it should appear on the order.';
+    if (!signature) errs.signature = 'Please sign in the box.';
+    if (!attest) errs.attest = 'Please confirm that you reviewed the order.';
+    setFieldErrors(errs);
+    const first = firstErrorKey(FIELD_ORDER, errs);
+    if (first) {
+      escortToField(fieldId(first));
+      return;
+    }
     setSubmitting(true);
     try {
       const r = await fetch('/api/forms/verbal-order-sign', {
@@ -126,22 +144,57 @@ function Inner() {
           <section style={cardStyle}>
             <h2 style={h2Style}>Sign</h2>
             {error && <div style={{ ...noticeStyle, marginBottom: 12 }}><AlertCircle size={16} /> {error}</div>}
-            <label style={fieldStyle}>
+            <label style={fieldStyle} id={fieldId('printedName')}>
               <span style={labelStyle}>Your printed name</span>
-              <input type="text" value={printedName} onChange={(e) => setPrintedName(e.target.value)} style={inputStyle} disabled={submitting} autoComplete="name" />
+              <input
+                type="text"
+                value={printedName}
+                onChange={(e) => {
+                  setPrintedName(e.target.value);
+                  clearFieldError('printedName');
+                }}
+                style={{ ...inputStyle, ...(fieldErrors.printedName ? FIELD_ERROR_STYLE : {}) }}
+                disabled={submitting}
+                autoComplete="name"
+                aria-invalid={!!fieldErrors.printedName}
+              />
+              <FieldError message={fieldErrors.printedName} />
             </label>
             <input type="text" value={honeypot} onChange={(e) => setHoneypot(e.target.value)} tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: 'absolute', left: -9999, width: 1, height: 1, opacity: 0 }} />
             <div style={labelStyle}>Signature</div>
-            <div style={sigWrapStyle}>
-              <SignatureCanvas ref={sigRef} onChange={setSignature} width={700} height={200} className="physician-sig" disabled={submitting} />
+            <div id={fieldId('signature')} style={{ ...sigWrapStyle, ...(fieldErrors.signature ? FIELD_ERROR_STYLE : {}) }}>
+              <SignatureCanvas
+                ref={sigRef}
+                onChange={(dataUrl) => {
+                  setSignature(dataUrl);
+                  if (dataUrl) clearFieldError('signature');
+                }}
+                width={700}
+                height={200}
+                className="physician-sig"
+                disabled={submitting}
+              />
             </div>
+            <FieldError message={fieldErrors.signature} />
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <button type="button" style={linkBtnStyle} onClick={() => sigRef.current?.clear()} disabled={submitting}>Clear</button>
             </div>
-            <label style={checkRowStyle}>
-              <input type="checkbox" checked={attest} onChange={(e) => setAttest(e.target.checked)} disabled={submitting} />
-              <span>I have reviewed the order above and confirm it is the order I gave by telephone. My electronic signature has the same effect as a handwritten signature.</span>
-            </label>
+            <div id={fieldId('attest')} style={{ margin: '8px 0 16px', ...(fieldErrors.attest ? FIELD_ERROR_WRAP_STYLE : {}) }}>
+              <label style={{ ...checkRowStyle, margin: 0 }}>
+                <input
+                  type="checkbox"
+                  checked={attest}
+                  onChange={(e) => {
+                    setAttest(e.target.checked);
+                    if (e.target.checked) clearFieldError('attest');
+                  }}
+                  disabled={submitting}
+                  aria-invalid={!!fieldErrors.attest}
+                />
+                <span>I have reviewed the order above and confirm it is the order I gave by telephone. My electronic signature has the same effect as a handwritten signature.</span>
+              </label>
+              <FieldError message={fieldErrors.attest} />
+            </div>
             <button type="button" style={{ ...primaryBtnStyle, opacity: submitting ? 0.6 : 1 }} disabled={submitting} onClick={() => void submit()}>
               {submitting ? 'Recording…' : 'Sign and return'}
             </button>

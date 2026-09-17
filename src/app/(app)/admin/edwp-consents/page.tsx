@@ -6,6 +6,12 @@ import { authedFetch } from '@/lib/authedFetch';
 import { buildEdwpConsentUrl } from '@/lib/shareLink';
 import { PROGRAM_LABEL, serviceLabels, type EdwpProgram } from '@/lib/edwpConsent';
 import { formatDateUS } from '@/lib/dateFormat';
+import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
+
+type SendField = 'clientName' | 'email';
+const SEND_FIELD_ORDER: readonly SendField[] = ['clientName', 'email'];
+const sendFieldId = (k: SendField) => `edwp-send-${k}`;
+const SEND_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 import type { EdwpConsentRecord, EdwpConsentInvite } from '@/lib/edwpConsentServer';
 
 // Staff view of the EDWP consent form: who has been sent it, who has signed,
@@ -273,21 +279,40 @@ function SendModal({ onClose, onSent }: { onClose: () => void; onSent: (invite: 
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<SendField, string>>>({});
+  const clearFieldError = (k: SendField) => {
+    if (fieldErrors[k]) setFieldErrors((prev) => ({ ...prev, [k]: undefined }));
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setBusy(true);
+    if (busy) return;
     setErr(null);
+    const errs: Partial<Record<SendField, string>> = {};
+    if (!clientName.trim()) errs.clientName = 'Enter the client\'s name. It is prefilled on the form they sign.';
+    if (!email.trim()) errs.email = 'Enter the email address to send the form to.';
+    else if (!SEND_EMAIL_RE.test(email.trim())) errs.email = 'Enter a valid email address, like name@example.com.';
+    if (!applyFieldErrors(errs, SEND_FIELD_ORDER, setFieldErrors, sendFieldId)) return;
+    setBusy(true);
     try {
       const res = await authedFetch('/api/admin/edwp-consents/send', {
         method: 'POST',
         body: JSON.stringify({ clientName, email, note }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
+      if (!res.ok) {
+        const failure = new Error(data.error || `Request failed (${res.status}).`) as Error & { fields?: Partial<Record<SendField, string>> };
+        if (data.fields && typeof data.fields === 'object') failure.fields = data.fields;
+        throw failure;
+      }
       onSent(data.invite);
     } catch (e2) {
-      setErr(e2 instanceof Error ? e2.message : 'Could not send the form.');
+      const message = e2 instanceof Error && e2.message ? e2.message : 'Could not send the form. Please try again.';
+      const data = e2 as { fields?: Partial<Record<SendField, string>> };
+      if (data.fields && Object.keys(data.fields).length > 0) applyFieldErrors(data.fields, SEND_FIELD_ORDER, setFieldErrors, sendFieldId);
+      else if (/email/i.test(message) && !/failed to send/i.test(message)) applyFieldErrors({ email: message }, SEND_FIELD_ORDER, setFieldErrors, sendFieldId);
+      else if (/client name/i.test(message)) applyFieldErrors({ clientName: message }, SEND_FIELD_ORDER, setFieldErrors, sendFieldId);
+      else setErr(message);
     } finally {
       setBusy(false);
     }
@@ -302,25 +327,27 @@ function SendModal({ onClose, onSent }: { onClose: () => void; onSent: (invite: 
             <X size={18} />
           </button>
         </div>
-        <form onSubmit={submit}>
+        <form onSubmit={submit} noValidate>
           <div style={{ padding: 20, display: 'grid', gap: 14 }}>
             <p style={{ margin: 0, fontSize: 13.5, color: '#5c6b7a' }}>
               The client (or whoever is signing for them) gets an email with a link to the form. Their name is
               prefilled, and the signed copy shows up here and in the office inbox.
             </p>
-            <label style={fieldStyle}>
+            <label style={fieldStyle} id={sendFieldId('clientName')}>
               <span style={fieldLabelStyle}>Client name</span>
-              <input value={clientName} onChange={(e) => setClientName(e.target.value)} style={inp} required autoFocus />
+              <input value={clientName} onChange={(e) => { setClientName(e.target.value); clearFieldError('clientName'); }} style={{ ...inp, ...(fieldErrors.clientName ? FIELD_ERROR_STYLE : null) }} aria-invalid={!!fieldErrors.clientName} autoFocus />
+              <FieldError message={fieldErrors.clientName} />
             </label>
-            <label style={fieldStyle}>
+            <label style={fieldStyle} id={sendFieldId('email')}>
               <span style={fieldLabelStyle}>Send to (email)</span>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={inp} required placeholder="Client or representative email" />
+              <input type="email" value={email} onChange={(e) => { setEmail(e.target.value); clearFieldError('email'); }} style={{ ...inp, ...(fieldErrors.email ? FIELD_ERROR_STYLE : null) }} aria-invalid={!!fieldErrors.email} placeholder="Client or representative email" />
+              <FieldError message={fieldErrors.email} />
             </label>
             <label style={fieldStyle}>
               <span style={fieldLabelStyle}>Personal note <span style={{ fontWeight: 400 }}>(optional)</span></span>
               <textarea value={note} onChange={(e) => setNote(e.target.value)} style={{ ...inp, minHeight: 72, resize: 'vertical' }} placeholder="e.g. It was great speaking with you today. Please sign by Friday so we can start services next week." />
             </label>
-            {err && <div style={{ color: '#b3261e', fontSize: 13 }}>{err}</div>}
+            {err && <div role="alert" style={{ color: '#b3261e', fontSize: 13, fontWeight: 600 }}>{err}</div>}
           </div>
           <div style={modalFooterStyle}>
             <button type="button" onClick={onClose} style={ghostBtnStyle} disabled={busy}>Cancel</button>

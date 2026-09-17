@@ -24,7 +24,36 @@ import {
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { useViewAs } from '@/components/ImpersonationProvider';
 import type { Role } from '@/lib/auth';
-import { formatUSPhone } from '@/lib/phone';
+import { formatUSPhone, isValidUSPhone } from '@/lib/phone';
+import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
+
+type StaffField = 'displayName' | 'email' | 'phone' | 'credential';
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const ADD_STAFF_FIELD_ORDER: readonly StaffField[] = ['displayName', 'email', 'phone', 'credential'];
+const EDIT_STAFF_FIELD_ORDER: readonly StaffField[] = ['email', 'displayName', 'phone', 'credential'];
+
+/** Client-side mirror of the API's rules, so a blocked save lands on the field. */
+function validateStaffFields(v: { displayName: string; email: string; phone: string; credential: string; role: Role }): Partial<Record<StaffField, string>> {
+  const errs: Partial<Record<StaffField, string>> = {};
+  if (!v.displayName.trim()) errs.displayName = 'Enter the staff member\'s full name.';
+  const email = v.email.trim();
+  if (!email) errs.email = 'Enter an email address.';
+  else if (!EMAIL_RE.test(email)) errs.email = 'Enter a valid email address, like name@example.com.';
+  if (v.phone.trim() && !isValidUSPhone(v.phone)) errs.phone = 'Enter a 10-digit US phone number, or leave it blank.';
+  if (v.role === 'nurse' && !v.credential.trim()) errs.credential = 'Choose a credential. Nurses need one so the progress-note form fills in correctly.';
+  return errs;
+}
+
+/** Route a server rejection to the field it names; null means it belongs in the banner. */
+function staffFieldForServerError(message: string): StaffField | null {
+  // "Could not update the email address" is a backend failure, not a bad value.
+  if (/could not|failed/i.test(message)) return null;
+  if (/email/i.test(message)) return 'email';
+  if (/phone/i.test(message)) return 'phone';
+  if (/credential/i.test(message)) return 'credential';
+  if (/displayName|full name/i.test(message)) return 'displayName';
+  return null;
+}
 
 interface StaffRow {
   uid: string;
@@ -506,11 +535,19 @@ function AddStaffModal({
   const [phone, setPhone] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<StaffField, string>>>({});
+  const fieldId = (k: StaffField) => `add-staff-${k}`;
+  const clearFieldError = (k: StaffField) => {
+    if (fieldErrors[k]) setFieldErrors((prev) => ({ ...prev, [k]: undefined }));
+  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setSubmitting(true);
+    if (submitting) return;
     setError(null);
+    const errs = validateStaffFields({ displayName, email, phone, credential, role });
+    if (!applyFieldErrors(errs, ADD_STAFF_FIELD_ORDER, setFieldErrors, fieldId)) return;
+    setSubmitting(true);
     try {
       const res = await authedFetch('/api/admin/users', {
         method: 'POST',
@@ -528,7 +565,10 @@ function AddStaffModal({
       }
       onCreated(body as CreateResult);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create account.');
+      const message = err instanceof Error && err.message ? err.message : 'Could not create the account. Please try again.';
+      const field = staffFieldForServerError(message);
+      if (field) applyFieldErrors({ [field]: message }, ADD_STAFF_FIELD_ORDER, setFieldErrors, fieldId);
+      else setError(message);
       setSubmitting(false);
     }
   };
@@ -542,38 +582,48 @@ function AddStaffModal({
             ✕
           </button>
         </div>
-        <form onSubmit={handleSubmit} style={{ padding: 20 }}>
-          <Field label="Full name *" help="Match the nurse's existing progress-note name exactly so past notes get linked.">
+        <form onSubmit={handleSubmit} noValidate style={{ padding: 20 }}>
+          <Field label="Full name *" help="Match the nurse's existing progress-note name exactly so past notes get linked." id={fieldId('displayName')} error={fieldErrors.displayName}>
             <input
               type="text"
-              required
               value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              style={inputStyle}
+              onChange={(e) => {
+                setDisplayName(e.target.value);
+                clearFieldError('displayName');
+              }}
+              style={{ ...inputStyle, ...(fieldErrors.displayName ? FIELD_ERROR_STYLE : null) }}
+              aria-invalid={!!fieldErrors.displayName}
               placeholder="e.g., Jordan Rivera"
               disabled={submitting}
             />
           </Field>
 
-          <Field label="Email *">
+          <Field label="Email *" id={fieldId('email')} error={fieldErrors.email}>
             <input
               type="email"
-              required
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              style={inputStyle}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                clearFieldError('email');
+              }}
+              style={{ ...inputStyle, ...(fieldErrors.email ? FIELD_ERROR_STYLE : null) }}
+              aria-invalid={!!fieldErrors.email}
               placeholder="staff@example.com"
               disabled={submitting}
             />
           </Field>
 
-          <Field label="Phone" help="US number. Optional — lets a reviewer call the nurse about their notes.">
+          <Field label="Phone" help="US number. Optional — lets a reviewer call the nurse about their notes." id={fieldId('phone')} error={fieldErrors.phone}>
             <input
               type="tel"
               inputMode="tel"
               value={phone}
-              onChange={(e) => setPhone(formatUSPhone(e.target.value))}
-              style={inputStyle}
+              onChange={(e) => {
+                setPhone(formatUSPhone(e.target.value));
+                clearFieldError('phone');
+              }}
+              style={{ ...inputStyle, ...(fieldErrors.phone ? FIELD_ERROR_STYLE : null) }}
+              aria-invalid={!!fieldErrors.phone}
               placeholder="(555) 123-4567"
               disabled={submitting}
             />
@@ -588,7 +638,10 @@ function AddStaffModal({
                     name="role"
                     value={opt.value}
                     checked={role === opt.value}
-                    onChange={() => setRole(opt.value)}
+                    onChange={() => {
+                      setRole(opt.value);
+                      clearFieldError('credential');
+                    }}
                     disabled={submitting}
                   />
                   <div>
@@ -603,12 +656,17 @@ function AddStaffModal({
           <Field
             label={role === 'nurse' ? 'Credential *' : 'Credential'}
             help="Clinical credential, independent of portal role. Used to auto-fill the progress-note form. Optional for admins and supervisors; required for nurses."
+            id={fieldId('credential')}
+            error={fieldErrors.credential}
           >
             <select
-              required={role === 'nurse'}
               value={credential}
-              onChange={(e) => setCredential(e.target.value)}
-              style={selectStyle}
+              onChange={(e) => {
+                setCredential(e.target.value);
+                clearFieldError('credential');
+              }}
+              style={{ ...selectStyle, ...(fieldErrors.credential ? FIELD_ERROR_STYLE : null) }}
+              aria-invalid={!!fieldErrors.credential}
               disabled={submitting}
             >
               {CREDENTIAL_OPTIONS.map((opt) => (
@@ -660,6 +718,11 @@ function EditStaffModal({
   const [role, setRole] = useState<Role>(staff.role || 'nurse');
   const [busy, setBusy] = useState<null | 'save' | 'deactivate' | 'reactivate' | 'link' | 'approveEmail' | 'dismissEmail' | 'block'>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<StaffField, string>>>({});
+  const fieldId = (k: StaffField) => `edit-staff-${k}`;
+  const clearFieldError = (k: StaffField) => {
+    if (fieldErrors[k]) setFieldErrors((prev) => ({ ...prev, [k]: undefined }));
+  };
   const emailRequest = staff.emailChangeRequest || null;
 
   // Case-insensitive comparison so saving without any change to the email
@@ -692,9 +755,15 @@ function EditStaffModal({
 
   const handleSave = async (e: FormEvent) => {
     e.preventDefault();
-    if (!dirty) return;
-    setBusy('save');
+    if (busy) return;
     setError(null);
+    if (!dirty) {
+      setError('Nothing has changed yet. Edit a field above, then save.');
+      return;
+    }
+    const errs = validateStaffFields({ displayName, email, phone, credential, role });
+    if (!applyFieldErrors(errs, EDIT_STAFF_FIELD_ORDER, setFieldErrors, fieldId)) return;
+    setBusy('save');
     try {
       const patchBody: Record<string, unknown> = {};
       if (displayName.trim() !== (staff.displayName || '')) patchBody.displayName = displayName.trim();
@@ -705,7 +774,10 @@ function EditStaffModal({
       const updated = await patch(patchBody);
       if (updated) onSaved(updated);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed.');
+      const message = err instanceof Error && err.message ? err.message : 'Could not save the changes. Please try again.';
+      const field = staffFieldForServerError(message);
+      if (field) applyFieldErrors({ [field]: message }, EDIT_STAFF_FIELD_ORDER, setFieldErrors, fieldId);
+      else setError(message);
       setBusy(null);
     }
   };
@@ -823,7 +895,7 @@ function EditStaffModal({
           </button>
         </div>
 
-        <form onSubmit={handleSave} style={{ padding: 20 }}>
+        <form onSubmit={handleSave} noValidate style={{ padding: 20 }}>
           {emailRequest && (
             <div style={emailReqBoxStyle}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontWeight: 700, color: '#a35400' }}>
@@ -865,35 +937,47 @@ function EditStaffModal({
                 ? `Changing this will change how this person signs in. They'll need to use the new email for their next login. A heads-up email goes to the old address (${staff.email}) so they can flag the change if it wasn't authorized. Existing notes stay linked.`
                 : 'Used as both the contact address and the sign-in identifier.'
             }
+            id={fieldId('email')}
+            error={fieldErrors.email}
           >
             <input
               type="email"
-              required
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              style={inputStyle}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                clearFieldError('email');
+              }}
+              style={{ ...inputStyle, ...(fieldErrors.email ? FIELD_ERROR_STYLE : null) }}
+              aria-invalid={!!fieldErrors.email}
               disabled={!!busy}
             />
           </Field>
 
-          <Field label="Full name *">
+          <Field label="Full name *" id={fieldId('displayName')} error={fieldErrors.displayName}>
             <input
               type="text"
-              required
               value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              style={inputStyle}
+              onChange={(e) => {
+                setDisplayName(e.target.value);
+                clearFieldError('displayName');
+              }}
+              style={{ ...inputStyle, ...(fieldErrors.displayName ? FIELD_ERROR_STYLE : null) }}
+              aria-invalid={!!fieldErrors.displayName}
               disabled={!!busy}
             />
           </Field>
 
-          <Field label="Phone" help="US number. Optional — lets a reviewer call the nurse about their notes.">
+          <Field label="Phone" help="US number. Optional — lets a reviewer call the nurse about their notes." id={fieldId('phone')} error={fieldErrors.phone}>
             <input
               type="tel"
               inputMode="tel"
               value={phone}
-              onChange={(e) => setPhone(formatUSPhone(e.target.value))}
-              style={inputStyle}
+              onChange={(e) => {
+                setPhone(formatUSPhone(e.target.value));
+                clearFieldError('phone');
+              }}
+              style={{ ...inputStyle, ...(fieldErrors.phone ? FIELD_ERROR_STYLE : null) }}
+              aria-invalid={!!fieldErrors.phone}
               placeholder="(555) 123-4567"
               disabled={!!busy}
             />
@@ -902,12 +986,17 @@ function EditStaffModal({
           <Field
             label={role === 'nurse' ? 'Credential *' : 'Credential'}
             help="Clinical credential, independent of portal role. Used to auto-fill the progress-note form. Optional for admins and supervisors; required for nurses."
+            id={fieldId('credential')}
+            error={fieldErrors.credential}
           >
             <select
-              required={role === 'nurse'}
               value={credential}
-              onChange={(e) => setCredential(e.target.value)}
-              style={selectStyle}
+              onChange={(e) => {
+                setCredential(e.target.value);
+                clearFieldError('credential');
+              }}
+              style={{ ...selectStyle, ...(fieldErrors.credential ? FIELD_ERROR_STYLE : null) }}
+              aria-invalid={!!fieldErrors.credential}
               disabled={!!busy}
             >
               {CREDENTIAL_OPTIONS.map((opt) => (
@@ -927,7 +1016,10 @@ function EditStaffModal({
                     name="role"
                     value={opt.value}
                     checked={role === opt.value}
-                    onChange={() => setRole(opt.value)}
+                    onChange={() => {
+                      setRole(opt.value);
+                      clearFieldError('credential');
+                    }}
                     disabled={!!busy || isSelf}
                   />
                   <div>
@@ -1011,7 +1103,7 @@ function EditStaffModal({
             <button type="button" onClick={close} disabled={!!busy} style={secondaryBtnStyle}>
               Cancel
             </button>
-            <button type="submit" disabled={!!busy || !dirty} style={primaryBtnStyle}>
+            <button type="submit" disabled={!!busy} style={primaryBtnStyle}>
               {busy === 'save' ? 'Saving…' : 'Save changes'}
             </button>
           </div>
@@ -1121,15 +1213,20 @@ function Field({
   label,
   help,
   children,
+  id,
+  error,
 }: {
   label: string;
   help?: string;
   children: React.ReactNode;
+  id?: string;
+  error?: string;
 }) {
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 14 }}>
+    <label id={id} style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 14 }}>
       <span style={{ fontSize: 12, fontWeight: 600, color: '#5c6b7a' }}>{label}</span>
       {children}
+      <FieldError message={error} />
       {help && <span style={{ fontSize: 11, color: '#7f8c8d' }}>{help}</span>}
     </label>
   );

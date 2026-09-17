@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import SignatureCanvas, { type SignatureCanvasHandle } from '@/components/SignatureCanvas';
 import { formatUSPhone } from '@/lib/phone';
+import { escortToField, firstErrorKey } from '@/lib/formEscort';
 import {
   EDWP_CONSENT_STATEMENTS,
   EDWP_PROGRAM_OPTIONS,
@@ -31,6 +32,10 @@ import styles from './page.module.css';
 // Posts to /api/forms/edwp-consent, which stores it and emails the office.
 
 type FieldErrors = Partial<Record<keyof EdwpConsentInput, string>>;
+
+// Display order of the fields, so a blocked submit escorts to the topmost problem.
+const FIELD_ORDER: (keyof EdwpConsentInput)[] = ['clientName', 'dob', 'address', 'phone', 'email', 'program', 'services', 'servicesOther', 'agreed', 'signerType', 'signerName', 'signerRelationship', 'signature'];
+const fieldId = (k: keyof EdwpConsentInput | string) => `consent-field-${k}`;
 
 const today = new Date().toISOString().split('T')[0];
 
@@ -93,12 +98,16 @@ function ConsentForm() {
     setErrors(nextErrors);
     setShowErrors(true);
     if (Object.keys(nextErrors).length > 0) {
-      formTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const first = firstErrorKey(FIELD_ORDER, nextErrors);
+      if (first) escortToField(fieldId(first));
       return;
     }
 
     setSubmitting(true);
     setSubmitError(null);
+    // When the server names the fields, the escort lands on the first one and
+    // the banner stays put; otherwise the banner at the top is the message.
+    let escorted = false;
     try {
       const res = await fetch('/api/forms/edwp-consent', {
         method: 'POST',
@@ -107,14 +116,22 @@ function ConsentForm() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        if (data.fields) setErrors(data.fields);
+        if (data.fields) {
+          setErrors(data.fields);
+          const first = firstErrorKey(FIELD_ORDER, data.fields as FieldErrors);
+          if (first) {
+            escortToField(fieldId(first));
+            escorted = true;
+            throw new Error(data.error || 'Please check the highlighted fields.');
+          }
+        }
         throw new Error(data.error || 'Something went wrong. Please try again.');
       }
       setSubmitted({ copySent: !!data.copySent });
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (e2) {
       setSubmitError(e2 instanceof Error ? e2.message : 'Something went wrong. Please try again.');
-      formTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (!escorted) formTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } finally {
       setSubmitting(false);
     }
@@ -203,29 +220,29 @@ function ConsentForm() {
             <div className={styles.section}>
               <h2 className={styles.sectionTitle}><User size={22} /> 1. Client Information</h2>
               <div className={styles.grid2}>
-                <div className="form-group">
+                <div className="form-group" id={fieldId('clientName')}>
                   <label className="form-label" htmlFor="clientName">Client Full Name *</label>
                   <input id="clientName" name="clientName" className={cls('clientName')} value={form.clientName} onChange={onText} autoComplete="name" />
                   {err('clientName') && <span className={styles.errorText}>{err('clientName')}</span>}
                 </div>
-                <div className="form-group">
+                <div className="form-group" id={fieldId('dob')}>
                   <label className="form-label" htmlFor="dob">Date of Birth *</label>
                   <input id="dob" name="dob" type="date" max={today} className={cls('dob')} value={form.dob} onChange={onText} />
                   {err('dob') && <span className={styles.errorText}>{err('dob')}</span>}
                 </div>
               </div>
-              <div className="form-group">
+              <div className="form-group" id={fieldId('address')}>
                 <label className="form-label" htmlFor="address">Home Address *</label>
                 <input id="address" name="address" className={cls('address')} value={form.address} onChange={onText} placeholder="Street, city, state, ZIP" autoComplete="street-address" />
                 {err('address') && <span className={styles.errorText}>{err('address')}</span>}
               </div>
               <div className={styles.grid3}>
-                <div className="form-group">
+                <div className="form-group" id={fieldId('phone')}>
                   <label className="form-label" htmlFor="phone">Phone *</label>
                   <input id="phone" name="phone" type="tel" className={cls('phone')} value={form.phone} onChange={onText} placeholder="(555) 555-5555" autoComplete="tel" />
                   {err('phone') && <span className={styles.errorText}>{err('phone')}</span>}
                 </div>
-                <div className="form-group">
+                <div className="form-group" id={fieldId('email')}>
                   <label className="form-label" htmlFor="email">Email <span className={styles.optional}>(for your copy)</span></label>
                   <input id="email" name="email" type="email" className={cls('email')} value={form.email} onChange={onText} autoComplete="email" />
                   {err('email') && <span className={styles.errorText}>{err('email')}</span>}
@@ -250,7 +267,7 @@ function ConsentForm() {
             {/* 2. Program & care coordination */}
             <div className={styles.section}>
               <h2 className={styles.sectionTitle}><ClipboardList size={22} /> 2. Program &amp; Care Coordination</h2>
-              <fieldset className={styles.choiceGroup}>
+              <fieldset className={styles.choiceGroup} id={fieldId('program')}>
                 <legend className={styles.choiceLegend}>Which program are you enrolled in or applying for? *</legend>
                 {EDWP_PROGRAM_OPTIONS.map((o) => (
                   <label key={o.value} className={styles.choiceRow}>
@@ -279,7 +296,7 @@ function ConsentForm() {
                 </div>
               </div>
 
-              <fieldset className={styles.choiceGroup}>
+              <fieldset className={styles.choiceGroup} id={fieldId('services')}>
                 <legend className={styles.choiceLegend}>Services requested <span className={styles.optional}>(check all that apply)</span></legend>
                 <div className={styles.choiceInline}>
                   {EDWP_SERVICE_OPTIONS.map((o) => (
@@ -289,8 +306,9 @@ function ConsentForm() {
                     </label>
                   ))}
                 </div>
+                {err('services') && <span className={styles.errorText}>{err('services')}</span>}
                 {form.services.includes('other') && (
-                  <div className="form-group" style={{ marginTop: 8 }}>
+                  <div className="form-group" style={{ marginTop: 8 }} id={fieldId('servicesOther')}>
                     <label className="form-label" htmlFor="servicesOther">Please describe *</label>
                     <input id="servicesOther" name="servicesOther" className={cls('servicesOther')} value={form.servicesOther} onChange={onText} />
                     {err('servicesOther') && <span className={styles.errorText}>{err('servicesOther')}</span>}
@@ -308,7 +326,7 @@ function ConsentForm() {
                   <li key={i}>{text}</li>
                 ))}
               </ol>
-              <label className={`${styles.choiceRow} ${styles.agreeRow}`}>
+              <label className={`${styles.choiceRow} ${styles.agreeRow}`} id={fieldId('agreed')}>
                 <input type="checkbox" checked={form.agreed} onChange={(e) => set('agreed', e.target.checked)} />
                 <span>I have read and agree to all five statements above. This consent remains in effect for the duration of services unless withdrawn or revised.</span>
               </label>
@@ -318,7 +336,7 @@ function ConsentForm() {
             {/* 4. Signature */}
             <div className={styles.section}>
               <h2 className={styles.sectionTitle}><FileSignature size={22} /> 4. Signature</h2>
-              <fieldset className={styles.choiceGroup}>
+              <fieldset className={styles.choiceGroup} id={fieldId('signerType')}>
                 <legend className={styles.choiceLegend}>Who is signing? *</legend>
                 <div className={styles.choiceInline}>
                   <label className={styles.choiceRow}>
@@ -330,22 +348,23 @@ function ConsentForm() {
                     <span>I am signing on the client&apos;s behalf (family member, guardian, or representative)</span>
                   </label>
                 </div>
+                {err('signerType') && <span className={styles.errorText}>{err('signerType')}</span>}
               </fieldset>
               <div className={styles.grid2}>
-                <div className="form-group">
+                <div className="form-group" id={fieldId('signerName')}>
                   <label className="form-label" htmlFor="signerName">Full Name of Person Signing *</label>
                   <input id="signerName" name="signerName" className={cls('signerName')} value={form.signerName} onChange={onText} autoComplete="off" />
                   {err('signerName') && <span className={styles.errorText}>{err('signerName')}</span>}
                 </div>
                 {form.signerType === 'representative' && (
-                  <div className="form-group">
+                  <div className="form-group" id={fieldId('signerRelationship')}>
                     <label className="form-label" htmlFor="signerRelationship">Relationship to Client *</label>
                     <input id="signerRelationship" name="signerRelationship" className={cls('signerRelationship')} value={form.signerRelationship} onChange={onText} placeholder="e.g. Daughter, Legal Guardian, Power of Attorney" />
                     {err('signerRelationship') && <span className={styles.errorText}>{err('signerRelationship')}</span>}
                   </div>
                 )}
               </div>
-              <div className="form-group">
+              <div className="form-group" id={fieldId('signature')}>
                 <label className="form-label">Sign in the box below *</label>
                 <div className={`${styles.signatureWrap}${err('signature') ? ` ${styles.signatureInvalid}` : ''}`}>
                   <SignatureCanvas
