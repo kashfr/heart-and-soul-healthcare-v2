@@ -21,7 +21,7 @@ const good: MedErrorInput = {
   route: 'PO',
   errorType: 'omitted',
   doseOutcome: 'omitted',
-  description: 'Morning dose still in the organizer at shift start.',
+  description: 'Morning Keppra dose still in the organizer at shift start; mother says she forgot. Found at 7 PM.',
   responsibleType: 'family',
   responsibleName: 'Mother',
   harm: 'none',
@@ -36,6 +36,9 @@ const good: MedErrorInput = {
 describe('validateMedErrorInput', () => {
   it('accepts a complete report', () => {
     expect(validateMedErrorInput(good, NOW)).toEqual({});
+  });
+  it('rejects a one-line description', () => {
+    expect(validateMedErrorInput({ ...good, description: 'Missed dose.' }, NOW).description).toBeTruthy();
   });
   it('requires the core fields', () => {
     const e = validateMedErrorInput({ ...EMPTY_MED_ERROR_INPUT, reporterSignature: '' }, NOW);
@@ -58,8 +61,9 @@ describe('validateMedErrorInput', () => {
 
 describe('stricter rules', () => {
   it('requires physician notification when a wrong dose was actually given, even with no effect', () => {
-    const e = validateMedErrorInput({ ...good, errorType: 'wrong-dose', doseOutcome: 'given', harm: 'none' }, NOW);
+    const e = validateMedErrorInput({ ...good, errorType: 'wrong-dose', doseOutcome: 'given', harm: 'none', doseGiven: '1000 mg' }, NOW);
     expect(e.physician).toBeTruthy();
+    expect(validateMedErrorInput({ ...good, errorType: 'wrong-dose', doseOutcome: 'given', harm: 'none', doseGiven: '', physician: { notified: true, name: 'Dr', at: '2026-09-16T19:20' } }, NOW).doseGiven).toBeTruthy();
     expect(validateMedErrorInput({ ...good, errorType: 'wrong-dose', doseOutcome: 'omitted', harm: 'none' }, NOW)).toEqual({});
   });
   it('rejects notification times in the future or before the error', () => {

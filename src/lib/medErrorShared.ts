@@ -202,8 +202,12 @@ export function validateMedErrorInput(input: MedErrorInput, nowLocal: string): M
   if (!input.medName.trim()) e.medName = 'Enter the medication involved.';
   if (!input.errorType) e.errorType = 'Choose the type of error.';
   if (!input.doseOutcome) e.doseOutcome = 'Say whether the dose was given.';
+  if (['wrong-dose', 'wrong-med', 'wrong-route', 'wrong-client', 'unauthorized', 'expired-discontinued'].includes(input.errorType) && ['given', 'partial'].includes(input.doseOutcome) && !input.doseGiven.trim()) {
+    e.doseGiven = 'Enter the dose that was actually given.';
+  }
   const desc = input.description.trim();
   if (!desc) e.description = 'Describe what happened in your own words.';
+  else if (desc.length < 40) e.description = 'Say more: what was ordered, what happened, and how you found out (at least a sentence or two).';
   else if (desc.length > MED_ERROR_TEXT_MAX) e.description = `Keep the description under ${MED_ERROR_TEXT_MAX} characters.`;
   if (!input.responsibleType) e.responsibleType = 'Say who administered or was responsible for the dose.';
   if (!input.harm) e.harm = "Describe the client's condition after the error.";

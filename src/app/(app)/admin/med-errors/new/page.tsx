@@ -9,6 +9,10 @@ import SignatureCanvas, { type SignatureCanvasHandle } from '@/components/Signat
 import { getPatients, getPatientsForNurse, type Patient } from '@/lib/patients';
 import { getAdministrationsForDay, getMarOrders, type MarAdministration, type MarOrder } from '@/lib/mar';
 import { withSelectChevron } from '@/lib/selectChevron';
+import { MED_ROUTES } from '@/lib/marShared';
+import { getNotesForPatient } from '@/lib/submissions';
+import { careTeamFromNotes } from '@/lib/clientDashboardShared';
+import { Lock } from 'lucide-react';
 import { postMedError } from '@/lib/medErrors';
 import {
   EMPTY_MED_ERROR_INPUT,
@@ -55,10 +59,17 @@ function Inner() {
   const canFile = !isViewingAs && (isStaff || !!credential);
 
   const [patients, setPatients] = useState<Patient[]>([]);
-  const [form, setForm] = useState<MedErrorInput>({ ...EMPTY_MED_ERROR_INPUT, patientId: presetPatient, discoveredAt: nowLocal() });
+  // The error usually happened the same shift it was found, so occurrence
+  // defaults to the discovery time (marked approximate); the nurse adjusts it
+  // if she knows better. A blank here would also hide the charted-dose picker.
+  const [form, setForm] = useState<MedErrorInput>(() => {
+    const now = nowLocal();
+    return { ...EMPTY_MED_ERROR_INPUT, patientId: presetPatient, discoveredAt: now, occurredAt: now, occurredApprox: true };
+  });
   const [orders, setOrders] = useState<MarOrder[]>([]);
   const [dayAdmins, setDayAdmins] = useState<MarAdministration[]>([]);
   const [medMode, setMedMode] = useState<'order' | 'other'>('order');
+  const [careTeam, setCareTeam] = useState<Array<{ uid: string; name: string; credential: string }>>([]);
   const [errors, setErrors] = useState<MedErrorFieldErrors>({});
   const [showErrors, setShowErrors] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -90,9 +101,15 @@ function Inner() {
     let cancelled = false;
     getMarOrders(form.patientId).then((list) => {
       // Replace, never merge: a client switch must not show the previous chart's orders.
-
       if (!cancelled) setOrders(list.filter((o) => o.status === 'active'));
     });
+    getNotesForPatient(form.patientId)
+      .then((notes) => {
+        if (!cancelled) setCareTeam(careTeamFromNotes(notes));
+      })
+      .catch(() => {
+        if (!cancelled) setCareTeam([]);
+      });
     return () => {
       cancelled = true;
     };
@@ -121,6 +138,29 @@ function Inner() {
     }));
   };
   const linkedDoses = dayAdmins.filter((a) => !form.marOrderId || a.orderId === form.marOrderId);
+  const orderUnits = useMemo(() => orders.find((o) => o.id === form.marOrderId)?.units || '', [orders, form.marOrderId]);
+  const medLocked = medMode === 'order' && !!form.marOrderId;
+  // The error type settles what "was the dose given" must be for the
+  // unambiguous cases, so the nurse isn't asked to restate it.
+  const pickErrorType = (t: MedErrorInput['errorType']) => {
+    setForm((f) => {
+      const next = { ...f, errorType: t };
+      if (t === 'omitted') {
+        next.doseOutcome = 'omitted';
+        next.doseGiven = '0';
+      } else if (t === 'documentation') {
+        next.doseOutcome = 'given';
+        if (next.doseGiven === '0') next.doseGiven = next.doseOrdered;
+      } else if (t === 'wrong-dose' || t === 'wrong-time' || t === 'wrong-med' || t === 'wrong-client' || t === 'wrong-route' || t === 'unauthorized' || t === 'expired-discontinued') {
+        if (!next.doseOutcome || next.doseOutcome === 'omitted') next.doseOutcome = 'given';
+        if (next.doseGiven === '0') next.doseGiven = '';
+      }
+      return next;
+    });
+  };
+  const outcomeLocked = form.errorType === 'omitted' || form.errorType === 'documentation';
+  const responsibleFromTeam = form.responsibleType === 'nurse' || form.responsibleType === 'aide';
+  const teamChoices = careTeam.filter((m) => (form.responsibleType === 'nurse' ? ['RN', 'LPN'].includes(m.credential) : ['CNA', 'HHA'].includes(m.credential)));
   const incident = incidentReportRequired({ harm: form.harm, errorType: form.errorType });
 
   const submit = async () => {
@@ -195,7 +235,7 @@ function Inner() {
           <div style={rowStyle}>
             <label style={fieldStyle}>
               <span style={labelStyle}>Client *</span>
-              <select value={form.patientId} onChange={(e) => { setOrders([]); setDayAdmins([]); setForm((f) => ({ ...f, patientId: e.target.value, marOrderId: '', marAdministrationId: '' })); }} style={selectStyle} disabled={submitting}>
+              <select value={form.patientId} onChange={(e) => { setOrders([]); setDayAdmins([]); setCareTeam([]); setForm((f) => ({ ...f, patientId: e.target.value, marOrderId: '', marAdministrationId: '', medName: '', doseOrdered: '', route: '' })); }} style={selectStyle} disabled={submitting}>
                 <option value="">Choose a client</option>
                 {patients.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
@@ -235,27 +275,46 @@ function Inner() {
               </select>
             </label>
           )}
-          <div style={rowStyle}>
+          {medLocked ? (
+            <div style={lockedBoxStyle}>
+              <Lock size={13} style={{ flexShrink: 0, marginTop: 2 }} />
+              <div>
+                <div style={{ fontWeight: 700, color: '#1f2937' }}>{form.medName} <span style={{ fontWeight: 500, color: '#5c6b7a' }}>{form.doseOrdered} {form.route}</span></div>
+                <div style={hintStyle}>Taken from the MAR order. If the order itself is wrong, say so in the description; the reviewing nurse corrects the MAR.</div>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div style={rowStyle}>
+                <label style={fieldStyle}>
+                  <span style={labelStyle}>Medication name *</span>
+                  <input type="text" value={form.medName} onChange={(e) => set('medName', e.target.value)} style={inputStyle} placeholder="As written on the label" disabled={submitting} />
+                  {err('medName')}
+                </label>
+                <label style={fieldStyle}>
+                  <span style={labelStyle}>Route</span>
+                  <select value={form.route} onChange={(e) => set('route', e.target.value)} style={selectStyle} disabled={submitting}>
+                    <option value="">Choose</option>
+                    {MED_ROUTES.map((r) => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </label>
+              </div>
+              <label style={fieldStyle}>
+                <span style={labelStyle}>Dose ordered</span>
+                <input type="text" value={form.doseOrdered} onChange={(e) => set('doseOrdered', e.target.value)} style={{ ...inputStyle, maxWidth: 260 }} placeholder="e.g. 500 mg" disabled={submitting} />
+              </label>
+            </>
+          )}
+          {form.errorType !== 'omitted' && (
             <label style={fieldStyle}>
-              <span style={labelStyle}>Medication name *</span>
-              <input type="text" value={form.medName} onChange={(e) => set('medName', e.target.value)} style={inputStyle} disabled={submitting} />
-              {err('medName')}
+              <span style={labelStyle}>Dose actually given{form.errorType === 'documentation' ? '' : ' *'}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input type="text" value={form.doseGiven} onChange={(e) => set('doseGiven', e.target.value)} style={{ ...inputStyle, maxWidth: 200 }} placeholder={orderUnits ? `amount in ${orderUnits}` : 'amount and units'} disabled={submitting} />
+                {orderUnits && !form.doseGiven.toLowerCase().includes(orderUnits.toLowerCase()) && <span style={hintStyle}>{orderUnits}</span>}
+              </div>
+              <span style={hintStyle}>{form.errorType ? 'The amount that actually went in, so the reviewer can see the difference from the order.' : 'Choose the type of error below first if the dose was not given.'}</span>
             </label>
-            <label style={fieldStyle}>
-              <span style={labelStyle}>Route</span>
-              <input type="text" value={form.route} onChange={(e) => set('route', e.target.value)} style={inputStyle} placeholder="PO, G-tube, topical" disabled={submitting} />
-            </label>
-          </div>
-          <div style={rowStyle}>
-            <label style={fieldStyle}>
-              <span style={labelStyle}>Dose ordered</span>
-              <input type="text" value={form.doseOrdered} onChange={(e) => set('doseOrdered', e.target.value)} style={inputStyle} disabled={submitting} />
-            </label>
-            <label style={fieldStyle}>
-              <span style={labelStyle}>Dose actually given</span>
-              <input type="text" value={form.doseGiven} onChange={(e) => set('doseGiven', e.target.value)} style={inputStyle} placeholder="0 if omitted" disabled={submitting} />
-            </label>
-          </div>
+          )}
           {medMode === 'order' && form.marOrderId && occurredDate && (
             <label style={fieldStyle}>
               <span style={labelStyle}>Charted dose this report is about (optional)</span>
@@ -274,7 +333,7 @@ function Inner() {
             <span style={labelStyle}>Type of error *</span>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 6 }}>
               {MED_ERROR_TYPES.map((t) => (
-                <button key={t.value} type="button" title={t.hint} style={form.errorType === t.value ? chipActiveStyle : chipStyle} onClick={() => set('errorType', t.value)} disabled={submitting}>{t.label}</button>
+                <button key={t.value} type="button" title={t.hint} style={form.errorType === t.value ? chipActiveStyle : chipStyle} onClick={() => pickErrorType(t.value)} disabled={submitting}>{t.label}</button>
               ))}
             </div>
             {err('errorType')}
@@ -282,10 +341,11 @@ function Inner() {
           <div style={rowStyle}>
             <label style={fieldStyle}>
               <span style={labelStyle}>Was the dose given? *</span>
-              <select value={form.doseOutcome} onChange={(e) => set('doseOutcome', e.target.value as MedErrorInput['doseOutcome'])} style={selectStyle} disabled={submitting}>
+              <select value={form.doseOutcome} onChange={(e) => set('doseOutcome', e.target.value as MedErrorInput['doseOutcome'])} style={{ ...selectStyle, ...(outcomeLocked ? { background: '#f1f5f9', color: '#5c6b7a' } : null) }} disabled={submitting || outcomeLocked}>
                 <option value="">Choose</option>
                 {MED_ERROR_DOSE_OUTCOMES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
+              {outcomeLocked && <span style={hintStyle}>Set by the type of error.</span>}
               {err('doseOutcome')}
             </label>
             <label style={fieldStyle}>
@@ -299,12 +359,30 @@ function Inner() {
           </div>
           <label style={fieldStyle}>
             <span style={labelStyle}>Their name (if known)</span>
-            <input type="text" value={form.responsibleName} onChange={(e) => set('responsibleName', e.target.value)} style={inputStyle} disabled={submitting} />
+            {responsibleFromTeam && teamChoices.length > 0 ? (
+              <>
+                <select
+                  value={teamChoices.some((m) => `${m.name}, ${m.credential}` === form.responsibleName) ? form.responsibleName : form.responsibleName ? '__other' : ''}
+                  onChange={(e) => set('responsibleName', e.target.value === '__other' ? ' ' : e.target.value)}
+                  style={selectStyle}
+                  disabled={submitting}
+                >
+                  <option value="">Choose from the care team</option>
+                  {teamChoices.map((m) => <option key={m.uid} value={`${m.name}, ${m.credential}`}>{m.name}, {m.credential}</option>)}
+                  <option value="__other">Someone else (type the name)</option>
+                </select>
+                {form.responsibleName && !teamChoices.some((m) => `${m.name}, ${m.credential}` === form.responsibleName) && (
+                  <input type="text" value={form.responsibleName.trim()} onChange={(e) => set('responsibleName', e.target.value || ' ')} style={{ ...inputStyle, marginTop: 6 }} placeholder="Name" disabled={submitting} />
+                )}
+              </>
+            ) : (
+              <input type="text" value={form.responsibleName} onChange={(e) => set('responsibleName', e.target.value)} style={inputStyle} placeholder={form.responsibleType === 'family' ? 'e.g. Mother' : ''} disabled={submitting} />
+            )}
             <span style={hintStyle}>This is separate from who is filing. You can report an error you discovered without having been involved.</span>
           </label>
           <label style={fieldStyle}>
             <span style={labelStyle}>Describe what happened, in your own words *</span>
-            <textarea value={form.description} onChange={(e) => set('description', e.target.value)} rows={5} maxLength={MED_ERROR_TEXT_MAX} style={textareaStyle} placeholder="What you found, what was ordered versus what happened, and how you learned of it." disabled={submitting} />
+            <textarea value={form.description} onChange={(e) => set('description', e.target.value)} rows={5} maxLength={MED_ERROR_TEXT_MAX} style={textareaStyle} placeholder="Be specific: what was ordered, what actually happened, how you found out, and anything the physician or reviewer will ask about. Example: 'Tylenol 500 mg ordered at 8 AM. Mother gave 1000 mg at 8:15 AM from the bottle instead of the pre-filled organizer. I found the organizer slot still full at 2 PM.'" disabled={submitting} />
             {err('description')}
           </label>
         </section>
@@ -405,6 +483,7 @@ const textareaStyle: CSSProperties = { ...inputStyle, height: 'auto', minHeight:
 const fieldErrStyle: CSSProperties = { fontSize: 12.5, color: '#b3261e', fontWeight: 600 };
 const noticeStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, background: '#fdeaea', color: '#b3261e', border: '1px solid #f0c8c4', borderRadius: 8, padding: '10px 14px', fontSize: 13.5, fontWeight: 600, marginBottom: 14 };
 const incidentBoxStyle: CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 8, background: '#fff4e0', color: '#9a5b00', border: '1px solid #f3d9a4', borderRadius: 8, padding: '10px 14px', fontSize: 13, lineHeight: 1.45, marginBottom: 12 };
+const lockedBoxStyle: CSSProperties = { display: 'flex', gap: 8, alignItems: 'flex-start', background: '#f6f9fc', border: '1px solid #dbe3ec', borderRadius: 8, padding: '10px 12px', fontSize: 13.5, marginBottom: 10 };
 const chipStyle: CSSProperties = { background: '#f1f5f9', color: '#475569', borderWidth: 1, borderStyle: 'solid', borderColor: '#e2e8f0', padding: '8px 12px', borderRadius: 999, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' };
 const chipActiveStyle: CSSProperties = { ...chipStyle, background: '#e8eef4', color: NAVY, borderColor: NAVY };
 const checkRowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, color: '#2c3e50', lineHeight: 1.45, cursor: 'pointer' };
