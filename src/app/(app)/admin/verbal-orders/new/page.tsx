@@ -19,6 +19,11 @@ import {
   type VerbalOrderType,
 } from '@/lib/verbalOrderShared';
 import ManageMedsModal from '../../records/[patientId]/mar/ManageMedsModal';
+import { escortToField, firstErrorKey, FIELD_ERROR_STYLE } from '@/lib/formEscort';
+
+const FIELD_ORDER: (keyof VerbalOrderFieldErrors)[] = ['patientId', 'orderType', 'physicianName', 'physicianSpecialty', 'physicianPhone', 'physicianFax', 'orderText', 'readBackVerified', 'nurseSignature'];
+const FIELD_LABEL: Record<keyof VerbalOrderFieldErrors, string> = { patientId: 'Client', orderType: 'Type of order', physicianName: "Physician's name", physicianPhone: "Physician's telephone", physicianFax: "Physician's fax", physicianSpecialty: 'Area of specialty', orderText: 'The order', readBackVerified: 'Read-back confirmation', nurseSignature: 'Your signature' };
+const fieldId = (k: string) => `vo-field-${k}`;
 
 /**
  * Take a verbal order. Mirrors the paper form: client, physician (name, phone,
@@ -118,7 +123,8 @@ function NewVerbalOrderInner() {
     setErrors(e);
     setShowErrors(true);
     if (Object.keys(e).length) {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      const first = firstErrorKey(FIELD_ORDER, e);
+      if (first) escortToField(fieldId(first));
       return;
     }
     setSubmitting(true);
@@ -128,7 +134,11 @@ function NewVerbalOrderInner() {
       setDone(r);
     } catch (err) {
       const withFields = err as Error & { fields?: Record<string, string> };
-      if (withFields.fields) setErrors(withFields.fields as VerbalOrderFieldErrors);
+      if (withFields.fields) {
+        setErrors(withFields.fields as VerbalOrderFieldErrors);
+        const first = firstErrorKey(FIELD_ORDER, withFields.fields as VerbalOrderFieldErrors);
+        if (first) escortToField(fieldId(first));
+      }
       setSubmitError(withFields.message || 'The verbal order could not be saved.');
       setSubmitting(false);
     }
@@ -177,6 +187,8 @@ function NewVerbalOrderInner() {
   }
 
   const err = (k: keyof VerbalOrderFieldErrors) => (showErrors && errors[k] ? <div style={fieldErrStyle}>{errors[k]}</div> : null);
+  const hi = (k: keyof VerbalOrderFieldErrors): CSSProperties => (showErrors && errors[k] ? FIELD_ERROR_STYLE : {});
+  const errorList = showErrors ? FIELD_ORDER.filter((k) => errors[k]) : [];
 
   return (
     <div style={containerStyle}>
@@ -190,15 +202,22 @@ function NewVerbalOrderInner() {
           </p>
         </header>
 
-        {showErrors && Object.keys(errors).length > 0 && (
-          <div style={noticeStyle}><AlertTriangle size={16} /> Please complete the highlighted fields.</div>
+        {errorList.length > 0 && (
+          <div style={{ ...noticeStyle, flexDirection: 'column', alignItems: 'flex-start' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><AlertTriangle size={16} /> {errorList.length === 1 ? 'One field needs attention:' : `${errorList.length} fields need attention:`}</div>
+            <ul style={{ margin: '4px 0 0 24px', padding: 0, fontWeight: 500 }}>
+              {errorList.map((k) => (
+                <li key={k}><button type="button" style={errorLinkStyle} onClick={() => escortToField(fieldId(k))}>{FIELD_LABEL[k]}</button>: {errors[k]}</li>
+              ))}
+            </ul>
+          </div>
         )}
         {submitError && <div style={noticeStyle}><AlertTriangle size={16} /> {submitError}</div>}
 
         <section style={cardStyle}>
           <h2 style={sectionTitleStyle}>Client and order type</h2>
           <div style={rowStyle}>
-            <label style={fieldStyle}>
+            <label id={fieldId('patientId')} style={fieldStyle}>
               <span style={labelStyle}>Client *</span>
               <select
                 value={patientId}
@@ -208,7 +227,7 @@ function NewVerbalOrderInner() {
                   setMarApplied(null);
                   setMarSummary('');
                 }}
-                style={selectStyle}
+                style={{ ...selectStyle, ...hi('patientId') }}
                 disabled={submitting}
               >
                 <option value="">Choose a client</option>
@@ -218,7 +237,7 @@ function NewVerbalOrderInner() {
               </select>
               {err('patientId')}
             </label>
-            <div style={fieldStyle}>
+            <div id={fieldId('orderType')} style={{ ...fieldStyle, ...(showErrors && errors.orderType ? { padding: 8, borderRadius: 8, borderWidth: 1, borderStyle: 'solid', ...FIELD_ERROR_STYLE } : {}) }}>
               <span style={labelStyle}>Type of order *</span>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {(['medication', 'other'] as const).map((t) => (
@@ -235,9 +254,9 @@ function NewVerbalOrderInner() {
         <section style={cardStyle}>
           <h2 style={sectionTitleStyle}>Physician giving the order</h2>
           <div style={rowStyle}>
-            <label style={fieldStyle}>
+            <label id={fieldId('physicianName')} style={fieldStyle}>
               <span style={labelStyle}>Physician&apos;s name *</span>
-              <input type="text" value={physicianName} onChange={(e) => setPhysicianName(e.target.value)} style={inputStyle} placeholder="Dr. ..." disabled={submitting} />
+              <input type="text" value={physicianName} onChange={(e) => setPhysicianName(e.target.value)} style={{ ...inputStyle, ...hi('physicianName') }} placeholder="Dr. ..." disabled={submitting} />
               {err('physicianName')}
             </label>
             <label style={fieldStyle}>
@@ -251,14 +270,14 @@ function NewVerbalOrderInner() {
             </label>
           </div>
           <div style={rowStyle}>
-            <label style={fieldStyle}>
+            <label id={fieldId('physicianPhone')} style={fieldStyle}>
               <span style={labelStyle}>Physician&apos;s telephone *</span>
-              <input type="tel" value={physicianPhone} onChange={(e) => setPhysicianPhone(formatUSPhone(e.target.value))} style={inputStyle} placeholder="(404) 555-0100" disabled={submitting} />
+              <input type="tel" value={physicianPhone} onChange={(e) => setPhysicianPhone(formatUSPhone(e.target.value))} style={{ ...inputStyle, ...hi('physicianPhone') }} placeholder="(404) 555-0100" disabled={submitting} />
               {err('physicianPhone')}
             </label>
-            <label style={fieldStyle}>
+            <label id={fieldId('physicianFax')} style={fieldStyle}>
               <span style={labelStyle}>Physician&apos;s fax *</span>
-              <input type="tel" value={physicianFax} onChange={(e) => setPhysicianFax(formatUSPhone(e.target.value))} style={inputStyle} placeholder="(404) 555-0101" disabled={submitting} />
+              <input type="tel" value={physicianFax} onChange={(e) => setPhysicianFax(formatUSPhone(e.target.value))} style={{ ...inputStyle, ...hi('physicianFax') }} placeholder="(404) 555-0101" disabled={submitting} />
               <span style={hintStyle}>The authentication form is faxed here for signature.</span>
               {err('physicianFax')}
             </label>
@@ -267,9 +286,9 @@ function NewVerbalOrderInner() {
 
         <section style={cardStyle}>
           <h2 style={sectionTitleStyle}>The order</h2>
-          <label style={fieldStyle}>
+          <label id={fieldId('orderText')} style={fieldStyle}>
             <span style={labelStyle}>Describe the order exactly as given *</span>
-            <textarea value={orderText} onChange={(e) => setOrderText(e.target.value)} rows={5} maxLength={VERBAL_ORDER_TEXT_MAX} style={textareaStyle} placeholder="Medication, dose, route, frequency, start, and any instructions, in the physician's words." disabled={submitting} />
+            <textarea value={orderText} onChange={(e) => setOrderText(e.target.value)} rows={5} maxLength={VERBAL_ORDER_TEXT_MAX} style={{ ...textareaStyle, ...hi('orderText') }} placeholder="Medication, dose, route, frequency, start, and any instructions, in the physician's words." disabled={submitting} />
             {err('orderText')}
           </label>
 
@@ -296,7 +315,7 @@ function NewVerbalOrderInner() {
             </div>
           )}
 
-          <label style={{ ...checkRowStyle, marginTop: 14 }}>
+          <label id={fieldId('readBackVerified')} style={{ ...checkRowStyle, marginTop: 14, ...(showErrors && errors.readBackVerified ? { padding: 8, borderRadius: 8, borderWidth: 1, borderStyle: 'solid', ...FIELD_ERROR_STYLE } : {}) }}>
             <input type="checkbox" checked={readBack} onChange={(e) => setReadBack(e.target.checked)} disabled={submitting} />
             <span><strong>I read this order back to the physician and verified it.</strong> Required before signing.</span>
           </label>
@@ -308,7 +327,7 @@ function NewVerbalOrderInner() {
           <div style={{ fontSize: 13, color: '#5c6b7a', marginBottom: 8 }}>
             Signing as <strong>{profile?.displayName || user.email}</strong>{credential ? `, ${credential}` : ''}. Name, credential, date, and time are recorded automatically.
           </div>
-          <div style={sigWrapStyle}>
+          <div id={fieldId('nurseSignature')} style={{ ...sigWrapStyle, ...hi('nurseSignature') }}>
             <SignatureCanvas ref={sigRef} onChange={setSignature} width={700} height={200} className="verbal-order-sig" disabled={submitting} />
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
@@ -370,6 +389,7 @@ const fieldErrStyle: CSSProperties = { fontSize: 12.5, color: '#b3261e', fontWei
 const noticeStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, background: '#fdeaea', color: '#b3261e', border: '1px solid #f0c8c4', borderRadius: 8, padding: '10px 14px', fontSize: 13.5, fontWeight: 600, marginBottom: 14 };
 const chipStyle: CSSProperties = { background: '#f1f5f9', color: '#475569', borderWidth: 1, borderStyle: 'solid', borderColor: '#e2e8f0', padding: '8px 14px', borderRadius: 999, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const chipActiveStyle: CSSProperties = { ...chipStyle, background: '#e8eef4', color: NAVY, borderColor: NAVY };
+const errorLinkStyle: CSSProperties = { background: 'transparent', border: 'none', padding: 0, color: '#b3261e', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit' };
 const marBoxStyle: CSSProperties = { background: '#f6f9fc', border: '1px solid #dbe3ec', borderRadius: 10, padding: '12px 14px', marginTop: 4 };
 const marDoneStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, color: '#1e7a44', fontSize: 13, fontWeight: 600 };
 const checkRowStyle: CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13.5, color: '#2c3e50', lineHeight: 1.45, cursor: 'pointer' };
