@@ -271,11 +271,20 @@ export function medErrorResponsibleLabel(v: string): string {
 }
 
 /** Bell text (in-portal, may name the client). */
-export function medErrorBellText(kind: 'filed' | 'incident' | 'reviewed', r: Pick<MedErrorReport, 'patientName' | 'reporterName' | 'medName' | 'errorType'>): string {
+export type MedErrorBellKind = 'filed' | 'filed-incident' | 'incident' | 'reviewed';
+
+/**
+ * One bell per event. A report that meets the incident rule at filing time
+ * gets a single combined bell ('filed-incident'); the standalone 'incident'
+ * bell is reserved for a reviewer adding the flag the form did not raise.
+ */
+export function medErrorBellText(kind: MedErrorBellKind, r: Pick<MedErrorReport, 'patientName' | 'reporterName' | 'medName' | 'errorType'>): string {
   const t = medErrorTypeLabel(r.errorType).toLowerCase();
   switch (kind) {
     case 'filed':
       return `Medication error reported for ${r.patientName} (${t}, ${r.medName}) by ${r.reporterName}`;
+    case 'filed-incident':
+      return `Medication error reported for ${r.patientName} (${t}, ${r.medName}) by ${r.reporterName}; may require a DBHDD incident report`;
     case 'incident':
       return `Medication error for ${r.patientName} may require a DBHDD incident report (${t}, ${r.medName})`;
     case 'reviewed':
