@@ -112,6 +112,20 @@ export async function recordVerbalOrderSignedByOffice(id: string, params: { sign
   return res.ok ? { ok: true } : { ok: false, error: data.error };
 }
 
+/** Staff: an inbound fax's PDF, for previewing before it is matched. */
+export async function fetchInboundFaxPdf(faxId: string): Promise<Blob> {
+  const res = await authedFetch(`/api/verbal-orders/inbound/${encodeURIComponent(faxId)}/pdf`);
+  if (!res.ok) throw new Error('Could not load the fax.');
+  return res.blob();
+}
+
+/** Staff: dismiss an inbound fax that is not a signed verbal order. */
+export async function ignoreInboundFax(faxId: string): Promise<{ ok: boolean; error?: string }> {
+  const res = await authedFetch(`/api/verbal-orders/inbound/${encodeURIComponent(faxId)}/ignore`, { method: 'POST' });
+  const data = (await res.json().catch(() => ({}))) as { error?: string };
+  return res.ok ? { ok: true } : { ok: false, error: data.error };
+}
+
 /** Fetch the PDF as a blob URL (opens in a new tab / downloads). */
 export async function fetchVerbalOrderPdf(id: string): Promise<Blob> {
   const res = await authedFetch(`/api/verbal-orders/${encodeURIComponent(id)}/pdf`);
