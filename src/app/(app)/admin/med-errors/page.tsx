@@ -8,6 +8,7 @@ import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
 import { fetchMedErrorPdf, getAllMedErrors, getMyMedErrors, markIncidentReportFiled, reviewMedErrorReport, type MedErrorReport } from '@/lib/medErrors';
 import { effectiveIncidentRequired, isSubstantiveText } from '@/lib/medErrorShared';
+import { escortToField, FIELD_ERROR_STYLE } from '@/lib/formEscort';
 import { formatLocalDateTimeUS, medErrorHarmLabel, medErrorOutcomeLabel, medErrorResponsibleLabel, medErrorTypeLabel } from '@/lib/medErrorShared';
 import { formatDateUS } from '@/lib/dateFormat';
 
@@ -211,14 +212,18 @@ function ReportDetail({ report: r, canReview, canMarkFiled, onClose, onReviewed,
   const [filedDate, setFiledDate] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  // Per-field problems: outlined at the field with the message under it, and
+  // the first one is scrolled to and focused, the way the progress note does.
+  const [fieldErrs, setFieldErrs] = useState<{ findings?: string; corrective?: string }>({});
 
   const save = async () => {
-    if (!isSubstantiveText(findings)) {
-      setErr('Findings must say what the review found, in at least a sentence. Placeholders like N/A are not accepted.');
-      return;
-    }
-    if (!isSubstantiveText(corrective)) {
-      setErr('Corrective action must say what will change, in at least a sentence. If no action is needed, say why.');
+    const fe: { findings?: string; corrective?: string } = {};
+    if (!isSubstantiveText(findings)) fe.findings = 'Say what the review found, in at least a sentence. Placeholders like N/A are not accepted.';
+    if (!isSubstantiveText(corrective)) fe.corrective = 'Say what will change so this does not recur, in at least a sentence. If no action is needed, say why.';
+    setFieldErrs(fe);
+    if (fe.findings || fe.corrective) {
+      setErr('');
+      escortToField(fe.findings ? 'me-review-findings' : 'me-review-corrective');
       return;
     }
     setBusy(true);
@@ -288,9 +293,9 @@ function ReportDetail({ report: r, canReview, canMarkFiled, onClose, onReviewed,
           <div style={reviewBoxStyle}>
             <div style={{ fontWeight: 700, color: NAVY, marginBottom: 8 }}>Nursing review</div>
             {err && <div style={errBoxStyle}>{err}</div>}
-            <label style={fieldStyle}><span style={labelStyle}>Findings *</span><textarea value={findings} onChange={(e) => setFindings(e.target.value)} rows={3} style={textareaStyle} placeholder="What the review established: what was ordered, what happened, and why. Example: 'Mother gave a second 500 mg dose from the bottle at 8:15 AM, not realizing the organizer dose had been given at 8:00.'" disabled={busy} /></label>
+            <label id="me-review-findings" style={fieldStyle}><span style={labelStyle}>Findings *</span><textarea value={findings} onChange={(e) => { setFindings(e.target.value); if (fieldErrs.findings) setFieldErrs((f) => ({ ...f, findings: undefined })); }} rows={3} style={{ ...textareaStyle, ...(fieldErrs.findings ? FIELD_ERROR_STYLE : null) }} placeholder="What the review established: what was ordered, what happened, and why. Example: 'Mother gave a second 500 mg dose from the bottle at 8:15 AM, not realizing the organizer dose had been given at 8:00.'" disabled={busy} />{fieldErrs.findings && <span style={fieldErrTextStyle}>{fieldErrs.findings}</span>}</label>
             <label style={fieldStyle}><span style={labelStyle}>Root cause</span><textarea value={rootCause} onChange={(e) => setRootCause(e.target.value)} rows={2} style={textareaStyle} disabled={busy} /></label>
-            <label style={fieldStyle}><span style={labelStyle}>Corrective action *</span><textarea value={corrective} onChange={(e) => setCorrective(e.target.value)} rows={2} style={textareaStyle} placeholder="What changes so it does not recur. Example: 'Family re-instructed to give only from the organizer; nurse to verify the organizer at each visit.'" disabled={busy} /></label>
+            <label id="me-review-corrective" style={fieldStyle}><span style={labelStyle}>Corrective action *</span><textarea value={corrective} onChange={(e) => { setCorrective(e.target.value); if (fieldErrs.corrective) setFieldErrs((f) => ({ ...f, corrective: undefined })); }} rows={2} style={{ ...textareaStyle, ...(fieldErrs.corrective ? FIELD_ERROR_STYLE : null) }} placeholder="What changes so it does not recur. Example: 'Family re-instructed to give only from the organizer; nurse to verify the organizer at each visit.'" disabled={busy} />{fieldErrs.corrective && <span style={fieldErrTextStyle}>{fieldErrs.corrective}</span>}</label>
             <label style={checkRowStyle}><input type="checkbox" checked={incident} onChange={(e) => setIncident(e.target.checked)} disabled={busy} /><span><strong>DBHDD incident report required.</strong> {r.incidentReportRequired ? 'Flagged automatically from the harm level or error type; uncheck only with the reason in your findings.' : 'Check if your review finds this meets the reporting criteria.'}</span></label>
             {incident && (
               <label style={{ ...fieldStyle, marginTop: 8 }}><span style={labelStyle}>Incident report filed on (leave blank if not yet)</span><input type="date" value={filedDate} onChange={(e) => setFiledDate(e.target.value)} style={{ ...inputStyle, maxWidth: 200 }} disabled={busy} /></label>
@@ -348,6 +353,7 @@ const detailValueStyle: CSSProperties = { fontSize: 13, color: '#2c3e50', fontWe
 const detailTextStyle: CSSProperties = { fontSize: 13.5, color: '#1f2937', lineHeight: 1.55, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', marginBottom: 6 };
 const reviewBoxStyle: CSSProperties = { marginTop: 12, padding: '12px 14px', background: '#f6f9fc', border: '1px solid #dbe3ec', borderRadius: 10 };
 const fieldStyle: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10, minWidth: 0 };
+const fieldErrTextStyle: CSSProperties = { fontSize: 12.5, color: '#b3261e', fontWeight: 600 };
 const labelStyle: CSSProperties = { fontSize: 12, fontWeight: 600, color: '#5c6b7a' };
 const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', height: 38 };
 const textareaStyle: CSSProperties = { ...inputStyle, height: 'auto', minHeight: 64, resize: 'vertical', lineHeight: 1.5 };
