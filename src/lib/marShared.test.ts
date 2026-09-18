@@ -112,9 +112,23 @@ describe('buildMarAdminFields', () => {
     expect(held.parametersChecked).toBe(false);
 
     // No parameters on the order: the flag cannot be true, whatever the row says.
-    const none = buildMarAdminFields(input({ parametersChecked: true }), meta);
+    const none = buildMarAdminFields(input({ parametersChecked: true, parametersReading: 'BP 120/80' }), meta);
     expect(none.parametersSnapshot).toBe('');
     expect(none.parametersChecked).toBe(false);
+    expect(none.parametersReading).toBe('');
+  });
+
+  it('keeps the reading checked against the parameters on given and held doses', () => {
+    const given = buildMarAdminFields(
+      input({ parameters: 'Give if SBP < 120', parametersChecked: true, parametersReading: ' BP 112/70 ' }),
+      meta,
+    );
+    expect(given.parametersReading).toBe('BP 112/70');
+    const held = buildMarAdminFields(
+      input({ status: 'held', reason: 'above parameters', parameters: 'Give if SBP < 120', parametersReading: 'BP 132/84' }),
+      meta,
+    );
+    expect(held.parametersReading).toBe('BP 132/84');
   });
 
   it('blanks administratorName when the nurse gave it, keeps it (trimmed) otherwise', () => {

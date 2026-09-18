@@ -347,6 +347,7 @@ export default function MonthlyMarPage() {
       const label = (a.valueLabelSnapshot || '').trim() || 'Reading';
       bits.splice(1, 0, `${label}: ${a.value}${unit ? ` ${unit}` : ''}`);
     }
+    if ((a.parametersReading || '').trim()) bits.push(`Checked: ${a.parametersReading}`);
     if (a.reason) bits.push(`Reason: ${a.reason}`);
     if (a.outcome) bits.push(`Result: ${a.outcome}`);
     if (a.noNoteAttestation) bits.push('Attested (no note was on file)');
@@ -679,6 +680,9 @@ export default function MonthlyMarPage() {
                               : a.documentedByName || 'Nurse'}
                           </td>
                           <td style={logTdStyle}>
+                            {(a.parametersReading || '').trim() && (
+                              <span style={{ display: 'block', fontSize: 11, color: '#8a5a0d' }}>Checked: {a.parametersReading}</span>
+                            )}
                             {a.reason || '-'}
                             {a.voided === true && (
                               <span style={{ display: 'block', fontSize: 10.5, color: '#5c6b7a' }}>

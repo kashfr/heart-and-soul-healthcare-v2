@@ -1556,6 +1556,15 @@ function ProgressNotePageInner() {
           if (m.status === 'given' && (m.parameters || '').trim() && m.parametersChecked !== true) {
             incomplete.push(`${med}: confirm the parameters were checked before the dose was given`);
           }
+          // ...and the reading the decision was based on (given OR held): a
+          // "hold if BP above 120/80" order is only defensible with the BP.
+          if (
+            (m.status === 'given' || m.status === 'held') &&
+            (m.parameters || '').trim() &&
+            !(m.parametersReading || '').trim()
+          ) {
+            incomplete.push(`${med}: the reading you checked against the parameters (e.g., BP)`);
+          }
           // A family/proxy dose is legal (starred on the MAR) but must say WHO
           // gave it — an anonymous escape hatch would defeat the attestation.
           if (
@@ -2066,6 +2075,7 @@ function ProgressNotePageInner() {
             indication: r.indication || '',
             parameters: r.parameters || '',
             parametersChecked: r.parametersChecked === true,
+            parametersReading: r.parametersReading || '',
             outcome: r.outcome || '',
             prescriberNotified: r.prescriberNotified === true,
           }));

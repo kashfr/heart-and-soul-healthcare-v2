@@ -308,6 +308,10 @@ export interface MarAdministration {
   // no parameters; parametersChecked is forced false on held/refused doses.
   parametersSnapshot?: string;
   parametersChecked?: boolean;
+  // The reading(s) the nurse checked against the parameters ("BP 116/74,
+  // HR 72") for a given OR held dose, so the record shows what the decision
+  // was based on. Blank when the order has no parameters.
+  parametersReading?: string;
   // Measurement recorded against a check-style order (see MarOrder.valueLabel):
   // the number the nurse read, e.g. a 30 mL gastric residual. Empty on ordinary
   // dose administrations. The label/unit are snapshotted alongside so the
@@ -385,6 +389,7 @@ export interface MarAdministrationDraft {
   indication: string; // the order's standing indication, snapshotted
   parameters?: string; // the order's administration parameters, snapshotted
   parametersChecked?: boolean; // given dose: documenter confirmed she checked them
+  parametersReading?: string; // given/held: the reading checked against the parameters
   outcome?: string; // PRN effectiveness/result, when known at write time
   prescriberNotified?: boolean; // held/refused: documenter notified the prescriber
   value?: string; // measurement, for a check-style order (e.g. gastric residual)
