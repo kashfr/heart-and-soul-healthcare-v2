@@ -97,6 +97,17 @@ export interface MarOrder {
   // Display code should use physicianAttributionPending() from marShared,
   // which also treats legacy junk values ("N/A") as pending.
   physicianPending?: boolean;
+  /**
+   * Administration PARAMETERS from the physician's order: the conditions the
+   * nurse must check before giving, and when to hold ("Hold if SBP > 140 or
+   * HR < 60. Check BP/HR before each dose."). Distinct from `notes` (general
+   * instructions) because parameters must be in the nurse's face at charting
+   * time: every dose-charting surface (grid modal, progress-note card) shows
+   * them and a GIVEN dose requires an explicit "parameters checked"
+   * acknowledgment, snapshotted onto the administration. A correction-side
+   * field: editing it never starts a new regimen.
+   */
+  parameters?: string;
   notes?: string;
   status: MarOrderStatus;
   createdAt?: unknown;
@@ -148,6 +159,7 @@ export interface MarOrderInput {
   orderSignedDate?: string;
   orderingPhysician?: string;
   physicianPending?: boolean;
+  parameters?: string;
   notes?: string;
 }
 
@@ -179,6 +191,7 @@ function normalizeInput(input: MarOrderInput) {
     orderSignedDate: input.orderSignedDate?.trim() ?? '',
     orderingPhysician: input.orderingPhysician?.trim() ?? '',
     physicianPending: input.physicianPending === true,
+    parameters: input.parameters?.trim() ?? '',
     notes: input.notes?.trim() ?? '',
   };
 }
@@ -289,6 +302,12 @@ export interface MarAdministration {
   unitsSnapshot: string;
   routeSnapshot: string;
   indicationSnapshot?: string; // the order's "what for" at the time of this dose
+  // The order's administration parameters (hold / check-before-giving
+  // criteria) at the time of this dose, and whether the documenter confirmed
+  // she checked them before a GIVEN dose. Both blank/false when the order has
+  // no parameters; parametersChecked is forced false on held/refused doses.
+  parametersSnapshot?: string;
+  parametersChecked?: boolean;
   // Measurement recorded against a check-style order (see MarOrder.valueLabel):
   // the number the nurse read, e.g. a 30 mL gastric residual. Empty on ordinary
   // dose administrations. The label/unit are snapshotted alongside so the
@@ -364,6 +383,8 @@ export interface MarAdministrationDraft {
   reason: string;
   isPRN: boolean; // a PRN given dose keeps its reason (why it was given)
   indication: string; // the order's standing indication, snapshotted
+  parameters?: string; // the order's administration parameters, snapshotted
+  parametersChecked?: boolean; // given dose: documenter confirmed she checked them
   outcome?: string; // PRN effectiveness/result, when known at write time
   prescriberNotified?: boolean; // held/refused: documenter notified the prescriber
   value?: string; // measurement, for a check-style order (e.g. gastric residual)
@@ -572,6 +593,7 @@ export interface ProposedMed {
   orderSignedDate: string;
   orderingPhysician: string;
   physicianPending: boolean;
+  parameters?: string;
   notes: string;
 }
 
@@ -648,6 +670,7 @@ function normalizeProposed(p: ProposedMed): ProposedMed {
     orderSignedDate: p.orderSignedDate?.trim() ?? '',
     orderingPhysician: p.orderingPhysician.trim(),
     physicianPending: p.physicianPending === true,
+    parameters: p.parameters?.trim() ?? '',
     notes: p.notes.trim(),
   };
 }

@@ -18,7 +18,7 @@ import {
   type MarOrder,
   type MarAdministration,
 } from '@/lib/mar';
-import { physicianAttributionPending, describeFrequency } from '@/lib/marShared';
+import { physicianAttributionPending, describeFrequency, orderParameters } from '@/lib/marShared';
 import { authedFetch } from '@/lib/authedFetch';
 import { triggerDownload } from '@/lib/batchExport';
 import { formatMonthUSFile } from '@/lib/dateFormat';
@@ -486,6 +486,11 @@ export default function MonthlyMarPage() {
                             {order.dose}{order.units ? ` ${order.units}` : ''} · {order.route}
                             {describeFrequency(order) ? ` · ${describeFrequency(order)}` : ''}
                           </div>
+                          {orderParameters(order) && (
+                            <div style={paramLineStyle} title={orderParameters(order)}>
+                              <span style={paramTagStyle}>Parameters</span> {orderParameters(order)}
+                            </div>
+                          )}
                         </td>
                         <td style={{ ...gridTdStyle, ...timeColStyle, color: slot === 'PRN' ? '#b56a17' : '#1a3a5c' }}>
                           {slot}
@@ -863,6 +868,11 @@ const medColStyle: React.CSSProperties = { minWidth: 190, maxWidth: 240, whiteSp
 const timeColStyle: React.CSSProperties = { background: '#f4f7fa', fontWeight: 700 };
 const physicianNeededChipStyle: React.CSSProperties = { display: 'inline-block', marginLeft: 6, padding: '1px 7px', borderRadius: 999, background: '#fff3e0', color: '#b45309', fontSize: 10, fontWeight: 700, verticalAlign: 'middle' };
 const dcChipStyle: React.CSSProperties = { marginLeft: 6, fontSize: 9, fontWeight: 700, background: '#fdeaea', color: '#c0392b', padding: '1px 5px', borderRadius: 999, letterSpacing: 0.4, verticalAlign: 'middle' };
+// Hold / check-before-giving criteria, kept on the row so they are read
+// before the nurse clicks a cell (the dose modal repeats them and requires
+// an acknowledgment). Amber = "conditions apply", matching the modal callout.
+const paramLineStyle: React.CSSProperties = { marginTop: 4, fontSize: 11, color: '#8a5a0d', lineHeight: 1.35, whiteSpace: 'normal', wordBreak: 'break-word' };
+const paramTagStyle: React.CSSProperties = { display: 'inline-block', padding: '0 5px', borderRadius: 999, background: '#fff3e0', color: '#b45309', fontSize: 9, fontWeight: 700, letterSpacing: 0.4, verticalAlign: 'middle', marginRight: 2 };
 // Diagonal hatch = "order not active that day" (the paper-MAR N/A convention) -
 // unmistakably different from a plain white "due but not documented" cell.
 const inactiveCellStyle: React.CSSProperties = {

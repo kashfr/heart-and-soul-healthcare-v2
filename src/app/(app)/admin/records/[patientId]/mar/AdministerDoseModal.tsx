@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { parseValueOptions, writeMarAdministrations, type MarOrder } from '@/lib/mar';
-import { decideNurseDoseGate, parseHHMM } from '@/lib/marShared';
+import { decideNurseDoseGate, parseHHMM, orderParameters } from '@/lib/marShared';
 import { getMyShiftWindowsForDate, type ShiftWindow } from '@/lib/submissions';
 import { formatDateUS } from '@/lib/dateFormat';
 import { withSelectChevron } from '@/lib/selectChevron';
@@ -12,10 +12,10 @@ import { escortToField, firstErrorKey, FieldError, FIELD_ERROR_STYLE, FIELD_ERRO
 
 /** Every problem the save can raise, keyed by where it is shown. `shiftBlock`
  *  is not a field: it is the notice at the top of the modal. */
-type DoseField = 'shiftBlock' | 'status' | 'value' | 'actualTime' | 'administratorName' | 'reason' | 'attest';
+type DoseField = 'shiftBlock' | 'status' | 'parameters' | 'value' | 'actualTime' | 'administratorName' | 'reason' | 'attest';
 type DoseErrors = Partial<Record<DoseField, string>>;
 /** Top-to-bottom order on the sheet, so the escort lands on the topmost problem. */
-const FIELD_ORDER: readonly DoseField[] = ['shiftBlock', 'status', 'value', 'actualTime', 'administratorName', 'reason', 'attest'];
+const FIELD_ORDER: readonly DoseField[] = ['shiftBlock', 'status', 'parameters', 'value', 'actualTime', 'administratorName', 'reason', 'attest'];
 const fieldId = (k: DoseField) => `ad-field-${k}`;
 
 const ADMIN_BY_OPTIONS = [
@@ -79,6 +79,12 @@ export default function AdministerDoseModal({
   // and the amend flow records a late notification).
   const [prescriberNotified, setPrescriberNotified] = useState(false);
   const [outcome, setOutcome] = useState('');
+  // The order's hold / check-before-giving criteria. A GIVEN dose against an
+  // order that has them requires this explicit acknowledgment (owner rule:
+  // the form hand-holds; a nurse must not be able to chart midodrine as given
+  // without being shown "hold if SBP > 140" and confirming she checked).
+  const parameters = orderParameters(order);
+  const [parametersChecked, setParametersChecked] = useState(false);
   // Reading for a check-style order (e.g. gastric residual in mL).
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
@@ -178,6 +184,11 @@ export default function AdministerDoseModal({
           ? `Select the ${valueLabel.toLowerCase()} reading.`
           : `Enter the ${valueLabel.toLowerCase()} reading.`;
     }
+    if (status === 'given' && parameters && !parametersChecked) {
+      e.parameters = isCheck
+        ? 'Confirm you reviewed the parameters before recording this check.'
+        : 'Confirm the parameters were checked before this dose was given. If they were not met, mark the dose Held instead.';
+    }
     if (needsReason && !reason.trim()) {
       e.reason = status === 'given' ? 'A PRN dose needs a reason (why it was given).' : 'A reason is required.';
     }
@@ -261,6 +272,8 @@ export default function AdministerDoseModal({
             reason,
             isPRN,
             indication,
+            parameters,
+            parametersChecked,
             outcome,
             prescriberNotified,
             noNoteAttestation: noNoteAttested,
@@ -318,6 +331,15 @@ export default function AdministerDoseModal({
 
         {isPRN && indication && <div style={indicationLine}>Ordered for: {indication}</div>}
 
+        {/* Hold / check-before-giving criteria from the order, shown before the
+            status choice so they are read BEFORE the nurse decides given vs held. */}
+        {parameters && (
+          <div style={paramCallout} role="note">
+            <div style={paramCalloutTitle}>Parameters: check before giving</div>
+            <div style={paramCalloutText}>{parameters}</div>
+          </div>
+        )}
+
         <div id={fieldId('status')} style={errors.status ? { ...statusRow, ...FIELD_ERROR_WRAP_STYLE } : statusRow}>
           {(['given', 'held', 'refused'] as const).map((s) => (
             <button
@@ -325,7 +347,7 @@ export default function AdministerDoseModal({
               type="button"
               onClick={() => {
                 setStatus((cur) => (cur === s ? '' : s));
-                clearErr('status', 'shiftBlock', 'attest');
+                clearErr('status', 'shiftBlock', 'attest', 'parameters');
               }}
               style={status === s ? statusActive[s] : statusBtn}
             >
@@ -334,6 +356,23 @@ export default function AdministerDoseModal({
           ))}
         </div>
         <FieldError message={errors.status} />
+
+        {status === 'given' && parameters && (
+          <label id={fieldId('parameters')} style={errors.parameters ? { ...paramCheckRow, ...FIELD_ERROR_WRAP_STYLE } : paramCheckRow}>
+            <input
+              type="checkbox"
+              checked={parametersChecked}
+              onChange={(e) => { setParametersChecked(e.target.checked); clearErr('parameters'); }}
+              style={{ marginTop: 2 }}
+            />
+            <span style={{ fontSize: 13, color: '#1f2937', lineHeight: 1.4 }}>
+              {isNurseAdmin
+                ? `I checked the parameters above before ${isCheck ? 'recording this check' : 'giving this dose'}, and they were met. *`
+                : `The parameters above were checked before this ${isCheck ? 'check was done' : 'dose was given'}, and they were met. *`}
+            </span>
+          </label>
+        )}
+        <FieldError message={errors.parameters} />
 
         {status === 'given' && (
           <div style={grid2}>
@@ -421,7 +460,9 @@ export default function AdministerDoseModal({
                 status === 'refused'
                   ? 'Reason for refusal'
                   : status === 'held'
-                    ? 'Reason held / omitted'
+                    ? parameters
+                      ? 'e.g., held per parameters: SBP 152/90'
+                      : 'Reason held / omitted'
                     : indication
                       ? `e.g., ${indication}; rated 6/10`
                       : 'e.g., complained of pain, rated 6/10'
@@ -530,6 +571,10 @@ const closeBtn: CSSProperties = { width: 40, height: 40, display: 'inline-flex',
 const lateNotice: CSSProperties = { background: '#fff7e6', border: '1px solid #f5d9a8', color: '#8a5a0d', borderRadius: 8, padding: '9px 11px', fontSize: 12.5, lineHeight: 1.45, marginBottom: 12 };
 const shiftBlockNotice: CSSProperties = { background: '#fdeaea', border: '1px solid #b3261e', color: '#7f1d1d', borderRadius: 8, padding: '10px 12px', fontSize: 13, lineHeight: 1.5, marginBottom: 12, boxShadow: '0 0 0 3px rgba(179,38,30,0.15)' };
 const indicationLine: CSSProperties = { fontSize: 12.5, color: '#5c6b7a', marginBottom: 12 };
+const paramCallout: CSSProperties = { background: '#fff7e6', border: '1px solid #f5d9a8', borderRadius: 8, padding: '10px 12px', marginBottom: 12 };
+const paramCalloutTitle: CSSProperties = { fontSize: 11, fontWeight: 700, color: '#b45309', letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 3 };
+const paramCalloutText: CSSProperties = { fontSize: 13.5, color: '#1f2937', lineHeight: 1.45, whiteSpace: 'pre-wrap' };
+const paramCheckRow: CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 4, marginBottom: 10, cursor: 'pointer', padding: '2px 0' };
 const statusRow: CSSProperties = { display: 'flex', gap: 8, flexWrap: 'wrap' };
 const statusBtn: CSSProperties = { padding: '8px 16px', borderRadius: 6, border: '1px solid #d0d7de', background: 'white', color: '#374151', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const statusActive: Record<'given' | 'held' | 'refused', CSSProperties> = {

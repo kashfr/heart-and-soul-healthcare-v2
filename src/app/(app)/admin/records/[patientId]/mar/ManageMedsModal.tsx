@@ -110,6 +110,8 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
   // Honest escape hatch: the nurse can flag the physician as unknown at entry
   // time instead of typing junk like "N/A"; the RN fills the name in later.
   const [physicianUnknown, setPhysicianUnknown] = useState(false);
+  // Hold / check-before-giving criteria from the order (see MarOrder.parameters).
+  const [parameters, setParameters] = useState('');
   const [notes, setNotes] = useState('');
 
   const [startDate, setStartDate] = useState(todayISO());
@@ -170,6 +172,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
       setOrderingPhysician(o.orderingPhysician || '');
       setOrderSignedDate(o.orderSignedDate || '');
       setPhysicianUnknown(o.physicianPending === true);
+      setParameters(o.parameters || '');
       setNotes(o.notes || '');
     }
   };
@@ -218,6 +221,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
         scheduledTimes: times.filter(Boolean),
         isPRN, prnFrequencyLabel, indication, valueLabel, valueUnit, valueOptions, orderingPhysician, orderSignedDate,
         physicianPending: physicianUnknown && looksLikeUnknownPhysician(orderingPhysician),
+        parameters,
         notes,
         startDate: mode === 'add' ? startDate : effectiveDate,
       };
@@ -530,8 +534,13 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
                   </span>
                 </label>
 
+                <Field label="Parameters (hold / check before giving)">
+                  <textarea value={parameters} onChange={(e) => setParameters(e.target.value)} style={textarea} placeholder="e.g., Hold if SBP > 140 mmHg or HR < 60. Check BP and HR before each dose." />
+                  <span style={dateHint}>Conditions to check before giving and when to hold, exactly as the physician wrote them. Nurses see this every time they chart a dose and must confirm they checked it.</span>
+                </Field>
+
                 <Field label="Notes">
-                  <textarea value={notes} onChange={(e) => setNotes(e.target.value)} style={textarea} placeholder="Special instructions, hold parameters, etc." />
+                  <textarea value={notes} onChange={(e) => setNotes(e.target.value)} style={textarea} placeholder="Special instructions (anything that is not a hold / check parameter)." />
                 </Field>
               </>
             )}

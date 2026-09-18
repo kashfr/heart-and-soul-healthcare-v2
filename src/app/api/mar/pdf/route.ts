@@ -58,6 +58,7 @@ interface OrderDoc {
   isPRN: boolean;
   prnFrequencyLabel: string; // PRN only: how often it may be given
   indication: string; // standing purpose — printed on PRN rows (manual D.6.b.ii.d)
+  parameters: string; // hold / check-before-giving criteria — printed first on the MAR row
   notes: string; // special instructions — printed on the MAR row (manual D.6.a.ii.e)
   startDate: string;
   endDate: string | null;
@@ -182,6 +183,7 @@ export async function POST(request: Request) {
         isPRN: !!o.isPRN,
         prnFrequencyLabel: String(o.prnFrequencyLabel || ''),
         indication: String(o.indication || ''),
+        parameters: String(o.parameters || ''),
         notes: String(o.notes || ''),
         startDate: String(o.startDate || ''),
         endDate: o.endDate ? String(o.endDate) : null,
@@ -293,8 +295,14 @@ export async function POST(request: Request) {
           // Capped: rows render wrap={false}, so an unbounded free-text note
           // would silently clip on the printed record. The full text always
           // lives on the order itself.
+          // Parameters lead (hold / check criteria are what a surveyor and
+          // the next nurse need first), then the PRN purpose, then notes.
           medLine3: truncate(
-            [o.isPRN && o.indication ? `For: ${o.indication}` : '', o.notes]
+            [
+              o.parameters ? `Parameters: ${o.parameters}` : '',
+              o.isPRN && o.indication ? `For: ${o.indication}` : '',
+              o.notes,
+            ]
               .filter(Boolean)
               .join(' · '),
             220,

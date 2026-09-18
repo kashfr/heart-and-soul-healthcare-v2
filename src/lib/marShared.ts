@@ -67,6 +67,14 @@ export interface MarAdminFieldInput {
   reason: string;
   isPRN?: boolean;
   indication?: string;
+  // The order's administration parameters (hold / check-before-giving
+  // criteria), snapshotted so the record shows what the nurse was told to
+  // check even if the order is later edited. parametersChecked is the
+  // documenter's acknowledgment that she checked them before a GIVEN dose;
+  // meaningless (forced false) on held/refused doses and when the order has
+  // no parameters.
+  parameters?: string;
+  parametersChecked?: boolean;
   // The PRN effectiveness follow-up ("what happened"): pain 6/10 to 2/10, fever
   // down, etc. Meaningful only for a GIVEN PRN dose; blanked otherwise.
   outcome?: string;
@@ -121,6 +129,9 @@ export function buildMarAdminFields(r: MarAdminFieldInput, meta: MarAdminFieldMe
     unitsSnapshot: r.units,
     routeSnapshot: r.route,
     indicationSnapshot: (r.indication || '').trim(),
+    parametersSnapshot: (r.parameters || '').trim(),
+    parametersChecked:
+      r.status === 'given' && !!(r.parameters || '').trim() && r.parametersChecked === true,
     date: meta.date,
     scheduledTime: r.scheduledTime,
     // Persisted so later flows (amend rebuilds, displays) can tell an
@@ -167,6 +178,13 @@ export function parseValueOptions(input: string[] | string | undefined): string[
     if (v && !out.includes(v)) out.push(v);
   }
   return out;
+}
+
+/** The order's administration parameters, trimmed ('' when none). One place
+ *  to read them so every charting surface agrees on what "has parameters"
+ *  means (whitespace-only is none). */
+export function orderParameters(order: { parameters?: string } | null | undefined): string {
+  return (order?.parameters || '').trim();
 }
 
 /** Sensible default scale for a volume reading, used to pre-fill the order form. */

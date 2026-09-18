@@ -192,6 +192,7 @@ export async function POST(request: Request) {
             physicianPending:
               physicianFlaggedUnknown &&
               looksLikeUnknownPhysician(String(rawProposed.orderingPhysician || '')),
+            parameters: String(rawProposed.parameters || ''),
             notes: String(rawProposed.notes || ''),
           }
         : undefined,

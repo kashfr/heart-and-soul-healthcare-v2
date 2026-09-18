@@ -1549,6 +1549,13 @@ function ProgressNotePageInner() {
           ) {
             incomplete.push(`${med}: time the dose was given`);
           }
+          // An order with hold / check-before-giving parameters: a given dose
+          // must carry the nurse's acknowledgment that she checked them. The
+          // criteria are snapshotted onto the mark when it is created, so the
+          // gate reads the mark, not the live order (which may have changed).
+          if (m.status === 'given' && (m.parameters || '').trim() && m.parametersChecked !== true) {
+            incomplete.push(`${med}: confirm the parameters were checked before the dose was given`);
+          }
           // A family/proxy dose is legal (starred on the MAR) but must say WHO
           // gave it — an anonymous escape hatch would defeat the attestation.
           if (
@@ -2057,6 +2064,8 @@ function ProgressNotePageInner() {
             reason: r.reason,
             isPRN: r.isPRN,
             indication: r.indication || '',
+            parameters: r.parameters || '',
+            parametersChecked: r.parametersChecked === true,
             outcome: r.outcome || '',
             prescriberNotified: r.prescriberNotified === true,
           }));
