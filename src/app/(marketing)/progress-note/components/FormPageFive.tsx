@@ -338,6 +338,8 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
     // be collapsed/unmounted by the time the note is submitted).
     const parameters = (opts.parameters || '').trim();
     const parametersChecked = opts.rec?.parametersChecked === true;
+    const parametersReading = opts.rec?.parametersReading || '';
+    const needsParametersReading = !!parameters && (status === 'given' || status === 'held');
     // The time pill's color reflects the dose's combined state. A documented
     // status (this draft, or a prior submitted entry) wins; an undocumented
     // SCHEDULED dose is colored by how its time compares to now (today only).
@@ -470,6 +472,27 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
                 </span>
               )}
             </span>
+          </label>
+        )}
+
+        {/* The reading the parameters decision was based on (given OR held). */}
+        {needsParametersReading && (
+          <label style={{ ...marFieldStyle, marginTop: 8 }}>
+            <span style={marFieldLabelStyle}>
+              {status === 'held' ? 'Reading that led you to hold *' : 'Reading you checked before giving *'}
+            </span>
+            <input
+              type="text"
+              required
+              aria-label={`Reading checked against ${opts.medName} parameters`}
+              value={parametersReading}
+              onChange={(e) => opts.onPatch({ parametersReading: e.target.value })}
+              style={!parametersReading.trim() ? marInputRequiredStyle : marInputStyle}
+              placeholder="e.g., BP 116/74, HR 72"
+            />
+            {!parametersReading.trim() && (
+              <span style={marRequiredHintStyle}>Required: the record must show the reading this decision was based on.</span>
+            )}
           </label>
         )}
 

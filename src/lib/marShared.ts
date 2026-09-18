@@ -75,6 +75,10 @@ export interface MarAdminFieldInput {
   // no parameters.
   parameters?: string;
   parametersChecked?: boolean;
+  // The reading checked against the parameters ("BP 116/74"). Kept for any
+  // status when the order has parameters (a held dose's reading is the
+  // justification for holding); blanked when there are no parameters.
+  parametersReading?: string;
   // The PRN effectiveness follow-up ("what happened"): pain 6/10 to 2/10, fever
   // down, etc. Meaningful only for a GIVEN PRN dose; blanked otherwise.
   outcome?: string;
@@ -132,6 +136,7 @@ export function buildMarAdminFields(r: MarAdminFieldInput, meta: MarAdminFieldMe
     parametersSnapshot: (r.parameters || '').trim(),
     parametersChecked:
       r.status === 'given' && !!(r.parameters || '').trim() && r.parametersChecked === true,
+    parametersReading: (r.parameters || '').trim() ? (r.parametersReading || '').trim() : '',
     date: meta.date,
     scheduledTime: r.scheduledTime,
     // Persisted so later flows (amend rebuilds, displays) can tell an

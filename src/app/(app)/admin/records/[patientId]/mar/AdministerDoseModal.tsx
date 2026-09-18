@@ -12,10 +12,10 @@ import { escortToField, firstErrorKey, FieldError, FIELD_ERROR_STYLE, FIELD_ERRO
 
 /** Every problem the save can raise, keyed by where it is shown. `shiftBlock`
  *  is not a field: it is the notice at the top of the modal. */
-type DoseField = 'shiftBlock' | 'status' | 'parameters' | 'value' | 'actualTime' | 'administratorName' | 'reason' | 'attest';
+type DoseField = 'shiftBlock' | 'status' | 'parameters' | 'parametersReading' | 'value' | 'actualTime' | 'administratorName' | 'reason' | 'attest';
 type DoseErrors = Partial<Record<DoseField, string>>;
 /** Top-to-bottom order on the sheet, so the escort lands on the topmost problem. */
-const FIELD_ORDER: readonly DoseField[] = ['shiftBlock', 'status', 'parameters', 'value', 'actualTime', 'administratorName', 'reason', 'attest'];
+const FIELD_ORDER: readonly DoseField[] = ['shiftBlock', 'status', 'parameters', 'parametersReading', 'value', 'actualTime', 'administratorName', 'reason', 'attest'];
 const fieldId = (k: DoseField) => `ad-field-${k}`;
 
 const ADMIN_BY_OPTIONS = [
@@ -85,6 +85,10 @@ export default function AdministerDoseModal({
   // without being shown "hold if SBP > 140" and confirming she checked).
   const parameters = orderParameters(order);
   const [parametersChecked, setParametersChecked] = useState(false);
+  // The reading checked against the parameters ("BP 116/74, HR 72"): required
+  // for a given OR held dose, since the hold is only defensible with the number.
+  const [parametersReading, setParametersReading] = useState('');
+  const needsParametersReading = !!parameters && (status === 'given' || status === 'held');
   // Reading for a check-style order (e.g. gastric residual in mL).
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
@@ -189,6 +193,12 @@ export default function AdministerDoseModal({
         ? 'Confirm you reviewed the parameters before recording this check.'
         : 'Confirm the parameters were checked before this dose was given. If they were not met, mark the dose Held instead.';
     }
+    if (needsParametersReading && !parametersReading.trim()) {
+      e.parametersReading =
+        status === 'held'
+          ? 'Record the reading that led you to hold (e.g., BP 132/84).'
+          : 'Record the reading you checked against the parameters (e.g., BP 116/74).';
+    }
     if (needsReason && !reason.trim()) {
       e.reason = status === 'given' ? 'A PRN dose needs a reason (why it was given).' : 'A reason is required.';
     }
@@ -274,6 +284,7 @@ export default function AdministerDoseModal({
             indication,
             parameters,
             parametersChecked,
+            parametersReading,
             outcome,
             prescriberNotified,
             noNoteAttestation: noNoteAttested,
@@ -347,7 +358,7 @@ export default function AdministerDoseModal({
               type="button"
               onClick={() => {
                 setStatus((cur) => (cur === s ? '' : s));
-                clearErr('status', 'shiftBlock', 'attest', 'parameters');
+                clearErr('status', 'shiftBlock', 'attest', 'parameters', 'parametersReading');
               }}
               style={status === s ? statusActive[s] : statusBtn}
             >
@@ -373,6 +384,22 @@ export default function AdministerDoseModal({
           </label>
         )}
         <FieldError message={errors.parameters} />
+
+        {needsParametersReading && (
+          <label id={fieldId('parametersReading')} style={{ ...field, marginBottom: 10 }}>
+            <span style={fieldLabel}>
+              {status === 'held' ? 'Reading that led you to hold *' : 'Reading you checked before giving *'}
+            </span>
+            <input
+              type="text"
+              value={parametersReading}
+              onChange={(e) => { setParametersReading(e.target.value); clearErr('parametersReading'); }}
+              style={{ ...input, ...hi('parametersReading') }}
+              placeholder="e.g., BP 116/74, HR 72"
+            />
+            <FieldError message={errors.parametersReading} />
+          </label>
+        )}
 
         {status === 'given' && (
           <div style={grid2}>

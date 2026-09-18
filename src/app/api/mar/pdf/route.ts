@@ -82,6 +82,7 @@ interface AdminDoc {
   actualTime: string;
   initials: string;
   reason: string;
+  parametersReading: string; // the reading checked against the order's parameters
   prescriberNotified: boolean | null;
   outcome: string;
   /** Reading for a check-style order (gastric residual, etc.); '' for doses. */
@@ -215,6 +216,7 @@ export async function POST(request: Request) {
         actualTime: String(a.actualTime || ''),
         initials: String(a.initials || ''),
         reason: String(a.reason || ''),
+        parametersReading: String(a.parametersReading || ''),
         // Tri-state: docs from before the attestation feature existed have no
         // field at all — printing "(prescriber not yet notified)" on them
         // would stamp a false negative assertion onto historical months.
@@ -343,12 +345,18 @@ export async function POST(request: Request) {
           // Positive attestation prints on any held/refused dose; the NEGATIVE
           // prints only on refusals (holds are often physician-directed, and
           // legacy docs without the field print nothing at all).
-          reason:
+          // The reading checked against the order's parameters leads, so a
+          // "held per parameters" entry prints with the BP it was based on.
+          reason: [
+            a.parametersReading ? `Checked: ${a.parametersReading}` : '',
             (a.status === 'held' || a.status === 'refused') && a.prescriberNotified === true
               ? `${a.reason || '-'} (prescriber notified)`
               : a.status === 'refused' && a.prescriberNotified === false
                 ? `${a.reason || '-'} (prescriber not yet notified)`
                 : a.reason || '-',
+          ]
+            .filter(Boolean)
+            .join(' · '),
           // A given PRN dose is complete only once its result is recorded; the
           // export says so explicitly rather than printing a silent blank.
           // A check's reading belongs in Result: it is what the entry recorded.

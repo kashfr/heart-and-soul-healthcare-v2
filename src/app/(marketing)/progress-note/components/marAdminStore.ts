@@ -33,6 +33,7 @@ export interface MarAdminRecord {
   indication?: string; // the order's standing "what for", snapshotted at submit
   parameters?: string; // the order's hold / check-before-giving criteria, snapshotted
   parametersChecked?: boolean; // given dose: nurse confirmed she checked them (required when parameters exist)
+  parametersReading?: string; // given/held dose: the reading checked against the parameters (required when parameters exist)
   status: AdminStatus;
   administeredByType: string; // 'nurse' | 'family' | 'responsibleParty' | 'self' | 'proxy'
   administratorName: string;
