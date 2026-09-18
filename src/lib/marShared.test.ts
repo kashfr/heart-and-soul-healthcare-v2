@@ -95,6 +95,28 @@ describe('buildMarAdminFields', () => {
     expect(buildMarAdminFields(input(), meta).indicationSnapshot).toBe('');
   });
 
+  it('snapshots the order parameters and keeps the checked flag only on a given dose', () => {
+    const given = buildMarAdminFields(
+      input({ parameters: ' Hold if SBP > 140 ', parametersChecked: true }),
+      meta,
+    );
+    expect(given.parametersSnapshot).toBe('Hold if SBP > 140');
+    expect(given.parametersChecked).toBe(true);
+
+    // Held/refused: nothing was given, so "checked before giving" is moot.
+    const held = buildMarAdminFields(
+      input({ status: 'held', reason: 'SBP 152', parameters: 'Hold if SBP > 140', parametersChecked: true }),
+      meta,
+    );
+    expect(held.parametersSnapshot).toBe('Hold if SBP > 140');
+    expect(held.parametersChecked).toBe(false);
+
+    // No parameters on the order: the flag cannot be true, whatever the row says.
+    const none = buildMarAdminFields(input({ parametersChecked: true }), meta);
+    expect(none.parametersSnapshot).toBe('');
+    expect(none.parametersChecked).toBe(false);
+  });
+
   it('blanks administratorName when the nurse gave it, keeps it (trimmed) otherwise', () => {
     expect(buildMarAdminFields(input({ administeredByType: 'nurse', administratorName: 'X' }), meta).administratorName).toBe('');
     const fam = buildMarAdminFields(input({ administeredByType: 'family', administratorName: '  Jane Doe ' }), meta);

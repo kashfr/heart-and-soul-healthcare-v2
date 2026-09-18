@@ -246,6 +246,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
         scheduledTime: slot,
         isPRN: slot === 'PRN',
         indication: order.indication || '',
+        parameters: order.parameters || '',
         status: '',
         administeredByType: 'nurse',
         administratorName: '',
@@ -325,11 +326,18 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
     extra?: boolean;
     isPRN?: boolean;
     indication?: string;
+    parameters?: string;
     prnGivenToday?: number;
   }) => {
     const status = opts.rec?.status || '';
     const isNurseAdmin = !opts.rec || !opts.rec.administeredByType || opts.rec.administeredByType === 'nurse';
     const indication = (opts.indication || '').trim();
+    // Hold / check-before-giving criteria from the order. Shown on the card
+    // before the status choice, and a GIVEN dose must acknowledge them (the
+    // submit gate in page.tsx enforces it from the store, since this card can
+    // be collapsed/unmounted by the time the note is submitted).
+    const parameters = (opts.parameters || '').trim();
+    const parametersChecked = opts.rec?.parametersChecked === true;
     // The time pill's color reflects the dose's combined state. A documented
     // status (this draft, or a prior submitted entry) wins; an undocumented
     // SCHEDULED dose is colored by how its time compares to now (today only).
@@ -355,6 +363,13 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
 
         {opts.isPRN && indication && (
           <div style={marIndicationStyle}>Ordered for: {indication}</div>
+        )}
+
+        {parameters && (
+          <div style={marParamCalloutStyle} role="note">
+            <div style={marParamTitleStyle}>Parameters: check before giving</div>
+            <div style={marParamTextStyle}>{parameters}</div>
+          </div>
         )}
 
         {opts.extra && (
@@ -432,6 +447,31 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
               times must be wrong. The note cannot be submitted with a nurse-given dose outside your shift.
             </div>
           )}
+
+        {/* The parameters acknowledgment: a given dose against an order with
+            hold / check criteria must confirm they were checked and met. */}
+        {status === 'given' && parameters && (
+          <label style={parametersChecked ? marParamCheckRowStyle : marParamCheckRowRequiredStyle}>
+            <input
+              type="checkbox"
+              required
+              aria-label={`Parameters checked before ${opts.medName} dose`}
+              checked={parametersChecked}
+              onChange={(e) => opts.onPatch({ parametersChecked: e.target.checked })}
+              style={{ marginTop: 2 }}
+            />
+            <span style={{ fontSize: 13, color: '#1f2937', lineHeight: 1.4 }}>
+              {isNurseAdmin
+                ? 'I checked the parameters above before giving this dose, and they were met. *'
+                : 'The parameters above were checked before this dose was given, and they were met. *'}
+              {!parametersChecked && (
+                <span style={{ ...marRequiredHintStyle, display: 'block' }}>
+                  Required: if the parameters were not met, mark the dose Held instead.
+                </span>
+              )}
+            </span>
+          </label>
+        )}
 
         {/* A PRN ("as needed") dose must record WHY it was given this time, shown
             against the order's standing indication. Scheduled doses don't ask. */}
@@ -537,6 +577,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
       onPatch: (patch) => updateMark(order, slot, patch),
       isPRN: slot === 'PRN',
       indication: order.indication,
+      parameters: order.parameters,
       prnGivenToday: slot === 'PRN' ? prnGivenToday(order.id || '') : 0,
     });
   };
@@ -875,6 +916,10 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
                         extra: isUnlisted,
                         isPRN: rec.isPRN || sched === 'PRN',
                         indication: rec.indication,
+                        // Marks created before this field existed carry none;
+                        // fall back to the live order so the criteria still show.
+                        parameters:
+                          rec.parameters || marAllOrders.find((o) => o.id === rec.orderId)?.parameters || '',
                         prnGivenToday: rec.orderId ? prnGivenToday(rec.orderId) : 0,
                       });
                     })}
@@ -1218,6 +1263,11 @@ const marFieldLabelStyle: CSSProperties = { fontSize: 12, fontWeight: 600, color
 const marInputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', height: 38 };
 const marInputRequiredStyle: CSSProperties = { ...marInputStyle, border: '1px solid #d9a441', background: '#fffdf6' };
 const marRequiredHintStyle: CSSProperties = { fontSize: 11.5, color: '#8a5a0d', lineHeight: 1.4, marginTop: 3 };
+const marParamCalloutStyle: CSSProperties = { marginTop: 8, background: '#fff7e6', border: '1px solid #f5d9a8', borderRadius: 8, padding: '8px 10px' };
+const marParamTitleStyle: CSSProperties = { fontSize: 10.5, fontWeight: 700, color: '#b45309', letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 2 };
+const marParamTextStyle: CSSProperties = { fontSize: 13, color: '#1f2937', lineHeight: 1.45, whiteSpace: 'pre-wrap' };
+const marParamCheckRowStyle: CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 10, cursor: 'pointer', padding: '6px 8px', borderRadius: 6, border: '1px solid transparent' };
+const marParamCheckRowRequiredStyle: CSSProperties = { ...marParamCheckRowStyle, border: '1px solid #f5d9a8', background: '#fffdf7' };
 const marIndicationStyle: CSSProperties = { marginTop: 6, fontSize: 12.5, color: '#5c6b7a' };
 const marPrnCountStyle: CSSProperties = { marginTop: 12, fontSize: 12.5, fontWeight: 700, color: '#b56a17' };
 // Same box as the inputs (appearance reset + custom chevron) so the select is

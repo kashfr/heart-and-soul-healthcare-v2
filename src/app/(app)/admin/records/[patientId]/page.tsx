@@ -47,6 +47,8 @@ interface OrderForm {
   orderSignedDate: string;
   orderingPhysician: string;
   physicianUnknown: boolean;
+  /** Hold / check-before-giving criteria (see MarOrder.parameters). */
+  parameters: string;
   notes: string;
 }
 
@@ -77,6 +79,7 @@ function emptyForm(): OrderForm {
     orderSignedDate: '',
     orderingPhysician: '',
     physicianUnknown: false,
+    parameters: '',
     notes: '',
   };
 }
@@ -189,6 +192,7 @@ export default function RecordDetailPage() {
       orderSignedDate: o.orderSignedDate || '',
       orderingPhysician: o.orderingPhysician || '',
       physicianUnknown: o.physicianPending === true,
+      parameters: o.parameters || '',
       notes: o.notes || '',
     });
     setEditingId(o.id || null);
@@ -264,6 +268,7 @@ export default function RecordDetailPage() {
         orderSignedDate: form.orderSignedDate,
         orderingPhysician: form.orderingPhysician,
         physicianPending: form.physicianUnknown && looksLikeUnknownPhysician(form.orderingPhysician),
+        parameters: form.parameters,
         notes: form.notes,
       };
       if (editingId) {
@@ -704,12 +709,22 @@ export default function RecordDetailPage() {
                 </span>
               </label>
 
+              <Field label="Parameters (hold / check before giving)">
+                <textarea
+                  value={form.parameters}
+                  onChange={(e) => setForm((f) => ({ ...f, parameters: e.target.value }))}
+                  style={textareaStyle}
+                  placeholder="e.g., Hold if SBP > 140 mmHg or HR < 60. Check BP and HR before each dose."
+                />
+                <span style={indicationHintStyle}>Conditions to check before giving and when to hold, exactly as the physician wrote them. Nurses see this every time they chart a dose and must confirm they checked it.</span>
+              </Field>
+
               <Field label="Notes">
                 <textarea
                   value={form.notes}
                   onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
                   style={textareaStyle}
-                  placeholder="Special instructions, hold parameters, etc."
+                  placeholder="Special instructions (anything that is not a hold / check parameter)."
                 />
               </Field>
 
@@ -810,6 +825,13 @@ export default function RecordDetailPage() {
                   }
                 />
               </div>
+
+              {viewOrder.parameters && (
+                <div style={{ marginTop: 14, background: '#fff7e6', border: '1px solid #f5d9a8', borderRadius: 8, padding: '10px 12px' }}>
+                  <div style={{ ...detailLabelStyle, color: '#8a5a0d' }}>Parameters (check before giving)</div>
+                  <div style={{ ...detailValueStyle, whiteSpace: 'pre-wrap' }}>{viewOrder.parameters}</div>
+                </div>
+              )}
 
               {viewOrder.notes && (
                 <div style={{ marginTop: 14 }}>

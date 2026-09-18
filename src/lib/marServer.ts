@@ -61,6 +61,7 @@ interface ProposedMedShape {
   orderSignedDate?: string;
   orderingPhysician?: string;
   physicianPending?: boolean;
+  parameters?: string;
   notes?: string;
 }
 
@@ -90,6 +91,7 @@ function orderFromProposed(
     orderSignedDate: String(p.orderSignedDate || ''),
     orderingPhysician: String(p.orderingPhysician || ''),
     physicianPending: p.physicianPending === true,
+    parameters: String(p.parameters || '').trim(),
     notes: String(p.notes || ''),
     status: 'active',
     createdAt: FieldValue.serverTimestamp(),
@@ -109,6 +111,7 @@ function orderFromProposed(
 function correctionFields(p: ProposedMedShape) {
   return {
     indication: String(p.indication || ''),
+    parameters: String(p.parameters || '').trim(),
     notes: String(p.notes || ''),
     orderingPhysician: String(p.orderingPhysician || ''),
     orderSignedDate: String(p.orderSignedDate || ''),
@@ -423,6 +426,7 @@ function cleanProposed(p: ProposedMedShape) {
     orderSignedDate: String(p.orderSignedDate || '').trim(),
     orderingPhysician: String(p.orderingPhysician || '').trim(),
     physicianPending: p.physicianPending === true,
+    parameters: String(p.parameters || '').trim(),
     notes: String(p.notes || '').trim(),
   };
 }
