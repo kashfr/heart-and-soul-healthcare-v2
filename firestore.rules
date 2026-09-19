@@ -544,7 +544,12 @@ service cloud.firestore {
     // retired ones for the receipts view. All writes, including the
     // acknowledgment map, go through the API so a receipt is trustworthy.
     match /announcements/{announcementId} {
-      allow read: if hasActiveProfile() && (resource.data.active == true || isAdmin());
+      // Admin clause FIRST: it is independent of resource.data, so the
+      // unfiltered receipts query (orderBy only) is provable; the engine does
+      // not fall through to a later clause once an earlier resource-bound one
+      // is unprovable.
+      allow read: if isAdmin()
+        || (hasActiveProfile() && resource.data.active == true);
       allow write: if false;
     }
 
