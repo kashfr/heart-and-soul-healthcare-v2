@@ -539,6 +539,15 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // "What's new" announcements. No PHI. Every ACTIVE staff profile reads the
+    // active ones (the gate filters audience client-side); admins also read
+    // retired ones for the receipts view. All writes, including the
+    // acknowledgment map, go through the API so a receipt is trustworthy.
+    match /announcements/{announcementId} {
+      allow read: if hasActiveProfile() && (resource.data.active == true || isAdmin());
+      allow write: if false;
+    }
+
     // Handoffs: nurse-to-nurse cross communication on a client. Created ONLY
     // server-side (POST /api/handoffs computes the recipient list from the
     // care team and writes the bells). The post is immutable; the single

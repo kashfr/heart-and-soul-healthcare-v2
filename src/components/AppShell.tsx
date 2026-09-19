@@ -13,6 +13,7 @@ import {
   FileText,
   Wrench,
   Settings,
+  Megaphone,
   Handshake,
   ArrowLeftRight,
   PhoneCall,
@@ -29,6 +30,7 @@ import UserMenu from './UserMenu';
 import NotificationsBell from './NotificationsBell';
 import ClarificationGate from './ClarificationGate';
 import CorrectionsBlockGate from './CorrectionsBlockGate';
+import AnnouncementGate from './AnnouncementGate';
 import type { Role } from '@/lib/auth';
 import { subscribePendingDupCount } from '@/lib/drafts';
 import { subscribeMyOpenClarifications, subscribeOpenFlagsAwaitingReviewer } from '@/lib/clarifications';
@@ -74,6 +76,8 @@ const NAV: NavItem[] = [
   { href: '/admin/users', label: 'Staff & Roles', icon: <UserCog size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/maintenance/link-notes', label: 'Maintenance', icon: <Wrench size={18} />, allow: ['admin'] },
   { href: '/admin/settings', label: 'Settings', icon: <Settings size={18} />, allow: ['admin'] },
+  // "What's new" announcements: publish to a role audience, see who clicked through.
+  { href: '/admin/announcements', label: 'Announcements', icon: <Megaphone size={18} />, allow: ['admin'] },
   { href: '/admin/referrals', label: 'Referrals', icon: <FileText size={18} />, allow: ['admin', 'va'] },
   { href: '/admin/agencies', label: 'Agencies', icon: <Handshake size={18} />, allow: ['admin', 'va'] },
   { href: '/admin/edwp-consents', label: 'EDWP Consents', icon: <FileSignature size={18} />, allow: ['admin', 'va'] },
@@ -278,6 +282,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       <Suspense fallback={null}>
         <CorrectionsBlockGate />
       </Suspense>
+      {/* "What's new": one-time read-and-acknowledge modal per announcement.
+          Below the two hard stops in z-order so a blocked nurse still sees
+          the block first. */}
+      <AnnouncementGate />
       <div className="app-shell-body">
       <aside
         suppressHydrationWarning

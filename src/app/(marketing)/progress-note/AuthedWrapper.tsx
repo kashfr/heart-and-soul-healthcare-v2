@@ -4,6 +4,7 @@ import { Suspense } from 'react';
 import { AuthGuard } from '@/components/AuthGuard';
 import { SettingsProvider } from '@/components/SettingsProvider';
 import CorrectionsBlockGate from '@/components/CorrectionsBlockGate';
+import AnnouncementGate from '@/components/AnnouncementGate';
 
 export default function AuthedWrapper({
   children,
@@ -25,6 +26,9 @@ export default function AuthedWrapper({
         <Suspense fallback={null}>
           <CorrectionsBlockGate />
         </Suspense>
+        {/* "What's new" announcements: the note is the one page every nurse
+            must open, so the read-and-acknowledge modal lives here too. */}
+        <AnnouncementGate />
         {children}
       </SettingsProvider>
     </AuthGuard>
