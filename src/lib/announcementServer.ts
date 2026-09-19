@@ -1,5 +1,5 @@
 import 'server-only';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldPath, FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
 import type { AuthedCaller } from './adminAuthGuard';
 import { normalizeAnnouncementInput, validateAnnouncementInput, type AnnouncementInput } from './announcementShared';
@@ -40,10 +40,7 @@ export async function acknowledgeAnnouncement(id: string, caller: AuthedCaller):
     const d = snap.data() as { audience?: string[]; acks?: Record<string, unknown> };
     if (!Array.isArray(d.audience) || !d.audience.includes(caller.role)) return { ok: false as const, error: 'This announcement was not addressed to you.', status: 403 };
     if (d.acks && Object.prototype.hasOwnProperty.call(d.acks, caller.uid)) return { ok: true as const, already: true };
-    tx.update(ref, {
-      [`acks.${caller.uid}`]: { at: FieldValue.serverTimestamp(), name },
-      ackCount: FieldValue.increment(1),
-    });
+    tx.update(ref, new FieldPath('acks', caller.uid), { at: FieldValue.serverTimestamp(), name }, 'ackCount', FieldValue.increment(1));
     return { ok: true as const, already: false };
   });
 }

@@ -43,6 +43,7 @@ export default function AnnouncementsPage() {
   const [list, setList] = useState<Announcement[]>([]);
   const [listError, setListError] = useState<string | null>(null);
   const [staff, setStaff] = useState<StaffLite[]>([]);
+  const [testUids, setTestUids] = useState<string[]>([]);
 
   const [title, setTitle] = useState("What's new in the portal");
   const [items, setItems] = useState<AnnouncementItem[]>(SEED_ITEMS);
@@ -62,10 +63,14 @@ export default function AnnouncementsPage() {
     );
     // Active staff, so the receipts view can list who has NOT clicked through.
     getDocs(query(collection(db, 'users'), where('active', '==', true)))
-      .then((snap) => setStaff(snap.docs.map((d) => {
-        const u = d.data() as { displayName?: string; role?: Role; isTestAccount?: boolean };
-        return { uid: d.id, name: u.displayName || '', role: u.role as Role, test: u.isTestAccount === true };
-      }).filter((u) => u.name && u.role && !u.test).map(({ uid, name, role: r }) => ({ uid, name, role: r }))))
+      .then((snap) => {
+        const rows = snap.docs.map((d) => {
+          const u = d.data() as { displayName?: string; role?: Role; isTestAccount?: boolean };
+          return { uid: d.id, name: u.displayName || '', role: u.role as Role, test: u.isTestAccount === true };
+        });
+        setTestUids(rows.filter((u) => u.test).map((u) => u.uid));
+        setStaff(rows.filter((u) => u.name && u.role && !u.test).map(({ uid, name, role: r }) => ({ uid, name, role: r })));
+      })
       .catch(() => setStaff([]));
     return unsub;
   }, [loading, role]);
@@ -82,6 +87,11 @@ export default function AnnouncementsPage() {
     setSaving(true);
     try {
       await publishAnnouncement(input);
+      // Clear the form so a second click cannot publish a duplicate.
+      setTitle('');
+      setItems([{ label: '', text: '' }]);
+      setFooter('');
+      setErrors({});
       setToast('Published. Everyone in the audience will see it at their next sign-in or note.');
       setTimeout(() => setToast(null), 5000);
     } catch (e) {
@@ -204,20 +214,20 @@ export default function AnnouncementsPage() {
         {listError && <div style={noticeStyle} role="alert"><AlertTriangle size={16} /> {listError}</div>}
         {list.length === 0 && !listError && <p style={hintStyle}>Nothing published yet.</p>}
         {list.map((a) => (
-          <AnnouncementCard key={a.id} a={a} staff={staff} retiring={retiring === a.id} onRetire={() => void retire(a.id)} />
+          <AnnouncementCard key={a.id} a={a} staff={staff} testUids={testUids} retiring={retiring === a.id} onRetire={() => void retire(a.id)} />
         ))}
       </div>
     </div>
   );
 }
 
-function AnnouncementCard({ a, staff, retiring, onRetire }: { a: Announcement; staff: StaffLite[]; retiring: boolean; onRetire: () => void }) {
+function AnnouncementCard({ a, staff, testUids, retiring, onRetire }: { a: Announcement; staff: StaffLite[]; testUids: string[]; retiring: boolean; onRetire: () => void }) {
   const [open, setOpen] = useState(false);
   const expected = useMemo(() => staff.filter((s) => a.audience.includes(s.role)).sort((x, y) => x.name.localeCompare(y.name)), [staff, a.audience]);
   const acked = expected.filter((s) => a.acks[s.uid]);
   const waiting = expected.filter((s) => !a.acks[s.uid]);
-  // People who acked but are no longer active staff (or outside the current audience list).
-  const others = Object.entries(a.acks).filter(([uid]) => !expected.some((s) => s.uid === uid));
+  // People who acked but are no longer active staff. The test account is left out.
+  const others = Object.entries(a.acks).filter(([uid]) => !expected.some((s) => s.uid === uid) && !testUids.includes(uid));
 
   return (
     <section style={{ ...cardStyle, opacity: a.active ? 1 : 0.7 }}>

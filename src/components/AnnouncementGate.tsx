@@ -38,7 +38,21 @@ export default function AnnouncementGate() {
   }, [loading, user]);
 
   const pending = useMemo(() => pendingAnnouncementsFor(list, uid, role).filter((a) => !sent.includes(a.id)), [list, uid, role, sent]);
-  const current = pending[0];
+  // Pin the one on screen: if the admin retires it while it is open, the
+  // modal closes rather than swapping to the next post under her cursor.
+  const [pinnedId, setPinnedId] = useState<string | null>(null);
+  const current = useMemo(() => {
+    if (pinnedId) {
+      const stillPending = pending.find((a) => a.id === pinnedId);
+      if (stillPending) return stillPending;
+      const stillActive = list.find((a) => a.id === pinnedId && a.active);
+      if (stillActive && !sent.includes(pinnedId)) return stillActive;
+    }
+    return pending[0];
+  }, [pinnedId, pending, list, sent]);
+  useEffect(() => {
+    setPinnedId(current?.id ?? null);
+  }, [current?.id]);
 
   if (loading || !user || isViewingAs || !current) return null;
 
