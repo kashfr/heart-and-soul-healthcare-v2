@@ -497,11 +497,27 @@ service cloud.firestore {
            ]
         && incomingData().storagePath ==
              'patients/' + incomingData().patientId + '/documents/' + docId + '/' + incomingData().fileName;
-      // Staff may archive/restore and fix labeling; identity, file pointer,
-      // and ownership fields are immutable.
+      // Staff may archive/restore, fix labeling, and REPLACE the file (new
+      // object in the same document folder; the server removes the old one).
+      // Identity and ownership fields stay immutable, and a replacement can
+      // only point inside this document's own folder with an allowlisted type.
       allow update: if isStaff()
         && incomingData().diff(resource.data).affectedKeys()
-             .hasOnly(['archived', 'archivedBy', 'archivedByName', 'archivedAt', 'title', 'category', 'docDate']);
+             .hasOnly(['archived', 'archivedBy', 'archivedByName', 'archivedAt', 'title', 'category', 'docDate',
+                       'fileName', 'storagePath', 'contentType', 'size', 'replacedAt', 'replacedBy', 'replacedByName'])
+        && (!incomingData().diff(resource.data).affectedKeys().hasAny(['fileName', 'storagePath', 'contentType', 'size'])
+            || (incomingData().fileName is string && incomingData().fileName.size() > 0
+                && incomingData().storagePath ==
+                     'patients/' + resource.data.patientId + '/documents/' + docId + '/' + incomingData().fileName
+                && incomingData().contentType in [
+                     'application/pdf', 'image/jpeg', 'image/png', 'image/heic',
+                     'application/msword',
+                     'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                   ]
+                && incomingData().replacedBy == request.auth.uid
+                && incomingData().replacedAt == request.time));
+      // Hard delete is admin-only through /api/documents/[id] (Admin SDK),
+      // which snapshots the metadata into deletedDocuments first.
       allow delete: if false;
     }
 

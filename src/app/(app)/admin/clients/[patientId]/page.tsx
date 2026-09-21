@@ -874,6 +874,7 @@ function ClientDashboardInner() {
               documents={documents}
               canUpload={canUploadDocs}
               isStaff={realStaff}
+              isAdmin={realRole === 'admin' && !isViewingAs}
               uploader={{
                 uid: user?.uid || '',
                 name: profile?.displayName || user?.email || '',

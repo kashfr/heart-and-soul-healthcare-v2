@@ -10,13 +10,17 @@ import {
 } from 'firebase/firestore';
 import { getBlob, ref, uploadBytesResumable } from 'firebase/storage';
 import { db, storage } from './firebase';
+import { authedFetch } from './authedFetch';
 
 /**
  * Client documents: uploaded files (plan of care, initial assessment,
  * supervisory visit forms, physician orders, scans) whose bytes live in Cloud
  * Storage and whose metadata lives in the `patientDocuments` collection.
- * Staff and assigned nurses upload and view; only staff archive; nothing is
- * ever hard-deleted (append-only compliance record, like the MAR).
+ * Staff and assigned nurses upload and view. Staff can edit a document's
+ * labeling, archive it, or replace its file (the old file is removed
+ * server-side); only an admin can hard-delete one, through a privileged
+ * route that snapshots it first. RN oversight visit notes file themselves
+ * here automatically (sourceNoteId links back to the note).
  */
 
 export const DOC_CATEGORIES = [
@@ -60,6 +64,13 @@ export interface PatientDocument {
   archivedBy?: string;
   archivedByName?: string;
   archivedAt?: unknown;
+  /** Set when the file was swapped out after upload. */
+  replacedAt?: unknown;
+  replacedBy?: string;
+  replacedByName?: string;
+  /** Present on documents the server filed from a submitted note. */
+  sourceNoteId?: string;
+  autoFiled?: boolean;
 }
 
 export interface DocUploader {
@@ -327,4 +338,104 @@ export async function setDocumentArchived(
     archivedByName: archived ? actor.name : '',
     archivedAt: archived ? serverTimestamp() : null,
   });
+}
+
+/** Staff-only relabel: title, category, date on the document. */
+export async function updateDocumentDetails(
+  id: string,
+  patch: { title: string; category: DocCategory; docDate: string },
+): Promise<void> {
+  await updateDoc(doc(db, 'patientDocuments', id), {
+    title: patch.title.trim(),
+    category: patch.category,
+    docDate: patch.docDate,
+  });
+}
+
+/**
+ * Staff-only: swap the file behind an existing document (wrong file picked,
+ * better scan). The new object goes under the SAME document folder with a
+ * dated name (Storage objects are immutable, so the old one cannot be
+ * overwritten), the metadata is repointed, then a privileged route removes
+ * the old object so it does not linger. Title/category/date are untouched.
+ */
+export async function replaceDocumentFile(
+  d: PatientDocument,
+  file: File,
+  actor: { uid: string; name: string },
+  onProgress?: (pct: number) => void,
+): Promise<void> {
+  if (!d.id) throw new Error('Document is missing an id.');
+  const contentType = resolveContentType(file);
+  if (!ALLOWED_DOC_TYPES[contentType]) {
+    throw new Error('That file type is not supported. Upload a PDF, image, or Word document.');
+  }
+  if (file.size >= MAX_DOC_BYTES) throw new Error('That file is too large (20 MB max).');
+  const stamp = new Date();
+  const tag = `${String(stamp.getMonth() + 1).padStart(2, '0')}-${String(stamp.getDate()).padStart(2, '0')}-${stamp.getFullYear()}-${String(stamp.getHours()).padStart(2, '0')}${String(stamp.getMinutes()).padStart(2, '0')}`;
+  const fileName = sanitizeFileName(`replaced-${tag}-${file.name}`);
+  const storagePath = `patients/${d.patientId}/documents/${d.id}/${fileName}`;
+  const task = uploadBytesResumable(ref(storage, storagePath), file, { contentType });
+  await new Promise<void>((resolve, reject) => {
+    task.on(
+      'state_changed',
+      (snap) => onProgress?.(Math.round((snap.bytesTransferred / Math.max(1, snap.totalBytes)) * 100)),
+      reject,
+      () => resolve(),
+    );
+  });
+  await updateDoc(doc(db, 'patientDocuments', d.id), {
+    fileName,
+    storagePath,
+    contentType,
+    size: file.size,
+    replacedAt: serverTimestamp(),
+    replacedBy: actor.uid,
+    replacedByName: actor.name,
+  });
+  // Old bytes: removed by the server. Non-fatal if it fails; the metadata
+  // already points at the new file and the old one is unreachable from the UI.
+  try {
+    await authedFetch(`/api/documents/${d.id}/cleanup`, { method: 'POST' });
+  } catch (err) {
+    console.warn('Replaced-file cleanup failed (non-fatal):', err);
+  }
+}
+
+/** Admin-only hard delete through the privileged route. */
+export async function deletePatientDocument(id: string): Promise<void> {
+  const res = await authedFetch(`/api/documents/${id}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error || 'Could not delete the document.');
+  }
+}
+
+/**
+ * Ask the server to render a submitted note to PDF and file it under the
+ * client's Documents (RN oversight visits). Idempotent per note. Non-fatal
+ * for callers: a failed filing is repaired by syncNoteDocuments.
+ */
+export async function fileNoteDocument(noteId: string): Promise<void> {
+  const res = await authedFetch('/api/documents/file-note', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ noteId }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error || 'Could not file the note.');
+  }
+}
+
+/** Staff: file every unfiled oversight note for a client (backfill / repair). */
+export async function syncNoteDocuments(patientId: string): Promise<{ filed: number; skipped: number; errors: string[] }> {
+  const res = await authedFetch('/api/documents/sync-notes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ patientId }),
+  });
+  const body = (await res.json().catch(() => ({}))) as { filed?: number; skipped?: number; errors?: string[]; error?: string };
+  if (!res.ok) throw new Error(body.error || 'Could not sync the notes.');
+  return { filed: body.filed ?? 0, skipped: body.skipped ?? 0, errors: body.errors ?? [] };
 }
