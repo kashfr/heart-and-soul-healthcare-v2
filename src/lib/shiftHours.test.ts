@@ -233,6 +233,18 @@ describe('hoursFindings', () => {
     expect(hoursFindings([kimLpn, kimRn], visited, '2026-09-21').some((f) => /No RN oversight visit/.test(f.message))).toBe(false);
     // a shift-only client (GAPP) never gets the nudge
     expect(hoursFindings([piper], none, '2026-09-21').some((f) => /RN oversight visit/.test(f.message))).toBe(false);
+    // a line that began on the 19th has not had 20 days yet
+    const late = { ...kimRn, from: '2026-09-19', to: '2027-09-18' };
+    expect(hoursFindings([late], none, '2026-09-21').some((f) => /No RN oversight visit/.test(f.message))).toBe(false);
+    expect(hoursFindings([late], none, '2026-10-09').some((f) => /No RN oversight visit/.test(f.message))).toBe(false); // October counts from the 1st
+    expect(hoursFindings([late], none, '2026-10-21').some((f) => /No RN oversight visit/.test(f.message))).toBe(true);
+  });
+  it('treats a fully used RN month as informational, and going over as an error', () => {
+    const full = { ...none, oversight: new Map([['2026-09-09', 6]]) };
+    const f = hoursFindings([kimRn], full, '2026-09-21');
+    expect(f.find((x) => /6 of 6 used/.test(x.message))?.severity).toBe('info');
+    const over = { ...none, oversight: new Map([['2026-09-09', 6.42]]) };
+    expect(hoursFindings([kimRn], over, '2026-09-21').find((x) => /Over by 0.42/.test(x.message))?.severity).toBe('error');
   });
   it('reports each bucket separately', () => {
     const both = { shift: new Map([['2026-09-02', 118]]), oversight: new Map([['2026-09-07', 6.5]]) };

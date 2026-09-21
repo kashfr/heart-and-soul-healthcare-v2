@@ -219,8 +219,8 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
 
       {/* Reminders: expiring / expired / nearly used up / no RN visit yet. */}
       {findings.map((f) => (
-        <div key={f.message} style={f.severity === 'error' ? alertErr : alertWarn}>
-          <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+        <div key={f.message} style={f.severity === 'error' ? alertErr : f.severity === 'warn' ? alertWarn : alertInfo}>
+          {f.severity === 'info' ? <Clock size={14} style={{ flexShrink: 0 }} /> : <AlertTriangle size={14} style={{ flexShrink: 0 }} />}
           <span>{f.message}</span>
         </div>
       ))}

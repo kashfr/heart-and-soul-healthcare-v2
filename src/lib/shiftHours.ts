@@ -523,12 +523,22 @@ export function hoursFindings(
       if (u.remaining < 0) {
         out.push({ severity: 'error', message: `${monthName} ${lower}: ${fmtH(u.used)} of ${fmtH(u.authorized)} used. Over by ${fmtH(-u.remaining)}.` });
       } else if (u.pct != null && u.pct >= 0.9) {
-        out.push({ severity: 'warn', message: `${monthName} ${lower}: ${fmtH(u.used)} of ${fmtH(u.authorized)} used (${Math.round(u.pct * 100)}%). ${fmtH(u.remaining)} left.` });
+        // Nearly used up. For shift hours that is a heads-up (the parent may
+        // still want shifts scheduled); for an RN line, using the month's
+        // hours IS the plan, so it is informational and stays off the roster.
+        out.push({
+          severity: bucket === 'oversight' ? 'info' : 'warn',
+          message: `${monthName} ${lower}: ${fmtH(u.used)} of ${fmtH(u.authorized)} used (${Math.round(u.pct * 100)}%). ${fmtH(u.remaining)} left.`,
+        });
       } else if (bucket === 'shift' && u.runsOutOn) {
         out.push({ severity: 'warn', message: `${monthName} ${lower}: on pace to run out ${fmtUS(u.runsOutOn)} (${fmtH(u.used)} of ${fmtH(u.authorized)} used).` });
       }
     }
-    if (bucket === 'oversight' && u.used === 0 && Number(todayISO.slice(8, 10)) > RN_VISIT_NUDGE_DAY) {
+    // Days the line has actually covered this month: a line that began on
+    // the 19th has not had 20 days to schedule a visit by the 21st.
+    const coveredFrom = current.from > monthStartISO(ym) ? current.from : monthStartISO(ym);
+    const daysCovered = isoToDayNum(todayISO) - isoToDayNum(coveredFrom) + 1;
+    if (bucket === 'oversight' && u.used === 0 && daysCovered > RN_VISIT_NUDGE_DAY) {
       out.push({ severity: 'warn', message: `No RN oversight visit documented yet for ${monthName} (${fmtH(u.authorized ?? 0)} hours authorized).` });
     }
 
