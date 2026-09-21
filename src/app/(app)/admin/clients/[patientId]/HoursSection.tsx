@@ -18,6 +18,7 @@ import {
   UNITS_PER_HOUR,
   authForMonth,
   bucketLabel,
+  bucketLabelLower,
   fmtH,
   fmtUnits,
   findShiftOverlaps,
@@ -202,7 +203,7 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
 
   const remove = async (a: HoursAuthorization) => {
     if (!a.id) return;
-    if (!window.confirm(`Delete the ${bucketLabel(a.covers).toLowerCase()} line ${a.paNumber || '(no PA #)'} (${formatDateUS(a.from)} to ${formatDateUS(a.to)})? The hours history stays; only the cap is removed.`)) return;
+    if (!window.confirm(`Delete the ${bucketLabelLower(a.covers)} line ${a.paNumber || '(no PA #)'} (${formatDateUS(a.from)} to ${formatDateUS(a.to)})? The hours history stays; only the cap is removed.`)) return;
     try {
       await deleteHoursAuthorization(a.id);
       await reload();
@@ -424,9 +425,11 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
                     <div style={{ marginTop: 6 }}>
                       <div style={{ fontSize: 12.5, color: '#334155' }}>
                         Annual units: <strong>{fmtUnits(units.usedUnits)}</strong> of {fmtUnits(units.totalUnits)} used ({Math.round(units.pct * 100)}%), {fmtUnits(Math.max(0, units.remainingUnits))} left
-                        {units.runsOutOn
-                          ? <span style={{ color: '#b3261e' }}> · on pace to run out {formatDateUS(units.runsOutOn)}</span>
-                          : <span style={{ color: '#5c6b7a' }}> · on pace for {fmtUnits(units.projectedUnits)} by {formatDateUS(a.to)}</span>}
+                        {a.from > todayISO
+                          ? <span style={{ color: '#5c6b7a' }}> · starts {formatDateUS(a.from)}</span>
+                          : units.runsOutOn
+                            ? <span style={{ color: '#b3261e' }}> · on pace to run out {formatDateUS(units.runsOutOn)}</span>
+                            : <span style={{ color: '#5c6b7a' }}> · on pace for {fmtUnits(units.projectedUnits)} by {formatDateUS(a.to)}</span>}
                       </div>
                       <div style={{ ...barTrack, height: 6, marginTop: 4, maxWidth: 420 }}>
                         <div style={{ ...barFill, width: `${Math.min(100, Math.round(units.pct * 100))}%`, background: units.remainingUnits < 0 ? '#b3261e' : units.pct >= 0.9 ? '#b45309' : NAVY }} />
@@ -500,7 +503,7 @@ function BucketSummary({ bucket, auth, cap, usage, isCurrent, month, countLabel,
                 : `${rateLabel(auth)} (PA ${auth.paNumber || '—'})`
               : auth
                 ? 'Line has no rate for this month'
-                : `No ${bucketLabel(bucket).toLowerCase()} line covers this month`}
+                : `No ${bucketLabelLower(bucket)} line covers this month`}
           </div>
         </div>
         <div style={stat}>
