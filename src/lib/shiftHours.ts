@@ -143,6 +143,60 @@ export function totalOfSegments(segments: DaySegment[]): number {
   return round2(segments.reduce((a, s) => a + s.hours, 0));
 }
 
+/**
+ * Absolute [start, end) minutes of a shift, or null when the window can't be
+ * resolved (missing times, end before start, implausible span). Same rules as
+ * splitShiftByDay so a shift that split cleanly always has an interval.
+ */
+export function shiftInterval(s: ShiftLike): { start: number; end: number } | null {
+  if (!ISO_DATE.test(s.dateISO || '')) return null;
+  const startMin = parseHM(s.shiftStart);
+  const endMin = parseHM(s.shiftEnd);
+  if (startMin == null || endMin == null) return null;
+  const startDay = isoToDayNum(s.dateISO);
+  const endDay = ISO_DATE.test(s.shiftEndDate || '')
+    ? isoToDayNum(s.shiftEndDate)
+    : endMin > startMin ? startDay : startDay + 1;
+  const start = startDay * 1440 + startMin;
+  const end = endDay * 1440 + endMin;
+  if (end <= start || endDay - startDay > MAX_SHIFT_DAYS) return null;
+  return { start, end };
+}
+
+export interface OverlapHit {
+  /** The other shift's id. */
+  otherId: string;
+  /** Minutes the two windows share. */
+  minutes: number;
+}
+
+/**
+ * Pairs of shifts for ONE client whose clock windows intersect. Two nurses
+ * charting the same hour on the same client is either a real double-staffed
+ * hour or a data-entry error; either way it double-bills unless someone
+ * looks, so the worksheet points at it. Keyed by shift id; each entry lists
+ * every other shift it overlaps.
+ */
+export function findShiftOverlaps<T extends ShiftLike & { id: string }>(shifts: T[]): Map<string, OverlapHit[]> {
+  const out = new Map<string, OverlapHit[]>();
+  const withIv = shifts
+    .map((s) => ({ id: s.id, iv: shiftInterval(s) }))
+    .filter((x): x is { id: string; iv: { start: number; end: number } } => x.iv != null)
+    .sort((a, b) => a.iv.start - b.iv.start);
+  for (let i = 0; i < withIv.length; i += 1) {
+    for (let j = i + 1; j < withIv.length; j += 1) {
+      const a = withIv[i];
+      const b = withIv[j];
+      if (b.iv.start >= a.iv.end) break; // sorted by start: nothing later can overlap a
+      const minutes = Math.min(a.iv.end, b.iv.end) - b.iv.start;
+      if (minutes <= 0) continue;
+      (out.get(a.id) ?? out.set(a.id, []).get(a.id)!).push({ otherId: b.id, minutes });
+      (out.get(b.id) ?? out.set(b.id, []).get(b.id)!).push({ otherId: a.id, minutes });
+    }
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Month helpers ('YYYY-MM').
 // ---------------------------------------------------------------------------

@@ -10,6 +10,7 @@ import {
   monthsBetween,
   authForMonth,
   fmtH,
+  findShiftOverlaps,
   type HoursAuthorization,
 } from './shiftHours';
 
@@ -196,5 +197,35 @@ describe('misc', () => {
     expect(fmtH(5.5)).toBe('5.5');
     expect(fmtH(12.25)).toBe('12.25');
     expect(fmtH(7.1)).toBe('7.1');
+  });
+});
+
+describe('findShiftOverlaps', () => {
+  const night = { id: 'night', dateISO: '2026-09-16', shiftStart: '19:00', shiftEndDate: '2026-09-17', shiftEnd: '07:00', totalHours: '12' };
+  const day = { id: 'day', dateISO: '2026-09-17', shiftStart: '08:00', shiftEndDate: '2026-09-17', shiftEnd: '16:00', totalHours: '8' };
+  const night2 = { id: 'night2', dateISO: '2026-09-17', shiftStart: '19:00', shiftEndDate: '2026-09-18', shiftEnd: '07:00', totalHours: '12' };
+  const dup = { id: 'dup', dateISO: '2026-09-17', shiftStart: '14:00', shiftEndDate: '2026-09-17', shiftEnd: '22:00', totalHours: '8' };
+
+  it('is empty for back-to-back shifts that only touch', () => {
+    expect(findShiftOverlaps([night, day, night2]).size).toBe(0);
+    // 07:00 end meeting 07:00 start is not an overlap
+    const touch = { ...day, shiftStart: '07:00' };
+    expect(findShiftOverlaps([night, touch]).size).toBe(0);
+  });
+
+  it('reports every pair with the shared minutes', () => {
+    const m = findShiftOverlaps([night, day, night2, dup]);
+    expect(m.get('dup')).toEqual([
+      { otherId: 'day', minutes: 120 },
+      { otherId: 'night2', minutes: 180 },
+    ]);
+    expect(m.get('day')).toEqual([{ otherId: 'dup', minutes: 120 }]);
+    expect(m.get('night2')).toEqual([{ otherId: 'dup', minutes: 180 }]);
+    expect(m.has('night')).toBe(false);
+  });
+
+  it('ignores shifts whose window cannot be resolved', () => {
+    const blank = { id: 'blank', dateISO: '2026-09-17', shiftStart: '', shiftEndDate: '', shiftEnd: '', totalHours: '8' };
+    expect(findShiftOverlaps([day, blank]).size).toBe(0);
   });
 });

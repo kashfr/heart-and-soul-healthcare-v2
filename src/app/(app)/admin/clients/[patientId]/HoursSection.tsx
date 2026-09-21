@@ -17,6 +17,7 @@ import {
   HOURS_AUTH_EXPIRY_WARN_DAYS,
   authForMonth,
   fmtH,
+  findShiftOverlaps,
   hoursFindings,
   monthCap,
   monthCapSource,
@@ -84,11 +85,28 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
     return () => { cancelled = true; };
   }, [patientId]);
 
+  const shiftNotes = useMemo(() => notes.filter((n) => n.noteType !== 'rn-oversight-visit'), [notes]);
+
+  // Two shifts charting the same hour on this client: a double-staffed hour
+  // or a typo, and a double bill either way. Keyed by note id.
+  const overlaps = useMemo(() => findShiftOverlaps(shiftNotes), [shiftNotes]);
+  const noteById = useMemo(() => new Map(shiftNotes.map((n) => [n.id, n])), [shiftNotes]);
+  const overlapText = (noteId: string): string => {
+    const hits = overlaps.get(noteId) ?? [];
+    return hits
+      .map((h) => {
+        const o = noteById.get(h.otherId);
+        const mins = h.minutes;
+        const dur = mins % 60 === 0 ? `${mins / 60} h` : `${Math.floor(mins / 60)} h ${mins % 60} min`;
+        return `${dur} with ${o?.nurseName || 'another nurse'} (${o ? `${formatDateUS(o.dateISO)} ${o.shiftStart} to ${o.shiftEnd}` : '?'})`;
+      })
+      .join('; ');
+  };
+
   // Shift notes only (oversight visits are not shift work), cut at midnight.
   const dayRows = useMemo<DayRow[]>(() => {
     const rows: DayRow[] = [];
-    for (const n of notes) {
-      if (n.noteType === 'rn-oversight-visit') continue;
+    for (const n of shiftNotes) {
       const segs = splitShiftByDay(n);
       const endDate = n.shiftEndDate || (segs.length > 1 ? segs[segs.length - 1].dateISO : n.dateISO);
       const window =
@@ -100,7 +118,7 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
       }
     }
     return rows.sort((a, b) => a.dateISO.localeCompare(b.dateISO) || a.window.localeCompare(b.window));
-  }, [notes]);
+  }, [shiftNotes]);
 
   const dayHours = useMemo(() => {
     const m = new Map<string, number>();
@@ -114,6 +132,7 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
   const usage = monthUsage(dayHours, cap, month, todayISO);
   const isCurrent = month === todayISO.slice(0, 7);
   const monthRows = dayRows.filter((r) => r.dateISO >= monthStartISO(month) && r.dateISO <= monthEndISO(month));
+  const monthOverlapNotes = new Set(monthRows.filter((r) => overlaps.has(r.noteId)).map((r) => r.noteId));
   const findings = useMemo(() => hoursFindings(list, dayHours, todayISO), [list, dayHours, todayISO]);
 
   // Every month any authorization covers, so the table shows the whole story
@@ -173,6 +192,15 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
           <span>{f.message}</span>
         </div>
       ))}
+      {monthOverlapNotes.size > 0 && (
+        <div style={alertErr}>
+          <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+          <span>
+            {monthLabel(month)}: {monthOverlapNotes.size} shift{monthOverlapNotes.size === 1 ? '' : 's'} overlap another nurse&apos;s shift on this client.
+            Both are counted in the totals below; check the rows marked “overlaps” before billing.
+          </span>
+        </div>
+      )}
       {auths && list.length === 0 && (
         <div style={alertInfo}>
           <FileText size={14} style={{ flexShrink: 0 }} />
@@ -282,7 +310,13 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
                   running = Math.round((running + r.hours) * 100) / 100;
                   const firstOfDay = i === 0 || monthRows[i - 1].dateISO !== r.dateISO;
                   return (
-                    <tr key={`${r.noteId}-${r.dateISO}`} style={firstOfDay && i > 0 ? { borderTop: '2px solid #e5e7eb' } : undefined}>
+                    <tr
+                      key={`${r.noteId}-${r.dateISO}`}
+                      style={{
+                        ...(firstOfDay && i > 0 ? { borderTop: '2px solid #e5e7eb' } : null),
+                        ...(overlaps.has(r.noteId) ? { background: '#fff5f5' } : null),
+                      }}
+                    >
                       <td style={{ ...td, whiteSpace: 'nowrap', fontWeight: firstOfDay ? 600 : 400, color: firstOfDay ? NAVY : '#94a3b8' }}>
                         {formatDateUS(r.dateISO)}
                         {firstOfDay && (dayHours.get(r.dateISO) ?? 0) > 24 && (
@@ -293,6 +327,9 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
                       <td style={td}>
                         <Link href={`/admin/submissions/${r.noteId}`} style={{ color: NAVY }}>{r.window}</Link>
                         {r.spill && <span style={spillBadge}>from prior day</span>}
+                        {overlaps.has(r.noteId) && (
+                          <span style={overBadge} title={`Overlaps ${overlapText(r.noteId)}`}>overlaps</span>
+                        )}
                       </td>
                       <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtH(r.hours)}</td>
                       <td style={{ ...td, textAlign: 'right', color: '#5c6b7a', fontVariantNumeric: 'tabular-nums' }}>{fmtH(running)}</td>
