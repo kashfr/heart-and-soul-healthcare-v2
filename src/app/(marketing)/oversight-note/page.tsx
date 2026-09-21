@@ -40,6 +40,7 @@ import {
 } from '@/lib/oversightNote';
 import { useAuth } from '@/components/AuthProvider';
 import { authedFetch } from '@/lib/authedFetch';
+import { fileNoteDocument } from '@/lib/patientDocuments';
 import { escortToField, FieldError, FIELD_ERROR_STYLE, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
 import SignatureCanvas, { type SignatureCanvasHandle } from '@/components/SignatureCanvas';
 import DeselectableRadio, {
@@ -519,6 +520,13 @@ function OversightNotePageInner() {
         } catch (err) {
           console.warn('Correction-amended event failed (non-fatal):', err);
         }
+        // Re-file the amended note into the client's Documents so the PDF on
+        // file matches the record. Non-fatal: staff can Sync from the tab.
+        try {
+          await fileNoteDocument(editId);
+        } catch (err) {
+          console.warn('Re-filing the amended oversight note failed (non-fatal):', err);
+        }
         clearRadioStorage();
         alert('Oversight note updated.');
         window.location.href = `/admin/submissions/${editId}`;
@@ -566,6 +574,14 @@ function OversightNotePageInner() {
       });
       clearRadioStorage();
       if (user?.uid) await clearOversightDraft(user.uid).catch(() => {});
+      // File the note into the client's Documents tab (RN Oversight) so the
+      // office never has to download and re-upload it. Non-fatal: the note is
+      // the record; staff can Sync from the tab if this ever fails.
+      try {
+        await fileNoteDocument(docId);
+      } catch (err) {
+        console.warn('Auto-filing the oversight note failed (non-fatal):', err);
+      }
       const c = encodeURIComponent(String(values.q3_clientName || ''));
       const d = encodeURIComponent(String(values.q6_dateofService || ''));
       router.push(`/progress-note/submitted/${docId}?c=${c}&d=${d}&t=oversight`);

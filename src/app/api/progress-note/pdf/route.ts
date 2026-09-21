@@ -1,79 +1,20 @@
-import { renderToBuffer } from '@react-pdf/renderer';
-import React from 'react';
-import ProgressNotePDF from '@/lib/pdf/ProgressNotePDF';
-import type { ProgressNoteFormData, PdfAuditEntry, PdfFieldVersion } from '@/lib/pdf/ProgressNotePDF';
-import { getServerSettings } from '@/lib/settingsServer';
-import { getEditHistoryServer } from '@/lib/editHistoryServer';
-import { buildFieldAmendments } from '@/lib/revisionFormat';
+import { renderNotePdf, notePdfFilename } from '@/lib/notePdfServer';
+import type { ProgressNoteFormData } from '@/lib/pdf/ProgressNotePDF';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
 import { adminDb } from '@/lib/firebaseAdmin';
-import { formatDateUS, formatDateUSFile } from '@/lib/dateFormat';
-
-function sanitize(part: string): string {
-  return (part || '').replace(/[^a-zA-Z0-9-]+/g, '_').replace(/^_+|_+$/g, '') || 'note';
-}
-
-function isoFromAnyDate(v: string | undefined): string {
-  if (!v) return 'unknown-date';
-  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
-  const parts = v.split('/');
-  if (parts.length === 3) {
-    return `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
-  }
-  return v;
-}
-
-// Display string for a struck-through prior value. Never truncated (the record
-// must stay legible); a blank prior shows as "(blank)" so an added field reads
-// clearly. Mirrors the on-screen displayOld.
-function displayOldPdf(v: unknown): string {
-  if (v === null || v === undefined || v === '') return '(blank)';
-  if (typeof v === 'string') return v.startsWith('data:image/') ? '(signature image)' : formatDateUS(v);
-  try {
-    return JSON.stringify(v);
-  } catch {
-    return String(v);
-  }
-}
-
-function fmtWhenPdf(d: Date | null): string {
-  if (!d) return 'an earlier edit';
-  return d.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
 
 export async function POST(request: Request) {
   try {
     const data: ProgressNoteFormData = await request.json();
 
-    // Pull vital-range overrides + branding so the rendered PDF uses
-    // the admin-configured thresholds and org name/tagline. Both are
-    // read in one settings call.
-    const settings = await getServerSettings();
-    const vitalsOverride = settings.vitals.rangesByAgeGroup;
-    const branding = {
-      orgName: settings.branding.orgName,
-      tagline: settings.branding.tagline,
-    };
-
-    // When a saved note id is supplied (?id=), append its audit trail so
-    // post-submission amendments travel with the export. Read server-side
-    // (authoritative) and pre-formatted here so the PDF stays a dumb renderer.
-    // Unsaved previews pass no id and get no audit section.
+    // When a saved note id is supplied (?id=), the audit trail is appended so
+    // post-submission amendments travel with the export. It is read
+    // server-side by id, so authorize the caller before disclosing it: any
+    // active staff member, and a nurse only for her own note (mirrors the
+    // in-app "staff see any, author sees own" policy). Requests without an id
+    // (unsaved previews) read no server data and remain open.
     const noteId = new URL(request.url).searchParams.get('id');
-    let editHistory: PdfAuditEntry[] | undefined;
-    let fieldAmendments: Record<string, PdfFieldVersion[]> | undefined;
     if (noteId) {
-      // The audit trail is read server-side by id, so authorize the caller
-      // before disclosing it: any active staff member, and a nurse only for
-      // her own note (mirrors the in-app "staff see any, author sees own"
-      // policy). Requests without an id (unsaved previews) read no server data
-      // and remain open, preserving existing behavior.
       const caller = await requireRole(request, ['admin', 'supervisor', 'nurse']);
       if (caller.role === 'nurse') {
         const noteSnap = await adminDb().collection('progressNotes').doc(noteId).get();
@@ -81,37 +22,9 @@ export async function POST(request: Request) {
           throw new AdminAuthError(403, 'You can only export the audit trail for your own notes.');
         }
       }
-      const rows = await getEditHistoryServer(noteId);
-      editHistory = rows.map((r) => ({
-        editedByName: r.editedByName,
-        editedByRole: r.editedByRole,
-        editedAt: r.editedAt ? r.editedAt.toLocaleString('en-US') : 'Unknown',
-        ...(r.reason ? { reason: r.reason } : {}),
-        ...(r.correctionNote ? { correctionNote: r.correctionNote } : {}),
-        ...(r.action ? { action: r.action } : {}),
-      }));
-      // Per-field prior values for the in-place amendment rendering in the note
-      // body (the "what changed"); the audit section becomes the "who/why" log.
-      const rawAmendments = buildFieldAmendments(rows);
-      fieldAmendments = {};
-      for (const [key, versions] of Object.entries(rawAmendments)) {
-        fieldAmendments[key] = versions.map((v) => ({
-          oldValue: displayOldPdf(v.oldValue),
-          correctedAt: fmtWhenPdf(v.correctedAt),
-          correctedBy: v.correctedBy || '',
-        }));
-      }
     }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const element = React.createElement(ProgressNotePDF, { data, vitalsOverride, branding, editHistory, fieldAmendments }) as any;
-    const buffer = await renderToBuffer(element);
-
-    const clientName = sanitize(data.q3_clientName || 'client');
-    const dateStr = isoFromAnyDate(data.q6_dateofService);
-    const kind = data.noteType === 'rn-oversight-visit' ? 'Oversight_Note' : 'Progress_Note';
-    const filename = `${kind}_${clientName}_${formatDateUSFile(dateStr)}.pdf`;
-
+    const buffer = await renderNotePdf(data, noteId);
+    const filename = notePdfFilename(data);
     return new Response(new Uint8Array(buffer), {
       status: 200,
       headers: {

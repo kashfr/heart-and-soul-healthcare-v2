@@ -44,6 +44,10 @@ const mockAuthedFetch = vi.hoisted(() => ({
   authedFetch: vi.fn().mockResolvedValue({ ok: true }),
 }));
 vi.mock('@/lib/authedFetch', () => mockAuthedFetch);
+// The form files the submitted note into Documents via a server route; the
+// module also initializes Firebase Storage, which the test env cannot.
+const mockDocuments = vi.hoisted(() => ({ fileNoteDocument: vi.fn(async () => {}) }));
+vi.mock('@/lib/patientDocuments', () => mockDocuments);
 
 vi.mock('@/components/SignatureCanvas', () => ({
   __esModule: true,

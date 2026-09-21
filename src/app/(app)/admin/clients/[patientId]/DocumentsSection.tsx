@@ -1,14 +1,20 @@
 'use client';
 
 import { useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Archive, ArchiveRestore, ExternalLink, FileText, FileUp, Image as ImageIcon } from 'lucide-react';
+import Link from 'next/link';
+import { Archive, ArchiveRestore, ExternalLink, FileText, FileUp, Image as ImageIcon, Pencil, RefreshCw, Replace, Trash2 } from 'lucide-react';
 import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
+import { withSelectChevron } from '@/lib/selectChevron';
 import {
   ALLOWED_DOC_TYPES,
   DOC_CATEGORIES,
+  deletePatientDocument,
   getDocumentBlob,
   renderDocumentInWindow,
+  replaceDocumentFile,
   setDocumentArchived,
+  syncNoteDocuments,
+  updateDocumentDetails,
   uploadPatientDocument,
   type DocCategory,
   type DocUploader,
@@ -35,7 +41,9 @@ interface Props {
   patientId: string;
   documents: PatientDocument[];
   canUpload: boolean;
-  isStaff: boolean; // archive/restore rights + archived visibility
+  isStaff: boolean; // archive/restore/edit/replace rights + archived visibility
+  /** Hard delete (privileged route). Never while previewing another user's view. */
+  isAdmin: boolean;
   uploader: DocUploader;
   onChanged: () => void; // re-fetch after upload/archive
   onToast: (msg: string) => void;
@@ -44,14 +52,16 @@ interface Props {
 /**
  * The dashboard's Documents section (phase 3): categorized uploads (plan of
  * care, initial assessment, supervisory visits, physician orders, scans) with
- * view + staff-only archive. Files are immutable and never hard-deleted; an
- * archived document just leaves the default list (staff can show it again).
+ * view, staff edit / replace / archive, and admin delete. RN oversight visit
+ * notes file themselves here (autoFiled + sourceNoteId); Sync backfills any
+ * that were submitted before that existed or whose filing failed.
  */
 export default function DocumentsSection({
   patientId,
   documents,
   canUpload,
   isStaff,
+  isAdmin,
   uploader,
   onChanged,
   onToast,
@@ -59,7 +69,10 @@ export default function DocumentsSection({
   const [filter, setFilter] = useState<string>('All');
   const [showArchived, setShowArchived] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [editing, setEditing] = useState<PatientDocument | null>(null);
+  const [replacing, setReplacing] = useState<PatientDocument | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
   const visible = useMemo(() => {
     return documents
@@ -114,6 +127,45 @@ export default function DocumentsSection({
     }
   };
 
+  const remove = async (d: PatientDocument) => {
+    if (!d.id || !isAdmin) return;
+    const what = d.autoFiled
+      ? `Delete "${d.title}"?\n\nThis is the PDF filed from an oversight note. The note itself stays; Sync would file it again. The file and its entry are removed (a snapshot is kept in the deletion audit).`
+      : `Delete "${d.title}"?\n\nThe file and its entry are permanently removed from this client's documents (a snapshot is kept in the deletion audit). This cannot be undone.`;
+    if (!window.confirm(what)) return;
+    setBusyId(d.id);
+    try {
+      await deletePatientDocument(d.id);
+      onToast(`Deleted "${d.title}".`);
+      onChanged();
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : 'Could not delete the document.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const sync = async () => {
+    setSyncing(true);
+    try {
+      const r = await syncNoteDocuments(patientId);
+      onToast(
+        r.filed > 0
+          ? `Filed ${r.filed} oversight ${r.filed === 1 ? 'note' : 'notes'}${r.skipped ? ` (${r.skipped} already on file)` : ''}.`
+          : r.errors.length
+            ? `Nothing filed: ${r.errors[0]}`
+            : r.skipped
+              ? `All ${r.skipped} oversight ${r.skipped === 1 ? 'note is' : 'notes are'} already on file.`
+              : 'No oversight notes to file for this client.',
+      );
+      if (r.filed > 0) onChanged();
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : 'Could not sync the notes.');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   return (
     <div>
       <div style={toolbarStyle}>
@@ -131,6 +183,17 @@ export default function DocumentsSection({
               <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
               Show archived
             </label>
+          )}
+          {isStaff && (
+            <button
+              type="button"
+              onClick={sync}
+              disabled={syncing}
+              style={actionBtnStyle}
+              title="File any RN oversight visit notes for this client that are not in Documents yet"
+            >
+              <RefreshCw size={14} /> {syncing ? 'Syncing…' : 'Sync RN oversight notes'}
+            </button>
           )}
           {canUpload && (
             <button type="button" onClick={() => setUploadOpen(true)} style={uploadBtnStyle}>
@@ -156,6 +219,11 @@ export default function DocumentsSection({
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={docTitleStyle}>
                   {d.title}
+                  {d.autoFiled && (
+                    <span style={autoChipStyle} title="Filed automatically from the submitted note; re-filed when the note is amended">
+                      From note
+                    </span>
+                  )}
                   {d.archived && <span style={archivedChipStyle}>Archived</span>}
                 </div>
                 <div style={docMetaStyle}>
@@ -163,13 +231,32 @@ export default function DocumentsSection({
                   {d.docDate ? ` ${fmtDate(d.docDate)}` : ''}
                   {` · ${ALLOWED_DOC_TYPES[d.contentType] || 'File'}`}
                   {d.size ? ` · ${fmtSize(d.size)}` : ''}
-                  {d.uploadedByName ? ` · uploaded by ${d.uploadedByName}` : ''}
+                  {d.uploadedByName ? ` · ${d.autoFiled ? 'documented' : 'uploaded'} by ${d.uploadedByName}` : ''}
+                  {d.replacedByName ? ` · file replaced by ${d.replacedByName}` : ''}
+                  {d.sourceNoteId && (
+                    <>
+                      {' · '}
+                      <Link href={`/admin/submissions/${d.sourceNoteId}`} style={{ color: NAVY, fontWeight: 600 }}>
+                        Open note
+                      </Link>
+                    </>
+                  )}
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                 <button type="button" onClick={() => view(d)} style={actionBtnStyle} title="Open in a new tab">
                   <ExternalLink size={14} /> View
                 </button>
+                {isStaff && (
+                  <button type="button" onClick={() => setEditing(d)} disabled={busyId === d.id} style={actionBtnStyle} title="Edit the title, category, or date">
+                    <Pencil size={14} /> Edit
+                  </button>
+                )}
+                {isStaff && !d.autoFiled && (
+                  <button type="button" onClick={() => setReplacing(d)} disabled={busyId === d.id} style={actionBtnStyle} title="Upload a different file in place of this one (the old file is removed)">
+                    <Replace size={14} /> Replace
+                  </button>
+                )}
                 {isStaff && (
                   <button
                     type="button"
@@ -180,6 +267,11 @@ export default function DocumentsSection({
                   >
                     {d.archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
                     {d.archived ? ' Restore' : ' Archive'}
+                  </button>
+                )}
+                {isAdmin && (
+                  <button type="button" onClick={() => remove(d)} disabled={busyId === d.id} style={{ ...actionBtnStyle, color: '#b3261e', borderColor: '#f3b8b8' }} title="Permanently delete this document (admin only)">
+                    <Trash2 size={14} /> Delete
                   </button>
                 )}
               </div>
@@ -199,6 +291,194 @@ export default function DocumentsSection({
           }}
         />
       )}
+      {editing && (
+        <EditDocumentModal
+          document={editing}
+          onClose={() => setEditing(null)}
+          onSaved={(title) => {
+            onToast(`Updated "${title}".`);
+            onChanged();
+          }}
+        />
+      )}
+      {replacing && (
+        <ReplaceDocumentModal
+          document={replacing}
+          actor={{ uid: uploader.uid, name: uploader.name }}
+          onClose={() => setReplacing(null)}
+          onReplaced={(title) => {
+            onToast(`Replaced the file behind "${title}".`);
+            onChanged();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+type EditField = 'title' | 'category' | 'docDate';
+const EDIT_FIELD_ORDER: readonly EditField[] = ['title', 'category', 'docDate'];
+const editFieldId = (k: EditField) => `doc-edit-${k}`;
+
+/** Staff relabel: title, category, date. The file is untouched. */
+function EditDocumentModal({
+  document: d,
+  onClose,
+  onSaved,
+}: {
+  document: PatientDocument;
+  onClose: () => void;
+  onSaved: (title: string) => void;
+}) {
+  const [title, setTitle] = useState(d.title);
+  const [category, setCategory] = useState<DocCategory | ''>((DOC_CATEGORIES as readonly string[]).includes(d.category) ? (d.category as DocCategory) : '');
+  const [docDate, setDocDate] = useState(d.docDate || '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<EditField, string>>>({});
+
+  const save = async () => {
+    if (saving || !d.id) return;
+    const errs: Partial<Record<EditField, string>> = {};
+    if (!title.trim()) errs.title = 'Enter a title.';
+    if (!category) errs.category = 'Choose a document category.';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(docDate)) errs.docDate = 'Enter the date on the document.';
+    if (!applyFieldErrors(errs, EDIT_FIELD_ORDER, setFieldErrors, editFieldId)) return;
+    if (!category) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await updateDocumentDetails(d.id, { title, category, docDate });
+      onSaved(title.trim());
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the changes.');
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={backdropStyle} role="dialog" aria-modal="true" aria-label="Edit document details">
+      <div style={sheetStyle}>
+        <div style={sheetTitleStyle}>Edit document details</div>
+        <div style={{ ...hintStyle, marginBottom: 12 }}>File: {d.fileName}</div>
+        <label style={fieldStyle} id={editFieldId('title')}>
+          <span style={fieldLabelStyle}>Title *</span>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => { setTitle(e.target.value); if (fieldErrors.title) setFieldErrors((f) => ({ ...f, title: undefined })); }}
+            style={{ ...inputStyle, ...(fieldErrors.title ? FIELD_ERROR_STYLE : null) }}
+            aria-invalid={!!fieldErrors.title}
+          />
+          <FieldError message={fieldErrors.title} />
+        </label>
+        <label style={fieldStyle} id={editFieldId('category')}>
+          <span style={fieldLabelStyle}>Category *</span>
+          <select
+            value={category}
+            onChange={(e) => { setCategory(e.target.value as DocCategory); if (fieldErrors.category) setFieldErrors((f) => ({ ...f, category: undefined })); }}
+            style={{ ...selectStyle, ...(fieldErrors.category ? FIELD_ERROR_STYLE : null) }}
+            aria-invalid={!!fieldErrors.category}
+          >
+            <option value="">Select a category…</option>
+            {DOC_CATEGORIES.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+          <FieldError message={fieldErrors.category} />
+        </label>
+        <label style={fieldStyle} id={editFieldId('docDate')}>
+          <span style={fieldLabelStyle}>Date on the document *</span>
+          <input
+            type="date"
+            value={docDate}
+            onChange={(e) => { setDocDate(e.target.value); if (fieldErrors.docDate) setFieldErrors((f) => ({ ...f, docDate: undefined })); }}
+            style={{ ...inputStyle, ...(fieldErrors.docDate ? FIELD_ERROR_STYLE : null) }}
+            aria-invalid={!!fieldErrors.docDate}
+          />
+          <FieldError message={fieldErrors.docDate} />
+        </label>
+        {error && <div style={errBoxStyle}>{error}</div>}
+        <div style={actionsStyle}>
+          <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="button" style={saveBtnStyle} onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Staff: swap the file behind a document. Labeling stays; the old file is removed server-side. */
+function ReplaceDocumentModal({
+  document: d,
+  actor,
+  onClose,
+  onReplaced,
+}: {
+  document: PatientDocument;
+  actor: { uid: string; name: string };
+  onClose: () => void;
+  onReplaced: (title: string) => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [pct, setPct] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const uploading = pct !== null;
+
+  const save = async () => {
+    if (uploading) return;
+    if (!file) { setError('Choose the file to upload in its place.'); return; }
+    setError(null);
+    setPct(0);
+    try {
+      await replaceDocumentFile(d, file, actor, (p) => setPct(p));
+      onReplaced(d.title);
+      onClose();
+    } catch (err) {
+      setPct(null);
+      setError(err instanceof Error ? err.message : 'Replace failed. Please try again.');
+    }
+  };
+
+  return (
+    <div style={backdropStyle} role="dialog" aria-modal="true" aria-label="Replace the document file">
+      <div style={sheetStyle}>
+        <div style={sheetTitleStyle}>Replace the file</div>
+        <div style={{ ...hintStyle, marginBottom: 12 }}>
+          “{d.title}” keeps its title, category, and date. The current file ({d.fileName}) is removed once the new one is uploaded.
+        </div>
+        <button
+          type="button"
+          style={{ ...dropZoneStyle, ...(error && !file ? FIELD_ERROR_WRAP_STYLE : null) }}
+          onClick={() => fileInput.current?.click()}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => { e.preventDefault(); setFile(e.dataTransfer.files?.[0] || null); setError(null); }}
+        >
+          <FileUp size={20} color="#5c6b7a" />
+          {file ? <span style={{ fontWeight: 600, color: '#1f2937' }}>{file.name}</span> : <span style={{ color: '#5c6b7a' }}>Click to choose the new file (or drop it here)</span>}
+          <span style={dropHintStyle}>PDF, image, or Word document · 20 MB max</span>
+        </button>
+        <input
+          ref={fileInput}
+          type="file"
+          accept={Object.keys(ALLOWED_DOC_TYPES).join(',')}
+          style={{ display: 'none' }}
+          onChange={(e) => { setFile(e.target.files?.[0] || null); setError(null); }}
+        />
+        {uploading && (
+          <div style={progressWrapStyle}>
+            <div style={{ ...progressBarStyle, width: `${pct}%` }} />
+            <span style={progressTextStyle}>{pct}%</span>
+          </div>
+        )}
+        {error && <div style={errBoxStyle}>{error}</div>}
+        <div style={actionsStyle}>
+          <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={uploading}>Cancel</button>
+          <button type="button" style={saveBtnStyle} onClick={save} disabled={uploading}>{uploading ? 'Uploading…' : 'Replace file'}</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -374,6 +654,7 @@ const docTitleStyle: CSSProperties = { fontWeight: 600, fontSize: 13.5, color: '
 const docMetaStyle: CSSProperties = { fontSize: 12, color: '#7f8c8d', marginTop: 2 };
 const categoryChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#e8eef4', color: NAVY, fontSize: 10.5, fontWeight: 700 };
 const archivedChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#f1f5f9', color: '#64748b', fontSize: 10.5, fontWeight: 700 };
+const autoChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#dbeafe', color: '#1d4ed8', border: '1px solid #bfdbfe', fontSize: 10.5, fontWeight: 700 };
 const actionBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'white', color: '#2c3e50', border: '1px solid #d0d7de', padding: '6px 10px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
 const backdropStyle: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 3200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '8vh 16px', overflowY: 'auto' };
 const sheetStyle: CSSProperties = { width: '100%', maxWidth: 520, background: 'white', borderRadius: 12, padding: 18, boxShadow: '0 10px 40px rgba(0,0,0,0.25)' };
@@ -383,7 +664,7 @@ const dropHintStyle: CSSProperties = { fontSize: 11.5, color: '#8a949e' };
 const fieldStyle: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12, minWidth: 0 };
 const fieldLabelStyle: CSSProperties = { fontSize: 12, fontWeight: 600, color: '#5c6b7a' };
 const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', height: 38 };
-const selectStyle: CSSProperties = { ...inputStyle, cursor: 'pointer' };
+const selectStyle: CSSProperties = withSelectChevron(inputStyle);
 const hintStyle: CSSProperties = { fontSize: 11.5, color: '#8a949e', lineHeight: 1.4 };
 const grid2Style: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 };
 const progressWrapStyle: CSSProperties = { position: 'relative', height: 22, background: '#eef1f4', borderRadius: 999, overflow: 'hidden', marginBottom: 10 };
