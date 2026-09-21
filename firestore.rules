@@ -127,6 +127,29 @@ service cloud.firestore {
       }
     }
 
+    // Authorized nursing hours per client, transcribed from the payer's Letter
+    // of Notification (GAPP weekly rate + per-month block hours). OWNER-ONLY on
+    // purpose: the caps and how close a client is to them are billing and
+    // parent-facing numbers the owner answers personally, so admin is the only
+    // role that can read or write them. Top-level (keyed by patientId) so the
+    // roster loads every client's lines in one query. Math in shiftHours.ts.
+    match /hoursAuthorizations/{authId} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin()
+        && incomingData().patientId is string && incomingData().patientId.size() > 0
+        && incomingData().paNumber is string && incomingData().paNumber.size() <= 60
+        && incomingData().kind in ['skilled', 'unskilled']
+        && (incomingData().hoursPerWeek == null
+            || (incomingData().hoursPerWeek is number
+                && incomingData().hoursPerWeek >= 0 && incomingData().hoursPerWeek <= 168))
+        && incomingData().from is string && incomingData().from.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        && incomingData().to is string && incomingData().to.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        && incomingData().from <= incomingData().to
+        && incomingData().monthOverrides is map
+        && incomingData().note is string && incomingData().note.size() <= 1000;
+      allow delete: if isAdmin();
+    }
+
     // Auto-assigned record-number counter (counters/patients). Staff-only:
     // patient creation, which consumes the counter inside a transaction, is
     // already staff-gated. Numbers only ever increment (never reused).
@@ -399,7 +422,7 @@ service cloud.firestore {
         && incomingData().userId == request.auth.uid
         && incomingData().exportedAt == request.time
         && incomingData().submissionIds is list
-        && incomingData().format in ['zip', 'merged-pdf'];
+        && incomingData().format in ['zip', 'merged-pdf', 'hours-csv'];
       allow read: if isAdmin();
       allow update, delete: if false;
     }

@@ -18,7 +18,7 @@ import {
 import { formatUSPhone } from '@/lib/phone';
 import { arrayUnion, arrayRemove, doc, updateDoc } from 'firebase/firestore';
 import { AuthGuard } from '@/components/AuthGuard';
-import { useEffectiveUser } from '@/components/AuthProvider';
+import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import {
   Patient,
   PatientClinical,
@@ -37,7 +37,10 @@ import {
   getServiceLevel,
   matchesClassification,
 } from '@/lib/programs';
-import { reconcilePatient, worstSeverity, summarize, type Finding } from '@/lib/reconcile';
+import { reconcilePatient, worstSeverity, type Finding } from '@/lib/reconcile';
+import { getAllHoursAuthorizations } from '@/lib/hoursAuthorizations';
+import { getShiftDayHoursByPatientSince } from '@/lib/submissions';
+import { addDaysISO, hoursFindings, monthStartISO, type HoursAuthorization } from '@/lib/shiftHours';
 import { db } from '@/lib/firebase';
 import { authedFetch } from '@/lib/authedFetch';
 import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
@@ -123,7 +126,13 @@ function ClientsRosterInner() {
   // the care-team chips commit real Firestore writes as the real admin, so
   // they must not be one accidental click away under a "(read-only)" banner.
   const canManageRoster = isStaff && !isViewingAs;
+  // Hours caps + usage are the owner's alone (admin-only collection) and stay
+  // hidden while previewing another user's view.
+  const { profile } = useAuth();
+  const showHours = profile?.role === 'admin' && !isViewingAs;
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [hoursAuths, setHoursAuths] = useState<Map<string, HoursAuthorization[]>>(new Map());
+  const [dayHoursByPatient, setDayHoursByPatient] = useState<Map<string, Map<string, number>>>(new Map());
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<Patient>>(emptyPatient);
@@ -153,6 +162,29 @@ function ClientsRosterInner() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }, []);
+
+  // Owner-only: every client's hours authorizations plus this month's shift
+  // hours (from two days before the 1st so an overnight shift dated the last
+  // day of the prior month contributes its post-midnight hours). Failures
+  // leave the badges off rather than blocking the roster.
+  useEffect(() => {
+    if (!showHours) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [auths, hours] = await Promise.all([
+          getAllHoursAuthorizations(),
+          getShiftDayHoursByPatientSince(addDaysISO(monthStartISO(todayISO.slice(0, 7)), -2)),
+        ]);
+        if (cancelled) return;
+        setHoursAuths(auths);
+        setDayHoursByPatient(hours);
+      } catch (err) {
+        console.error('Hours badges load failed:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [showHours, todayISO]);
 
   useEffect(() => {
     // Wait until we know who's asking, so a nurse never briefly loads ALL
@@ -440,15 +472,30 @@ function ClientsRosterInner() {
     if (!isStaff) return m;
     for (const p of patients) {
       if (!p.id) continue;
-      m.set(p.id, reconcilePatient(p, todayISO));
+      const list = reconcilePatient(p, todayISO);
+      if (showHours) {
+        const auths = hoursAuths.get(p.id) ?? [];
+        for (const f of hoursFindings(auths, dayHoursByPatient.get(p.id) ?? new Map(), todayISO)) {
+          list.push({ rule: `hours-${f.message}`, severity: f.severity, message: f.message });
+        }
+      }
+      m.set(p.id, list);
     }
     return m;
-  }, [patients, todayISO, isStaff]);
+  }, [patients, todayISO, isStaff, showHours, hoursAuths, dayHoursByPatient]);
 
-  const checkSummary = useMemo(
-    () => (isStaff ? summarize(patients, todayISO) : { error: 0, warn: 0, info: 0, clean: 0 }),
-    [patients, todayISO, isStaff],
-  );
+  // Counted off the same findings map the rows render (reconcile + hours),
+  // so the header tally and the per-row badges can never disagree.
+  const checkSummary = useMemo(() => {
+    const acc = { error: 0, warn: 0, info: 0, clean: 0 };
+    if (!isStaff) return acc;
+    for (const p of patients) {
+      const w = worstSeverity(findings.get(p.id || '') ?? []);
+      if (w === null) acc.clean += 1;
+      else acc[w] += 1;
+    }
+    return acc;
+  }, [patients, findings, isStaff]);
 
   // "Needs attention" is its own filter rather than a sort, so the list can be
   // narrowed to exactly the records that need a human.

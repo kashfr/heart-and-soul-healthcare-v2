@@ -15,6 +15,7 @@ import {
   CalendarClock,
   FolderOpen,
   ListChecks,
+  Clock,
   Stethoscope,
   TrendingUp,
 } from 'lucide-react';
@@ -34,6 +35,7 @@ import VerbalOrdersSection from './VerbalOrdersSection';
 import MedErrorsSection from './MedErrorsSection';
 import SeizureLogSection from './SeizureLogSection';
 import CarePlanSection from './CarePlanSection';
+import HoursSection from './HoursSection';
 import { physicianAttributionPending, physicianOrderStale } from '@/lib/marShared';
 import {
   adverseEvents,
@@ -70,6 +72,10 @@ const TABS = [
   // tab (nav consolidation, Aug 2026). Hidden from nurses at render time and
   // guarded in the tab resolver below.
   { key: 'careplan', label: 'Care plan' },
+  // Owner-only: authorized hours vs documented shift hours (billing + the
+  // parent's "how many hours are left"). Hidden from every other role and
+  // while an admin previews a nurse's view; guarded in the resolver below.
+  { key: 'hours', label: 'Hours' },
 ] as const;
 type TabKey = (typeof TABS)[number]['key'];
 
@@ -151,20 +157,25 @@ function ClientDashboardInner() {
   const tabParam = searchParams.get('tab');
   const { uid, role, isViewingAs } = useEffectiveUser();
   const isNurse = role === 'nurse';
-  // Care plan is a staff surface; a nurse deep-linking ?tab=careplan lands on
-  // Overview instead of an editor she isn't meant to drive.
-  const tab: TabKey =
-    isTabKey(tabParam) && !(tabParam === 'careplan' && isNurse) ? tabParam : 'overview';
-  const setTab = (next: TabKey) => {
-    router.replace(next === 'overview' ? pathname : `${pathname}?tab=${next}`, { scroll: false });
-  };
-  const { settings } = useSettings();
   // Writes (upload/archive) always act as the REAL signed-in user — the
   // Firestore create rule pins uploadedBy to auth.uid, so a view-as session
   // can't forge authorship.
   const { user, profile } = useAuth();
   const realRole = profile?.role || '';
   const realStaff = realRole === 'admin' || realRole === 'supervisor';
+  // The Hours tab is the owner's alone (hoursAuthorizations is admin-only in
+  // rules too), and it stays hidden while previewing another user's view.
+  const showHoursTab = realRole === 'admin' && !isViewingAs;
+  // Care plan is a staff surface; a nurse deep-linking ?tab=careplan lands on
+  // Overview instead of an editor she isn't meant to drive.
+  const tab: TabKey =
+    isTabKey(tabParam) && !(tabParam === 'careplan' && isNurse) && !(tabParam === 'hours' && !showHoursTab)
+      ? tabParam
+      : 'overview';
+  const setTab = (next: TabKey) => {
+    router.replace(next === 'overview' ? pathname : `${pathname}?tab=${next}`, { scroll: false });
+  };
+  const { settings } = useSettings();
 
   const [patient, setPatient] = useState<Patient | null>(null);
   const [clinical, setClinical] = useState<PatientClinical | null>(null);
@@ -524,7 +535,7 @@ function ClientDashboardInner() {
 
           {/* Tab bar */}
           <div style={tabBarStyle} role="tablist" aria-label="Dashboard sections">
-            {TABS.filter((t) => t.key !== 'careplan' || !isNurse).map((t) => (
+            {TABS.filter((t) => (t.key !== 'careplan' || !isNurse) && (t.key !== 'hours' || showHoursTab)).map((t) => (
               <button
                 key={t.key}
                 type="button"
@@ -885,6 +896,16 @@ function ClientDashboardInner() {
               <ListChecks size={16} /> Care plan
             </div>
             <CarePlanSection patientId={patientId} />
+          </section>
+          )}
+
+          {/* Hours (owner-only tab) */}
+          {tab === 'hours' && showHoursTab && user && (
+          <section style={{ ...sectionCardStyle, background: 'transparent', border: 'none', padding: 0 }}>
+            <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
+              <Clock size={16} /> Hours
+            </div>
+            <HoursSection patientId={patientId} patientName={patient.name} notes={notes} uid={user.uid} todayISO={today} />
           </section>
           )}
 
