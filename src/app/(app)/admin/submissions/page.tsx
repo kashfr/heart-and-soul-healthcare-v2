@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Archive as ArchiveIcon, Download, RotateCcw, X, Search, Plus, CheckCircle2 } from 'lucide-react';
+import { Archive as ArchiveIcon, Download, RotateCcw, X, Search, Plus, CheckCircle2, Clock, FileSpreadsheet } from 'lucide-react';
 import {
   getSubmissions,
   getNurseAccessibleSubmissions,
@@ -27,6 +27,16 @@ import { logExport } from '@/lib/audit';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
 import { RN_COSIGN_SESSION_KEY } from '@/lib/settings';
+import { RANGE_PRESETS, describeRange, isRangePreset, resolveRange, type RangePreset } from '@/lib/dateRange';
+import {
+  fmtH,
+  hoursInRange,
+  splitShiftByDay,
+  totalOfSegments,
+  touchesRange,
+  type DaySegment,
+} from '@/lib/shiftHours';
+import { formatDateUS, formatDateUSFile } from '@/lib/dateFormat';
 
 const MAX_BATCH = 50;
 // PAGE_SIZE used to be a constant here; it's now driven by
@@ -43,9 +53,8 @@ const FALLBACK_PAGE_SIZE = 25;
 // archive a care-team note from her view without affecting anyone
 // else's. Admin/supervisor never see this scope.
 type Scope = 'active' | 'archived' | 'all' | 'team';
-type SortKey = 'submittedAt' | 'dateOfService' | 'clientName' | 'nurseName';
+type SortKey = 'submittedAt' | 'dateOfService' | 'clientName' | 'nurseName' | 'hours';
 type SortDir = 'asc' | 'desc';
-type DatePreset = '' | 'today' | 'week' | 'month' | '30d';
 
 function parseDateOfService(mmddyyyy: string): Date | null {
   const [m, d, y] = mmddyyyy.split('/').map(Number);
@@ -53,33 +62,22 @@ function parseDateOfService(mmddyyyy: string): Date | null {
   return new Date(y, m - 1, d);
 }
 
-function startOfDay(d: Date) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
+/** Local calendar date as 'YYYY-MM-DD' (the date-of-service convention). */
+function localTodayISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function presetRange(preset: DatePreset): { start: Date | null; end: Date | null } {
-  if (!preset) return { start: null, end: null };
-  const now = startOfDay(new Date());
-  const end = new Date(now);
-  end.setHours(23, 59, 59, 999);
-  if (preset === 'today') return { start: now, end };
-  if (preset === 'week') {
-    const start = new Date(now);
-    start.setDate(start.getDate() - now.getDay());
-    return { start, end };
-  }
-  if (preset === 'month') {
-    const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    return { start, end };
-  }
-  if (preset === '30d') {
-    const start = new Date(now);
-    start.setDate(start.getDate() - 30);
-    return { start, end };
-  }
-  return { start: null, end: null };
+/** Hours per client/nurse for the pivot under the totals strip. */
+interface HoursBucket {
+  key: string;
+  hours: number;
+  shifts: number;
+}
+
+function csvCell(v: string | number): string {
+  const str = String(v ?? '');
+  return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
 }
 
 function useDebounced<T>(value: T, delay = 250): T {
@@ -132,7 +130,13 @@ export default function SubmissionsPage() {
   const dirParam = (searchParams.get('dir') as SortDir) || subDefaults.defaultDir;
   const credParam = searchParams.get('cred') ?? '';
   const nurseParam = searchParams.get('nurse') ?? '';
-  const datePreset = (searchParams.get('range') as DatePreset) || '';
+  // Date-of-service range: a relative preset, a picked month (?range=m&m=YYYY-MM)
+  // or an explicit window (?range=c&from=&to=). Resolved to ISO bounds below.
+  const rangeRaw = searchParams.get('range');
+  const rangePreset: RangePreset = isRangePreset(rangeRaw) ? rangeRaw : '';
+  const monthParam = searchParams.get('m') ?? '';
+  const fromParam = searchParams.get('from') ?? '';
+  const toParam = searchParams.get('to') ?? '';
   const flagAbnormal = searchParams.get('abn') === '1';
   const flagIncident = searchParams.get('inc') === '1';
   const flagPhysNotified = searchParams.get('phy') === '1';
@@ -284,7 +288,7 @@ export default function SubmissionsPage() {
     if (typeof window === 'undefined') return;
     if (sessionStorage.getItem(RN_COSIGN_SESSION_KEY) === '1') return;
     const hasAnyFilter =
-      qParam || credParam || nurseParam || datePreset ||
+      qParam || credParam || nurseParam || rangePreset ||
       flagAbnormal || flagIncident || flagPhysNotified || flagNeedsCosign || flagHospitalEr || flagMedChange || flagOpen;
     if (hasAnyFilter) {
       sessionStorage.setItem(RN_COSIGN_SESSION_KEY, '1');
@@ -339,10 +343,53 @@ export default function SubmissionsPage() {
     return Array.from(set).sort();
   }, [allSubmissions]);
 
-  const { start: rangeStart, end: rangeEnd } = useMemo(
-    () => presetRange(datePreset),
-    [datePreset]
+  // Memoized so the range does not shift under a midnight boundary mid-session.
+  const todayIso = useMemo(() => localTodayISO(), []);
+  const { fromISO: rangeFrom, toISO: rangeTo } = useMemo(
+    () => resolveRange(rangePreset, { month: monthParam, from: fromParam, to: toParam }, todayIso),
+    [rangePreset, monthParam, fromParam, toParam, todayIso],
   );
+  const rangeActive = Boolean(rangeFrom || rangeTo);
+
+  // Each note's hours cut at midnight (shiftHours.ts), computed once per load.
+  // Drives the range filter (a 19:00 to 07:00 shift on 8/31 belongs to
+  // September too), the Hours column, and the totals strip, so the numbers
+  // agree with the client Hours tab and the roster badges.
+  const segmentsById = useMemo(() => {
+    const m = new Map<string, DaySegment[]>();
+    for (const s of allSubmissions) m.set(s.id, splitShiftByDay(s));
+    return m;
+  }, [allSubmissions]);
+
+  // Hours a row contributes to the current view: the in-range slice when a
+  // range is set, else the whole shift. RN oversight visits are not shift
+  // work and never count (null renders as a dash and is skipped by totals).
+  const rowHours = useCallback(
+    (s: SubmissionSummary): number | null => {
+      if (s.noteType === 'rn-oversight-visit') return null;
+      const segs = segmentsById.get(s.id) ?? [];
+      return rangeActive ? hoursInRange(segs, rangeFrom, rangeTo) : totalOfSegments(segs);
+    },
+    [segmentsById, rangeActive, rangeFrom, rangeTo],
+  );
+
+  // A note is in range when any of its days is. Notes with no usable day
+  // segments (no hours and no times) fall back to the date of service.
+  const noteTouchesRange = useCallback(
+    (s: SubmissionSummary): boolean => {
+      const segs = segmentsById.get(s.id) ?? [];
+      if (segs.length > 0) return touchesRange(segs, rangeFrom, rangeTo);
+      if (!s.dateISO) return false;
+      if (rangeFrom && s.dateISO < rangeFrom) return false;
+      if (rangeTo && s.dateISO > rangeTo) return false;
+      return true;
+    },
+    [segmentsById, rangeFrom, rangeTo],
+  );
+
+  // Hours are an owner-only surface (billing + parent questions); the
+  // effective role hides the column while previewing a nurse's view.
+  const showHours = role === 'admin';
 
   // Defined here (rather than after `sorted`) so the cross-scope-counts memo
   // below can short-circuit when nothing is filtered.
@@ -350,7 +397,7 @@ export default function SubmissionsPage() {
     !!qParam ||
     !!credParam ||
     !!nurseParam ||
-    !!datePreset ||
+    !!rangePreset ||
     flagAbnormal ||
     flagIncident ||
     flagPhysNotified ||
@@ -379,12 +426,7 @@ export default function SubmissionsPage() {
       if (flagHospitalEr && !(s.hospitalAdmission || s.erUrgentCare)) return false;
       if (flagMedChange && !s.medChangeReported) return false;
       if (flagOpen && s.clarificationStatus !== 'open') return false;
-      if (rangeStart || rangeEnd) {
-        const d = parseDateOfService(s.dateOfService);
-        if (!d) return false;
-        if (rangeStart && d < rangeStart) return false;
-        if (rangeEnd && d > rangeEnd) return false;
-      }
+      if (rangeActive && !noteTouchesRange(s)) return false;
       return true;
     });
   }, [
@@ -399,8 +441,8 @@ export default function SubmissionsPage() {
     flagHospitalEr,
     flagMedChange,
     flagOpen,
-    rangeStart,
-    rangeEnd,
+    rangeActive,
+    noteTouchesRange,
   ]);
 
   // Keep the bulk-action selection in lockstep with what's actually visible.
@@ -450,12 +492,7 @@ export default function SubmissionsPage() {
       if (flagHospitalEr && !(s.hospitalAdmission || s.erUrgentCare)) continue;
       if (flagMedChange && !s.medChangeReported) continue;
       if (flagOpen && s.clarificationStatus !== 'open') continue;
-      if (rangeStart || rangeEnd) {
-        const d = parseDateOfService(s.dateOfService);
-        if (!d) continue;
-        if (rangeStart && d < rangeStart) continue;
-        if (rangeEnd && d > rangeEnd) continue;
-      }
+      if (rangeActive && !noteTouchesRange(s)) continue;
       if (s[archivedKey] != null) archived++;
       else active++;
     }
@@ -474,8 +511,8 @@ export default function SubmissionsPage() {
     flagHospitalEr,
     flagMedChange,
     flagOpen,
-    rangeStart,
-    rangeEnd,
+    rangeActive,
+    noteTouchesRange,
   ]);
 
   // Sort.
@@ -493,6 +530,9 @@ export default function SubmissionsPage() {
       } else if (sortParam === 'clientName') {
         av = a.clientName.toLowerCase();
         bv = b.clientName.toLowerCase();
+      } else if (sortParam === 'hours') {
+        av = rowHours(a) ?? -1;
+        bv = rowHours(b) ?? -1;
       } else {
         av = a.nurseName.toLowerCase();
         bv = b.nurseName.toLowerCase();
@@ -502,7 +542,83 @@ export default function SubmissionsPage() {
       return 0;
     });
     return copy;
-  }, [filtered, sortParam, dirParam]);
+  }, [filtered, sortParam, dirParam, rowHours]);
+
+  // Totals for the whole filtered list (not just the page): the number the
+  // owner reads off when a parent asks "how many hours did we use in
+  // September". Shift notes only; oversight visits are skipped by rowHours.
+  const hoursStats = useMemo(() => {
+    if (!showHours) return null;
+    let hours = 0;
+    let shifts = 0;
+    const byClient = new Map<string, HoursBucket>();
+    const byNurse = new Map<string, HoursBucket>();
+    const bump = (m: Map<string, HoursBucket>, key: string, h: number) => {
+      const b = m.get(key) ?? { key, hours: 0, shifts: 0 };
+      b.hours += h;
+      b.shifts += 1;
+      m.set(key, b);
+    };
+    for (const s of sorted) {
+      const h = rowHours(s);
+      if (h == null) continue;
+      shifts += 1;
+      hours += h;
+      bump(byClient, s.clientName || '(no client)', h);
+      bump(byNurse, s.nurseName || '(no nurse)', h);
+    }
+    const round = (n: number) => Math.round(n * 100) / 100;
+    const finish = (m: Map<string, HoursBucket>) =>
+      Array.from(m.values())
+        .map((b) => ({ ...b, hours: round(b.hours) }))
+        .sort((a, b) => b.hours - a.hours || a.key.localeCompare(b.key));
+    return { hours: round(hours), shifts, byClient: finish(byClient), byNurse: finish(byNurse) };
+  }, [sorted, rowHours, showHours]);
+  const [pivot, setPivot] = useState<'' | 'client' | 'nurse'>('');
+
+  // CSV of the filtered list with per-row hours: the billing worksheet. Same
+  // rows as the totals strip, so what is exported is what was on screen.
+  const exportHoursCsv = async () => {
+    if (!user || !hoursStats) return;
+    const header = [
+      'Date of service', 'Client', 'Nurse', 'Credential', 'Shift start', 'Shift end date', 'Shift end',
+      'Total hours', 'Hours in range', 'Note type', 'Submitted at', 'Note ID',
+    ];
+    const lines = [header.join(',')];
+    for (const s of sorted) {
+      const h = rowHours(s);
+      lines.push([
+        s.dateOfService,
+        s.clientName,
+        s.nurseName,
+        s.credential,
+        s.shiftStart,
+        formatDateUS(s.shiftEndDate),
+        s.shiftEnd,
+        s.totalHours,
+        h == null ? '' : fmtH(h),
+        s.noteType === 'rn-oversight-visit' ? 'RN oversight visit' : 'Shift note',
+        s.submittedAt ? s.submittedAt.toLocaleString() : '',
+        s.id,
+      ].map(csvCell).join(','));
+    }
+    lines.push('');
+    lines.push(['Total hours', fmtH(hoursStats.hours)].join(','));
+    lines.push(['Shifts', String(hoursStats.shifts)].join(','));
+    lines.push(['Range', describeRange({ fromISO: rangeFrom, toISO: rangeTo })].join(','));
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const suffix = rangeFrom || rangeTo
+      ? `${formatDateUSFile(rangeFrom) || 'start'}_to_${formatDateUSFile(rangeTo) || 'today'}`
+      : 'all-dates';
+    triggerDownload(blob, `shift-notes-hours_${suffix}.csv`);
+    await logExport(user, {
+      submissionIds: sorted.map((s) => s.id),
+      count: sorted.length,
+      format: 'hours-csv',
+      dateRangeStart: rangeFrom || null,
+      dateRangeEnd: rangeTo || null,
+    });
+  };
 
   // Pagination — page size from /admin/settings, with a fallback for
   // the brief window before the settings hook hydrates on first paint.
@@ -534,6 +650,9 @@ export default function SubmissionsPage() {
       cred: null,
       nurse: null,
       range: null,
+      m: null,
+      from: null,
+      to: null,
       abn: null,
       inc: null,
       phy: null,
@@ -935,17 +1054,57 @@ export default function SubmissionsPage() {
           </div>
 
           <select
-            value={datePreset}
-            onChange={(e) => updateParams({ range: e.target.value || null, p: null })}
+            value={rangePreset}
+            onChange={(e) => {
+              const next = e.target.value as RangePreset;
+              // Picking "month" defaults to the current month; "custom"
+              // starts from whatever bounds the previous preset resolved to
+              // so the inputs open pre-filled rather than blank.
+              updateParams({
+                range: next || null,
+                m: next === 'm' ? monthParam || todayIso.slice(0, 7) : null,
+                from: next === 'c' ? fromParam || rangeFrom || null : null,
+                to: next === 'c' ? toParam || rangeTo || null : null,
+                p: null,
+              });
+            }}
             style={selectStyle}
             aria-label="Date of service range"
           >
-            <option value="">Any date</option>
-            <option value="today">Today</option>
-            <option value="week">This week</option>
-            <option value="month">This month</option>
-            <option value="30d">Last 30 days</option>
+            {RANGE_PRESETS.map((p) => (
+              <option key={p.value || 'any'} value={p.value}>{p.label}</option>
+            ))}
           </select>
+          {rangePreset === 'm' && (
+            <input
+              type="month"
+              value={monthParam}
+              onChange={(e) => updateParams({ m: e.target.value || null, p: null })}
+              style={dateInputStyle}
+              aria-label="Month"
+            />
+          )}
+          {rangePreset === 'c' && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <input
+                type="date"
+                value={fromParam}
+                max={toParam || undefined}
+                onChange={(e) => updateParams({ from: e.target.value || null, p: null })}
+                style={dateInputStyle}
+                aria-label="From date"
+              />
+              <span style={{ fontSize: 12, color: '#7f8c8d' }}>to</span>
+              <input
+                type="date"
+                value={toParam}
+                min={fromParam || undefined}
+                onChange={(e) => updateParams({ to: e.target.value || null, p: null })}
+                style={dateInputStyle}
+                aria-label="To date"
+              />
+            </span>
+          )}
 
           <select
             value={credParam}
@@ -993,6 +1152,8 @@ export default function SubmissionsPage() {
             <option value="clientName:desc">Client Z–A</option>
             <option value="nurseName:asc">Nurse A–Z</option>
             <option value="nurseName:desc">Nurse Z–A</option>
+            {showHours && <option value="hours:desc">Most hours</option>}
+            {showHours && <option value="hours:asc">Fewest hours</option>}
           </select>
         </div>
 
@@ -1200,6 +1361,74 @@ export default function SubmissionsPage() {
           </div>
         )}
 
+        {/* Hours strip (owner only): totals for the whole filtered list plus
+            an optional by-client / by-nurse pivot and a CSV of the rows. */}
+        {!loading && hoursStats && sorted.length > 0 && (
+          <div style={hoursStripStyle}>
+            <div style={hoursStripRowStyle}>
+              <span style={hoursStripIconStyle}><Clock size={14} /></span>
+              <span style={hoursStatStyle}>
+                <strong style={hoursStatNumStyle}>{fmtH(hoursStats.hours)}</strong> hours
+              </span>
+              <span style={hoursStatStyle}>
+                <strong style={hoursStatNumStyle}>{hoursStats.shifts}</strong> {hoursStats.shifts === 1 ? 'shift' : 'shifts'}
+              </span>
+              <span style={hoursStatStyle}>
+                <strong style={hoursStatNumStyle}>{hoursStats.byClient.length}</strong> {hoursStats.byClient.length === 1 ? 'client' : 'clients'}
+              </span>
+              <span style={hoursStatStyle}>
+                <strong style={hoursStatNumStyle}>{hoursStats.byNurse.length}</strong> {hoursStats.byNurse.length === 1 ? 'nurse' : 'nurses'}
+              </span>
+              <span style={{ color: '#64748b', fontSize: 12 }}>
+                {describeRange({ fromISO: rangeFrom, toISO: rangeTo })}
+                {rangeActive && ' · shifts are split at midnight; only the hours inside the range count'}
+              </span>
+              <div style={{ flex: 1 }} />
+              <button
+                type="button"
+                onClick={() => setPivot(pivot === 'client' ? '' : 'client')}
+                style={pivot === 'client' ? pivotBtnActiveStyle : pivotBtnStyle}
+              >
+                By client
+              </button>
+              <button
+                type="button"
+                onClick={() => setPivot(pivot === 'nurse' ? '' : 'nurse')}
+                style={pivot === 'nurse' ? pivotBtnActiveStyle : pivotBtnStyle}
+              >
+                By nurse
+              </button>
+              <button type="button" onClick={exportHoursCsv} style={pivotBtnStyle} title="Download these rows with hours as a spreadsheet">
+                <FileSpreadsheet size={13} /> CSV
+              </button>
+            </div>
+            {pivot && (
+              <table style={pivotTableStyle}>
+                <thead>
+                  <tr>
+                    <th style={pivotThStyle}>{pivot === 'client' ? 'Client' : 'Nurse'}</th>
+                    <th style={{ ...pivotThStyle, textAlign: 'right' }}>Shifts</th>
+                    <th style={{ ...pivotThStyle, textAlign: 'right' }}>Hours</th>
+                    <th style={{ ...pivotThStyle, textAlign: 'right' }}>Share</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(pivot === 'client' ? hoursStats.byClient : hoursStats.byNurse).map((b) => (
+                    <tr key={b.key}>
+                      <td style={pivotTdStyle}>{b.key}</td>
+                      <td style={{ ...pivotTdStyle, textAlign: 'right' }}>{b.shifts}</td>
+                      <td style={{ ...pivotTdStyle, textAlign: 'right', fontWeight: 700 }}>{fmtH(b.hours)}</td>
+                      <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#64748b' }}>
+                        {hoursStats.hours > 0 ? `${Math.round((b.hours / hoursStats.hours) * 100)}%` : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
         {loading ? (
           <div style={loadingStyle}>
             <p>Loading submissions...</p>
@@ -1259,6 +1488,15 @@ export default function SubmissionsPage() {
                       Nurse{sortIndicator('nurseName')}
                     </th>
                     <th style={thStyle}>Credential</th>
+                    {showHours && (
+                      <th
+                        style={{ ...thStyle, cursor: 'pointer', textAlign: 'right', whiteSpace: 'nowrap' }}
+                        onClick={() => setSort('hours')}
+                        title={rangeActive ? 'Hours inside the selected range (shifts split at midnight)' : 'Total shift hours'}
+                      >
+                        Hours{sortIndicator('hours')}
+                      </th>
+                    )}
                     <th style={thStyle}>Flags</th>
                     <th
                       style={{ ...thStyle, cursor: 'pointer' }}
@@ -1297,6 +1535,7 @@ export default function SubmissionsPage() {
                       <td style={tdStyle}>
                         <span style={{ color: '#94a3b8', fontSize: 12 }}>—</span>
                       </td>
+                      {showHours && <td style={{ ...tdStyle, textAlign: 'right', color: '#cbd5e1' }}>—</td>}
                       <td style={tdStyle}>
                         <span style={draftBadgeStyle} title="This note hasn't been submitted yet">
                           Draft
@@ -1389,6 +1628,32 @@ export default function SubmissionsPage() {
                         <td style={tdStyle}>
                           <span style={credentialBadge}>{s.credential}</span>
                         </td>
+                        {showHours && (() => {
+                          const h = rowHours(s);
+                          const total = totalOfSegments(segmentsById.get(s.id) ?? []);
+                          const partial = h != null && rangeActive && Math.abs(total - h) >= 0.01;
+                          return (
+                            <td
+                              style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}
+                              title={
+                                h == null
+                                  ? 'RN oversight visit: not shift hours'
+                                  : partial
+                                    ? `${fmtH(h)} of this ${fmtH(total)}-hour shift falls inside the selected range (${s.shiftStart || '?'} to ${s.shiftEnd || '?'})`
+                                    : `${s.shiftStart || '?'} to ${s.shiftEnd || '?'}`
+                              }
+                            >
+                              {h == null ? (
+                                <span style={{ color: '#cbd5e1' }}>—</span>
+                              ) : (
+                                <>
+                                  <strong style={{ color: '#0f172a' }}>{fmtH(h)}</strong>
+                                  {partial && <span style={{ color: '#94a3b8', fontSize: 11 }}> of {fmtH(total)}</span>}
+                                </>
+                              )}
+                            </td>
+                          );
+                        })()}
                         <td style={tdStyle}>
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                             {s.hasCriticalVitals ? (
@@ -1866,6 +2131,97 @@ const selectStyle: React.CSSProperties = {
   backgroundSize: '14px',
   color: '#2c3e50',
   cursor: 'pointer',
+};
+
+const dateInputStyle: React.CSSProperties = {
+  padding: '7px 10px',
+  border: '1px solid #dfe5ec',
+  borderRadius: 6,
+  fontSize: 13,
+  fontFamily: 'inherit',
+  color: '#2c3e50',
+  background: 'white',
+};
+
+const hoursStripStyle: React.CSSProperties = {
+  marginBottom: 12,
+  padding: '10px 14px',
+  background: '#f0f7ff',
+  border: '1px solid #c8def5',
+  borderRadius: 8,
+};
+
+const hoursStripRowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+  gap: 14,
+};
+
+const hoursStripIconStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  color: '#1a3a5c',
+};
+
+const hoursStatStyle: React.CSSProperties = {
+  fontSize: 13,
+  color: '#334155',
+  whiteSpace: 'nowrap',
+};
+
+const hoursStatNumStyle: React.CSSProperties = {
+  fontSize: 16,
+  color: '#0f172a',
+  fontVariantNumeric: 'tabular-nums',
+};
+
+const pivotBtnStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 5,
+  background: 'white',
+  color: '#1a3a5c',
+  padding: '5px 10px',
+  borderRadius: 6,
+  border: '1px solid #c8def5',
+  fontSize: 12,
+  fontWeight: 600,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
+
+const pivotBtnActiveStyle: React.CSSProperties = {
+  ...pivotBtnStyle,
+  background: '#1a3a5c',
+  color: 'white',
+  borderColor: '#1a3a5c',
+};
+
+const pivotTableStyle: React.CSSProperties = {
+  width: '100%',
+  maxWidth: 560,
+  marginTop: 10,
+  borderCollapse: 'collapse',
+  fontSize: 13,
+  background: 'white',
+  borderRadius: 6,
+  overflow: 'hidden',
+};
+
+const pivotThStyle: React.CSSProperties = {
+  textAlign: 'left',
+  padding: '6px 10px',
+  fontSize: 11,
+  textTransform: 'uppercase',
+  letterSpacing: 0.4,
+  color: '#64748b',
+  borderBottom: '1px solid #e2e8f0',
+};
+
+const pivotTdStyle: React.CSSProperties = {
+  padding: '6px 10px',
+  borderBottom: '1px solid #f1f5f9',
+  color: '#1e293b',
 };
 
 const flagsRowStyle: React.CSSProperties = {

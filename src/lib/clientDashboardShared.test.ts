@@ -36,6 +36,7 @@ import {
 function note(overrides: Partial<DashboardNote> = {}): DashboardNote {
   return {
     id: 'n1',
+    noteType: '',
     dateISO: '2026-07-01',
     submittedAt: new Date('2026-07-01T18:00:00'),
     nurseId: 'u1',

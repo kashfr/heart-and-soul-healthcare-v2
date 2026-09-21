@@ -24,6 +24,7 @@ import { noteIsActiveDuplicate } from './duplicateMatch';
 import { normalizeDateISO, sortNotesDesc, type DashboardNote } from './clientDashboardShared';
 import { formatDateUS } from './dateFormat';
 import { readShiftChange } from './shiftChange';
+import { splitShiftByDay } from './shiftHours';
 
 /**
  * All form fields from the 7-page progress note form.
@@ -248,6 +249,19 @@ export interface SubmissionSummary {
   nurseId: string;
   diagnosis: string;
   dateOfService: string;
+  /** Date of service normalized to 'YYYY-MM-DD' ('' when unparseable). */
+  dateISO: string;
+  /** Roster link (progressNotes.patientId); '' on unlinked legacy notes. */
+  patientId: string;
+  // --- Shift window (feeds the per-day hours split in shiftHours.ts) ---
+  /** 'HH:MM' shift start ('' when absent). */
+  shiftStart: string;
+  /** 'HH:MM' shift end ('' when absent). */
+  shiftEnd: string;
+  /** 'YYYY-MM-DD' shift end date ('' on older notes). */
+  shiftEndDate: string;
+  /** q9_totalHours as stored (free-text numeric). */
+  totalHours: string;
   submittedAt: Date | null;
   status: string;
   archivedAt: Date | null;
@@ -438,6 +452,12 @@ function mapDocToSummary(
     nurseId: (data.nurseId as string) || '',
     diagnosis: (data.q10_primaryDiagnosis as string) || '',
     dateOfService: formatDateUS((data.q6_dateofService as string) || ''),
+    dateISO: normalizeDateISO((data.q6_dateofService as string) || ''),
+    patientId: (data.patientId as string) || '',
+    shiftStart: (data.q7_shiftStart as string) || '',
+    shiftEnd: (data.q62_shiftEndTime as string) || '',
+    shiftEndDate: (data.q62_shiftEndDate as string) || '',
+    totalHours: (data.q9_totalHours as string) || '',
     submittedAt: submittedAt ? submittedAt.toDate() : null,
     status: (data.status as string) || 'submitted',
     archivedAt: archivedAt ? archivedAt.toDate() : null,
@@ -820,6 +840,7 @@ export async function getNotesForPatient(patientId: string): Promise<DashboardNo
       const submittedAt = data.submittedAt as Timestamp | null;
       notes.push({
         id: d.id,
+        noteType: (data.noteType as string) || '',
         dateISO: normalizeDateISO((data.q6_dateofService as string) || ''),
         submittedAt: submittedAt && typeof submittedAt.toDate === 'function' ? submittedAt.toDate() : null,
         nurseId: (data.nurseId as string) || '',
@@ -848,6 +869,48 @@ export async function getNotesForPatient(patientId: string): Promise<DashboardNo
     console.error('Error fetching notes for patient:', error);
     return [];
   }
+}
+
+/**
+ * Per-client, per-day shift hours for every ACTIVE shift note whose date of
+ * service is on/after `fromISO` (admin roster badges: "September: 84 of 90
+ * hours used"). Shifts are split at midnight via shiftHours.ts so a note
+ * dated the last day of the prior month still lands its post-midnight hours
+ * in the current month; callers therefore pass a fromISO a day or two BEFORE
+ * the window they care about. RN oversight visits are not shift work and are
+ * skipped. Notes with no patientId can't be attributed and are skipped too.
+ *
+ * A single range query on q6_dateofService (ISO 'YYYY-MM-DD' on every note
+ * the form has written; older non-ISO values sort out of range and are
+ * simply not counted, which only affects months long since billed).
+ */
+export async function getShiftDayHoursByPatientSince(fromISO: string): Promise<Map<string, Map<string, number>>> {
+  const out = new Map<string, Map<string, number>>();
+  try {
+    const q = query(collection(db, 'progressNotes'), where('q6_dateofService', '>=', fromISO));
+    const snap = await getDocs(q);
+    for (const d of snap.docs) {
+      const data = d.data();
+      if ((data.status as string) === 'archived' || data.archivedAt) continue;
+      if ((data.noteType as string) === 'rn-oversight-visit') continue;
+      const patientId = (data.patientId as string) || '';
+      if (!patientId) continue;
+      const segs = splitShiftByDay({
+        dateISO: normalizeDateISO((data.q6_dateofService as string) || ''),
+        shiftStart: (data.q7_shiftStart as string) || '',
+        shiftEndDate: (data.q62_shiftEndDate as string) || '',
+        shiftEnd: (data.q62_shiftEndTime as string) || '',
+        totalHours: (data.q9_totalHours as string) || '',
+      });
+      if (segs.length === 0) continue;
+      const days = out.get(patientId) ?? new Map<string, number>();
+      for (const seg of segs) days.set(seg.dateISO, Math.round(((days.get(seg.dateISO) || 0) + seg.hours) * 100) / 100);
+      out.set(patientId, days);
+    }
+  } catch (error) {
+    console.error('Error fetching shift day hours:', error);
+  }
+  return out;
 }
 
 /**

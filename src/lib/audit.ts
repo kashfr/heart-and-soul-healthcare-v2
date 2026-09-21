@@ -7,7 +7,8 @@ export interface ExportAuditEntry {
   userEmail: string | null;
   submissionIds: string[];
   count: number;
-  format: 'zip' | 'merged-pdf';
+  /** 'hours-csv' = the shift-notes hours spreadsheet (owner-only billing export). */
+  format: 'zip' | 'merged-pdf' | 'hours-csv';
   dateRangeStart: string | null;
   dateRangeEnd: string | null;
 }
