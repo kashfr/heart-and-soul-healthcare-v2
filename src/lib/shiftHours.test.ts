@@ -238,7 +238,7 @@ describe('hoursFindings', () => {
     const both = { shift: new Map([['2026-09-02', 118]]), oversight: new Map([['2026-09-07', 6.5]]) };
     const msgs = hoursFindings([kimLpn, kimRn], both, '2026-09-21').map((f) => f.message);
     expect(msgs.some((m) => /September shift hours: 118 of 120 used \(98%\)/.test(m))).toBe(true);
-    expect(msgs.some((m) => /September rn oversight: 6.5 of 6 used. Over by 0.5/.test(m))).toBe(true);
+    expect(msgs.some((m) => /September RN oversight: 6.5 of 6 used. Over by 0.5/.test(m))).toBe(true);
   });
   it('flags annual units', () => {
     // 4 h/day used every day since 04/03 through 09/21 = 172 days x 16 units = 2752 of 5840, on pace exactly

@@ -304,6 +304,11 @@ export function bucketLabel(b: HoursBucket): string {
   return b === 'oversight' ? 'RN oversight' : 'Shift hours';
 }
 
+/** The label mid-sentence: "shift hours" lowercases, "RN oversight" keeps its initials. */
+export function bucketLabelLower(b: HoursBucket): string {
+  return b === 'oversight' ? 'RN oversight' : 'shift hours';
+}
+
 /** '21/wk', '4/day', '6/mo' for the source column and chips. */
 export function rateLabel(a: HoursAuthorization): string {
   if (a.rateHours == null) return '';
@@ -498,6 +503,7 @@ export function hoursFindings(
     const lines = auths.filter((a) => a.covers === bucket);
     if (lines.length === 0) continue;
     const name = bucketLabel(bucket);
+    const lower = bucketLabelLower(bucket);
     const hours = dayHours[bucket];
     const latest = [...lines].sort((a, b) => b.to.localeCompare(a.to))[0];
     const daysLeft = isoToDayNum(latest.to) - isoToDayNum(todayISO);
@@ -515,11 +521,11 @@ export function hoursFindings(
     const u = monthUsage(hours, monthCap(current, ym), ym, todayISO);
     if (u.authorized != null && u.remaining != null) {
       if (u.remaining < 0) {
-        out.push({ severity: 'error', message: `${monthName} ${name.toLowerCase()}: ${fmtH(u.used)} of ${fmtH(u.authorized)} used. Over by ${fmtH(-u.remaining)}.` });
+        out.push({ severity: 'error', message: `${monthName} ${lower}: ${fmtH(u.used)} of ${fmtH(u.authorized)} used. Over by ${fmtH(-u.remaining)}.` });
       } else if (u.pct != null && u.pct >= 0.9) {
-        out.push({ severity: 'warn', message: `${monthName} ${name.toLowerCase()}: ${fmtH(u.used)} of ${fmtH(u.authorized)} used (${Math.round(u.pct * 100)}%). ${fmtH(u.remaining)} left.` });
+        out.push({ severity: 'warn', message: `${monthName} ${lower}: ${fmtH(u.used)} of ${fmtH(u.authorized)} used (${Math.round(u.pct * 100)}%). ${fmtH(u.remaining)} left.` });
       } else if (bucket === 'shift' && u.runsOutOn) {
-        out.push({ severity: 'warn', message: `${monthName} ${name.toLowerCase()}: on pace to run out ${fmtUS(u.runsOutOn)} (${fmtH(u.used)} of ${fmtH(u.authorized)} used).` });
+        out.push({ severity: 'warn', message: `${monthName} ${lower}: on pace to run out ${fmtUS(u.runsOutOn)} (${fmtH(u.used)} of ${fmtH(u.authorized)} used).` });
       }
     }
     if (bucket === 'oversight' && u.used === 0 && Number(todayISO.slice(8, 10)) > RN_VISIT_NUDGE_DAY) {
