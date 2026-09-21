@@ -430,6 +430,134 @@ export function inferService(input: ServiceInferenceInput): ServiceInference {
   return { service: null, source: 'unknown', reason: '', conflict: null };
 }
 
+// --- Young-child paid-caregiver hard stop ------------------------------------
+
+/**
+ * Age below which a GAPP paid-caregiver request is screened as a young child.
+ * Under this line, everyday personal care (feeding, bathing, dressing,
+ * diapering) reads as ordinary parenting, so Medicaid does not approve paid
+ * family hours for it and there is no other GAPP service the agency (or a
+ * partner agency) can provide for those needs. Shared by both public forms and
+ * both server intakes, so a request that is refused on the form is refused at
+ * the API too.
+ */
+export const YOUNG_PAID_CAREGIVER_AGE_YEARS = 6;
+
+/**
+ * The state assessment scores "unable to ambulate" only above 18 months, so a
+ * mobility need at or past this age is a real deficit rather than an
+ * age-typical one, and the paid request is allowed through for the nurse to
+ * assess. (Toileting scores only above age 3, but the hygiene option lumps
+ * bathing and dressing in with it, which stay age-typical well past 3, so it
+ * does not clear the stop on its own.)
+ */
+export const MOBILITY_SCORES_FROM_MONTHS = 18;
+
+const MOBILITY_CODES = new Set(['wheelchair', 'help_transfer']);
+
+/** Whole months of age from an ISO date (YYYY-MM-DD) as of `nowMs`; null for
+ *  a missing, unparseable, or future date. */
+export function ageMonthsFromDob(
+  dob: string | null | undefined,
+  nowMs: number = Date.now()
+): number | null {
+  const s = String(dob ?? '').trim();
+  if (!s) return null;
+  const birth = new Date(s.length === 10 ? `${s}T00:00:00` : s);
+  if (Number.isNaN(birth.getTime()) || birth.getTime() > nowMs) return null;
+  const now = new Date(nowMs);
+  let months =
+    (now.getFullYear() - birth.getFullYear()) * 12 +
+    (now.getMonth() - birth.getMonth());
+  if (now.getDate() < birth.getDate()) months -= 1;
+  return months < 0 ? null : months;
+}
+
+export interface YoungChildScreenInput extends ServiceInferenceInput {
+  dob?: string | null;
+  seekingPaidCaregiver?: string;
+}
+
+export interface YoungChildScreen {
+  /** Why the referral is refused. Null when it may proceed. Plain prose that
+   *  is shown to the family and stored for staff, so no dashes. */
+  block: string | null;
+  /** Set when a young child's paid request was allowed through: what cleared
+   *  it, so staff know to confirm it at the assessment. */
+  cleared: string | null;
+  /** Whole years, when the DOB was usable. */
+  ageYears: number | null;
+}
+
+const NOT_SCREENED: YoungChildScreen = { block: null, cleared: null, ageYears: null };
+
+/**
+ * Hard stop for a paid-caregiver request for a young child whose care picture
+ * is everyday personal support. Refuses when ALL of:
+ *
+ *   - the family is seeking to be the paid caregiver,
+ *   - the child is under YOUNG_PAID_CAREGIVER_AGE_YEARS (DOB usable),
+ *   - no skilled-tier equipment is reported (trach, vent, oxygen, suction,
+ *     feeding tube, seizure rescue meds, catheter/ostomy), and
+ *   - no mobility need at MOBILITY_SCORES_FROM_MONTHS or older.
+ *
+ * Skilled equipment means the child needs nursing (which GAPP covers) and the
+ * paid personal-care question becomes a real one for the assessment. A
+ * mobility deficit past 18 months scores on the state's own grid. Everything
+ * else at this age is ordinary parenting and cannot be reimbursed, so the
+ * referral is refused outright rather than accepted and worked for nothing.
+ */
+export function screenYoungPaidCaregiver(
+  input: YoungChildScreenInput,
+  nowMs: number = Date.now()
+): YoungChildScreen {
+  if (input.seekingPaidCaregiver !== 'yes') return NOT_SCREENED;
+  const months = ageMonthsFromDob(input.dob, nowMs);
+  if (months === null) return NOT_SCREENED;
+  const ageYears = Math.floor(months / 12);
+  if (ageYears >= YOUNG_PAID_CAREGIVER_AGE_YEARS) {
+    return { block: null, cleared: null, ageYears };
+  }
+
+  const equipment = known(input.equipment, EQUIPMENT_OPTIONS);
+  const skilled = equipment.filter((o) => o.tier === 'skilled');
+  const mobility = equipment.filter((o) => MOBILITY_CODES.has(o.code));
+  const ageText =
+    ageYears < 1
+      ? `an infant (${months} month${months === 1 ? '' : 's'} old)`
+      : `a ${ageYears}-year-old`;
+
+  if (skilled.length > 0) {
+    return {
+      block: null,
+      ageYears,
+      cleared:
+        `Paid-caregiver request for ${ageText}, allowed through because skilled needs were reported (${skilled
+          .map((o) => o.label)
+          .join(', ')}). A parent can be paid for personal care only, and at this age only for care beyond age-typical needs; confirm at the nursing assessment.`,
+    };
+  }
+  if (mobility.length > 0 && months >= MOBILITY_SCORES_FROM_MONTHS) {
+    return {
+      block: null,
+      ageYears,
+      cleared:
+        `Paid-caregiver request for ${ageText}, allowed through because a mobility need was reported (${mobility
+          .map((o) => o.label)
+          .join(', ')}) and the assessment scores non-ambulation above ${MOBILITY_SCORES_FROM_MONTHS} months. Confirm at the nursing assessment.`,
+    };
+  }
+
+  return {
+    ageYears,
+    cleared: null,
+    block:
+      `Paid-caregiver request for ${ageText} with no skilled medical or mobility needs reported. ` +
+      'GAPP pays a parent only for personal care that goes beyond what a child this age ordinarily needs, and everyday care for an infant or young child (feeding, bathing, dressing, diapering) is typical parenting. ' +
+      'Medicaid will not approve paid family hours for it, and there is no other GAPP service that covers these needs, so the referral cannot be accepted.',
+  };
+}
+
 // --- Drift guard -------------------------------------------------------------
 
 /**

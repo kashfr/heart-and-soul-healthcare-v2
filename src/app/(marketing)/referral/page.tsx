@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { formatUSPhone } from '@/lib/phone';
 import { escortToField, FieldError, FIELD_ERROR_WRAP_STYLE, firstErrorKey } from '@/lib/formEscort';
-import { YOUNG_PAID_CAREGIVER_AGE_YEARS } from '@/lib/diagnosisScreening';
+import { screenYoungPaidCaregiver } from '@/lib/diagnosisScreening';
 import {
   BEHAVIOR_RISK_OPTIONS,
   CURRENT_SERVICE_OPTIONS,
@@ -289,14 +289,20 @@ export default function ReferralPage() {
     seekingPaidGapp &&
     !isPaidBehavioralBlock &&
     (proseDxClass === 'mixed' || structuredPicture === 'mixed');
-  // Young child + paid-caregiver: advisory only, never a block. There is no age
-  // rule in the GAPP manual; the lever is medical necessity (paid family hours
-  // cover only care beyond age-typical needs), so we set expectations without
-  // turning away medically fragile toddlers who can legitimately qualify.
-  const isPaidYoungChild =
-    seekingPaidGapp &&
-    !!childAge &&
-    childAge.years < YOUNG_PAID_CAREGIVER_AGE_YEARS;
+  // Young child + paid-caregiver: a hard stop when the care picture is
+  // everyday personal support (no skilled equipment, no scoring mobility
+  // need). Same rule as the GAPP site and both server intakes. Uses the raw
+  // DOB rather than the debounced one: a half-typed year reads as an ancient
+  // age, never a young child, so nothing flashes, and the gate is right the
+  // instant Submit is pressed.
+  const youngChild = screenYoungPaidCaregiver({
+    dob: formData.clientDOB,
+    seekingPaidCaregiver: seekingPaidGapp ? 'yes' : 'no',
+    equipment: formData.equipment,
+  });
+  const isPaidYoungChildBlock = !isPaidBehavioralBlock && youngChild.block !== null;
+  const isPaidYoungChildCleared = !isPaidBehavioralBlock && youngChild.cleared !== null;
+  const isBlocked = isPaidBehavioralBlock || isPaidYoungChildBlock;
 
   // "None of these" is mutually exclusive with every real answer, both ways.
   const toggleMulti = (field: 'diagnoses' | 'equipment' | 'currentServices',
@@ -373,9 +379,9 @@ export default function ReferralPage() {
   };
 
   const handleAttemptSubmit = (e: React.FormEvent) => {
-    // A GAPP parent seeking pay for behavioral/autism care cannot be submitted;
-    // the redirect panel explains why and points to the ASD Program.
-    if (isPaidBehavioralBlock) {
+    // A GAPP parent seeking pay for behavioral/autism care, or for everyday
+    // care of a young child, cannot be submitted; the panel explains why.
+    if (isBlocked) {
       e.preventDefault();
       return;
     }
@@ -493,7 +499,13 @@ export default function ReferralPage() {
       });
 
       // 2. Send Email Notification & Add to CRM
-      await processReferralSubmission(submissionData);
+      const result = await processReferralSubmission(submissionData);
+      if (result && result.success === false) {
+        // Server-side refusal (the same screen the form runs). Show the
+        // reason instead of the generic error.
+        setError(result.error ?? 'This referral cannot be submitted as answered.');
+        return;
+      }
 
       setIsSubmitted(true);
     } catch (err) {
@@ -1408,20 +1420,44 @@ export default function ReferralPage() {
                         </div>
                       )}
 
-                      {isPaidYoungChild && !isPaidBehavioralBlock && (
+                      {/* Paid + young child + everyday care only = dead end.
+                          Block, and say plainly why, so the family does not
+                          submit something nobody can act on. */}
+                      {isPaidYoungChildBlock && (
                         <div className={styles.countyNotice}>
                           <AlertCircle size={16} />
                           <p>
-                            A note about being paid to care for a young child: Medicaid
-                            approves paid family caregiver hours only for care that goes
-                            beyond what a child of the same age would ordinarily need.
-                            Everyday help for infants and young children, like feeding,
-                            bathing, dressing, and diapering, is considered typical
-                            parenting, so paid hours are rarely approved at this age.
-                            Approval is more likely when a child has significant medical
-                            needs, such as a feeding tube, trach, or ventilator. You are
-                            welcome to apply either way. Your child may still qualify
-                            for other GAPP services based on their medical needs.
+                            <strong>We cannot accept this referral as answered.</strong>{' '}
+                            You are asking to be paid to care for an infant or young
+                            child, and the only needs listed are everyday care. GAPP
+                            pays a parent only for personal care that goes beyond what
+                            a child this age ordinarily needs. Feeding, bathing,
+                            dressing, and diapering an infant or young child is
+                            considered typical parenting, so Medicaid will not approve
+                            paid family hours for it, and there is no other GAPP
+                            service that covers these needs. Neither we nor our partner
+                            agencies can act on this referral, so please do not submit
+                            it. If your child has a feeding tube, tracheostomy,
+                            ventilator, oxygen, or another skilled medical need that
+                            you did not check above, go back and add it and we will
+                            help. Otherwise, please talk with your child&apos;s
+                            pediatrician or Medicaid CMO about other supports.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Paid + young child who cleared the stop (skilled or
+                          mobility needs): set expectations, do not block. */}
+                      {isPaidYoungChildCleared && (
+                        <div className={styles.countyNotice}>
+                          <AlertCircle size={16} />
+                          <p>
+                            A note about being paid to care for a young child: a parent
+                            can be paid for personal care only, and at this age only for
+                            care that goes beyond what a child of the same age would
+                            ordinarily need. Because of the medical or mobility needs
+                            you listed, we will review this with you, and any paid hours
+                            are set by the nursing assessment.
                           </p>
                         </div>
                       )}
@@ -1466,7 +1502,7 @@ export default function ReferralPage() {
                           tells the same family. */}
                       {formData.programInterest === 'gapp' &&
                         inferred.service === 'pss' &&
-                        !isPaidBehavioralBlock &&
+                        !isBlocked &&
                         !isPaidMixedDx && (
                           <div className={styles.countyNotice}>
                             <AlertCircle size={16} />
@@ -1572,14 +1608,17 @@ export default function ReferralPage() {
                   )}
                   <button
                     type="button"
-                    className={`btn btn-gold btn-lg ${isStepValid() && !isPaidBehavioralBlock ? styles.btnReady : styles.btnFaded}`}
+                    className={`btn btn-gold btn-lg ${isStepValid() && !isBlocked ? styles.btnReady : styles.btnFaded}`}
                     onClick={handleAttemptSubmit}
-                    disabled={isSubmitting || isPaidBehavioralBlock}
+                    disabled={isSubmitting || isBlocked}
                   >
                     <Send size={20} /> {isSubmitting ? 'Submitting...' : 'Submit Referral'}
                   </button>
                   {isPaidBehavioralBlock && (
                     <FieldError message="This referral cannot be submitted as answered: under GAPP a parent cannot be paid for behavioral or autism care. See the note above for the ASD Program, or change the paid caregiver answer if it was a mistake." />
+                  )}
+                  {isPaidYoungChildBlock && (
+                    <FieldError message="This referral cannot be submitted as answered: GAPP does not pay a parent for everyday care of an infant or young child, and no other GAPP service covers it. See the note above, or add the skilled medical needs your child has if they were left out." />
                   )}
                 </div>
               )}

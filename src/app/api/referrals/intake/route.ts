@@ -4,7 +4,7 @@ import { createReferral, type ReferralInput } from '@/lib/referrals';
 import { sendReferralNotification } from '@/lib/emails/referralNotification';
 import { formatDateUS } from '@/lib/dateFormat';
 import { sendReferralConfirmation } from '@/lib/emails/referralConfirmation';
-import { paidCaregiverDiagnosisFlag, paidCaregiverAgeFlag } from '@/lib/diagnosisScreening';
+import { paidCaregiverDiagnosisFlag, screenYoungPaidCaregiver } from '@/lib/diagnosisScreening';
 import {
   CATALOG_VERSION,
   behaviorRiskLabel,
@@ -128,9 +128,10 @@ function toReferralInput(payload: IncomingPayload): ReferralInput {
   // Backstop flag: the GAPP form blocks most paid-caregiver-for-behavioral
   // requests, but flag any that reach us so staff can triage at a glance.
   const reviewFlag = paidCaregiverDiagnosisFlag(r.diagnosis, r.seekingPaidCaregiver);
-  // Young-child advisory: paid family hours cover only care beyond age-typical
-  // needs, so a request for a toddler is unlikely to be approved as-is.
-  const ageFlag = paidCaregiverAgeFlag(r.dob, r.seekingPaidCaregiver);
+  // Young child + paid request that was allowed through (skilled equipment or
+  // a scoring mobility need): say why, so staff confirm it at the assessment.
+  // A request that fails the same screen is refused in POST before we get here.
+  const ageFlag = screenYoungPaidCaregiver(r).cleared;
 
   // Which GAPP service line the family's answers point to, and whether that
   // disagrees with the care need they selected. Advisory: it drives the board's
@@ -210,6 +211,19 @@ export async function POST(req: Request) {
     return NextResponse.json(
       { error: 'Missing required referral fields.' },
       { status: 400 }
+    );
+  }
+
+  // Hard stop, mirrored from the GAPP site's form and route: a paid-caregiver
+  // request for a young child with only everyday care needs is refused, not
+  // stored, and not emailed. There is nothing the agency can do with it. 422
+  // (not 5xx) so the site treats it as a refusal rather than an outage and
+  // does not fire its portal-down fallback email.
+  const youngChild = screenYoungPaidCaregiver(payload.referral ?? {});
+  if (youngChild.block) {
+    return NextResponse.json(
+      { error: youngChild.block, refused: 'young-child-paid-caregiver' },
+      { status: 422 }
     );
   }
 

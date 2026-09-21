@@ -6,7 +6,7 @@ import { JWT } from 'google-auth-library';
 import { createClickUpTask } from '@/lib/clickup';
 import { createReferral } from '@/lib/referrals';
 import { sendReferralConfirmation } from '@/lib/emails/referralConfirmation';
-import { paidCaregiverDiagnosisFlag, paidCaregiverAgeFlag } from '@/lib/diagnosisScreening';
+import { paidCaregiverDiagnosisFlag, screenYoungPaidCaregiver } from '@/lib/diagnosisScreening';
 import { formatDateUS } from '@/lib/dateFormat';
 import {
   behaviorRiskLabel,
@@ -198,6 +198,22 @@ export async function processReferralSubmission(data: any) {
 
   const { client, program, referrer, details } = data;
 
+  // Hard stop (GAPP only), same rule as the GAPP site and the portal intake: a
+  // paid-caregiver request for a young child with only everyday care needs is
+  // refused before any email, CRM, or referral record is created. The form
+  // blocks this client-side; this is the backstop for anything that bypasses
+  // it. Returned, not thrown, so the page can show the reason.
+  if (program?.interest === 'gapp') {
+    const youngChild = screenYoungPaidCaregiver({
+      dob: client?.dob,
+      seekingPaidCaregiver: details?.seekingPaidCaregiver,
+      equipment: details?.equipment,
+    });
+    if (youngChild.block) {
+      return { success: false, refused: 'young-child-paid-caregiver', error: youngChild.block };
+    }
+  }
+
   try {
     // 1. Send Email
     const { data: result, error } = await resend.emails.send({
@@ -255,11 +271,15 @@ export async function processReferralSubmission(data: any) {
               details.seekingPaidCaregiver
             )
           : null;
-      // Young-child advisory (GAPP only): paid family hours cover only care
-      // beyond age-typical needs, so a toddler request is unlikely as-is.
+      // Young child + paid request that cleared the hard stop above (skilled
+      // equipment or a scoring mobility need): say why, for the assessment.
       const ageFlag =
         program.interest === 'gapp'
-          ? paidCaregiverAgeFlag(client.dob, details.seekingPaidCaregiver)
+          ? screenYoungPaidCaregiver({
+              dob: client.dob,
+              seekingPaidCaregiver: details.seekingPaidCaregiver,
+              equipment: details.equipment,
+            }).cleared
           : null;
       // Which GAPP service line the answers point to. Scoped to GAPP: the other
       // programs on this form (NOW/COMP, ICWP, EDWP, private pay) don't have

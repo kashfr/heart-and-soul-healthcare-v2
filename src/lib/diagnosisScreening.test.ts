@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { classifyDiagnosis, paidCaregiverDiagnosisFlag, paidCaregiverAgeFlag, ageYearsFromDob } from './diagnosisScreening';
+import {
+  classifyDiagnosis,
+  paidCaregiverDiagnosisFlag,
+  screenYoungPaidCaregiver,
+  ageYearsFromDob,
+} from './diagnosisScreening';
 
 describe('classifyDiagnosis', () => {
   it('classifies behavioral/developmental-only diagnoses', () => {
@@ -49,46 +54,76 @@ describe('paidCaregiverDiagnosisFlag', () => {
   });
 });
 
-describe('paidCaregiverAgeFlag (young-child advisory)', () => {
-  // Fixed "now" so ages are deterministic: July 30, 2026.
-  const NOW = new Date('2026-07-30T12:00:00Z').getTime();
-  const flag = (dob: string | undefined, seeking: string | undefined) =>
-    paidCaregiverAgeFlag(dob, seeking, NOW);
+describe('screenYoungPaidCaregiver (young-child hard stop)', () => {
+  // Fixed "now" so ages are deterministic: September 20, 2026.
+  const NOW = new Date('2026-09-20T12:00:00Z').getTime();
+  const screen = (
+    dob: string | undefined,
+    seeking: string | undefined,
+    equipment: string[] = []
+  ) => screenYoungPaidCaregiver({ dob, seekingPaidCaregiver: seeking, equipment }, NOW);
 
-  it('flags a paid request for a 2-year-old (the Madalie case)', () => {
-    const f = flag('2024-04-10', 'yes');
-    expect(f).toContain('a 2-year-old');
-    expect(f).toContain('age-typical');
-    expect(f).toContain('other GAPP services');
+  it('refuses a paid request for a 2-month-old needing help with feeding (the Legacy case)', () => {
+    const r = screen('2026-07-18', 'yes', ['help_feeding']);
+    expect(r.block).toContain('an infant (2 months old)');
+    expect(r.block).toContain('cannot be accepted');
+    expect(r.cleared).toBeNull();
+    expect(r.ageYears).toBe(0);
   });
 
-  it('flags an infant with under-1 wording', () => {
-    expect(flag('2026-01-15', 'yes')).toContain('an infant under 1');
+  it('refuses everyday-care requests for a 2-year-old and a 5-year-old', () => {
+    expect(screen('2024-04-10', 'yes', ['help_hygiene']).block).toContain('a 2-year-old');
+    expect(screen('2021-06-15', 'yes', ['equip_none']).block).toContain('a 5-year-old');
   });
 
-  it('flags a 5-year-old but not a 6-year-old (under-6 line)', () => {
-    expect(flag('2021-06-15', 'yes')).toContain('a 5-year-old');
-    expect(flag('2020-06-15', 'yes')).toBeNull();
+  it('refuses regardless of the care-need radio (the radio is gameable)', () => {
+    const r = screenYoungPaidCaregiver(
+      { dob: '2026-07-18', seekingPaidCaregiver: 'yes', equipment: ['help_feeding'], careNeeds: 'nursing' },
+      NOW
+    );
+    expect(r.block).not.toBeNull();
   });
 
-  it('treats the 6th birthday itself as old enough', () => {
-    expect(flag('2020-07-30', 'yes')).toBeNull();
-    expect(flag('2020-07-31', 'yes')).toContain('a 5-year-old');
+  it('lets a young child through when skilled equipment is reported, and says why', () => {
+    const r = screen('2026-07-18', 'yes', ['feeding_tube', 'help_feeding']);
+    expect(r.block).toBeNull();
+    expect(r.cleared).toContain('skilled needs were reported');
+    expect(r.cleared).toContain('Feeding tube');
   });
 
-  it('never flags when not seeking pay', () => {
-    expect(flag('2024-04-10', 'no')).toBeNull();
-    expect(flag('2024-04-10', undefined)).toBeNull();
+  it('lets a mobility need through only at 18 months or older', () => {
+    // 4-year-old in a wheelchair: the assessment scores non-ambulation.
+    const older = screen('2022-03-01', 'yes', ['wheelchair']);
+    expect(older.block).toBeNull();
+    expect(older.cleared).toContain('mobility need was reported');
+    // 12-month-old who "cannot walk unassisted": age-typical, still refused.
+    const infant = screen('2025-09-01', 'yes', ['wheelchair']);
+    expect(infant.block).not.toBeNull();
+    // Exactly 18 months clears.
+    expect(screen('2025-03-20', 'yes', ['help_transfer']).block).toBeNull();
+    expect(screen('2025-03-21', 'yes', ['help_transfer']).block).not.toBeNull();
+  });
+
+  it('does not screen at 6 or older (the 6th birthday itself is old enough)', () => {
+    expect(screen('2020-09-20', 'yes', ['help_feeding'])).toEqual({ block: null, cleared: null, ageYears: 6 });
+    expect(screen('2020-09-21', 'yes', ['help_feeding']).block).toContain('a 5-year-old');
+  });
+
+  it('never screens when not seeking pay', () => {
+    expect(screen('2026-07-18', 'no', ['help_feeding']).block).toBeNull();
+    expect(screen('2026-07-18', undefined, ['help_feeding']).block).toBeNull();
   });
 
   it('stays silent on missing, unparseable, or future DOBs', () => {
-    expect(flag(undefined, 'yes')).toBeNull();
-    expect(flag('not-a-date', 'yes')).toBeNull();
-    expect(flag('2027-01-01', 'yes')).toBeNull();
+    expect(screen(undefined, 'yes', ['help_feeding']).block).toBeNull();
+    expect(screen('not-a-date', 'yes', ['help_feeding']).block).toBeNull();
+    expect(screen('2027-01-01', 'yes', ['help_feeding']).block).toBeNull();
   });
 
-  it('contains no em or en dashes (goes into staff email under the org name)', () => {
-    expect(flag('2024-04-10', 'yes')).not.toMatch(/[—–]/);
+  it('contains no em or en dashes (shown to families and stored for staff)', () => {
+    expect(screen('2026-07-18', 'yes', ['help_feeding']).block).not.toMatch(/[—–]/);
+    expect(screen('2026-07-18', 'yes', ['trach']).cleared).not.toMatch(/[—–]/);
+    expect(screen('2022-03-01', 'yes', ['wheelchair']).cleared).not.toMatch(/[—–]/);
   });
 });
 
