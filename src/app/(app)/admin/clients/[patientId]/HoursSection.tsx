@@ -520,8 +520,8 @@ function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: Form
           </select>
         </label>
         <label style={field}>
-          <span style={label}>Hours per week (from the letter)</span>
-          <input type="number" min={0} max={168} step="0.25" value={weekly} onChange={(e) => setWeekly(e.target.value)} style={{ ...input, ...errStyle('weekly') }} placeholder="21" />
+          <span style={label} title="The weekly rate printed on the letter, e.g. “21 hours/week”">Hours per week</span>
+          <input type="number" min={0} max={168} step="0.25" value={weekly} onChange={(e) => setWeekly(e.target.value)} style={{ ...input, ...errStyle('weekly') }} placeholder="21 (from the letter)" />
         </label>
         <label style={field}>
           <span style={label}>Effective</span>
@@ -616,7 +616,7 @@ const chip: CSSProperties = { fontSize: 12, padding: '3px 8px', borderRadius: 6,
 const chipOverride: CSSProperties = { background: '#eef4fb', border: '1px solid #c8def5', color: NAVY };
 const formCard: CSSProperties = { border: '1px solid #c8def5', background: '#f8fbff', borderRadius: 10, padding: 14, marginBottom: 14 };
 const formGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 };
-const field: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4 };
-const label: CSSProperties = { fontSize: 11.5, fontWeight: 700, color: '#5c6b7a', textTransform: 'uppercase', letterSpacing: 0.3 };
+const field: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 };
+const label: CSSProperties = { fontSize: 11.5, fontWeight: 700, color: '#5c6b7a', textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap' };
 const monthGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8 };
 const monthCell: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 3 };
