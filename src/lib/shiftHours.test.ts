@@ -11,6 +11,9 @@ import {
   authForMonth,
   fmtH,
   findShiftOverlaps,
+  unitsUsage,
+  emptyBucketDayHours,
+  rateLabel,
   type HoursAuthorization,
 } from './shiftHours';
 
@@ -92,18 +95,40 @@ const piper: HoursAuthorization = {
   patientId: 'p1',
   paNumber: '126040902312',
   kind: 'skilled',
-  hoursPerWeek: 21,
+  covers: 'shift',
+  rateBasis: 'week',
+  rateHours: 21,
   from: '2026-06-10',
   to: '2026-09-30',
   monthOverrides: { '2026-06': 71 },
+  totalUnits: null,
 };
+
+// Kimberly Guffey's Therap lines (NOW/COMP): 4 h daily LPN, 6 h monthly RN,
+// 04/03/2026 to 04/02/2027, 5,840 and 288 fifteen-minute units.
+const kimLpn: HoursAuthorization = {
+  patientId: 'k1',
+  paNumber: '926021602410',
+  kind: 'skilled',
+  covers: 'shift',
+  rateBasis: 'day',
+  rateHours: 4,
+  from: '2026-04-03',
+  to: '2027-04-02',
+  monthOverrides: {},
+  totalUnits: 5840,
+  serviceCode: 'NL1',
+};
+const kimRn: HoursAuthorization = { ...kimLpn, covers: 'oversight', rateBasis: 'month', rateHours: 6, totalUnits: 288, serviceCode: 'NR1' };
+
+const shiftOnly = (m: Map<string, number>) => ({ ...emptyBucketDayHours(), shift: m });
 
 describe('monthCap', () => {
   it('reproduces the letter for full months from the weekly rate', () => {
     expect(monthCap(piper, '2026-07')).toBe(93);
     expect(monthCap(piper, '2026-08')).toBe(93);
     expect(monthCap(piper, '2026-09')).toBe(90);
-    expect(monthCapSource(piper, '2026-09')).toBe('weekly');
+    expect(monthCapSource(piper, '2026-09')).toBe('rate');
   });
   it('uses the override for the partial first month', () => {
     expect(monthCap(piper, '2026-06')).toBe(71);
@@ -115,14 +140,28 @@ describe('monthCap', () => {
   });
   it('is null outside the window or without any rate', () => {
     expect(monthCap(piper, '2026-10')).toBeNull();
-    expect(monthCap({ ...piper, hoursPerWeek: null, monthOverrides: {} }, '2026-07')).toBeNull();
+    expect(monthCap({ ...piper, rateHours: null, monthOverrides: {} }, '2026-07')).toBeNull();
     expect(monthCapSource(piper, '2026-10')).toBe('none');
   });
-  it('authForMonth prefers the newest overlapping authorization', () => {
-    const renewal = { ...piper, from: '2026-09-15', to: '2027-03-31', hoursPerWeek: 28, monthOverrides: {} };
+  it('daily rate multiplies by covered days; monthly rate is as stated', () => {
+    expect(monthCap(kimLpn, '2026-09')).toBe(120); // 4 x 30
+    expect(monthCap(kimLpn, '2026-10')).toBe(124); // 4 x 31
+    expect(monthCap(kimLpn, '2026-04')).toBe(112); // 04/03 to 04/30 = 28 days
+    expect(monthCap(kimLpn, '2027-04')).toBe(8); // 04/01 to 04/02
+    expect(monthCap(kimRn, '2026-09')).toBe(6);
+    expect(monthCap(kimRn, '2026-04')).toBe(6); // partial month, not prorated
+    expect(rateLabel(kimLpn)).toBe('4/day');
+    expect(rateLabel(kimRn)).toBe('6/mo');
+    expect(rateLabel(piper)).toBe('21/wk');
+  });
+  it('authForMonth prefers the newest overlapping authorization, per bucket', () => {
+    const renewal = { ...piper, from: '2026-09-15', to: '2027-03-31', rateHours: 28, monthOverrides: {} };
     expect(authForMonth([piper, renewal], '2026-09')).toBe(renewal);
     expect(authForMonth([piper, renewal], '2026-07')).toBe(piper);
     expect(authForMonth([piper], '2026-12')).toBeNull();
+    expect(authForMonth([kimLpn, kimRn], '2026-09', 'oversight')).toBe(kimRn);
+    expect(authForMonth([kimLpn, kimRn], '2026-09', 'shift')).toBe(kimLpn);
+    expect(authForMonth([kimLpn], '2026-09', 'oversight')).toBeNull();
   });
 });
 
@@ -160,31 +199,63 @@ describe('monthUsage', () => {
 });
 
 describe('hoursFindings', () => {
+  const none = emptyBucketDayHours();
   it('is silent without an authorization', () => {
-    expect(hoursFindings([], new Map(), '2026-09-21')).toEqual([]);
+    expect(hoursFindings([], none, '2026-09-21')).toEqual([]);
   });
   it('warns on an authorization ending within 45 days and errors inside 14', () => {
-    expect(hoursFindings([piper], new Map(), '2026-08-20')[0]).toMatchObject({ severity: 'warn' });
-    expect(hoursFindings([piper], new Map(), '2026-09-21')[0]).toMatchObject({
+    expect(hoursFindings([piper], none, '2026-08-20')[0]).toMatchObject({ severity: 'warn' });
+    expect(hoursFindings([piper], none, '2026-09-21')[0]).toMatchObject({
       severity: 'error',
-      message: 'Hours authorization ends 09/30/2026 (9 days). No renewal on file.',
+      message: 'Shift hours authorization ends 09/30/2026 (9 days). No renewal on file.',
     });
   });
   it('errors once expired, and stays quiet when a renewal is on file', () => {
-    expect(hoursFindings([piper], new Map(), '2026-10-05')[0]).toMatchObject({ severity: 'error' });
+    expect(hoursFindings([piper], none, '2026-10-05')[0]).toMatchObject({ severity: 'error' });
     const renewal = { ...piper, from: '2026-10-01', to: '2027-03-31', monthOverrides: {} };
-    expect(hoursFindings([piper, renewal], new Map(), '2026-10-05')).toEqual([]);
+    expect(hoursFindings([piper, renewal], none, '2026-10-05')).toEqual([]);
   });
   it('warns at 90% used and errors when over', () => {
-    const near = new Map([['2026-09-02', 84]]);
+    const near = shiftOnly(new Map([['2026-09-02', 84]]));
     expect(hoursFindings([piper], near, '2026-09-05').some((f) => /93%/.test(f.message))).toBe(true);
-    const over = new Map([['2026-09-02', 95]]);
+    const over = shiftOnly(new Map([['2026-09-02', 95]]));
     expect(hoursFindings([piper], over, '2026-09-05').some((f) => /Over by 5/.test(f.message))).toBe(true);
   });
   it('warns when on pace to run out before month end', () => {
-    const fast = new Map([['2026-09-01', 12], ['2026-09-02', 12], ['2026-09-03', 12]]);
+    const fast = shiftOnly(new Map([['2026-09-01', 12], ['2026-09-02', 12], ['2026-09-03', 12]]));
     const f = hoursFindings([piper], fast, '2026-09-03');
     expect(f.some((x) => /on pace to run out/.test(x.message))).toBe(true);
+  });
+  it('nudges when an RN oversight line has no visit after the 20th, and not before', () => {
+    expect(hoursFindings([kimLpn, kimRn], none, '2026-09-21').some((f) => /No RN oversight visit documented yet for September/.test(f.message))).toBe(true);
+    expect(hoursFindings([kimLpn, kimRn], none, '2026-09-15').some((f) => /No RN oversight visit/.test(f.message))).toBe(false);
+    const visited = { ...none, oversight: new Map([['2026-09-07', 3.5]]) };
+    expect(hoursFindings([kimLpn, kimRn], visited, '2026-09-21').some((f) => /No RN oversight visit/.test(f.message))).toBe(false);
+    // a shift-only client (GAPP) never gets the nudge
+    expect(hoursFindings([piper], none, '2026-09-21').some((f) => /RN oversight visit/.test(f.message))).toBe(false);
+  });
+  it('reports each bucket separately', () => {
+    const both = { shift: new Map([['2026-09-02', 118]]), oversight: new Map([['2026-09-07', 6.5]]) };
+    const msgs = hoursFindings([kimLpn, kimRn], both, '2026-09-21').map((f) => f.message);
+    expect(msgs.some((m) => /September shift hours: 118 of 120 used \(98%\)/.test(m))).toBe(true);
+    expect(msgs.some((m) => /September rn oversight: 6.5 of 6 used. Over by 0.5/.test(m))).toBe(true);
+  });
+  it('flags annual units', () => {
+    // 4 h/day used every day since 04/03 through 09/21 = 172 days x 16 units = 2752 of 5840, on pace exactly
+    const steady = new Map<string, number>();
+    for (let d = new Date(Date.UTC(2026, 3, 3)); d <= new Date(Date.UTC(2026, 8, 21)); d.setUTCDate(d.getUTCDate() + 1)) {
+      steady.set(d.toISOString().slice(0, 10), 4);
+    }
+    expect(hoursFindings([kimLpn], shiftOnly(steady), '2026-09-21').some((f) => /annual units/.test(f.message))).toBe(false);
+    // 6 h/day = 4,128 units so far (71%), but the pace exhausts 5,840 by early December
+    const heavy = new Map(steady);
+    for (const k of heavy.keys()) heavy.set(k, 6);
+    const f = hoursFindings([kimLpn], shiftOnly(heavy), '2026-09-21');
+    expect(f.some((x) => /on pace to exhaust the 5,840 annual units 12\/01\/2026/.test(x.message))).toBe(true);
+    // 8 h/day is already past 90% used, which takes precedence over the pace message
+    const over = new Map(steady);
+    for (const k of over.keys()) over.set(k, 8);
+    expect(hoursFindings([kimLpn], shiftOnly(over), '2026-09-21').some((x) => /5,504 of 5,840 annual units used \(94%\)/.test(x.message))).toBe(true);
   });
 });
 
@@ -227,5 +298,30 @@ describe('findShiftOverlaps', () => {
   it('ignores shifts whose window cannot be resolved', () => {
     const blank = { id: 'blank', dateISO: '2026-09-17', shiftStart: '', shiftEndDate: '', shiftEnd: '', totalHours: '8' };
     expect(findShiftOverlaps([day, blank]).size).toBe(0);
+  });
+});
+
+describe('unitsUsage', () => {
+  it('converts hours to 15-minute units and projects over the window', () => {
+    const days = new Map<string, number>([
+      ['2026-04-02', 4], // before the window, ignored
+      ['2026-04-03', 4],
+      ['2026-04-04', 4],
+    ]);
+    const u = unitsUsage(kimLpn, days, '2026-04-04')!;
+    expect(u.hours).toBe(8);
+    expect(u.usedUnits).toBe(32);
+    expect(u.remainingUnits).toBe(5808);
+    expect(u.projectedUnits).toBe(5840); // 16/day x 365
+    expect(u.runsOutOn).toBeNull();
+  });
+  it('is null without a unit total', () => {
+    expect(unitsUsage(piper, new Map(), '2026-09-21')).toBeNull();
+  });
+  it('names the run-out day when the pace exceeds the total', () => {
+    const days = new Map<string, number>([['2026-04-03', 8], ['2026-04-04', 8]]);
+    const u = unitsUsage(kimLpn, days, '2026-04-04')!;
+    expect(u.projectedUnits).toBe(11680);
+    expect(u.runsOutOn).toBe('2026-10-01'); // 5776 / 32 per day = 180.5 days after 04/04
   });
 });

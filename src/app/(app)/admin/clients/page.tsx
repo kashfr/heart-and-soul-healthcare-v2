@@ -39,8 +39,8 @@ import {
 } from '@/lib/programs';
 import { reconcilePatient, worstSeverity, type Finding } from '@/lib/reconcile';
 import { getAllHoursAuthorizations } from '@/lib/hoursAuthorizations';
-import { getShiftDayHoursByPatientSince } from '@/lib/submissions';
-import { addDaysISO, hoursFindings, monthStartISO, type HoursAuthorization } from '@/lib/shiftHours';
+import { getDayHoursByPatientSince } from '@/lib/submissions';
+import { addDaysISO, emptyBucketDayHours, hoursFindings, monthStartISO, type BucketDayHours, type HoursAuthorization } from '@/lib/shiftHours';
 import { db } from '@/lib/firebase';
 import { authedFetch } from '@/lib/authedFetch';
 import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
@@ -132,7 +132,7 @@ function ClientsRosterInner() {
   const showHours = profile?.role === 'admin' && !isViewingAs;
   const [patients, setPatients] = useState<Patient[]>([]);
   const [hoursAuths, setHoursAuths] = useState<Map<string, HoursAuthorization[]>>(new Map());
-  const [dayHoursByPatient, setDayHoursByPatient] = useState<Map<string, Map<string, number>>>(new Map());
+  const [dayHoursByPatient, setDayHoursByPatient] = useState<Map<string, BucketDayHours>>(new Map());
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<Patient>>(emptyPatient);
@@ -163,10 +163,10 @@ function ClientsRosterInner() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }, []);
 
-  // Owner-only: every client's hours authorizations plus this month's shift
-  // hours (from two days before the 1st so an overnight shift dated the last
-  // day of the prior month contributes its post-midnight hours). Failures
-  // leave the badges off rather than blocking the roster.
+  // Owner-only: every client's hours authorizations plus this month's hours
+  // in both buckets (from two days before the 1st so an overnight shift dated
+  // the last day of the prior month contributes its post-midnight hours).
+  // Failures leave the badges off rather than blocking the roster.
   useEffect(() => {
     if (!showHours) return;
     let cancelled = false;
@@ -174,7 +174,7 @@ function ClientsRosterInner() {
       try {
         const [auths, hours] = await Promise.all([
           getAllHoursAuthorizations(),
-          getShiftDayHoursByPatientSince(addDaysISO(monthStartISO(todayISO.slice(0, 7)), -2)),
+          getDayHoursByPatientSince(addDaysISO(monthStartISO(todayISO.slice(0, 7)), -2)),
         ]);
         if (cancelled) return;
         setHoursAuths(auths);
@@ -475,7 +475,7 @@ function ClientsRosterInner() {
       const list = reconcilePatient(p, todayISO);
       if (showHours) {
         const auths = hoursAuths.get(p.id) ?? [];
-        for (const f of hoursFindings(auths, dayHoursByPatient.get(p.id) ?? new Map(), todayISO)) {
+        for (const f of hoursFindings(auths, dayHoursByPatient.get(p.id) ?? emptyBucketDayHours(), todayISO)) {
           list.push({ rule: `hours-${f.message}`, severity: f.severity, message: f.message });
         }
       }

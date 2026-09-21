@@ -68,11 +68,15 @@ function localTodayISO(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/** Hours per client/nurse for the pivot under the totals strip. */
-interface HoursBucket {
+/** Hours per client/nurse for the pivot under the totals strip. Shift hours
+ *  and RN oversight hours are kept apart (they are paid from different
+ *  authorization lines and are never summed). */
+interface HoursPivotRow {
   key: string;
   hours: number;
   shifts: number;
+  rnHours: number;
+  visits: number;
 }
 
 function csvCell(v: string | number): string {
@@ -362,16 +366,18 @@ export default function SubmissionsPage() {
   }, [allSubmissions]);
 
   // Hours a row contributes to the current view: the in-range slice when a
-  // range is set, else the whole shift. RN oversight visits are not shift
-  // work and never count (null renders as a dash and is skipped by totals).
+  // range is set, else the whole shift / visit. RN oversight visits (time in
+  // to time out) are a separate bucket: shown in a blue chip, totalled apart,
+  // never added to shift hours. null when the note has no usable window.
   const rowHours = useCallback(
     (s: SubmissionSummary): number | null => {
-      if (s.noteType === 'rn-oversight-visit') return null;
       const segs = segmentsById.get(s.id) ?? [];
+      if (segs.length === 0) return null;
       return rangeActive ? hoursInRange(segs, rangeFrom, rangeTo) : totalOfSegments(segs);
     },
     [segmentsById, rangeActive, rangeFrom, rangeTo],
   );
+  const isOversight = (s: SubmissionSummary) => s.noteType === 'rn-oversight-visit';
 
   // A note is in range when any of its days is. Notes with no usable day
   // segments (no hours and no times) fall back to the date of service.
@@ -546,33 +552,55 @@ export default function SubmissionsPage() {
 
   // Totals for the whole filtered list (not just the page): the number the
   // owner reads off when a parent asks "how many hours did we use in
-  // September". Shift notes only; oversight visits are skipped by rowHours.
+  // September". Shift hours and RN oversight hours are totalled separately.
   const hoursStats = useMemo(() => {
     if (!showHours) return null;
     let hours = 0;
     let shifts = 0;
-    const byClient = new Map<string, HoursBucket>();
-    const byNurse = new Map<string, HoursBucket>();
-    const bump = (m: Map<string, HoursBucket>, key: string, h: number) => {
-      const b = m.get(key) ?? { key, hours: 0, shifts: 0 };
-      b.hours += h;
-      b.shifts += 1;
+    let rnHours = 0;
+    let visits = 0;
+    const byClient = new Map<string, HoursPivotRow>();
+    const byNurse = new Map<string, HoursPivotRow>();
+    const bump = (m: Map<string, HoursPivotRow>, key: string, h: number, rn: boolean) => {
+      const b = m.get(key) ?? { key, hours: 0, shifts: 0, rnHours: 0, visits: 0 };
+      if (rn) {
+        b.rnHours += h;
+        b.visits += 1;
+      } else {
+        b.hours += h;
+        b.shifts += 1;
+      }
       m.set(key, b);
     };
     for (const s of sorted) {
       const h = rowHours(s);
       if (h == null) continue;
-      shifts += 1;
-      hours += h;
-      bump(byClient, s.clientName || '(no client)', h);
-      bump(byNurse, s.nurseName || '(no nurse)', h);
+      const rn = isOversight(s);
+      if (rn) {
+        visits += 1;
+        rnHours += h;
+      } else {
+        shifts += 1;
+        hours += h;
+      }
+      bump(byClient, s.clientName || '(no client)', h, rn);
+      bump(byNurse, s.nurseName || '(no nurse)', h, rn);
     }
     const round = (n: number) => Math.round(n * 100) / 100;
-    const finish = (m: Map<string, HoursBucket>) =>
+    const finish = (m: Map<string, HoursPivotRow>) =>
       Array.from(m.values())
-        .map((b) => ({ ...b, hours: round(b.hours) }))
-        .sort((a, b) => b.hours - a.hours || a.key.localeCompare(b.key));
-    return { hours: round(hours), shifts, byClient: finish(byClient), byNurse: finish(byNurse) };
+        .map((b) => ({ ...b, hours: round(b.hours), rnHours: round(b.rnHours) }))
+        .sort((a, b) => b.hours - a.hours || b.rnHours - a.rnHours || a.key.localeCompare(b.key));
+    return {
+      hours: round(hours),
+      shifts,
+      rnHours: round(rnHours),
+      visits,
+      clients: byClient.size,
+      nurses: byNurse.size,
+      byClient: finish(byClient),
+      byNurse: finish(byNurse),
+    };
   }, [sorted, rowHours, showHours]);
   const [pivot, setPivot] = useState<'' | 'client' | 'nurse'>('');
 
@@ -581,30 +609,34 @@ export default function SubmissionsPage() {
   const exportHoursCsv = async () => {
     if (!user || !hoursStats) return;
     const header = [
-      'Date of service', 'Client', 'Nurse', 'Credential', 'Shift start', 'Shift end date', 'Shift end',
-      'Total hours', 'Hours in range', 'Note type', 'Submitted at', 'Note ID',
+      'Date of service', 'Client', 'Nurse', 'Credential', 'Note type', 'Start', 'End date', 'End',
+      'Total hours', 'Shift hours in range', 'RN oversight hours in range', 'Submitted at', 'Note ID',
     ];
     const lines = [header.join(',')];
     for (const s of sorted) {
       const h = rowHours(s);
+      const rn = isOversight(s);
       lines.push([
         s.dateOfService,
         s.clientName,
         s.nurseName,
         s.credential,
+        rn ? 'RN oversight visit' : 'Shift note',
         s.shiftStart,
         formatDateUS(s.shiftEndDate),
         s.shiftEnd,
         s.totalHours,
-        h == null ? '' : fmtH(h),
-        s.noteType === 'rn-oversight-visit' ? 'RN oversight visit' : 'Shift note',
+        h == null || rn ? '' : fmtH(h),
+        h == null || !rn ? '' : fmtH(h),
         s.submittedAt ? s.submittedAt.toLocaleString() : '',
         s.id,
       ].map(csvCell).join(','));
     }
     lines.push('');
-    lines.push(['Total hours', fmtH(hoursStats.hours)].join(','));
+    lines.push(['Shift hours', fmtH(hoursStats.hours)].join(','));
     lines.push(['Shifts', String(hoursStats.shifts)].join(','));
+    lines.push(['RN oversight hours', fmtH(hoursStats.rnHours)].join(','));
+    lines.push(['RN visits', String(hoursStats.visits)].join(','));
     lines.push(['Range', describeRange({ fromISO: rangeFrom, toISO: rangeTo })].join(','));
     const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
     const suffix = rangeFrom || rangeTo
@@ -1368,20 +1400,25 @@ export default function SubmissionsPage() {
             <div style={hoursStripRowStyle}>
               <span style={hoursStripIconStyle}><Clock size={14} /></span>
               <span style={hoursStatStyle}>
-                <strong style={hoursStatNumStyle}>{fmtH(hoursStats.hours)}</strong> hours
+                <strong style={hoursStatNumStyle}>{fmtH(hoursStats.hours)}</strong> shift hours
+                <span style={{ color: '#64748b' }}> · {hoursStats.shifts} {hoursStats.shifts === 1 ? 'shift' : 'shifts'}</span>
+              </span>
+              {(hoursStats.visits > 0 || hoursStats.rnHours > 0) && (
+                <span style={{ ...hoursStatStyle, color: '#1d4ed8' }} title="RN oversight visit hours (time in to time out); never added to shift hours">
+                  <strong style={{ ...hoursStatNumStyle, color: '#1d4ed8' }}>{fmtH(hoursStats.rnHours)}</strong> RN oversight hours
+                  <span style={{ color: '#3b82f6' }}> · {hoursStats.visits} {hoursStats.visits === 1 ? 'visit' : 'visits'}</span>
+                </span>
+              )}
+              <span style={hoursStatStyle}>
+                <strong style={hoursStatNumStyle}>{hoursStats.clients}</strong> {hoursStats.clients === 1 ? 'client' : 'clients'}
               </span>
               <span style={hoursStatStyle}>
-                <strong style={hoursStatNumStyle}>{hoursStats.shifts}</strong> {hoursStats.shifts === 1 ? 'shift' : 'shifts'}
-              </span>
-              <span style={hoursStatStyle}>
-                <strong style={hoursStatNumStyle}>{hoursStats.byClient.length}</strong> {hoursStats.byClient.length === 1 ? 'client' : 'clients'}
-              </span>
-              <span style={hoursStatStyle}>
-                <strong style={hoursStatNumStyle}>{hoursStats.byNurse.length}</strong> {hoursStats.byNurse.length === 1 ? 'nurse' : 'nurses'}
+                <strong style={hoursStatNumStyle}>{hoursStats.nurses}</strong> {hoursStats.nurses === 1 ? 'nurse' : 'nurses'}
               </span>
               <span style={{ color: '#64748b', fontSize: 12 }}>
                 {describeRange({ fromISO: rangeFrom, toISO: rangeTo })}
                 {rangeActive && ' · shifts are split at midnight; only the hours inside the range count'}
+                {' · RN oversight visits are shown in blue and never added to shift hours'}
               </span>
               <div style={{ flex: 1 }} />
               <button
@@ -1408,19 +1445,23 @@ export default function SubmissionsPage() {
                   <tr>
                     <th style={pivotThStyle}>{pivot === 'client' ? 'Client' : 'Nurse'}</th>
                     <th style={{ ...pivotThStyle, textAlign: 'right' }}>Shifts</th>
-                    <th style={{ ...pivotThStyle, textAlign: 'right' }}>Hours</th>
+                    <th style={{ ...pivotThStyle, textAlign: 'right' }}>Shift hours</th>
                     <th style={{ ...pivotThStyle, textAlign: 'right' }}>Share</th>
+                    {hoursStats.visits > 0 && <th style={{ ...pivotThStyle, textAlign: 'right', color: '#1d4ed8' }}>RN visits</th>}
+                    {hoursStats.visits > 0 && <th style={{ ...pivotThStyle, textAlign: 'right', color: '#1d4ed8' }}>RN hours</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {(pivot === 'client' ? hoursStats.byClient : hoursStats.byNurse).map((b) => (
                     <tr key={b.key}>
                       <td style={pivotTdStyle}>{b.key}</td>
-                      <td style={{ ...pivotTdStyle, textAlign: 'right' }}>{b.shifts}</td>
-                      <td style={{ ...pivotTdStyle, textAlign: 'right', fontWeight: 700 }}>{fmtH(b.hours)}</td>
+                      <td style={{ ...pivotTdStyle, textAlign: 'right' }}>{b.shifts || ''}</td>
+                      <td style={{ ...pivotTdStyle, textAlign: 'right', fontWeight: 700 }}>{b.shifts ? fmtH(b.hours) : ''}</td>
                       <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#64748b' }}>
-                        {hoursStats.hours > 0 ? `${Math.round((b.hours / hoursStats.hours) * 100)}%` : '—'}
+                        {b.shifts && hoursStats.hours > 0 ? `${Math.round((b.hours / hoursStats.hours) * 100)}%` : ''}
                       </td>
+                      {hoursStats.visits > 0 && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#1d4ed8' }}>{b.visits || ''}</td>}
+                      {hoursStats.visits > 0 && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#1d4ed8', fontWeight: 700 }}>{b.visits ? fmtH(b.rnHours) : ''}</td>}
                     </tr>
                   ))}
                 </tbody>
@@ -1630,6 +1671,7 @@ export default function SubmissionsPage() {
                         </td>
                         {showHours && (() => {
                           const h = rowHours(s);
+                          const rn = isOversight(s);
                           const total = totalOfSegments(segmentsById.get(s.id) ?? []);
                           const partial = h != null && rangeActive && Math.abs(total - h) >= 0.01;
                           return (
@@ -1637,14 +1679,18 @@ export default function SubmissionsPage() {
                               style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}
                               title={
                                 h == null
-                                  ? 'RN oversight visit: not shift hours'
-                                  : partial
-                                    ? `${fmtH(h)} of this ${fmtH(total)}-hour shift falls inside the selected range (${s.shiftStart || '?'} to ${s.shiftEnd || '?'})`
-                                    : `${s.shiftStart || '?'} to ${s.shiftEnd || '?'}`
+                                  ? 'No usable time window on this note'
+                                  : rn
+                                    ? `RN oversight visit, ${s.shiftStart || '?'} to ${s.shiftEnd || '?'}. Counted as RN oversight hours, not shift hours.`
+                                    : partial
+                                      ? `${fmtH(h)} of this ${fmtH(total)}-hour shift falls inside the selected range (${s.shiftStart || '?'} to ${s.shiftEnd || '?'})`
+                                      : `${s.shiftStart || '?'} to ${s.shiftEnd || '?'}`
                               }
                             >
                               {h == null ? (
                                 <span style={{ color: '#cbd5e1' }}>—</span>
+                              ) : rn ? (
+                                <span style={rnHoursChipStyle}>RN {fmtH(h)}</span>
                               ) : (
                                 <>
                                   <strong style={{ color: '#0f172a' }}>{fmtH(h)}</strong>
@@ -2173,6 +2219,18 @@ const hoursStatNumStyle: React.CSSProperties = {
   fontSize: 16,
   color: '#0f172a',
   fontVariantNumeric: 'tabular-nums',
+};
+
+/** Blue = RN oversight hours, matching the client Hours tab. */
+const rnHoursChipStyle: React.CSSProperties = {
+  display: 'inline-block',
+  padding: '1px 7px',
+  borderRadius: 999,
+  fontSize: 11.5,
+  fontWeight: 700,
+  background: '#dbeafe',
+  color: '#1d4ed8',
+  border: '1px solid #bfdbfe',
 };
 
 const pivotBtnStyle: React.CSSProperties = {

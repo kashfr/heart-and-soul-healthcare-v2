@@ -257,21 +257,58 @@ export function monthsBetween(fromISO: string, toISO: string): string[] {
 // any other deviation are entered as overrides, month by month.
 // ---------------------------------------------------------------------------
 
+/**
+ * Which hours a line caps. Shift hours come from shift notes (LPN/HHA/CNA on
+ * the clock); RN oversight hours come from RN oversight visit notes (time in
+ * to time out). NOW/COMP authorizes both as separate Therap lines (NL1 vs
+ * NR1); GAPP authorizes shift hours only. The two are never added together.
+ */
+export type HoursBucket = 'shift' | 'oversight';
+
+/** How the authorization states its rate: GAPP letters say hours/week,
+ *  Therap lines say hours daily (LPN) or hours monthly (RN). */
+export type RateBasis = 'day' | 'week' | 'month';
+
+/** Medicaid bills nursing in 15-minute units, so an hour is four units.
+ *  Therap's "Total Units" (5,840 on a 4-hour-daily LPN line) is in these. */
+export const UNITS_PER_HOUR = 4;
+
 export interface HoursAuthorization {
   id?: string;
   patientId: string;
-  /** Prior-authorization number as printed on the letter. */
+  /** Prior-authorization number as printed on the letter / Therap line. */
   paNumber: string;
   /** 'skilled' | 'unskilled' nursing hours. */
   kind: 'skilled' | 'unskilled';
-  /** Weekly rate from the letter; null when the letter only lists months. */
-  hoursPerWeek: number | null;
+  /** Which hours this line caps. */
+  covers: HoursBucket;
+  /** Rate as printed: 21 per week (GAPP), 4 per day (NL1), 6 per month (NR1).
+   *  rateHours null when the letter only lists month blocks. */
+  rateBasis: RateBasis;
+  rateHours: number | null;
   /** 'YYYY-MM-DD' effective window. */
   from: string;
   to: string;
-  /** Month block hours as printed, keyed 'YYYY-MM'. Wins over the weekly default. */
+  /** Month block hours as printed, keyed 'YYYY-MM'. Wins over the rate default. */
   monthOverrides: Record<string, number>;
+  /** Therap "Total Units" for the whole window (15-minute units), the real
+   *  ceiling claims are paid against. null when the payer states none (GAPP). */
+  totalUnits: number | null;
+  /** Therap service code, e.g. 'NL1' or 'T1003-U1'. Display only. */
+  serviceCode?: string;
   note?: string;
+}
+
+/** Short label for a line's bucket. */
+export function bucketLabel(b: HoursBucket): string {
+  return b === 'oversight' ? 'RN oversight' : 'Shift hours';
+}
+
+/** '21/wk', '4/day', '6/mo' for the source column and chips. */
+export function rateLabel(a: HoursAuthorization): string {
+  if (a.rateHours == null) return '';
+  const unit = a.rateBasis === 'day' ? 'day' : a.rateBasis === 'month' ? 'mo' : 'wk';
+  return `${fmtH(a.rateHours)}/${unit}`;
 }
 
 /** Does the authorization cover any day of this month? */
@@ -279,34 +316,87 @@ export function authCoversMonth(a: HoursAuthorization, ym: string): boolean {
   return a.from <= monthEndISO(ym) && a.to >= monthStartISO(ym);
 }
 
+/** Days of the month that fall inside the authorization window. */
+function coveredDays(a: HoursAuthorization, ym: string): number {
+  const start = a.from > monthStartISO(ym) ? a.from : monthStartISO(ym);
+  const end = a.to < monthEndISO(ym) ? a.to : monthEndISO(ym);
+  return Math.max(0, isoToDayNum(end) - isoToDayNum(start) + 1);
+}
+
 /**
  * Authorized hours for one month under one authorization: the override when
- * entered, otherwise the weekly rate prorated over the days of the month the
- * authorization actually covers. null when neither is available.
+ * entered, otherwise derived from the rate. Weekly rates prorate over the
+ * covered days (weekly x days / 7 reproduces the GAPP letter's full months);
+ * daily rates multiply by the covered days; a monthly rate is the month's
+ * figure as stated, even for a partially covered month (Therap does not
+ * prorate a monthly line). null when neither is available.
  */
 export function monthCap(a: HoursAuthorization, ym: string): number | null {
   if (!authCoversMonth(a, ym)) return null;
   const override = a.monthOverrides?.[ym];
   if (typeof override === 'number' && Number.isFinite(override)) return override;
-  if (a.hoursPerWeek == null || !Number.isFinite(a.hoursPerWeek)) return null;
-  const start = a.from > monthStartISO(ym) ? a.from : monthStartISO(ym);
-  const end = a.to < monthEndISO(ym) ? a.to : monthEndISO(ym);
-  const days = isoToDayNum(end) - isoToDayNum(start) + 1;
-  return Math.round((a.hoursPerWeek * days) / 7);
+  if (a.rateHours == null || !Number.isFinite(a.rateHours)) return null;
+  const days = coveredDays(a, ym);
+  if (a.rateBasis === 'day') return Math.round(a.rateHours * days * 100) / 100;
+  if (a.rateBasis === 'month') return a.rateHours;
+  return Math.round((a.rateHours * days) / 7);
 }
 
-/** Whether a month's cap came from an override or the weekly default. */
-export function monthCapSource(a: HoursAuthorization, ym: string): 'override' | 'weekly' | 'none' {
+/** Whether a month's cap came from an override or the rate default. */
+export function monthCapSource(a: HoursAuthorization, ym: string): 'override' | 'rate' | 'none' {
   if (!authCoversMonth(a, ym)) return 'none';
   if (typeof a.monthOverrides?.[ym] === 'number') return 'override';
-  return a.hoursPerWeek != null ? 'weekly' : 'none';
+  return a.rateHours != null ? 'rate' : 'none';
 }
 
-/** The authorization in force for a month (newest `from` wins when several overlap). */
-export function authForMonth(auths: HoursAuthorization[], ym: string): HoursAuthorization | null {
-  const covering = auths.filter((a) => authCoversMonth(a, ym));
+/** The authorization in force for a month and bucket (newest `from` wins when several overlap). */
+export function authForMonth(auths: HoursAuthorization[], ym: string, bucket: HoursBucket = 'shift'): HoursAuthorization | null {
+  const covering = auths.filter((a) => a.covers === bucket && authCoversMonth(a, ym));
   if (covering.length === 0) return null;
   return [...covering].sort((a, b) => b.from.localeCompare(a.from))[0];
+}
+
+export interface UnitsUsage {
+  /** Hours documented inside the window through today. */
+  hours: number;
+  usedUnits: number;
+  totalUnits: number;
+  remainingUnits: number;
+  pct: number;
+  /** Straight-line projection of units at the end of the window. */
+  projectedUnits: number;
+  /** 'YYYY-MM-DD' the units run out at the current pace, when before the window end. */
+  runsOutOn: string | null;
+}
+
+/**
+ * Annual (whole-window) usage against Therap's Total Units. Only hours on
+ * days inside [from, to] count; pace is measured over the elapsed part of the
+ * window so a line acknowledged mid-year still projects sensibly.
+ */
+export function unitsUsage(a: HoursAuthorization, dayHours: Map<string, number>, todayISO: string): UnitsUsage | null {
+  if (a.totalUnits == null || !Number.isFinite(a.totalUnits) || a.totalUnits <= 0) return null;
+  let hours = 0;
+  for (const [d, h] of dayHours) {
+    if (d >= a.from && d <= a.to) hours += h;
+  }
+  hours = round2(hours);
+  const usedUnits = Math.round(hours * UNITS_PER_HOUR * 100) / 100;
+  const remainingUnits = Math.round((a.totalUnits - usedUnits) * 100) / 100;
+  const totalDays = isoToDayNum(a.to) - isoToDayNum(a.from) + 1;
+  const elapsed = Math.min(totalDays, Math.max(0, isoToDayNum(todayISO > a.to ? a.to : todayISO) - isoToDayNum(a.from) + 1));
+  const perDay = elapsed > 0 ? usedUnits / elapsed : 0;
+  const projectedUnits = elapsed >= totalDays ? usedUnits : Math.round(perDay * totalDays);
+  let runsOutOn: string | null = null;
+  if (elapsed < totalDays && perDay > 0) {
+    if (remainingUnits <= 0) runsOutOn = todayISO;
+    else {
+      // Strictly before the window end: running out ON the last day is the plan working.
+      const day = isoToDayNum(todayISO) + Math.floor(remainingUnits / perDay);
+      if (day < isoToDayNum(a.to)) runsOutOn = dayNumToISO(day);
+    }
+  }
+  return { hours, usedUnits, totalUnits: a.totalUnits, remainingUnits, pct: usedUnits / a.totalUnits, projectedUnits, runsOutOn };
 }
 
 export interface MonthUsage {
@@ -376,48 +466,83 @@ export const HOURS_AUTH_EXPIRY_WARN_DAYS = 45;
 
 export type HoursFinding = { severity: 'error' | 'warn' | 'info'; message: string };
 
+/** Per-day hours for both buckets (each map keyed 'YYYY-MM-DD'). */
+export interface BucketDayHours {
+  shift: Map<string, number>;
+  oversight: Map<string, number>;
+}
+
+export const emptyBucketDayHours = (): BucketDayHours => ({ shift: new Map(), oversight: new Map() });
+
+/** After this day of the month, a NOW/COMP client with an RN oversight line
+ *  and no visit yet is worth a nudge (the monthly RN hours do not roll over). */
+export const RN_VISIT_NUDGE_DAY = 20;
+
 /**
- * Roster-level findings for one client: an expiring/expired authorization and
- * a current month that is nearly used up or on pace to run over. Empty when
- * the client has no authorization on file (not every client has hours caps).
+ * Roster-level findings for one client, per bucket: an expiring/expired
+ * line, a current month nearly used up or on pace to run over, annual units
+ * nearly used up or over, and (RN oversight lines only) no visit yet this
+ * month. Empty when the client has no authorization on file.
  */
 export function hoursFindings(
   auths: HoursAuthorization[],
-  dayHours: Map<string, number>,
+  dayHours: BucketDayHours,
   todayISO: string,
 ): HoursFinding[] {
   const out: HoursFinding[] = [];
   if (auths.length === 0) return out;
   const ym = monthKeyOf(todayISO);
-  const current = authForMonth(auths, ym);
-  const latest = [...auths].sort((a, b) => b.to.localeCompare(a.to))[0];
+  const monthName = monthLabel(ym).split(' ')[0];
 
-  if (latest) {
+  for (const bucket of ['shift', 'oversight'] as HoursBucket[]) {
+    const lines = auths.filter((a) => a.covers === bucket);
+    if (lines.length === 0) continue;
+    const name = bucketLabel(bucket);
+    const hours = dayHours[bucket];
+    const latest = [...lines].sort((a, b) => b.to.localeCompare(a.to))[0];
     const daysLeft = isoToDayNum(latest.to) - isoToDayNum(todayISO);
     if (daysLeft < 0) {
-      out.push({ severity: 'error', message: `Hours authorization expired ${fmtUS(latest.to)}. No renewal on file.` });
+      out.push({ severity: 'error', message: `${name} authorization expired ${fmtUS(latest.to)}. No renewal on file.` });
     } else if (daysLeft <= HOURS_AUTH_EXPIRY_WARN_DAYS) {
       out.push({
         severity: daysLeft <= 14 ? 'error' : 'warn',
-        message: `Hours authorization ends ${fmtUS(latest.to)} (${daysLeft === 0 ? 'today' : `${daysLeft} day${daysLeft === 1 ? '' : 's'}`}). No renewal on file.`,
+        message: `${name} authorization ends ${fmtUS(latest.to)} (${daysLeft === 0 ? 'today' : `${daysLeft} day${daysLeft === 1 ? '' : 's'}`}). No renewal on file.`,
       });
     }
-  }
 
-  if (current) {
-    const u = monthUsage(dayHours, monthCap(current, ym), ym, todayISO);
+    const current = authForMonth(lines, ym, bucket);
+    if (!current) continue;
+    const u = monthUsage(hours, monthCap(current, ym), ym, todayISO);
     if (u.authorized != null && u.remaining != null) {
-      const label = monthLabel(ym).split(' ')[0];
       if (u.remaining < 0) {
-        out.push({ severity: 'error', message: `${label}: ${fmtH(u.used)} of ${fmtH(u.authorized)} hours used. Over by ${fmtH(-u.remaining)}.` });
+        out.push({ severity: 'error', message: `${monthName} ${name.toLowerCase()}: ${fmtH(u.used)} of ${fmtH(u.authorized)} used. Over by ${fmtH(-u.remaining)}.` });
       } else if (u.pct != null && u.pct >= 0.9) {
-        out.push({ severity: 'warn', message: `${label}: ${fmtH(u.used)} of ${fmtH(u.authorized)} hours used (${Math.round(u.pct * 100)}%). ${fmtH(u.remaining)} left.` });
-      } else if (u.runsOutOn) {
-        out.push({ severity: 'warn', message: `${label}: on pace to run out of hours ${fmtUS(u.runsOutOn)} (${fmtH(u.used)} of ${fmtH(u.authorized)} used).` });
+        out.push({ severity: 'warn', message: `${monthName} ${name.toLowerCase()}: ${fmtH(u.used)} of ${fmtH(u.authorized)} used (${Math.round(u.pct * 100)}%). ${fmtH(u.remaining)} left.` });
+      } else if (bucket === 'shift' && u.runsOutOn) {
+        out.push({ severity: 'warn', message: `${monthName} ${name.toLowerCase()}: on pace to run out ${fmtUS(u.runsOutOn)} (${fmtH(u.used)} of ${fmtH(u.authorized)} used).` });
+      }
+    }
+    if (bucket === 'oversight' && u.used === 0 && Number(todayISO.slice(8, 10)) > RN_VISIT_NUDGE_DAY) {
+      out.push({ severity: 'warn', message: `No RN oversight visit documented yet for ${monthName} (${fmtH(u.authorized ?? 0)} hours authorized).` });
+    }
+
+    const units = unitsUsage(current, hours, todayISO);
+    if (units) {
+      if (units.remainingUnits < 0) {
+        out.push({ severity: 'error', message: `${name}: ${fmtUnits(units.usedUnits)} of ${fmtUnits(units.totalUnits)} annual units used. Over by ${fmtUnits(-units.remainingUnits)}.` });
+      } else if (units.pct >= 0.9) {
+        out.push({ severity: 'warn', message: `${name}: ${fmtUnits(units.usedUnits)} of ${fmtUnits(units.totalUnits)} annual units used (${Math.round(units.pct * 100)}%).` });
+      } else if (units.runsOutOn) {
+        out.push({ severity: 'warn', message: `${name}: on pace to exhaust the ${fmtUnits(units.totalUnits)} annual units ${fmtUS(units.runsOutOn)}, before the line ends ${fmtUS(current.to)}.` });
       }
     }
   }
   return out;
+}
+
+/** '5,840' style units (whole numbers with separators; quarter units kept). */
+export function fmtUnits(n: number): string {
+  return n.toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
 
 /** '93', '5.5', '12.25' (no trailing zeros, at most two decimals). */

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, ChevronLeft, ChevronRight, Clock, Copy, FileText, Pencil, Plus, Trash2 } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, ChevronRight, Clock, Copy, FileText, Pencil, Plus, Stethoscope, Trash2 } from 'lucide-react';
 import { formatDateUS } from '@/lib/dateFormat';
 import { withSelectChevron } from '@/lib/selectChevron';
 import type { DashboardNote } from '@/lib/clientDashboardShared';
@@ -15,8 +15,11 @@ import {
 } from '@/lib/hoursAuthorizations';
 import {
   HOURS_AUTH_EXPIRY_WARN_DAYS,
+  UNITS_PER_HOUR,
   authForMonth,
+  bucketLabel,
   fmtH,
+  fmtUnits,
   findShiftOverlaps,
   hoursFindings,
   monthCap,
@@ -26,8 +29,12 @@ import {
   monthStartISO,
   monthUsage,
   monthsBetween,
+  rateLabel,
   splitShiftByDay,
+  unitsUsage,
   type HoursAuthorization,
+  type HoursBucket,
+  type RateBasis,
 } from '@/lib/shiftHours';
 
 const NAVY = '#1a3a5c';
@@ -42,6 +49,7 @@ interface Props {
 }
 
 interface DayRow {
+  bucket: HoursBucket;
   dateISO: string;
   noteId: string;
   nurseName: string;
@@ -52,11 +60,14 @@ interface DayRow {
 }
 
 /**
- * Owner-only "Hours" tab: authorized nursing hours (from the payer's Letter
- * of Notification) against hours documented on shift notes, month by month
- * and day by day. Answers the parent's "how many hours are left this month"
- * and doubles as the billing worksheet (shifts split at midnight, so each
- * calendar day carries exactly the hours worked on it).
+ * Owner-only "Hours" tab: authorized nursing hours (GAPP Letter of
+ * Notification or Therap Service Authorization lines) against hours
+ * documented on notes, month by month and day by day. Two buckets that are
+ * never summed: shift hours (shift notes) and RN oversight hours (oversight
+ * visit notes, time in to time out), each against its own line. Answers the
+ * parent's "how many hours are left this month" and doubles as the billing
+ * worksheet (shifts split at midnight, so each calendar day carries exactly
+ * the hours worked on it).
  */
 export default function HoursSection({ patientId, patientName, notes, uid, todayISO }: Props) {
   const [auths, setAuths] = useState<HoursAuthorization[] | null>(null);
@@ -86,9 +97,11 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
   }, [patientId]);
 
   const shiftNotes = useMemo(() => notes.filter((n) => n.noteType !== 'rn-oversight-visit'), [notes]);
+  const oversightNotes = useMemo(() => notes.filter((n) => n.noteType === 'rn-oversight-visit'), [notes]);
 
   // Two shifts charting the same hour on this client: a double-staffed hour
-  // or a typo, and a double bill either way. Keyed by note id.
+  // or a typo, and a double bill either way. Shift notes only: an RN visiting
+  // during an LPN shift is what a supervisory visit looks like.
   const overlaps = useMemo(() => findShiftOverlaps(shiftNotes), [shiftNotes]);
   const noteById = useMemo(() => new Map(shiftNotes.map((n) => [n.id, n])), [shiftNotes]);
   const overlapText = (noteId: string): string => {
@@ -103,45 +116,57 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
       .join('; ');
   };
 
-  // Shift notes only (oversight visits are not shift work), cut at midnight.
+  // Every note cut at midnight, tagged with its bucket.
   const dayRows = useMemo<DayRow[]>(() => {
     const rows: DayRow[] = [];
-    for (const n of shiftNotes) {
+    for (const n of notes) {
+      const bucket: HoursBucket = n.noteType === 'rn-oversight-visit' ? 'oversight' : 'shift';
       const segs = splitShiftByDay(n);
       const endDate = n.shiftEndDate || (segs.length > 1 ? segs[segs.length - 1].dateISO : n.dateISO);
       const window =
         n.shiftStart && n.shiftEnd
-          ? `${formatDateUS(n.dateISO)} ${n.shiftStart} to ${formatDateUS(endDate)} ${n.shiftEnd}`
+          ? bucket === 'oversight' || endDate === n.dateISO
+            ? `${formatDateUS(n.dateISO)} ${n.shiftStart} to ${n.shiftEnd}`
+            : `${formatDateUS(n.dateISO)} ${n.shiftStart} to ${formatDateUS(endDate)} ${n.shiftEnd}`
           : `${formatDateUS(n.dateISO)} (${fmtH(parseFloat(n.totalHours) || 0)} h, no times)`;
       for (const seg of segs) {
-        rows.push({ dateISO: seg.dateISO, noteId: n.id, nurseName: n.nurseName, window, hours: seg.hours, spill: seg.dateISO !== n.dateISO });
+        rows.push({ bucket, dateISO: seg.dateISO, noteId: n.id, nurseName: n.nurseName, window, hours: seg.hours, spill: seg.dateISO !== n.dateISO });
       }
     }
     return rows.sort((a, b) => a.dateISO.localeCompare(b.dateISO) || a.window.localeCompare(b.window));
-  }, [shiftNotes]);
+  }, [notes]);
 
   const dayHours = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const r of dayRows) m.set(r.dateISO, Math.round(((m.get(r.dateISO) || 0) + r.hours) * 100) / 100);
-    return m;
+    const out = { shift: new Map<string, number>(), oversight: new Map<string, number>() };
+    for (const r of dayRows) {
+      const m = out[r.bucket];
+      m.set(r.dateISO, Math.round(((m.get(r.dateISO) || 0) + r.hours) * 100) / 100);
+    }
+    return out;
   }, [dayRows]);
 
   const list = useMemo(() => auths ?? [], [auths]);
-  const auth = authForMonth(list, month);
-  const cap = auth ? monthCap(auth, month) : null;
-  const usage = monthUsage(dayHours, cap, month, todayISO);
   const isCurrent = month === todayISO.slice(0, 7);
   const monthRows = dayRows.filter((r) => r.dateISO >= monthStartISO(month) && r.dateISO <= monthEndISO(month));
-  const monthOverlapNotes = new Set(monthRows.filter((r) => overlaps.has(r.noteId)).map((r) => r.noteId));
+  const monthOverlapNotes = new Set(monthRows.filter((r) => r.bucket === 'shift' && overlaps.has(r.noteId)).map((r) => r.noteId));
   const findings = useMemo(() => hoursFindings(list, dayHours, todayISO), [list, dayHours, todayISO]);
 
-  // Every month any authorization covers, so the table shows the whole story
-  // (past months final, the current one in progress, future ones at zero).
-  const coveredMonths = useMemo(() => {
-    const set = new Set<string>();
-    for (const a of list) for (const ym of monthsBetween(a.from, a.to)) set.add(ym);
-    return Array.from(set).sort();
-  }, [list]);
+  // Per-bucket month picture.
+  const shiftAuth = authForMonth(list, month, 'shift');
+  const shiftCap = shiftAuth ? monthCap(shiftAuth, month) : null;
+  const shiftUsage = monthUsage(dayHours.shift, shiftCap, month, todayISO);
+  const rnAuth = authForMonth(list, month, 'oversight');
+  const rnCap = rnAuth ? monthCap(rnAuth, month) : null;
+  const rnUsage = monthUsage(dayHours.oversight, rnCap, month, todayISO);
+  const rnVisits = monthRows.filter((r) => r.bucket === 'oversight').length;
+  // Show the RN block for NOW/COMP-style clients (an oversight line on file)
+  // or whenever a visit was documented; GAPP clients with neither stay simple.
+  const hasOversight = list.some((a) => a.covers === 'oversight') || oversightNotes.length > 0;
+
+  // Every month any authorization covers, per bucket, so the tables show the
+  // whole story (past months final, current in progress, future at zero).
+  const shiftMonths = useMemo(() => coveredMonths(list, 'shift'), [list]);
+  const rnMonths = useMemo(() => coveredMonths(list, 'oversight'), [list]);
 
   const shiftMonth = (delta: number) => {
     const [y, m] = month.split('-').map(Number);
@@ -151,9 +176,18 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
 
   const answerText = (() => {
     const label = monthLabel(month);
-    if (cap == null) return `As of ${formatDateUS(todayISO)}, ${patientName} has ${fmtH(usage.used)} documented nursing hours for ${label}. No authorized-hours figure is on file for that month.`;
-    const rem = usage.remaining ?? 0;
-    return `As of ${formatDateUS(todayISO)}, ${patientName} has used ${fmtH(usage.used)} of ${fmtH(cap)} authorized nursing hours for ${label}. ${rem >= 0 ? `${fmtH(rem)} hours remain.` : `That is ${fmtH(-rem)} hours over the authorization.`}`;
+    const parts: string[] = [];
+    if (shiftCap == null) {
+      parts.push(`As of ${formatDateUS(todayISO)}, ${patientName} has ${fmtH(shiftUsage.used)} documented nursing hours for ${label}. No authorized-hours figure is on file for that month.`);
+    } else {
+      const rem = shiftUsage.remaining ?? 0;
+      parts.push(`As of ${formatDateUS(todayISO)}, ${patientName} has used ${fmtH(shiftUsage.used)} of ${fmtH(shiftCap)} authorized nursing hours for ${label}. ${rem >= 0 ? `${fmtH(rem)} hours remain.` : `That is ${fmtH(-rem)} hours over the authorization.`}`);
+    }
+    if (rnCap != null) {
+      const rem = rnUsage.remaining ?? 0;
+      parts.push(`RN oversight: ${fmtH(rnUsage.used)} of ${fmtH(rnCap)} hours used${rem >= 0 ? `, ${fmtH(rem)} remaining.` : ` (${fmtH(-rem)} over).`}`);
+    }
+    return parts.join(' ');
   })();
 
   const copyAnswer = async () => {
@@ -168,7 +202,7 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
 
   const remove = async (a: HoursAuthorization) => {
     if (!a.id) return;
-    if (!window.confirm(`Delete authorization ${a.paNumber || '(no PA #)'} (${formatDateUS(a.from)} to ${formatDateUS(a.to)})? The hours history stays; only the cap is removed.`)) return;
+    if (!window.confirm(`Delete the ${bucketLabel(a.covers).toLowerCase()} line ${a.paNumber || '(no PA #)'} (${formatDateUS(a.from)} to ${formatDateUS(a.to)})? The hours history stays; only the cap is removed.`)) return;
     try {
       await deleteHoursAuthorization(a.id);
       await reload();
@@ -178,14 +212,11 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
     }
   };
 
-  const pct = usage.pct == null ? 0 : Math.min(1, usage.pct);
-  const barColor = usage.remaining != null && usage.remaining < 0 ? '#b3261e' : pct >= 0.9 ? '#b45309' : '#27ae60';
-
   return (
     <div>
       {error && <div style={errBox}>{error}</div>}
 
-      {/* Reminders: expiring / expired / nearly used up. */}
+      {/* Reminders: expiring / expired / nearly used up / no RN visit yet. */}
       {findings.map((f) => (
         <div key={f.message} style={f.severity === 'error' ? alertErr : alertWarn}>
           <AlertTriangle size={14} style={{ flexShrink: 0 }} />
@@ -204,7 +235,7 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
       {auths && list.length === 0 && (
         <div style={alertInfo}>
           <FileText size={14} style={{ flexShrink: 0 }} />
-          <span>No hours authorization on file for {patientName}. Add the Letter of Notification below and this tab will track hours used against it.</span>
+          <span>No hours authorization on file for {patientName}. Add the Letter of Notification or Therap lines below and this tab will track hours used against them.</span>
         </div>
       )}
 
@@ -222,51 +253,29 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
           </div>
         </div>
 
-        <div style={statRow}>
-          <div style={stat}>
-            <div style={statLabel}>Authorized</div>
-            <div style={statValue}>{cap == null ? '—' : fmtH(cap)}</div>
-            <div style={statSub}>
-              {auth && cap != null
-                ? monthCapSource(auth, month) === 'override'
-                  ? `From the letter (PA ${auth.paNumber || '—'})`
-                  : `${fmtH(auth.hoursPerWeek ?? 0)}/week default (PA ${auth.paNumber || '—'})`
-                : auth
-                  ? 'Authorization has no rate for this month'
-                  : 'No authorization covers this month'}
-            </div>
-          </div>
-          <div style={stat}>
-            <div style={statLabel}>Used</div>
-            <div style={statValue}>{fmtH(usage.used)}</div>
-            <div style={statSub}>{monthRows.length} shift {monthRows.length === 1 ? 'day' : 'days'} documented</div>
-          </div>
-          <div style={stat}>
-            <div style={statLabel}>Remaining</div>
-            <div style={{ ...statValue, color: usage.remaining != null && usage.remaining < 0 ? '#b3261e' : NAVY }}>
-              {usage.remaining == null ? '—' : usage.remaining < 0 ? `${fmtH(-usage.remaining)} over` : fmtH(usage.remaining)}
-            </div>
-            <div style={statSub}>{usage.pct == null ? '' : `${Math.round(usage.pct * 100)}% used`}</div>
-          </div>
-          <div style={stat}>
-            <div style={statLabel}>{isCurrent ? 'Pace' : 'Average'}</div>
-            <div style={statValue}>{fmtH(usage.perDay)}<span style={{ fontSize: 12, fontWeight: 500, color: '#5c6b7a' }}> hrs/day</span></div>
-            <div style={statSub}>
-              {isCurrent && usage.projected != null
-                ? usage.runsOutOn
-                  ? `Runs out ${formatDateUS(usage.runsOutOn)} at this pace`
-                  : cap != null
-                    ? `On track for ${fmtH(usage.projected)} of ${fmtH(cap)} by month end`
-                    : `On track for ${fmtH(usage.projected)} by month end`
-                : ''}
-            </div>
-          </div>
-        </div>
-
-        {cap != null && (
-          <div style={barTrack} title={`${fmtH(usage.used)} of ${fmtH(cap)} hours`}>
-            <div style={{ ...barFill, width: `${Math.round(pct * 100)}%`, background: barColor }} />
-          </div>
+        <BucketSummary
+          bucket="shift"
+          auth={shiftAuth}
+          cap={shiftCap}
+          usage={shiftUsage}
+          isCurrent={isCurrent}
+          month={month}
+          countLabel={`${monthRows.filter((r) => r.bucket === 'shift').length} shift ${monthRows.filter((r) => r.bucket === 'shift').length === 1 ? 'day' : 'days'} documented`}
+          dayHours={dayHours.shift}
+          todayISO={todayISO}
+        />
+        {hasOversight && (
+          <BucketSummary
+            bucket="oversight"
+            auth={rnAuth}
+            cap={rnCap}
+            usage={rnUsage}
+            isCurrent={isCurrent}
+            month={month}
+            countLabel={`${rnVisits} RN ${rnVisits === 1 ? 'visit' : 'visits'} documented`}
+            dayHours={dayHours.oversight}
+            todayISO={todayISO}
+          />
         )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
@@ -277,7 +286,7 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
           <Link
             href={`/admin/submissions?view=all&range=m&m=${month}&q=${encodeURIComponent(patientName)}`}
             style={{ ...smallBtn, textDecoration: 'none' }}
-            title="Open these shift notes on the Shift Notes list"
+            title="Open these notes on the Shift Notes list"
           >
             Open in Shift Notes
           </Link>
@@ -288,27 +297,28 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
       <section style={card}>
         <div style={head}>
           <div style={title}>Day by day, {monthLabel(month)}</div>
-          <div style={muted}>Shifts crossing midnight are split; a row marked “from prior day” is the tail of an overnight shift.</div>
+          <div style={muted}>Shifts crossing midnight are split; a row marked “from prior day” is the tail of an overnight shift. RN visits are listed but never added to shift hours.</div>
         </div>
         {monthRows.length === 0 ? (
-          <div style={muted}>No shift notes documented for this month.</div>
+          <div style={muted}>Nothing documented for this month.</div>
         ) : (
           <table style={table}>
             <thead>
               <tr>
                 <th style={th}>Date</th>
                 <th style={th}>Nurse</th>
-                <th style={th}>Shift</th>
+                <th style={th}>Shift / visit</th>
                 <th style={{ ...th, textAlign: 'right' }}>Hours</th>
-                <th style={{ ...th, textAlign: 'right' }}>Running</th>
+                <th style={{ ...th, textAlign: 'right' }} title="Running total of shift hours">Running</th>
               </tr>
             </thead>
             <tbody>
               {(() => {
                 let running = 0;
                 return monthRows.map((r, i) => {
-                  running = Math.round((running + r.hours) * 100) / 100;
+                  if (r.bucket === 'shift') running = Math.round((running + r.hours) * 100) / 100;
                   const firstOfDay = i === 0 || monthRows[i - 1].dateISO !== r.dateISO;
+                  const isRn = r.bucket === 'oversight';
                   return (
                     <tr
                       key={`${r.noteId}-${r.dateISO}`}
@@ -319,20 +329,21 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
                     >
                       <td style={{ ...td, whiteSpace: 'nowrap', fontWeight: firstOfDay ? 600 : 400, color: firstOfDay ? NAVY : '#94a3b8' }}>
                         {formatDateUS(r.dateISO)}
-                        {firstOfDay && (dayHours.get(r.dateISO) ?? 0) > 24 && (
-                          <span style={overBadge} title="More than 24 hours documented on one calendar day: overlapping shifts">&gt;24h</span>
+                        {firstOfDay && (dayHours.shift.get(r.dateISO) ?? 0) > 24 && (
+                          <span style={overBadge} title="More than 24 shift hours documented on one calendar day: overlapping shifts">&gt;24h</span>
                         )}
                       </td>
                       <td style={td}>{r.nurseName || '—'}</td>
                       <td style={td}>
+                        {isRn && <span style={rnChip} title="RN oversight visit">RN visit</span>}
                         <Link href={`/admin/submissions/${r.noteId}`} style={{ color: NAVY }}>{r.window}</Link>
                         {r.spill && <span style={spillBadge}>from prior day</span>}
                         {overlaps.has(r.noteId) && (
                           <span style={overBadge} title={`Overlaps ${overlapText(r.noteId)}`}>overlaps</span>
                         )}
                       </td>
-                      <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtH(r.hours)}</td>
-                      <td style={{ ...td, textAlign: 'right', color: '#5c6b7a', fontVariantNumeric: 'tabular-nums' }}>{fmtH(running)}</td>
+                      <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: isRn ? '#1d4ed8' : undefined }}>{fmtH(r.hours)}</td>
+                      <td style={{ ...td, textAlign: 'right', color: '#5c6b7a', fontVariantNumeric: 'tabular-nums' }}>{isRn ? '' : fmtH(running)}</td>
                     </tr>
                   );
                 });
@@ -340,57 +351,28 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
             </tbody>
             <tfoot>
               <tr>
-                <td style={{ ...td, fontWeight: 700 }} colSpan={3}>Total</td>
-                <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{fmtH(usage.used)}</td>
+                <td style={{ ...td, fontWeight: 700 }} colSpan={3}>Shift hours</td>
+                <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{fmtH(shiftUsage.used)}</td>
                 <td style={td} />
               </tr>
+              {(hasOversight || rnUsage.used > 0) && (
+                <tr>
+                  <td style={{ ...td, fontWeight: 700, color: '#1d4ed8' }} colSpan={3}>RN oversight hours</td>
+                  <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#1d4ed8' }}>{fmtH(rnUsage.used)}</td>
+                  <td style={td} />
+                </tr>
+              )}
             </tfoot>
           </table>
         )}
       </section>
 
-      {/* Month by month across the authorization window(s) */}
-      {coveredMonths.length > 0 && (
-        <section style={card}>
-          <div style={head}>
-            <div style={title}>Month by month</div>
-          </div>
-          <table style={table}>
-            <thead>
-              <tr>
-                <th style={th}>Month</th>
-                <th style={{ ...th, textAlign: 'right' }}>Authorized</th>
-                <th style={{ ...th, textAlign: 'right' }}>Used</th>
-                <th style={{ ...th, textAlign: 'right' }}>Remaining</th>
-                <th style={th}>Source</th>
-              </tr>
-            </thead>
-            <tbody>
-              {coveredMonths.map((ym) => {
-                const a = authForMonth(list, ym);
-                const c = a ? monthCap(a, ym) : null;
-                const u = monthUsage(dayHours, c, ym, todayISO);
-                const over = u.remaining != null && u.remaining < 0;
-                return (
-                  <tr key={ym} style={ym === month ? { background: '#f0f7ff' } : undefined}>
-                    <td style={td}>
-                      <button type="button" onClick={() => setMonth(ym)} style={linkBtn}>{monthLabel(ym)}</button>
-                      {ym === todayISO.slice(0, 7) && <span style={nowBadge}>current</span>}
-                    </td>
-                    <td style={{ ...td, textAlign: 'right' }}>{c == null ? '—' : fmtH(c)}</td>
-                    <td style={{ ...td, textAlign: 'right' }}>{fmtH(u.used)}</td>
-                    <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: over ? '#b3261e' : NAVY }}>
-                      {u.remaining == null ? '—' : over ? `${fmtH(-u.remaining)} over` : fmtH(u.remaining)}
-                    </td>
-                    <td style={{ ...td, color: '#5c6b7a' }}>
-                      {a ? (monthCapSource(a, ym) === 'override' ? 'Letter' : monthCapSource(a, ym) === 'weekly' ? `${fmtH(a.hoursPerWeek ?? 0)}/wk default` : '—') : '—'}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </section>
+      {/* Month by month across the authorization window(s), per bucket */}
+      {shiftMonths.length > 0 && (
+        <MonthTable title="Month by month: shift hours" bucket="shift" months={shiftMonths} list={list} dayHours={dayHours.shift} month={month} todayISO={todayISO} onPick={setMonth} />
+      )}
+      {rnMonths.length > 0 && (
+        <MonthTable title="Month by month: RN oversight" bucket="oversight" months={rnMonths} list={list} dayHours={dayHours.oversight} month={month} todayISO={todayISO} onPick={setMonth} />
       )}
 
       {/* Authorizations on file */}
@@ -402,8 +384,9 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
           )}
         </div>
         <div style={{ ...muted, marginBottom: 12 }}>
-          Transcribe the Letter of Notification: the weekly rate fills every month by default (weekly × days in month ÷ 7);
-          type the month&apos;s block hours from the letter wherever they differ. Only you can see this.
+          GAPP: transcribe the Letter of Notification (hours per week; type each month&apos;s block hours where they differ).
+          NOW/COMP: one line per Therap Service Authorization, LPN hours daily for shift hours and RN hours monthly for oversight,
+          with the Total Units (15-minute units) so the annual ceiling is tracked too. Only you can see this.
         </div>
 
         {editing !== null && (
@@ -421,19 +404,35 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
           const months = monthsBetween(a.from, a.to);
           const daysLeft = Math.round((Date.parse(`${a.to}T00:00:00Z`) - Date.parse(`${todayISO}T00:00:00Z`)) / 86400000);
           const status = daysLeft < 0 ? 'Expired' : a.from > todayISO ? 'Upcoming' : daysLeft <= HOURS_AUTH_EXPIRY_WARN_DAYS ? `Ends in ${daysLeft} day${daysLeft === 1 ? '' : 's'}` : 'Active';
+          const units = unitsUsage(a, dayHours[a.covers], todayISO);
           return (
             <div key={a.id} style={authCard}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
                 <div style={{ flex: 1, minWidth: 220 }}>
                   <div style={{ fontWeight: 700, color: NAVY, fontSize: 14 }}>
-                    PA {a.paNumber || '—'} · {a.kind === 'unskilled' ? 'Unskilled' : 'Skilled'} nursing
+                    <span style={a.covers === 'oversight' ? rnChip : shiftChip}>{bucketLabel(a.covers)}</span>
+                    PA {a.paNumber || '—'}{a.serviceCode ? ` · ${a.serviceCode}` : ''} · {a.kind === 'unskilled' ? 'Unskilled' : 'Skilled'}
                     <span style={daysLeft < 0 ? expiredBadge : a.from > todayISO ? nowBadge : daysLeft <= HOURS_AUTH_EXPIRY_WARN_DAYS ? warnBadge : okBadge}>{status}</span>
                   </div>
                   <div style={muted}>
                     {formatDateUS(a.from)} to {formatDateUS(a.to)}
-                    {a.hoursPerWeek != null && ` · ${fmtH(a.hoursPerWeek)} hours/week`}
+                    {a.rateHours != null && ` · ${fmtH(a.rateHours)} hours per ${a.rateBasis}`}
+                    {a.totalUnits != null && ` · ${fmtUnits(a.totalUnits)} units (${fmtH(a.totalUnits / UNITS_PER_HOUR)} h)`}
                     {a.note && ` · ${a.note}`}
                   </div>
+                  {units && (
+                    <div style={{ marginTop: 6 }}>
+                      <div style={{ fontSize: 12.5, color: '#334155' }}>
+                        Annual units: <strong>{fmtUnits(units.usedUnits)}</strong> of {fmtUnits(units.totalUnits)} used ({Math.round(units.pct * 100)}%), {fmtUnits(Math.max(0, units.remainingUnits))} left
+                        {units.runsOutOn
+                          ? <span style={{ color: '#b3261e' }}> · on pace to run out {formatDateUS(units.runsOutOn)}</span>
+                          : <span style={{ color: '#5c6b7a' }}> · on pace for {fmtUnits(units.projectedUnits)} by {formatDateUS(a.to)}</span>}
+                      </div>
+                      <div style={{ ...barTrack, height: 6, marginTop: 4, maxWidth: 420 }}>
+                        <div style={{ ...barFill, width: `${Math.min(100, Math.round(units.pct * 100))}%`, background: units.remainingUnits < 0 ? '#b3261e' : units.pct >= 0.9 ? '#b45309' : NAVY }} />
+                      </div>
+                    </div>
+                  )}
                 </div>
                 {editing === null && (
                   <div style={{ display: 'flex', gap: 6 }}>
@@ -447,7 +446,7 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
                   const c = monthCap(a, ym);
                   const src = monthCapSource(a, ym);
                   return (
-                    <span key={ym} style={{ ...chip, ...(src === 'override' ? chipOverride : null) }} title={src === 'override' ? 'Block hours from the letter' : 'Weekly default'}>
+                    <span key={ym} style={{ ...chip, ...(src === 'override' ? chipOverride : null) }} title={src === 'override' ? 'Block hours from the letter' : `${rateLabel(a)} default`}>
                       {monthLabel(ym).replace(/(\w{3})\w* (\d{4})/, '$1 $2')}: <strong>{c == null ? '—' : fmtH(c)}</strong>
                     </span>
                   );
@@ -463,6 +462,148 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
 
 // ---------------------------------------------------------------------------
 
+function coveredMonths(list: HoursAuthorization[], bucket: HoursBucket): string[] {
+  const set = new Set<string>();
+  for (const a of list) if (a.covers === bucket) for (const ym of monthsBetween(a.from, a.to)) set.add(ym);
+  return Array.from(set).sort();
+}
+
+function BucketSummary({ bucket, auth, cap, usage, isCurrent, month, countLabel, dayHours, todayISO }: {
+  bucket: HoursBucket;
+  auth: HoursAuthorization | null;
+  cap: number | null;
+  usage: ReturnType<typeof monthUsage>;
+  isCurrent: boolean;
+  month: string;
+  countLabel: string;
+  dayHours: Map<string, number>;
+  todayISO: string;
+}) {
+  const isRn = bucket === 'oversight';
+  const pct = usage.pct == null ? 0 : Math.min(1, usage.pct);
+  const barColor = usage.remaining != null && usage.remaining < 0 ? '#b3261e' : pct >= 0.9 ? '#b45309' : isRn ? '#1d4ed8' : '#27ae60';
+  const units = auth ? unitsUsage(auth, dayHours, todayISO) : null;
+  return (
+    <div style={{ marginTop: isRn ? 14 : 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        {isRn ? <Stethoscope size={14} color="#1d4ed8" /> : <Clock size={14} color={NAVY} />}
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: isRn ? '#1d4ed8' : NAVY, textTransform: 'uppercase', letterSpacing: 0.4 }}>{bucketLabel(bucket)}</span>
+      </div>
+      <div style={statRow}>
+        <div style={stat}>
+          <div style={statLabel}>Authorized</div>
+          <div style={statValue}>{cap == null ? '—' : fmtH(cap)}</div>
+          <div style={statSub}>
+            {auth && cap != null
+              ? monthCapSource(auth, month) === 'override'
+                ? `From the letter (PA ${auth.paNumber || '—'})`
+                : `${rateLabel(auth)} (PA ${auth.paNumber || '—'})`
+              : auth
+                ? 'Line has no rate for this month'
+                : `No ${bucketLabel(bucket).toLowerCase()} line covers this month`}
+          </div>
+        </div>
+        <div style={stat}>
+          <div style={statLabel}>Used</div>
+          <div style={statValue}>{fmtH(usage.used)}</div>
+          <div style={statSub}>{countLabel}</div>
+        </div>
+        <div style={stat}>
+          <div style={statLabel}>Remaining</div>
+          <div style={{ ...statValue, color: usage.remaining != null && usage.remaining < 0 ? '#b3261e' : NAVY }}>
+            {usage.remaining == null ? '—' : usage.remaining < 0 ? `${fmtH(-usage.remaining)} over` : fmtH(usage.remaining)}
+          </div>
+          <div style={statSub}>{usage.pct == null ? '' : `${Math.round(usage.pct * 100)}% used`}</div>
+        </div>
+        {isRn ? (
+          <div style={stat}>
+            <div style={statLabel}>Annual units</div>
+            <div style={statValue}>{units ? fmtUnits(units.usedUnits) : '—'}</div>
+            <div style={statSub}>{units ? `of ${fmtUnits(units.totalUnits)} (${fmtUnits(Math.max(0, units.remainingUnits))} left)` : 'No unit total on the line'}</div>
+          </div>
+        ) : (
+          <div style={stat}>
+            <div style={statLabel}>{isCurrent ? 'Pace' : 'Average'}</div>
+            <div style={statValue}>{fmtH(usage.perDay)}<span style={{ fontSize: 12, fontWeight: 500, color: '#5c6b7a' }}> hrs/day</span></div>
+            <div style={statSub}>
+              {isCurrent && usage.projected != null
+                ? usage.runsOutOn
+                  ? `Runs out ${formatDateUS(usage.runsOutOn)} at this pace`
+                  : cap != null
+                    ? `On track for ${fmtH(usage.projected)} of ${fmtH(cap)} by month end`
+                    : `On track for ${fmtH(usage.projected)} by month end`
+                : units
+                  ? `Annual units: ${fmtUnits(units.usedUnits)} of ${fmtUnits(units.totalUnits)}`
+                  : ''}
+            </div>
+          </div>
+        )}
+      </div>
+      {cap != null && (
+        <div style={barTrack} title={`${fmtH(usage.used)} of ${fmtH(cap)} hours`}>
+          <div style={{ ...barFill, width: `${Math.round(pct * 100)}%`, background: barColor }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MonthTable({ title: heading, bucket, months, list, dayHours, month, todayISO, onPick }: {
+  title: string;
+  bucket: HoursBucket;
+  months: string[];
+  list: HoursAuthorization[];
+  dayHours: Map<string, number>;
+  month: string;
+  todayISO: string;
+  onPick: (ym: string) => void;
+}) {
+  return (
+    <section style={card}>
+      <div style={head}>
+        <div style={title}>{heading}</div>
+      </div>
+      <table style={table}>
+        <thead>
+          <tr>
+            <th style={th}>Month</th>
+            <th style={{ ...th, textAlign: 'right' }}>Authorized</th>
+            <th style={{ ...th, textAlign: 'right' }}>Used</th>
+            <th style={{ ...th, textAlign: 'right' }}>Remaining</th>
+            <th style={th}>Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          {months.map((ym) => {
+            const a = authForMonth(list, ym, bucket);
+            const c = a ? monthCap(a, ym) : null;
+            const u = monthUsage(dayHours, c, ym, todayISO);
+            const over = u.remaining != null && u.remaining < 0;
+            return (
+              <tr key={ym} style={ym === month ? { background: '#f0f7ff' } : undefined}>
+                <td style={td}>
+                  <button type="button" onClick={() => onPick(ym)} style={linkBtn}>{monthLabel(ym)}</button>
+                  {ym === todayISO.slice(0, 7) && <span style={nowBadge}>current</span>}
+                </td>
+                <td style={{ ...td, textAlign: 'right' }}>{c == null ? '—' : fmtH(c)}</td>
+                <td style={{ ...td, textAlign: 'right' }}>{fmtH(u.used)}</td>
+                <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: over ? '#b3261e' : NAVY }}>
+                  {u.remaining == null ? '—' : over ? `${fmtH(-u.remaining)} over` : fmtH(u.remaining)}
+                </td>
+                <td style={{ ...td, color: '#5c6b7a' }}>
+                  {a ? (monthCapSource(a, ym) === 'override' ? 'Letter' : monthCapSource(a, ym) === 'rate' ? `${rateLabel(a)} default` : '—') : '—'}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
 interface FormProps {
   patientId: string;
   uid: string;
@@ -472,9 +613,13 @@ interface FormProps {
 }
 
 function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: FormProps) {
+  const [covers, setCovers] = useState<HoursBucket>(existing?.covers ?? 'shift');
   const [paNumber, setPaNumber] = useState(existing?.paNumber ?? '');
+  const [serviceCode, setServiceCode] = useState(existing?.serviceCode ?? '');
   const [kind, setKind] = useState<'skilled' | 'unskilled'>(existing?.kind ?? 'skilled');
-  const [weekly, setWeekly] = useState(existing?.hoursPerWeek != null ? String(existing.hoursPerWeek) : '');
+  const [rateBasis, setRateBasis] = useState<RateBasis>(existing?.rateBasis ?? 'week');
+  const [rate, setRate] = useState(existing?.rateHours != null ? String(existing.rateHours) : '');
+  const [totalUnits, setTotalUnits] = useState(existing?.totalUnits != null ? String(existing.totalUnits) : '');
   const [from, setFrom] = useState(existing?.from ?? '');
   const [to, setTo] = useState(existing?.to ?? '');
   const [note, setNote] = useState(existing?.note ?? '');
@@ -485,27 +630,34 @@ function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: Form
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [fieldErr, setFieldErr] = useState<'paNumber' | 'from' | 'to' | 'weekly' | null>(null);
+  const [fieldErr, setFieldErr] = useState<'paNumber' | 'from' | 'to' | 'rate' | 'units' | null>(null);
 
-  const weeklyNum = weekly.trim() === '' ? null : Number(weekly);
+  const rateNum = rate.trim() === '' ? null : Number(rate);
+  const unitsNum = totalUnits.trim() === '' ? null : Number(totalUnits);
   const validDates = /^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to) && from <= to;
   const months = validDates ? monthsBetween(from, to) : [];
   const preview: HoursAuthorization = {
     patientId,
     paNumber,
     kind,
-    hoursPerWeek: weeklyNum != null && Number.isFinite(weeklyNum) ? weeklyNum : null,
+    covers,
+    rateBasis,
+    rateHours: rateNum != null && Number.isFinite(rateNum) ? rateNum : null,
     from,
     to,
     monthOverrides: {},
+    totalUnits: null,
   };
+  // Sanity hint: Therap's Total Units should equal rate x days (or months) x 4.
+  const impliedHours = unitsNum != null && Number.isFinite(unitsNum) ? unitsNum / UNITS_PER_HOUR : null;
 
   const submit = async () => {
     setErr(null);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) { setFieldErr('from'); setErr('Enter the effective date.'); return; }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(to)) { setFieldErr('to'); setErr('Enter the end date.'); return; }
     if (from > to) { setFieldErr('to'); setErr('The end date is before the effective date.'); return; }
-    if (weeklyNum != null && (!Number.isFinite(weeklyNum) || weeklyNum < 0 || weeklyNum > 168)) { setFieldErr('weekly'); setErr('Hours per week must be between 0 and 168.'); return; }
+    if (rateNum != null && (!Number.isFinite(rateNum) || rateNum < 0 || rateNum > 744)) { setFieldErr('rate'); setErr('Hours must be a number between 0 and 744.'); return; }
+    if (unitsNum != null && (!Number.isFinite(unitsNum) || unitsNum < 0)) { setFieldErr('units'); setErr('Total units must be a positive number.'); return; }
     const monthOverrides: Record<string, number> = {};
     for (const ym of months) {
       const raw = (overrides[ym] ?? '').trim();
@@ -514,16 +666,20 @@ function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: Form
       if (!Number.isFinite(n) || n < 0 || n > 744) { setErr(`${monthLabel(ym)}: enter a number of hours (0 to 744) or leave it blank for the default.`); return; }
       monthOverrides[ym] = n;
     }
-    if (weeklyNum == null && Object.keys(monthOverrides).length === 0) { setFieldErr('weekly'); setErr('Enter the hours per week from the letter, or the block hours for at least one month.'); return; }
+    if (rateNum == null && Object.keys(monthOverrides).length === 0) { setFieldErr('rate'); setErr('Enter the hours rate from the authorization, or the block hours for at least one month.'); return; }
     setFieldErr(null);
     const input: HoursAuthorizationInput = {
       patientId,
       paNumber: paNumber.trim(),
       kind,
-      hoursPerWeek: weeklyNum,
+      covers,
+      rateBasis,
+      rateHours: rateNum,
       from,
       to,
       monthOverrides,
+      totalUnits: unitsNum,
+      serviceCode: serviceCode.trim(),
       note: note.trim(),
     };
     setSaving(true);
@@ -546,8 +702,19 @@ function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: Form
       <div style={{ fontWeight: 700, color: NAVY, marginBottom: 10 }}>{existing ? 'Edit authorization' : 'New authorization'}</div>
       <div style={formGrid}>
         <label style={field}>
+          <span style={label}>Covers</span>
+          <select value={covers} onChange={(e) => setCovers(e.target.value as HoursBucket)} style={select}>
+            <option value="shift">Shift hours (LPN / HHA / CNA shift notes)</option>
+            <option value="oversight">RN oversight visits</option>
+          </select>
+        </label>
+        <label style={field}>
           <span style={label}>PA #</span>
           <input value={paNumber} onChange={(e) => setPaNumber(e.target.value)} style={{ ...input, ...errStyle('paNumber') }} placeholder="126040902312" />
+        </label>
+        <label style={field}>
+          <span style={label}>Service code</span>
+          <input value={serviceCode} onChange={(e) => setServiceCode(e.target.value)} style={input} placeholder="NL1, NR1 (Therap) or blank" />
         </label>
         <label style={field}>
           <span style={label}>Type</span>
@@ -557,8 +724,16 @@ function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: Form
           </select>
         </label>
         <label style={field}>
-          <span style={label} title="The weekly rate printed on the letter, e.g. “21 hours/week”">Hours per week</span>
-          <input type="number" min={0} max={168} step="0.25" value={weekly} onChange={(e) => setWeekly(e.target.value)} style={{ ...input, ...errStyle('weekly') }} placeholder="21 (from the letter)" />
+          <span style={label}>Hours</span>
+          <input type="number" min={0} max={744} step="0.25" value={rate} onChange={(e) => setRate(e.target.value)} style={{ ...input, ...errStyle('rate') }} placeholder="21" />
+        </label>
+        <label style={field}>
+          <span style={label}>Per</span>
+          <select value={rateBasis} onChange={(e) => setRateBasis(e.target.value as RateBasis)} style={select}>
+            <option value="week">Week (GAPP letter)</option>
+            <option value="day">Day (Therap LPN line)</option>
+            <option value="month">Month (Therap RN line)</option>
+          </select>
         </label>
         <label style={field}>
           <span style={label}>Effective</span>
@@ -568,17 +743,25 @@ function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: Form
           <span style={label}>Until</span>
           <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} style={{ ...input, ...errStyle('to') }} />
         </label>
+        <label style={field}>
+          <span style={label} title="Therap Total Units for the whole window; 4 units = 1 hour">Total units</span>
+          <input type="number" min={0} step="1" value={totalUnits} onChange={(e) => setTotalUnits(e.target.value)} style={{ ...input, ...errStyle('units') }} placeholder="5840 (Therap) or blank" />
+        </label>
         <label style={{ ...field, gridColumn: '1 / -1' }}>
           <span style={label}>Note (optional)</span>
           <input value={note} onChange={(e) => setNote(e.target.value)} style={input} placeholder="Letter signed 07/04/2026; determination 06/10/2026" />
         </label>
       </div>
+      {impliedHours != null && (
+        <div style={{ ...muted, marginTop: 6 }}>{fmtUnits(unitsNum as number)} units = {fmtH(impliedHours)} hours over the window (4 units per hour).</div>
+      )}
 
       {months.length > 0 && (
         <div style={{ marginTop: 12 }}>
-          <div style={label}>Block hours by month</div>
+          <div style={label}>Hours by month</div>
           <div style={{ ...muted, marginBottom: 8 }}>
-            Blank uses the weekly default shown in grey. Type the month&apos;s number from the letter&apos;s Block Hours table to override it.
+            Blank uses the default shown in grey ({rateBasis === 'week' ? 'hours per week × days in month ÷ 7' : rateBasis === 'day' ? 'hours per day × days in month' : 'the monthly figure'}).
+            Type a month&apos;s number from the letter&apos;s Block Hours table to override it.
           </div>
           <div style={monthGrid}>
             {months.map((ym) => {
@@ -595,7 +778,7 @@ function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: Form
                     placeholder={def == null ? '—' : String(def)}
                     onChange={(e) => setOverrides((o) => ({ ...o, [ym]: e.target.value }))}
                     style={{ ...input, ...(overrides[ym] ? { fontWeight: 700, color: NAVY } : null) }}
-                    aria-label={`${monthLabel(ym)} block hours`}
+                    aria-label={`${monthLabel(ym)} hours`}
                   />
                 </label>
               );
@@ -647,6 +830,9 @@ const expiredBadge: CSSProperties = { ...badgeBase, background: '#fdeaea', color
 const nowBadge: CSSProperties = { ...badgeBase, background: '#eef4fb', color: NAVY, border: '1px solid #c8def5' };
 const spillBadge: CSSProperties = { ...badgeBase, background: '#f8fafc', color: '#64748b', border: '1px solid #e2e8f0', textTransform: 'none', letterSpacing: 0, fontWeight: 600 };
 const overBadge: CSSProperties = { ...badgeBase, background: '#fdeaea', color: '#b3261e', border: '1px solid #f3b8b8', textTransform: 'none', letterSpacing: 0 };
+/** Blue = RN oversight, everywhere the two buckets sit side by side. */
+const rnChip: CSSProperties = { ...badgeBase, marginLeft: 0, marginRight: 8, background: '#dbeafe', color: '#1d4ed8', border: '1px solid #bfdbfe' };
+const shiftChip: CSSProperties = { ...badgeBase, marginLeft: 0, marginRight: 8, background: '#e9f6f2', color: '#14544a', border: '1px solid #b9e3d8' };
 const authCard: CSSProperties = { border: '1px solid #e5e7eb', borderRadius: 10, padding: '12px 14px', marginBottom: 10 };
 const monthChips: CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 };
 const chip: CSSProperties = { fontSize: 12, padding: '3px 8px', borderRadius: 6, background: '#f8fafc', border: '1px solid #e2e8f0', color: '#334155' };

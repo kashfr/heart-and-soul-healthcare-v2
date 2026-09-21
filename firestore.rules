@@ -128,7 +128,10 @@ service cloud.firestore {
     }
 
     // Authorized nursing hours per client, transcribed from the payer's Letter
-    // of Notification (GAPP weekly rate + per-month block hours). OWNER-ONLY on
+    // of Notification (GAPP weekly rate + per-month block hours) or Therap
+    // Service Authorization lines (NOW/COMP: LPN daily + RN monthly, annual
+    // 15-minute units). Each line says which bucket it caps (shift hours vs
+    // RN oversight visit hours; never summed together). OWNER-ONLY on
     // purpose: the caps and how close a client is to them are billing and
     // parent-facing numbers the owner answers personally, so admin is the only
     // role that can read or write them. Top-level (keyed by patientId) so the
@@ -139,9 +142,14 @@ service cloud.firestore {
         && incomingData().patientId is string && incomingData().patientId.size() > 0
         && incomingData().paNumber is string && incomingData().paNumber.size() <= 60
         && incomingData().kind in ['skilled', 'unskilled']
-        && (incomingData().hoursPerWeek == null
-            || (incomingData().hoursPerWeek is number
-                && incomingData().hoursPerWeek >= 0 && incomingData().hoursPerWeek <= 168))
+        && incomingData().covers in ['shift', 'oversight']
+        && incomingData().rateBasis in ['day', 'week', 'month']
+        && (incomingData().rateHours == null
+            || (incomingData().rateHours is number
+                && incomingData().rateHours >= 0 && incomingData().rateHours <= 744))
+        && (incomingData().totalUnits == null
+            || (incomingData().totalUnits is number && incomingData().totalUnits >= 0))
+        && incomingData().serviceCode is string && incomingData().serviceCode.size() <= 40
         && incomingData().from is string && incomingData().from.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
         && incomingData().to is string && incomingData().to.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
         && incomingData().from <= incomingData().to
