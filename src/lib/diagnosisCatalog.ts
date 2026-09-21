@@ -430,6 +430,66 @@ export function inferService(input: ServiceInferenceInput): ServiceInference {
   return { service: null, source: 'unknown', reason: '', conflict: null };
 }
 
+// --- Behavioral-only paid-caregiver screen ----------------------------------
+
+/**
+ * The diagnosis picture from everything a form can carry: the structured
+ * checkboxes and "Other" text, plus (on the H&S site) the free-text needs and
+ * notes. The prose is classified separately rather than fed in as "Other",
+ * because a long description would read as unclassifiable medical text and
+ * quietly disable the behavioral checks.
+ */
+export function combinedDiagnosisPicture(
+  diagnoses: string[] | undefined,
+  diagnosisOther: string | undefined,
+  freeText: string | undefined
+): DiagnosisPicture {
+  const structured = diagnosisPicture(diagnoses, diagnosisOther);
+  const prose = classifyFreeText(freeText);
+  const hasBehavioral =
+    structured === 'behavioral' || structured === 'mixed' ||
+    prose === 'behavioral' || prose === 'mixed';
+  const hasMedical =
+    structured === 'medical' || structured === 'mixed' || prose === 'mixed';
+  if (!hasBehavioral && !hasMedical) return 'none';
+  if (!hasBehavioral) return 'medical';
+  return hasMedical ? 'mixed' : 'behavioral';
+}
+
+export interface BehavioralPaidScreenInput extends ServiceInferenceInput {
+  freeText?: string;
+  seekingPaidCaregiver?: string;
+}
+
+export const BEHAVIORAL_PAID_CAREGIVER_BLOCK =
+  'Paid-caregiver request for behavioral or autism care. The Family Caregiver Option covers personal care only, never behavioral aide, and autism routes to the ASD Program, so the referral cannot be accepted as a paid-caregiver request.';
+
+/**
+ * Refuses a paid-caregiver request whose picture is behavioral: either the
+ * service inference says so (behaviors that put someone at risk, or a
+ * behavioral diagnosis with nothing else), or the ONLY diagnoses are
+ * behavioral/developmental and no skilled equipment is reported. The second
+ * clause is the Kehlani case: autism, developmental delay and speech delay,
+ * with "needs help with feeding / bathing" checked. Daily-care boxes rank
+ * above a behavioral diagnosis for service inference (so the card says PSS),
+ * but with no medical condition anywhere there is nothing the Family
+ * Caregiver Option can pay for, whatever boxes are checked.
+ */
+export function screenBehavioralPaidCaregiver(
+  input: BehavioralPaidScreenInput
+): string | null {
+  if (input.seekingPaidCaregiver !== 'yes') return null;
+  const inferred = inferService(input);
+  if (inferred.service === 'behavioral') return BEHAVIORAL_PAID_CAREGIVER_BLOCK;
+  if (inferred.source === 'equipment') return null;
+  const picture = combinedDiagnosisPicture(
+    input.diagnoses,
+    input.diagnosisOther,
+    input.freeText
+  );
+  return picture === 'behavioral' ? BEHAVIORAL_PAID_CAREGIVER_BLOCK : null;
+}
+
 // --- Mixed-diagnosis paid-caregiver screen ----------------------------------
 
 /**
@@ -487,8 +547,8 @@ const NO_MIXED_SCREEN: MixedPaidScreen = { asks: false, block: null, flag: null 
 export function screenMixedPaidCaregiver(input: MixedPaidScreenInput): MixedPaidScreen {
   if (input.seekingPaidCaregiver !== 'yes') return NO_MIXED_SCREEN;
   const mixed =
-    diagnosisPicture(input.diagnoses, input.diagnosisOther) === 'mixed' ||
-    classifyFreeText(input.freeText) === 'mixed';
+    combinedDiagnosisPicture(input.diagnoses, input.diagnosisOther, input.freeText) ===
+    'mixed';
   if (!mixed) return NO_MIXED_SCREEN;
 
   switch (input.paidCareBasis) {

@@ -10,12 +10,12 @@ import { paidCaregiverDiagnosisFlag, screenYoungPaidCaregiver } from '@/lib/diag
 import { formatDateUS } from '@/lib/dateFormat';
 import {
   behaviorRiskLabel,
-  classifyFreeText,
   composeDiagnosisText,
   currentServiceLabels,
   equipmentLabels,
   inferService,
   paidCareBasisLabel,
+  screenBehavioralPaidCaregiver,
   screenMixedPaidCaregiver,
   type ServiceKey,
 } from '@/lib/diagnosisCatalog';
@@ -209,18 +209,11 @@ export async function processReferralSubmission(data: any) {
   if (program?.interest === 'gapp' && details?.seekingPaidCaregiver === 'yes') {
     const prose = `${details.serviceNeeds ?? ''} ${details.additionalNotes ?? ''}`;
     // Paid + behavioral picture (structured answers, or the prose describing
-    // autism with no skilled care reported): the FCO never covers it.
-    const inferred = inferService(details);
-    if (
-      inferred.service === 'behavioral' ||
-      (inferred.source !== 'equipment' && classifyFreeText(prose) === 'behavioral')
-    ) {
-      return {
-        success: false,
-        refused: 'behavioral-paid-caregiver',
-        error:
-          'Paid-caregiver request for behavioral or autism care. The Family Caregiver Option covers personal care only, never behavioral aide, and autism routes to the ASD Program, so the referral cannot be accepted as a paid-caregiver request.',
-      };
+    // autism, with no medical condition or skilled care): the FCO never
+    // covers it.
+    const behavioral = screenBehavioralPaidCaregiver({ ...details, freeText: prose });
+    if (behavioral) {
+      return { success: false, refused: 'behavioral-paid-caregiver', error: behavioral };
     }
     const youngChild = screenYoungPaidCaregiver({
       dob: client?.dob,

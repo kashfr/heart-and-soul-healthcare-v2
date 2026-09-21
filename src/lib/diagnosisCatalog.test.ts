@@ -18,7 +18,9 @@ import {
   diagnosisLabels,
   diagnosisPicture,
   inferService,
+  combinedDiagnosisPicture,
   paidCareBasisLabel,
+  screenBehavioralPaidCaregiver,
   screenMixedPaidCaregiver,
   screenYoungPaidCaregiver,
   serviceFromCareNeed,
@@ -320,5 +322,64 @@ describe('screenYoungPaidCaregiver (the Legacy case)', () => {
         NOW
       ).block
     ).not.toBeNull();
+  });
+});
+
+describe('screenBehavioralPaidCaregiver (the Kehlani case)', () => {
+  // Autism + developmental delay + speech delay, no medical diagnosis, no
+  // equipment, "needs help with feeding / bathing" checked, parent seeking
+  // pay. The daily-care boxes make the service inference say PSS, which used
+  // to slip past the paid + behavioral block.
+  const kehlani = {
+    diagnoses: ['autism', 'dev_delay', 'speech'],
+    equipment: ['help_feeding', 'help_hygiene'],
+    behaviorRisk: 'managed',
+    currentServices: ['aba', 'speech', 'ot_pt'],
+    careNeeds: 'personal',
+    seekingPaidCaregiver: 'yes',
+  };
+
+  it('refuses a behavioral-only picture even with daily-care boxes checked', () => {
+    expect(inferService(kehlani).service).toBe('pss');
+    expect(screenBehavioralPaidCaregiver(kehlani)).not.toBeNull();
+  });
+
+  it('still refuses the plain behavioral inference cases', () => {
+    expect(
+      screenBehavioralPaidCaregiver({ diagnoses: ['autism'], equipment: ['equip_none'], seekingPaidCaregiver: 'yes' })
+    ).not.toBeNull();
+    expect(
+      screenBehavioralPaidCaregiver({ diagnoses: ['seizures'], behaviorRisk: 'high', seekingPaidCaregiver: 'yes' })
+    ).not.toBeNull();
+  });
+
+  it('does not refuse when a medical diagnosis or skilled equipment is present', () => {
+    // Mixed picture: the mixed screen asks the follow-up instead.
+    expect(
+      screenBehavioralPaidCaregiver({ ...kehlani, diagnoses: ['autism', 'seizures'] })
+    ).toBeNull();
+    // Skilled equipment settles it: the child needs nursing.
+    expect(
+      screenBehavioralPaidCaregiver({ ...kehlani, equipment: ['feeding_tube', 'help_feeding'] })
+    ).toBeNull();
+    // Medical-only picture.
+    expect(
+      screenBehavioralPaidCaregiver({ ...kehlani, diagnoses: ['cerebral_palsy'] })
+    ).toBeNull();
+  });
+
+  it('never refuses when pay is not sought', () => {
+    expect(screenBehavioralPaidCaregiver({ ...kehlani, seekingPaidCaregiver: 'no' })).toBeNull();
+  });
+
+  it('reads free text like the checkboxes', () => {
+    expect(
+      screenBehavioralPaidCaregiver({ freeText: 'autism, needs help bathing', seekingPaidCaregiver: 'yes' })
+    ).not.toBeNull();
+    // Structured medical + prose autism = mixed, not behavioral-only.
+    expect(combinedDiagnosisPicture(['seizures'], '', 'he has autism')).toBe('mixed');
+    expect(
+      screenBehavioralPaidCaregiver({ diagnoses: ['seizures'], freeText: 'he has autism', seekingPaidCaregiver: 'yes' })
+    ).toBeNull();
   });
 });

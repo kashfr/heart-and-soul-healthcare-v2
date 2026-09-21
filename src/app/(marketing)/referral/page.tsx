@@ -11,8 +11,8 @@ import {
   DIAGNOSIS_GROUPS,
   EQUIPMENT_OPTIONS,
   PAID_CARE_BASIS_OPTIONS,
-  classifyFreeText,
   inferService,
+  screenBehavioralPaidCaregiver,
   screenMixedPaidCaregiver,
   type BehaviorRisk,
   type PaidCareBasis,
@@ -266,20 +266,24 @@ export default function ReferralPage() {
     currentServices: formData.currentServices,
     careNeeds: formData.careNeeds,
   });
-  // Cross-check the free-text needs/notes too — submitters dodge the radio by
-  // picking "personal care" while describing autism. Kept separate from the
-  // structured answers rather than concatenated: this prose is a long
-  // description, and feeding it in as "Other" would read as an unclassifiable
-  // medical signal on every submission and quietly disable the check.
+  // Paid + behavioral picture: the structured answers, or the free-text
+  // needs/notes (submitters dodge the radio by picking "personal care" while
+  // describing autism). A behavioral-only diagnosis with no medical condition
+  // and no skilled equipment is refused whatever daily-care boxes are checked;
+  // reported skilled equipment settles it the other way (same rule as the
+  // GAPP site's form and both server intakes).
   const prose = `${formData.serviceNeeds} ${formData.additionalNotes}`;
-  const proseDxClass = classifyFreeText(prose);
-  // Reported skilled equipment settles it — the child needs nursing, so nothing
-  // in the prose should block them (same rule as the GAPP site's form).
-  const reportsSkilledCare = inferred.source === 'equipment';
   const isPaidBehavioralBlock =
-    seekingPaidGapp &&
-    !reportsSkilledCare &&
-    (inferred.service === 'behavioral' || proseDxClass === 'behavioral');
+    screenBehavioralPaidCaregiver({
+      diagnoses: formData.diagnoses,
+      diagnosisOther: formData.diagnosisOther,
+      equipment: formData.equipment,
+      behaviorRisk: formData.behaviorRisk,
+      currentServices: formData.currentServices,
+      careNeeds: formData.careNeeds,
+      freeText: prose,
+      seekingPaidCaregiver: seekingPaidGapp ? 'yes' : 'no',
+    }) !== null;
   // Blocked by what they described, not the option they picked.
   const blockedByDiagnosis =
     isPaidBehavioralBlock && formData.careNeeds !== 'behavioral';

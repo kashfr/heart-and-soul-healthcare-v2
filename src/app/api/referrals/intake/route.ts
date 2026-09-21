@@ -12,6 +12,7 @@ import {
   equipmentLabels,
   inferService,
   paidCareBasisLabel,
+  screenBehavioralPaidCaregiver,
   screenMixedPaidCaregiver,
   type BehaviorRisk,
   type PaidCareBasis,
@@ -203,12 +204,9 @@ function paidCaregiverRefusal(
   r: NonNullable<IncomingPayload['referral']>
 ): { code: string; reason: string } | null {
   if (r.seekingPaidCaregiver !== 'yes') return null;
-  if (inferService(r).service === 'behavioral') {
-    return {
-      code: 'behavioral-paid-caregiver',
-      reason:
-        'Paid-caregiver request for behavioral or autism care. The Family Caregiver Option covers personal care only, never behavioral aide, and autism routes to the ASD Program, so the referral cannot be accepted as a paid-caregiver request.',
-    };
+  const behavioral = screenBehavioralPaidCaregiver({ ...r, freeText: r.diagnosis });
+  if (behavioral) {
+    return { code: 'behavioral-paid-caregiver', reason: behavioral };
   }
   const youngChild = screenYoungPaidCaregiver(r);
   if (youngChild.block) {
