@@ -24,7 +24,7 @@ import { noteIsActiveDuplicate } from './duplicateMatch';
 import { normalizeDateISO, sortNotesDesc, type DashboardNote } from './clientDashboardShared';
 import { formatDateUS } from './dateFormat';
 import { readShiftChange } from './shiftChange';
-import { splitShiftByDay } from './shiftHours';
+import { emptyBucketDayHours, splitShiftByDay, type BucketDayHours, type HoursBucket } from './shiftHours';
 
 /**
  * All form fields from the 7-page progress note form.
@@ -420,6 +420,35 @@ const NO_INCIDENT_VALUES = new Set([
   'na',
 ]);
 
+/**
+ * The documented clock window of a note, whichever type it is. Shift notes
+ * carry q7/q62 start + end (end date included); RN oversight visit notes
+ * carry ov_timeIn / ov_timeOut on the visit date. Returning both in one
+ * shape lets shiftHours.ts split and total either kind with the same code,
+ * while noteType keeps them in separate buckets everywhere they are shown.
+ */
+export function readShiftWindow(data: Record<string, unknown>): {
+  shiftStart: string;
+  shiftEnd: string;
+  shiftEndDate: string;
+  totalHours: string;
+} {
+  if ((data.noteType as string) === 'rn-oversight-visit') {
+    return {
+      shiftStart: (data.ov_timeIn as string) || '',
+      shiftEnd: (data.ov_timeOut as string) || '',
+      shiftEndDate: normalizeDateISO((data.q6_dateofService as string) || ''),
+      totalHours: '',
+    };
+  }
+  return {
+    shiftStart: (data.q7_shiftStart as string) || '',
+    shiftEnd: (data.q62_shiftEndTime as string) || '',
+    shiftEndDate: (data.q62_shiftEndDate as string) || '',
+    totalHours: (data.q9_totalHours as string) || '',
+  };
+}
+
 // Map a single progressNotes Firestore doc to the dashboard's
 // SubmissionSummary shape. Extracted so getSubmissions +
 // getNurseAccessibleSubmissions agree on every derived field
@@ -454,10 +483,7 @@ function mapDocToSummary(
     dateOfService: formatDateUS((data.q6_dateofService as string) || ''),
     dateISO: normalizeDateISO((data.q6_dateofService as string) || ''),
     patientId: (data.patientId as string) || '',
-    shiftStart: (data.q7_shiftStart as string) || '',
-    shiftEnd: (data.q62_shiftEndTime as string) || '',
-    shiftEndDate: (data.q62_shiftEndDate as string) || '',
-    totalHours: (data.q9_totalHours as string) || '',
+    ...readShiftWindow(data),
     submittedAt: submittedAt ? submittedAt.toDate() : null,
     status: (data.status as string) || 'submitted',
     archivedAt: archivedAt ? archivedAt.toDate() : null,
@@ -846,7 +872,6 @@ export async function getNotesForPatient(patientId: string): Promise<DashboardNo
         nurseId: (data.nurseId as string) || '',
         nurseName: (data.q11_nurseName as string) || '',
         credential: (data.q12_credential as string) || '',
-        totalHours: (data.q9_totalHours as string) || '',
         temperature: (data.q16_temperature as string) || '',
         bloodPressure: (data.q17_bloodPressure as string) || '',
         pulse: (data.q18_pulse as string) || '',
@@ -855,9 +880,7 @@ export async function getNotesForPatient(patientId: string): Promise<DashboardNo
         painScore: (data.q24_painScore as string) || '',
         medTolerance: (data.q43_medTolerance as string) || '',
         physNotified: (data.q43_reactionPhysNotified as string) || '',
-        shiftStart: (data.q7_shiftStart as string) || '',
-        shiftEnd: (data.q62_shiftEndTime as string) || '',
-        shiftEndDate: (data.q62_shiftEndDate as string) || '',
+        ...readShiftWindow(data),
         addrLine1: (data.q200_addr_line1 as string) || '',
         city: (data.q200_city as string) || '',
         state: (data.q200_state as string) || '',
@@ -872,43 +895,42 @@ export async function getNotesForPatient(patientId: string): Promise<DashboardNo
 }
 
 /**
- * Per-client, per-day shift hours for every ACTIVE shift note whose date of
- * service is on/after `fromISO` (admin roster badges: "September: 84 of 90
- * hours used"). Shifts are split at midnight via shiftHours.ts so a note
- * dated the last day of the prior month still lands its post-midnight hours
- * in the current month; callers therefore pass a fromISO a day or two BEFORE
- * the window they care about. RN oversight visits are not shift work and are
- * skipped. Notes with no patientId can't be attributed and are skipped too.
+ * Per-client, per-day hours for every ACTIVE note whose date of service is
+ * on/after `fromISO`, in two buckets: shift notes and RN oversight visits
+ * (admin roster badges: "September shift hours: 84 of 90 used", "No RN
+ * oversight visit yet"). Shifts are split at midnight via shiftHours.ts so a
+ * note dated the last day of the prior month still lands its post-midnight
+ * hours in the current month; callers therefore pass a fromISO a day or two
+ * BEFORE the window they care about. Notes with no patientId can't be
+ * attributed and are skipped.
  *
  * A single range query on q6_dateofService (ISO 'YYYY-MM-DD' on every note
  * the form has written; older non-ISO values sort out of range and are
  * simply not counted, which only affects months long since billed).
  */
-export async function getShiftDayHoursByPatientSince(fromISO: string): Promise<Map<string, Map<string, number>>> {
-  const out = new Map<string, Map<string, number>>();
+export async function getDayHoursByPatientSince(fromISO: string): Promise<Map<string, BucketDayHours>> {
+  const out = new Map<string, BucketDayHours>();
   try {
     const q = query(collection(db, 'progressNotes'), where('q6_dateofService', '>=', fromISO));
     const snap = await getDocs(q);
     for (const d of snap.docs) {
       const data = d.data();
       if ((data.status as string) === 'archived' || data.archivedAt) continue;
-      if ((data.noteType as string) === 'rn-oversight-visit') continue;
       const patientId = (data.patientId as string) || '';
       if (!patientId) continue;
+      const bucket: HoursBucket = (data.noteType as string) === 'rn-oversight-visit' ? 'oversight' : 'shift';
       const segs = splitShiftByDay({
         dateISO: normalizeDateISO((data.q6_dateofService as string) || ''),
-        shiftStart: (data.q7_shiftStart as string) || '',
-        shiftEndDate: (data.q62_shiftEndDate as string) || '',
-        shiftEnd: (data.q62_shiftEndTime as string) || '',
-        totalHours: (data.q9_totalHours as string) || '',
+        ...readShiftWindow(data),
       });
       if (segs.length === 0) continue;
-      const days = out.get(patientId) ?? new Map<string, number>();
+      const buckets = out.get(patientId) ?? emptyBucketDayHours();
+      const days = buckets[bucket];
       for (const seg of segs) days.set(seg.dateISO, Math.round(((days.get(seg.dateISO) || 0) + seg.hours) * 100) / 100);
-      out.set(patientId, days);
+      out.set(patientId, buckets);
     }
   } catch (error) {
-    console.error('Error fetching shift day hours:', error);
+    console.error('Error fetching day hours:', error);
   }
   return out;
 }

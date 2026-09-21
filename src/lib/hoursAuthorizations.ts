@@ -10,11 +10,14 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { HoursAuthorization } from './shiftHours';
+import type { HoursAuthorization, HoursBucket, RateBasis } from './shiftHours';
 
 /**
- * Authorized nursing hours per client, transcribed from the payer's Letter of
- * Notification (GAPP: a weekly rate plus a per-month block table). Owner-only:
+ * Authorized nursing hours per client, transcribed from the payer's paperwork:
+ * a GAPP Letter of Notification (weekly rate plus a per-month block table,
+ * shift hours only) or a Therap Service Authorization line (NOW/COMP: hours
+ * daily for the LPN line, hours monthly for the RN oversight line, plus an
+ * annual total in 15-minute units). Owner-only:
  * the collection is admin-read/admin-write in firestore.rules, so nurses and
  * supervisors cannot see a client's caps or how close she is to them. The
  * math that turns these into "hours left this month" lives in shiftHours.ts.
@@ -33,16 +36,26 @@ function toAuth(id: string, data: Raw): HoursAuthorization {
   for (const [k, v] of Object.entries(overridesRaw)) {
     if (typeof v === 'number' && Number.isFinite(v)) monthOverrides[k] = v;
   }
-  const weekly = data.hoursPerWeek;
+  const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  // Lines written before the NOW/COMP work carried only hoursPerWeek; read
+  // them as a weekly shift-hours rate so nothing needs a migration to render.
+  const legacyWeekly = num(data.hoursPerWeek);
+  const rateBasis: RateBasis =
+    data.rateBasis === 'day' || data.rateBasis === 'month' || data.rateBasis === 'week' ? data.rateBasis : 'week';
+  const covers: HoursBucket = data.covers === 'oversight' ? 'oversight' : 'shift';
   return {
     id,
     patientId: String(data.patientId || ''),
     paNumber: String(data.paNumber || ''),
     kind: data.kind === 'unskilled' ? 'unskilled' : 'skilled',
-    hoursPerWeek: typeof weekly === 'number' && Number.isFinite(weekly) ? weekly : null,
+    covers,
+    rateBasis,
+    rateHours: 'rateHours' in data ? num(data.rateHours) : legacyWeekly,
     from: String(data.from || ''),
     to: String(data.to || ''),
     monthOverrides,
+    totalUnits: num(data.totalUnits),
+    serviceCode: typeof data.serviceCode === 'string' ? data.serviceCode : '',
     note: typeof data.note === 'string' ? data.note : '',
   };
 }
@@ -80,10 +93,14 @@ function toPayload(input: HoursAuthorizationInput, uid: string) {
     patientId: input.patientId,
     paNumber: input.paNumber.trim(),
     kind: input.kind,
-    hoursPerWeek: input.hoursPerWeek,
+    covers: input.covers,
+    rateBasis: input.rateBasis,
+    rateHours: input.rateHours,
     from: input.from,
     to: input.to,
     monthOverrides: input.monthOverrides,
+    totalUnits: input.totalUnits,
+    serviceCode: (input.serviceCode || '').trim(),
     note: (input.note || '').trim(),
     updatedAt: serverTimestamp(),
     updatedBy: uid,
