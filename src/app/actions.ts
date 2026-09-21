@@ -6,7 +6,7 @@ import { JWT } from 'google-auth-library';
 import { createClickUpTask } from '@/lib/clickup';
 import { createReferral } from '@/lib/referrals';
 import { sendReferralConfirmation } from '@/lib/emails/referralConfirmation';
-import { paidCaregiverDiagnosisFlag, paidCaregiverAgeFlag } from '@/lib/diagnosisScreening';
+import { paidCaregiverDiagnosisFlag, screenYoungPaidCaregiver } from '@/lib/diagnosisScreening';
 import { formatDateUS } from '@/lib/dateFormat';
 import {
   behaviorRiskLabel,
@@ -14,6 +14,9 @@ import {
   currentServiceLabels,
   equipmentLabels,
   inferService,
+  paidCareBasisLabel,
+  screenBehavioralPaidCaregiver,
+  screenMixedPaidCaregiver,
   type ServiceKey,
 } from '@/lib/diagnosisCatalog';
 
@@ -198,6 +201,34 @@ export async function processReferralSubmission(data: any) {
 
   const { client, program, referrer, details } = data;
 
+  // Hard stops (GAPP only), same rules as the GAPP site and the portal intake:
+  // the paid-caregiver dead ends are refused before any email, CRM, or
+  // referral record is created. The form blocks these client-side; this is
+  // the backstop for anything that bypasses it. Returned, not thrown, so the
+  // page can show the reason.
+  if (program?.interest === 'gapp' && details?.seekingPaidCaregiver === 'yes') {
+    const prose = `${details.serviceNeeds ?? ''} ${details.additionalNotes ?? ''}`;
+    // Paid + behavioral picture (structured answers, or the prose describing
+    // autism, with no medical condition or skilled care): the FCO never
+    // covers it.
+    const behavioral = screenBehavioralPaidCaregiver({ ...details, freeText: prose });
+    if (behavioral) {
+      return { success: false, refused: 'behavioral-paid-caregiver', error: behavioral };
+    }
+    const youngChild = screenYoungPaidCaregiver({
+      dob: client?.dob,
+      seekingPaidCaregiver: 'yes',
+      equipment: details.equipment,
+    });
+    if (youngChild.block) {
+      return { success: false, refused: 'young-child-paid-caregiver', error: youngChild.block };
+    }
+    const mixed = screenMixedPaidCaregiver({ ...details, freeText: prose });
+    if (mixed.block) {
+      return { success: false, refused: 'mixed-paid-caregiver', error: mixed.block };
+    }
+  }
+
   try {
     // 1. Send Email
     const { data: result, error } = await resend.emails.send({
@@ -246,20 +277,24 @@ export async function processReferralSubmission(data: any) {
     // Referrals tab alongside referrals forwarded from the GAPP site. Non-fatal:
     // a storage failure must never block the email/Sheets/ClickUp flow.
     try {
-      // Backstop flag (mirrors the GAPP intake): flag a GAPP paid-caregiver
-      // request whose described needs read behavioral/developmental.
+      // Mixed diagnosis + paid request: what the family said the hands-on
+      // care is for. Falls back to the free-text screen (mirrors the GAPP
+      // intake) for anything else that reaches us.
+      const prose = `${details.serviceNeeds ?? ''} ${details.additionalNotes ?? ''}`;
       const reviewFlag =
         program.interest === 'gapp'
-          ? paidCaregiverDiagnosisFlag(
-              `${details.serviceNeeds ?? ''} ${details.additionalNotes ?? ''}`,
-              details.seekingPaidCaregiver
-            )
+          ? screenMixedPaidCaregiver({ ...details, freeText: prose }).flag ??
+            paidCaregiverDiagnosisFlag(prose, details.seekingPaidCaregiver)
           : null;
-      // Young-child advisory (GAPP only): paid family hours cover only care
-      // beyond age-typical needs, so a toddler request is unlikely as-is.
+      // Young child + paid request that cleared the hard stop above (skilled
+      // equipment or a scoring mobility need): say why, for the assessment.
       const ageFlag =
         program.interest === 'gapp'
-          ? paidCaregiverAgeFlag(client.dob, details.seekingPaidCaregiver)
+          ? screenYoungPaidCaregiver({
+              dob: client.dob,
+              seekingPaidCaregiver: details.seekingPaidCaregiver,
+              equipment: details.equipment,
+            }).cleared
           : null;
       // Which GAPP service line the answers point to. Scoped to GAPP: the other
       // programs on this form (NOW/COMP, ICWP, EDWP, private pay) don't have
@@ -332,6 +367,14 @@ export async function processReferralSubmission(data: any) {
                     },
                     details.careNeeds ?? ''
                   ),
+                },
+              ]
+            : []),
+          ...(details.seekingPaidCaregiver === 'yes' && details.paidCareBasis
+            ? [
+                {
+                  label: 'Hands-on care mainly due to',
+                  value: paidCareBasisLabel(details.paidCareBasis),
                 },
               ]
             : []),

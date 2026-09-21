@@ -4,16 +4,18 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { formatUSPhone } from '@/lib/phone';
 import { escortToField, FieldError, FIELD_ERROR_WRAP_STYLE, firstErrorKey } from '@/lib/formEscort';
-import { YOUNG_PAID_CAREGIVER_AGE_YEARS } from '@/lib/diagnosisScreening';
+import { screenYoungPaidCaregiver } from '@/lib/diagnosisScreening';
 import {
   BEHAVIOR_RISK_OPTIONS,
   CURRENT_SERVICE_OPTIONS,
   DIAGNOSIS_GROUPS,
   EQUIPMENT_OPTIONS,
-  classifyFreeText,
-  diagnosisPicture,
+  PAID_CARE_BASIS_OPTIONS,
   inferService,
+  screenBehavioralPaidCaregiver,
+  screenMixedPaidCaregiver,
   type BehaviorRisk,
+  type PaidCareBasis,
 } from '@/lib/diagnosisCatalog';
 import {
   FileText,
@@ -42,11 +44,11 @@ import styles from './page.module.css';
 // "Next" or "Submit" escorts to the topmost problem.
 type ReferralField =
   | 'programInterest' | 'clientCounty' | 'clientFirstName' | 'clientLastName' | 'clientDOB' | 'clientPhone' | 'clientSecondaryPhone' | 'clientEmail'
-  | 'referralSource' | 'referrerName' | 'diagnoses' | 'equipment' | 'behaviorRisk' | 'seekingPaidCaregiver' | 'careNeeds';
+  | 'referralSource' | 'referrerName' | 'diagnoses' | 'equipment' | 'behaviorRisk' | 'seekingPaidCaregiver' | 'careNeeds' | 'paidCareBasis';
 type ReferralFieldErrors = Partial<Record<ReferralField, string>>;
 const FIELD_ORDER: ReferralField[] = [
   'programInterest', 'clientCounty', 'clientFirstName', 'clientLastName', 'clientDOB', 'clientPhone', 'clientSecondaryPhone', 'clientEmail',
-  'referralSource', 'referrerName', 'diagnoses', 'equipment', 'behaviorRisk', 'seekingPaidCaregiver', 'careNeeds',
+  'referralSource', 'referrerName', 'diagnoses', 'equipment', 'behaviorRisk', 'seekingPaidCaregiver', 'careNeeds', 'paidCareBasis',
 ];
 // Banner labels (the careNeeds label depends on who is filling the form).
 const FIELD_LABEL: Record<Exclude<ReferralField, 'careNeeds'>, string> = {
@@ -64,6 +66,7 @@ const FIELD_LABEL: Record<Exclude<ReferralField, 'careNeeds'>, string> = {
   equipment: 'What your child needs at home',
   behaviorRisk: 'Behavior question',
   seekingPaidCaregiver: 'Paid caregiver question',
+  paidCareBasis: 'What the hands-on care is for',
 };
 const fieldId = (k: ReferralField) => `ref-field-${k}`;
 
@@ -178,6 +181,7 @@ export default function ReferralPage() {
     additionalNotes: '',
     seekingPaidCaregiver: '',
     careNeeds: '',
+    paidCareBasis: '' as PaidCareBasis,
     diagnoses: [] as string[],
     diagnosisOther: '',
     equipment: [] as string[],
@@ -252,12 +256,8 @@ export default function ReferralPage() {
     sourceView === 'self'
       ? 'What you need help with'
       : `What ${careSubject} needs help with`;
-  // What the structured answers say, and which GAPP service line they point to.
-  // Same catalog and inference the GAPP site's form and the portal intake use.
-  const structuredPicture = diagnosisPicture(
-    formData.diagnoses,
-    formData.diagnosisOther
-  );
+  // Which GAPP service line the structured answers point to. Same catalog and
+  // inference the GAPP site's form and the portal intake use.
   const inferred = inferService({
     diagnoses: formData.diagnoses,
     diagnosisOther: formData.diagnosisOther,
@@ -266,37 +266,54 @@ export default function ReferralPage() {
     currentServices: formData.currentServices,
     careNeeds: formData.careNeeds,
   });
-  // Cross-check the free-text needs/notes too — submitters dodge the radio by
-  // picking "personal care" while describing autism. Kept separate from the
-  // structured answers rather than concatenated: this prose is a long
-  // description, and feeding it in as "Other" would read as an unclassifiable
-  // medical signal on every submission and quietly disable the check.
-  const proseDxClass = classifyFreeText(
-    `${formData.serviceNeeds} ${formData.additionalNotes}`
-  );
-  // Reported skilled equipment settles it — the child needs nursing, so nothing
-  // in the prose should block them (same rule as the GAPP site's form).
-  const reportsSkilledCare = inferred.source === 'equipment';
+  // Paid + behavioral picture: the structured answers, or the free-text
+  // needs/notes (submitters dodge the radio by picking "personal care" while
+  // describing autism). A behavioral-only diagnosis with no medical condition
+  // and no skilled equipment is refused whatever daily-care boxes are checked;
+  // reported skilled equipment settles it the other way (same rule as the
+  // GAPP site's form and both server intakes).
+  const prose = `${formData.serviceNeeds} ${formData.additionalNotes}`;
   const isPaidBehavioralBlock =
-    seekingPaidGapp &&
-    !reportsSkilledCare &&
-    (inferred.service === 'behavioral' || proseDxClass === 'behavioral');
+    screenBehavioralPaidCaregiver({
+      diagnoses: formData.diagnoses,
+      diagnosisOther: formData.diagnosisOther,
+      equipment: formData.equipment,
+      behaviorRisk: formData.behaviorRisk,
+      currentServices: formData.currentServices,
+      careNeeds: formData.careNeeds,
+      freeText: prose,
+      seekingPaidCaregiver: seekingPaidGapp ? 'yes' : 'no',
+    }) !== null;
   // Blocked by what they described, not the option they picked.
   const blockedByDiagnosis =
     isPaidBehavioralBlock && formData.careNeeds !== 'behavioral';
-  // Behavioral alongside a physical/medical condition: don't block; prompt.
-  const isPaidMixedDx =
-    seekingPaidGapp &&
-    !isPaidBehavioralBlock &&
-    (proseDxClass === 'mixed' || structuredPicture === 'mixed');
-  // Young child + paid-caregiver: advisory only, never a block. There is no age
-  // rule in the GAPP manual; the lever is medical necessity (paid family hours
-  // cover only care beyond age-typical needs), so we set expectations without
-  // turning away medically fragile toddlers who can legitimately qualify.
-  const isPaidYoungChild =
-    seekingPaidGapp &&
-    !!childAge &&
-    childAge.years < YOUNG_PAID_CAREGIVER_AGE_YEARS;
+  // Behavioral alongside a physical/medical condition: the form cannot tell
+  // which one the hands-on care is for, so the family must say. "Autism or
+  // developmental" refuses the paid request (they can switch to No and still
+  // refer the child); the other answers go through, stored for the assessment.
+  const mixedPaid = screenMixedPaidCaregiver({
+    diagnoses: formData.diagnoses,
+    diagnosisOther: formData.diagnosisOther,
+    freeText: prose,
+    seekingPaidCaregiver: seekingPaidGapp ? 'yes' : 'no',
+    paidCareBasis: formData.paidCareBasis,
+  });
+  const isPaidMixedDx = !isPaidBehavioralBlock && mixedPaid.asks;
+  const isPaidMixedBlock = isPaidMixedDx && mixedPaid.block !== null;
+  // Young child + paid-caregiver: a hard stop when the care picture is
+  // everyday personal support (no skilled equipment, no scoring mobility
+  // need). Same rule as the GAPP site and both server intakes. Uses the raw
+  // DOB rather than the debounced one: a half-typed year reads as an ancient
+  // age, never a young child, so nothing flashes, and the gate is right the
+  // instant Submit is pressed.
+  const youngChild = screenYoungPaidCaregiver({
+    dob: formData.clientDOB,
+    seekingPaidCaregiver: seekingPaidGapp ? 'yes' : 'no',
+    equipment: formData.equipment,
+  });
+  const isPaidYoungChildBlock = !isPaidBehavioralBlock && youngChild.block !== null;
+  const isPaidYoungChildCleared = !isPaidBehavioralBlock && youngChild.cleared !== null;
+  const isBlocked = isPaidBehavioralBlock || isPaidYoungChildBlock || isPaidMixedBlock;
 
   // "None of these" is mutually exclusive with every real answer, both ways.
   const toggleMulti = (field: 'diagnoses' | 'equipment' | 'currentServices',
@@ -339,6 +356,7 @@ export default function ReferralPage() {
       if (showGappClinical && !formData.behaviorRisk) errs.behaviorRisk = 'Please choose an answer.';
       if (!formData.seekingPaidCaregiver) errs.seekingPaidCaregiver = 'Please answer Yes or No.';
       if (formData.seekingPaidCaregiver === 'yes' && !formData.careNeeds) errs.careNeeds = 'Please choose an answer.';
+      if (isPaidMixedDx && !formData.paidCareBasis) errs.paidCareBasis = 'Please tell us what the hands-on care is mainly for.';
     }
     return errs;
   };
@@ -373,9 +391,9 @@ export default function ReferralPage() {
   };
 
   const handleAttemptSubmit = (e: React.FormEvent) => {
-    // A GAPP parent seeking pay for behavioral/autism care cannot be submitted;
-    // the redirect panel explains why and points to the ASD Program.
-    if (isPaidBehavioralBlock) {
+    // A GAPP parent seeking pay for behavioral/autism care, or for everyday
+    // care of a young child, cannot be submitted; the panel explains why.
+    if (isBlocked) {
       e.preventDefault();
       return;
     }
@@ -419,11 +437,12 @@ export default function ReferralPage() {
         clientCounty: '',
       });
     } else if (name === 'seekingPaidCaregiver' && value === 'no') {
-      // Switching to "No" clears the care-need follow-up.
+      // Switching to "No" clears the paid-only follow-ups.
       setFormData({
         ...formData,
         seekingPaidCaregiver: 'no',
         careNeeds: '',
+        paidCareBasis: '',
       });
     } else {
       setFormData({
@@ -477,6 +496,7 @@ export default function ReferralPage() {
           // referral submitted for another program.
           seekingPaidCaregiver: formData.seekingPaidCaregiver,
           careNeeds: formData.careNeeds,
+          paidCareBasis: showGappClinical ? formData.paidCareBasis : '',
           diagnoses: showGappClinical ? formData.diagnoses : [],
           diagnosisOther: showGappClinical ? formData.diagnosisOther : '',
           equipment: showGappClinical ? formData.equipment : [],
@@ -493,7 +513,13 @@ export default function ReferralPage() {
       });
 
       // 2. Send Email Notification & Add to CRM
-      await processReferralSubmission(submissionData);
+      const result = await processReferralSubmission(submissionData);
+      if (result && result.success === false) {
+        // Server-side refusal (the same screen the form runs). Show the
+        // reason instead of the generic error.
+        setError(result.error ?? 'This referral cannot be submitted as answered.');
+        return;
+      }
 
       setIsSubmitted(true);
     } catch (err) {
@@ -517,7 +543,8 @@ export default function ReferralPage() {
               formData.equipment.length > 0 &&
               formData.behaviorRisk !== '')) &&
           formData.seekingPaidCaregiver &&
-          (formData.seekingPaidCaregiver === 'no' || formData.careNeeds)
+          (formData.seekingPaidCaregiver === 'no' || formData.careNeeds) &&
+          (!isPaidMixedDx || formData.paidCareBasis)
         );
       default:
         return true;
@@ -564,7 +591,7 @@ export default function ReferralPage() {
                       referrerEmail: '', referrerOrganization: '', medicaidNumber: '',
                       insuranceProvider: '', insuranceNumber: '', serviceNeeds: '',
                       urgency: 'standard', additionalNotes: '',
-                      seekingPaidCaregiver: '', careNeeds: '',
+                      seekingPaidCaregiver: '', careNeeds: '', paidCareBasis: '' as PaidCareBasis,
                       diagnoses: [], diagnosisOther: '', equipment: [],
                       behaviorRisk: '' as BehaviorRisk, currentServices: [],
                     });
@@ -1395,33 +1422,125 @@ export default function ReferralPage() {
                         </div>
                       )}
 
+                      {/* Mixed picture + paid: make the family say which
+                          condition the hands-on care is for. That answer
+                          decides whether a parent can be paid. */}
                       {isPaidMixedDx && (
+                        <>
+                          <div className={styles.countyNotice}>
+                            <AlertCircle size={16} />
+                            <p>
+                              <strong>
+                                You will not be paid for care related to autism, ADHD,
+                                or developmental delay.
+                              </strong>{' '}
+                              You described autism, ADHD, or a developmental diagnosis
+                              along with a medical condition. A parent can be paid only
+                              for hands-on personal care (feeding, bathing, dressing,
+                              toileting) that {careSubject === 'your child' ? 'your child needs' : 'is needed'}{' '}
+                              because of the medical or physical condition. No GAPP
+                              service pays a parent for autism, behavioral, or
+                              developmental support.
+                            </p>
+                          </div>
+                          <div className="form-group" id={fieldId('paidCareBasis')}>
+                            <label htmlFor="paidCareBasis" className="form-label">
+                              The hands-on care {careSubject === 'your child' ? 'your child needs' : 'needed'} is mainly because of: *
+                            </label>
+                            <select
+                              id="paidCareBasis"
+                              name="paidCareBasis"
+                              className={`form-select ${isFieldInvalid('paidCareBasis') ? styles.fieldError : ''}`}
+                              value={formData.paidCareBasis}
+                              onChange={handleChange}
+                              required
+                            >
+                              <option value="">Please select</option>
+                              {PAID_CARE_BASIS_OPTIONS.map((opt) => (
+                                <option key={opt.code} value={opt.code}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                            <FieldError message={fieldMessage('paidCareBasis')} />
+                          </div>
+                          {isPaidMixedBlock && (
+                            <div className={styles.countyNotice}>
+                              <AlertCircle size={16} />
+                              <p>
+                                <strong>
+                                  We cannot accept a paid-caregiver request for this
+                                  care.
+                                </strong>{' '}
+                                You told us the hands-on care is mainly because of the
+                                autism, ADHD, or developmental diagnosis. Medicaid will
+                                not approve paid family hours for that, and neither we
+                                nor our partner agencies can change it, so please do not
+                                submit this as a paid-caregiver request. {careSubject === 'your child' ? 'Your child' : 'The child'} may
+                                still qualify for GAPP nursing or personal care for the
+                                medical condition. To send this referral, change the
+                                paid caregiver answer above to <strong>No</strong>. For
+                                autism support, the program is Georgia Medicaid&apos;s{' '}
+                                <a
+                                  href="https://medicaid.georgia.gov/programs/all-programs/autism-spectrum-disorder"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{ color: 'inherit', fontWeight: 600 }}
+                                >
+                                  Autism Spectrum Disorder (ASD) Program
+                                </a>{' '}
+                                (ABA therapy), or call Georgia Medicaid (DCH) at{' '}
+                                <a
+                                  href="tel:+14046564507"
+                                  style={{ color: 'inherit', fontWeight: 600 }}
+                                >
+                                  (404) 656-4507
+                                </a>
+                                .
+                              </p>
+                            </div>
+                          )}
+                        </>
+                      )}
+
+                      {/* Paid + young child + everyday care only = dead end.
+                          Block, and say plainly why, so the family does not
+                          submit something nobody can act on. */}
+                      {isPaidYoungChildBlock && (
                         <div className={styles.countyNotice}>
                           <AlertCircle size={16} />
                           <p>
-                            You described a physical or medical condition along with a
-                            developmental or behavioral one. A parent can be paid only
-                            for hands-on care related to the physical or medical
-                            condition, not for autism or behavioral support. We will
-                            confirm what your child qualifies for when we talk.
+                            <strong>We cannot accept this referral as answered.</strong>{' '}
+                            You are asking to be paid to care for an infant or young
+                            child, and the only needs listed are everyday care. GAPP
+                            pays a parent only for personal care that goes beyond what
+                            a child this age ordinarily needs. Feeding, bathing,
+                            dressing, and diapering an infant or young child is
+                            considered typical parenting, so Medicaid will not approve
+                            paid family hours for it, and there is no other GAPP
+                            service that covers these needs. Neither we nor our partner
+                            agencies can act on this referral, so please do not submit
+                            it. If your child has a feeding tube, tracheostomy,
+                            ventilator, oxygen, or another skilled medical need that
+                            you did not check above, go back and add it and we will
+                            help. Otherwise, please talk with your child&apos;s
+                            pediatrician or Medicaid CMO about other supports.
                           </p>
                         </div>
                       )}
 
-                      {isPaidYoungChild && !isPaidBehavioralBlock && (
+                      {/* Paid + young child who cleared the stop (skilled or
+                          mobility needs): set expectations, do not block. */}
+                      {isPaidYoungChildCleared && (
                         <div className={styles.countyNotice}>
                           <AlertCircle size={16} />
                           <p>
-                            A note about being paid to care for a young child: Medicaid
-                            approves paid family caregiver hours only for care that goes
-                            beyond what a child of the same age would ordinarily need.
-                            Everyday help for infants and young children, like feeding,
-                            bathing, dressing, and diapering, is considered typical
-                            parenting, so paid hours are rarely approved at this age.
-                            Approval is more likely when a child has significant medical
-                            needs, such as a feeding tube, trach, or ventilator. You are
-                            welcome to apply either way. Your child may still qualify
-                            for other GAPP services based on their medical needs.
+                            A note about being paid to care for a young child: a parent
+                            can be paid for personal care only, and at this age only for
+                            care that goes beyond what a child of the same age would
+                            ordinarily need. Because of the medical or mobility needs
+                            you listed, we will review this with you, and any paid hours
+                            are set by the nursing assessment.
                           </p>
                         </div>
                       )}
@@ -1466,7 +1585,7 @@ export default function ReferralPage() {
                           tells the same family. */}
                       {formData.programInterest === 'gapp' &&
                         inferred.service === 'pss' &&
-                        !isPaidBehavioralBlock &&
+                        !isBlocked &&
                         !isPaidMixedDx && (
                           <div className={styles.countyNotice}>
                             <AlertCircle size={16} />
@@ -1572,14 +1691,20 @@ export default function ReferralPage() {
                   )}
                   <button
                     type="button"
-                    className={`btn btn-gold btn-lg ${isStepValid() && !isPaidBehavioralBlock ? styles.btnReady : styles.btnFaded}`}
+                    className={`btn btn-gold btn-lg ${isStepValid() && !isBlocked ? styles.btnReady : styles.btnFaded}`}
                     onClick={handleAttemptSubmit}
-                    disabled={isSubmitting || isPaidBehavioralBlock}
+                    disabled={isSubmitting || isBlocked}
                   >
                     <Send size={20} /> {isSubmitting ? 'Submitting...' : 'Submit Referral'}
                   </button>
                   {isPaidBehavioralBlock && (
                     <FieldError message="This referral cannot be submitted as answered: under GAPP a parent cannot be paid for behavioral or autism care. See the note above for the ASD Program, or change the paid caregiver answer if it was a mistake." />
+                  )}
+                  {isPaidYoungChildBlock && (
+                    <FieldError message="This referral cannot be submitted as answered: GAPP does not pay a parent for everyday care of an infant or young child, and no other GAPP service covers it. See the note above, or add the skilled medical needs your child has if they were left out." />
+                  )}
+                  {isPaidMixedBlock && (
+                    <FieldError message="This referral cannot be submitted as answered: a parent cannot be paid for care related to autism, ADHD, or developmental delay. Change the paid caregiver answer to No to send the referral for the medical condition." />
                   )}
                 </div>
               )}

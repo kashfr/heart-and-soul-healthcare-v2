@@ -430,6 +430,290 @@ export function inferService(input: ServiceInferenceInput): ServiceInference {
   return { service: null, source: 'unknown', reason: '', conflict: null };
 }
 
+// --- Behavioral-only paid-caregiver screen ----------------------------------
+
+/**
+ * The diagnosis picture from everything a form can carry: the structured
+ * checkboxes and "Other" text, plus (on the H&S site) the free-text needs and
+ * notes. The prose is classified separately rather than fed in as "Other",
+ * because a long description would read as unclassifiable medical text and
+ * quietly disable the behavioral checks.
+ */
+export function combinedDiagnosisPicture(
+  diagnoses: string[] | undefined,
+  diagnosisOther: string | undefined,
+  freeText: string | undefined
+): DiagnosisPicture {
+  const structured = diagnosisPicture(diagnoses, diagnosisOther);
+  const prose = classifyFreeText(freeText);
+  const hasBehavioral =
+    structured === 'behavioral' || structured === 'mixed' ||
+    prose === 'behavioral' || prose === 'mixed';
+  const hasMedical =
+    structured === 'medical' || structured === 'mixed' || prose === 'mixed';
+  if (!hasBehavioral && !hasMedical) return 'none';
+  if (!hasBehavioral) return 'medical';
+  return hasMedical ? 'mixed' : 'behavioral';
+}
+
+export interface BehavioralPaidScreenInput extends ServiceInferenceInput {
+  freeText?: string;
+  seekingPaidCaregiver?: string;
+}
+
+export const BEHAVIORAL_PAID_CAREGIVER_BLOCK =
+  'Paid-caregiver request for behavioral or autism care. The Family Caregiver Option covers personal care only, never behavioral aide, and autism routes to the ASD Program, so the referral cannot be accepted as a paid-caregiver request.';
+
+/**
+ * Refuses a paid-caregiver request whose picture is behavioral: either the
+ * service inference says so (behaviors that put someone at risk, or a
+ * behavioral diagnosis with nothing else), or the ONLY diagnoses are
+ * behavioral/developmental and no skilled equipment is reported. The second
+ * clause is the Kehlani case: autism, developmental delay and speech delay,
+ * with "needs help with feeding / bathing" checked. Daily-care boxes rank
+ * above a behavioral diagnosis for service inference (so the card says PSS),
+ * but with no medical condition anywhere there is nothing the Family
+ * Caregiver Option can pay for, whatever boxes are checked.
+ */
+export function screenBehavioralPaidCaregiver(
+  input: BehavioralPaidScreenInput
+): string | null {
+  if (input.seekingPaidCaregiver !== 'yes') return null;
+  const inferred = inferService(input);
+  if (inferred.service === 'behavioral') return BEHAVIORAL_PAID_CAREGIVER_BLOCK;
+  if (inferred.source === 'equipment') return null;
+  const picture = combinedDiagnosisPicture(
+    input.diagnoses,
+    input.diagnosisOther,
+    input.freeText
+  );
+  return picture === 'behavioral' ? BEHAVIORAL_PAID_CAREGIVER_BLOCK : null;
+}
+
+// --- Mixed-diagnosis paid-caregiver screen ----------------------------------
+
+/**
+ * When a paid-caregiver request comes with BOTH a behavioral/developmental
+ * diagnosis and a medical one (the Chance case: autism + ADHD + developmental
+ * delay alongside seizures and a G-tube), the form cannot tell which one
+ * drives the hands-on care, and that is the whole question: the Family
+ * Caregiver Option pays for personal care related to the medical condition
+ * and never for autism, ADHD, or developmental support. So the family is
+ * made to answer it. This is the answer.
+ */
+export type PaidCareBasis = '' | 'medical' | 'behavioral' | 'unsure';
+
+export const PAID_CARE_BASIS_OPTIONS: { code: Exclude<PaidCareBasis, ''>; label: string }[] = [
+  { code: 'medical', label: 'The medical or physical condition' },
+  { code: 'behavioral', label: 'The autism, ADHD, or developmental diagnosis' },
+  { code: 'unsure', label: 'Not sure' },
+];
+
+const PAID_CARE_BASIS_LABEL = new Map(PAID_CARE_BASIS_OPTIONS.map((o) => [o.code, o.label]));
+
+export function paidCareBasisLabel(value: PaidCareBasis | string | undefined): string {
+  return PAID_CARE_BASIS_LABEL.get(value as Exclude<PaidCareBasis, ''>) ?? '';
+}
+
+export interface MixedPaidScreenInput {
+  diagnoses?: string[];
+  diagnosisOther?: string;
+  /** Free-text needs/notes from a form that has them (the H&S site). */
+  freeText?: string;
+  seekingPaidCaregiver?: string;
+  paidCareBasis?: PaidCareBasis | string;
+}
+
+export interface MixedPaidScreen {
+  /** True when the follow-up question applies: seeking pay and the picture
+   *  is mixed. The forms require an answer in exactly this case. */
+  asks: boolean;
+  /** Why the paid request is refused. Null when it may proceed. */
+  block: string | null;
+  /** Staff-facing note for the card when the request goes through. */
+  flag: string | null;
+}
+
+const NO_MIXED_SCREEN: MixedPaidScreen = { asks: false, block: null, flag: null };
+
+/**
+ * Refuses a paid-caregiver request when the family says the hands-on care is
+ * mainly due to the autism/developmental diagnosis: paid family hours will be
+ * denied, full stop. The child may still qualify for GAPP nursing or personal
+ * care, so the family is told to switch the paid answer to No, not to give
+ * up on the referral. "Medical" and "not sure" go through with the
+ * attestation recorded for the assessment.
+ */
+export function screenMixedPaidCaregiver(input: MixedPaidScreenInput): MixedPaidScreen {
+  if (input.seekingPaidCaregiver !== 'yes') return NO_MIXED_SCREEN;
+  const mixed =
+    combinedDiagnosisPicture(input.diagnoses, input.diagnosisOther, input.freeText) ===
+    'mixed';
+  if (!mixed) return NO_MIXED_SCREEN;
+
+  switch (input.paidCareBasis) {
+    case 'behavioral':
+      return {
+        asks: true,
+        flag: null,
+        block:
+          'Paid-caregiver request where the family says the hands-on care is mainly due to the autism, ADHD, or developmental diagnosis. ' +
+          'The Family Caregiver Option does not pay for behavioral or developmental support, so paid family hours will be denied. ' +
+          'The child may still qualify for GAPP nursing or personal care on the medical condition; the referral can be sent with the paid-caregiver answer set to No.',
+      };
+    case 'medical':
+      return {
+        asks: true,
+        block: null,
+        flag:
+          'Mixed diagnosis with a paid-caregiver request. The family attests the hands-on care is mainly due to the medical or physical condition, not the autism or developmental diagnosis. Hold them to this at the assessment: paid hours cover only care related to the medical condition.',
+      };
+    case 'unsure':
+      return {
+        asks: true,
+        block: null,
+        flag:
+          'Mixed diagnosis with a paid-caregiver request. The family is not sure whether the hands-on care is due to the medical condition or the autism or developmental diagnosis. Paid hours cover only care related to the medical condition; settle this before scheduling.',
+      };
+    default:
+      // Older form build that never asked. Same review note as before.
+      return {
+        asks: true,
+        block: null,
+        flag:
+          'Review: behavioral/developmental diagnosis alongside a physical/medical condition with a paid-caregiver request; the form did not capture which drives the hands-on care. Confirm before scheduling.',
+      };
+  }
+}
+
+// --- Young-child paid-caregiver hard stop ------------------------------------
+
+/**
+ * Age below which a GAPP paid-caregiver request is screened as a young child.
+ * Under this line, everyday personal care (feeding, bathing, dressing,
+ * diapering) reads as ordinary parenting, so Medicaid does not approve paid
+ * family hours for it and there is no other GAPP service the agency (or a
+ * partner agency) can provide for those needs. Shared by both public forms and
+ * both server intakes, so a request that is refused on the form is refused at
+ * the API too.
+ */
+export const YOUNG_PAID_CAREGIVER_AGE_YEARS = 6;
+
+/**
+ * The state assessment scores "unable to ambulate" only above 18 months, so a
+ * mobility need at or past this age is a real deficit rather than an
+ * age-typical one, and the paid request is allowed through for the nurse to
+ * assess. (Toileting scores only above age 3, but the hygiene option lumps
+ * bathing and dressing in with it, which stay age-typical well past 3, so it
+ * does not clear the stop on its own.)
+ */
+export const MOBILITY_SCORES_FROM_MONTHS = 18;
+
+const MOBILITY_CODES = new Set(['wheelchair', 'help_transfer']);
+
+/** Whole months of age from an ISO date (YYYY-MM-DD) as of `nowMs`; null for
+ *  a missing, unparseable, or future date. */
+export function ageMonthsFromDob(
+  dob: string | null | undefined,
+  nowMs: number = Date.now()
+): number | null {
+  const s = String(dob ?? '').trim();
+  if (!s) return null;
+  const birth = new Date(s.length === 10 ? `${s}T00:00:00` : s);
+  if (Number.isNaN(birth.getTime()) || birth.getTime() > nowMs) return null;
+  const now = new Date(nowMs);
+  let months =
+    (now.getFullYear() - birth.getFullYear()) * 12 +
+    (now.getMonth() - birth.getMonth());
+  if (now.getDate() < birth.getDate()) months -= 1;
+  return months < 0 ? null : months;
+}
+
+export interface YoungChildScreenInput extends ServiceInferenceInput {
+  dob?: string | null;
+  seekingPaidCaregiver?: string;
+}
+
+export interface YoungChildScreen {
+  /** Why the referral is refused. Null when it may proceed. Plain prose that
+   *  is shown to the family and stored for staff, so no dashes. */
+  block: string | null;
+  /** Set when a young child's paid request was allowed through: what cleared
+   *  it, so staff know to confirm it at the assessment. */
+  cleared: string | null;
+  /** Whole years, when the DOB was usable. */
+  ageYears: number | null;
+}
+
+const NOT_SCREENED: YoungChildScreen = { block: null, cleared: null, ageYears: null };
+
+/**
+ * Hard stop for a paid-caregiver request for a young child whose care picture
+ * is everyday personal support. Refuses when ALL of:
+ *
+ *   - the family is seeking to be the paid caregiver,
+ *   - the child is under YOUNG_PAID_CAREGIVER_AGE_YEARS (DOB usable),
+ *   - no skilled-tier equipment is reported (trach, vent, oxygen, suction,
+ *     feeding tube, seizure rescue meds, catheter/ostomy), and
+ *   - no mobility need at MOBILITY_SCORES_FROM_MONTHS or older.
+ *
+ * Skilled equipment means the child needs nursing (which GAPP covers) and the
+ * paid personal-care question becomes a real one for the assessment. A
+ * mobility deficit past 18 months scores on the state's own grid. Everything
+ * else at this age is ordinary parenting and cannot be reimbursed, so the
+ * referral is refused outright rather than accepted and worked for nothing.
+ */
+export function screenYoungPaidCaregiver(
+  input: YoungChildScreenInput,
+  nowMs: number = Date.now()
+): YoungChildScreen {
+  if (input.seekingPaidCaregiver !== 'yes') return NOT_SCREENED;
+  const months = ageMonthsFromDob(input.dob, nowMs);
+  if (months === null) return NOT_SCREENED;
+  const ageYears = Math.floor(months / 12);
+  if (ageYears >= YOUNG_PAID_CAREGIVER_AGE_YEARS) {
+    return { block: null, cleared: null, ageYears };
+  }
+
+  const equipment = known(input.equipment, EQUIPMENT_OPTIONS);
+  const skilled = equipment.filter((o) => o.tier === 'skilled');
+  const mobility = equipment.filter((o) => MOBILITY_CODES.has(o.code));
+  const ageText =
+    ageYears < 1
+      ? `an infant (${months} month${months === 1 ? '' : 's'} old)`
+      : `a ${ageYears}-year-old`;
+
+  if (skilled.length > 0) {
+    return {
+      block: null,
+      ageYears,
+      cleared:
+        `Paid-caregiver request for ${ageText}, allowed through because skilled needs were reported (${skilled
+          .map((o) => o.label)
+          .join(', ')}). A parent can be paid for personal care only, and at this age only for care beyond age-typical needs; confirm at the nursing assessment.`,
+    };
+  }
+  if (mobility.length > 0 && months >= MOBILITY_SCORES_FROM_MONTHS) {
+    return {
+      block: null,
+      ageYears,
+      cleared:
+        `Paid-caregiver request for ${ageText}, allowed through because a mobility need was reported (${mobility
+          .map((o) => o.label)
+          .join(', ')}) and the assessment scores non-ambulation above ${MOBILITY_SCORES_FROM_MONTHS} months. Confirm at the nursing assessment.`,
+    };
+  }
+
+  return {
+    ageYears,
+    cleared: null,
+    block:
+      `Paid-caregiver request for ${ageText} with no skilled medical or mobility needs reported. ` +
+      'GAPP pays a parent only for personal care that goes beyond what a child this age ordinarily needs, and everyday care for an infant or young child (feeding, bathing, dressing, diapering) is typical parenting. ' +
+      'Medicaid will not approve paid family hours for it, and there is no other GAPP service that covers these needs, so the referral cannot be accepted.',
+  };
+}
+
 // --- Drift guard -------------------------------------------------------------
 
 /**
