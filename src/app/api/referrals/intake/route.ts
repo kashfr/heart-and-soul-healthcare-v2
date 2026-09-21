@@ -11,7 +11,10 @@ import {
   currentServiceLabels,
   equipmentLabels,
   inferService,
+  paidCareBasisLabel,
+  screenMixedPaidCaregiver,
   type BehaviorRisk,
+  type PaidCareBasis,
 } from '@/lib/diagnosisCatalog';
 
 // Public intake for referrals submitted from external sites (the GAPP website).
@@ -72,6 +75,8 @@ interface IncomingPayload {
     dob?: string;
     careNeeds?: '' | 'personal' | 'nursing' | 'behavioral' | 'unsure';
     seekingPaidCaregiver?: '' | 'yes' | 'no';
+    /** Mixed diagnosis + seeking pay: what the hands-on care is mainly for. */
+    paidCareBasis?: PaidCareBasis;
   };
 }
 
@@ -125,9 +130,12 @@ function toReferralInput(payload: IncomingPayload): ReferralInput {
       : r.seekingPaidCaregiver === 'no'
       ? 'No'
       : '';
-  // Backstop flag: the GAPP form blocks most paid-caregiver-for-behavioral
-  // requests, but flag any that reach us so staff can triage at a glance.
-  const reviewFlag = paidCaregiverDiagnosisFlag(r.diagnosis, r.seekingPaidCaregiver);
+  // Mixed diagnosis + paid request: what the family said the hands-on care is
+  // for (or that the form never asked). Falls back to the free-text diagnosis
+  // screen for anything else that reaches us, so staff can triage at a glance.
+  const reviewFlag =
+    screenMixedPaidCaregiver({ ...r, freeText: r.diagnosis }).flag ??
+    paidCaregiverDiagnosisFlag(r.diagnosis, r.seekingPaidCaregiver);
   // Young child + paid request that was allowed through (skilled equipment or
   // a scoring mobility need): say why, so staff confirm it at the assessment.
   // A request that fails the same screen is refused in POST before we get here.
@@ -182,8 +190,35 @@ function toReferralInput(payload: IncomingPayload): ReferralInput {
       },
       { label: 'Inferred service need', value: inferredValue },
       { label: 'Seeking paid caregiver', value: seekingValue },
+      ...(r.seekingPaidCaregiver === 'yes' && r.paidCareBasis
+        ? [{ label: 'Hands-on care mainly due to', value: paidCareBasisLabel(r.paidCareBasis) }]
+        : []),
     ],
   };
+}
+
+// Same rules, same shared functions, same order as the GAPP site's form and
+// route (src/app/api/referral/route.ts there).
+function paidCaregiverRefusal(
+  r: NonNullable<IncomingPayload['referral']>
+): { code: string; reason: string } | null {
+  if (r.seekingPaidCaregiver !== 'yes') return null;
+  if (inferService(r).service === 'behavioral') {
+    return {
+      code: 'behavioral-paid-caregiver',
+      reason:
+        'Paid-caregiver request for behavioral or autism care. The Family Caregiver Option covers personal care only, never behavioral aide, and autism routes to the ASD Program, so the referral cannot be accepted as a paid-caregiver request.',
+    };
+  }
+  const youngChild = screenYoungPaidCaregiver(r);
+  if (youngChild.block) {
+    return { code: 'young-child-paid-caregiver', reason: youngChild.block };
+  }
+  const mixed = screenMixedPaidCaregiver(r);
+  if (mixed.block) {
+    return { code: 'mixed-paid-caregiver', reason: mixed.block };
+  }
+  return null;
 }
 
 export async function POST(req: Request) {
@@ -214,15 +249,14 @@ export async function POST(req: Request) {
     );
   }
 
-  // Hard stop, mirrored from the GAPP site's form and route: a paid-caregiver
-  // request for a young child with only everyday care needs is refused, not
-  // stored, and not emailed. There is nothing the agency can do with it. 422
-  // (not 5xx) so the site treats it as a refusal rather than an outage and
-  // does not fire its portal-down fallback email.
-  const youngChild = screenYoungPaidCaregiver(payload.referral ?? {});
-  if (youngChild.block) {
+  // Hard stops, mirrored from the GAPP site's form and route: the paid-caregiver
+  // dead ends are refused, not stored, and not emailed. There is nothing the
+  // agency can do with them. 422 (not 5xx) so the site treats it as a refusal
+  // rather than an outage and does not fire its portal-down fallback email.
+  const refusal = paidCaregiverRefusal(payload.referral ?? {});
+  if (refusal) {
     return NextResponse.json(
-      { error: youngChild.block, refused: 'young-child-paid-caregiver' },
+      { error: refusal.reason, refused: refusal.code },
       { status: 422 }
     );
   }

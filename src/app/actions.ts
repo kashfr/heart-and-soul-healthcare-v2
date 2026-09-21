@@ -10,10 +10,13 @@ import { paidCaregiverDiagnosisFlag, screenYoungPaidCaregiver } from '@/lib/diag
 import { formatDateUS } from '@/lib/dateFormat';
 import {
   behaviorRiskLabel,
+  classifyFreeText,
   composeDiagnosisText,
   currentServiceLabels,
   equipmentLabels,
   inferService,
+  paidCareBasisLabel,
+  screenMixedPaidCaregiver,
   type ServiceKey,
 } from '@/lib/diagnosisCatalog';
 
@@ -198,19 +201,38 @@ export async function processReferralSubmission(data: any) {
 
   const { client, program, referrer, details } = data;
 
-  // Hard stop (GAPP only), same rule as the GAPP site and the portal intake: a
-  // paid-caregiver request for a young child with only everyday care needs is
-  // refused before any email, CRM, or referral record is created. The form
-  // blocks this client-side; this is the backstop for anything that bypasses
-  // it. Returned, not thrown, so the page can show the reason.
-  if (program?.interest === 'gapp') {
+  // Hard stops (GAPP only), same rules as the GAPP site and the portal intake:
+  // the paid-caregiver dead ends are refused before any email, CRM, or
+  // referral record is created. The form blocks these client-side; this is
+  // the backstop for anything that bypasses it. Returned, not thrown, so the
+  // page can show the reason.
+  if (program?.interest === 'gapp' && details?.seekingPaidCaregiver === 'yes') {
+    const prose = `${details.serviceNeeds ?? ''} ${details.additionalNotes ?? ''}`;
+    // Paid + behavioral picture (structured answers, or the prose describing
+    // autism with no skilled care reported): the FCO never covers it.
+    const inferred = inferService(details);
+    if (
+      inferred.service === 'behavioral' ||
+      (inferred.source !== 'equipment' && classifyFreeText(prose) === 'behavioral')
+    ) {
+      return {
+        success: false,
+        refused: 'behavioral-paid-caregiver',
+        error:
+          'Paid-caregiver request for behavioral or autism care. The Family Caregiver Option covers personal care only, never behavioral aide, and autism routes to the ASD Program, so the referral cannot be accepted as a paid-caregiver request.',
+      };
+    }
     const youngChild = screenYoungPaidCaregiver({
       dob: client?.dob,
-      seekingPaidCaregiver: details?.seekingPaidCaregiver,
-      equipment: details?.equipment,
+      seekingPaidCaregiver: 'yes',
+      equipment: details.equipment,
     });
     if (youngChild.block) {
       return { success: false, refused: 'young-child-paid-caregiver', error: youngChild.block };
+    }
+    const mixed = screenMixedPaidCaregiver({ ...details, freeText: prose });
+    if (mixed.block) {
+      return { success: false, refused: 'mixed-paid-caregiver', error: mixed.block };
     }
   }
 
@@ -262,14 +284,14 @@ export async function processReferralSubmission(data: any) {
     // Referrals tab alongside referrals forwarded from the GAPP site. Non-fatal:
     // a storage failure must never block the email/Sheets/ClickUp flow.
     try {
-      // Backstop flag (mirrors the GAPP intake): flag a GAPP paid-caregiver
-      // request whose described needs read behavioral/developmental.
+      // Mixed diagnosis + paid request: what the family said the hands-on
+      // care is for. Falls back to the free-text screen (mirrors the GAPP
+      // intake) for anything else that reaches us.
+      const prose = `${details.serviceNeeds ?? ''} ${details.additionalNotes ?? ''}`;
       const reviewFlag =
         program.interest === 'gapp'
-          ? paidCaregiverDiagnosisFlag(
-              `${details.serviceNeeds ?? ''} ${details.additionalNotes ?? ''}`,
-              details.seekingPaidCaregiver
-            )
+          ? screenMixedPaidCaregiver({ ...details, freeText: prose }).flag ??
+            paidCaregiverDiagnosisFlag(prose, details.seekingPaidCaregiver)
           : null;
       // Young child + paid request that cleared the hard stop above (skilled
       // equipment or a scoring mobility need): say why, for the assessment.
@@ -352,6 +374,14 @@ export async function processReferralSubmission(data: any) {
                     },
                     details.careNeeds ?? ''
                   ),
+                },
+              ]
+            : []),
+          ...(details.seekingPaidCaregiver === 'yes' && details.paidCareBasis
+            ? [
+                {
+                  label: 'Hands-on care mainly due to',
+                  value: paidCareBasisLabel(details.paidCareBasis),
                 },
               ]
             : []),

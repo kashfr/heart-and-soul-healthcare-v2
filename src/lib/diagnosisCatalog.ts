@@ -430,6 +430,102 @@ export function inferService(input: ServiceInferenceInput): ServiceInference {
   return { service: null, source: 'unknown', reason: '', conflict: null };
 }
 
+// --- Mixed-diagnosis paid-caregiver screen ----------------------------------
+
+/**
+ * When a paid-caregiver request comes with BOTH a behavioral/developmental
+ * diagnosis and a medical one (the Chance case: autism + ADHD + developmental
+ * delay alongside seizures and a G-tube), the form cannot tell which one
+ * drives the hands-on care, and that is the whole question: the Family
+ * Caregiver Option pays for personal care related to the medical condition
+ * and never for autism, ADHD, or developmental support. So the family is
+ * made to answer it. This is the answer.
+ */
+export type PaidCareBasis = '' | 'medical' | 'behavioral' | 'unsure';
+
+export const PAID_CARE_BASIS_OPTIONS: { code: Exclude<PaidCareBasis, ''>; label: string }[] = [
+  { code: 'medical', label: 'The medical or physical condition' },
+  { code: 'behavioral', label: 'The autism, ADHD, or developmental diagnosis' },
+  { code: 'unsure', label: 'Not sure' },
+];
+
+const PAID_CARE_BASIS_LABEL = new Map(PAID_CARE_BASIS_OPTIONS.map((o) => [o.code, o.label]));
+
+export function paidCareBasisLabel(value: PaidCareBasis | string | undefined): string {
+  return PAID_CARE_BASIS_LABEL.get(value as Exclude<PaidCareBasis, ''>) ?? '';
+}
+
+export interface MixedPaidScreenInput {
+  diagnoses?: string[];
+  diagnosisOther?: string;
+  /** Free-text needs/notes from a form that has them (the H&S site). */
+  freeText?: string;
+  seekingPaidCaregiver?: string;
+  paidCareBasis?: PaidCareBasis | string;
+}
+
+export interface MixedPaidScreen {
+  /** True when the follow-up question applies: seeking pay and the picture
+   *  is mixed. The forms require an answer in exactly this case. */
+  asks: boolean;
+  /** Why the paid request is refused. Null when it may proceed. */
+  block: string | null;
+  /** Staff-facing note for the card when the request goes through. */
+  flag: string | null;
+}
+
+const NO_MIXED_SCREEN: MixedPaidScreen = { asks: false, block: null, flag: null };
+
+/**
+ * Refuses a paid-caregiver request when the family says the hands-on care is
+ * mainly due to the autism/developmental diagnosis: paid family hours will be
+ * denied, full stop. The child may still qualify for GAPP nursing or personal
+ * care, so the family is told to switch the paid answer to No, not to give
+ * up on the referral. "Medical" and "not sure" go through with the
+ * attestation recorded for the assessment.
+ */
+export function screenMixedPaidCaregiver(input: MixedPaidScreenInput): MixedPaidScreen {
+  if (input.seekingPaidCaregiver !== 'yes') return NO_MIXED_SCREEN;
+  const mixed =
+    diagnosisPicture(input.diagnoses, input.diagnosisOther) === 'mixed' ||
+    classifyFreeText(input.freeText) === 'mixed';
+  if (!mixed) return NO_MIXED_SCREEN;
+
+  switch (input.paidCareBasis) {
+    case 'behavioral':
+      return {
+        asks: true,
+        flag: null,
+        block:
+          'Paid-caregiver request where the family says the hands-on care is mainly due to the autism, ADHD, or developmental diagnosis. ' +
+          'The Family Caregiver Option does not pay for behavioral or developmental support, so paid family hours will be denied. ' +
+          'The child may still qualify for GAPP nursing or personal care on the medical condition; the referral can be sent with the paid-caregiver answer set to No.',
+      };
+    case 'medical':
+      return {
+        asks: true,
+        block: null,
+        flag:
+          'Mixed diagnosis with a paid-caregiver request. The family attests the hands-on care is mainly due to the medical or physical condition, not the autism or developmental diagnosis. Hold them to this at the assessment: paid hours cover only care related to the medical condition.',
+      };
+    case 'unsure':
+      return {
+        asks: true,
+        block: null,
+        flag:
+          'Mixed diagnosis with a paid-caregiver request. The family is not sure whether the hands-on care is due to the medical condition or the autism or developmental diagnosis. Paid hours cover only care related to the medical condition; settle this before scheduling.',
+      };
+    default:
+      // Older form build that never asked. Same review note as before.
+      return {
+        asks: true,
+        block: null,
+        flag:
+          'Review: behavioral/developmental diagnosis alongside a physical/medical condition with a paid-caregiver request; the form did not capture which drives the hands-on care. Confirm before scheduling.',
+      };
+  }
+}
+
 // --- Young-child paid-caregiver hard stop ------------------------------------
 
 /**

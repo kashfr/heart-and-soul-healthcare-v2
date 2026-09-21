@@ -18,6 +18,9 @@ import {
   diagnosisLabels,
   diagnosisPicture,
   inferService,
+  paidCareBasisLabel,
+  screenMixedPaidCaregiver,
+  screenYoungPaidCaregiver,
   serviceFromCareNeed,
 } from './diagnosisCatalog';
 
@@ -217,5 +220,105 @@ describe('serviceFromCareNeed', () => {
     expect(serviceFromCareNeed('unsure')).toBeNull();
     expect(serviceFromCareNeed('')).toBeNull();
     expect(serviceFromCareNeed(undefined)).toBeNull();
+  });
+});
+
+describe('screenMixedPaidCaregiver (the Chance case)', () => {
+  // Autism + ADHD + developmental delay alongside seizures, a feeding problem,
+  // and a G-tube; parent seeking pay. The form cannot tell which diagnosis the
+  // hands-on care is for, so the family has to say.
+  const chance = {
+    diagnoses: ['autism', 'adhd', 'dev_delay', 'seizures', 'feeding_growth'],
+    equipment: ['feeding_tube', 'help_feeding', 'help_hygiene'],
+    seekingPaidCaregiver: 'yes',
+  };
+
+  it('asks the follow-up for a mixed picture with a paid request', () => {
+    const r = screenMixedPaidCaregiver(chance);
+    expect(r.asks).toBe(true);
+    expect(r.block).toBeNull();
+    expect(r.flag).toContain('the form did not capture');
+  });
+
+  it('refuses when the family says the care is for the autism/developmental diagnosis', () => {
+    const r = screenMixedPaidCaregiver({ ...chance, paidCareBasis: 'behavioral' });
+    expect(r.block).toContain('paid family hours will be denied');
+    expect(r.block).toContain('paid-caregiver answer set to No');
+    expect(r.flag).toBeNull();
+  });
+
+  it('lets a medical attestation through and records it for the assessment', () => {
+    const r = screenMixedPaidCaregiver({ ...chance, paidCareBasis: 'medical' });
+    expect(r.block).toBeNull();
+    expect(r.flag).toContain('family attests');
+    expect(r.flag).toContain('Hold them to this');
+  });
+
+  it('lets "not sure" through with a settle-it-first note', () => {
+    const r = screenMixedPaidCaregiver({ ...chance, paidCareBasis: 'unsure' });
+    expect(r.block).toBeNull();
+    expect(r.flag).toContain('not sure');
+  });
+
+  it('does not ask when the picture is not mixed or pay is not sought', () => {
+    expect(screenMixedPaidCaregiver({ ...chance, seekingPaidCaregiver: 'no' }).asks).toBe(false);
+    expect(
+      screenMixedPaidCaregiver({ diagnoses: ['seizures'], seekingPaidCaregiver: 'yes' }).asks
+    ).toBe(false);
+    expect(
+      screenMixedPaidCaregiver({ diagnoses: ['autism'], seekingPaidCaregiver: 'yes' }).asks
+    ).toBe(false);
+  });
+
+  it('treats a mixed free-text description the same as mixed checkboxes', () => {
+    const r = screenMixedPaidCaregiver({
+      freeText: 'autism and a g-tube, needs help bathing',
+      seekingPaidCaregiver: 'yes',
+      paidCareBasis: 'behavioral',
+    });
+    expect(r.asks).toBe(true);
+    expect(r.block).not.toBeNull();
+  });
+
+  it('has labels for every basis and no dashes in any copy', () => {
+    for (const code of ['medical', 'behavioral', 'unsure'] as const) {
+      expect(paidCareBasisLabel(code)).not.toBe('');
+      const r = screenMixedPaidCaregiver({ ...chance, paidCareBasis: code });
+      expect(r.block ?? r.flag).not.toMatch(/[—–]/);
+    }
+    expect(paidCareBasisLabel('')).toBe('');
+  });
+});
+
+describe('screenYoungPaidCaregiver (the Legacy case)', () => {
+  const NOW = new Date('2026-09-20T12:00:00Z').getTime();
+
+  it('refuses a paid request for a 2-month-old needing help with feeding', () => {
+    const r = screenYoungPaidCaregiver(
+      { dob: '2026-07-18', seekingPaidCaregiver: 'yes', equipment: ['help_feeding'] },
+      NOW
+    );
+    expect(r.block).toContain('an infant (2 months old)');
+  });
+
+  it('clears on skilled equipment, or a mobility need at 18+ months', () => {
+    expect(
+      screenYoungPaidCaregiver(
+        { dob: '2026-07-18', seekingPaidCaregiver: 'yes', equipment: ['feeding_tube'] },
+        NOW
+      ).cleared
+    ).toContain('skilled needs');
+    expect(
+      screenYoungPaidCaregiver(
+        { dob: '2022-03-01', seekingPaidCaregiver: 'yes', equipment: ['wheelchair'] },
+        NOW
+      ).cleared
+    ).toContain('mobility need');
+    expect(
+      screenYoungPaidCaregiver(
+        { dob: '2025-09-01', seekingPaidCaregiver: 'yes', equipment: ['wheelchair'] },
+        NOW
+      ).block
+    ).not.toBeNull();
   });
 });
