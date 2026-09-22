@@ -13,6 +13,7 @@
  * take precedence over these screening thresholds.
  */
 import { getAgeGroup, type AgeGroup } from './vitalRanges';
+import { readVitalsRechecks, recheckWhen } from './vitalsRecheck';
 
 export type CriticalVitalKey =
   | 'temperature'
@@ -37,6 +38,12 @@ export interface CriticalFinding {
   threshold: number;
   /** Plain-language line for the nurse, e.g. "SpO₂ 86% is at or below the notify threshold (< 90%)." */
   message: string;
+  /**
+   * Set when the value came from a later reading in the shift (vitals
+   * recheck n, see src/lib/vitalsRecheck.ts) rather than the first set.
+   * "at 14:30 (Resting / calm)" style text for the escalation prompt.
+   */
+  recheck?: { index: number; when: string };
 }
 
 const META: Record<CriticalVitalKey, { label: string; unit: string }> = {
@@ -187,6 +194,33 @@ export function getCriticalFindings(data: Record<string, unknown>): CriticalFind
     if (f) findings.push(f);
   }
 
+  // Later readings in the same shift. A critical value on a recheck needs
+  // escalation just as much as one on the first set (and the first set
+  // being normal never excuses it).
+  for (const r of readVitalsRechecks(data)) {
+    const when = recheckWhen(r);
+    const tag = { index: r.index, when };
+    const single: Array<[CriticalVitalKey, string]> = [
+      ['temperature', r.temperature],
+      ['pulse', r.pulse],
+      ['respiration', r.respiration],
+      ['oxygenSaturation', r.oxygenSaturation],
+      ['systolic', r.systolic],
+    ];
+    for (const [key, raw] of single) {
+      const v = num(raw);
+      if (v == null) continue;
+      const f = evaluate(key, v, th[key]);
+      if (f) {
+        findings.push({
+          ...f,
+          recheck: tag,
+          message: `Recheck ${r.index}${when ? ` ${when}` : ''}: ${f.message}`,
+        });
+      }
+    }
+  }
+
   return findings;
 }
 
@@ -198,6 +232,11 @@ export function hasCriticalVital(data: Record<string, unknown>): boolean {
 /** Short one-line summary of the critical findings, for storage/display. */
 export function summarizeFindings(findings: CriticalFinding[]): string {
   return findings
-    .map((f) => `${f.label} ${f.value}${f.unit} (${f.direction === 'low' ? '<' : '>'} ${f.threshold}${f.unit})`)
+    .map(
+      (f) =>
+        `${f.label} ${f.value}${f.unit} (${f.direction === 'low' ? '<' : '>'} ${f.threshold}${f.unit})${
+          f.recheck ? ` [recheck ${f.recheck.index}${f.recheck.when ? ` ${f.recheck.when}` : ''}]` : ''
+        }`,
+    )
     .join('; ');
 }

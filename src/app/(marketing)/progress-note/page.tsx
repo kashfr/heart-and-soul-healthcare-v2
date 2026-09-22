@@ -44,6 +44,7 @@ import {
 } from '@/lib/mar';
 import { classifyDoseAgainstShift, computeRequiredDoseGaps, resolveCurrentAdministrations } from '@/lib/marShared';
 import { seizureGaps } from '@/lib/seizureShared';
+import { vitalsRecheckGaps } from '@/lib/vitalsRecheck';
 import { writeSeizureEvents } from '@/lib/seizures';
 import { postHandoff } from '@/lib/handoffs';
 import { isSubstantiveHandoffText } from '@/lib/handoffShared';
@@ -1217,6 +1218,41 @@ function ProgressNotePageInner() {
           : 'Please enter a blood pressure, or — if it could not be obtained — choose a reason from the dropdown under the BP boxes on the Vitals tab.'
       );
       return;
+    }
+
+    // Vitals rechecks (later readings in the same shift): every added block
+    // needs a time and at least one vital, both BP numbers or neither, and a
+    // route / oxygen source once their value is present. The DOM scan above
+    // catches the plain `required` inputs when the nurse is on Tab 2; this
+    // owns the either/or rules and fires from any tab. Same escort as the
+    // seizure gate: switch tab, scroll, red-outline, focus.
+    {
+      const recheckGaps = vitalsRecheckGaps(getValues() as Record<string, unknown>);
+      if (recheckGaps.length > 0) {
+        setCurrentPage(2);
+        const firstTarget = recheckGaps[0].targetId;
+        setTimeout(() => {
+          const el = formRef.current?.querySelector(`#${firstTarget}`) as HTMLInputElement | null;
+          if (!el) return;
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.style.border = '2px solid #c62828';
+          el.style.background = '#fff5f5';
+          const clearHighlight = () => {
+            el.style.border = '';
+            el.style.background = '';
+            el.removeEventListener('input', clearHighlight);
+            el.removeEventListener('change', clearHighlight);
+          };
+          el.addEventListener('input', clearHighlight);
+          el.addEventListener('change', clearHighlight);
+          el.focus();
+        }, 150);
+        alert(
+          `A vitals recheck on the Status & Vitals tab isn't complete:\n\n${recheckGaps.map((g) => `• ${g.label}`).join('\n')}\n\n` +
+            `We've taken you to the first one and highlighted it in red. (Remove a recheck you didn't mean to add.)`
+        );
+        return;
+      }
     }
 
     // Date-of-service guardrails. The picker has max={today}, but a date can

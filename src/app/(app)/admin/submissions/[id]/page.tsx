@@ -16,6 +16,7 @@ import { useSettings } from '@/components/SettingsProvider';
 import { pdfFilenameFor, triggerDownload } from '@/lib/batchExport';
 import { formatDateUS } from '@/lib/dateFormat';
 import { formatDuration, readSeizureEntries, seizureDurationSeconds, sortSeizuresByStart } from '@/lib/seizureShared';
+import { readVitalsRechecks, recheckAbnormalVitals, recheckBloodPressure, recheckWhen, vitalsRecheckAllKeys, MAX_VITALS_RECHECKS } from '@/lib/vitalsRecheck';
 import { authedFetch } from '@/lib/authedFetch';
 import { getVitalRanges, getAgeGroupLabel } from '@/lib/vitalRanges';
 import { parseCareTaskCharting } from '@/lib/careTaskCharting';
@@ -277,6 +278,19 @@ export default function SubmissionDetailPage({ params }: PageProps) {
     const v = parseNum(data.q20_oxygenSaturation);
     if (!isNaN(v) && (v < vitalRanges.oxygenSaturation.low || v > vitalRanges.oxygenSaturation.high))
       abnormalVitals.push(`SpO2: ${data.q20_oxygenSaturation}% (LOW)`);
+  }
+  // Later readings in the same shift: each abnormal value names its reading
+  // and time so a recheck that stayed high is as visible as the first set.
+  const vitalRechecks = readVitalsRechecks(data as unknown as Record<string, unknown>);
+  for (const r of vitalRechecks) {
+    const ab = recheckAbnormalVitals(r, vitalRanges);
+    const tag = `Recheck ${r.index}${recheckWhen(r) ? ` ${recheckWhen(r)}` : ''}`;
+    if (ab.temperature) abnormalVitals.push(`${tag}: Temperature ${r.temperature}°F (${ab.temperature.toUpperCase()})`);
+    if (ab.systolic) abnormalVitals.push(`${tag}: Systolic BP ${r.systolic} mmHg (${ab.systolic.toUpperCase()})`);
+    if (ab.diastolic) abnormalVitals.push(`${tag}: Diastolic BP ${r.diastolic} mmHg (${ab.diastolic.toUpperCase()})`);
+    if (ab.pulse) abnormalVitals.push(`${tag}: Pulse ${r.pulse} bpm (${ab.pulse.toUpperCase()})`);
+    if (ab.respiration) abnormalVitals.push(`${tag}: Respirations ${r.respiration}/min (${ab.respiration.toUpperCase()})`);
+    if (ab.oxygenSaturation) abnormalVitals.push(`${tag}: SpO2 ${r.oxygenSaturation}% (LOW)`);
   }
   // Build address string
   const addressParts = [
@@ -750,6 +764,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             'q16_temperature', 'q16_temperatureRoute', 'q17_bloodPressure',
             'q17_bpMethod', 'q17_bpSite', 'q18_pulse', 'q18_pulseSite', 'q19_respiration',
             'q20_oxygenSaturation', 'q21_oxygenSource', 'q22_additionalObservations',
+            ...vitalsRecheckAllKeys(MAX_VITALS_RECHECKS),
           ]}
           data={data}
         >
@@ -791,6 +806,48 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             <VitalCard fieldKey="q20_oxygenSaturation" label="SpO2" value={data.q20_oxygenSaturation} />
             {hasValue(data.q21_oxygenSource) && <VitalCard fieldKey="q21_oxygenSource" label="Oxygen Source" value={data.q21_oxygenSource} />}
           </div>
+          {/* Later readings in the same shift (vitals rechecks): only the
+              vitals that were retaken, abnormal ones red, each with its own
+              amendment history. */}
+          {vitalRechecks.map((r) => {
+            const ab = recheckAbnormalVitals(r, vitalRanges);
+            const key = (f: string) => `q16r_reading${r.index}_${f}`;
+            const bp = recheckBloodPressure(r);
+            const ms = [r.bpMethod, r.bpSite].filter(Boolean).join(', ');
+            const when = recheckWhen(r);
+            return (
+              <div key={r.index} style={{ borderTop: '1px solid #ddd' }}>
+                <div style={recheckHeaderStyle}>
+                  Recheck {r.index}{when ? ` ${when}` : ''}
+                  <AmendedVersions fieldKey={key('time')} />
+                </div>
+                <div style={vitalsGridStyle}>
+                  {hasValue(r.temperature) && (
+                    <VitalCard fieldKey={key('temperature')} label="Temperature" alert={!!ab.temperature}
+                      value={`${r.temperature}${r.temperatureRoute ? ` (${r.temperatureRoute})` : ''}`} />
+                  )}
+                  {bp && (
+                    <VitalCard fieldKey={key('systolic')} label="Blood Pressure" alert={!!(ab.systolic || ab.diastolic)}
+                      value={`${bp}${ms ? ` (${ms})` : ''}`} />
+                  )}
+                  {hasValue(r.pulse) && (
+                    <VitalCard fieldKey={key('pulse')} label="Pulse" alert={!!ab.pulse}
+                      value={`${r.pulse}${r.pulseSite ? ` (${r.pulseSite})` : ''}`} />
+                  )}
+                  {hasValue(r.respiration) && <VitalCard fieldKey={key('respiration')} label="Respirations" alert={!!ab.respiration} value={r.respiration} />}
+                  {hasValue(r.oxygenSaturation) && (
+                    <VitalCard fieldKey={key('oxygenSaturation')} label="SpO2" alert={!!ab.oxygenSaturation}
+                      value={`${r.oxygenSaturation}${r.oxygenSource ? ` (${r.oxygenSource})` : ''}`} />
+                  )}
+                </div>
+                {hasValue(r.notes) && (
+                  <div style={{ padding: '8px 0' }}>
+                    <TextBlock fieldKey={key('notes')} label="Recheck notes" value={r.notes} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
           {hasValue(data.q16_vitalsNotObtainedReason) && (
             <div style={{ padding: '8px 0' }}>
               {/* Covers whichever vitals are blank in the grid above. */}
@@ -1595,12 +1652,12 @@ function TextBlock({ label, value, fieldKey }: { label: string; value: string; f
   );
 }
 
-function VitalCard({ label, value, fieldKey }: { label: string; value: string; fieldKey?: string }) {
+function VitalCard({ label, value, fieldKey, alert }: { label: string; value: string; fieldKey?: string; alert?: boolean }) {
   return (
-    <div style={vitalCardStyle}>
+    <div style={alert ? { ...vitalCardStyle, background: '#fff3f0' } : vitalCardStyle}>
       <div style={vitalLabelStyle}>{label}</div>
       <AmendedVersions fieldKey={fieldKey} />
-      <div style={vitalValueStyle}>{value || '--'}</div>
+      <div style={alert ? { ...vitalValueStyle, color: '#c62828' } : vitalValueStyle}>{value || '--'}</div>
     </div>
   );
 }
@@ -1880,6 +1937,16 @@ const vitalValueStyle: React.CSSProperties = {
   fontWeight: 700,
   color: '#1a1a1a',
   marginTop: 2,
+};
+
+const recheckHeaderStyle: React.CSSProperties = {
+  padding: '5px 12px',
+  background: '#f4f6f9',
+  fontSize: 11,
+  fontWeight: 700,
+  color: NAVY,
+  textTransform: 'uppercase',
+  letterSpacing: 0.3,
 };
 
 const systemSubsectionStyle: React.CSSProperties = {

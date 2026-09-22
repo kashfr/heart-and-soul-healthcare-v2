@@ -15,6 +15,9 @@
  *     satisfied by a reading OR the section-level "unable to obtain vitals"
  *     reason (q16_vitalsNotObtainedReason); blood pressure additionally
  *     accepts its own BP-specific "unable to obtain" reason.
+ *   - Tab 2 (Vitals rechecks): each added later-in-shift reading needs a time
+ *     and at least one vital, both BP numbers or neither, and route / oxygen
+ *     source once their value is present (see src/lib/vitalsRecheck.ts).
  *   - Tab 4: the nutrition note is required only when aspiration concerns = Yes.
  *   - Tab 5 (Skilled Nursing): the intervention narrative is required for LPN/RN.
  *   - Tab 6: physician-notification details are required only when the nurse
@@ -28,6 +31,7 @@
 
 import { isBpRoutinelyRequired } from './vitalRanges';
 import { SHIFT_CHANGE_KEYS, shiftChangeAnyYes } from './shiftChange';
+import { vitalsRecheckGaps } from './vitalsRecheck';
 
 export interface NoteIssue {
   /** Field key (also the DOM id the nurse form scrolls to). */
@@ -241,6 +245,11 @@ export function getIncompleteRequired(flat: Record<string, string>): NoteIssue[]
     if (r.applies(flat, cred) && !r.filled(flat)) {
       issues.push({ key: r.key, label: r.label, tab: r.tab, tabName: NOTE_TAB_NAMES[r.tab] ?? `Tab ${r.tab}` });
     }
+  }
+  // Vitals rechecks are numbered blocks, so their rules are computed rather
+  // than listed. Each gap's targetId is the input's DOM id, same as `key`.
+  for (const g of vitalsRecheckGaps(flat)) {
+    issues.push({ key: g.targetId, label: g.label, tab: 2, tabName: NOTE_TAB_NAMES[2] });
   }
   return issues;
 }

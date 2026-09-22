@@ -19,6 +19,7 @@ import {
   NOTE_TAB_NAMES,
   type NoteIssue,
 } from '@/lib/noteValidation';
+import { readVitalsRechecks, recheckBloodPressure } from '@/lib/vitalsRecheck';
 
 interface Row {
   draft: NoteDraft;
@@ -415,6 +416,19 @@ export default function InProgressPage() {
                       <Detail label="Pulse" value={flat.q18_pulse} />
                       <Detail label="Respiration" value={flat.q19_respiration} />
                       <Detail label="O₂ saturation" value={flat.q20_oxygenSaturation} />
+                      {readVitalsRechecks(flat).map((r) => (
+                        <Detail
+                          key={r.index}
+                          label={`Recheck ${r.index}${r.time ? ` at ${r.time}` : ''}`}
+                          value={[
+                            r.temperature ? `T ${r.temperature}` : '',
+                            recheckBloodPressure(r) ? `BP ${recheckBloodPressure(r)}` : '',
+                            r.pulse ? `P ${r.pulse}` : '',
+                            r.respiration ? `R ${r.respiration}` : '',
+                            r.oxygenSaturation ? `SpO₂ ${r.oxygenSaturation}%` : '',
+                          ].filter(Boolean).join(' · ')}
+                        />
+                      ))}
                       <Detail label="Signature" value={flat.q61_signature ? 'Signed' : ''} />
                     </div>
                   </div>
