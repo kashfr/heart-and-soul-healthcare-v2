@@ -8,7 +8,7 @@ import {
   StyleSheet,
 } from '@react-pdf/renderer';
 import { getVitalRanges, getAgeGroupLabel, type VitalRangesOverride } from '@/lib/vitalRanges';
-import { readVitalsRechecks, recheckAbnormalVitals, recheckBloodPressure, recheckWhen, vitalsRecheckAllKeys, MAX_VITALS_RECHECKS, type VitalsRecheck } from '@/lib/vitalsRecheck';
+import { readVitalsRechecks, recheckAbnormalVitals, recheckBloodPressure, recheckWhen, vitalsRecheckAllKeys, MAX_VITALS_RECHECKS, recheckAddedKey, type VitalsRecheck } from '@/lib/vitalsRecheck';
 import { formatDuration, readSeizureEntries, seizureDurationSeconds, sortSeizuresByStart } from '../seizureShared';
 import { parseCareTaskCharting } from '@/lib/careTaskCharting';
 
@@ -746,12 +746,19 @@ function VitalsRecheckBlock({ reading: r, ranges }: { reading: VitalsRecheck; ra
     cells.push({ label: 'SpO2', fieldKey: key('oxygenSaturation'), value: `${r.oxygenSaturation}${r.oxygenSource ? ` (${r.oxygenSource})` : ''}`, abnormal: !!ab.oxygenSaturation });
   }
   const when = recheckWhen(r);
+  const added = currentFieldAmendments[recheckAddedKey(r.index)]?.[0];
   return (
     <View wrap={false}>
       <View style={s.recheckHeader}>
         <Text style={s.recheckHeaderText}>
           Recheck {r.index}{when ? ` ${when}` : ''}
         </Text>
+        {added && (
+          // Printed deliverable: parentheses, no em dash.
+          <Text style={s.amendTag}>
+            {`(added by amendment ${added.correctedAt}${added.correctedBy ? ` by ${added.correctedBy}` : ''})`}
+          </Text>
+        )}
         <AmendedVersions fieldKey={key('time')} />
       </View>
       <View style={s.vitalsGrid}>

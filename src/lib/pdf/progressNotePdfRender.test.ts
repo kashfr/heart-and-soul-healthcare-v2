@@ -86,6 +86,8 @@ describe('ProgressNotePDF inline amendments', () => {
     };
     const fieldAmendments = {
       q16r_reading1_pulse: [{ oldValue: '98', correctedAt: 'Sep 22, 2026, 3:05 PM', correctedBy: 'Jane Doe' }],
+      // Recheck 2 was added while amending: one header marker, no per-field lines.
+      q16r_reading2__added: [{ oldValue: '(blank)', correctedAt: 'Sep 22, 2026, 12:37 PM', correctedBy: 'Jane Doe' }],
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const el = React.createElement(ProgressNotePDF as any, { data, fieldAmendments });

@@ -6,6 +6,7 @@ import type { ProgressNoteFormData, PdfAuditEntry, PdfFieldVersion } from '@/lib
 import { getServerSettings } from '@/lib/settingsServer';
 import { getEditHistoryServer } from '@/lib/editHistoryServer';
 import { buildFieldAmendments } from '@/lib/revisionFormat';
+import { collapseAddedRechecks } from '@/lib/vitalsRecheck';
 import { formatDateUS, formatDateUSFile } from '@/lib/dateFormat';
 
 /**
@@ -70,7 +71,8 @@ export async function loadNoteAuditForPdf(noteId: string): Promise<{
   }));
   // Per-field prior values for the in-place amendment rendering in the note
   // body (the "what changed"); the audit section becomes the "who/why" log.
-  const rawAmendments = buildFieldAmendments(rows);
+  // Rechecks added while amending collapse to one "added" line per block.
+  const rawAmendments = collapseAddedRechecks(buildFieldAmendments(rows));
   const fieldAmendments: Record<string, PdfFieldVersion[]> = {};
   for (const [key, versions] of Object.entries(rawAmendments)) {
     fieldAmendments[key] = versions.map((v) => ({
