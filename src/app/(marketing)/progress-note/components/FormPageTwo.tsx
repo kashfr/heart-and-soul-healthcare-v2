@@ -8,6 +8,7 @@ import { SHIFT_CHANGE_KEYS } from '@/lib/shiftChange';
 import FieldError from './FieldError';
 import { rangeValidator, VITAL_RANGE as RANGE } from '../validators';
 import { getVitalRanges, getAgeGroupLabel, checkVitalRange, isBpRoutinelyRequired, type VitalKey } from '@/lib/vitalRanges';
+import VitalsRecheckSection from './VitalsRecheckSection';
 
 interface FormPageTwoProps extends FormPageProps {
   credential?: string;
@@ -894,6 +895,11 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
                 </select>
               </div>
             </div>
+
+            {/* Later readings in the same shift (q16r_reading{n}_*). The first
+                set above stays the note's "vitals of record" for every chart
+                and filter; rechecks print beneath it and share its ranges. */}
+            <VitalsRecheckSection register={register} watch={watch} setValue={setValue} ageStr={ageStr || ''} dob={dob} />
           </div>
         </div>
 

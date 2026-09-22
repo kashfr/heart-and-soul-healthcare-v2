@@ -6,6 +6,8 @@
  * Individual patient baselines and provider orders always take precedence.
  */
 
+import { anyRecheckAbnormal } from './vitalsRecheck';
+
 export interface VitalRange {
   low: number;
   high: number;
@@ -351,5 +353,8 @@ export function hasAnyAbnormalVital(
     if (!isNaN(dia) && (dia < ranges.diastolic.low || dia > ranges.diastolic.high)) return true;
   }
 
-  return false;
+  // Later readings in the same shift (q16r_reading{n}_*) count too: a note
+  // whose first pulse was fine but whose 2 PM recheck was not is still a
+  // note with an abnormal vital.
+  return anyRecheckAbnormal(data, ranges);
 }

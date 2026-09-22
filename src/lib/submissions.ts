@@ -91,6 +91,14 @@ export interface ProgressNoteFormData {
   q19_respiration: string;
   q20_oxygenSaturation: string;
   q21_oxygenSource: string;
+  /**
+   * Later readings in the same shift (vitals rechecks). The count key plus
+   * numbered blocks q16r_reading{n}_{time,context,temperature,temperatureRoute,
+   * systolic,diastolic,bpMethod,bpSite,pulse,pulseSite,respiration,
+   * oxygenSaturation,oxygenSource,notes}, accessed as dynamic keys via
+   * src/lib/vitalsRecheck.ts. The first set stays in q16-q21 above.
+   */
+  q16r_readingCount?: string;
 
   // Page 2: Additional Observations
   q22_additionalObservations: string;

@@ -8,6 +8,7 @@ import {
   StyleSheet,
 } from '@react-pdf/renderer';
 import { getVitalRanges, getAgeGroupLabel, type VitalRangesOverride } from '@/lib/vitalRanges';
+import { readVitalsRechecks, recheckAbnormalVitals, recheckBloodPressure, recheckWhen, vitalsRecheckAllKeys, MAX_VITALS_RECHECKS, type VitalsRecheck } from '@/lib/vitalsRecheck';
 import { formatDuration, readSeizureEntries, seizureDurationSeconds, sortSeizuresByStart } from '../seizureShared';
 import { parseCareTaskCharting } from '@/lib/careTaskCharting';
 
@@ -289,6 +290,19 @@ const s = StyleSheet.create({
     color: RED,
     marginTop: 1,
   },
+  recheckHeader: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: '#f4f6f9',
+    borderTopWidth: 1,
+    borderTopColor: '#ddd',
+  },
+  recheckHeaderText: {
+    fontFamily: 'Helvetica-Bold',
+    fontSize: 8.5,
+    color: '#1a3a5c',
+    textTransform: 'uppercase',
+  },
   systemSubsection: {
     borderBottomWidth: 1,
     borderBottomColor: LIGHT_GRAY,
@@ -557,9 +571,25 @@ function checkVitals(data: ProgressNoteFormData, overrides?: VitalRangesOverride
   // How each reading was taken, appended in parentheses (e.g. "98.6 (Temporal)").
   const bpMethodSite = [data.q17_bpMethod, data.q17_bpSite].filter(Boolean).join(', ');
 
+  // Later readings in the same shift: each abnormal value gets its own alert
+  // line naming the reading and time, so a recheck that was still high is as
+  // visible in the banner as the first set. (Printed deliverable: no dashes.)
+  const rechecks = readVitalsRechecks(data as unknown as Record<string, unknown>);
+  for (const r of rechecks) {
+    const ab = recheckAbnormalVitals(r, ranges);
+    const tag = `Recheck ${r.index}${recheckWhen(r) ? ` ${recheckWhen(r)}` : ''}`;
+    if (ab.temperature) alerts.push(`${tag}: Temperature ${r.temperature}\u00b0F (${ab.temperature.toUpperCase()})`);
+    if (ab.systolic || ab.diastolic) alerts.push(`${tag}: Blood Pressure ${recheckBloodPressure(r) || `${r.systolic}/${r.diastolic}`} mmHg`);
+    if (ab.pulse) alerts.push(`${tag}: Pulse ${r.pulse} bpm (${ab.pulse.toUpperCase()})`);
+    if (ab.respiration) alerts.push(`${tag}: Respirations ${r.respiration}/min (${ab.respiration.toUpperCase()})`);
+    if (ab.oxygenSaturation) alerts.push(`${tag}: SpO2 ${r.oxygenSaturation}% (LOW)`);
+  }
+
   return {
     alerts,
     ageGroupLabel,
+    rechecks,
+    ranges,
     cells: [
       {
         label: 'Temperature',
@@ -689,6 +719,55 @@ function TextBlock({ label, value, fieldKey }: { label: string; value: string | 
       <Text style={s.textBlockLabel}>{label}:</Text>
       <AmendedVersions fieldKey={fieldKey} />
       <Text style={s.textBlockValue}>{hasValue(value) ? value : '--'}</Text>
+    </View>
+  );
+}
+
+/**
+ * One later-in-shift vitals reading (q16r_reading{n}_*), printed under the
+ * first set as a labeled strip of cells: only the vitals that were retaken,
+ * abnormal ones in red, each cell carrying its own amendment history.
+ */
+function VitalsRecheckBlock({ reading: r, ranges }: { reading: VitalsRecheck; ranges: ReturnType<typeof getVitalRanges> }) {
+  const ab = recheckAbnormalVitals(r, ranges);
+  const key = (f: keyof Omit<VitalsRecheck, 'index'>) => `q16r_reading${r.index}_${f}`;
+  const cells: Array<{ label: string; fieldKey: string; value: string; abnormal: boolean }> = [];
+  if (hasValue(r.temperature)) {
+    cells.push({ label: 'Temperature', fieldKey: key('temperature'), value: `${r.temperature}${r.temperatureRoute ? ` (${r.temperatureRoute})` : ''}`, abnormal: !!ab.temperature });
+  }
+  const bp = recheckBloodPressure(r);
+  if (bp) {
+    const ms = [r.bpMethod, r.bpSite].filter(Boolean).join(', ');
+    cells.push({ label: 'Blood Pressure', fieldKey: key('systolic'), value: `${bp}${ms ? ` (${ms})` : ''}`, abnormal: !!(ab.systolic || ab.diastolic) });
+  }
+  if (hasValue(r.pulse)) cells.push({ label: 'Pulse', fieldKey: key('pulse'), value: `${r.pulse}${r.pulseSite ? ` (${r.pulseSite})` : ''}`, abnormal: !!ab.pulse });
+  if (hasValue(r.respiration)) cells.push({ label: 'Respirations', fieldKey: key('respiration'), value: r.respiration, abnormal: !!ab.respiration });
+  if (hasValue(r.oxygenSaturation)) {
+    cells.push({ label: 'SpO2', fieldKey: key('oxygenSaturation'), value: `${r.oxygenSaturation}${r.oxygenSource ? ` (${r.oxygenSource})` : ''}`, abnormal: !!ab.oxygenSaturation });
+  }
+  const when = recheckWhen(r);
+  return (
+    <View wrap={false}>
+      <View style={s.recheckHeader}>
+        <Text style={s.recheckHeaderText}>
+          Recheck {r.index}{when ? ` ${when}` : ''}
+        </Text>
+        <AmendedVersions fieldKey={key('time')} />
+      </View>
+      <View style={s.vitalsGrid}>
+        {cells.map((v) => (
+          <View key={v.label} style={v.abnormal ? s.vitalCellAlert : s.vitalCell}>
+            <Text style={s.vitalLabel}>{v.label}</Text>
+            <AmendedVersions fieldKey={v.fieldKey} />
+            <Text style={v.abnormal ? s.vitalValueAlert : s.vitalValue}>{v.value}</Text>
+          </View>
+        ))}
+      </View>
+      {hasValue(r.notes) && (
+        <View style={s.sectionBody}>
+          <TextBlock fieldKey={key('notes')} label="Recheck notes" value={r.notes} />
+        </View>
+      )}
     </View>
   );
 }
@@ -905,7 +984,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
     .filter((p) => hasValue(p))
     .join(', ');
 
-  const { alerts: abnormalVitals, cells: vitalCells, ageGroupLabel } = checkVitals(data, vitalsOverride);
+  const { alerts: abnormalVitals, cells: vitalCells, ageGroupLabel, rechecks: vitalRechecks, ranges: vitalRangeSet } = checkVitals(data, vitalsOverride);
 
   // Set the render-scoped amendment index before the tree renders (children read
   // it synchronously during this same render).
@@ -1129,6 +1208,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
           'q16_temperature', 'q16_temperatureRoute', 'q17_bloodPressure',
           'q17_bpMethod', 'q17_bpSite', 'q18_pulse', 'q18_pulseSite', 'q19_respiration',
           'q20_oxygenSaturation', 'q21_oxygenSource', 'q22_additionalObservations',
+          ...vitalsRecheckAllKeys(MAX_VITALS_RECHECKS),
         ]) && (
           <View style={s.section} wrap={false}>
             <View style={s.sectionHeader}>
@@ -1150,6 +1230,9 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
                 </View>
               )}
             </View>
+            {vitalRechecks.map((r) => (
+              <VitalsRecheckBlock key={r.index} reading={r} ranges={vitalRangeSet} />
+            ))}
             {(hasValue(data.q16_vitalsNotObtainedReason) || hasValue(data.q22_additionalObservations)) && (
               <View style={s.sectionBody}>
                 {hasValue(data.q16_vitalsNotObtainedReason) && (
