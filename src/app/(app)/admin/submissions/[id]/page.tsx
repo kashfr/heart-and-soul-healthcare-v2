@@ -16,7 +16,7 @@ import { useSettings } from '@/components/SettingsProvider';
 import { pdfFilenameFor, triggerDownload } from '@/lib/batchExport';
 import { formatDateUS } from '@/lib/dateFormat';
 import { formatDuration, readSeizureEntries, seizureDurationSeconds, sortSeizuresByStart } from '@/lib/seizureShared';
-import { readVitalsRechecks, recheckAbnormalVitals, recheckBloodPressure, recheckWhen, vitalsRecheckAllKeys, MAX_VITALS_RECHECKS } from '@/lib/vitalsRecheck';
+import { readVitalsRechecks, recheckAbnormalVitals, recheckBloodPressure, recheckWhen, vitalsRecheckAllKeys, MAX_VITALS_RECHECKS, collapseAddedRechecks, recheckAddedKey } from '@/lib/vitalsRecheck';
 import { authedFetch } from '@/lib/authedFetch';
 import { getVitalRanges, getAgeGroupLabel } from '@/lib/vitalRanges';
 import { parseCareTaskCharting } from '@/lib/careTaskCharting';
@@ -130,7 +130,8 @@ export default function SubmissionDetailPage({ params }: PageProps) {
   }, [authLoading, id, isNurse, user]);
 
   // Per-field prior values for the inline "struck old -> corrected" rendering.
-  const fieldAmendments = useMemo(() => buildFieldAmendments(editHistory), [editHistory]);
+  // Rechecks added while amending collapse to one "added" line per block.
+  const fieldAmendments = useMemo(() => collapseAddedRechecks(buildFieldAmendments(editHistory)), [editHistory]);
 
   /** Download a clean PDF of the note using the same server-side renderer as
       the bulk export (/api/progress-note/pdf → @react-pdf/renderer). The old
@@ -819,6 +820,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
               <div key={r.index} style={{ borderTop: '1px solid #ddd' }}>
                 <div style={recheckHeaderStyle}>
                   Recheck {r.index}{when ? ` ${when}` : ''}
+                  <RecheckAddedLine index={r.index} />
                   <AmendedVersions fieldKey={key('time')} />
                 </div>
                 <div style={vitalsGridStyle}>
@@ -1605,6 +1607,20 @@ function AmendedVersions({ fieldKey }: { fieldKey?: string }) {
         </span>
       ))}
     </>
+  );
+}
+
+/** "Added by amendment <when> by <who>" on a recheck block created while
+ *  amending the note (see collapseAddedRechecks). Null otherwise. */
+function RecheckAddedLine({ index }: { index: number }) {
+  const amendments = useContext(AmendmentContext);
+  const v = amendments[recheckAddedKey(index)]?.[0];
+  if (!v) return null;
+  return (
+    <span style={{ ...correctedTagStyle, display: 'block', textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>
+      Added by amendment {fmtWhen(v.correctedAt)}
+      {v.correctedBy ? ` by ${v.correctedBy}` : ''}
+    </span>
   );
 }
 

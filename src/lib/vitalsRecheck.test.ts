@@ -10,6 +10,8 @@ import {
   recheckBloodPressure,
   recheckWhen,
   vitalsRecheckAllKeys,
+  collapseAddedRechecks,
+  recheckAddedKey,
 } from './vitalsRecheck';
 import { getVitalRanges, hasAnyAbnormalVital } from './vitalRanges';
 import { getCriticalFindings, summarizeFindings } from './criticalVitals';
@@ -126,5 +128,55 @@ describe('formatting helpers', () => {
   it('builds the heading suffix from time and context', () => {
     expect(recheckWhen({ time: '14:30', context: 'Sleeping' })).toBe('at 14:30 (Sleeping)');
     expect(recheckWhen({ time: '', context: '' })).toBe('');
+  });
+});
+
+describe('collapseAddedRechecks', () => {
+  const t1 = new Date('2026-09-22T16:37:22Z');
+  const t2 = new Date('2026-09-23T14:00:00Z');
+  const v = (oldValue: unknown, at: Date) => ({ oldValue, correctedAt: at, correctedBy: 'ZZ TEST ACCOUNT' });
+
+  it('turns a recheck added by one amendment into a single "added" marker', () => {
+    const raw = {
+      [k(1, 'time')]: [v('', t1)],
+      [k(1, 'pulse')]: [v(undefined, t1)],
+      [k(1, 'systolic')]: [v(null, t1)],
+      [k(1, 'notes')]: [v('', t1)],
+      q22_additionalObservations: [v('', t1)], // not a recheck: untouched
+    };
+    const out = collapseAddedRechecks(raw);
+    expect(out[k(1, 'time')]).toBeUndefined();
+    expect(out[k(1, 'pulse')]).toBeUndefined();
+    expect(out[k(1, 'systolic')]).toBeUndefined();
+    expect(out[k(1, 'notes')]).toBeUndefined();
+    expect(out[recheckAddedKey(1)]).toEqual([v('', t1)]);
+    expect(out.q22_additionalObservations).toEqual([v('', t1)]);
+  });
+
+  it('keeps a later real correction to an added recheck', () => {
+    const out = collapseAddedRechecks({
+      [k(1, 'time')]: [v('', t1)],
+      [k(1, 'pulse')]: [v('', t1), v('82', t2)],
+    });
+    expect(out[k(1, 'pulse')]).toEqual([v('82', t2)]);
+    expect(out[recheckAddedKey(1)]).toBeDefined();
+  });
+
+  it('keeps a vital added to an existing recheck by a later amendment', () => {
+    const out = collapseAddedRechecks({
+      [k(1, 'time')]: [v('', t1)],
+      [k(1, 'systolic')]: [v('', t2)],
+    });
+    expect(out[k(1, 'systolic')]).toEqual([v('', t2)]);
+  });
+
+  it('leaves a recheck that existed at submission alone', () => {
+    const raw = {
+      [k(1, 'time')]: [v('11:00', t1)], // time corrected, not created
+      [k(1, 'systolic')]: [v('', t1)], // BP added to an existing reading
+    };
+    const out = collapseAddedRechecks(raw);
+    expect(out).toEqual(raw);
+    expect(out[recheckAddedKey(1)]).toBeUndefined();
   });
 });

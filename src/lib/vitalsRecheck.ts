@@ -179,3 +179,58 @@ export function recheckWhen(e: Pick<VitalsRecheck, 'time' | 'context'>): string 
   const c = e.context ? `(${e.context})` : '';
   return [t, c].filter(Boolean).join(' ');
 }
+
+// ---------------------------------------------------------------------------
+// Amendment display. A recheck added while amending a note is brand-new data,
+// not a correction: without this, every one of its fields renders its own
+// struck-through "(blank) corrected ..." line, which buries the readings and
+// implies an earlier value existed. collapseAddedRechecks rewrites the raw
+// per-field amendment map (from buildFieldAmendments) so such a block shows
+// ONE "added by amendment" line on its header instead. Later real corrections
+// to a recheck value (82 -> 84) still render struck through as usual.
+// ---------------------------------------------------------------------------
+
+/** Reserved amendment-map key carrying "recheck n was added by an amendment". */
+export function recheckAddedKey(index: number): string {
+  return `${VITALS_RECHECK_PREFIX}${index}__added`;
+}
+
+interface VersionLike {
+  oldValue: unknown;
+  correctedAt: Date | null;
+  correctedBy: string;
+}
+
+function isBlankValue(v: unknown): boolean {
+  return v === null || v === undefined || (typeof v === 'string' && v.trim() === '');
+}
+
+function sameEdit(a: Date | null, b: Date | null): boolean {
+  return (a ? a.getTime() : null) === (b ? b.getTime() : null);
+}
+
+/**
+ * Collapse amendment-created recheck blocks. A block counts as added by an
+ * amendment when its time (required on every recheck, so a pre-existing
+ * block always had one) first changed from blank. Every blank-to-value entry
+ * for that block made by the SAME edit is dropped, and the block gets a single
+ * marker under recheckAddedKey(n). Pure; returns a new map.
+ */
+export function collapseAddedRechecks<V extends VersionLike>(amendments: Record<string, V[]>): Record<string, V[]> {
+  const out: Record<string, V[]> = { ...amendments };
+  for (let i = 1; i <= MAX_VITALS_RECHECKS; i += 1) {
+    const timeVersions = amendments[vitalsRecheckFieldKey(i, 'time')];
+    const created = timeVersions?.[0];
+    if (!created || !isBlankValue(created.oldValue)) continue;
+    for (const f of VITALS_RECHECK_KEYS) {
+      const key = vitalsRecheckFieldKey(i, f);
+      const versions = amendments[key];
+      if (!versions) continue;
+      const kept = versions.filter((v) => !(isBlankValue(v.oldValue) && sameEdit(v.correctedAt, created.correctedAt)));
+      if (kept.length) out[key] = kept;
+      else delete out[key];
+    }
+    out[recheckAddedKey(i)] = [created];
+  }
+  return out;
+}
