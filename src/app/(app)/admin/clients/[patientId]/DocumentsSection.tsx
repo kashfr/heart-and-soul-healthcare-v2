@@ -7,7 +7,9 @@ import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE, FIELD_ERROR_WRAP_STYLE
 import { withSelectChevron } from '@/lib/selectChevron';
 import {
   ALLOWED_DOC_TYPES,
+  CORE_DOC_CATEGORIES,
   DOC_CATEGORIES,
+  DOC_CATEGORY_GROUPS,
   deletePatientDocument,
   getDocumentBlob,
   movePatientDocument,
@@ -92,6 +94,16 @@ export default function DocumentsSection({
     return map;
   }, [documents]);
 
+  // Filter chips: the compliance checklist categories always, plus any other
+  // category this client has documents in (catalog order, unknown legacy
+  // names last), so the row stays readable now that the catalog is long.
+  const chipCategories = useMemo(() => {
+    const present = new Set(documents.map((d) => d.category));
+    const ordered = DOC_CATEGORIES.filter((c) => CORE_DOC_CATEGORIES.includes(c) || present.has(c));
+    const legacy = Array.from(present).filter((c) => !(DOC_CATEGORIES as readonly string[]).includes(c)).sort();
+    return [...ordered, ...legacy];
+  }, [documents]);
+
   const view = async (d: PatientDocument) => {
     // Open the tab SYNCHRONOUSLY inside the click gesture — after the awaited
     // fetch, browsers treat window.open as an unsolicited popup and silently
@@ -173,7 +185,7 @@ export default function DocumentsSection({
     <div>
       <div style={toolbarStyle}>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flex: 1 }}>
-          {['All', ...DOC_CATEGORIES].map((c) => (
+          {['All', ...chipCategories].map((c) => (
             <button key={c} type="button" onClick={() => setFilter(c)} style={filter === c ? chipActiveStyle : chipStyle}>
               {c}
               {c !== 'All' && counts.get(c) ? ` (${counts.get(c)})` : ''}
@@ -336,6 +348,21 @@ export default function DocumentsSection({
   );
 }
 
+/** The grouped category list for every category <select> on this tab. */
+function CategoryOptions() {
+  return (
+    <>
+      {DOC_CATEGORY_GROUPS.map((g) => (
+        <optgroup key={g.label} label={g.label}>
+          {g.categories.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </optgroup>
+      ))}
+    </>
+  );
+}
+
 type EditField = 'title' | 'category' | 'docDate';
 const EDIT_FIELD_ORDER: readonly EditField[] = ['title', 'category', 'docDate'];
 const editFieldId = (k: EditField) => `doc-edit-${k}`;
@@ -402,9 +429,7 @@ function EditDocumentModal({
             aria-invalid={!!fieldErrors.category}
           >
             <option value="">Select a category…</option>
-            {DOC_CATEGORIES.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
+            <CategoryOptions />
           </select>
           <FieldError message={fieldErrors.category} />
         </label>
@@ -498,9 +523,7 @@ function MoveDocumentModal({
             <span style={fieldLabelStyle}>Category</span>
             <select value={category} onChange={(e) => setCategory(e.target.value as DocCategory)} style={selectStyle}>
               <option value="">Keep current</option>
-              {DOC_CATEGORIES.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
+              <CategoryOptions />
             </select>
           </label>
           <label style={fieldStyle}>
@@ -697,11 +720,7 @@ function UploadDocumentModal({
             aria-invalid={!!fieldErrors.category}
           >
             <option value="">Select a category…</option>
-            {DOC_CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
+            <CategoryOptions />
           </select>
           <FieldError message={fieldErrors.category} />
         </label>
