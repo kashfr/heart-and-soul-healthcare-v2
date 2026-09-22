@@ -81,8 +81,10 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
   const [month, setMonth] = useState(todayISO.slice(0, 7));
   const [editing, setEditing] = useState<HoursAuthorization | 'new' | null>(null);
   const [copied, setCopied] = useState(false);
-  // Hours / 15-minute units / dollars at the line rate, for the worksheet.
+  // Hours or 15-minute units for the worksheet, and, independently, dollars
+  // at the line rate shown alongside.
   const [view, setView] = useState<QtyView>('hours');
+  const [showDollars, setShowDollars] = useState(false);
 
   const reload = async () => {
     try {
@@ -168,7 +170,11 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
   const rnUsage = monthUsage(dayHours.oversight, rnCap, month, todayISO);
   const rnVisits = monthRows.filter((r) => r.bucket === 'oversight').length;
   const rateOf = (bucket: HoursBucket): number | null => (bucket === 'shift' ? shiftAuth : rnAuth)?.ratePerUnit ?? null;
-  const qty = (hours: number, bucket: HoursBucket): string => fmtQty(hours, view, rateOf(bucket));
+  const qty = (hours: number): string => fmtQty(hours, view);
+  const money = (hours: number, bucket: HoursBucket): string => {
+    const d = hoursToDollars(hours, rateOf(bucket));
+    return d == null ? '—' : fmtDollars(d);
+  };
   const shiftDollars = hoursToDollars(shiftUsage.used, rateOf('shift'));
   const rnDollars = hoursToDollars(rnUsage.used, rateOf('oversight'));
   // Show the RN block for NOW/COMP-style clients (an oversight line on file)
@@ -327,18 +333,29 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
       <section style={card}>
         <div style={head}>
           <div style={title}>Day by day, {monthLabel(month)}</div>
-          <span style={segmented} role="group" aria-label="Show as">
-            {(['hours', 'units', 'dollars'] as QtyView[]).map((v) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => setView(v)}
-                style={view === v ? segmentedActive : segmentedBtn}
-                title={v === 'units' ? '15-minute billing units (4 per hour)' : v === 'dollars' ? "Units × the rate on this client's line" : 'Hours'}
-              >
-                {v === 'hours' ? 'Hours' : v === 'units' ? 'Units' : '$'}
-              </button>
-            ))}
+          <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+            <span style={segmented} role="group" aria-label="Show as">
+              {(['hours', 'units'] as QtyView[]).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setView(v)}
+                  style={view === v ? segmentedActive : segmentedBtn}
+                  title={v === 'units' ? '15-minute billing units (4 per hour)' : 'Hours'}
+                >
+                  {v === 'hours' ? 'Hours' : 'Units'}
+                </button>
+              ))}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowDollars((v) => !v)}
+              style={showDollars ? dollarsActive : smallBtn}
+              title="Show dollars alongside: units × the rate on this client's line"
+              aria-pressed={showDollars}
+            >
+              $ {showDollars ? 'on' : 'off'}
+            </button>
           </span>
         </div>
         <div style={{ ...muted, marginBottom: 10 }}>Shifts crossing midnight are split; a row marked “from prior day” is the tail of an overnight shift. Each day with more than one entry gets a day total. RN visits are listed but never added to shift hours.</div>
@@ -351,7 +368,8 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
                 <th style={th}>Date</th>
                 <th style={th}>Nurse</th>
                 <th style={th}>Shift / visit</th>
-                <th style={{ ...th, textAlign: 'right' }}>{view === 'hours' ? 'Hours' : view === 'units' ? 'Units' : 'Amount'}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{view === 'hours' ? 'Hours' : 'Units'}</th>
+                {showDollars && <th style={{ ...th, textAlign: 'right', color: '#166534' }}>Amount</th>}
                 <th style={{ ...th, textAlign: 'right' }} title="Running total of shift hours">Running</th>
               </tr>
             </thead>
@@ -387,8 +405,9 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
                           <span style={overBadge} title={`Overlaps ${overlapText(r.noteId)}`}>overlaps</span>
                         )}
                       </td>
-                      <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: isRn ? '#1d4ed8' : undefined }}>{qty(r.hours, r.bucket)}</td>
-                      <td style={{ ...td, textAlign: 'right', color: '#5c6b7a', fontVariantNumeric: 'tabular-nums' }}>{isRn ? '' : qty(running, 'shift')}</td>
+                      <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: isRn ? '#1d4ed8' : undefined }}>{qty(r.hours)}</td>
+                      {showDollars && <td style={{ ...td, textAlign: 'right', color: '#166534', fontVariantNumeric: 'tabular-nums' }}>{money(r.hours, r.bucket)}</td>}
+                      <td style={{ ...td, textAlign: 'right', color: '#5c6b7a', fontVariantNumeric: 'tabular-nums' }}>{isRn ? '' : qty(running)}</td>
                     </tr>,
                   );
                   // Day total when a calendar day has more than one entry
@@ -406,9 +425,10 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
                           <td style={{ ...td, color: '#5c6b7a' }} colSpan={2}>
                             {dayShift.length > 0 && `${dayShift.length} shift ${dayShift.length === 1 ? 'entry' : 'entries'}`}
                             {dayShift.length > 0 && dayRn.length > 0 && ' · '}
-                            {dayRn.length > 0 && <span style={{ color: '#1d4ed8' }}>{dayRn.length} RN {dayRn.length === 1 ? 'visit' : 'visits'} ({qty(rnSum, 'oversight')})</span>}
+                            {dayRn.length > 0 && <span style={{ color: '#1d4ed8' }}>{dayRn.length} RN {dayRn.length === 1 ? 'visit' : 'visits'} ({qty(rnSum)}{showDollars ? `, ${money(rnSum, 'oversight')}` : ''})</span>}
                           </td>
-                          <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: NAVY, fontVariantNumeric: 'tabular-nums' }}>{dayShift.length > 0 ? qty(shiftSum, 'shift') : ''}</td>
+                          <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: NAVY, fontVariantNumeric: 'tabular-nums' }}>{dayShift.length > 0 ? qty(shiftSum) : ''}</td>
+                          {showDollars && <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#166534', fontVariantNumeric: 'tabular-nums' }}>{dayShift.length > 0 ? money(shiftSum, 'shift') : ''}</td>}
                           <td style={td} />
                         </tr>,
                       );
@@ -420,14 +440,16 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
             </tbody>
             <tfoot>
               <tr>
-                <td style={{ ...td, fontWeight: 700 }} colSpan={3}>Shift {view === 'hours' ? 'hours' : view === 'units' ? 'units' : 'amount'}</td>
-                <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{qty(shiftUsage.used, 'shift')}</td>
+                <td style={{ ...td, fontWeight: 700 }} colSpan={3}>Shift {view === 'hours' ? 'hours' : 'units'}</td>
+                <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{qty(shiftUsage.used)}</td>
+                {showDollars && <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#166534' }}>{money(shiftUsage.used, 'shift')}</td>}
                 <td style={td} />
               </tr>
               {(hasOversight || rnUsage.used > 0) && (
                 <tr>
-                  <td style={{ ...td, fontWeight: 700, color: '#1d4ed8' }} colSpan={3}>RN oversight {view === 'hours' ? 'hours' : view === 'units' ? 'units' : 'amount'}</td>
-                  <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#1d4ed8' }}>{qty(rnUsage.used, 'oversight')}</td>
+                  <td style={{ ...td, fontWeight: 700, color: '#1d4ed8' }} colSpan={3}>RN oversight {view === 'hours' ? 'hours' : 'units'}</td>
+                  <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#1d4ed8' }}>{qty(rnUsage.used)}</td>
+                  {showDollars && <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#166534' }}>{money(rnUsage.used, 'oversight')}</td>}
                   <td style={td} />
                 </tr>
               )}
@@ -926,5 +948,6 @@ const dayTotalRow: CSSProperties = { background: '#f0f7ff' };
 const segmented: CSSProperties = { display: 'inline-flex', border: '1px solid #c8def5', borderRadius: 6, overflow: 'hidden', background: 'white' };
 const segmentedBtn: CSSProperties = { background: 'white', color: NAVY, border: 'none', padding: '5px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const segmentedActive: CSSProperties = { ...segmentedBtn, background: NAVY, color: 'white' };
+const dollarsActive: CSSProperties = { ...smallBtn, background: '#166534', color: 'white', border: '1px solid #166534' };
 const monthGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8 };
 const monthCell: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 3 };
