@@ -296,7 +296,60 @@ export interface HoursAuthorization {
   totalUnits: number | null;
   /** Therap service code, e.g. 'NL1' or 'T1003-U1'. Display only. */
   serviceCode?: string;
+  /** Payer rate per 15-minute unit ($24.36 LPN, $36.68 RN on COMP). Drives
+   *  the owner-only dollar view; null when unknown. */
+  ratePerUnit?: number | null;
   note?: string;
+}
+
+/** How a quantity of nursing time is displayed. */
+export type QtyView = 'hours' | 'units' | 'dollars';
+
+export function hoursToUnits(hours: number): number {
+  return Math.round(hours * UNITS_PER_HOUR * 100) / 100;
+}
+
+/** Dollars for `hours` at a per-unit rate; null when no rate is known. */
+export function hoursToDollars(hours: number, ratePerUnit: number | null | undefined): number | null {
+  if (ratePerUnit == null || !Number.isFinite(ratePerUnit)) return null;
+  return Math.round(hours * UNITS_PER_HOUR * ratePerUnit * 100) / 100;
+}
+
+export function fmtDollars(n: number): string {
+  return n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+}
+
+/** Format a quantity of hours in the chosen view ('—' when dollars are unknown). */
+export function fmtQty(hours: number, view: QtyView, ratePerUnit?: number | null): string {
+  if (view === 'units') return fmtUnits(hoursToUnits(hours));
+  if (view === 'dollars') {
+    const d = hoursToDollars(hours, ratePerUnit);
+    return d == null ? '—' : fmtDollars(d);
+  }
+  return fmtH(hours);
+}
+
+export const QTY_VIEW_LABEL: Record<QtyView, string> = { hours: 'Hours', units: 'Units', dollars: 'Amount' };
+
+/** The per-unit rate in force for a bucket on a date, from the client's lines. */
+export function rateFor(auths: HoursAuthorization[], dateISO: string, bucket: HoursBucket): number | null {
+  const a = authForMonth(auths, monthKeyOf(dateISO), bucket);
+  return a?.ratePerUnit ?? null;
+}
+
+/**
+ * Dollars for a set of day segments, each priced at the rate in force on its
+ * date. null when any segment has no rate (a partial dollar figure would be
+ * worse than none for billing).
+ */
+export function segmentsToDollars(segments: DaySegment[], auths: HoursAuthorization[], bucket: HoursBucket): number | null {
+  let sum = 0;
+  for (const seg of segments) {
+    const d = hoursToDollars(seg.hours, rateFor(auths, seg.dateISO, bucket));
+    if (d == null) return null;
+    sum += d;
+  }
+  return Math.round(sum * 100) / 100;
 }
 
 /** Short label for a line's bucket. */
