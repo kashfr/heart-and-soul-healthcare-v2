@@ -176,6 +176,63 @@ export async function cleanupReplacedFiles(documentId: string): Promise<{ ok: bo
   return { ok: true, removed };
 }
 
+export type MoveDocumentResult =
+  | { ok: true; documentId: string }
+  | { ok: false; reason: 'not-found' | 'no-target' | 'same-client' | 'auto-filed'; message: string };
+
+/**
+ * Move a document to another client (a file uploaded to the wrong chart).
+ * The Storage path embeds the client and patientId is immutable in rules,
+ * so a move is copy-then-delete: copy the object into a NEW document folder
+ * under the target client, write fresh metadata there (ownership and upload
+ * time carried over, plus where it came from), then delete the original
+ * through the audited delete. Auto-filed notes cannot be moved; the note
+ * itself would have to be re-linked.
+ */
+export async function moveDocumentToPatient(
+  documentId: string,
+  toPatientId: string,
+  caller: AuthedCaller,
+  opts: { title?: string; docDate?: string; category?: string } = {},
+): Promise<MoveDocumentResult> {
+  const ref = adminDb().collection('patientDocuments').doc(documentId);
+  const snap = await ref.get();
+  if (!snap.exists) return { ok: false, reason: 'not-found', message: 'Document not found.' };
+  const data = snap.data() as Record<string, unknown>;
+  if (data.autoFiled) return { ok: false, reason: 'auto-filed', message: 'This document was filed from a note; move the note instead.' };
+  const fromPatientId = String(data.patientId || '');
+  if (fromPatientId === toPatientId) return { ok: false, reason: 'same-client', message: 'The document is already on that client.' };
+  const target = await adminDb().collection('patients').doc(toPatientId).get();
+  if (!target.exists) return { ok: false, reason: 'no-target', message: 'Target client not found.' };
+
+  const fileName = String(data.fileName || 'document');
+  const newRef = adminDb().collection('patientDocuments').doc();
+  const newPath = `patients/${toPatientId}/documents/${newRef.id}/${fileName}`;
+  await adminBucket().file(String(data.storagePath)).copy(adminBucket().file(newPath));
+
+  // Carry everything over except the archive state (a moved document starts
+  // active on the target chart).
+  const rest: Record<string, unknown> = { ...data };
+  for (const k of ['archived', 'archivedBy', 'archivedByName', 'archivedAt']) delete rest[k];
+  await newRef.set({
+    ...rest,
+    patientId: toPatientId,
+    storagePath: newPath,
+    ...(opts.title?.trim() ? { title: opts.title.trim() } : {}),
+    ...(opts.docDate && /^\d{4}-\d{2}-\d{2}$/.test(opts.docDate) ? { docDate: opts.docDate } : {}),
+    ...(opts.category ? { category: opts.category } : {}),
+    archived: false,
+    movedFrom: { patientId: fromPatientId, documentId },
+    movedAt: FieldValue.serverTimestamp(),
+    movedBy: caller.uid,
+    movedByName: caller.profile.displayName || caller.email || '',
+  });
+
+  const targetName = String(target.data()?.name || toPatientId);
+  await deleteDocumentWithAudit(documentId, caller, `moved to ${targetName} (${newRef.id})`);
+  return { ok: true, documentId: newRef.id };
+}
+
 /**
  * Hard-delete a document: snapshot the metadata into deletedDocuments (with
  * who/when/why), delete the metadata doc, then remove every file in its
