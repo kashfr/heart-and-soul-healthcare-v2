@@ -77,6 +77,23 @@ export interface DashboardNote {
   city: string;
   state: string;
   postal: string;
+  /**
+   * Later readings in the same shift (vitals rechecks, q16r_reading{n}_*),
+   * each holding only the vitals that were retaken. Optional: notes fetched
+   * before the feature carry none.
+   */
+  rechecks?: DashboardRecheck[];
+}
+
+/** One later-in-shift vitals reading, slimmed for the trend chart. */
+export interface DashboardRecheck {
+  time: string; // 'HH:MM'
+  context: string; // what the client was doing ('' when not recorded)
+  temperature: string;
+  bloodPressure: string; // "120/80" or ''
+  pulse: string;
+  respiration: string;
+  oxygenSaturation: string;
 }
 
 /** Notes sorted newest-first by date of service (ties by submittedAt). */
@@ -478,6 +495,12 @@ export function bestCurrency(a: DocumentCurrency, b: DocumentCurrency): Document
 
 export interface VitalPoint {
   dateISO: string;
+  /**
+   * Set on a point that came from a vitals recheck rather than the note's
+   * first set: the 1-based reading number, its 'HH:MM', and what the client
+   * was doing. The chart draws these as hollow dots and labels them by time.
+   */
+  recheck?: { index: number; time: string; context: string };
   temp?: number;
   sys?: number;
   dia?: number;
@@ -491,35 +514,63 @@ function inBounds(v: number, low: number, high: number): number | undefined {
   return !isNaN(v) && v >= low && v <= high ? v : undefined;
 }
 
-/** One point per note carrying at least one plausible vital, oldest first. */
+function parseVitals(
+  p: VitalPoint,
+  v: { temperature: string; bloodPressure: string; pulse: string; respiration: string; oxygenSaturation: string; painScore?: string },
+): boolean {
+  p.temp = inBounds(parseFloat(v.temperature), 90, 110);
+  const bp = /^\s*(\d{2,3})\s*\/\s*(\d{2,3})\s*$/.exec(v.bloodPressure || '');
+  if (bp) {
+    p.sys = inBounds(Number(bp[1]), 50, 260);
+    p.dia = inBounds(Number(bp[2]), 20, 160);
+  }
+  p.pulse = inBounds(parseFloat(v.pulse), 20, 260);
+  p.resp = inBounds(parseFloat(v.respiration), 4, 80);
+  p.spo2 = inBounds(parseFloat(v.oxygenSaturation), 50, 100);
+  if (v.painScore !== undefined) p.pain = inBounds(parseFloat(v.painScore), 0, 10);
+  return (
+    p.temp !== undefined ||
+    p.sys !== undefined ||
+    p.dia !== undefined ||
+    p.pulse !== undefined ||
+    p.resp !== undefined ||
+    p.spo2 !== undefined ||
+    p.pain !== undefined
+  );
+}
+
+/**
+ * One point per note carrying at least one plausible vital, oldest first,
+ * followed on the same date by one point per vitals recheck (in the order
+ * the nurse logged them, then by time). A recheck point carries only the
+ * vitals that were retaken, so a pulse-only recheck leaves every other line
+ * at its previous value (the chart connects across the gap).
+ */
 export function vitalSeries(notes: DashboardNote[]): VitalPoint[] {
   const points: VitalPoint[] = [];
   for (const n of notes) {
     if (!n.dateISO) continue;
     const p: VitalPoint = { dateISO: n.dateISO };
-    p.temp = inBounds(parseFloat(n.temperature), 90, 110);
-    const bp = /^\s*(\d{2,3})\s*\/\s*(\d{2,3})\s*$/.exec(n.bloodPressure || '');
-    if (bp) {
-      p.sys = inBounds(Number(bp[1]), 50, 260);
-      p.dia = inBounds(Number(bp[2]), 20, 160);
-    }
-    p.pulse = inBounds(parseFloat(n.pulse), 20, 260);
-    p.resp = inBounds(parseFloat(n.respiration), 4, 80);
-    p.spo2 = inBounds(parseFloat(n.oxygenSaturation), 50, 100);
-    p.pain = inBounds(parseFloat(n.painScore), 0, 10);
-    if (
-      p.temp !== undefined ||
-      p.sys !== undefined ||
-      p.dia !== undefined ||
-      p.pulse !== undefined ||
-      p.resp !== undefined ||
-      p.spo2 !== undefined ||
-      p.pain !== undefined
-    ) {
-      points.push(p);
-    }
+    if (parseVitals(p, n)) points.push(p);
+    (n.rechecks || []).forEach((r, i) => {
+      const rp: VitalPoint = { dateISO: n.dateISO, recheck: { index: i + 1, time: r.time, context: r.context } };
+      if (parseVitals(rp, r)) points.push(rp);
+    });
   }
-  return points.sort((a, b) => a.dateISO.localeCompare(b.dateISO));
+  // Stable sort: same-date points keep note order (first set, then rechecks
+  // in logged order), and rechecks additionally order by clock time.
+  return points
+    .map((p, i) => ({ p, i }))
+    .sort((a, b) => {
+      const byDate = a.p.dateISO.localeCompare(b.p.dateISO);
+      if (byDate !== 0) return byDate;
+      const ta = a.p.recheck ? a.p.recheck.time || '99:99' : '';
+      const tb = b.p.recheck ? b.p.recheck.time || '99:99' : '';
+      if (!!a.p.recheck !== !!b.p.recheck) return a.p.recheck ? 1 : -1;
+      const byTime = ta.localeCompare(tb);
+      return byTime !== 0 ? byTime : a.i - b.i;
+    })
+    .map(({ p }) => p);
 }
 
 export interface MedWeekBucket {
