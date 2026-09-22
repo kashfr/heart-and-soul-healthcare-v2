@@ -149,10 +149,11 @@ export default function SubmissionsPage() {
   const credParam = searchParams.get('cred') ?? '';
   const nurseParam = searchParams.get('nurse') ?? '';
   const clientParam = searchParams.get('client') ?? '';
-  // Owner-only quantity view for the Hours column / totals: hours, 15-minute
-  // units, or dollars at the client's line rate (?u=units|dollars).
-  const uParam = searchParams.get('u');
-  const qtyView: QtyView = uParam === 'units' || uParam === 'dollars' ? uParam : 'hours';
+  // Owner-only views for the Hours column / totals: hours or 15-minute units
+  // (?u=units), and, independently, dollars at the client's line rate shown
+  // alongside (?usd=1).
+  const qtyView: QtyView = searchParams.get('u') === 'units' ? 'units' : 'hours';
+  const showDollars = searchParams.get('usd') === '1';
   // Date-of-service range: a relative preset, a picked month (?range=m&m=YYYY-MM)
   // or an explicit window (?range=c&from=&to=). Resolved to ISO bounds below.
   const rangeRaw = searchParams.get('range');
@@ -448,16 +449,13 @@ export default function SubmissionsPage() {
     },
     [authsByPatient, segmentsById, rangeActive, rangeFrom, rangeTo],
   );
-  /** The row's hours in the chosen view, or '—' when dollars are unknown. */
-  const rowQtyText = useCallback(
-    (s: SubmissionSummary, h: number): string => {
-      if (qtyView === 'dollars') {
-        const d = rowDollars(s);
-        return d == null ? '—' : fmtDollars(d);
-      }
-      return fmtQty(h, qtyView);
+  /** The row's dollars as text ('—' when the client has no rate). */
+  const rowDollarText = useCallback(
+    (s: SubmissionSummary): string => {
+      const d = rowDollars(s);
+      return d == null ? '—' : fmtDollars(d);
     },
-    [qtyView, rowDollars],
+    [rowDollars],
   );
 
   // Defined here (rather than after `sorted`) so the cross-scope-counts memo
@@ -710,9 +708,7 @@ export default function SubmissionsPage() {
     };
   }, [sorted, rowHours, rowDollars, showHours, authsByPatient, segmentsById, rangeActive, rangeFrom, rangeTo]);
   const [pivot, setPivot] = useState<'' | 'client' | 'nurse' | 'day'>('');
-  /** A pivot cell in the chosen view. */
-  const pivotQty = (hours: number, dollars: number | null): string =>
-    qtyView === 'dollars' ? (dollars == null ? '—' : fmtDollars(dollars)) : fmtQty(hours, qtyView);
+  const money = (d: number | null): string => (d == null ? '—' : fmtDollars(d));
 
   // CSV of the filtered list with per-row hours: the billing worksheet. Same
   // rows as the totals strip, so what is exported is what was on screen.
@@ -1532,18 +1528,20 @@ export default function SubmissionsPage() {
             <div style={hoursStripRowStyle}>
               <span style={hoursStripIconStyle}><Clock size={14} /></span>
               <span style={hoursStatStyle}>
-                <strong style={hoursStatNumStyle}>{pivotQty(hoursStats.hours, hoursStats.dollars)}</strong>
-                {qtyView === 'hours' ? ' shift hours' : qtyView === 'units' ? ' shift units' : ' shift'}
+                <strong style={hoursStatNumStyle}>{fmtQty(hoursStats.hours, qtyView)}</strong>
+                {qtyView === 'hours' ? ' shift hours' : ' shift units'}
+                {showDollars && <strong style={{ ...hoursStatNumStyle, marginLeft: 8, color: '#166534' }}>{money(hoursStats.dollars)}</strong>}
                 <span style={{ color: '#64748b' }}> · {hoursStats.shifts} {hoursStats.shifts === 1 ? 'shift' : 'shifts'}</span>
               </span>
               {(hoursStats.visits > 0 || hoursStats.rnHours > 0) && (
                 <span style={{ ...hoursStatStyle, color: '#1d4ed8' }} title="RN oversight visit hours (time in to time out); never added to shift hours">
-                  <strong style={{ ...hoursStatNumStyle, color: '#1d4ed8' }}>{pivotQty(hoursStats.rnHours, hoursStats.rnDollars)}</strong>
-                  {qtyView === 'hours' ? ' RN oversight hours' : qtyView === 'units' ? ' RN oversight units' : ' RN oversight'}
+                  <strong style={{ ...hoursStatNumStyle, color: '#1d4ed8' }}>{fmtQty(hoursStats.rnHours, qtyView)}</strong>
+                  {qtyView === 'hours' ? ' RN oversight hours' : ' RN oversight units'}
+                  {showDollars && <strong style={{ ...hoursStatNumStyle, marginLeft: 8, color: '#166534' }}>{money(hoursStats.rnDollars)}</strong>}
                   <span style={{ color: '#3b82f6' }}> · {hoursStats.visits} {hoursStats.visits === 1 ? 'visit' : 'visits'}</span>
                 </span>
               )}
-              {qtyView === 'dollars' && hoursStats.unpriced > 0 && (
+              {showDollars && hoursStats.unpriced > 0 && (
                 <span style={{ ...hoursStatStyle, color: '#b45309' }} title="Dollars need a rate per unit on the client's authorization line (Hours tab)">
                   {hoursStats.unpriced} {hoursStats.unpriced === 1 ? 'row has' : 'rows have'} no rate
                 </span>
@@ -1561,18 +1559,27 @@ export default function SubmissionsPage() {
               </span>
               <div style={{ flex: 1 }} />
               <span style={segmentedStyle} role="group" aria-label="Show as">
-                {(['hours', 'units', 'dollars'] as QtyView[]).map((v) => (
+                {(['hours', 'units'] as QtyView[]).map((v) => (
                   <button
                     key={v}
                     type="button"
                     onClick={() => updateParams({ u: v === 'hours' ? null : v })}
                     style={qtyView === v ? segmentedActiveStyle : segmentedBtnStyle}
-                    title={v === 'units' ? '15-minute billing units (4 per hour)' : v === 'dollars' ? "Units × the rate on the client's authorization line" : 'Hours'}
+                    title={v === 'units' ? '15-minute billing units (4 per hour)' : 'Hours'}
                   >
-                    {v === 'hours' ? 'Hours' : v === 'units' ? 'Units' : '$'}
+                    {v === 'hours' ? 'Hours' : 'Units'}
                   </button>
                 ))}
               </span>
+              <button
+                type="button"
+                onClick={() => updateParams({ usd: showDollars ? null : '1' })}
+                style={showDollars ? dollarsBtnActiveStyle : pivotBtnStyle}
+                title="Show dollars alongside: units × the rate on the client's authorization line"
+                aria-pressed={showDollars}
+              >
+                $ {showDollars ? 'on' : 'off'}
+              </button>
               <button
                 type="button"
                 onClick={() => setPivot(pivot === 'day' ? '' : 'day')}
@@ -1606,10 +1613,12 @@ export default function SubmissionsPage() {
                     <th style={pivotThStyle}>{pivot === 'client' ? 'Client' : pivot === 'nurse' ? 'Nurse' : 'Day'}</th>
                     {pivot === 'day' && <th style={pivotThStyle}>Who</th>}
                     <th style={{ ...pivotThStyle, textAlign: 'right' }}>Shifts</th>
-                    <th style={{ ...pivotThStyle, textAlign: 'right' }}>{qtyView === 'hours' ? 'Shift hours' : qtyView === 'units' ? 'Shift units' : 'Shift $'}</th>
+                    <th style={{ ...pivotThStyle, textAlign: 'right' }}>{qtyView === 'hours' ? 'Shift hours' : 'Shift units'}</th>
+                    {showDollars && <th style={{ ...pivotThStyle, textAlign: 'right', color: '#166534' }}>Shift $</th>}
                     {pivot !== 'day' && <th style={{ ...pivotThStyle, textAlign: 'right' }}>Share</th>}
                     {hoursStats.visits > 0 && <th style={{ ...pivotThStyle, textAlign: 'right', color: '#1d4ed8' }}>RN visits</th>}
-                    {hoursStats.visits > 0 && <th style={{ ...pivotThStyle, textAlign: 'right', color: '#1d4ed8' }}>{qtyView === 'hours' ? 'RN hours' : qtyView === 'units' ? 'RN units' : 'RN $'}</th>}
+                    {hoursStats.visits > 0 && <th style={{ ...pivotThStyle, textAlign: 'right', color: '#1d4ed8' }}>{qtyView === 'hours' ? 'RN hours' : 'RN units'}</th>}
+                    {hoursStats.visits > 0 && showDollars && <th style={{ ...pivotThStyle, textAlign: 'right', color: '#166534' }}>RN $</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -1618,14 +1627,16 @@ export default function SubmissionsPage() {
                       <td style={{ ...pivotTdStyle, whiteSpace: 'nowrap' }}>{pivot === 'day' ? formatDateUS(b.key) : b.key}</td>
                       {pivot === 'day' && <td style={{ ...pivotTdStyle, color: '#475569' }}>{b.who}</td>}
                       <td style={{ ...pivotTdStyle, textAlign: 'right' }}>{b.shifts || ''}</td>
-                      <td style={{ ...pivotTdStyle, textAlign: 'right', fontWeight: 700 }}>{b.shifts ? pivotQty(b.hours, b.dollars) : ''}</td>
+                      <td style={{ ...pivotTdStyle, textAlign: 'right', fontWeight: 700 }}>{b.shifts ? fmtQty(b.hours, qtyView) : ''}</td>
+                      {showDollars && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#166534', fontWeight: 600 }}>{b.shifts ? money(b.dollars) : ''}</td>}
                       {pivot !== 'day' && (
                         <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#64748b' }}>
                           {b.shifts && hoursStats.hours > 0 ? `${Math.round((b.hours / hoursStats.hours) * 100)}%` : ''}
                         </td>
                       )}
                       {hoursStats.visits > 0 && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#1d4ed8' }}>{b.visits || ''}</td>}
-                      {hoursStats.visits > 0 && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#1d4ed8', fontWeight: 700 }}>{b.visits ? pivotQty(b.rnHours, b.rnDollars) : ''}</td>}
+                      {hoursStats.visits > 0 && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#1d4ed8', fontWeight: 700 }}>{b.visits ? fmtQty(b.rnHours, qtyView) : ''}</td>}
+                      {hoursStats.visits > 0 && showDollars && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#166534', fontWeight: 600 }}>{b.visits ? money(b.rnDollars) : ''}</td>}
                     </tr>
                   ))}
                 </tbody>
@@ -1634,9 +1645,11 @@ export default function SubmissionsPage() {
                     <tr>
                       <td style={{ ...pivotTdStyle, fontWeight: 700 }} colSpan={2}>Total</td>
                       <td style={{ ...pivotTdStyle, textAlign: 'right' }}>{hoursStats.shifts}</td>
-                      <td style={{ ...pivotTdStyle, textAlign: 'right', fontWeight: 700 }}>{pivotQty(hoursStats.hours, hoursStats.dollars)}</td>
+                      <td style={{ ...pivotTdStyle, textAlign: 'right', fontWeight: 700 }}>{fmtQty(hoursStats.hours, qtyView)}</td>
+                      {showDollars && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#166534', fontWeight: 700 }}>{money(hoursStats.dollars)}</td>}
                       {hoursStats.visits > 0 && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#1d4ed8' }}>{hoursStats.visits}</td>}
-                      {hoursStats.visits > 0 && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#1d4ed8', fontWeight: 700 }}>{pivotQty(hoursStats.rnHours, hoursStats.rnDollars)}</td>}
+                      {hoursStats.visits > 0 && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#1d4ed8', fontWeight: 700 }}>{fmtQty(hoursStats.rnHours, qtyView)}</td>}
+                      {hoursStats.visits > 0 && showDollars && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#166534', fontWeight: 700 }}>{money(hoursStats.rnDollars)}</td>}
                     </tr>
                   </tfoot>
                 )}
@@ -1865,12 +1878,15 @@ export default function SubmissionsPage() {
                               {h == null ? (
                                 <span style={{ color: '#cbd5e1' }}>—</span>
                               ) : rn ? (
-                                <span style={rnHoursChipStyle}>RN {rowQtyText(s, h)}</span>
+                                <span style={rnHoursChipStyle}>RN {fmtQty(h, qtyView)}</span>
                               ) : (
                                 <>
-                                  <strong style={{ color: '#0f172a' }}>{rowQtyText(s, h)}</strong>
-                                  {partial && qtyView !== 'dollars' && <span style={{ color: '#94a3b8', fontSize: 11 }}> of {fmtQty(total, qtyView)}</span>}
+                                  <strong style={{ color: '#0f172a' }}>{fmtQty(h, qtyView)}</strong>
+                                  {partial && <span style={{ color: '#94a3b8', fontSize: 11 }}> of {fmtQty(total, qtyView)}</span>}
                                 </>
+                              )}
+                              {h != null && showDollars && (
+                                <div style={{ fontSize: 11.5, color: '#166534', fontWeight: 600 }}>{rowDollarText(s)}</div>
                               )}
                             </td>
                           );
@@ -2421,6 +2437,7 @@ const segmentedActiveStyle: React.CSSProperties = {
   color: 'white',
 };
 
+
 /** Blue = RN oversight hours, matching the client Hours tab. */
 const rnHoursChipStyle: React.CSSProperties = {
   display: 'inline-block',
@@ -2455,6 +2472,13 @@ const pivotBtnActiveStyle: React.CSSProperties = {
   // Longhand-free: overriding the `border` shorthand with borderColor makes
   // React warn about mixed shorthand/longhand on rerender.
   border: '1px solid #1a3a5c',
+};
+
+const dollarsBtnActiveStyle: React.CSSProperties = {
+  ...pivotBtnStyle,
+  background: '#166534',
+  color: 'white',
+  border: '1px solid #166534',
 };
 
 const pivotTableStyle: React.CSSProperties = {
