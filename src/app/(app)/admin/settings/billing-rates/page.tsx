@@ -78,12 +78,25 @@ function BillingRatesInner() {
     }
   };
 
+  // Grouped by program, and within a program ordered the way the fee
+  // schedules read: shift nursing before RN oversight, then by skill level
+  // (RN, LPN, CNA, HHA) with the catch-all "any nurse" row last, newest
+  // effective window first.
   const grouped = useMemo(() => {
+    const credRank = (c: string) => ({ RN: 0, LPN: 1, CNA: 2, HHA: 3 }[c] ?? 4);
     const m = new Map<string, BillingRate[]>();
     for (const r of rates || []) {
       const list = m.get(r.program) ?? [];
       list.push(r);
       m.set(r.program, list);
+    }
+    for (const list of m.values()) {
+      list.sort(
+        (a, b) =>
+          (a.bucket === b.bucket ? 0 : a.bucket === 'shift' ? -1 : 1) ||
+          credRank(a.credential) - credRank(b.credential) ||
+          b.effectiveFrom.localeCompare(a.effectiveFrom),
+      );
     }
     return m;
   }, [rates]);
@@ -137,20 +150,19 @@ function BillingRatesInner() {
           <div style={{ ...cardTitle, color: p.fg }}>
             <span style={{ ...programChip, background: p.bg, color: p.fg, border: `1px solid ${p.border}` }}>{p.label}</span>
             <span style={{ fontWeight: 500, color: '#5c6b7a', fontSize: 13 }}>{p.full}</span>
+            <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 500, color: '#94a3b8' }}>
+              {(grouped.get(p.id) || []).length} {(grouped.get(p.id) || []).length === 1 ? 'rate' : 'rates'}
+            </span>
           </div>
           <table style={table}>
             <thead>
               <tr>
-                <th style={th}>Covers</th>
-                <th style={th}>Nurse type</th>
-                <th style={th}>Code</th>
-                <th style={th}>Modifier</th>
-                <th style={th}>Description</th>
-                <th style={{ ...th, textAlign: 'right' }}>Rate / unit</th>
-                <th style={{ ...th, textAlign: 'right' }}>Per hour</th>
-                <th style={th}>Effective</th>
-                <th style={th}>Status</th>
-                <th style={{ ...th, textAlign: 'right' }}>Actions</th>
+                <th style={th}>Service</th>
+                <th style={{ ...th, width: 110 }}>Nurse type</th>
+                <th style={{ ...th, width: 120 }}>Code</th>
+                <th style={{ ...th, textAlign: 'right', width: 130 }}>Rate</th>
+                <th style={{ ...th, width: 190 }}>Effective</th>
+                <th style={{ ...th, textAlign: 'right', width: 90 }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -158,19 +170,32 @@ function BillingRatesInner() {
                 const active = r.effectiveFrom <= todayISO && (!r.effectiveTo || r.effectiveTo >= todayISO);
                 const future = r.effectiveFrom > todayISO;
                 return (
-                  <tr key={r.id} style={active ? undefined : { opacity: 0.6 }}>
-                    <td style={td}><span style={r.bucket === 'oversight' ? rnChip : shiftChip}>{bucketLabel(r.bucket)}</span></td>
-                    <td style={td}>{r.credential ? <span style={credChip}>{r.credential}</span> : <span style={{ color: '#7f8c8d' }}>Any</span>}</td>
-                    <td style={{ ...td, fontFamily: 'ui-monospace, monospace' }}>{r.serviceCode || '—'}</td>
-                    <td style={{ ...td, fontFamily: 'ui-monospace, monospace' }}>{r.modifier || '—'}</td>
-                    <td style={td}>{r.description || '—'}{r.note ? <div style={{ fontSize: 11.5, color: '#7f8c8d' }}>{r.note}</div> : null}</td>
-                    <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#166534', fontVariantNumeric: 'tabular-nums' }}>{fmtDollars(r.ratePerUnit)}</td>
-                    <td style={{ ...td, textAlign: 'right', color: '#5c6b7a', fontVariantNumeric: 'tabular-nums' }}>{fmtDollars(r.ratePerUnit * 4)}</td>
-                    <td style={{ ...td, whiteSpace: 'nowrap' }}>{formatDateUS(r.effectiveFrom)} to {r.effectiveTo ? formatDateUS(r.effectiveTo) : 'open'}</td>
-                    <td style={td}><span style={active ? okBadge : future ? futureBadge : endedBadge}>{active ? 'Active' : future ? 'Upcoming' : 'Ended'}</span></td>
+                  <tr key={r.id} style={active ? undefined : inactiveRow}>
+                    <td style={td}>
+                      <span style={r.bucket === 'oversight' ? rnChip : shiftChip}>{bucketLabel(r.bucket)}</span>
+                      {r.description && <div style={descStyle}>{r.description}</div>}
+                      {r.note && <div style={noteStyle}>{r.note}</div>}
+                    </td>
+                    <td style={td}>
+                      <span style={r.credential ? credChip : anyChip}>{r.credential || 'Any nurse'}</span>
+                    </td>
+                    <td style={td}>
+                      <span style={codeStyle}>{r.serviceCode || '—'}</span>
+                      {r.modifier && <span style={modifierStyle}>{r.modifier}</span>}
+                    </td>
+                    <td style={{ ...td, textAlign: 'right' }}>
+                      <div style={rateStyle}>{fmtDollars(r.ratePerUnit)}</div>
+                      <div style={perHourStyle}>{fmtDollars(r.ratePerUnit * 4)} / hour</div>
+                    </td>
+                    <td style={td}>
+                      <div style={{ whiteSpace: 'nowrap', color: '#334155' }}>
+                        {formatDateUS(r.effectiveFrom)} <span style={{ color: '#94a3b8' }}>to</span> {r.effectiveTo ? formatDateUS(r.effectiveTo) : <span style={{ color: '#94a3b8' }}>open</span>}
+                      </div>
+                      <span style={active ? okBadge : future ? futureBadge : endedBadge}>{active ? 'Active' : future ? 'Upcoming' : 'Ended'}</span>
+                    </td>
                     <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      <button type="button" onClick={() => setEditing(r)} style={iconBtn} aria-label="Edit rate"><Pencil size={14} /></button>
-                      <button type="button" onClick={() => remove(r)} style={{ ...iconBtn, color: '#b3261e', marginLeft: 6 }} aria-label="Delete rate"><Trash2 size={14} /></button>
+                      <button type="button" onClick={() => setEditing(r)} style={iconBtn} aria-label="Edit rate" title="Edit this rate"><Pencil size={14} /></button>
+                      <button type="button" onClick={() => remove(r)} style={{ ...iconBtn, color: '#b3261e', marginLeft: 6 }} aria-label="Delete rate" title="Delete this rate"><Trash2 size={14} /></button>
                     </td>
                   </tr>
                 );
@@ -312,19 +337,30 @@ const muted: CSSProperties = { fontSize: 13, color: '#5c6b7a', lineHeight: 1.45 
 const errBox: CSSProperties = { background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '8px 11px', fontSize: 13, marginBottom: 12 };
 const toastStyle: CSSProperties = { position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: '#1f2937', color: 'white', padding: '10px 18px', borderRadius: 8, fontSize: 13.5, zIndex: 4000 };
 const emptyStyle: CSSProperties = { padding: '20px 14px', color: '#7f8c8d', fontSize: 13, textAlign: 'center', background: '#f8fafc', borderRadius: 8, lineHeight: 1.5 };
-const card: CSSProperties = { background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: 18, marginBottom: 14 };
-const cardTitle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, fontSize: 15, fontWeight: 700, marginBottom: 12 };
-const programChip: CSSProperties = { display: 'inline-block', padding: '2px 9px', borderRadius: 999, fontSize: 11.5, fontWeight: 700 };
-const table: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
-const th: CSSProperties = { textAlign: 'left', padding: '6px 8px', borderBottom: '2px solid #e5e7eb', color: '#5c6b7a', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap' };
-const td: CSSProperties = { padding: '8px 8px', borderBottom: '1px solid #eef1f4', verticalAlign: 'top' };
-const badgeBase: CSSProperties = { display: 'inline-block', padding: '1px 7px', borderRadius: 999, fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3 };
-const okBadge: CSSProperties = { ...badgeBase, background: '#e9f6f2', color: '#14544a', border: '1px solid #b9e3d8' };
-const futureBadge: CSSProperties = { ...badgeBase, background: '#eef4fb', color: NAVY, border: '1px solid #c8def5' };
-const endedBadge: CSSProperties = { ...badgeBase, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0' };
+const card: CSSProperties = { background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '16px 18px 6px', marginBottom: 14 };
+const cardTitle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, fontSize: 15, fontWeight: 700, marginBottom: 14 };
+const programChip: CSSProperties = { display: 'inline-flex', alignItems: 'center', height: 24, padding: '0 11px', borderRadius: 999, fontSize: 12, fontWeight: 700 };
+const table: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13, tableLayout: 'fixed' };
+const th: CSSProperties = { textAlign: 'left', padding: '0 10px 8px', borderBottom: '1px solid #e5e7eb', color: '#94a3b8', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, whiteSpace: 'nowrap' };
+const td: CSSProperties = { padding: '12px 10px', borderBottom: '1px solid #f1f5f9', verticalAlign: 'middle' };
+const inactiveRow: CSSProperties = { background: '#fcfcfd', color: '#94a3b8' };
+const descStyle: CSSProperties = { marginTop: 5, fontSize: 12.5, color: '#334155', lineHeight: 1.4 };
+const noteStyle: CSSProperties = { marginTop: 3, fontSize: 11.5, color: '#94a3b8', lineHeight: 1.35 };
+const codeStyle: CSSProperties = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12.5, fontWeight: 600, color: '#334155' };
+const modifierStyle: CSSProperties = { marginLeft: 6, padding: '1px 6px', borderRadius: 4, background: '#f1f5f9', border: '1px solid #e2e8f0', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11.5, color: '#475569' };
+const rateStyle: CSSProperties = { fontSize: 16, fontWeight: 700, color: '#166534', fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 };
+const perHourStyle: CSSProperties = { fontSize: 11.5, color: '#94a3b8', fontVariantNumeric: 'tabular-nums', marginTop: 2 };
+// Chips: one line always (the old uppercase + letter-spacing wrapped
+// "RN OVERSIGHT" onto two lines in a narrow column), consistent height.
+const badgeBase: CSSProperties = { display: 'inline-flex', alignItems: 'center', height: 22, padding: '0 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap' };
+const statusBadge: CSSProperties = { ...badgeBase, height: 19, padding: '0 8px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, marginTop: 5 };
+const okBadge: CSSProperties = { ...statusBadge, background: '#e9f6f2', color: '#14544a', border: '1px solid #b9e3d8' };
+const futureBadge: CSSProperties = { ...statusBadge, background: '#eef4fb', color: NAVY, border: '1px solid #c8def5' };
+const endedBadge: CSSProperties = { ...statusBadge, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0' };
 const rnChip: CSSProperties = { ...badgeBase, background: '#dbeafe', color: '#1d4ed8', border: '1px solid #bfdbfe' };
 const shiftChip: CSSProperties = { ...badgeBase, background: '#e9f6f2', color: '#14544a', border: '1px solid #b9e3d8' };
 const credChip: CSSProperties = { ...badgeBase, background: '#eef4fb', color: NAVY, border: '1px solid #c8def5' };
+const anyChip: CSSProperties = { ...badgeBase, background: '#f8fafc', color: '#64748b', border: '1px solid #e2e8f0', fontWeight: 600 };
 const iconBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'white', border: '1px solid #d0d7de', borderRadius: 6, padding: 6, cursor: 'pointer', color: NAVY };
 const smallBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', border: '1px solid #d0d7de', borderRadius: 6, padding: '7px 12px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: NAVY, fontFamily: 'inherit' };
 const primaryBtn: CSSProperties = { ...smallBtn, background: NAVY, color: 'white', border: `1px solid ${NAVY}` };
