@@ -63,6 +63,8 @@ interface DayRow {
   dateISO: string;
   noteId: string;
   nurseName: string;
+  /** Author credential at submit time; picks the rate row on GAPP. */
+  credential: string;
   window: string;
   hours: number;
   /** True when this day's hours came from a shift whose date of service is another day. */
@@ -153,7 +155,7 @@ export default function HoursSection({ patientId, patientName, program, notes, u
             : `${formatDateUS(n.dateISO)} ${n.shiftStart} to ${formatDateUS(endDate)} ${n.shiftEnd}`
           : `${formatDateUS(n.dateISO)} (${fmtH(parseFloat(n.totalHours) || 0)} h, no times)`;
       for (const seg of segs) {
-        rows.push({ bucket, dateISO: seg.dateISO, noteId: n.id, nurseName: n.nurseName, window, hours: seg.hours, spill: seg.dateISO !== n.dateISO });
+        rows.push({ bucket, dateISO: seg.dateISO, noteId: n.id, nurseName: n.nurseName, credential: n.credential || '', window, hours: seg.hours, spill: seg.dateISO !== n.dateISO });
       }
     }
     return rows.sort((a, b) => a.dateISO.localeCompare(b.dateISO) || a.window.localeCompare(b.window));
@@ -185,25 +187,39 @@ export default function HoursSection({ patientId, patientName, program, notes, u
   // Rates come from the billing rate table by program + bucket + date. The
   // month figures use the rate in force on the 1st (a mid-month change is
   // priced per day on the worksheet).
-  const rateOn = (bucket: HoursBucket, dateISO: string): number | null => resolveRate(rates, program, bucket, dateISO);
-  const monthRate = (bucket: HoursBucket): number | null => rateOn(bucket, monthStartISO(month));
+  // The note author's credential picks a credential-specific row (GAPP pays
+  // LPN and RN shifts differently); an "any nurse" row is the fallback.
+  const rateOn = (bucket: HoursBucket, dateISO: string, credential = ''): number | null => resolveRate(rates, program, bucket, dateISO, credential);
+  /** Distinct rates in force this month for a bucket ("$8.50 LPN / $10.25 RN"). */
+  const monthRateLabel = (bucket: HoursBucket): string => {
+    const seen = new Map<string, number>();
+    for (const r of monthRows.filter((x) => x.bucket === bucket)) {
+      const rate = rateOn(bucket, r.dateISO, r.credential);
+      if (rate != null) seen.set(r.credential || 'any', rate);
+    }
+    if (seen.size === 0) {
+      const base = rateOn(bucket, monthStartISO(month));
+      return base == null ? '' : `${fmtDollars(base)}/unit`;
+    }
+    return Array.from(seen.entries()).map(([c, rate]) => `${fmtDollars(rate)}${seen.size > 1 || c !== 'any' ? ` ${c}` : ''}`).join(' / ') + '/unit';
+  };
   const qty = (hours: number): string => fmtQty(hours, view);
-  const money = (hours: number, bucket: HoursBucket, dateISO: string): string => {
-    const d = hoursToDollars(hours, rateOn(bucket, dateISO));
+  const money = (hours: number, bucket: HoursBucket, dateISO: string, credential = ''): string => {
+    const d = hoursToDollars(hours, rateOn(bucket, dateISO, credential));
     return d == null ? '—' : fmtDollars(d);
   };
-  // Month dollars: each day's billable units at that day's rate.
-  const monthDollars = (bucket: HoursBucket): number | null => {
-    const days = monthRows.filter((r) => r.bucket === bucket);
-    if (days.length === 0) return 0;
+  /** Dollars for a set of worksheet rows, each at its own day + credential rate. */
+  const rowsDollars = (list: DayRow[]): number | null => {
+    if (list.length === 0) return 0;
     let sum = 0;
-    for (const r of days) {
-      const d = hoursToDollars(r.hours, rateOn(bucket, r.dateISO));
+    for (const r of list) {
+      const d = hoursToDollars(r.hours, rateOn(r.bucket, r.dateISO, r.credential));
       if (d == null) return null;
       sum += d;
     }
     return Math.round(sum * 100) / 100;
   };
+  const monthDollars = (bucket: HoursBucket): number | null => rowsDollars(monthRows.filter((r) => r.bucket === bucket));
   const shiftDollars = monthDollars('shift');
   const rnDollars = monthDollars('oversight');
   const monthUnits = (bucket: HoursBucket): number => monthRows.filter((r) => r.bucket === bucket).reduce((a, r) => a + hoursToUnits(r.hours), 0);
@@ -330,15 +346,15 @@ export default function HoursSection({ patientId, patientName, program, notes, u
         <div style={billingLine}>
           <span>
             <strong>Shift:</strong> {fmtH(shiftUsage.used)} h = {fmtUnits(monthUnits('shift'))} units
-            {shiftDollars != null && monthRate('shift') != null
-              ? <> = <strong>{fmtDollars(shiftDollars)}</strong> at {fmtDollars(monthRate('shift') as number)}/unit</>
-              : <span style={{ color: '#b45309' }}> · no billing rate for this program (Settings → Billing rates)</span>}
+            {shiftDollars != null && monthRateLabel('shift')
+              ? <> = <strong>{fmtDollars(shiftDollars)}</strong> at {monthRateLabel('shift')}</>
+              : <span style={{ color: '#b45309' }}> · no billing rate for this program / nurse type (Settings → Billing rates)</span>}
           </span>
           {hasOversight && (
             <span style={{ color: '#1d4ed8' }}>
               <strong>RN oversight:</strong> {fmtH(rnUsage.used)} h = {fmtUnits(monthUnits('oversight'))} units
-              {rnDollars != null && monthRate('oversight') != null
-                ? <> = <strong>{fmtDollars(rnDollars)}</strong> at {fmtDollars(monthRate('oversight') as number)}/unit</>
+              {rnDollars != null && monthRateLabel('oversight')
+                ? <> = <strong>{fmtDollars(rnDollars)}</strong> at {monthRateLabel('oversight')}</>
                 : <span style={{ color: '#b45309' }}> · no billing rate for this program</span>}
             </span>
           )}
@@ -430,7 +446,7 @@ export default function HoursSection({ patientId, patientName, program, notes, u
                           <span style={overBadge} title="More than 24 shift hours documented on one calendar day: overlapping shifts">&gt;24h</span>
                         )}
                       </td>
-                      <td style={td}>{r.nurseName || '—'}</td>
+                      <td style={td}>{r.nurseName || '—'}{r.credential && <span style={credTag}>{r.credential}</span>}</td>
                       <td style={td}>
                         {isRn && <span style={rnChip} title="RN oversight visit">RN visit</span>}
                         <Link href={`/admin/submissions/${r.noteId}`} style={{ color: NAVY }}>{r.window}</Link>
@@ -440,7 +456,14 @@ export default function HoursSection({ patientId, patientName, program, notes, u
                         )}
                       </td>
                       <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: isRn ? '#1d4ed8' : undefined }}>{qty(r.hours)}</td>
-                      {showDollars && <td style={{ ...td, textAlign: 'right', color: '#166534', fontVariantNumeric: 'tabular-nums' }}>{money(r.hours, r.bucket, r.dateISO)}</td>}
+                      {showDollars && (
+                        <td
+                          style={{ ...td, textAlign: 'right', color: '#166534', fontVariantNumeric: 'tabular-nums' }}
+                          title={(() => { const rate = rateOn(r.bucket, r.dateISO, r.credential); return rate == null ? `No billing rate for this program${r.credential ? ` (${r.credential})` : ''}` : `${fmtUnits(hoursToUnits(r.hours))} units × ${fmtDollars(rate)}${r.credential ? ` (${r.credential} rate)` : ''}`; })()}
+                        >
+                          {money(r.hours, r.bucket, r.dateISO, r.credential)}
+                        </td>
+                      )}
                       <td style={{ ...td, textAlign: 'right', color: '#5c6b7a', fontVariantNumeric: 'tabular-nums' }}>{isRn ? '' : view === 'units' ? fmtUnits(runningUnits) : fmtH(running)}</td>
                     </tr>,
                   );
@@ -459,10 +482,10 @@ export default function HoursSection({ patientId, patientName, program, notes, u
                           <td style={{ ...td, color: '#5c6b7a' }} colSpan={2}>
                             {dayShift.length > 0 && `${dayShift.length} shift ${dayShift.length === 1 ? 'entry' : 'entries'}`}
                             {dayShift.length > 0 && dayRn.length > 0 && ' · '}
-                            {dayRn.length > 0 && <span style={{ color: '#1d4ed8' }}>{dayRn.length} RN {dayRn.length === 1 ? 'visit' : 'visits'} ({qty(rnSum)}{showDollars ? `, ${money(rnSum, 'oversight', r.dateISO)}` : ''})</span>}
+                            {dayRn.length > 0 && <span style={{ color: '#1d4ed8' }}>{dayRn.length} RN {dayRn.length === 1 ? 'visit' : 'visits'} ({qty(rnSum)}{showDollars ? `, ${(() => { const d = rowsDollars(dayRn); return d == null ? '—' : fmtDollars(d); })()}` : ''})</span>}
                           </td>
                           <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: NAVY, fontVariantNumeric: 'tabular-nums' }}>{dayShift.length > 0 ? qty(shiftSum) : ''}</td>
-                          {showDollars && <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#166534', fontVariantNumeric: 'tabular-nums' }}>{dayShift.length > 0 ? money(shiftSum, 'shift', r.dateISO) : ''}</td>}
+                          {showDollars && <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#166534', fontVariantNumeric: 'tabular-nums' }}>{dayShift.length > 0 ? (() => { const d = rowsDollars(dayShift); return d == null ? '—' : fmtDollars(d); })() : ''}</td>}
                           <td style={td} />
                         </tr>,
                       );
@@ -970,6 +993,7 @@ const field: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4,
 const label: CSSProperties = { fontSize: 11.5, fontWeight: 700, color: '#5c6b7a', textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap' };
 const billingLine: CSSProperties = { display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 12, padding: '8px 12px', background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 13, color: '#334155' };
 const dayTotalRow: CSSProperties = { background: '#f0f7ff' };
+const credTag: CSSProperties = { display: 'inline-block', marginLeft: 6, padding: '0 5px', borderRadius: 4, fontSize: 10, fontWeight: 700, background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', verticalAlign: 'middle' };
 const segmented: CSSProperties = { display: 'inline-flex', border: '1px solid #c8def5', borderRadius: 6, overflow: 'hidden', background: 'white' };
 const segmentedBtn: CSSProperties = { background: 'white', color: NAVY, border: 'none', padding: '5px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const segmentedActive: CSSProperties = { ...segmentedBtn, background: NAVY, color: 'white' };

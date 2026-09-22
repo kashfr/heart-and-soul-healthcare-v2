@@ -167,6 +167,7 @@ service cloud.firestore {
       allow create, update: if isAdmin()
         && incomingData().program is string && incomingData().program.size() > 0 && incomingData().program.size() <= 40
         && incomingData().bucket in ['shift', 'oversight']
+        && incomingData().credential in ['', 'LPN', 'RN', 'HHA', 'CNA']
         && incomingData().serviceCode is string && incomingData().serviceCode.size() <= 20
         && incomingData().modifier is string && incomingData().modifier.size() <= 20
         && incomingData().description is string && incomingData().description.size() <= 120

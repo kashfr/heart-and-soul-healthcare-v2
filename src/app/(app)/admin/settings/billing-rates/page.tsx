@@ -9,6 +9,7 @@ import { withSelectChevron } from '@/lib/selectChevron';
 import { PROGRAMS, getProgram } from '@/lib/programs';
 import { formatDateUS } from '@/lib/dateFormat';
 import { bucketLabel, fmtDollars, type HoursBucket } from '@/lib/shiftHours';
+import { RATE_CREDENTIALS } from '@/lib/billingRatesShared';
 import {
   addBillingRate,
   deleteBillingRate,
@@ -102,8 +103,10 @@ function BillingRatesInner() {
           <h1 style={titleStyle}><DollarSign size={20} /> Billing rates</h1>
           <p style={subStyle}>
             Dollars per 15-minute unit by program, for shift nursing (LPN / HHA / CNA shift notes) and RN oversight visits,
-            with the claim code and modifier. When a rate changes, end the current row and add a new one with the new
-            effective date so earlier months keep pricing at the rate that applied. These feed the $ views on the Shift
+            with the claim code and modifier. Limit a row to a nurse type when the payer pays LPN and RN shifts differently
+            (GAPP): the note author&apos;s credential picks the matching row, and a row for &quot;any nurse&quot; is the fallback.
+            When a rate changes, end the current row and add a new one with the new effective date so earlier months keep
+            pricing at the rate that applied. These feed the $ views on the Shift
             Notes list and each client&apos;s Hours tab. Only you can see this.
           </p>
         </div>
@@ -139,6 +142,7 @@ function BillingRatesInner() {
             <thead>
               <tr>
                 <th style={th}>Covers</th>
+                <th style={th}>Nurse type</th>
                 <th style={th}>Code</th>
                 <th style={th}>Modifier</th>
                 <th style={th}>Description</th>
@@ -156,6 +160,7 @@ function BillingRatesInner() {
                 return (
                   <tr key={r.id} style={active ? undefined : { opacity: 0.6 }}>
                     <td style={td}><span style={r.bucket === 'oversight' ? rnChip : shiftChip}>{bucketLabel(r.bucket)}</span></td>
+                    <td style={td}>{r.credential ? <span style={credChip}>{r.credential}</span> : <span style={{ color: '#7f8c8d' }}>Any</span>}</td>
                     <td style={{ ...td, fontFamily: 'ui-monospace, monospace' }}>{r.serviceCode || '—'}</td>
                     <td style={{ ...td, fontFamily: 'ui-monospace, monospace' }}>{r.modifier || '—'}</td>
                     <td style={td}>{r.description || '—'}{r.note ? <div style={{ fontSize: 11.5, color: '#7f8c8d' }}>{r.note}</div> : null}</td>
@@ -186,6 +191,7 @@ function RateForm({ existing, uid, onCancel, onSaved }: {
 }) {
   const [program, setProgram] = useState(existing?.program ?? '');
   const [bucket, setBucket] = useState<HoursBucket>(existing?.bucket ?? 'shift');
+  const [credential, setCredential] = useState(existing?.credential ?? '');
   const [serviceCode, setServiceCode] = useState(existing?.serviceCode ?? '');
   const [modifier, setModifier] = useState(existing?.modifier ?? '');
   const [description, setDescription] = useState(existing?.description ?? '');
@@ -208,6 +214,7 @@ function RateForm({ existing, uid, onCancel, onSaved }: {
     const input: BillingRateInput = {
       program,
       bucket,
+      credential,
       serviceCode: serviceCode.trim(),
       modifier: modifier.trim(),
       description: description.trim(),
@@ -247,6 +254,14 @@ function RateForm({ existing, uid, onCancel, onSaved }: {
           <select value={bucket} onChange={(e) => setBucket(e.target.value as HoursBucket)} style={select}>
             <option value="shift">Shift hours (LPN / HHA / CNA shift notes)</option>
             <option value="oversight">RN oversight visits</option>
+          </select>
+        </label>
+        <label style={field}>
+          <span style={label} title="Limit this rate to notes written by this nurse type. Leave on Any when the payer pays the same regardless.">Nurse type</span>
+          <select value={credential} onChange={(e) => setCredential(e.target.value)} style={select}>
+            {RATE_CREDENTIALS.map((c) => (
+              <option key={c || 'any'} value={c}>{c || 'Any nurse'}</option>
+            ))}
           </select>
         </label>
         <label style={field}>
@@ -309,6 +324,7 @@ const futureBadge: CSSProperties = { ...badgeBase, background: '#eef4fb', color:
 const endedBadge: CSSProperties = { ...badgeBase, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0' };
 const rnChip: CSSProperties = { ...badgeBase, background: '#dbeafe', color: '#1d4ed8', border: '1px solid #bfdbfe' };
 const shiftChip: CSSProperties = { ...badgeBase, background: '#e9f6f2', color: '#14544a', border: '1px solid #b9e3d8' };
+const credChip: CSSProperties = { ...badgeBase, background: '#eef4fb', color: NAVY, border: '1px solid #c8def5' };
 const iconBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'white', border: '1px solid #d0d7de', borderRadius: 6, padding: 6, cursor: 'pointer', color: NAVY };
 const smallBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', border: '1px solid #d0d7de', borderRadius: 6, padding: '7px 12px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: NAVY, fontFamily: 'inherit' };
 const primaryBtn: CSSProperties = { ...smallBtn, background: NAVY, color: 'white', border: `1px solid ${NAVY}` };

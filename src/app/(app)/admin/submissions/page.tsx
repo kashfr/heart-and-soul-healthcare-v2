@@ -44,8 +44,9 @@ import {
   type QtyView,
 } from '@/lib/shiftHours';
 import { getBillingRates, type BillingRate } from '@/lib/billingRates';
-import { resolveRate } from '@/lib/billingRatesShared';
+import { resolveRate, resolveRateRow } from '@/lib/billingRatesShared';
 import { getPatients } from '@/lib/patients';
+import { getProgram } from '@/lib/programs';
 import { formatDateUS, formatDateUSFile } from '@/lib/dateFormat';
 
 const MAX_BATCH = 50;
@@ -93,7 +94,7 @@ interface HoursPivotRow {
   /** Dollars at each client's line rate; null when any counted row lacks a rate. */
   dollars: number | null;
   rnDollars: number | null;
-  /** By-day pivot only: who worked that day. */
+  /** By-day pivot only: who worked that day. By-nurse pivot: the nurse's credential(s). */
   who?: string;
 }
 
@@ -449,7 +450,9 @@ export default function SubmissionsPage() {
     (s: SubmissionSummary) => {
       const program = s.patientId ? programByPatient.get(s.patientId) || '' : '';
       const bucket = bucketOf(s);
-      return (dateISO: string) => resolveRate(rates, program, bucket, dateISO);
+      // The note author's credential picks a credential-specific row (GAPP
+      // pays LPN and RN shifts differently); an "any nurse" row is the fallback.
+      return (dateISO: string) => resolveRate(rates, program, bucket, dateISO, s.credential);
     },
     [rates, programByPatient],
   );
@@ -460,6 +463,20 @@ export default function SubmissionsPage() {
         (seg) => (!rangeActive || !rangeFrom || seg.dateISO >= rangeFrom) && (!rangeActive || !rangeTo || seg.dateISO <= rangeTo),
       ),
     [segmentsById, rangeActive, rangeFrom, rangeTo],
+  );
+  /** "45 units × $24.36 (NOW/COMP, any nurse)" for the $ cell's tooltip. */
+  const rateHint = useCallback(
+    (s: SubmissionSummary): string => {
+      const program = s.patientId ? programByPatient.get(s.patientId) || '' : '';
+      const segs = rowSegments(s);
+      const first = segs[0];
+      if (!program || !first) return 'Not linked to a client on the roster, so no program to price by.';
+      const row = resolveRateRow(rates, program, bucketOf(s), first.dateISO, s.credential);
+      const programLabel = getProgram(program)?.label || program;
+      if (!row) return `No billing rate for ${programLabel} ${bucketOf(s) === 'oversight' ? 'RN oversight' : 'shift hours'}${s.credential ? ` (${s.credential})` : ''}. Add one under Settings → Billing rates.`;
+      return `${fmtUnits(segmentsToUnits(segs))} units × ${fmtDollars(row.ratePerUnit)} (${programLabel}, ${row.credential || 'any nurse'}${row.serviceCode ? `, ${row.serviceCode}${row.modifier ? ` ${row.modifier}` : ''}` : ''})`;
+    },
+    [rates, programByPatient, rowSegments],
   );
   /** Billable units for a row (each day rounded up to whole units). */
   const rowUnits = useCallback((s: SubmissionSummary): number => segmentsToUnits(rowSegments(s)), [rowSegments]);
@@ -662,6 +679,7 @@ export default function SubmissionsPage() {
     const byClient = new Map<string, HoursPivotRow>();
     const byNurse = new Map<string, HoursPivotRow>();
     const byDay = new Map<string, HoursPivotRow & { nurses: Set<string> }>();
+    const credsByNurse = new Map<string, Set<string>>();
     let units = 0;
     let rnUnits = 0;
     const blank = (key: string): HoursPivotRow => ({ key, hours: 0, units: 0, shifts: 0, rnHours: 0, rnUnits: 0, visits: 0, dollars: 0, rnDollars: 0 });
@@ -701,6 +719,11 @@ export default function SubmissionsPage() {
       }
       bump(byClient, s.clientName || '(no client)', h, u, d, rn);
       bump(byNurse, s.nurseName || '(no nurse)', h, u, d, rn);
+      if (s.credential) {
+        const set = credsByNurse.get(s.nurseName || '(no nurse)') ?? new Set<string>();
+        set.add(s.credential);
+        credsByNurse.set(s.nurseName || '(no nurse)', set);
+      }
       // By day: each calendar day carries exactly the hours worked on it
       // (an overnight shift lands on two days), rounded and priced per day.
       const rateFor = rateResolverFor(s);
@@ -745,7 +768,7 @@ export default function SubmissionsPage() {
       clients: byClient.size,
       nurses: byNurse.size,
       byClient: finish(byClient),
-      byNurse: finish(byNurse),
+      byNurse: finish(byNurse).map((b) => ({ ...b, who: Array.from(credsByNurse.get(b.key) ?? []).sort().join(' / ') })),
       byDay: days,
     };
   }, [sorted, rowHours, rowUnits, rowDollars, rowSegments, rateResolverFor, showHours]);
@@ -1657,6 +1680,7 @@ export default function SubmissionsPage() {
                   <tr>
                     <th style={pivotThStyle}>{pivot === 'client' ? 'Client' : pivot === 'nurse' ? 'Nurse' : 'Day'}</th>
                     {pivot === 'day' && <th style={pivotThStyle}>Who</th>}
+                    {pivot === 'nurse' && <th style={pivotThStyle}>Type</th>}
                     <th style={{ ...pivotThStyle, textAlign: 'right' }}>Shifts</th>
                     <th style={{ ...pivotThStyle, textAlign: 'right' }}>{qtyView === 'hours' ? 'Shift hours' : 'Shift units'}</th>
                     {showDollars && <th style={{ ...pivotThStyle, textAlign: 'right', color: '#166534' }}>Shift $</th>}
@@ -1671,6 +1695,7 @@ export default function SubmissionsPage() {
                     <tr key={b.key}>
                       <td style={{ ...pivotTdStyle, whiteSpace: 'nowrap' }}>{pivot === 'day' ? formatDateUS(b.key) : b.key}</td>
                       {pivot === 'day' && <td style={{ ...pivotTdStyle, color: '#475569' }}>{b.who}</td>}
+                      {pivot === 'nurse' && <td style={{ ...pivotTdStyle, color: '#475569' }}>{b.who}</td>}
                       <td style={{ ...pivotTdStyle, textAlign: 'right' }}>{b.shifts || ''}</td>
                       <td style={{ ...pivotTdStyle, textAlign: 'right', fontWeight: 700 }}>{b.shifts ? pq(b.hours, b.units) : ''}</td>
                       {showDollars && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#166534', fontWeight: 600 }}>{b.shifts ? money(b.dollars) : ''}</td>}
@@ -1931,7 +1956,7 @@ export default function SubmissionsPage() {
                                 </>
                               )}
                               {h != null && showDollars && (
-                                <div style={{ fontSize: 11.5, color: '#166534', fontWeight: 600 }}>{rowDollarText(s)}</div>
+                                <div style={{ fontSize: 11.5, color: '#166534', fontWeight: 600 }} title={rateHint(s)}>{rowDollarText(s)}</div>
                               )}
                             </td>
                           );
