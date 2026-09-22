@@ -71,6 +71,11 @@ export interface PatientDocument {
   /** Present on documents the server filed from a submitted note. */
   sourceNoteId?: string;
   autoFiled?: boolean;
+  /** Set when an admin moved the document here from another client's chart. */
+  movedFrom?: { patientId: string; documentId: string };
+  movedAt?: unknown;
+  movedBy?: string;
+  movedByName?: string;
 }
 
 export interface DocUploader {
@@ -438,4 +443,20 @@ export async function syncNoteDocuments(patientId: string): Promise<{ filed: num
   const body = (await res.json().catch(() => ({}))) as { filed?: number; skipped?: number; errors?: string[]; error?: string };
   if (!res.ok) throw new Error(body.error || 'Could not sync the notes.');
   return { filed: body.filed ?? 0, skipped: body.skipped ?? 0, errors: body.errors ?? [] };
+}
+
+/** Admin-only: move a wrongly filed document to another client (privileged route). */
+export async function movePatientDocument(
+  id: string,
+  toPatientId: string,
+  opts: { title?: string; docDate?: string; category?: DocCategory } = {},
+): Promise<{ documentId: string }> {
+  const res = await authedFetch(`/api/documents/${id}/move`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ toPatientId, ...opts }),
+  });
+  const body = (await res.json().catch(() => ({}))) as { documentId?: string; error?: string };
+  if (!res.ok || !body.documentId) throw new Error(body.error || 'Could not move the document.');
+  return { documentId: body.documentId };
 }

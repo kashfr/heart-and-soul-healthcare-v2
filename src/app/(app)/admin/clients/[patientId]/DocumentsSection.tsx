@@ -1,8 +1,8 @@
 'use client';
 
-import { useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import Link from 'next/link';
-import { Archive, ArchiveRestore, ExternalLink, FileText, FileUp, Image as ImageIcon, Pencil, RefreshCw, Replace, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, ArrowRightLeft, ExternalLink, FileText, FileUp, Image as ImageIcon, Pencil, RefreshCw, Replace, Trash2 } from 'lucide-react';
 import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
 import { withSelectChevron } from '@/lib/selectChevron';
 import {
@@ -10,6 +10,7 @@ import {
   DOC_CATEGORIES,
   deletePatientDocument,
   getDocumentBlob,
+  movePatientDocument,
   renderDocumentInWindow,
   replaceDocumentFile,
   setDocumentArchived,
@@ -20,6 +21,7 @@ import {
   type DocUploader,
   type PatientDocument,
 } from '@/lib/patientDocuments';
+import { getPatients, type Patient } from '@/lib/patients';
 
 function todayISO(): string {
   const d = new Date();
@@ -71,6 +73,7 @@ export default function DocumentsSection({
   const [uploadOpen, setUploadOpen] = useState(false);
   const [editing, setEditing] = useState<PatientDocument | null>(null);
   const [replacing, setReplacing] = useState<PatientDocument | null>(null);
+  const [moving, setMoving] = useState<PatientDocument | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
 
@@ -233,6 +236,7 @@ export default function DocumentsSection({
                   {d.size ? ` · ${fmtSize(d.size)}` : ''}
                   {d.uploadedByName ? ` · ${d.autoFiled ? 'documented' : 'uploaded'} by ${d.uploadedByName}` : ''}
                   {d.replacedByName ? ` · file replaced by ${d.replacedByName}` : ''}
+                  {d.movedByName ? ` · moved here by ${d.movedByName}` : ''}
                   {d.sourceNoteId && (
                     <>
                       {' · '}
@@ -269,6 +273,11 @@ export default function DocumentsSection({
                     {d.archived ? ' Restore' : ' Archive'}
                   </button>
                 )}
+                {isAdmin && !d.autoFiled && (
+                  <button type="button" onClick={() => setMoving(d)} disabled={busyId === d.id} style={actionBtnStyle} title="Move this document to another client's chart (uploaded to the wrong client)">
+                    <ArrowRightLeft size={14} /> Move
+                  </button>
+                )}
                 {isAdmin && (
                   <button type="button" onClick={() => remove(d)} disabled={busyId === d.id} style={{ ...actionBtnStyle, color: '#b3261e', borderColor: '#f3b8b8' }} title="Permanently delete this document (admin only)">
                     <Trash2 size={14} /> Delete
@@ -297,6 +306,17 @@ export default function DocumentsSection({
           onClose={() => setEditing(null)}
           onSaved={(title) => {
             onToast(`Updated "${title}".`);
+            onChanged();
+          }}
+        />
+      )}
+      {moving && (
+        <MoveDocumentModal
+          document={moving}
+          currentPatientId={patientId}
+          onClose={() => setMoving(null)}
+          onMoved={(title, toName) => {
+            onToast(`Moved "${title}" to ${toName}.`);
             onChanged();
           }}
         />
@@ -403,6 +423,95 @@ function EditDocumentModal({
         <div style={actionsStyle}>
           <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={saving}>Cancel</button>
           <button type="button" style={saveBtnStyle} onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Admin: move a document uploaded to the wrong client. Title/date/category can be corrected on the way. */
+function MoveDocumentModal({
+  document: d,
+  currentPatientId,
+  onClose,
+  onMoved,
+}: {
+  document: PatientDocument;
+  currentPatientId: string;
+  onClose: () => void;
+  onMoved: (title: string, toName: string) => void;
+}) {
+  const [patients, setPatients] = useState<Patient[] | null>(null);
+  const [toPatientId, setToPatientId] = useState('');
+  const [title, setTitle] = useState(d.title);
+  const [category, setCategory] = useState<DocCategory | ''>((DOC_CATEGORIES as readonly string[]).includes(d.category) ? (d.category as DocCategory) : '');
+  const [docDate, setDocDate] = useState(d.docDate || '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getPatients().then((list) => { if (!cancelled) setPatients(list.filter((p) => p.id !== currentPatientId)); });
+    return () => { cancelled = true; };
+  }, [currentPatientId]);
+
+  const target = patients?.find((p) => p.id === toPatientId) || null;
+
+  const save = async () => {
+    if (saving || !d.id) return;
+    if (!toPatientId) { setError('Choose the client this document belongs to.'); return; }
+    if (!title.trim()) { setError('Enter a title.'); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(docDate)) { setError('Enter the date on the document.'); return; }
+    if (!window.confirm(`Move "${title.trim()}" to ${target?.name || 'the selected client'}?\n\nIt disappears from this client's documents and appears on theirs. The original entry is recorded in the deletion audit.`)) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await movePatientDocument(d.id, toPatientId, { title: title.trim(), docDate, ...(category ? { category } : {}) });
+      onMoved(title.trim(), target?.name || 'the other client');
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not move the document.');
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={backdropStyle} role="dialog" aria-modal="true" aria-label="Move document to another client">
+      <div style={sheetStyle}>
+        <div style={sheetTitleStyle}>Move to another client</div>
+        <div style={{ ...hintStyle, marginBottom: 12 }}>File: {d.fileName}. Fix the title, category, or date at the same time if they were wrong too.</div>
+        <label style={fieldStyle}>
+          <span style={fieldLabelStyle}>Move to *</span>
+          <select value={toPatientId} onChange={(e) => { setToPatientId(e.target.value); setError(null); }} style={selectStyle} disabled={!patients}>
+            <option value="">{patients ? 'Select a client…' : 'Loading clients…'}</option>
+            {(patients || []).map((p) => (
+              <option key={p.id} value={p.id}>{p.name}{p.mrn ? ` (#${p.mrn})` : ''}</option>
+            ))}
+          </select>
+        </label>
+        <label style={fieldStyle}>
+          <span style={fieldLabelStyle}>Title *</span>
+          <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} style={inputStyle} />
+        </label>
+        <div style={grid2Style}>
+          <label style={fieldStyle}>
+            <span style={fieldLabelStyle}>Category</span>
+            <select value={category} onChange={(e) => setCategory(e.target.value as DocCategory)} style={selectStyle}>
+              <option value="">Keep current</option>
+              {DOC_CATEGORIES.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </label>
+          <label style={fieldStyle}>
+            <span style={fieldLabelStyle}>Date on the document *</span>
+            <input type="date" value={docDate} onChange={(e) => setDocDate(e.target.value)} style={inputStyle} />
+          </label>
+        </div>
+        {error && <div style={errBoxStyle}>{error}</div>}
+        <div style={actionsStyle}>
+          <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="button" style={saveBtnStyle} onClick={save} disabled={saving || !patients}>{saving ? 'Moving…' : 'Move document'}</button>
         </div>
       </div>
     </div>
