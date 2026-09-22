@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useParams, usePathname } from 'next/navigation';
+import { useParams, usePathname, useSearchParams } from 'next/navigation';
 import { ArrowLeft, ChevronLeft, ChevronRight, FileDown, Pill, PlusCircle } from 'lucide-react';
 import {
   getPatient,
@@ -142,7 +142,13 @@ export default function MonthlyMarPage() {
     credential: profile?.credential || '',
   };
 
-  const [month, setMonth] = useState(currentMonth());
+  // Deep links (?month=YYYY-MM) open the MAR on that month — the client
+  // dashboard's activity feed links a dose to the month it was charted in.
+  const searchParams = useSearchParams();
+  const monthParam = searchParams.get('month');
+  const [month, setMonth] = useState(
+    monthParam && /^\d{4}-\d{2}$/.test(monthParam) ? monthParam : currentMonth(),
+  );
   const [patient, setPatient] = useState<Patient | null>(null);
   const [clinical, setClinical] = useState<PatientClinical | null>(null);
   const [orders, setOrders] = useState<MarOrder[]>([]);

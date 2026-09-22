@@ -133,6 +133,10 @@ interface ActivityItem {
   when: Date;
   text: string;
   kind: 'note' | 'med' | 'dose';
+  /** Where the entry came from, so the row opens the actual record. */
+  href?: string;
+  /** Tooltip on the link ("Open this progress note"). */
+  hint?: string;
 }
 
 function tsToDate(v: unknown): Date | null {
@@ -305,6 +309,10 @@ function ClientDashboardInner() {
     return n ? [n.addrLine1, n.city, n.state, n.postal].filter(Boolean).join(', ') : '';
   }, [patient, notes]);
 
+  // Declared before the activity memo below, which links medication and
+  // dose entries into the MAR.
+  const marHref = isNurse ? `/admin/mar/${patientId}` : `/admin/records/${patientId}/mar`;
+
   const activity = useMemo<ActivityItem[]>(() => {
     const items: ActivityItem[] = [];
     // Rank note candidates by WHEN THEY WERE SUBMITTED, not date of service —
@@ -317,17 +325,35 @@ function ClientDashboardInner() {
       items.push({
         when: n.submittedAt as Date,
         kind: 'note',
-        text: `Progress note for ${fmtDate(n.dateISO)} by ${n.nurseName || 'a nurse'}${n.credential ? `, ${n.credential}` : ''}`,
+        text: `${n.noteType === 'rn-oversight-visit' ? 'RN oversight visit' : 'Progress note'} for ${fmtDate(n.dateISO)} by ${n.nurseName || 'a nurse'}${n.credential ? `, ${n.credential}` : ''}`,
+        href: `/admin/submissions/${n.id}`,
+        hint: 'Open this note',
       });
     }
+    // Medication entries open the MAR on the month the change was made, so a
+    // med added in July doesn't land on the current month's grid.
+    const marMonthHref = (d: Date) =>
+      `${marHref}?month=${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     for (const o of orders) {
       const created = tsToDate(o.createdAt);
       if (created) {
-        items.push({ when: created, kind: 'med', text: `Medication added: ${o.medName} ${o.dose}${o.units ? ` ${o.units}` : ''}${o.createdByName ? ` (by ${o.createdByName})` : ''}` });
+        items.push({
+          when: created,
+          kind: 'med',
+          text: `Medication added: ${o.medName} ${o.dose}${o.units ? ` ${o.units}` : ''}${o.createdByName ? ` (by ${o.createdByName})` : ''}`,
+          href: marMonthHref(created),
+          hint: `Open the MAR for ${o.medName}`,
+        });
       }
       const dced = tsToDate(o.discontinuedAt);
       if (dced) {
-        items.push({ when: dced, kind: 'med', text: `Medication discontinued: ${o.medName}${o.discontinuedByName ? ` (by ${o.discontinuedByName})` : ''}` });
+        items.push({
+          when: dced,
+          kind: 'med',
+          text: `Medication discontinued: ${o.medName}${o.discontinuedByName ? ` (by ${o.discontinuedByName})` : ''}`,
+          href: marMonthHref(dced),
+          hint: `Open the MAR for ${o.medName}`,
+        });
       }
     }
     // Amendment-resolved, so a corrected record never shows beside its correction.
@@ -335,15 +361,23 @@ function ClientDashboardInner() {
       if (a.status === 'held' || a.status === 'refused') {
         const when = tsToDate(a.at);
         if (when) {
-          items.push({ when, kind: 'dose', text: `Dose ${a.status}: ${a.medNameSnapshot} on ${fmtDate(a.date)}${a.reason ? ` (${a.reason})` : ''}` });
+          // The dose's own date drives the month (a late entry for the 30th
+          // charted on the 1st belongs to the month it was given in).
+          const month = /^\d{4}-\d{2}/.test(a.date) ? a.date.slice(0, 7) : null;
+          items.push({
+            when,
+            kind: 'dose',
+            text: `Dose ${a.status}: ${a.medNameSnapshot} on ${fmtDate(a.date)}${a.reason ? ` (${a.reason})` : ''}`,
+            href: month ? `${marHref}?month=${month}` : marHref,
+            hint: `Open the MAR for ${fmtDate(a.date)}`,
+          });
         }
       }
     }
     return items.sort((x, y) => y.when.getTime() - x.when.getTime()).slice(0, 10);
-  }, [notes, orders, admins]);
+  }, [notes, orders, admins, marHref]);
 
   const age = patient?.dob ? ageYears(patient.dob, today) : null;
-  const marHref = isNurse ? `/admin/mar/${patientId}` : `/admin/records/${patientId}/mar`;
 
   // Survey-readiness signals (baseline thresholds; tune with the compliance nurse).
   const timelinessSignal: Signal =
@@ -920,17 +954,38 @@ function ClientDashboardInner() {
               <div style={emptyInlineStyle}>Nothing documented yet for this client.</div>
             ) : (
               <ul style={activityListStyle}>
-                {activity.map((a, i) => (
-                  <li key={i} style={activityRowStyle}>
-                    <span style={activityIconStyle(a.kind)}>
-                      {a.kind === 'note' ? <FileText size={13} /> : a.kind === 'med' ? <Pill size={13} /> : <AlertTriangle size={13} />}
-                    </span>
-                    <span style={{ flex: 1, minWidth: 0 }}>{a.text}</span>
-                    <span style={activityWhenStyle}>
-                      {a.when.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                    </span>
-                  </li>
-                ))}
+                {activity.map((a, i) => {
+                  const body = (
+                    <>
+                      <span style={activityIconStyle(a.kind)}>
+                        {a.kind === 'note' ? <FileText size={13} /> : a.kind === 'med' ? <Pill size={13} /> : <AlertTriangle size={13} />}
+                      </span>
+                      <span style={{ flex: 1, minWidth: 0 }}>{a.text}</span>
+                      <span style={activityWhenStyle}>
+                        {a.when.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </span>
+                    </>
+                  );
+                  return (
+                    <li key={i}>
+                      {a.href ? (
+                        // The whole row is the link: click anything in it to
+                        // open the note or the MAR month it came from.
+                        <Link
+                          href={a.href}
+                          title={a.hint}
+                          style={activityLinkStyle}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = '#f1f5f9'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                        >
+                          {body}
+                        </Link>
+                      ) : (
+                        <span style={activityRowStyle}>{body}</span>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </section>
@@ -1096,7 +1151,10 @@ const readinessValueStyle: React.CSSProperties = { fontSize: 15.5, fontWeight: 7
 const readinessDetailStyle: React.CSSProperties = { fontSize: 12.5, color: '#64748b', marginTop: 3 };
 const emptyInlineStyle: React.CSSProperties = { padding: '18px 0 6px', color: '#7f8c8d', fontSize: 13.5 };
 const activityListStyle: React.CSSProperties = { listStyle: 'none', margin: '12px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 8 };
-const activityRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13.5, color: '#2c3e50', lineHeight: 1.4 };
+const activityRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13.5, color: '#2c3e50', lineHeight: 1.4, padding: '4px 6px' };
+// Same row, as a link: no underline (the icon + hover tint carry the
+// affordance), and the hit area covers the whole row.
+const activityLinkStyle: React.CSSProperties = { ...activityRowStyle, textDecoration: 'none', borderRadius: 6, transition: 'background 120ms', cursor: 'pointer' };
 const activityWhenStyle: React.CSSProperties = { fontSize: 12, color: '#8a949e', whiteSpace: 'nowrap' };
 const toastStyle: React.CSSProperties = {
   position: 'fixed',
