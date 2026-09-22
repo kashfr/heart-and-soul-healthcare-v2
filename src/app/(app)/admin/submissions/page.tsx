@@ -32,19 +32,20 @@ import {
   QTY_VIEW_LABEL,
   fmtDollars,
   fmtH,
-  fmtQty,
   fmtUnits,
   hoursInRange,
-  hoursToUnits,
   segmentsToDollars,
+  segmentsToUnits,
   splitShiftByDay,
   totalOfSegments,
   touchesRange,
   type DaySegment,
-  type HoursAuthorization,
+  type HoursBucket,
   type QtyView,
 } from '@/lib/shiftHours';
-import { getAllHoursAuthorizations } from '@/lib/hoursAuthorizations';
+import { getBillingRates, type BillingRate } from '@/lib/billingRates';
+import { resolveRate } from '@/lib/billingRatesShared';
+import { getPatients } from '@/lib/patients';
 import { formatDateUS, formatDateUSFile } from '@/lib/dateFormat';
 
 const MAX_BATCH = 50;
@@ -83,8 +84,11 @@ function localTodayISO(): string {
 interface HoursPivotRow {
   key: string;
   hours: number;
+  /** Billable units (each calendar day rounded up separately). */
+  units: number;
   shifts: number;
   rnHours: number;
+  rnUnits: number;
   visits: number;
   /** Dollars at each client's line rate; null when any counted row lacks a rate. */
   dollars: number | null;
@@ -422,32 +426,59 @@ export default function SubmissionsPage() {
   // effective role hides the column while previewing a nurse's view.
   const showHours = role === 'admin';
 
-  // Every client's authorization lines (owner-only collection) so the dollar
-  // view can price each day at the rate in force for that client and bucket.
-  const [authsByPatient, setAuthsByPatient] = useState<Map<string, HoursAuthorization[]>>(new Map());
+  // The billing rate table (owner-only) plus each client's program, so the
+  // dollar view can price every day at the rate in force for that program
+  // and bucket on that date.
+  const [rates, setRates] = useState<BillingRate[]>([]);
+  const [programByPatient, setProgramByPatient] = useState<Map<string, string>>(new Map());
   useEffect(() => {
     if (!showHours) return;
     let cancelled = false;
-    getAllHoursAuthorizations()
-      .then((m) => { if (!cancelled) setAuthsByPatient(m); })
-      .catch((err) => console.error('Authorization lines load failed:', err));
+    Promise.all([getBillingRates(), getPatients()])
+      .then(([r, patients]) => {
+        if (cancelled) return;
+        setRates(r);
+        setProgramByPatient(new Map(patients.map((p) => [p.id || '', p.program || ''])));
+      })
+      .catch((err) => console.error('Billing rates load failed:', err));
     return () => { cancelled = true; };
   }, [showHours]);
 
-  // Dollars for a row's in-view hours: each day segment priced at its
-  // client's line rate. null when the note is unlinked or any day has no rate.
+  const bucketOf = (s: SubmissionSummary): HoursBucket => (s.noteType === 'rn-oversight-visit' ? 'oversight' : 'shift');
+  const rateResolverFor = useCallback(
+    (s: SubmissionSummary) => {
+      const program = s.patientId ? programByPatient.get(s.patientId) || '' : '';
+      const bucket = bucketOf(s);
+      return (dateISO: string) => resolveRate(rates, program, bucket, dateISO);
+    },
+    [rates, programByPatient],
+  );
+  /** The row's day segments inside the current range. */
+  const rowSegments = useCallback(
+    (s: SubmissionSummary): DaySegment[] =>
+      (segmentsById.get(s.id) ?? []).filter(
+        (seg) => (!rangeActive || !rangeFrom || seg.dateISO >= rangeFrom) && (!rangeActive || !rangeTo || seg.dateISO <= rangeTo),
+      ),
+    [segmentsById, rangeActive, rangeFrom, rangeTo],
+  );
+  /** Billable units for a row (each day rounded up to whole units). */
+  const rowUnits = useCallback((s: SubmissionSummary): number => segmentsToUnits(rowSegments(s)), [rowSegments]);
+  // Dollars for a row's in-view hours: each day priced at the rate in force
+  // for the client's program. null when the note is unlinked, the program
+  // has no rate row, or any day is unpriced.
   const rowDollars = useCallback(
     (s: SubmissionSummary): number | null => {
       if (!s.patientId) return null;
-      const lines = authsByPatient.get(s.patientId);
-      if (!lines || lines.length === 0) return null;
-      const segs = (segmentsById.get(s.id) ?? []).filter(
-        (seg) => (!rangeActive || !rangeFrom || seg.dateISO >= rangeFrom) && (!rangeActive || !rangeTo || seg.dateISO <= rangeTo),
-      );
+      const segs = rowSegments(s);
       if (segs.length === 0) return null;
-      return segmentsToDollars(segs, lines, s.noteType === 'rn-oversight-visit' ? 'oversight' : 'shift');
+      return segmentsToDollars(segs, rateResolverFor(s));
     },
-    [authsByPatient, segmentsById, rangeActive, rangeFrom, rangeTo],
+    [rowSegments, rateResolverFor],
+  );
+  /** A row's quantity in the chosen view. */
+  const rowQty = useCallback(
+    (s: SubmissionSummary, h: number): string => (qtyView === 'units' ? fmtUnits(rowUnits(s)) : fmtH(h)),
+    [qtyView, rowUnits],
   );
   /** The row's dollars as text ('—' when the client has no rate). */
   const rowDollarText = useCallback(
@@ -631,16 +662,20 @@ export default function SubmissionsPage() {
     const byClient = new Map<string, HoursPivotRow>();
     const byNurse = new Map<string, HoursPivotRow>();
     const byDay = new Map<string, HoursPivotRow & { nurses: Set<string> }>();
-    const blank = (key: string): HoursPivotRow => ({ key, hours: 0, shifts: 0, rnHours: 0, visits: 0, dollars: 0, rnDollars: 0 });
+    let units = 0;
+    let rnUnits = 0;
+    const blank = (key: string): HoursPivotRow => ({ key, hours: 0, units: 0, shifts: 0, rnHours: 0, rnUnits: 0, visits: 0, dollars: 0, rnDollars: 0 });
     const addMoney = (cur: number | null, add: number | null) => (cur == null || add == null ? null : cur + add);
-    const bump = (m: Map<string, HoursPivotRow>, key: string, h: number, d: number | null, rn: boolean) => {
+    const bump = (m: Map<string, HoursPivotRow>, key: string, h: number, u: number, d: number | null, rn: boolean) => {
       const b = m.get(key) ?? blank(key);
       if (rn) {
         b.rnHours += h;
+        b.rnUnits += u;
         b.visits += 1;
         b.rnDollars = addMoney(b.rnDollars, d);
       } else {
         b.hours += h;
+        b.units += u;
         b.shifts += 1;
         b.dollars = addMoney(b.dollars, d);
       }
@@ -650,32 +685,37 @@ export default function SubmissionsPage() {
       const h = rowHours(s);
       if (h == null) continue;
       const rn = isOversight(s);
+      const u = rowUnits(s);
       const d = rowDollars(s);
       if (d == null) unpriced += 1;
       if (rn) {
         visits += 1;
         rnHours += h;
+        rnUnits += u;
         rnDollars = addMoney(rnDollars, d);
       } else {
         shifts += 1;
         hours += h;
+        units += u;
         dollars = addMoney(dollars, d);
       }
-      bump(byClient, s.clientName || '(no client)', h, d, rn);
-      bump(byNurse, s.nurseName || '(no nurse)', h, d, rn);
+      bump(byClient, s.clientName || '(no client)', h, u, d, rn);
+      bump(byNurse, s.nurseName || '(no nurse)', h, u, d, rn);
       // By day: each calendar day carries exactly the hours worked on it
-      // (an overnight shift lands on two days), priced per day.
-      const lines = s.patientId ? authsByPatient.get(s.patientId) ?? [] : [];
-      for (const seg of segmentsById.get(s.id) ?? []) {
-        if (rangeActive && ((rangeFrom && seg.dateISO < rangeFrom) || (rangeTo && seg.dateISO > rangeTo))) continue;
+      // (an overnight shift lands on two days), rounded and priced per day.
+      const rateFor = rateResolverFor(s);
+      for (const seg of rowSegments(s)) {
         const b = byDay.get(seg.dateISO) ?? { ...blank(seg.dateISO), nurses: new Set<string>() };
-        const segDollars = lines.length ? segmentsToDollars([seg], lines, rn ? 'oversight' : 'shift') : null;
+        const segDollars = s.patientId ? segmentsToDollars([seg], rateFor) : null;
+        const segUnits = segmentsToUnits([seg]);
         if (rn) {
           b.rnHours += seg.hours;
+          b.rnUnits += segUnits;
           b.visits += 1;
           b.rnDollars = addMoney(b.rnDollars, segDollars);
         } else {
           b.hours += seg.hours;
+          b.units += segUnits;
           b.shifts += 1;
           b.dollars = addMoney(b.dollars, segDollars);
         }
@@ -694,8 +734,10 @@ export default function SubmissionsPage() {
       .sort((a, b) => b.key.localeCompare(a.key));
     return {
       hours: round(hours),
+      units,
       shifts,
       rnHours: round(rnHours),
+      rnUnits,
       visits,
       dollars: roundMoney(dollars),
       rnDollars: roundMoney(rnDollars),
@@ -706,9 +748,11 @@ export default function SubmissionsPage() {
       byNurse: finish(byNurse),
       byDay: days,
     };
-  }, [sorted, rowHours, rowDollars, showHours, authsByPatient, segmentsById, rangeActive, rangeFrom, rangeTo]);
+  }, [sorted, rowHours, rowUnits, rowDollars, rowSegments, rateResolverFor, showHours]);
   const [pivot, setPivot] = useState<'' | 'client' | 'nurse' | 'day'>('');
   const money = (d: number | null): string => (d == null ? '—' : fmtDollars(d));
+  /** A pivot quantity: exact hours or whole billable units. */
+  const pq = (hours: number, units: number): string => (qtyView === 'units' ? fmtUnits(units) : fmtH(hours));
 
   // CSV of the filtered list with per-row hours: the billing worksheet. Same
   // rows as the totals strip, so what is exported is what was on screen.
@@ -734,7 +778,7 @@ export default function SubmissionsPage() {
         s.totalHours,
         h == null || rn ? '' : fmtH(h),
         h == null || !rn ? '' : fmtH(h),
-        h == null ? '' : fmtUnits(hoursToUnits(h)),
+        h == null ? '' : fmtUnits(rowUnits(s)),
         (() => { const d = rowDollars(s); return d == null ? '' : d.toFixed(2); })(),
         s.submittedAt ? s.submittedAt.toLocaleString() : '',
         s.id,
@@ -745,7 +789,8 @@ export default function SubmissionsPage() {
     lines.push(['Shifts', String(hoursStats.shifts)].join(','));
     lines.push(['RN oversight hours', fmtH(hoursStats.rnHours)].join(','));
     lines.push(['RN visits', String(hoursStats.visits)].join(','));
-    lines.push(['Shift units', fmtUnits(hoursToUnits(hoursStats.hours))].join(','));
+    lines.push(['Shift units', fmtUnits(hoursStats.units)].join(','));
+    lines.push(['RN oversight units', fmtUnits(hoursStats.rnUnits)].join(','));
     lines.push(['Shift amount', hoursStats.dollars == null ? 'n/a (missing rate)' : hoursStats.dollars.toFixed(2)].join(','));
     lines.push(['RN oversight amount', hoursStats.rnDollars == null ? 'n/a (missing rate)' : hoursStats.rnDollars.toFixed(2)].join(','));
     lines.push(['Range', describeRange({ fromISO: rangeFrom, toISO: rangeTo })].join(','));
@@ -1528,23 +1573,23 @@ export default function SubmissionsPage() {
             <div style={hoursStripRowStyle}>
               <span style={hoursStripIconStyle}><Clock size={14} /></span>
               <span style={hoursStatStyle}>
-                <strong style={hoursStatNumStyle}>{fmtQty(hoursStats.hours, qtyView)}</strong>
+                <strong style={hoursStatNumStyle}>{pq(hoursStats.hours, hoursStats.units)}</strong>
                 {qtyView === 'hours' ? ' shift hours' : ' shift units'}
                 {showDollars && <strong style={{ ...hoursStatNumStyle, marginLeft: 8, color: '#166534' }}>{money(hoursStats.dollars)}</strong>}
                 <span style={{ color: '#64748b' }}> · {hoursStats.shifts} {hoursStats.shifts === 1 ? 'shift' : 'shifts'}</span>
               </span>
               {(hoursStats.visits > 0 || hoursStats.rnHours > 0) && (
                 <span style={{ ...hoursStatStyle, color: '#1d4ed8' }} title="RN oversight visit hours (time in to time out); never added to shift hours">
-                  <strong style={{ ...hoursStatNumStyle, color: '#1d4ed8' }}>{fmtQty(hoursStats.rnHours, qtyView)}</strong>
+                  <strong style={{ ...hoursStatNumStyle, color: '#1d4ed8' }}>{pq(hoursStats.rnHours, hoursStats.rnUnits)}</strong>
                   {qtyView === 'hours' ? ' RN oversight hours' : ' RN oversight units'}
                   {showDollars && <strong style={{ ...hoursStatNumStyle, marginLeft: 8, color: '#166534' }}>{money(hoursStats.rnDollars)}</strong>}
                   <span style={{ color: '#3b82f6' }}> · {hoursStats.visits} {hoursStats.visits === 1 ? 'visit' : 'visits'}</span>
                 </span>
               )}
               {showDollars && hoursStats.unpriced > 0 && (
-                <span style={{ ...hoursStatStyle, color: '#b45309' }} title="Dollars need a rate per unit on the client's authorization line (Hours tab)">
+                <Link href="/admin/settings/billing-rates" style={{ ...hoursStatStyle, color: '#b45309', textDecoration: 'underline' }} title="Dollars need a billing rate for the client's program (Settings → Billing rates)">
                   {hoursStats.unpriced} {hoursStats.unpriced === 1 ? 'row has' : 'rows have'} no rate
-                </span>
+                </Link>
               )}
               <span style={hoursStatStyle}>
                 <strong style={hoursStatNumStyle}>{hoursStats.clients}</strong> {hoursStats.clients === 1 ? 'client' : 'clients'}
@@ -1627,7 +1672,7 @@ export default function SubmissionsPage() {
                       <td style={{ ...pivotTdStyle, whiteSpace: 'nowrap' }}>{pivot === 'day' ? formatDateUS(b.key) : b.key}</td>
                       {pivot === 'day' && <td style={{ ...pivotTdStyle, color: '#475569' }}>{b.who}</td>}
                       <td style={{ ...pivotTdStyle, textAlign: 'right' }}>{b.shifts || ''}</td>
-                      <td style={{ ...pivotTdStyle, textAlign: 'right', fontWeight: 700 }}>{b.shifts ? fmtQty(b.hours, qtyView) : ''}</td>
+                      <td style={{ ...pivotTdStyle, textAlign: 'right', fontWeight: 700 }}>{b.shifts ? pq(b.hours, b.units) : ''}</td>
                       {showDollars && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#166534', fontWeight: 600 }}>{b.shifts ? money(b.dollars) : ''}</td>}
                       {pivot !== 'day' && (
                         <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#64748b' }}>
@@ -1635,7 +1680,7 @@ export default function SubmissionsPage() {
                         </td>
                       )}
                       {hoursStats.visits > 0 && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#1d4ed8' }}>{b.visits || ''}</td>}
-                      {hoursStats.visits > 0 && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#1d4ed8', fontWeight: 700 }}>{b.visits ? fmtQty(b.rnHours, qtyView) : ''}</td>}
+                      {hoursStats.visits > 0 && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#1d4ed8', fontWeight: 700 }}>{b.visits ? pq(b.rnHours, b.rnUnits) : ''}</td>}
                       {hoursStats.visits > 0 && showDollars && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#166534', fontWeight: 600 }}>{b.visits ? money(b.rnDollars) : ''}</td>}
                     </tr>
                   ))}
@@ -1645,10 +1690,10 @@ export default function SubmissionsPage() {
                     <tr>
                       <td style={{ ...pivotTdStyle, fontWeight: 700 }} colSpan={2}>Total</td>
                       <td style={{ ...pivotTdStyle, textAlign: 'right' }}>{hoursStats.shifts}</td>
-                      <td style={{ ...pivotTdStyle, textAlign: 'right', fontWeight: 700 }}>{fmtQty(hoursStats.hours, qtyView)}</td>
+                      <td style={{ ...pivotTdStyle, textAlign: 'right', fontWeight: 700 }}>{pq(hoursStats.hours, hoursStats.units)}</td>
                       {showDollars && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#166534', fontWeight: 700 }}>{money(hoursStats.dollars)}</td>}
                       {hoursStats.visits > 0 && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#1d4ed8' }}>{hoursStats.visits}</td>}
-                      {hoursStats.visits > 0 && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#1d4ed8', fontWeight: 700 }}>{fmtQty(hoursStats.rnHours, qtyView)}</td>}
+                      {hoursStats.visits > 0 && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#1d4ed8', fontWeight: 700 }}>{pq(hoursStats.rnHours, hoursStats.rnUnits)}</td>}
                       {hoursStats.visits > 0 && showDollars && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#166534', fontWeight: 700 }}>{money(hoursStats.rnDollars)}</td>}
                     </tr>
                   </tfoot>
@@ -1878,11 +1923,11 @@ export default function SubmissionsPage() {
                               {h == null ? (
                                 <span style={{ color: '#cbd5e1' }}>—</span>
                               ) : rn ? (
-                                <span style={rnHoursChipStyle}>RN {fmtQty(h, qtyView)}</span>
+                                <span style={rnHoursChipStyle}>RN {rowQty(s, h)}</span>
                               ) : (
                                 <>
-                                  <strong style={{ color: '#0f172a' }}>{fmtQty(h, qtyView)}</strong>
-                                  {partial && <span style={{ color: '#94a3b8', fontSize: 11 }}> of {fmtQty(total, qtyView)}</span>}
+                                  <strong style={{ color: '#0f172a' }}>{rowQty(s, h)}</strong>
+                                  {partial && <span style={{ color: '#94a3b8', fontSize: 11 }}> of {qtyView === 'units' ? fmtUnits(segmentsToUnits(segmentsById.get(s.id) ?? [])) : fmtH(total)}</span>}
                                 </>
                               )}
                               {h != null && showDollars && (

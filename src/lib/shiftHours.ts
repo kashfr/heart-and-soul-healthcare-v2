@@ -296,23 +296,32 @@ export interface HoursAuthorization {
   totalUnits: number | null;
   /** Therap service code, e.g. 'NL1' or 'T1003-U1'. Display only. */
   serviceCode?: string;
-  /** Payer rate per 15-minute unit ($24.36 LPN, $36.68 RN on COMP). Drives
-   *  the owner-only dollar view; null when unknown. */
-  ratePerUnit?: number | null;
   note?: string;
 }
 
 /** How a quantity of nursing time is displayed. */
 export type QtyView = 'hours' | 'units' | 'dollars';
 
+/**
+ * Billable units for a block of hours: every started 15 minutes is a unit,
+ * so hours round UP to the next quarter hour and units are whole numbers
+ * (3.42 h -> 3.5 h -> 14 units). Applied per calendar day, which is how the
+ * claim is built. A hair of float noise (8.0000001 h) does not add a unit.
+ */
 export function hoursToUnits(hours: number): number {
-  return Math.round(hours * UNITS_PER_HOUR * 100) / 100;
+  if (!(hours > 0)) return 0;
+  return Math.ceil(Math.round(hours * UNITS_PER_HOUR * 1000) / 1000);
 }
 
-/** Dollars for `hours` at a per-unit rate; null when no rate is known. */
+/** Hours rounded up to the quarter hour (the billable hours behind the units). */
+export function billableHours(hours: number): number {
+  return hoursToUnits(hours) / UNITS_PER_HOUR;
+}
+
+/** Dollars for `hours` at a per-unit rate (billable units x rate); null when no rate is known. */
 export function hoursToDollars(hours: number, ratePerUnit: number | null | undefined): number | null {
   if (ratePerUnit == null || !Number.isFinite(ratePerUnit)) return null;
-  return Math.round(hours * UNITS_PER_HOUR * ratePerUnit * 100) / 100;
+  return Math.round(hoursToUnits(hours) * ratePerUnit * 100) / 100;
 }
 
 export function fmtDollars(n: number): string {
@@ -331,21 +340,23 @@ export function fmtQty(hours: number, view: QtyView, ratePerUnit?: number | null
 
 export const QTY_VIEW_LABEL: Record<QtyView, string> = { hours: 'Hours', units: 'Units', dollars: 'Amount' };
 
-/** The per-unit rate in force for a bucket on a date, from the client's lines. */
-export function rateFor(auths: HoursAuthorization[], dateISO: string, bucket: HoursBucket): number | null {
-  const a = authForMonth(auths, monthKeyOf(dateISO), bucket);
-  return a?.ratePerUnit ?? null;
+/** Looks up the per-unit rate for a date (the billing rate table, by program + bucket). */
+export type RateResolver = (dateISO: string) => number | null;
+
+/** Billable units for a set of day segments (each day rounded up separately). */
+export function segmentsToUnits(segments: DaySegment[]): number {
+  return segments.reduce((a, s) => a + hoursToUnits(s.hours), 0);
 }
 
 /**
- * Dollars for a set of day segments, each priced at the rate in force on its
- * date. null when any segment has no rate (a partial dollar figure would be
+ * Dollars for a set of day segments, each day priced at the rate in force on
+ * its date. null when any day has no rate (a partial dollar figure would be
  * worse than none for billing).
  */
-export function segmentsToDollars(segments: DaySegment[], auths: HoursAuthorization[], bucket: HoursBucket): number | null {
+export function segmentsToDollars(segments: DaySegment[], rateFor: RateResolver): number | null {
   let sum = 0;
   for (const seg of segments) {
-    const d = hoursToDollars(seg.hours, rateFor(auths, seg.dateISO, bucket));
+    const d = hoursToDollars(seg.hours, rateFor(seg.dateISO));
     if (d == null) return null;
     sum += d;
   }

@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { AlertTriangle, ChevronLeft, ChevronRight, Clock, Copy, FileText, Pencil, Plus, Stethoscope, Trash2 } from 'lucide-react';
 import { formatDateUS } from '@/lib/dateFormat';
 import { withSelectChevron } from '@/lib/selectChevron';
+import { getBillingRates, type BillingRate } from '@/lib/billingRates';
+import { resolveRate } from '@/lib/billingRatesShared';
 import type { DashboardNote } from '@/lib/clientDashboardShared';
 import {
   addHoursAuthorization,
@@ -48,6 +50,8 @@ const NAVY = '#1a3a5c';
 interface Props {
   patientId: string;
   patientName: string;
+  /** Payer program id (patients.program); drives the rate lookup. */
+  program: string;
   /** Active notes for the client (the dashboard already loads them). */
   notes: DashboardNote[];
   uid: string;
@@ -75,8 +79,9 @@ interface DayRow {
  * worksheet (shifts split at midnight, so each calendar day carries exactly
  * the hours worked on it).
  */
-export default function HoursSection({ patientId, patientName, notes, uid, todayISO }: Props) {
+export default function HoursSection({ patientId, patientName, program, notes, uid, todayISO }: Props) {
   const [auths, setAuths] = useState<HoursAuthorization[] | null>(null);
+  const [rates, setRates] = useState<BillingRate[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [month, setMonth] = useState(todayISO.slice(0, 7));
   const [editing, setEditing] = useState<HoursAuthorization | 'new' | null>(null);
@@ -94,6 +99,14 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
       setError('Could not load the hours authorizations.');
     }
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    getBillingRates()
+      .then((list) => { if (!cancelled) setRates(list); })
+      .catch((err) => console.error('Billing rates load failed:', err));
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -169,14 +182,31 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
   const rnCap = rnAuth ? monthCap(rnAuth, month) : null;
   const rnUsage = monthUsage(dayHours.oversight, rnCap, month, todayISO);
   const rnVisits = monthRows.filter((r) => r.bucket === 'oversight').length;
-  const rateOf = (bucket: HoursBucket): number | null => (bucket === 'shift' ? shiftAuth : rnAuth)?.ratePerUnit ?? null;
+  // Rates come from the billing rate table by program + bucket + date. The
+  // month figures use the rate in force on the 1st (a mid-month change is
+  // priced per day on the worksheet).
+  const rateOn = (bucket: HoursBucket, dateISO: string): number | null => resolveRate(rates, program, bucket, dateISO);
+  const monthRate = (bucket: HoursBucket): number | null => rateOn(bucket, monthStartISO(month));
   const qty = (hours: number): string => fmtQty(hours, view);
-  const money = (hours: number, bucket: HoursBucket): string => {
-    const d = hoursToDollars(hours, rateOf(bucket));
+  const money = (hours: number, bucket: HoursBucket, dateISO: string): string => {
+    const d = hoursToDollars(hours, rateOn(bucket, dateISO));
     return d == null ? '—' : fmtDollars(d);
   };
-  const shiftDollars = hoursToDollars(shiftUsage.used, rateOf('shift'));
-  const rnDollars = hoursToDollars(rnUsage.used, rateOf('oversight'));
+  // Month dollars: each day's billable units at that day's rate.
+  const monthDollars = (bucket: HoursBucket): number | null => {
+    const days = monthRows.filter((r) => r.bucket === bucket);
+    if (days.length === 0) return 0;
+    let sum = 0;
+    for (const r of days) {
+      const d = hoursToDollars(r.hours, rateOn(bucket, r.dateISO));
+      if (d == null) return null;
+      sum += d;
+    }
+    return Math.round(sum * 100) / 100;
+  };
+  const shiftDollars = monthDollars('shift');
+  const rnDollars = monthDollars('oversight');
+  const monthUnits = (bucket: HoursBucket): number => monthRows.filter((r) => r.bucket === bucket).reduce((a, r) => a + hoursToUnits(r.hours), 0);
   // Show the RN block for NOW/COMP-style clients (an oversight line on file)
   // or whenever a visit was documented; GAPP clients with neither stay simple.
   const hasOversight = list.some((a) => a.covers === 'oversight') || oversightNotes.length > 0;
@@ -299,17 +329,17 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
         {/* Billing line: the month's used hours as units and dollars. */}
         <div style={billingLine}>
           <span>
-            <strong>Shift:</strong> {fmtH(shiftUsage.used)} h = {fmtUnits(hoursToUnits(shiftUsage.used))} units
-            {shiftDollars != null
-              ? <> = <strong>{fmtDollars(shiftDollars)}</strong> at {fmtDollars(rateOf('shift') as number)}/unit</>
-              : shiftAuth ? <span style={{ color: '#b45309' }}> · no rate on the line</span> : null}
+            <strong>Shift:</strong> {fmtH(shiftUsage.used)} h = {fmtUnits(monthUnits('shift'))} units
+            {shiftDollars != null && monthRate('shift') != null
+              ? <> = <strong>{fmtDollars(shiftDollars)}</strong> at {fmtDollars(monthRate('shift') as number)}/unit</>
+              : <span style={{ color: '#b45309' }}> · no billing rate for this program (Settings → Billing rates)</span>}
           </span>
           {hasOversight && (
             <span style={{ color: '#1d4ed8' }}>
-              <strong>RN oversight:</strong> {fmtH(rnUsage.used)} h = {fmtUnits(hoursToUnits(rnUsage.used))} units
-              {rnDollars != null
-                ? <> = <strong>{fmtDollars(rnDollars)}</strong> at {fmtDollars(rateOf('oversight') as number)}/unit</>
-                : rnAuth ? <span style={{ color: '#b45309' }}> · no rate on the line</span> : null}
+              <strong>RN oversight:</strong> {fmtH(rnUsage.used)} h = {fmtUnits(monthUnits('oversight'))} units
+              {rnDollars != null && monthRate('oversight') != null
+                ? <> = <strong>{fmtDollars(rnDollars)}</strong> at {fmtDollars(monthRate('oversight') as number)}/unit</>
+                : <span style={{ color: '#b45309' }}> · no billing rate for this program</span>}
             </span>
           )}
         </div>
@@ -376,9 +406,13 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
             <tbody>
               {(() => {
                 let running = 0;
+                let runningUnits = 0;
                 const out: React.ReactNode[] = [];
                 monthRows.forEach((r, i) => {
-                  if (r.bucket === 'shift') running = Math.round((running + r.hours) * 100) / 100;
+                  if (r.bucket === 'shift') {
+                    running = Math.round((running + r.hours) * 100) / 100;
+                    runningUnits += hoursToUnits(r.hours);
+                  }
                   const firstOfDay = i === 0 || monthRows[i - 1].dateISO !== r.dateISO;
                   const lastOfDay = i === monthRows.length - 1 || monthRows[i + 1].dateISO !== r.dateISO;
                   const isRn = r.bucket === 'oversight';
@@ -406,8 +440,8 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
                         )}
                       </td>
                       <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: isRn ? '#1d4ed8' : undefined }}>{qty(r.hours)}</td>
-                      {showDollars && <td style={{ ...td, textAlign: 'right', color: '#166534', fontVariantNumeric: 'tabular-nums' }}>{money(r.hours, r.bucket)}</td>}
-                      <td style={{ ...td, textAlign: 'right', color: '#5c6b7a', fontVariantNumeric: 'tabular-nums' }}>{isRn ? '' : qty(running)}</td>
+                      {showDollars && <td style={{ ...td, textAlign: 'right', color: '#166534', fontVariantNumeric: 'tabular-nums' }}>{money(r.hours, r.bucket, r.dateISO)}</td>}
+                      <td style={{ ...td, textAlign: 'right', color: '#5c6b7a', fontVariantNumeric: 'tabular-nums' }}>{isRn ? '' : view === 'units' ? fmtUnits(runningUnits) : fmtH(running)}</td>
                     </tr>,
                   );
                   // Day total when a calendar day has more than one entry
@@ -425,10 +459,10 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
                           <td style={{ ...td, color: '#5c6b7a' }} colSpan={2}>
                             {dayShift.length > 0 && `${dayShift.length} shift ${dayShift.length === 1 ? 'entry' : 'entries'}`}
                             {dayShift.length > 0 && dayRn.length > 0 && ' · '}
-                            {dayRn.length > 0 && <span style={{ color: '#1d4ed8' }}>{dayRn.length} RN {dayRn.length === 1 ? 'visit' : 'visits'} ({qty(rnSum)}{showDollars ? `, ${money(rnSum, 'oversight')}` : ''})</span>}
+                            {dayRn.length > 0 && <span style={{ color: '#1d4ed8' }}>{dayRn.length} RN {dayRn.length === 1 ? 'visit' : 'visits'} ({qty(rnSum)}{showDollars ? `, ${money(rnSum, 'oversight', r.dateISO)}` : ''})</span>}
                           </td>
                           <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: NAVY, fontVariantNumeric: 'tabular-nums' }}>{dayShift.length > 0 ? qty(shiftSum) : ''}</td>
-                          {showDollars && <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#166534', fontVariantNumeric: 'tabular-nums' }}>{dayShift.length > 0 ? money(shiftSum, 'shift') : ''}</td>}
+                          {showDollars && <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#166534', fontVariantNumeric: 'tabular-nums' }}>{dayShift.length > 0 ? money(shiftSum, 'shift', r.dateISO) : ''}</td>}
                           <td style={td} />
                         </tr>,
                       );
@@ -441,15 +475,15 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
             <tfoot>
               <tr>
                 <td style={{ ...td, fontWeight: 700 }} colSpan={3}>Shift {view === 'hours' ? 'hours' : 'units'}</td>
-                <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{qty(shiftUsage.used)}</td>
-                {showDollars && <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#166534' }}>{money(shiftUsage.used, 'shift')}</td>}
+                <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{view === 'units' ? fmtUnits(monthUnits('shift')) : fmtH(shiftUsage.used)}</td>
+                {showDollars && <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#166534' }}>{shiftDollars == null ? '—' : fmtDollars(shiftDollars)}</td>}
                 <td style={td} />
               </tr>
               {(hasOversight || rnUsage.used > 0) && (
                 <tr>
                   <td style={{ ...td, fontWeight: 700, color: '#1d4ed8' }} colSpan={3}>RN oversight {view === 'hours' ? 'hours' : 'units'}</td>
-                  <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#1d4ed8' }}>{qty(rnUsage.used)}</td>
-                  {showDollars && <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#166534' }}>{money(rnUsage.used, 'oversight')}</td>}
+                  <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#1d4ed8' }}>{view === 'units' ? fmtUnits(monthUnits('oversight')) : fmtH(rnUsage.used)}</td>
+                  {showDollars && <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#166534' }}>{rnDollars == null ? '—' : fmtDollars(rnDollars)}</td>}
                   <td style={td} />
                 </tr>
               )}
@@ -509,7 +543,6 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
                     {formatDateUS(a.from)} to {formatDateUS(a.to)}
                     {a.rateHours != null && ` · ${fmtH(a.rateHours)} hours per ${a.rateBasis}`}
                     {a.totalUnits != null && ` · ${fmtUnits(a.totalUnits)} units (${fmtH(a.totalUnits / UNITS_PER_HOUR)} h)`}
-                    {a.ratePerUnit != null && ` · ${fmtDollars(a.ratePerUnit)}/unit`}
                     {a.note && ` · ${a.note}`}
                   </div>
                   {units && (
@@ -714,7 +747,6 @@ function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: Form
   const [rateBasis, setRateBasis] = useState<RateBasis>(existing?.rateBasis ?? 'week');
   const [rate, setRate] = useState(existing?.rateHours != null ? String(existing.rateHours) : '');
   const [totalUnits, setTotalUnits] = useState(existing?.totalUnits != null ? String(existing.totalUnits) : '');
-  const [unitRate, setUnitRate] = useState(existing?.ratePerUnit != null ? String(existing.ratePerUnit) : '');
   const [from, setFrom] = useState(existing?.from ?? '');
   const [to, setTo] = useState(existing?.to ?? '');
   const [note, setNote] = useState(existing?.note ?? '');
@@ -729,7 +761,6 @@ function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: Form
 
   const rateNum = rate.trim() === '' ? null : Number(rate);
   const unitsNum = totalUnits.trim() === '' ? null : Number(totalUnits);
-  const rateUnitNum = unitRate.trim() === '' ? null : Number(unitRate);
   const validDates = /^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to) && from <= to;
   const months = validDates ? monthsBetween(from, to) : [];
   const preview: HoursAuthorization = {
@@ -754,7 +785,6 @@ function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: Form
     if (from > to) { setFieldErr('to'); setErr('The end date is before the effective date.'); return; }
     if (rateNum != null && (!Number.isFinite(rateNum) || rateNum < 0 || rateNum > 744)) { setFieldErr('rate'); setErr('Hours must be a number between 0 and 744.'); return; }
     if (unitsNum != null && (!Number.isFinite(unitsNum) || unitsNum < 0)) { setFieldErr('units'); setErr('Total units must be a positive number.'); return; }
-    if (rateUnitNum != null && (!Number.isFinite(rateUnitNum) || rateUnitNum < 0 || rateUnitNum > 1000)) { setErr('Rate per unit must be a dollar amount (0 to 1000).'); return; }
     const monthOverrides: Record<string, number> = {};
     for (const ym of months) {
       const raw = (overrides[ym] ?? '').trim();
@@ -777,7 +807,6 @@ function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: Form
       monthOverrides,
       totalUnits: unitsNum,
       serviceCode: serviceCode.trim(),
-      ratePerUnit: rateUnitNum,
       note: note.trim(),
     };
     setSaving(true);
@@ -844,10 +873,6 @@ function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: Form
         <label style={field}>
           <span style={label} title="Therap Total Units for the whole window; 4 units = 1 hour">Total units</span>
           <input type="number" min={0} step="1" value={totalUnits} onChange={(e) => setTotalUnits(e.target.value)} style={{ ...input, ...errStyle('units') }} placeholder="5840 (Therap) or blank" />
-        </label>
-        <label style={field}>
-          <span style={label} title="Payer rate per 15-minute unit, e.g. $24.36 LPN / $36.68 RN on COMP. Drives the $ view.">Rate per unit ($)</span>
-          <input type="number" min={0} step="0.01" value={unitRate} onChange={(e) => setUnitRate(e.target.value)} style={input} placeholder="24.36" />
         </label>
         <label style={{ ...field, gridColumn: '1 / -1' }}>
           <span style={label}>Note (optional)</span>

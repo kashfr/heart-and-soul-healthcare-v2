@@ -543,6 +543,19 @@ export default function AdminSettingsPage() {
           </div>
         )}
 
+        {/* --- Billing rates (own page: a table, not a form draft) --- */}
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Billing rates</h2>
+          <p style={sectionSubStyle}>
+            Dollars per 15-minute unit by program (NOW/COMP, GAPP, EDWP, ICWP) for shift nursing
+            and RN oversight, with the claim code and modifier and effective dates. Feeds the $
+            views on the Shift Notes list and each client&apos;s Hours tab. Admin only.
+          </p>
+          <Link href="/admin/settings/billing-rates" style={collapseToggleStyle}>
+            Open billing rates →
+          </Link>
+        </section>
+
         {/* --- Submissions list defaults --- */}
         <section style={sectionStyle}>
           <h2 style={sectionTitleStyle}>Submissions list</h2>
