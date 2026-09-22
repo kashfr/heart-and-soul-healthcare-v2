@@ -27,6 +27,8 @@ export interface BillingRate {
   program: string;
   /** Which hours this rate prices. */
   bucket: HoursBucket;
+  /** Nurse type this row is limited to ('LPN', 'RN', 'HHA', 'CNA'); '' = any. */
+  credential: string;
   /** Procedure code on the claim, e.g. 'T1003'. Display / reference. */
   serviceCode: string;
   /** Modifier(s), e.g. 'U1'. Display / reference. */
@@ -49,6 +51,7 @@ function toRate(id: string, d: Record<string, unknown>): BillingRate {
     id,
     program: String(d.program || ''),
     bucket: d.bucket === 'oversight' ? 'oversight' : 'shift',
+    credential: String(d.credential || '').toUpperCase(),
     serviceCode: String(d.serviceCode || ''),
     modifier: String(d.modifier || ''),
     description: String(d.description || ''),
@@ -63,13 +66,14 @@ export async function getBillingRates(): Promise<BillingRate[]> {
   const snap = await getDocs(collection(db, BILLING_RATES_COLLECTION));
   return snap.docs
     .map((d) => toRate(d.id, d.data() as Record<string, unknown>))
-    .sort((a, b) => a.program.localeCompare(b.program) || a.bucket.localeCompare(b.bucket) || b.effectiveFrom.localeCompare(a.effectiveFrom));
+    .sort((a, b) => a.program.localeCompare(b.program) || a.bucket.localeCompare(b.bucket) || a.credential.localeCompare(b.credential) || b.effectiveFrom.localeCompare(a.effectiveFrom));
 }
 
 function payload(input: BillingRateInput, uid: string) {
   return {
     program: input.program,
     bucket: input.bucket,
+    credential: (input.credential || '').trim().toUpperCase(),
     serviceCode: input.serviceCode.trim(),
     modifier: input.modifier.trim(),
     description: input.description.trim(),
