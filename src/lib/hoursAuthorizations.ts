@@ -56,6 +56,7 @@ function toAuth(id: string, data: Raw): HoursAuthorization {
     monthOverrides,
     totalUnits: num(data.totalUnits),
     serviceCode: typeof data.serviceCode === 'string' ? data.serviceCode : '',
+    ratePerUnit: num(data.ratePerUnit),
     note: typeof data.note === 'string' ? data.note : '',
   };
 }
@@ -101,6 +102,7 @@ function toPayload(input: HoursAuthorizationInput, uid: string) {
     monthOverrides: input.monthOverrides,
     totalUnits: input.totalUnits,
     serviceCode: (input.serviceCode || '').trim(),
+    ratePerUnit: input.ratePerUnit ?? null,
     note: (input.note || '').trim(),
     updatedAt: serverTimestamp(),
     updatedBy: uid,

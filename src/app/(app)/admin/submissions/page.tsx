@@ -29,13 +29,22 @@ import { useSettings } from '@/components/SettingsProvider';
 import { RN_COSIGN_SESSION_KEY } from '@/lib/settings';
 import { RANGE_PRESETS, describeRange, isRangePreset, resolveRange, type RangePreset } from '@/lib/dateRange';
 import {
+  QTY_VIEW_LABEL,
+  fmtDollars,
   fmtH,
+  fmtQty,
+  fmtUnits,
   hoursInRange,
+  hoursToUnits,
+  segmentsToDollars,
   splitShiftByDay,
   totalOfSegments,
   touchesRange,
   type DaySegment,
+  type HoursAuthorization,
+  type QtyView,
 } from '@/lib/shiftHours';
+import { getAllHoursAuthorizations } from '@/lib/hoursAuthorizations';
 import { formatDateUS, formatDateUSFile } from '@/lib/dateFormat';
 
 const MAX_BATCH = 50;
@@ -77,6 +86,11 @@ interface HoursPivotRow {
   shifts: number;
   rnHours: number;
   visits: number;
+  /** Dollars at each client's line rate; null when any counted row lacks a rate. */
+  dollars: number | null;
+  rnDollars: number | null;
+  /** By-day pivot only: who worked that day. */
+  who?: string;
 }
 
 function csvCell(v: string | number): string {
@@ -134,6 +148,11 @@ export default function SubmissionsPage() {
   const dirParam = (searchParams.get('dir') as SortDir) || subDefaults.defaultDir;
   const credParam = searchParams.get('cred') ?? '';
   const nurseParam = searchParams.get('nurse') ?? '';
+  const clientParam = searchParams.get('client') ?? '';
+  // Owner-only quantity view for the Hours column / totals: hours, 15-minute
+  // units, or dollars at the client's line rate (?u=units|dollars).
+  const uParam = searchParams.get('u');
+  const qtyView: QtyView = uParam === 'units' || uParam === 'dollars' ? uParam : 'hours';
   // Date-of-service range: a relative preset, a picked month (?range=m&m=YYYY-MM)
   // or an explicit window (?range=c&from=&to=). Resolved to ISO bounds below.
   const rangeRaw = searchParams.get('range');
@@ -292,7 +311,7 @@ export default function SubmissionsPage() {
     if (typeof window === 'undefined') return;
     if (sessionStorage.getItem(RN_COSIGN_SESSION_KEY) === '1') return;
     const hasAnyFilter =
-      qParam || credParam || nurseParam || rangePreset ||
+      qParam || credParam || nurseParam || clientParam || rangePreset ||
       flagAbnormal || flagIncident || flagPhysNotified || flagNeedsCosign || flagHospitalEr || flagMedChange || flagOpen;
     if (hasAnyFilter) {
       sessionStorage.setItem(RN_COSIGN_SESSION_KEY, '1');
@@ -346,6 +365,11 @@ export default function SubmissionsPage() {
     allSubmissions.forEach((s) => s.nurseName && set.add(s.nurseName));
     return Array.from(set).sort();
   }, [allSubmissions]);
+  const clientOptions = useMemo(() => {
+    const set = new Set<string>();
+    allSubmissions.forEach((s) => s.clientName && set.add(s.clientName));
+    return Array.from(set).sort();
+  }, [allSubmissions]);
 
   // Memoized so the range does not shift under a midnight boundary mid-session.
   const todayIso = useMemo(() => localTodayISO(), []);
@@ -397,12 +421,52 @@ export default function SubmissionsPage() {
   // effective role hides the column while previewing a nurse's view.
   const showHours = role === 'admin';
 
+  // Every client's authorization lines (owner-only collection) so the dollar
+  // view can price each day at the rate in force for that client and bucket.
+  const [authsByPatient, setAuthsByPatient] = useState<Map<string, HoursAuthorization[]>>(new Map());
+  useEffect(() => {
+    if (!showHours) return;
+    let cancelled = false;
+    getAllHoursAuthorizations()
+      .then((m) => { if (!cancelled) setAuthsByPatient(m); })
+      .catch((err) => console.error('Authorization lines load failed:', err));
+    return () => { cancelled = true; };
+  }, [showHours]);
+
+  // Dollars for a row's in-view hours: each day segment priced at its
+  // client's line rate. null when the note is unlinked or any day has no rate.
+  const rowDollars = useCallback(
+    (s: SubmissionSummary): number | null => {
+      if (!s.patientId) return null;
+      const lines = authsByPatient.get(s.patientId);
+      if (!lines || lines.length === 0) return null;
+      const segs = (segmentsById.get(s.id) ?? []).filter(
+        (seg) => (!rangeActive || !rangeFrom || seg.dateISO >= rangeFrom) && (!rangeActive || !rangeTo || seg.dateISO <= rangeTo),
+      );
+      if (segs.length === 0) return null;
+      return segmentsToDollars(segs, lines, s.noteType === 'rn-oversight-visit' ? 'oversight' : 'shift');
+    },
+    [authsByPatient, segmentsById, rangeActive, rangeFrom, rangeTo],
+  );
+  /** The row's hours in the chosen view, or '—' when dollars are unknown. */
+  const rowQtyText = useCallback(
+    (s: SubmissionSummary, h: number): string => {
+      if (qtyView === 'dollars') {
+        const d = rowDollars(s);
+        return d == null ? '—' : fmtDollars(d);
+      }
+      return fmtQty(h, qtyView);
+    },
+    [qtyView, rowDollars],
+  );
+
   // Defined here (rather than after `sorted`) so the cross-scope-counts memo
   // below can short-circuit when nothing is filtered.
   const hasAnyFilter =
     !!qParam ||
     !!credParam ||
     !!nurseParam ||
+    !!clientParam ||
     !!rangePreset ||
     flagAbnormal ||
     flagIncident ||
@@ -425,6 +489,7 @@ export default function SubmissionsPage() {
       }
       if (credParam && s.credential !== credParam) return false;
       if (nurseParam && s.nurseName !== nurseParam) return false;
+      if (clientParam && s.clientName !== clientParam) return false;
       if (flagAbnormal && !s.hasAbnormalVitals) return false;
       if (flagIncident && !s.hasIncident) return false;
       if (flagPhysNotified && !s.physicianNotified) return false;
@@ -440,6 +505,7 @@ export default function SubmissionsPage() {
     qParam,
     credParam,
     nurseParam,
+    clientParam,
     flagAbnormal,
     flagIncident,
     flagPhysNotified,
@@ -491,6 +557,7 @@ export default function SubmissionsPage() {
       }
       if (credParam && s.credential !== credParam) continue;
       if (nurseParam && s.nurseName !== nurseParam) continue;
+      if (clientParam && s.clientName !== clientParam) continue;
       if (flagAbnormal && !s.hasAbnormalVitals) continue;
       if (flagIncident && !s.hasIncident) continue;
       if (flagPhysNotified && !s.physicianNotified) continue;
@@ -510,6 +577,7 @@ export default function SubmissionsPage() {
     qParam,
     credParam,
     nurseParam,
+    clientParam,
     flagAbnormal,
     flagIncident,
     flagPhysNotified,
@@ -559,16 +627,24 @@ export default function SubmissionsPage() {
     let shifts = 0;
     let rnHours = 0;
     let visits = 0;
+    let dollars: number | null = 0;
+    let rnDollars: number | null = 0;
+    let unpriced = 0;
     const byClient = new Map<string, HoursPivotRow>();
     const byNurse = new Map<string, HoursPivotRow>();
-    const bump = (m: Map<string, HoursPivotRow>, key: string, h: number, rn: boolean) => {
-      const b = m.get(key) ?? { key, hours: 0, shifts: 0, rnHours: 0, visits: 0 };
+    const byDay = new Map<string, HoursPivotRow & { nurses: Set<string> }>();
+    const blank = (key: string): HoursPivotRow => ({ key, hours: 0, shifts: 0, rnHours: 0, visits: 0, dollars: 0, rnDollars: 0 });
+    const addMoney = (cur: number | null, add: number | null) => (cur == null || add == null ? null : cur + add);
+    const bump = (m: Map<string, HoursPivotRow>, key: string, h: number, d: number | null, rn: boolean) => {
+      const b = m.get(key) ?? blank(key);
       if (rn) {
         b.rnHours += h;
         b.visits += 1;
+        b.rnDollars = addMoney(b.rnDollars, d);
       } else {
         b.hours += h;
         b.shifts += 1;
+        b.dollars = addMoney(b.dollars, d);
       }
       m.set(key, b);
     };
@@ -576,33 +652,67 @@ export default function SubmissionsPage() {
       const h = rowHours(s);
       if (h == null) continue;
       const rn = isOversight(s);
+      const d = rowDollars(s);
+      if (d == null) unpriced += 1;
       if (rn) {
         visits += 1;
         rnHours += h;
+        rnDollars = addMoney(rnDollars, d);
       } else {
         shifts += 1;
         hours += h;
+        dollars = addMoney(dollars, d);
       }
-      bump(byClient, s.clientName || '(no client)', h, rn);
-      bump(byNurse, s.nurseName || '(no nurse)', h, rn);
+      bump(byClient, s.clientName || '(no client)', h, d, rn);
+      bump(byNurse, s.nurseName || '(no nurse)', h, d, rn);
+      // By day: each calendar day carries exactly the hours worked on it
+      // (an overnight shift lands on two days), priced per day.
+      const lines = s.patientId ? authsByPatient.get(s.patientId) ?? [] : [];
+      for (const seg of segmentsById.get(s.id) ?? []) {
+        if (rangeActive && ((rangeFrom && seg.dateISO < rangeFrom) || (rangeTo && seg.dateISO > rangeTo))) continue;
+        const b = byDay.get(seg.dateISO) ?? { ...blank(seg.dateISO), nurses: new Set<string>() };
+        const segDollars = lines.length ? segmentsToDollars([seg], lines, rn ? 'oversight' : 'shift') : null;
+        if (rn) {
+          b.rnHours += seg.hours;
+          b.visits += 1;
+          b.rnDollars = addMoney(b.rnDollars, segDollars);
+        } else {
+          b.hours += seg.hours;
+          b.shifts += 1;
+          b.dollars = addMoney(b.dollars, segDollars);
+        }
+        if (s.nurseName) b.nurses.add(s.nurseName);
+        byDay.set(seg.dateISO, b);
+      }
     }
     const round = (n: number) => Math.round(n * 100) / 100;
+    const roundMoney = (n: number | null) => (n == null ? null : round(n));
     const finish = (m: Map<string, HoursPivotRow>) =>
       Array.from(m.values())
-        .map((b) => ({ ...b, hours: round(b.hours), rnHours: round(b.rnHours) }))
+        .map((b) => ({ ...b, hours: round(b.hours), rnHours: round(b.rnHours), dollars: roundMoney(b.dollars), rnDollars: roundMoney(b.rnDollars) }))
         .sort((a, b) => b.hours - a.hours || b.rnHours - a.rnHours || a.key.localeCompare(b.key));
+    const days = Array.from(byDay.values())
+      .map((b) => ({ ...b, hours: round(b.hours), rnHours: round(b.rnHours), dollars: roundMoney(b.dollars), rnDollars: roundMoney(b.rnDollars), who: Array.from(b.nurses).sort().join(', ') }))
+      .sort((a, b) => b.key.localeCompare(a.key));
     return {
       hours: round(hours),
       shifts,
       rnHours: round(rnHours),
       visits,
+      dollars: roundMoney(dollars),
+      rnDollars: roundMoney(rnDollars),
+      unpriced,
       clients: byClient.size,
       nurses: byNurse.size,
       byClient: finish(byClient),
       byNurse: finish(byNurse),
+      byDay: days,
     };
-  }, [sorted, rowHours, showHours]);
-  const [pivot, setPivot] = useState<'' | 'client' | 'nurse'>('');
+  }, [sorted, rowHours, rowDollars, showHours, authsByPatient, segmentsById, rangeActive, rangeFrom, rangeTo]);
+  const [pivot, setPivot] = useState<'' | 'client' | 'nurse' | 'day'>('');
+  /** A pivot cell in the chosen view. */
+  const pivotQty = (hours: number, dollars: number | null): string =>
+    qtyView === 'dollars' ? (dollars == null ? '—' : fmtDollars(dollars)) : fmtQty(hours, qtyView);
 
   // CSV of the filtered list with per-row hours: the billing worksheet. Same
   // rows as the totals strip, so what is exported is what was on screen.
@@ -610,7 +720,7 @@ export default function SubmissionsPage() {
     if (!user || !hoursStats) return;
     const header = [
       'Date of service', 'Client', 'Nurse', 'Credential', 'Note type', 'Start', 'End date', 'End',
-      'Total hours', 'Shift hours in range', 'RN oversight hours in range', 'Submitted at', 'Note ID',
+      'Total hours', 'Shift hours in range', 'RN oversight hours in range', 'Units in range', 'Amount in range', 'Submitted at', 'Note ID',
     ];
     const lines = [header.join(',')];
     for (const s of sorted) {
@@ -628,6 +738,8 @@ export default function SubmissionsPage() {
         s.totalHours,
         h == null || rn ? '' : fmtH(h),
         h == null || !rn ? '' : fmtH(h),
+        h == null ? '' : fmtUnits(hoursToUnits(h)),
+        (() => { const d = rowDollars(s); return d == null ? '' : d.toFixed(2); })(),
         s.submittedAt ? s.submittedAt.toLocaleString() : '',
         s.id,
       ].map(csvCell).join(','));
@@ -637,6 +749,9 @@ export default function SubmissionsPage() {
     lines.push(['Shifts', String(hoursStats.shifts)].join(','));
     lines.push(['RN oversight hours', fmtH(hoursStats.rnHours)].join(','));
     lines.push(['RN visits', String(hoursStats.visits)].join(','));
+    lines.push(['Shift units', fmtUnits(hoursToUnits(hoursStats.hours))].join(','));
+    lines.push(['Shift amount', hoursStats.dollars == null ? 'n/a (missing rate)' : hoursStats.dollars.toFixed(2)].join(','));
+    lines.push(['RN oversight amount', hoursStats.rnDollars == null ? 'n/a (missing rate)' : hoursStats.rnDollars.toFixed(2)].join(','));
     lines.push(['Range', describeRange({ fromISO: rangeFrom, toISO: rangeTo })].join(','));
     const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
     const suffix = rangeFrom || rangeTo
@@ -681,6 +796,7 @@ export default function SubmissionsPage() {
       q: null,
       cred: null,
       nurse: null,
+      client: null,
       range: null,
       m: null,
       from: null,
@@ -1167,6 +1283,22 @@ export default function SubmissionsPage() {
             </select>
           )}
 
+          {clientOptions.length > 1 && (
+            <select
+              value={clientParam}
+              onChange={(e) => updateParams({ client: e.target.value || null, p: null })}
+              style={selectStyle}
+              aria-label="Client"
+            >
+              <option value="">All clients</option>
+              {clientOptions.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          )}
+
           <select
             value={`${sortParam}:${dirParam}`}
             onChange={(e) => {
@@ -1400,13 +1532,20 @@ export default function SubmissionsPage() {
             <div style={hoursStripRowStyle}>
               <span style={hoursStripIconStyle}><Clock size={14} /></span>
               <span style={hoursStatStyle}>
-                <strong style={hoursStatNumStyle}>{fmtH(hoursStats.hours)}</strong> shift hours
+                <strong style={hoursStatNumStyle}>{pivotQty(hoursStats.hours, hoursStats.dollars)}</strong>
+                {qtyView === 'hours' ? ' shift hours' : qtyView === 'units' ? ' shift units' : ' shift'}
                 <span style={{ color: '#64748b' }}> · {hoursStats.shifts} {hoursStats.shifts === 1 ? 'shift' : 'shifts'}</span>
               </span>
               {(hoursStats.visits > 0 || hoursStats.rnHours > 0) && (
                 <span style={{ ...hoursStatStyle, color: '#1d4ed8' }} title="RN oversight visit hours (time in to time out); never added to shift hours">
-                  <strong style={{ ...hoursStatNumStyle, color: '#1d4ed8' }}>{fmtH(hoursStats.rnHours)}</strong> RN oversight hours
+                  <strong style={{ ...hoursStatNumStyle, color: '#1d4ed8' }}>{pivotQty(hoursStats.rnHours, hoursStats.rnDollars)}</strong>
+                  {qtyView === 'hours' ? ' RN oversight hours' : qtyView === 'units' ? ' RN oversight units' : ' RN oversight'}
                   <span style={{ color: '#3b82f6' }}> · {hoursStats.visits} {hoursStats.visits === 1 ? 'visit' : 'visits'}</span>
+                </span>
+              )}
+              {qtyView === 'dollars' && hoursStats.unpriced > 0 && (
+                <span style={{ ...hoursStatStyle, color: '#b45309' }} title="Dollars need a rate per unit on the client's authorization line (Hours tab)">
+                  {hoursStats.unpriced} {hoursStats.unpriced === 1 ? 'row has' : 'rows have'} no rate
                 </span>
               )}
               <span style={hoursStatStyle}>
@@ -1421,6 +1560,27 @@ export default function SubmissionsPage() {
                 {' · RN oversight visits are shown in blue and never added to shift hours'}
               </span>
               <div style={{ flex: 1 }} />
+              <span style={segmentedStyle} role="group" aria-label="Show as">
+                {(['hours', 'units', 'dollars'] as QtyView[]).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => updateParams({ u: v === 'hours' ? null : v })}
+                    style={qtyView === v ? segmentedActiveStyle : segmentedBtnStyle}
+                    title={v === 'units' ? '15-minute billing units (4 per hour)' : v === 'dollars' ? "Units × the rate on the client's authorization line" : 'Hours'}
+                  >
+                    {v === 'hours' ? 'Hours' : v === 'units' ? 'Units' : '$'}
+                  </button>
+                ))}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPivot(pivot === 'day' ? '' : 'day')}
+                style={pivot === 'day' ? pivotBtnActiveStyle : pivotBtnStyle}
+                title="Each calendar day's hours (overnight shifts split at midnight)"
+              >
+                By day
+              </button>
               <button
                 type="button"
                 onClick={() => setPivot(pivot === 'client' ? '' : 'client')}
@@ -1440,31 +1600,46 @@ export default function SubmissionsPage() {
               </button>
             </div>
             {pivot && (
-              <table style={pivotTableStyle}>
+              <table style={{ ...pivotTableStyle, ...(pivot === 'day' ? { maxWidth: 760 } : null) }}>
                 <thead>
                   <tr>
-                    <th style={pivotThStyle}>{pivot === 'client' ? 'Client' : 'Nurse'}</th>
+                    <th style={pivotThStyle}>{pivot === 'client' ? 'Client' : pivot === 'nurse' ? 'Nurse' : 'Day'}</th>
+                    {pivot === 'day' && <th style={pivotThStyle}>Who</th>}
                     <th style={{ ...pivotThStyle, textAlign: 'right' }}>Shifts</th>
-                    <th style={{ ...pivotThStyle, textAlign: 'right' }}>Shift hours</th>
-                    <th style={{ ...pivotThStyle, textAlign: 'right' }}>Share</th>
+                    <th style={{ ...pivotThStyle, textAlign: 'right' }}>{qtyView === 'hours' ? 'Shift hours' : qtyView === 'units' ? 'Shift units' : 'Shift $'}</th>
+                    {pivot !== 'day' && <th style={{ ...pivotThStyle, textAlign: 'right' }}>Share</th>}
                     {hoursStats.visits > 0 && <th style={{ ...pivotThStyle, textAlign: 'right', color: '#1d4ed8' }}>RN visits</th>}
-                    {hoursStats.visits > 0 && <th style={{ ...pivotThStyle, textAlign: 'right', color: '#1d4ed8' }}>RN hours</th>}
+                    {hoursStats.visits > 0 && <th style={{ ...pivotThStyle, textAlign: 'right', color: '#1d4ed8' }}>{qtyView === 'hours' ? 'RN hours' : qtyView === 'units' ? 'RN units' : 'RN $'}</th>}
                   </tr>
                 </thead>
                 <tbody>
-                  {(pivot === 'client' ? hoursStats.byClient : hoursStats.byNurse).map((b) => (
+                  {(pivot === 'client' ? hoursStats.byClient : pivot === 'nurse' ? hoursStats.byNurse : hoursStats.byDay).map((b) => (
                     <tr key={b.key}>
-                      <td style={pivotTdStyle}>{b.key}</td>
+                      <td style={{ ...pivotTdStyle, whiteSpace: 'nowrap' }}>{pivot === 'day' ? formatDateUS(b.key) : b.key}</td>
+                      {pivot === 'day' && <td style={{ ...pivotTdStyle, color: '#475569' }}>{b.who}</td>}
                       <td style={{ ...pivotTdStyle, textAlign: 'right' }}>{b.shifts || ''}</td>
-                      <td style={{ ...pivotTdStyle, textAlign: 'right', fontWeight: 700 }}>{b.shifts ? fmtH(b.hours) : ''}</td>
-                      <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#64748b' }}>
-                        {b.shifts && hoursStats.hours > 0 ? `${Math.round((b.hours / hoursStats.hours) * 100)}%` : ''}
-                      </td>
+                      <td style={{ ...pivotTdStyle, textAlign: 'right', fontWeight: 700 }}>{b.shifts ? pivotQty(b.hours, b.dollars) : ''}</td>
+                      {pivot !== 'day' && (
+                        <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#64748b' }}>
+                          {b.shifts && hoursStats.hours > 0 ? `${Math.round((b.hours / hoursStats.hours) * 100)}%` : ''}
+                        </td>
+                      )}
                       {hoursStats.visits > 0 && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#1d4ed8' }}>{b.visits || ''}</td>}
-                      {hoursStats.visits > 0 && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#1d4ed8', fontWeight: 700 }}>{b.visits ? fmtH(b.rnHours) : ''}</td>}
+                      {hoursStats.visits > 0 && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#1d4ed8', fontWeight: 700 }}>{b.visits ? pivotQty(b.rnHours, b.rnDollars) : ''}</td>}
                     </tr>
                   ))}
                 </tbody>
+                {pivot === 'day' && (
+                  <tfoot>
+                    <tr>
+                      <td style={{ ...pivotTdStyle, fontWeight: 700 }} colSpan={2}>Total</td>
+                      <td style={{ ...pivotTdStyle, textAlign: 'right' }}>{hoursStats.shifts}</td>
+                      <td style={{ ...pivotTdStyle, textAlign: 'right', fontWeight: 700 }}>{pivotQty(hoursStats.hours, hoursStats.dollars)}</td>
+                      {hoursStats.visits > 0 && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#1d4ed8' }}>{hoursStats.visits}</td>}
+                      {hoursStats.visits > 0 && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#1d4ed8', fontWeight: 700 }}>{pivotQty(hoursStats.rnHours, hoursStats.rnDollars)}</td>}
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             )}
           </div>
@@ -1535,7 +1710,7 @@ export default function SubmissionsPage() {
                         onClick={() => setSort('hours')}
                         title={rangeActive ? 'Hours inside the selected range (shifts split at midnight)' : 'Total shift hours'}
                       >
-                        Hours{sortIndicator('hours')}
+                        {QTY_VIEW_LABEL[qtyView]}{sortIndicator('hours')}
                       </th>
                     )}
                     <th style={thStyle}>Flags</th>
@@ -1690,11 +1865,11 @@ export default function SubmissionsPage() {
                               {h == null ? (
                                 <span style={{ color: '#cbd5e1' }}>—</span>
                               ) : rn ? (
-                                <span style={rnHoursChipStyle}>RN {fmtH(h)}</span>
+                                <span style={rnHoursChipStyle}>RN {rowQtyText(s, h)}</span>
                               ) : (
                                 <>
-                                  <strong style={{ color: '#0f172a' }}>{fmtH(h)}</strong>
-                                  {partial && <span style={{ color: '#94a3b8', fontSize: 11 }}> of {fmtH(total)}</span>}
+                                  <strong style={{ color: '#0f172a' }}>{rowQtyText(s, h)}</strong>
+                                  {partial && qtyView !== 'dollars' && <span style={{ color: '#94a3b8', fontSize: 11 }}> of {fmtQty(total, qtyView)}</span>}
                                 </>
                               )}
                             </td>
@@ -2221,6 +2396,31 @@ const hoursStatNumStyle: React.CSSProperties = {
   fontVariantNumeric: 'tabular-nums',
 };
 
+const segmentedStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  border: '1px solid #c8def5',
+  borderRadius: 6,
+  overflow: 'hidden',
+  background: 'white',
+};
+
+const segmentedBtnStyle: React.CSSProperties = {
+  background: 'white',
+  color: '#1a3a5c',
+  border: 'none',
+  padding: '5px 10px',
+  fontSize: 12,
+  fontWeight: 600,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
+
+const segmentedActiveStyle: React.CSSProperties = {
+  ...segmentedBtnStyle,
+  background: '#1a3a5c',
+  color: 'white',
+};
+
 /** Blue = RN oversight hours, matching the client Hours tab. */
 const rnHoursChipStyle: React.CSSProperties = {
   display: 'inline-block',
@@ -2252,7 +2452,9 @@ const pivotBtnActiveStyle: React.CSSProperties = {
   ...pivotBtnStyle,
   background: '#1a3a5c',
   color: 'white',
-  borderColor: '#1a3a5c',
+  // Longhand-free: overriding the `border` shorthand with borderColor makes
+  // React warn about mixed shorthand/longhand on rerender.
+  border: '1px solid #1a3a5c',
 };
 
 const pivotTableStyle: React.CSSProperties = {

@@ -19,8 +19,12 @@ import {
   authForMonth,
   bucketLabel,
   bucketLabelLower,
+  fmtDollars,
   fmtH,
+  fmtQty,
   fmtUnits,
+  hoursToDollars,
+  hoursToUnits,
   findShiftOverlaps,
   hoursFindings,
   monthCap,
@@ -35,6 +39,7 @@ import {
   unitsUsage,
   type HoursAuthorization,
   type HoursBucket,
+  type QtyView,
   type RateBasis,
 } from '@/lib/shiftHours';
 
@@ -76,6 +81,8 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
   const [month, setMonth] = useState(todayISO.slice(0, 7));
   const [editing, setEditing] = useState<HoursAuthorization | 'new' | null>(null);
   const [copied, setCopied] = useState(false);
+  // Hours / 15-minute units / dollars at the line rate, for the worksheet.
+  const [view, setView] = useState<QtyView>('hours');
 
   const reload = async () => {
     try {
@@ -160,6 +167,10 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
   const rnCap = rnAuth ? monthCap(rnAuth, month) : null;
   const rnUsage = monthUsage(dayHours.oversight, rnCap, month, todayISO);
   const rnVisits = monthRows.filter((r) => r.bucket === 'oversight').length;
+  const rateOf = (bucket: HoursBucket): number | null => (bucket === 'shift' ? shiftAuth : rnAuth)?.ratePerUnit ?? null;
+  const qty = (hours: number, bucket: HoursBucket): string => fmtQty(hours, view, rateOf(bucket));
+  const shiftDollars = hoursToDollars(shiftUsage.used, rateOf('shift'));
+  const rnDollars = hoursToDollars(rnUsage.used, rateOf('oversight'));
   // Show the RN block for NOW/COMP-style clients (an oversight line on file)
   // or whenever a visit was documented; GAPP clients with neither stay simple.
   const hasOversight = list.some((a) => a.covers === 'oversight') || oversightNotes.length > 0;
@@ -279,13 +290,31 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
           />
         )}
 
+        {/* Billing line: the month's used hours as units and dollars. */}
+        <div style={billingLine}>
+          <span>
+            <strong>Shift:</strong> {fmtH(shiftUsage.used)} h = {fmtUnits(hoursToUnits(shiftUsage.used))} units
+            {shiftDollars != null
+              ? <> = <strong>{fmtDollars(shiftDollars)}</strong> at {fmtDollars(rateOf('shift') as number)}/unit</>
+              : shiftAuth ? <span style={{ color: '#b45309' }}> · no rate on the line</span> : null}
+          </span>
+          {hasOversight && (
+            <span style={{ color: '#1d4ed8' }}>
+              <strong>RN oversight:</strong> {fmtH(rnUsage.used)} h = {fmtUnits(hoursToUnits(rnUsage.used))} units
+              {rnDollars != null
+                ? <> = <strong>{fmtDollars(rnDollars)}</strong> at {fmtDollars(rateOf('oversight') as number)}/unit</>
+                : rnAuth ? <span style={{ color: '#b45309' }}> · no rate on the line</span> : null}
+            </span>
+          )}
+        </div>
+
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
           <div style={{ ...muted, flex: 1, minWidth: 240 }}>{answerText}</div>
           <button type="button" onClick={copyAnswer} style={smallBtn} title="Copy a one-line answer for the parent">
             <Copy size={13} /> {copied ? 'Copied' : 'Copy answer'}
           </button>
           <Link
-            href={`/admin/submissions?view=all&range=m&m=${month}&q=${encodeURIComponent(patientName)}`}
+            href={`/admin/submissions?view=all&range=m&m=${month}&client=${encodeURIComponent(patientName)}`}
             style={{ ...smallBtn, textDecoration: 'none' }}
             title="Open these notes on the Shift Notes list"
           >
@@ -298,8 +327,21 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
       <section style={card}>
         <div style={head}>
           <div style={title}>Day by day, {monthLabel(month)}</div>
-          <div style={muted}>Shifts crossing midnight are split; a row marked “from prior day” is the tail of an overnight shift. RN visits are listed but never added to shift hours.</div>
+          <span style={segmented} role="group" aria-label="Show as">
+            {(['hours', 'units', 'dollars'] as QtyView[]).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setView(v)}
+                style={view === v ? segmentedActive : segmentedBtn}
+                title={v === 'units' ? '15-minute billing units (4 per hour)' : v === 'dollars' ? "Units × the rate on this client's line" : 'Hours'}
+              >
+                {v === 'hours' ? 'Hours' : v === 'units' ? 'Units' : '$'}
+              </button>
+            ))}
+          </span>
         </div>
+        <div style={{ ...muted, marginBottom: 10 }}>Shifts crossing midnight are split; a row marked “from prior day” is the tail of an overnight shift. Each day with more than one entry gets a day total. RN visits are listed but never added to shift hours.</div>
         {monthRows.length === 0 ? (
           <div style={muted}>Nothing documented for this month.</div>
         ) : (
@@ -309,18 +351,20 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
                 <th style={th}>Date</th>
                 <th style={th}>Nurse</th>
                 <th style={th}>Shift / visit</th>
-                <th style={{ ...th, textAlign: 'right' }}>Hours</th>
+                <th style={{ ...th, textAlign: 'right' }}>{view === 'hours' ? 'Hours' : view === 'units' ? 'Units' : 'Amount'}</th>
                 <th style={{ ...th, textAlign: 'right' }} title="Running total of shift hours">Running</th>
               </tr>
             </thead>
             <tbody>
               {(() => {
                 let running = 0;
-                return monthRows.map((r, i) => {
+                const out: React.ReactNode[] = [];
+                monthRows.forEach((r, i) => {
                   if (r.bucket === 'shift') running = Math.round((running + r.hours) * 100) / 100;
                   const firstOfDay = i === 0 || monthRows[i - 1].dateISO !== r.dateISO;
+                  const lastOfDay = i === monthRows.length - 1 || monthRows[i + 1].dateISO !== r.dateISO;
                   const isRn = r.bucket === 'oversight';
-                  return (
+                  out.push(
                     <tr
                       key={`${r.noteId}-${r.dateISO}`}
                       style={{
@@ -343,23 +387,47 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
                           <span style={overBadge} title={`Overlaps ${overlapText(r.noteId)}`}>overlaps</span>
                         )}
                       </td>
-                      <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: isRn ? '#1d4ed8' : undefined }}>{fmtH(r.hours)}</td>
-                      <td style={{ ...td, textAlign: 'right', color: '#5c6b7a', fontVariantNumeric: 'tabular-nums' }}>{isRn ? '' : fmtH(running)}</td>
-                    </tr>
+                      <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: isRn ? '#1d4ed8' : undefined }}>{qty(r.hours, r.bucket)}</td>
+                      <td style={{ ...td, textAlign: 'right', color: '#5c6b7a', fontVariantNumeric: 'tabular-nums' }}>{isRn ? '' : qty(running, 'shift')}</td>
+                    </tr>,
                   );
+                  // Day total when a calendar day has more than one entry
+                  // (Sarah's overnight tail + Jamie's day shift = 15 on the 14th).
+                  if (lastOfDay) {
+                    const dayRowsHere = monthRows.filter((x) => x.dateISO === r.dateISO);
+                    const dayShift = dayRowsHere.filter((x) => x.bucket === 'shift');
+                    const dayRn = dayRowsHere.filter((x) => x.bucket === 'oversight');
+                    if (dayRowsHere.length > 1) {
+                      const shiftSum = Math.round(dayShift.reduce((a, x) => a + x.hours, 0) * 100) / 100;
+                      const rnSum = Math.round(dayRn.reduce((a, x) => a + x.hours, 0) * 100) / 100;
+                      out.push(
+                        <tr key={`total-${r.dateISO}`} style={dayTotalRow}>
+                          <td style={{ ...td, fontWeight: 700, color: NAVY, whiteSpace: 'nowrap' }}>{formatDateUS(r.dateISO)} total</td>
+                          <td style={{ ...td, color: '#5c6b7a' }} colSpan={2}>
+                            {dayShift.length > 0 && `${dayShift.length} shift ${dayShift.length === 1 ? 'entry' : 'entries'}`}
+                            {dayShift.length > 0 && dayRn.length > 0 && ' · '}
+                            {dayRn.length > 0 && <span style={{ color: '#1d4ed8' }}>{dayRn.length} RN {dayRn.length === 1 ? 'visit' : 'visits'} ({qty(rnSum, 'oversight')})</span>}
+                          </td>
+                          <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: NAVY, fontVariantNumeric: 'tabular-nums' }}>{dayShift.length > 0 ? qty(shiftSum, 'shift') : ''}</td>
+                          <td style={td} />
+                        </tr>,
+                      );
+                    }
+                  }
                 });
+                return out;
               })()}
             </tbody>
             <tfoot>
               <tr>
-                <td style={{ ...td, fontWeight: 700 }} colSpan={3}>Shift hours</td>
-                <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{fmtH(shiftUsage.used)}</td>
+                <td style={{ ...td, fontWeight: 700 }} colSpan={3}>Shift {view === 'hours' ? 'hours' : view === 'units' ? 'units' : 'amount'}</td>
+                <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{qty(shiftUsage.used, 'shift')}</td>
                 <td style={td} />
               </tr>
               {(hasOversight || rnUsage.used > 0) && (
                 <tr>
-                  <td style={{ ...td, fontWeight: 700, color: '#1d4ed8' }} colSpan={3}>RN oversight hours</td>
-                  <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#1d4ed8' }}>{fmtH(rnUsage.used)}</td>
+                  <td style={{ ...td, fontWeight: 700, color: '#1d4ed8' }} colSpan={3}>RN oversight {view === 'hours' ? 'hours' : view === 'units' ? 'units' : 'amount'}</td>
+                  <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#1d4ed8' }}>{qty(rnUsage.used, 'oversight')}</td>
                   <td style={td} />
                 </tr>
               )}
@@ -419,6 +487,7 @@ export default function HoursSection({ patientId, patientName, notes, uid, today
                     {formatDateUS(a.from)} to {formatDateUS(a.to)}
                     {a.rateHours != null && ` · ${fmtH(a.rateHours)} hours per ${a.rateBasis}`}
                     {a.totalUnits != null && ` · ${fmtUnits(a.totalUnits)} units (${fmtH(a.totalUnits / UNITS_PER_HOUR)} h)`}
+                    {a.ratePerUnit != null && ` · ${fmtDollars(a.ratePerUnit)}/unit`}
                     {a.note && ` · ${a.note}`}
                   </div>
                   {units && (
@@ -623,6 +692,7 @@ function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: Form
   const [rateBasis, setRateBasis] = useState<RateBasis>(existing?.rateBasis ?? 'week');
   const [rate, setRate] = useState(existing?.rateHours != null ? String(existing.rateHours) : '');
   const [totalUnits, setTotalUnits] = useState(existing?.totalUnits != null ? String(existing.totalUnits) : '');
+  const [unitRate, setUnitRate] = useState(existing?.ratePerUnit != null ? String(existing.ratePerUnit) : '');
   const [from, setFrom] = useState(existing?.from ?? '');
   const [to, setTo] = useState(existing?.to ?? '');
   const [note, setNote] = useState(existing?.note ?? '');
@@ -637,6 +707,7 @@ function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: Form
 
   const rateNum = rate.trim() === '' ? null : Number(rate);
   const unitsNum = totalUnits.trim() === '' ? null : Number(totalUnits);
+  const rateUnitNum = unitRate.trim() === '' ? null : Number(unitRate);
   const validDates = /^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to) && from <= to;
   const months = validDates ? monthsBetween(from, to) : [];
   const preview: HoursAuthorization = {
@@ -661,6 +732,7 @@ function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: Form
     if (from > to) { setFieldErr('to'); setErr('The end date is before the effective date.'); return; }
     if (rateNum != null && (!Number.isFinite(rateNum) || rateNum < 0 || rateNum > 744)) { setFieldErr('rate'); setErr('Hours must be a number between 0 and 744.'); return; }
     if (unitsNum != null && (!Number.isFinite(unitsNum) || unitsNum < 0)) { setFieldErr('units'); setErr('Total units must be a positive number.'); return; }
+    if (rateUnitNum != null && (!Number.isFinite(rateUnitNum) || rateUnitNum < 0 || rateUnitNum > 1000)) { setErr('Rate per unit must be a dollar amount (0 to 1000).'); return; }
     const monthOverrides: Record<string, number> = {};
     for (const ym of months) {
       const raw = (overrides[ym] ?? '').trim();
@@ -683,6 +755,7 @@ function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: Form
       monthOverrides,
       totalUnits: unitsNum,
       serviceCode: serviceCode.trim(),
+      ratePerUnit: rateUnitNum,
       note: note.trim(),
     };
     setSaving(true);
@@ -749,6 +822,10 @@ function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: Form
         <label style={field}>
           <span style={label} title="Therap Total Units for the whole window; 4 units = 1 hour">Total units</span>
           <input type="number" min={0} step="1" value={totalUnits} onChange={(e) => setTotalUnits(e.target.value)} style={{ ...input, ...errStyle('units') }} placeholder="5840 (Therap) or blank" />
+        </label>
+        <label style={field}>
+          <span style={label} title="Payer rate per 15-minute unit, e.g. $24.36 LPN / $36.68 RN on COMP. Drives the $ view.">Rate per unit ($)</span>
+          <input type="number" min={0} step="0.01" value={unitRate} onChange={(e) => setUnitRate(e.target.value)} style={input} placeholder="24.36" />
         </label>
         <label style={{ ...field, gridColumn: '1 / -1' }}>
           <span style={label}>Note (optional)</span>
@@ -844,5 +921,10 @@ const formCard: CSSProperties = { border: '1px solid #c8def5', background: '#f8f
 const formGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 };
 const field: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 };
 const label: CSSProperties = { fontSize: 11.5, fontWeight: 700, color: '#5c6b7a', textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap' };
+const billingLine: CSSProperties = { display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 12, padding: '8px 12px', background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 13, color: '#334155' };
+const dayTotalRow: CSSProperties = { background: '#f0f7ff' };
+const segmented: CSSProperties = { display: 'inline-flex', border: '1px solid #c8def5', borderRadius: 6, overflow: 'hidden', background: 'white' };
+const segmentedBtn: CSSProperties = { background: 'white', color: NAVY, border: 'none', padding: '5px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
+const segmentedActive: CSSProperties = { ...segmentedBtn, background: NAVY, color: 'white' };
 const monthGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8 };
 const monthCell: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 3 };

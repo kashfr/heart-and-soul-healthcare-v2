@@ -14,6 +14,10 @@ import {
   unitsUsage,
   emptyBucketDayHours,
   rateLabel,
+  hoursToUnits,
+  hoursToDollars,
+  fmtQty,
+  segmentsToDollars,
   type HoursAuthorization,
 } from './shiftHours';
 
@@ -335,5 +339,26 @@ describe('unitsUsage', () => {
     const u = unitsUsage(kimLpn, days, '2026-04-04')!;
     expect(u.projectedUnits).toBe(11680);
     expect(u.runsOutOn).toBe('2026-10-01'); // 5776 / 32 per day = 180.5 days after 04/04
+  });
+});
+
+describe('units and dollars', () => {
+  const lpn = { ...kimLpn, ratePerUnit: 24.36 };
+  const rn = { ...kimRn, ratePerUnit: 36.68 };
+  it('converts hours to 15-minute units and prices them', () => {
+    expect(hoursToUnits(11.25)).toBe(45);
+    expect(hoursToDollars(11.25, 24.36)).toBe(1096.2);
+    expect(hoursToDollars(3, null)).toBeNull();
+    expect(fmtQty(11.25, 'hours')).toBe('11.25');
+    expect(fmtQty(11.25, 'units')).toBe('45');
+    expect(fmtQty(11.25, 'dollars', 24.36)).toBe('$1,096.20');
+    expect(fmtQty(11.25, 'dollars', null)).toBe('—');
+  });
+  it('prices day segments at the rate in force per bucket, or refuses when any is unpriced', () => {
+    const segs = [{ dateISO: '2026-09-13', hours: 5 }, { dateISO: '2026-09-14', hours: 7 }];
+    expect(segmentsToDollars(segs, [lpn, rn], 'shift')).toBe(1169.28); // 12 h x 4 x 24.36
+    expect(segmentsToDollars([{ dateISO: '2026-09-07', hours: 3.5 }], [lpn, rn], 'oversight')).toBe(513.52);
+    expect(segmentsToDollars(segs, [{ ...lpn, ratePerUnit: null }], 'shift')).toBeNull();
+    expect(segmentsToDollars([{ dateISO: '2027-06-01', hours: 4 }], [lpn], 'shift')).toBeNull(); // outside the window
   });
 });
