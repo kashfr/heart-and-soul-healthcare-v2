@@ -906,7 +906,7 @@ function ClientDashboardInner() {
             <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
               <Clock size={16} /> Hours
             </div>
-            <HoursSection patientId={patientId} patientName={patient.name} notes={notes} uid={user.uid} todayISO={today} />
+            <HoursSection patientId={patientId} patientName={patient.name} program={patient.program || ''} notes={notes} uid={user.uid} todayISO={today} />
           </section>
           )}
 

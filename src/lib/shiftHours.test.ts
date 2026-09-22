@@ -18,6 +18,7 @@ import {
   hoursToDollars,
   fmtQty,
   segmentsToDollars,
+  segmentsToUnits,
   type HoursAuthorization,
 } from './shiftHours';
 
@@ -343,10 +344,16 @@ describe('unitsUsage', () => {
 });
 
 describe('units and dollars', () => {
-  const lpn = { ...kimLpn, ratePerUnit: 24.36 };
-  const rn = { ...kimRn, ratePerUnit: 36.68 };
-  it('converts hours to 15-minute units and prices them', () => {
+  it('rounds each day up to whole 15-minute units', () => {
+    expect(hoursToUnits(8)).toBe(32);
     expect(hoursToUnits(11.25)).toBe(45);
+    expect(hoursToUnits(3.42)).toBe(14); // 3.42 h -> 3.5 h
+    expect(hoursToUnits(5.08)).toBe(21); // 5.08 h -> 5.25 h
+    expect(hoursToUnits(8.0000001)).toBe(32); // float noise does not add a unit
+    expect(hoursToUnits(0)).toBe(0);
+  });
+  it('prices billable units, not raw hours', () => {
+    expect(hoursToDollars(3.42, 24.36)).toBe(341.04); // 14 units
     expect(hoursToDollars(11.25, 24.36)).toBe(1096.2);
     expect(hoursToDollars(3, null)).toBeNull();
     expect(fmtQty(11.25, 'hours')).toBe('11.25');
@@ -354,11 +361,12 @@ describe('units and dollars', () => {
     expect(fmtQty(11.25, 'dollars', 24.36)).toBe('$1,096.20');
     expect(fmtQty(11.25, 'dollars', null)).toBe('—');
   });
-  it('prices day segments at the rate in force per bucket, or refuses when any is unpriced', () => {
+  it('sums units and dollars per day, and refuses a partial dollar total', () => {
     const segs = [{ dateISO: '2026-09-13', hours: 5 }, { dateISO: '2026-09-14', hours: 7 }];
-    expect(segmentsToDollars(segs, [lpn, rn], 'shift')).toBe(1169.28); // 12 h x 4 x 24.36
-    expect(segmentsToDollars([{ dateISO: '2026-09-07', hours: 3.5 }], [lpn, rn], 'oversight')).toBe(513.52);
-    expect(segmentsToDollars(segs, [{ ...lpn, ratePerUnit: null }], 'shift')).toBeNull();
-    expect(segmentsToDollars([{ dateISO: '2027-06-01', hours: 4 }], [lpn], 'shift')).toBeNull(); // outside the window
+    expect(segmentsToUnits(segs)).toBe(48);
+    expect(segmentsToDollars(segs, () => 24.36)).toBe(1169.28);
+    expect(segmentsToDollars(segs, (d) => (d === '2026-09-14' ? null : 24.36))).toBeNull();
+    // a shift split into two short pieces bills the started quarter on each day
+    expect(segmentsToUnits([{ dateISO: '2026-09-13', hours: 5.05 }, { dateISO: '2026-09-14', hours: 7.05 }])).toBe(50);
   });
 });
