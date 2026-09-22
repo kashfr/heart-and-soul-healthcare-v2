@@ -352,6 +352,41 @@ describe('vitalSeries', () => {
     expect(pts[0].sys).toBeUndefined();
     expect(pts[0].dia).toBe(80);
   });
+
+  it('adds one point per vitals recheck after the first set, tagged and ordered by time', () => {
+    const pts = vitalSeries([
+      note({ id: 'b', dateISO: '2026-09-23', pulse: '70' }),
+      note({
+        id: 'a',
+        dateISO: '2026-09-22',
+        pulse: '102',
+        bloodPressure: '125/82',
+        rechecks: [
+          { time: '14:30', context: 'After activity or exertion', temperature: '', bloodPressure: '150/88', pulse: '112', respiration: '', oxygenSaturation: '' },
+          { time: '11:00', context: 'Resting / calm', temperature: '', bloodPressure: '', pulse: '100', respiration: '', oxygenSaturation: '' },
+        ],
+      }),
+    ]);
+    expect(pts.map((p) => [p.dateISO, p.recheck?.time ?? 'first', p.pulse])).toEqual([
+      ['2026-09-22', 'first', 102],
+      ['2026-09-22', '11:00', 100],
+      ['2026-09-22', '14:30', 112],
+      ['2026-09-23', 'first', 70],
+    ]);
+    // A pulse-only recheck carries no BP; the 14:30 one does.
+    expect(pts[1].sys).toBeUndefined();
+    expect(pts[2].sys).toBe(150);
+    expect(pts[1].recheck).toEqual({ index: 2, time: '11:00', context: 'Resting / calm' });
+  });
+
+  it('skips a recheck with no plausible vital and leaves old notes (no rechecks field) unchanged', () => {
+    const pts = vitalSeries([
+      note({ id: 'a', dateISO: '2026-09-22', pulse: '80', rechecks: [{ time: '12:00', context: '', temperature: '', bloodPressure: '', pulse: '999', respiration: '', oxygenSaturation: '' }] }),
+      note({ id: 'b', dateISO: '2026-09-21', pulse: '78' }),
+    ]);
+    expect(pts).toHaveLength(2);
+    expect(pts.every((p) => !p.recheck)).toBe(true);
+  });
 });
 
 describe('weeklyMedBuckets', () => {

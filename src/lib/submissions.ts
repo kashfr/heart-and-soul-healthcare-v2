@@ -18,6 +18,7 @@ import { clarificationBlocksNotes, clarificationTurn } from './clarificationShar
 import type { NoteClarification, ClarificationKind, ClarificationTurn } from './clarificationShared';
 import { db } from './firebase';
 import { hasAnyAbnormalVital, type VitalRangesOverride } from './vitalRanges';
+import { readVitalsRechecks, recheckBloodPressure } from './vitalsRecheck';
 import { hasCriticalVital } from './criticalVitals';
 import { normalizeName } from './levenshtein';
 import { noteIsActiveDuplicate } from './duplicateMatch';
@@ -885,6 +886,15 @@ export async function getNotesForPatient(patientId: string): Promise<DashboardNo
         pulse: (data.q18_pulse as string) || '',
         respiration: (data.q19_respiration as string) || '',
         oxygenSaturation: (data.q20_oxygenSaturation as string) || '',
+        rechecks: readVitalsRechecks(data).map((r) => ({
+          time: r.time,
+          context: r.context,
+          temperature: r.temperature,
+          bloodPressure: recheckBloodPressure(r),
+          pulse: r.pulse,
+          respiration: r.respiration,
+          oxygenSaturation: r.oxygenSaturation,
+        })),
         painScore: (data.q24_painScore as string) || '',
         medTolerance: (data.q43_medTolerance as string) || '',
         physNotified: (data.q43_reactionPhysNotified as string) || '',
