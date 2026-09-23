@@ -36,6 +36,7 @@ import MedErrorsSection from './MedErrorsSection';
 import SeizureLogSection from './SeizureLogSection';
 import CarePlanSection from './CarePlanSection';
 import HoursSection from './HoursSection';
+import DayProgramSection from './DayProgramSection';
 import { physicianAttributionPending, physicianOrderStale } from '@/lib/marShared';
 import {
   adverseEvents,
@@ -646,6 +647,17 @@ function ClientDashboardInner() {
                 </button>
               </section>
 
+              {/* Day program: where the client spends the day and who to call
+                  there. Clinical sub-record, so VAs (no clinical read) skip it. */}
+              {realRole !== 'va' && (
+                <DayProgramSection
+                  key={`dp-${patientId}`}
+                  patientId={patientId}
+                  canEdit={realStaff && !isViewingAs}
+                  actorName={profile?.displayName || user?.email || ''}
+                  onToast={showToast}
+                />
+              )}
               {/* Quick notes — the lightweight jot-it-down sibling of the
                   progress note (author/time auto-captured, immutable). Keyed
                   by patient so NOTHING (esp. an open modal with typed text)
