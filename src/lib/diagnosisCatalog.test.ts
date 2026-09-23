@@ -19,7 +19,11 @@ import {
   diagnosisPicture,
   inferService,
   combinedDiagnosisPicture,
+  highBehaviorPaidFlag,
   paidCareBasisLabel,
+  relationshipLabel,
+  RELATIONSHIP_OPTIONS,
+  screenCaregiverRelationship,
   screenBehavioralPaidCaregiver,
   screenMixedPaidCaregiver,
   screenYoungPaidCaregiver,
@@ -381,5 +385,69 @@ describe('screenBehavioralPaidCaregiver (the Kehlani case)', () => {
     expect(
       screenBehavioralPaidCaregiver({ diagnoses: ['seizures'], freeText: 'he has autism', seekingPaidCaregiver: 'yes' })
     ).toBeNull();
+  });
+});
+
+describe('screenCaregiverRelationship', () => {
+  const NOW = new Date('2026-09-23T12:00:00Z').getTime();
+  const screen = (relationship: string, dob: string, hasGuardianship = '', seeking = 'yes') =>
+    screenCaregiverRelationship({ relationship, dob, hasGuardianship, seekingPaidCaregiver: seeking }, NOW);
+
+  it('refuses a paid request from a foster parent, at any age', () => {
+    expect(screen('foster', '2018-01-01').block).toContain('Foster parents are not eligible');
+    expect(screen('foster', '2006-10-23').block).not.toBeNull();
+    expect(screen('foster', '2018-01-01', '', 'no').block).toBeNull();
+  });
+
+  it('asks a parent about guardianship only when the member is 18 or older (the Demetrius case)', () => {
+    expect(screen('parent', '2012-03-14').asksGuardianship).toBe(false);
+    expect(screen('parent', '2012-03-14').flag).toBeNull();
+    const d = screen('parent', '2006-10-23', 'no');
+    expect(d.asksGuardianship).toBe(true);
+    expect(d.block).toBeNull();
+    expect(d.flag).toContain('WITHOUT legal guardianship');
+    expect(d.flag).toContain('18 or older');
+    expect(screen('parent', '2006-10-23', 'yes').flag).toContain('Collect the guardianship order');
+    expect(screen('parent', '2006-10-23').flag).toContain('did not capture guardianship');
+  });
+
+  it('asks grandparents and other relatives at any age', () => {
+    expect(screen('grandparent', '2018-01-01').asksGuardianship).toBe(true);
+    expect(screen('relative', '2018-01-01', 'no').flag).toContain('other relative WITHOUT');
+  });
+
+  it('never asks a legal guardian', () => {
+    expect(screen('guardian', '2006-10-23')).toEqual({ block: null, asksGuardianship: false, flag: null });
+  });
+
+  it('flags a paid request submitted by a professional, the member, or other', () => {
+    for (const rel of ['professional', 'self', 'other']) {
+      expect(screen(rel, '2012-01-01').flag).toContain('someone other than the family member');
+    }
+  });
+
+  it('has a label for every option and no dashes in any copy', () => {
+    for (const o of RELATIONSHIP_OPTIONS) expect(relationshipLabel(o.code)).toBe(o.label);
+    const copy = [
+      screen('foster', '2018-01-01').block,
+      screen('parent', '2006-10-23', 'no').flag,
+      screen('parent', '2006-10-23', 'yes').flag,
+      screen('grandparent', '2018-01-01').flag,
+      screen('other', '2018-01-01').flag,
+    ];
+    for (const c of copy) expect(c).not.toMatch(/[—–]/);
+  });
+});
+
+describe('highBehaviorPaidFlag', () => {
+  it('flags paid + behaviors that need help to manage, naming ABA when present', () => {
+    const f = highBehaviorPaidFlag({ behaviorRisk: 'high', currentServices: ['aba'], seekingPaidCaregiver: 'yes' });
+    expect(f).toContain('with ABA already in place');
+    expect(f).not.toMatch(/[—–]/);
+  });
+
+  it('stays quiet otherwise', () => {
+    expect(highBehaviorPaidFlag({ behaviorRisk: 'managed', seekingPaidCaregiver: 'yes' })).toBeNull();
+    expect(highBehaviorPaidFlag({ behaviorRisk: 'high', seekingPaidCaregiver: 'no' })).toBeNull();
   });
 });
