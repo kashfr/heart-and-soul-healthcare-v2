@@ -1,6 +1,7 @@
 import 'server-only';
 import { Resend } from 'resend';
 import type { ReferralInput } from '@/lib/referrals';
+import { referralPortalButtonHtml } from '@/lib/emails/referralPortalLink';
 
 // Notification for a referral that arrived via the API intake (e.g. the GAPP
 // website). The portal's own /referral form already sends its own richer email
@@ -32,7 +33,9 @@ export interface ReferralNotificationResult {
 }
 
 export async function sendReferralNotification(
-  referral: ReferralInput
+  referral: ReferralInput,
+  /** The stored referral's id; when present the email links straight to its card. */
+  referralId?: string
 ): Promise<ReferralNotificationResult> {
   if (!process.env.RESEND_API_KEY) {
     return { ok: false, error: 'RESEND_API_KEY not configured on the server.' };
@@ -72,10 +75,15 @@ export async function sendReferralNotification(
       <p style="margin:0 0 16px;color:#6b7280;font-size:13px;">via ${escapeHtml(
         sourceLabel
       )}</p>
+      ${referralId ? referralPortalButtonHtml(referralId) : ''}
       <table style="border-collapse:collapse;width:100%;font-size:14px;">${rowsHtml}</table>
-      <p style="margin:16px 0 0;font-size:12px;color:#6b7280;">
+      ${
+        referralId
+          ? referralPortalButtonHtml(referralId)
+          : `<p style="margin:16px 0 0;font-size:12px;color:#6b7280;">
         View and manage this referral in the staff portal under Referrals.
-      </p>
+      </p>`
+      }
     </div>`;
 
   try {
