@@ -14,7 +14,10 @@ import {
   currentServiceLabels,
   equipmentLabels,
   inferService,
+  highBehaviorPaidFlag,
   paidCareBasisLabel,
+  relationshipLabel,
+  screenCaregiverRelationship,
   screenBehavioralPaidCaregiver,
   screenMixedPaidCaregiver,
   type ServiceKey,
@@ -227,6 +230,10 @@ export async function processReferralSubmission(data: any) {
     if (mixed.block) {
       return { success: false, refused: 'mixed-paid-caregiver', error: mixed.block };
     }
+    const relationship = screenCaregiverRelationship({ ...details, dob: client?.dob });
+    if (relationship.block) {
+      return { success: false, refused: 'foster-paid-caregiver', error: relationship.block };
+    }
   }
 
   try {
@@ -301,6 +308,14 @@ export async function processReferralSubmission(data: any) {
       // GAPP service lines and never see the clinical questions.
       const inferred =
         program.interest === 'gapp' ? inferService(details) : null;
+      // Who is asking to be paid, and a paid request reporting behaviors that
+      // need help to manage (GAPP only).
+      const relationship =
+        program.interest === 'gapp'
+          ? screenCaregiverRelationship({ ...details, dob: client.dob })
+          : null;
+      const behaviorFlag =
+        program.interest === 'gapp' ? highBehaviorPaidFlag(details) : null;
 
       await createReferral({
         source: 'hs-website',
@@ -314,8 +329,13 @@ export async function processReferralSubmission(data: any) {
         details: [
           ...(reviewFlag ? [{ label: '⚠ Review', value: reviewFlag }] : []),
           ...(ageFlag ? [{ label: '⚠ Young child', value: ageFlag }] : []),
+          ...(relationship?.flag ? [{ label: '⚠ Relationship', value: relationship.flag }] : []),
+          ...(behaviorFlag ? [{ label: '⚠ Behavior', value: behaviorFlag }] : []),
           ...(inferred?.conflict
             ? [{ label: '⚠ Care need unclear', value: inferred.conflict }]
+            : []),
+          ...(program.interest === 'gapp'
+            ? [{ label: 'Relationship to child', value: relationshipLabel(details.relationship) }]
             : []),
           { label: 'Date of birth', value: formatDateUS(client.dob ?? '') },
           { label: 'Secondary phone', value: client.secondaryPhone ?? '' },
@@ -369,6 +389,12 @@ export async function processReferralSubmission(data: any) {
                   ),
                 },
               ]
+            : []),
+          ...(relationship?.asksGuardianship
+            ? [{
+                label: 'Legal guardianship',
+                value: details.hasGuardianship === 'yes' ? 'Yes' : details.hasGuardianship === 'no' ? 'No' : '',
+              }]
             : []),
           ...(details.seekingPaidCaregiver === 'yes' && details.paidCareBasis
             ? [

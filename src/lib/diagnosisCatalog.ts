@@ -714,6 +714,150 @@ export function screenYoungPaidCaregiver(
   };
 }
 
+// --- Relationship + paid-caregiver screens -----------------------------------
+
+/**
+ * The submitter's relationship to the member. The Family Caregiver Option pays
+ * only "a legally responsible adult family member who lives with the member"
+ * and never a foster parent (GAPP manual §604.2, §604.3, §907), so who is
+ * asking to be paid matters as much as what the care is for.
+ */
+export type CaregiverRelationship =
+  | ''
+  | 'parent'
+  | 'guardian'
+  | 'grandparent'
+  | 'relative'
+  | 'foster'
+  | 'self'
+  | 'professional'
+  | 'other';
+
+export const RELATIONSHIP_OPTIONS: { code: Exclude<CaregiverRelationship, ''>; label: string }[] = [
+  { code: 'parent', label: 'Parent' },
+  { code: 'guardian', label: 'Legal guardian' },
+  { code: 'grandparent', label: 'Grandparent' },
+  { code: 'relative', label: 'Other relative (aunt, uncle, sibling, cousin)' },
+  { code: 'foster', label: 'Foster parent' },
+  { code: 'self', label: 'I am the member (18 or older)' },
+  { code: 'professional', label: 'Case manager, social worker, or healthcare professional' },
+  { code: 'other', label: 'Other' },
+];
+
+const RELATIONSHIP_LABEL = new Map(RELATIONSHIP_OPTIONS.map((o) => [o.code, o.label]));
+
+export function relationshipLabel(value: CaregiverRelationship | string | undefined): string {
+  return RELATIONSHIP_LABEL.get(value as Exclude<CaregiverRelationship, ''>) ?? '';
+}
+
+export interface RelationshipScreenInput {
+  relationship?: CaregiverRelationship | string;
+  /** Asked only when `asksGuardianship`: does the submitter hold legal guardianship? */
+  hasGuardianship?: '' | 'yes' | 'no' | string;
+  seekingPaidCaregiver?: string;
+  dob?: string | null;
+}
+
+export interface RelationshipScreen {
+  /** Why the paid request is refused. Null when it may proceed. */
+  block: string | null;
+  /** The form must ask "Do you have legal guardianship?" in exactly this case. */
+  asksGuardianship: boolean;
+  /** Staff-facing note for the card when the request goes through. */
+  flag: string | null;
+}
+
+const NO_RELATIONSHIP_SCREEN: RelationshipScreen = { block: null, asksGuardianship: false, flag: null };
+
+export const FOSTER_PAID_CAREGIVER_BLOCK =
+  'Paid-caregiver request from a foster parent. Foster parents are not eligible for the Family Caregiver Option (GAPP manual §604.3, §907), so the referral cannot be accepted as a paid-caregiver request. The child may still qualify for GAPP nursing or personal care; the referral can be sent with the paid-caregiver answer set to No.';
+
+/**
+ * Relationship checks on a paid-caregiver request:
+ *
+ *   - Foster parent: refused. The manual says so in three places.
+ *   - Grandparent or other relative, or a parent of a member 18 or older:
+ *     the form asks whether they hold legal guardianship. The manual pays
+ *     only a "legally responsible" family member and never defines the term,
+ *     so this is flagged for DCH confirmation rather than refused.
+ *   - A professional, the member themself, or "other": the person applying
+ *     to be paid is someone else, whose relationship we do not have.
+ */
+export function screenCaregiverRelationship(
+  input: RelationshipScreenInput,
+  nowMs: number = Date.now()
+): RelationshipScreen {
+  if (input.seekingPaidCaregiver !== 'yes') return NO_RELATIONSHIP_SCREEN;
+  const rel = input.relationship ?? '';
+
+  if (rel === 'foster') {
+    return { block: FOSTER_PAID_CAREGIVER_BLOCK, asksGuardianship: false, flag: null };
+  }
+
+  const months = ageMonthsFromDob(input.dob, nowMs);
+  const adultMember = months !== null && months >= 18 * 12;
+  const asksGuardianship =
+    rel === 'grandparent' || rel === 'relative' || (rel === 'parent' && adultMember);
+
+  if (asksGuardianship) {
+    const who = relationshipLabel(rel).toLowerCase().replace(/ \(.*\)$/, '');
+    const why =
+      rel === 'parent'
+        ? 'The member is 18 or older, so a parent is not automatically legally responsible.'
+        : `A ${who} is legally responsible only with guardianship.`;
+    if (input.hasGuardianship === 'yes') {
+      return {
+        block: null,
+        asksGuardianship,
+        flag: `Paid-caregiver request from a ${who} who says they hold legal guardianship. ${why} Collect the guardianship order before hiring under the Family Caregiver Option.`,
+      };
+    }
+    if (input.hasGuardianship === 'no') {
+      return {
+        block: null,
+        asksGuardianship,
+        flag: `Paid-caregiver request from a ${who} WITHOUT legal guardianship. ${why} The Family Caregiver Option pays only a legally responsible adult family member; confirm with DCH (GAPP.Inquiries@dch.ga.gov) before hiring.`,
+      };
+    }
+    return {
+      block: null,
+      asksGuardianship,
+      flag: `Paid-caregiver request from a ${who}; the form did not capture guardianship. ${why} Confirm before hiring.`,
+    };
+  }
+
+  if (rel === 'professional' || rel === 'self' || rel === 'other') {
+    return {
+      block: null,
+      asksGuardianship: false,
+      flag:
+        'Paid-caregiver request submitted by someone other than the family member who wants to be paid. Confirm who that is and that they are a legally responsible adult family member living with the member (not a foster parent).',
+    };
+  }
+
+  return NO_RELATIONSHIP_SCREEN;
+}
+
+/**
+ * Seeking pay while reporting behaviors that happen often and need help to
+ * manage: the Appendix W Behavioral Support Aide signal. The Family Caregiver
+ * Option never pays for behavior management. Not a refusal (a medically
+ * complex member can still need paid personal care); the form tells them
+ * plainly and the card calls it out.
+ */
+export function highBehaviorPaidFlag(input: {
+  behaviorRisk?: string;
+  currentServices?: string[];
+  seekingPaidCaregiver?: string;
+}): string | null {
+  if (input.seekingPaidCaregiver !== 'yes' || input.behaviorRisk !== 'high') return null;
+  const aba = (input.currentServices ?? []).includes('aba');
+  return (
+    `Paid-caregiver request where the family reports behaviors that happen often and need help to manage${aba ? ', with ABA already in place' : ''}. ` +
+    'The Family Caregiver Option does not pay for behavior management (Behavioral Health Aide is excluded). Raise this at intake: paid hours cover only hands-on personal care tied to the medical condition.'
+  );
+}
+
 // --- Drift guard -------------------------------------------------------------
 
 /**

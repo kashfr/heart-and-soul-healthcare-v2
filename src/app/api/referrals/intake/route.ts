@@ -11,10 +11,14 @@ import {
   currentServiceLabels,
   equipmentLabels,
   inferService,
+  highBehaviorPaidFlag,
   paidCareBasisLabel,
+  relationshipLabel,
+  screenCaregiverRelationship,
   screenBehavioralPaidCaregiver,
   screenMixedPaidCaregiver,
   type BehaviorRisk,
+  type CaregiverRelationship,
   type PaidCareBasis,
 } from '@/lib/diagnosisCatalog';
 
@@ -49,6 +53,10 @@ interface IncomingPayload {
   submittedAt?: string;
   referral?: {
     submitterName?: string;
+    /** The submitter's relationship to the child. */
+    relationship?: CaregiverRelationship;
+    /** Asked only when the relationship screen needs it. */
+    hasGuardianship?: '' | 'yes' | 'no';
     fullName?: string;
     phoneNumber?: string;
     emailAddress?: string;
@@ -146,6 +154,11 @@ function toReferralInput(payload: IncomingPayload): ReferralInput {
   // disagrees with the care need they selected. Advisory: it drives the board's
   // partner matching and flags the card, it never decides eligibility (which
   // Alliant determines on medical necessity, GAPP manual §702.1.1).
+  // Who is asking to be paid (guardianship / not-the-applicant notes), and a
+  // paid request that reports behaviors needing help to manage.
+  const relationship = screenCaregiverRelationship(r);
+  const behaviorFlag = highBehaviorPaidFlag(r);
+
   const inferred = inferService(r);
   const inferredValue = inferred.service
     ? `${SERVICE_LABEL[inferred.service]} (${inferred.reason})`
@@ -172,10 +185,13 @@ function toReferralInput(payload: IncomingPayload): ReferralInput {
     details: [
       ...(reviewFlag ? [{ label: '⚠ Review', value: reviewFlag }] : []),
       ...(ageFlag ? [{ label: '⚠ Young child', value: ageFlag }] : []),
+      ...(relationship.flag ? [{ label: '⚠ Relationship', value: relationship.flag }] : []),
+      ...(behaviorFlag ? [{ label: '⚠ Behavior', value: behaviorFlag }] : []),
       ...(inferred.conflict
         ? [{ label: '⚠ Care need unclear', value: inferred.conflict }]
         : []),
       ...(catalogDrift ? [{ label: '⚠ Form version', value: catalogDrift }] : []),
+      { label: 'Relationship to child', value: relationshipLabel(r.relationship) },
       { label: 'Date of birth', value: formatDateUS(r.dob ?? '') },
       { label: 'Age', value: ageLabel(r.dob) },
       { label: 'Address', value: address },
@@ -191,6 +207,12 @@ function toReferralInput(payload: IncomingPayload): ReferralInput {
       },
       { label: 'Inferred service need', value: inferredValue },
       { label: 'Seeking paid caregiver', value: seekingValue },
+      ...(relationship.asksGuardianship
+        ? [{
+            label: 'Legal guardianship',
+            value: r.hasGuardianship === 'yes' ? 'Yes' : r.hasGuardianship === 'no' ? 'No' : '',
+          }]
+        : []),
       ...(r.seekingPaidCaregiver === 'yes' && r.paidCareBasis
         ? [{ label: 'Hands-on care mainly due to', value: paidCareBasisLabel(r.paidCareBasis) }]
         : []),
@@ -215,6 +237,10 @@ function paidCaregiverRefusal(
   const mixed = screenMixedPaidCaregiver(r);
   if (mixed.block) {
     return { code: 'mixed-paid-caregiver', reason: mixed.block };
+  }
+  const relationship = screenCaregiverRelationship(r);
+  if (relationship.block) {
+    return { code: 'foster-paid-caregiver', reason: relationship.block };
   }
   return null;
 }

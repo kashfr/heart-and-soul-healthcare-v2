@@ -11,10 +11,14 @@ import {
   DIAGNOSIS_GROUPS,
   EQUIPMENT_OPTIONS,
   PAID_CARE_BASIS_OPTIONS,
+  RELATIONSHIP_OPTIONS,
+  highBehaviorPaidFlag,
+  screenCaregiverRelationship,
   inferService,
   screenBehavioralPaidCaregiver,
   screenMixedPaidCaregiver,
   type BehaviorRisk,
+  type CaregiverRelationship,
   type PaidCareBasis,
 } from '@/lib/diagnosisCatalog';
 import {
@@ -44,11 +48,11 @@ import styles from './page.module.css';
 // "Next" or "Submit" escorts to the topmost problem.
 type ReferralField =
   | 'programInterest' | 'clientCounty' | 'clientFirstName' | 'clientLastName' | 'clientDOB' | 'clientPhone' | 'clientSecondaryPhone' | 'clientEmail'
-  | 'referralSource' | 'referrerName' | 'diagnoses' | 'equipment' | 'behaviorRisk' | 'seekingPaidCaregiver' | 'careNeeds' | 'paidCareBasis';
+  | 'referralSource' | 'relationship' | 'referrerName' | 'diagnoses' | 'equipment' | 'behaviorRisk' | 'seekingPaidCaregiver' | 'careNeeds' | 'paidCareBasis' | 'hasGuardianship';
 type ReferralFieldErrors = Partial<Record<ReferralField, string>>;
 const FIELD_ORDER: ReferralField[] = [
   'programInterest', 'clientCounty', 'clientFirstName', 'clientLastName', 'clientDOB', 'clientPhone', 'clientSecondaryPhone', 'clientEmail',
-  'referralSource', 'referrerName', 'diagnoses', 'equipment', 'behaviorRisk', 'seekingPaidCaregiver', 'careNeeds', 'paidCareBasis',
+  'referralSource', 'relationship', 'referrerName', 'diagnoses', 'equipment', 'behaviorRisk', 'seekingPaidCaregiver', 'careNeeds', 'paidCareBasis', 'hasGuardianship',
 ];
 // Banner labels (the careNeeds label depends on who is filling the form).
 const FIELD_LABEL: Record<Exclude<ReferralField, 'careNeeds'>, string> = {
@@ -67,6 +71,8 @@ const FIELD_LABEL: Record<Exclude<ReferralField, 'careNeeds'>, string> = {
   behaviorRisk: 'Behavior question',
   seekingPaidCaregiver: 'Paid caregiver question',
   paidCareBasis: 'What the hands-on care is for',
+  relationship: 'Your relationship to the child',
+  hasGuardianship: 'Legal guardianship question',
 };
 const fieldId = (k: ReferralField) => `ref-field-${k}`;
 
@@ -182,6 +188,8 @@ export default function ReferralPage() {
     seekingPaidCaregiver: '',
     careNeeds: '',
     paidCareBasis: '' as PaidCareBasis,
+    relationship: '' as CaregiverRelationship,
+    hasGuardianship: '' as '' | 'yes' | 'no',
     diagnoses: [] as string[],
     diagnosisOther: '',
     equipment: [] as string[],
@@ -313,7 +321,28 @@ export default function ReferralPage() {
   });
   const isPaidYoungChildBlock = !isPaidBehavioralBlock && youngChild.block !== null;
   const isPaidYoungChildCleared = !isPaidBehavioralBlock && youngChild.cleared !== null;
-  const isBlocked = isPaidBehavioralBlock || isPaidYoungChildBlock || isPaidMixedBlock;
+  // Who is asking to be paid (GAPP only). Foster parent = refused (manual
+  // §604.3, §907); grandparent/relative, or a parent of a member 18+, must say
+  // whether they hold legal guardianship (flagged for staff, not refused).
+  const relationshipScreen = screenCaregiverRelationship({
+    relationship: formData.relationship,
+    hasGuardianship: formData.hasGuardianship,
+    seekingPaidCaregiver: seekingPaidGapp ? 'yes' : 'no',
+    dob: formData.clientDOB,
+  });
+  const isPaidFosterBlock = !isPaidBehavioralBlock && relationshipScreen.block !== null;
+  const asksGuardianship = !isPaidBehavioralBlock && relationshipScreen.asksGuardianship;
+  // Behaviors that need help to manage + seeking pay: the FCO never pays for
+  // behavior management. Said plainly; not a block.
+  const showHighBehaviorPaid =
+    !isPaidBehavioralBlock &&
+    highBehaviorPaidFlag({
+      behaviorRisk: formData.behaviorRisk,
+      seekingPaidCaregiver: seekingPaidGapp ? 'yes' : 'no',
+    }) !== null;
+  const isBlocked =
+    isPaidBehavioralBlock || isPaidYoungChildBlock || isPaidMixedBlock || isPaidFosterBlock;
+  const memberWord = childAge && childAge.years >= 18 ? 'member' : 'child';
 
   // "None of these" is mutually exclusive with every real answer, both ways.
   const toggleMulti = (field: 'diagnoses' | 'equipment' | 'currentServices',
@@ -357,6 +386,8 @@ export default function ReferralPage() {
       if (!formData.seekingPaidCaregiver) errs.seekingPaidCaregiver = 'Please answer Yes or No.';
       if (formData.seekingPaidCaregiver === 'yes' && !formData.careNeeds) errs.careNeeds = 'Please choose an answer.';
       if (isPaidMixedDx && !formData.paidCareBasis) errs.paidCareBasis = 'Please tell us what the hands-on care is mainly for.';
+      if (showGappClinical && !formData.relationship) errs.relationship = 'Please choose your relationship to the child.';
+      if (asksGuardianship && !isPaidFosterBlock && !formData.hasGuardianship) errs.hasGuardianship = 'Please answer Yes or No.';
     }
     return errs;
   };
@@ -443,6 +474,7 @@ export default function ReferralPage() {
         seekingPaidCaregiver: 'no',
         careNeeds: '',
         paidCareBasis: '',
+        hasGuardianship: '',
       });
     } else {
       setFormData({
@@ -497,6 +529,8 @@ export default function ReferralPage() {
           seekingPaidCaregiver: formData.seekingPaidCaregiver,
           careNeeds: formData.careNeeds,
           paidCareBasis: showGappClinical ? formData.paidCareBasis : '',
+          relationship: showGappClinical ? formData.relationship : '',
+          hasGuardianship: showGappClinical ? formData.hasGuardianship : '',
           diagnoses: showGappClinical ? formData.diagnoses : [],
           diagnosisOther: showGappClinical ? formData.diagnosisOther : '',
           equipment: showGappClinical ? formData.equipment : [],
@@ -544,7 +578,9 @@ export default function ReferralPage() {
               formData.behaviorRisk !== '')) &&
           formData.seekingPaidCaregiver &&
           (formData.seekingPaidCaregiver === 'no' || formData.careNeeds) &&
-          (!isPaidMixedDx || formData.paidCareBasis)
+          (!isPaidMixedDx || formData.paidCareBasis) &&
+          (!showGappClinical || formData.relationship) &&
+          (!asksGuardianship || isPaidFosterBlock || formData.hasGuardianship)
         );
       default:
         return true;
@@ -592,6 +628,7 @@ export default function ReferralPage() {
                       insuranceProvider: '', insuranceNumber: '', serviceNeeds: '',
                       urgency: 'standard', additionalNotes: '',
                       seekingPaidCaregiver: '', careNeeds: '', paidCareBasis: '' as PaidCareBasis,
+                      relationship: '' as CaregiverRelationship, hasGuardianship: '' as '' | 'yes' | 'no',
                       diagnoses: [], diagnosisOther: '', equipment: [],
                       behaviorRisk: '' as BehaviorRisk, currentServices: [],
                     });
@@ -975,6 +1012,31 @@ export default function ReferralPage() {
                     </select>
                     <FieldError message={fieldMessage('referralSource')} />
                   </div>
+
+                  {/* Relationship to the child (GAPP). Required: the Family
+                      Caregiver Option pays only a legally responsible family
+                      member, never a foster parent. */}
+                  {showGappClinical && (
+                    <div className="form-group" id={fieldId('relationship')}>
+                      <label htmlFor="relationship" className="form-label">
+                        Your relationship to the child *
+                      </label>
+                      <select
+                        id="relationship"
+                        name="relationship"
+                        className={`form-select ${isFieldInvalid('relationship') ? styles.fieldError : ''}`}
+                        value={formData.relationship}
+                        onChange={handleChange}
+                        required
+                      >
+                        <option value="">Select your relationship</option>
+                        {RELATIONSHIP_OPTIONS.map((o) => (
+                          <option key={o.code} value={o.code}>{o.label}</option>
+                        ))}
+                      </select>
+                      <FieldError message={fieldMessage('relationship')} />
+                    </div>
+                  )}
 
                   {/* Self-referral notice */}
                   {isSelfReferral && (
@@ -1545,6 +1607,74 @@ export default function ReferralPage() {
                         </div>
                       )}
 
+                      {/* Paid + foster parent = dead end (manual §604.3, §907). */}
+                      {isPaidFosterBlock && (
+                        <div className={styles.countyNotice}>
+                          <AlertCircle size={16} />
+                          <p>
+                            <strong>Foster parents cannot be paid as the child&apos;s caregiver.</strong>{' '}
+                            Georgia Medicaid&apos;s Family Caregiver Option does not allow
+                            foster parents to be paid for the child&apos;s care, and neither
+                            we nor our partner agencies can change that. The child may still
+                            qualify for GAPP nursing or personal care provided by our staff.
+                            To send this referral, change the paid caregiver answer above
+                            to <strong>No</strong>.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Grandparent/relative, or a parent of a member 18+:
+                          asked, stored, flagged for staff; not a refusal. */}
+                      {asksGuardianship && !isPaidFosterBlock && (
+                        <>
+                          <div className={styles.countyNotice}>
+                            <AlertCircle size={16} />
+                            <p>
+                              Medicaid pays only a family member who is legally
+                              responsible for the {memberWord} and lives with them.{' '}
+                              {formData.relationship === 'parent'
+                                ? 'Once a child turns 18, a parent is legally responsible only with a court order of guardianship.'
+                                : 'A grandparent or other relative is legally responsible only with a court order of guardianship.'}
+                              {formData.hasGuardianship === 'no' &&
+                                ` Without guardianship, you may not qualify to be paid. We will confirm with Georgia Medicaid before anything is set up. The ${memberWord}'s own GAPP care does not depend on this.`}
+                            </p>
+                          </div>
+                          <div className="form-group" id={fieldId('hasGuardianship')}>
+                            <label htmlFor="hasGuardianship" className="form-label">
+                              Do you have legal guardianship of the {memberWord}? *
+                            </label>
+                            <select
+                              id="hasGuardianship"
+                              name="hasGuardianship"
+                              className={`form-select ${isFieldInvalid('hasGuardianship') ? styles.fieldError : ''}`}
+                              value={formData.hasGuardianship}
+                              onChange={handleChange}
+                              required
+                            >
+                              <option value="">Select an answer</option>
+                              <option value="yes">Yes</option>
+                              <option value="no">No</option>
+                            </select>
+                            <FieldError message={fieldMessage('hasGuardianship')} />
+                          </div>
+                        </>
+                      )}
+
+                      {/* Paid + behaviors that need help to manage. Not a block. */}
+                      {showHighBehaviorPaid && !isBlocked && (
+                        <div className={styles.countyNotice}>
+                          <AlertCircle size={16} />
+                          <p>
+                            <strong>You will not be paid for managing behaviors.</strong>{' '}
+                            You told us about behaviors that happen often and need help
+                            to manage. A parent can be paid only for hands-on personal
+                            care (feeding, bathing, dressing, toileting) tied to a medical
+                            condition. No GAPP service pays a parent for behavior
+                            management or supervision.
+                          </p>
+                        </div>
+                      )}
+
                       {/* ASD-program routing makes sense only for the programs
                           that serve children/I-DD; an EDWP or ICWP adult with
                           behavioral needs should not be pointed at ABA. */}
@@ -1705,6 +1835,9 @@ export default function ReferralPage() {
                   )}
                   {isPaidMixedBlock && (
                     <FieldError message="This referral cannot be submitted as answered: a parent cannot be paid for care related to autism, ADHD, or developmental delay. Change the paid caregiver answer to No to send the referral for the medical condition." />
+                  )}
+                  {isPaidFosterBlock && (
+                    <FieldError message="This referral cannot be submitted as answered: foster parents cannot be paid under the Family Caregiver Option. Change the paid caregiver answer to No to send the referral for the child's care." />
                   )}
                 </div>
               )}
