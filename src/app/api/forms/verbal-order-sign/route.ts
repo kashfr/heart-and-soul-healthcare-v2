@@ -20,7 +20,11 @@ export async function GET(req: Request) {
   const t = new URL(req.url).searchParams.get('t') || '';
   const found = await lookupSignToken(t);
   if (!found) return NextResponse.json({ error: 'This signing link is not valid.' }, { status: 404 });
-  const { order, used } = found;
+  const { order, used, cancelled } = found;
+  // A voided order: say so, and nothing else.
+  if (cancelled && !used) {
+    return NextResponse.json({ cancelled: true, order: { physicianName: order.physicianName, signedDate: '', patientName: '', patientDob: '', takenDate: '', nurseName: '', nurseCredential: '', physicianSpecialty: '', physicianFax: '', orderType: order.orderType, orderText: '' } }, { headers: { 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' } });
+  }
   // Once signed, the link only confirms that: no PHI on a page that has
   // finished its job.
   if (used) {
@@ -66,6 +70,7 @@ export async function POST(req: Request) {
   const found = await lookupSignToken(t);
   if (!found) return NextResponse.json({ error: 'This signing link is not valid.' }, { status: 404 });
   if (found.used) return NextResponse.json({ error: 'This order has already been signed.' }, { status: 409 });
+  if (found.cancelled) return NextResponse.json({ error: 'Heart and Soul Healthcare cancelled this order. No signature is needed.' }, { status: 409 });
 
   const r = await recordVerbalOrderSigned({
     orderId: found.order.id,
@@ -75,6 +80,7 @@ export async function POST(req: Request) {
     physicianSignature: signature,
     receivedBy: { uid: '', name: 'Physician (signed online)' },
   });
+  if (r.cancelled) return NextResponse.json({ error: 'Heart and Soul Healthcare cancelled this order. No signature is needed.' }, { status: 409 });
   if (!r.ok) return NextResponse.json({ error: r.error || 'We could not record your signature. Please fax the signed form instead.' }, { status: 500 });
   await markSignTokenUsed(t);
   return NextResponse.json({ ok: true });

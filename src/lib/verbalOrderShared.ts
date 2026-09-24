@@ -3,19 +3,23 @@
  * API routes, and vitest. No Firebase imports here.
  *
  * Lifecycle (status only moves forward):
- *   taken  -> the nurse recorded the order, read it back, and signed
- *   faxed  -> the physician authentication form went out (SRFax, or by hand)
- *   signed -> the physician's signature is on file (returned fax, e-sign, or
- *             the office recording a signed copy by hand)
+ *   taken     -> the nurse recorded the order, read it back, and signed
+ *   faxed     -> the physician authentication form went out (SRFax, or by hand)
+ *   signed    -> the physician's signature is on file (returned fax, e-sign, or
+ *                the office recording a signed copy by hand)
+ *   cancelled -> voided before it was signed (entered in error, wrong client,
+ *                physician declined). The record is kept for the audit trail;
+ *                it just leaves the queue and can no longer be signed.
  * "Overdue" and "escalated" are derived from takenDate + settings, not stored
  * statuses, so changing the thresholds re-evaluates every open order.
  */
 
-export type VerbalOrderStatus = 'taken' | 'faxed' | 'signed';
+export type VerbalOrderStatus = 'taken' | 'faxed' | 'signed' | 'cancelled';
 export type VerbalOrderType = 'medication' | 'other';
 export type VerbalOrderSignMethod = 'fax' | 'esign' | 'manual';
 
 export const VERBAL_ORDER_TEXT_MAX = 4000;
+export const VERBAL_ORDER_CANCEL_REASON_MAX = 1000;
 export const DEFAULT_VERBAL_ORDER_OVERDUE_DAYS = 14;
 export const DEFAULT_VERBAL_ORDER_ESCALATE_DAYS = 30;
 
@@ -58,6 +62,13 @@ export interface VerbalOrderSigned {
   inboundFaxFileName: string;
 }
 
+export interface VerbalOrderCancelled {
+  reason: string;
+  cancelledAt: string | null; // ISO
+  cancelledBy: string;
+  cancelledByName: string;
+}
+
 export interface VerbalOrder {
   id: string;
   patientId: string;
@@ -85,6 +96,7 @@ export interface VerbalOrder {
   marMedName: string;
   fax: VerbalOrderFaxState | null;
   signed: VerbalOrderSigned | null;
+  cancelled: VerbalOrderCancelled | null;
   reminderSentAt: string | null;
   escalatedAt: string | null;
   createdAt: string | null;
@@ -143,7 +155,17 @@ export function daysBetweenISO(a: string, b: string): number | null {
   return Math.floor((Date.parse(b + 'T12:00:00Z') - Date.parse(a + 'T12:00:00Z')) / 86400000);
 }
 
-export type VerbalOrderUrgency = 'signed' | 'open' | 'overdue' | 'escalated';
+export type VerbalOrderUrgency = 'signed' | 'cancelled' | 'open' | 'overdue' | 'escalated';
+
+/** Still waiting on the physician: not signed and not cancelled. */
+export function isVerbalOrderOpen(o: Pick<VerbalOrder, 'status'>): boolean {
+  return o.status === 'taken' || o.status === 'faxed';
+}
+
+/** Parse a stored status, defaulting unknown values to 'taken'. */
+export function parseVerbalOrderStatus(v: unknown): VerbalOrderStatus {
+  return v === 'signed' || v === 'faxed' || v === 'cancelled' ? v : 'taken';
+}
 
 /** Where an order stands against the signature deadline. */
 export function verbalOrderUrgency(
@@ -152,6 +174,7 @@ export function verbalOrderUrgency(
   thresholds: { overdueDays: number; escalateDays: number },
 ): VerbalOrderUrgency {
   if (order.status === 'signed') return 'signed';
+  if (order.status === 'cancelled') return 'cancelled';
   const age = daysBetweenISO(order.takenDate, todayISO);
   if (age === null) return 'open';
   if (age >= thresholds.escalateDays) return 'escalated';
@@ -167,16 +190,19 @@ export const VERBAL_ORDER_STATUS_LABEL: Record<VerbalOrderStatus, string> = {
   taken: 'Taken, not yet faxed',
   faxed: 'Faxed, awaiting signature',
   signed: 'Signed',
+  cancelled: 'Cancelled',
 };
 
 export function verbalOrderStatusLabel(o: Pick<VerbalOrder, 'status' | 'fax'>): string {
-  if (o.status !== 'signed' && o.fax?.sentStatus === 'Failed') return 'Fax failed';
+  if (isVerbalOrderOpen(o) && o.fax?.sentStatus === 'Failed') return 'Fax failed';
   if (o.status === 'faxed' && o.fax?.sentStatus === 'In Progress') return 'Fax sending';
   return VERBAL_ORDER_STATUS_LABEL[o.status];
 }
 
+export type VerbalOrderBellKind = 'taken' | 'fax-failed' | 'fax-returned' | 'signed' | 'overdue' | 'escalated' | 'cancelled';
+
 /** In-portal bell text (behind the login, may name the client). */
-export function verbalOrderBellText(kind: 'taken' | 'fax-failed' | 'fax-returned' | 'signed' | 'overdue' | 'escalated', o: Pick<VerbalOrder, 'patientName' | 'nurseName' | 'physicianName'>): string {
+export function verbalOrderBellText(kind: VerbalOrderBellKind, o: Pick<VerbalOrder, 'patientName' | 'nurseName' | 'physicianName'>, actorName = ''): string {
   switch (kind) {
     case 'taken':
       return `Verbal order taken for ${o.patientName} by ${o.nurseName} from ${o.physicianName}`;
@@ -190,6 +216,8 @@ export function verbalOrderBellText(kind: 'taken' | 'fax-failed' | 'fax-returned
       return `Verbal order for ${o.patientName} is still unsigned by ${o.physicianName}`;
     case 'escalated':
       return `Verbal order for ${o.patientName} has gone unsigned past the escalation limit`;
+    case 'cancelled':
+      return `Verbal order for ${o.patientName} from ${o.physicianName} was cancelled${actorName ? ` by ${actorName}` : ''}`;
   }
 }
 
@@ -208,6 +236,6 @@ export function candidateOrdersForInboundFax(
   const froms = new Set(raws.map(normalizeUSFaxNumber).filter(Boolean));
   if (froms.size === 0) return [];
   return openOrders
-    .filter((o) => o.status !== 'signed' && froms.has(normalizeUSFaxNumber(o.physicianFax)))
+    .filter((o) => isVerbalOrderOpen(o) && froms.has(normalizeUSFaxNumber(o.physicianFax)))
     .map((o) => o.id);
 }

@@ -25,6 +25,9 @@ const s = StyleSheet.create({
   headerRule: { borderBottomWidth: 1.5, borderBottomColor: CORAL, marginTop: 5, marginBottom: 6 },
   title: { fontSize: 15, fontFamily: 'Helvetica-Bold', textAlign: 'center' },
   subtitle: { fontSize: 8.5, color: MUTED, textAlign: 'center', marginTop: 2, marginBottom: 6 },
+  voidBox: { borderWidth: 1.5, borderColor: '#b3261e', padding: 6, marginBottom: 6 },
+  voidTitle: { fontSize: 12, fontFamily: 'Helvetica-Bold', color: '#b3261e', textAlign: 'center' },
+  voidText: { fontSize: 8.5, color: INK, textAlign: 'center', marginTop: 2 },
   sectionHeading: { fontSize: 9.5, fontFamily: 'Helvetica-Bold', marginTop: 6, marginBottom: 3, paddingBottom: 2, borderBottomWidth: 0.75, borderBottomColor: CORAL },
   grid: { borderWidth: 0.5, borderColor: RULE },
   row: { flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: RULE },
@@ -78,6 +81,7 @@ export interface VerbalOrderPdfProps {
 export default function VerbalOrderPDF({ order, returnFax, esignUrl, esignQrDataUrl }: VerbalOrderPdfProps) {
   const signed = order.signed;
   const isSigned = order.status === 'signed' && !!signed;
+  const cancelled = order.status === 'cancelled' ? order.cancelled : null;
   return (
     <Document title={`Verbal Order - ${order.patientName}`} author="Heart and Soul Healthcare, LLC">
       <Page size="LETTER" style={s.page}>
@@ -94,6 +98,15 @@ export default function VerbalOrderPDF({ order, returnFax, esignUrl, esignQrData
 
         <Text style={s.title}>VERBAL ORDER</Text>
         <Text style={s.subtitle}>{order.orderType === 'medication' ? 'Medication order' : 'Treatment or care order'} received by telephone</Text>
+        {order.status === 'cancelled' ? (
+          <View style={s.voidBox}>
+            <Text style={s.voidTitle}>CANCELLED: NOT A VALID ORDER</Text>
+            <Text style={s.voidText}>
+              Cancelled{cancelled?.cancelledAt ? ` ${fmtWhen(cancelled.cancelledAt)}` : ''}{cancelled?.cancelledByName ? ` by ${cancelled.cancelledByName}` : ''}. No physician signature is required.
+            </Text>
+            {cancelled?.reason ? <Text style={s.voidText}>Reason: {cancelled.reason}</Text> : null}
+          </View>
+        ) : null}
 
         <View style={s.grid}>
           <View style={s.row}>
@@ -143,7 +156,9 @@ export default function VerbalOrderPDF({ order, returnFax, esignUrl, esignQrData
         </View>
 
         <Text style={s.sectionHeading}>Physician authentication</Text>
-        {isSigned ? (
+        {order.status === 'cancelled' ? (
+          <Text style={s.instruction}>This order was cancelled by Heart and Soul Healthcare. Do not sign or return it.</Text>
+        ) : isSigned ? (
           <View style={s.sigGrid}>
             <View style={s.sigCol}>
               {signed.physicianSignature ? (

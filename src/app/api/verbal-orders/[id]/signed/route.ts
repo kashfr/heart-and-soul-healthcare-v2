@@ -42,6 +42,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!/^\d{4}-\d{2}-\d{2}$/.test(signedDate)) return NextResponse.json({ error: 'signedDate must be YYYY-MM-DD.' }, { status: 400 });
   const order = await getVerbalOrder(id);
   if (!order) return NextResponse.json({ error: 'Verbal order not found.' }, { status: 404 });
+  if (order.status === 'cancelled') return NextResponse.json({ error: 'This order was cancelled and can no longer be signed.' }, { status: 409 });
   if (signedDate < order.takenDate) return NextResponse.json({ error: 'The signed date cannot be before the order was taken.' }, { status: 400 });
 
   let signedPdf: Buffer | undefined;
@@ -74,7 +75,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     signedPdf,
     inboundFaxFileName,
   });
-  if (!result.ok) return NextResponse.json({ error: result.error || 'Could not record the signature.' }, { status: 500 });
+  if (!result.ok) return NextResponse.json({ error: result.error || 'Could not record the signature.' }, { status: result.cancelled ? 409 : 500 });
   if (inboundFaxFileName) {
     const faxId = inboundFaxFileName.includes('|') ? inboundFaxFileName.split('|').pop() || '' : '';
     if (faxId) {

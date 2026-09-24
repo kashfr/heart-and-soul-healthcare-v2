@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   candidateOrdersForInboundFax,
   daysBetweenISO,
+  isVerbalOrderOpen,
+  parseVerbalOrderStatus,
   formatUSFaxNumber,
   normalizeUSFaxNumber,
   validateVerbalOrderInput,
@@ -61,6 +63,18 @@ describe('urgency', () => {
     expect(verbalOrderUrgency({ status: 'signed', takenDate: '2020-01-01' }, '2026-09-15', T)).toBe('signed');
     expect(verbalOrderUrgency({ status: 'taken', takenDate: '' }, '2026-09-15', T)).toBe('open');
   });
+  it('cancelled is never overdue or open', () => {
+    expect(verbalOrderUrgency({ status: 'cancelled', takenDate: '2020-01-01' }, '2026-09-15', T)).toBe('cancelled');
+    expect(isVerbalOrderOpen({ status: 'cancelled' })).toBe(false);
+    expect(isVerbalOrderOpen({ status: 'signed' })).toBe(false);
+    expect(isVerbalOrderOpen({ status: 'taken' })).toBe(true);
+    expect(isVerbalOrderOpen({ status: 'faxed' })).toBe(true);
+  });
+  it('parses stored status', () => {
+    expect(parseVerbalOrderStatus('cancelled')).toBe('cancelled');
+    expect(parseVerbalOrderStatus('signed')).toBe('signed');
+    expect(parseVerbalOrderStatus('junk')).toBe('taken');
+  });
   it('daysBetweenISO', () => {
     expect(daysBetweenISO('2026-09-01', '2026-09-15')).toBe(14);
     expect(daysBetweenISO('bad', '2026-09-15')).toBeNull();
@@ -73,11 +87,13 @@ describe('labels', () => {
     expect(verbalOrderStatusLabel({ status: 'faxed', fax: { ...base, sentStatus: 'Failed' } })).toBe('Fax failed');
     expect(verbalOrderStatusLabel({ status: 'faxed', fax: { ...base, sentStatus: 'Sent' } })).toBe('Faxed, awaiting signature');
     expect(verbalOrderStatusLabel({ status: 'taken', fax: null })).toBe('Taken, not yet faxed');
+    expect(verbalOrderStatusLabel({ status: 'cancelled', fax: { ...base, sentStatus: 'Failed' } })).toBe('Cancelled');
   });
   it('bell text', () => {
     const o = { patientName: 'ZZ Test Client', nurseName: 'Test Nurse', physicianName: 'Dr. Holmes' };
     expect(verbalOrderBellText('taken', o)).toContain('ZZ Test Client');
     expect(verbalOrderBellText('signed', o)).toContain('Dr. Holmes');
+    expect(verbalOrderBellText('cancelled', o, 'Office Admin')).toBe('Verbal order for ZZ Test Client from Dr. Holmes was cancelled by Office Admin');
   });
 });
 
@@ -86,6 +102,7 @@ describe('candidateOrdersForInboundFax', () => {
     { id: 'a', physicianFax: '(404) 555-0101', status: 'faxed' as const },
     { id: 'b', physicianFax: '4045550101', status: 'signed' as const },
     { id: 'c', physicianFax: '4045550199', status: 'faxed' as const },
+    { id: 'd', physicianFax: '4045550101', status: 'cancelled' as const },
   ];
   it('matches open orders by the sender fax number only', () => {
     expect(candidateOrdersForInboundFax('14045550101', orders)).toEqual(['a']);

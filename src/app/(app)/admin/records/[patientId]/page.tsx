@@ -944,6 +944,11 @@ function OrderTable({
                       Verbal, awaiting signature
                     </span>
                   )}
+                  {!discontinued && o.verbalOrderCancelled && !o.verbalOrderPending && !o.orderSignedDate && (
+                    <span style={physicianNeededBadgeStyle} title="The verbal order behind this med was cancelled before the physician signed it. Review whether it should stay on the MAR.">
+                      Verbal order cancelled
+                    </span>
+                  )}
                   {!discontinued && physicianAttributionPending(o) && (
                     <span style={physicianNeededBadgeStyle} title="No ordering physician on this order yet; edit the order to add the name.">
                       Physician needed

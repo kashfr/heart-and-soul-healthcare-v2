@@ -3,10 +3,11 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { AlertTriangle, Check, Clock, Download, Eye, FileSignature, Inbox, PhoneCall, Plus, RefreshCw, Send, X } from 'lucide-react';
+import { AlertTriangle, Ban, Check, Clock, Download, Eye, FileSignature, Inbox, PhoneCall, Plus, RefreshCw, Send, X } from 'lucide-react';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
 import {
+  cancelVerbalOrder,
   fetchInboundFaxPdf,
   fetchVerbalOrderPdf,
   getAllVerbalOrders,
@@ -18,14 +19,14 @@ import {
   type UnmatchedInboundFax,
   type VerbalOrder,
 } from '@/lib/verbalOrders';
-import { formatUSFaxNumber, verbalOrderAgeDays, verbalOrderStatusLabel, verbalOrderUrgency, type VerbalOrderUrgency } from '@/lib/verbalOrderShared';
+import { formatUSFaxNumber, isVerbalOrderOpen, VERBAL_ORDER_CANCEL_REASON_MAX, verbalOrderAgeDays, verbalOrderStatusLabel, verbalOrderUrgency, type VerbalOrderUrgency } from '@/lib/verbalOrderShared';
 import { formatDateUS } from '@/lib/dateFormat';
 import { escortToField, FieldError, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
 
 /**
  * /admin/verbal-orders
  * Staff: the open queue (awaiting fax, awaiting signature, overdue) with
- * Resend and Record signature, the unmatched inbound faxes the sweep could
+ * Resend, Record signature, and Cancel, the unmatched inbound faxes the sweep could
  * not tie to one order, and history. Nurse: the verbal orders she took.
  */
 export default function VerbalOrdersPage() {
@@ -58,6 +59,7 @@ function VerbalOrdersInner() {
   const [toast, setToast] = useState('');
   const [signModal, setSignModal] = useState<{ order: VerbalOrder; fax?: UnmatchedInboundFax } | null>(null);
   const [matchFax, setMatchFax] = useState<UnmatchedInboundFax | null>(null);
+  const [cancelModal, setCancelModal] = useState<VerbalOrder | null>(null);
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
 
   useEffect(() => {
@@ -95,9 +97,9 @@ function VerbalOrdersInner() {
   const visible = useMemo(() => {
     if (!orders) return [];
     if (filter === 'all') return orders;
-    return orders.filter((o) => o.status !== 'signed' || o.id === highlightId);
+    return orders.filter((o) => isVerbalOrderOpen(o) || o.id === highlightId);
   }, [orders, filter, highlightId]);
-  const openCount = orders ? orders.filter((o) => o.status !== 'signed').length : 0;
+  const openCount = orders ? orders.filter(isVerbalOrderOpen).length : 0;
   const overdueCount = orders ? orders.filter((o) => ['overdue', 'escalated'].includes(verbalOrderUrgency(o, today, thresholds))).length : 0;
 
   const showToast = (m: string) => {
@@ -219,14 +221,16 @@ function VerbalOrdersInner() {
           ) : error ? (
             <div style={errRowStyle}><AlertTriangle size={14} /> Verbal orders couldn&apos;t be loaded. <button type="button" style={retryBtnStyle} onClick={reload}>Retry</button></div>
           ) : visible.length === 0 ? (
-            <div style={mutedStyle}>{filter === 'open' ? 'Every verbal order has been signed.' : 'No verbal orders yet.'}</div>
+            <div style={mutedStyle}>{filter === 'open' ? 'Nothing is awaiting a physician signature.' : 'No verbal orders yet.'}</div>
           ) : (
             <ul style={listStyle}>
               {visible.map((o) => {
                 const urgency = verbalOrderUrgency(o, today, thresholds);
                 const age = verbalOrderAgeDays(o, today);
-                const faxFailed = o.status !== 'signed' && o.fax?.sentStatus === 'Failed';
+                const isOpen = isVerbalOrderOpen(o);
+                const faxFailed = isOpen && o.fax?.sentStatus === 'Failed';
                 const needsManualFax = o.status === 'taken';
+                const canAct = isOpen && !isViewingAs && (isStaff || o.nurseId === effectiveUid);
                 return (
                   <li key={o.id} id={`vo-${o.id}`} style={{ ...rowStyle, ...urgencyRowStyle(urgency, faxFailed), ...(o.id === highlightId ? hotStyle : null) }}>
                     <div style={rowHeadStyle}>
@@ -235,14 +239,18 @@ function VerbalOrdersInner() {
                       <span style={metaStyle}>
                         {o.orderType === 'medication' ? 'Medication' : 'Treatment/other'} · from {o.physicianName}
                         {o.physicianSpecialty ? ` (${o.physicianSpecialty})` : ''} · taken {formatDateUS(o.takenDate)} by {o.nurseName}
-                        {age !== null && o.status !== 'signed' ? ` · ${age} day${age === 1 ? '' : 's'} ago` : ''}
+                        {age !== null && isOpen ? ` · ${age} day${age === 1 ? '' : 's'} ago` : ''}
                       </span>
                     </div>
-                    <div style={textStyle}>{o.orderText}</div>
+                    <div style={{ ...textStyle, ...(o.status === 'cancelled' ? { color: '#6b7280', textDecoration: 'line-through' } : null) }}>{o.orderText}</div>
                     {o.marMedName && (
                       <div style={{ ...metaStyle, marginTop: 4 }}>
                         MAR: {o.marChangeType === 'discontinue' ? 'discontinued' : o.marChangeType === 'change' ? 'changed' : 'added'} {o.marMedName}
-                        {o.status !== 'signed' ? ' (awaiting signature)' : ` (signed ${formatDateUS(o.signed?.signedDate || '')})`}
+                        {o.status === 'cancelled'
+                          ? ' (verbal order cancelled; review this med in the MAR)'
+                          : o.status !== 'signed'
+                            ? ' (awaiting signature)'
+                            : ` (signed ${formatDateUS(o.signed?.signedDate || '')})`}
                       </div>
                     )}
                     {faxFailed && o.fax?.error && <div style={{ ...metaStyle, color: '#b3261e', marginTop: 4 }}>Fax error: {o.fax.error}</div>}
@@ -253,16 +261,28 @@ function VerbalOrdersInner() {
                         {o.signed.documentId ? <> · <Link href={`/admin/clients/${o.patientId}?tab=documents`} style={{ color: '#1e7a44' }}>filed in Documents</Link></> : null}
                       </div>
                     )}
+                    {o.status === 'cancelled' && o.cancelled && (
+                      <div style={{ ...metaStyle, marginTop: 4, color: '#6b7280' }}>
+                        <Ban size={12} style={{ verticalAlign: -2 }} /> Cancelled{o.cancelled.cancelledAt ? ` ${formatDateUS(o.cancelled.cancelledAt.slice(0, 10))}` : ''}
+                        {o.cancelled.cancelledByName ? ` by ${o.cancelled.cancelledByName}` : ''}
+                        {o.cancelled.reason ? `: ${o.cancelled.reason}` : ''}
+                      </div>
+                    )}
                     <div style={actionsRowStyle}>
                       <button type="button" style={smallBtnStyle} onClick={() => void download(o)}><Download size={13} /> PDF</button>
-                      {o.status !== 'signed' && !isViewingAs && (isStaff || o.nurseId === effectiveUid) && (
+                      {canAct && (
                         <button type="button" style={{ ...smallBtnStyle, opacity: busyId === o.id ? 0.6 : 1 }} disabled={busyId === o.id} onClick={() => void resend(o)}>
                           <Send size={13} /> {busyId === o.id ? 'Sending…' : o.status === 'taken' ? 'Fax now' : 'Resend fax'}
                         </button>
                       )}
-                      {o.status !== 'signed' && isStaff && !isViewingAs && (
+                      {isOpen && isStaff && !isViewingAs && (
                         <button type="button" style={{ ...smallBtnStyle, background: '#e6f6ec', color: '#1e7a44', borderColor: '#bfe3cc' }} onClick={() => setSignModal({ order: o })}>
                           <FileSignature size={13} /> Record signature
+                        </button>
+                      )}
+                      {canAct && (
+                        <button type="button" style={{ ...smallBtnStyle, background: '#fdeaea', color: '#b3261e', borderColor: '#f0c8c4' }} onClick={() => setCancelModal(o)}>
+                          <Ban size={13} /> Cancel order
                         </button>
                       )}
                     </div>
@@ -286,10 +306,21 @@ function VerbalOrdersInner() {
           }}
         />
       )}
+      {cancelModal && (
+        <CancelOrderModal
+          order={cancelModal}
+          onClose={() => setCancelModal(null)}
+          onDone={(msg) => {
+            setCancelModal(null);
+            showToast(msg);
+            reload();
+          }}
+        />
+      )}
       {matchFax && orders && (
         <MatchFaxModal
           fax={matchFax}
-          openOrders={orders.filter((o) => o.status !== 'signed')}
+          openOrders={orders.filter(isVerbalOrderOpen)}
           onClose={() => setMatchFax(null)}
           onPreview={() => void previewFax(matchFax)}
           onPick={(o) => {
@@ -304,6 +335,7 @@ function VerbalOrdersInner() {
 
 function UrgencyChip({ urgency, faxFailed, needsManualFax, label }: { urgency: VerbalOrderUrgency; faxFailed: boolean; needsManualFax: boolean; label: string }) {
   if (urgency === 'signed') return <span style={chipSignedStyle}><Check size={11} /> Signed</span>;
+  if (urgency === 'cancelled') return <span style={chipMutedStyle}><Ban size={11} /> Cancelled</span>;
   if (faxFailed) return <span style={chipDangerStyle}><AlertTriangle size={11} /> {label}</span>;
   if (urgency === 'escalated') return <span style={chipDangerStyle}><AlertTriangle size={11} /> Escalated</span>;
   if (urgency === 'overdue') return <span style={chipWarnStyle}><Clock size={11} /> Overdue</span>;
@@ -401,6 +433,81 @@ function RecordSignatureModal({ order, fax, onClose, onDone }: { order: VerbalOr
   );
 }
 
+function CancelOrderModal({ order, onClose, onDone }: { order: VerbalOrder; onClose: () => void; onDone: (msg: string) => void }) {
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [reasonError, setReasonError] = useState('');
+
+  const save = async () => {
+    if (busy) return;
+    if (!reason.trim()) {
+      setReasonError('Enter the reason for cancelling.');
+      escortToField('vo-cancel-reason');
+      return;
+    }
+    setReasonError('');
+    setBusy(true);
+    setErr('');
+    const r = await cancelVerbalOrder(order.id, reason.trim());
+    if (!r.ok) {
+      setErr(r.error || 'The order could not be cancelled.');
+      setBusy(false);
+      return;
+    }
+    onDone(`Verbal order for ${order.patientName} cancelled.${order.marOrderId ? ' Review the MAR change it made.' : ''}`);
+  };
+
+  return (
+    <div style={backdropStyle} onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
+      <div style={sheetStyle}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+          <div style={sheetTitleStyle}>Cancel this verbal order?</div>
+          <button type="button" onClick={onClose} style={closeBtnStyle} aria-label="Close" disabled={busy}><X size={16} /></button>
+        </div>
+        <div style={sheetHintStyle}>
+          Use this when the order was entered in error or the physician will not sign it. The order stays on record, marked
+          cancelled with your name and reason. It leaves the queue, stops fax reminders, and its online signing link stops working.
+          If the physician&apos;s office already has the fax, call them so they know to discard it.
+        </div>
+        <div style={{ ...mutedStyle, marginBottom: 10 }}>
+          <strong>{order.patientName}</strong> · {order.physicianName} · taken {formatDateUS(order.takenDate)} by {order.nurseName}
+        </div>
+        {order.marOrderId && (
+          <div style={{ ...errBoxStyle, background: '#fff4e0', color: '#9a5b00' }}>
+            This order also {order.marChangeType === 'discontinue' ? 'discontinued' : order.marChangeType === 'change' ? 'changed' : 'added'} {order.marMedName || 'a medication'} on the MAR.
+            Cancelling does not undo that. Review the medication in Manage meds after you cancel.
+          </div>
+        )}
+        <label style={fieldStyle} id="vo-cancel-reason">
+          <span style={labelStyle}>Reason *</span>
+          <div style={reasonError ? FIELD_ERROR_WRAP_STYLE : undefined}>
+            <textarea
+              value={reason}
+              maxLength={VERBAL_ORDER_CANCEL_REASON_MAX}
+              rows={3}
+              placeholder="e.g. Entered in error: this was a clinic instruction, not a physician order."
+              onChange={(e) => {
+                setReason(e.target.value);
+                if (reasonError) setReasonError('');
+              }}
+              style={{ ...inputStyle, height: 'auto', resize: 'vertical' }}
+              disabled={busy}
+              aria-invalid={!!reasonError}
+            />
+          </div>
+          <FieldError message={reasonError} />
+        </label>
+        {err && <div style={errBoxStyle} role="alert">{err}</div>}
+        <div style={actionsStyle}>
+          <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={busy}>Keep order</button>
+          <button type="button" style={{ ...saveBtnStyle, background: '#b3261e', opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => void save()}>{busy ? 'Cancelling…' : 'Cancel order'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MatchFaxModal({ fax, openOrders, onClose, onPick, onPreview }: { fax: UnmatchedInboundFax; openOrders: VerbalOrder[]; onClose: () => void; onPick: (o: VerbalOrder) => void; onPreview: () => void }) {
   const suggested = openOrders.filter((o) => fax.candidateOrderIds.includes(o.id));
   const rest = openOrders.filter((o) => !fax.candidateOrderIds.includes(o.id));
@@ -459,6 +566,7 @@ function MatchFaxModal({ fax, openOrders, onClose, onPick, onPreview }: { fax: U
 
 function urgencyRowStyle(u: VerbalOrderUrgency, faxFailed: boolean): CSSProperties {
   if (u === 'signed') return { borderLeftColor: '#27ae60' };
+  if (u === 'cancelled') return { borderLeftColor: '#9ca3af', background: '#fafafa' };
   if (faxFailed || u === 'escalated') return { borderLeftColor: '#b3261e', background: '#fffafa' };
   if (u === 'overdue') return { borderLeftColor: '#e0a100', background: '#fffdf5' };
   return { borderLeftColor: NAVY };
@@ -486,6 +594,7 @@ const chipSignedStyle = chip('#e6f6ec', '#1e7a44');
 const chipOpenStyle = chip('#e8eef4', NAVY);
 const chipWarnStyle = chip('#fff4e0', '#9a5b00');
 const chipDangerStyle = chip('#fdeaea', '#b3261e');
+const chipMutedStyle = chip('#f1f5f9', '#6b7280');
 const countChipStyle: CSSProperties = chip('#e8eef4', NAVY);
 const countChipWarnStyle: CSSProperties = chip('#fff4e0', '#9a5b00');
 const filterBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: '#f1f5f9', color: '#475569', borderWidth: 1, borderStyle: 'solid', borderColor: '#e2e8f0', padding: '5px 11px', borderRadius: 999, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
