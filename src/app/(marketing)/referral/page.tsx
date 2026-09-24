@@ -182,6 +182,10 @@ export default function ReferralPage() {
     medicaidNumber: '',
     insuranceProvider: '',
     insuranceNumber: '',
+    physicianName: '',
+    physicianOffice: '',
+    physicianPhone: '',
+    physicianFax: '',
     serviceNeeds: '',
     urgency: 'standard',
     additionalNotes: '',
@@ -510,6 +514,15 @@ export default function ReferralPage() {
           insuranceProvider: formData.insuranceProvider,
           insuranceNumber: formData.insuranceNumber,
         },
+        // The child's own doctor. Optional; when a fax number is given, the
+        // office can send the physician the GAPP Plan of Treatment request
+        // (Appendix T) straight from the referral card.
+        physician: {
+          name: formData.physicianName,
+          office: formData.physicianOffice,
+          phone: formData.physicianPhone,
+          fax: formData.physicianFax,
+        },
         referrer: {
           source: formData.referralSource,
           name: formData.referrerName,
@@ -625,7 +638,9 @@ export default function ReferralPage() {
                       clientCity: '', clientState: 'GA', clientZip: '',
                       referralSource: '', referrerName: '', referrerPhone: '',
                       referrerEmail: '', referrerOrganization: '', medicaidNumber: '',
-                      insuranceProvider: '', insuranceNumber: '', serviceNeeds: '',
+                      insuranceProvider: '', insuranceNumber: '',
+                      physicianName: '', physicianOffice: '', physicianPhone: '', physicianFax: '',
+                      serviceNeeds: '',
                       urgency: 'standard', additionalNotes: '',
                       seekingPaidCaregiver: '', careNeeds: '', paidCareBasis: '' as PaidCareBasis,
                       relationship: '' as CaregiverRelationship, hasGuardianship: '' as '' | 'yes' | 'no',
@@ -1142,6 +1157,66 @@ export default function ReferralPage() {
                       className="form-input"
                       placeholder="Policy number"
                       value={formData.insuranceNumber}
+                      onChange={handleChange}
+                    />
+                  </div>
+                </div>
+
+                {/* Child's physician */}
+                <div className={styles.sectionDivider} />
+                <h3 className={styles.subSectionTitle}>Child&apos;s Physician</h3>
+                <p className={styles.subSectionDescription}>Optional. The doctor who will sign the child&apos;s plan of treatment, if you know it</p>
+
+                <div className={styles.formGrid}>
+                  <div className="form-group">
+                    <label htmlFor="physicianName" className="form-label">Physician Name</label>
+                    <input
+                      type="text"
+                      id="physicianName"
+                      name="physicianName"
+                      className="form-input"
+                      placeholder="e.g. Dr. Anita Patel"
+                      maxLength={120}
+                      value={formData.physicianName}
+                      onChange={handleChange}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="physicianOffice" className="form-label">Practice or Office</label>
+                    <input
+                      type="text"
+                      id="physicianOffice"
+                      name="physicianOffice"
+                      className="form-input"
+                      placeholder="e.g. Peachtree Pediatrics"
+                      maxLength={120}
+                      value={formData.physicianOffice}
+                      onChange={handleChange}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="physicianPhone" className="form-label">Office Phone</label>
+                    <input
+                      type="tel"
+                      id="physicianPhone"
+                      name="physicianPhone"
+                      className="form-input"
+                      placeholder="(404) 555-0100"
+                      maxLength={40}
+                      value={formData.physicianPhone}
+                      onChange={handleChange}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="physicianFax" className="form-label">Office Fax</label>
+                    <input
+                      type="tel"
+                      id="physicianFax"
+                      name="physicianFax"
+                      className="form-input"
+                      placeholder="(404) 555-0101"
+                      maxLength={40}
+                      value={formData.physicianFax}
                       onChange={handleChange}
                     />
                   </div>

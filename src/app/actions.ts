@@ -204,6 +204,7 @@ export async function processReferralSubmission(data: any) {
   }
 
   const { client, program, referrer, details } = data;
+  const physician = (data.physician ?? {}) as { name?: string; office?: string; phone?: string; fax?: string };
 
   // Hard stops (GAPP only), same rules as the GAPP site and the portal intake:
   // the paid-caregiver dead ends are refused before any email, CRM, or
@@ -309,6 +310,11 @@ export async function processReferralSubmission(data: any) {
           { label: 'Medicaid #', value: program.medicaidNumber ?? '' },
           { label: 'Insurance provider', value: program.insuranceProvider ?? '' },
           { label: 'Insurance policy #', value: program.insuranceNumber ?? '' },
+          // Labels are read back by ppotSubjectFromReferral (src/lib/ppotShared.ts).
+          { label: "Child's physician", value: physician.name ?? '' },
+          { label: 'Physician office', value: physician.office ?? '' },
+          { label: 'Physician phone', value: physician.phone ?? '' },
+          { label: 'Physician fax', value: physician.fax ?? '' },
           { label: 'Referral source', value: labelFor(SOURCE_LABELS, referrer.source ?? '') },
           { label: 'Referrer phone', value: referrer.phone ?? '' },
           { label: 'Referrer email', value: referrer.email ?? '' },
@@ -395,6 +401,12 @@ export async function processReferralSubmission(data: any) {
         <p><strong>Medicaid #:</strong> ${escapeHtml(program.medicaidNumber || 'N/A')}</p>
         <p><strong>Insurance Provider:</strong> ${escapeHtml(program.insuranceProvider || 'N/A')}</p>
         <p><strong>Insurance Policy #:</strong> ${escapeHtml(program.insuranceNumber || 'N/A')}</p>
+
+        <h3>Child's Physician</h3>
+        <p><strong>Name:</strong> ${escapeHtml(physician.name || 'N/A')}</p>
+        <p><strong>Office:</strong> ${escapeHtml(physician.office || 'N/A')}</p>
+        <p><strong>Phone:</strong> ${escapeHtml(physician.phone || 'N/A')}</p>
+        <p><strong>Fax:</strong> ${escapeHtml(physician.fax || 'N/A')}</p>
 
         <h3>Referrer Information</h3>
         <p><strong>Source:</strong> ${escapeHtml(referrer.source || 'N/A')}</p>

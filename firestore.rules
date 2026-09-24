@@ -750,6 +750,14 @@ service cloud.firestore {
     match /outboundFaxes/{faxId} {
       allow read, write: if false;
     }
+    // PPOT (Appendix T) request bookkeeping: the latest request per member and
+    // one recertification reminder per authorization period. Server-only.
+    match /ppotRequests/{key} {
+      allow read, write: if false;
+    }
+    match /ppotRecertReminders/{key} {
+      allow read, write: if false;
+    }
 
     // Default deny
     match /{document=**} {

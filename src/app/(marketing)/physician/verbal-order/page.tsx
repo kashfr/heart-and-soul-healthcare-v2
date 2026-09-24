@@ -117,10 +117,10 @@ function Inner() {
 
         {state === 'loading' && <p style={mutedStyle}>Loading the order…</p>}
         {state === 'invalid' && (
-          <div style={noticeStyle}><AlertCircle size={18} /> This signing link is not valid. Please sign the faxed form and return it to Heart and Soul Healthcare, or call 678.644.0337.</div>
+          <div style={noticeStyle}><AlertCircle size={18} /> This signing link is not valid. Please sign the faxed form and return it to Heart and Soul Healthcare, or call (678) 644-0337.</div>
         )}
         {state === 'cancelled' && (
-          <div style={noticeStyle}><AlertCircle size={18} /> Heart and Soul Healthcare cancelled this order. No signature is needed, and the faxed form can be discarded. Questions: call 678.644.0337.</div>
+          <div style={noticeStyle}><AlertCircle size={18} /> Heart and Soul Healthcare cancelled this order. No signature is needed, and the faxed form can be discarded. Questions: call (678) 644-0337.</div>
         )}
         {(state === 'used' || state === 'done') && order && (
           <div style={{ ...noticeStyle, background: '#e6f6ec', color: '#1e7a44', borderColor: '#bfe3cc' }}>
@@ -201,7 +201,7 @@ function Inner() {
             <button type="button" style={{ ...primaryBtnStyle, opacity: submitting ? 0.6 : 1 }} disabled={submitting} onClick={() => void submit()}>
               {submitting ? 'Recording…' : 'Sign and return'}
             </button>
-            <p style={{ ...mutedStyle, marginTop: 12 }}><ShieldCheck size={13} style={{ verticalAlign: -2 }} /> This page is private to this order. Questions: 678.644.0337.</p>
+            <p style={{ ...mutedStyle, marginTop: 12 }}><ShieldCheck size={13} style={{ verticalAlign: -2 }} /> This page is private to this order. Questions: (678) 644-0337.</p>
           </section>
         )}
       </div>

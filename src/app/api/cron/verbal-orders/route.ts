@@ -12,6 +12,7 @@ import {
   verbalOrderThresholds,
 } from '@/lib/verbalOrderServer';
 import { pollInFlightFaxes } from '@/lib/faxCenterServer';
+import { runPpotRecertSweep } from '@/lib/ppotServer';
 import { candidateOrdersForInboundFax, verbalOrderUrgency } from '@/lib/verbalOrderShared';
 
 export const runtime = 'nodejs';
@@ -39,6 +40,10 @@ function ymd(d: Date): string {
  *     bell once.
  *  5. Fax Center: poll outbound faxes still 'In Progress' (same safety net
  *     as step 2, for faxes sent from /admin/fax).
+ *  6. PPOT recertification: a GAPP client whose authorization ends within
+ *     the Settings lead time, with no Appendix T request sent this cycle,
+ *     rings everyone with Fax Center access (once per authorization period;
+ *     checked hourly during weekday office hours).
  */
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -48,7 +53,7 @@ export async function GET(request: Request) {
   const db = adminDb();
   const today = agencyTodayISO();
   const thresholds = await verbalOrderThresholds();
-  const summary = { inboundSeen: 0, inboundUnmatched: 0, statusPolled: 0, reminded: 0, escalated: 0, faxCenterPolled: 0, errors: [] as string[] };
+  const summary = { inboundSeen: 0, inboundUnmatched: 0, statusPolled: 0, reminded: 0, escalated: 0, faxCenterPolled: 0, ppotRecertReminded: 0, errors: [] as string[] };
 
   const openSnap = await db.collection('verbalOrders').where('status', 'in', ['taken', 'faxed']).get();
   const open = openSnap.docs.map((d) => serializeVerbalOrder(d.id, d.data() || {}));
@@ -149,6 +154,22 @@ export async function GET(request: Request) {
       summary.errors.push(...r.errors);
     } catch (err) {
       summary.errors.push(`fax center: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  // 6. PPOT recertification reminders. Once an hour (the first tick of the
+  // hour), office hours only, so the bell rings while someone can act on it
+  // and the roster isn't re-read every ten minutes.
+  const et = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', hourCycle: 'h23', weekday: 'short' }).formatToParts(new Date());
+  const etHour = Number(et.find((x) => x.type === 'hour')?.value ?? -1);
+  const etWeekday = et.find((x) => x.type === 'weekday')?.value ?? '';
+  if (new Date().getUTCMinutes() < 10 && etHour >= 8 && etHour < 18 && etWeekday !== 'Sat' && etWeekday !== 'Sun') {
+    try {
+      const r = await runPpotRecertSweep();
+      summary.ppotRecertReminded = r.reminded;
+      summary.errors.push(...r.errors);
+    } catch (err) {
+      summary.errors.push(`ppot recert: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

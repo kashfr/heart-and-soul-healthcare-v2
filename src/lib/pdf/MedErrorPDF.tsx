@@ -90,7 +90,7 @@ export default function MedErrorPDF({ report: r }: { report: MedErrorReport }) {
           {/* eslint-disable-next-line jsx-a11y/alt-text */}
           <Image src={BRAND_LOGO_DATA_URL} style={s.logo} />
           <Text style={s.company}>Heart and Soul Healthcare, LLC</Text>
-          <Text style={s.contact}>1372 Peachtree St NE, Atlanta, GA 30309   |   Phone: 678.644.0337</Text>
+          <Text style={s.contact}>1372 Peachtree St NE, Atlanta, GA 30309   |   Phone: (678) 644-0337</Text>
         </View>
         <View style={s.headerRule} />
         <Text style={s.title}>MEDICATION ERROR REPORT</Text>

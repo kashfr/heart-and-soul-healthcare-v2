@@ -110,7 +110,7 @@ export default function EdwpConsentPDF({ consent }: { consent: EdwpConsentRecord
           <Image src={BRAND_LOGO_DATA_URL} style={s.logo} />
           <Text style={s.company}>Heart and Soul Healthcare, LLC</Text>
           <Text style={s.contact}>
-            1372 Peachtree St NE, Atlanta, GA 30309   |   Phone: 678.644.0337   |   Fax: 678.802.3121
+            1372 Peachtree St NE, Atlanta, GA 30309   |   Phone: (678) 644-0337   |   Fax: (678) 802-3121
           </Text>
         </View>
         <View style={s.headerRule} />

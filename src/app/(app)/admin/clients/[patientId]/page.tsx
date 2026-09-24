@@ -23,6 +23,7 @@ import { AuthGuard } from '@/components/AuthGuard';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
 import { getPatient, getPatientClinical, type Patient, type PatientClinical } from '@/lib/patients';
+import { formatUSFaxNumber } from '@/lib/verbalOrderShared';
 import { getMarOrders, getAdministrationsForRange, type MarOrder, type MarAdministration } from '@/lib/mar';
 import { getNotesForPatient } from '@/lib/submissions';
 import { getPatientDocuments, type PatientDocument } from '@/lib/patientDocuments';
@@ -550,7 +551,7 @@ function ClientDashboardInner() {
               <HeaderField label="Allergies" value={clinical?.allergies} highlight />
               <HeaderField
                 label="Attending physician"
-                value={[clinical?.physicianName, clinical?.physicianPhone].filter(Boolean).join(' · ')}
+                value={[clinical?.physicianName, clinical?.physicianPhone, clinical?.physicianFax ? `fax ${formatUSFaxNumber(clinical.physicianFax)}` : ''].filter(Boolean).join(' · ')}
               />
               <HeaderField label="Diet / special instructions" value={clinical?.diet} />
             </div>
