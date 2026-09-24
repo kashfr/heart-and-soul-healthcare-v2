@@ -309,6 +309,11 @@ export interface FaxSettings {
    *  PPOT request sent yet this cycle, are flagged for recertification and
    *  everyone with Fax Center access is notified. */
   recertLeadDays: number;
+  /** Print the member's name and Medicaid ID (when on file) on the Appendix T
+   *  identity line. Off by default: the GAPP manual (913.3) says providers
+   *  cannot complete the PPOT, so turn this on only once DCH / the GAPP
+   *  program confirms identity fields are acceptable. Never anything else. */
+  ppotPrefillIdentity: boolean;
 }
 
 export interface AppSettings {
@@ -335,7 +340,7 @@ export interface AppSettings {
  */
 export const DEFAULT_SETTINGS: AppSettings = {
   verbalOrders: { overdueDays: 14, escalateDays: 30, returnFax: '' },
-  fax: { enabled: false, userUids: [], recertLeadDays: 45 },
+  fax: { enabled: false, userUids: [], recertLeadDays: 45, ppotPrefillIdentity: false },
   submissions: {
     defaultSort: 'dateOfService',
     defaultDir: 'desc',
@@ -504,6 +509,7 @@ function mergeFax(input: unknown): FaxSettings {
     enabled: src.enabled === true,
     userUids: Array.from(new Set(uids)),
     recertLeadDays: Number.isFinite(lead) && lead >= 7 && lead <= 180 ? lead : DEFAULT_SETTINGS.fax.recertLeadDays,
+    ppotPrefillIdentity: src.ppotPrefillIdentity === true,
   };
 }
 
@@ -654,6 +660,9 @@ export function validateSettings(payload: unknown): AppSettings {
   const sca = (p.shiftChangeAlerts ?? {}) as Partial<ShiftChangeAlertsSettings>;
   const fax = (p.fax ?? {}) as Partial<FaxSettings>;
 
+  if (fax.ppotPrefillIdentity !== undefined && typeof fax.ppotPrefillIdentity !== 'boolean') {
+    throw new SettingsValidationError('fax.ppotPrefillIdentity', 'fax.ppotPrefillIdentity must be true or false.');
+  }
   if (fax.enabled !== undefined && typeof fax.enabled !== 'boolean') {
     throw new SettingsValidationError('fax.enabled', 'fax.enabled must be true or false.');
   }

@@ -313,13 +313,14 @@ describe('intake settings (org service profile)', () => {
 
 describe('fax settings (Fax Center grant)', () => {
   it('defaults to off with nobody granted', () => {
-    expect(mergeWithDefaults(null).fax).toEqual({ enabled: false, userUids: [], recertLeadDays: 45 });
+    expect(mergeWithDefaults(null).fax).toEqual({ enabled: false, userUids: [], recertLeadDays: 45, ppotPrefillIdentity: false });
   });
   it('keeps the switch and dedupes / trims the granted uids', () => {
     expect(mergeWithDefaults({ fax: { enabled: true, userUids: [' rose ', 'rose', '', 'sup1', 7] } }).fax).toEqual({
       enabled: true,
       userUids: ['rose', 'sup1'],
       recertLeadDays: 45,
+      ppotPrefillIdentity: false,
     });
   });
   it('treats anything but true as off', () => {
@@ -329,6 +330,11 @@ describe('fax settings (Fax Center grant)', () => {
     expect(mergeWithDefaults({ fax: { recertLeadDays: 60 } }).fax.recertLeadDays).toBe(60);
     expect(mergeWithDefaults({ fax: { recertLeadDays: 2 } }).fax.recertLeadDays).toBe(45);
     expect(() => validateSettings({ fax: { recertLeadDays: 500 } })).toThrow(SettingsValidationError);
+  });
+  it('prints identity on the form only when explicitly turned on', () => {
+    expect(mergeWithDefaults({ fax: { ppotPrefillIdentity: true } }).fax.ppotPrefillIdentity).toBe(true);
+    expect(mergeWithDefaults({ fax: { ppotPrefillIdentity: 'yes' } }).fax.ppotPrefillIdentity).toBe(false);
+    expect(() => validateSettings({ fax: { ppotPrefillIdentity: 1 } })).toThrow(SettingsValidationError);
   });
   it('rejects a malformed payload', () => {
     expect(() => validateSettings({ fax: { enabled: 'yes' } })).toThrow(SettingsValidationError);

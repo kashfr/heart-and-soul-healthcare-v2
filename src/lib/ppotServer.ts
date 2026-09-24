@@ -11,6 +11,7 @@ import { sendOutboundFax, type SendFaxResult } from './faxCenterServer';
 import { agencyTodayISO } from './verbalOrderServer';
 import { normalizeUSFaxNumber } from './verbalOrderShared';
 import { formatDateUS } from './dateFormat';
+import { stampAppendixTIdentity } from './pdf/appendixTStamp';
 import { canUseFax } from './faxShared';
 import {
   cleanMedicaidId,
@@ -32,7 +33,9 @@ import {
  *
  * A request is a Fax Center send (outboundFaxes, kind 'ppot') of the blank
  * public/forms/gapp-appendix-t.pdf behind a cover sheet naming the member.
- * The form itself is never filled in (GAPP manual 913.3).
+ * The form goes out blank (GAPP manual 913.3), unless an admin turns on
+ * Settings > Fax Center > "Print name and Medicaid ID on the Appendix T",
+ * which prints only those two identity fields.
  */
 
 const REQUESTS = 'ppotRequests';
@@ -158,7 +161,11 @@ export async function sendPpotRequest(input: PpotSendInput, caller: AuthedCaller
   // The member block on the cover carries DOB and Medicaid ID; this line is
   // what the outbox lists and searches.
   const regarding = `Appendix T, ${PPOT_REQUEST_LABEL[input.requestType].toLowerCase()}: ${subject.name}`;
-  const pdf = await readFile(APPENDIX_T_PATH);
+  // Blank by default. With the Settings opt-in, only the identity line
+  // (name, Medicaid ID) is printed; the physician completes everything else.
+  const blank = await readFile(APPENDIX_T_PATH);
+  const settings = await getServerSettings();
+  const pdf = settings.fax.ppotPrefillIdentity ? await stampAppendixTIdentity(blank, { name: subject.name, medicaidId }) : blank;
   const fileName = `Appendix_T_${subject.name.replace(/[^A-Za-z0-9]+/g, '_').slice(0, 40) || 'member'}.pdf`;
 
   const result = await sendOutboundFax({

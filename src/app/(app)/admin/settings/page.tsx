@@ -956,6 +956,33 @@ export default function AdminSettingsPage() {
             />
             Turn on the Fax Center
           </label>
+          <label
+            style={{
+              display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', marginBottom: 12,
+              background: draft.fax.ppotPrefillIdentity ? '#eef4fb' : '#f8fafc', border: '1px solid #e5e7eb',
+              borderRadius: 6, cursor: 'pointer', fontSize: 13.5, color: '#2c3e50',
+            }}
+          >
+            <input
+              type="checkbox"
+              style={{ marginTop: 3 }}
+              checked={draft.fax.ppotPrefillIdentity}
+              onChange={(e) => {
+                const ppotPrefillIdentity = e.target.checked;
+                setDirty(true);
+                setDraft((prev) => ({ ...prev, fax: { ...prev.fax, ppotPrefillIdentity } }));
+              }}
+            />
+            <span>
+              <strong>Print name and Medicaid ID on the Appendix T</strong>
+              <span style={{ display: 'block', color: '#5c6b7a', fontSize: 12.5, marginTop: 2 }}>
+                When on, PPOT requests print the member&apos;s name and Medicaid ID (when we have it) on the form&apos;s
+                Member Name and Member Medicaid Number lines. Everything else stays blank for the physician. The GAPP
+                manual (913.3) says providers cannot complete the PPOT, so turn this on only after DCH or your GAPP
+                contact confirms identity fields are acceptable. When off, they appear on the cover sheet only.
+              </span>
+            </span>
+          </label>
           <div style={{ maxWidth: 320, marginBottom: 12 }}>
             <Field
               label="Recertification reminder (days before the authorization ends)"
