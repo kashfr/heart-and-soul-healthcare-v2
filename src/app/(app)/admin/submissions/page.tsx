@@ -64,7 +64,7 @@ const FALLBACK_PAGE_SIZE = 25;
 // archive a care-team note from her view without affecting anyone
 // else's. Admin/supervisor never see this scope.
 type Scope = 'active' | 'archived' | 'all' | 'team';
-type SortKey = 'submittedAt' | 'dateOfService' | 'clientName' | 'nurseName' | 'hours';
+type SortKey = 'submittedAt' | 'dateOfService' | 'clientName' | 'nurseName' | 'hours' | 'credential' | 'flags';
 type SortDir = 'asc' | 'desc';
 
 function parseDateOfService(mmddyyyy: string): Date | null {
@@ -77,6 +77,11 @@ function parseDateOfService(mmddyyyy: string): Date | null {
 function localTodayISO(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const CREDENTIAL_RANK: Record<string, number> = { RN: 0, LPN: 1, CNA: 2, HHA: 3 };
+function credentialRank(c: string): number {
+  return CREDENTIAL_RANK[(c || '').toUpperCase()] ?? 9;
 }
 
 /** Hours per client/nurse for the pivot under the totals strip. Shift hours
@@ -408,6 +413,18 @@ export default function SubmissionsPage() {
     [segmentsById, rangeActive, rangeFrom, rangeTo],
   );
   const isOversight = (s: SubmissionSummary) => s.noteType === 'rn-oversight-visit';
+  /** How many flag badges the Flags column shows for a row (the Flags sort). */
+  const flagCount = (s: SubmissionSummary): number =>
+    [
+      s.hasCriticalVitals || s.hasAbnormalVitals,
+      s.hasIncident,
+      s.physicianNotified,
+      s.hospitalAdmission || s.erUrgentCare,
+      s.medChangeReported,
+      needsCosign(s, requiredCosignCreds),
+      s.clarificationStatus === 'open',
+      s.clarificationBlocksNotes,
+    ].filter(Boolean).length;
 
   // A note is in range when any of its days is. Notes with no usable day
   // segments (no hours and no times) fall back to the date of service.
@@ -653,16 +670,26 @@ export default function SubmissionsPage() {
       } else if (sortParam === 'hours') {
         av = rowHours(a) ?? -1;
         bv = rowHours(b) ?? -1;
+      } else if (sortParam === 'credential') {
+        // Skill order (RN, LPN, CNA, HHA), not alphabetical.
+        av = credentialRank(a.credential);
+        bv = credentialRank(b.credential);
+      } else if (sortParam === 'flags') {
+        av = flagCount(a);
+        bv = flagCount(b);
       } else {
         av = a.nurseName.toLowerCase();
         bv = b.nurseName.toLowerCase();
       }
       if (av < bv) return dirParam === 'asc' ? -1 : 1;
       if (av > bv) return dirParam === 'asc' ? 1 : -1;
-      return 0;
+      // Ties (same credential, same flag count) fall back to newest service
+      // date so a grouped column still reads chronologically.
+      return (parseDateOfService(b.dateOfService)?.getTime() ?? 0) - (parseDateOfService(a.dateOfService)?.getTime() ?? 0);
     });
     return copy;
-  }, [filtered, sortParam, dirParam, rowHours]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered, sortParam, dirParam, rowHours, requiredCosignCreds]);
 
   // Totals for the whole filtered list (not just the page): the number the
   // owner reads off when a parent asks "how many hours did we use in
@@ -773,6 +800,24 @@ export default function SubmissionsPage() {
     };
   }, [sorted, rowHours, rowUnits, rowDollars, rowSegments, rateResolverFor, showHours]);
   const [pivot, setPivot] = useState<'' | 'client' | 'nurse' | 'day'>('');
+  // Pivot column sort. Resets to each pivot's natural order when you switch
+  // pivots (days newest first, clients / nurses by most hours).
+  type PivotSortKey = 'key' | 'who' | 'shifts' | 'hours' | 'dollars' | 'visits' | 'rnHours' | 'rnDollars';
+  const [pivotSort, setPivotSort] = useState<{ key: PivotSortKey; dir: 'asc' | 'desc' } | null>(null);
+  const openPivot = (next: '' | 'client' | 'nurse' | 'day') => {
+    setPivot(next);
+    setPivotSort(null);
+  };
+  const clickPivotSort = (key: PivotSortKey) => {
+    setPivotSort((cur) => {
+      // First click on a text column sorts A to Z; on a number column, biggest first.
+      const firstDir: 'asc' | 'desc' = key === 'key' || key === 'who' ? (pivot === 'day' && key === 'key' ? 'desc' : 'asc') : 'desc';
+      if (!cur || cur.key !== key) return { key, dir: firstDir };
+      return { key, dir: cur.dir === 'asc' ? 'desc' : 'asc' };
+    });
+  };
+  const pivotIndicator = (key: PivotSortKey) =>
+    pivotSort?.key === key ? (pivotSort.dir === 'asc' ? ' ↑' : ' ↓') : '';
   const money = (d: number | null): string => (d == null ? '—' : fmtDollars(d));
   /** A pivot quantity: exact hours or whole billable units. */
   const pq = (hours: number, units: number): string => (qtyView === 'units' ? fmtUnits(units) : fmtH(hours));
@@ -1382,6 +1427,8 @@ export default function SubmissionsPage() {
             <option value="nurseName:desc">Nurse Z–A</option>
             {showHours && <option value="hours:desc">Most hours</option>}
             {showHours && <option value="hours:asc">Fewest hours</option>}
+            <option value="credential:asc">Credential (RN first)</option>
+            <option value="flags:desc">Most flags</option>
           </select>
         </div>
 
@@ -1593,6 +1640,9 @@ export default function SubmissionsPage() {
             an optional by-client / by-nurse pivot and a CSV of the rows. */}
         {!loading && hoursStats && sorted.length > 0 && (
           <div style={hoursStripStyle}>
+            {/* Row 1: the numbers. Row 2: what they cover. Row 3: the
+                controls, always on their own line, so toggling $ (which adds
+                two dollar figures to row 1) never reflows the buttons. */}
             <div style={hoursStripRowStyle}>
               <span style={hoursStripIconStyle}><Clock size={14} /></span>
               <span style={hoursStatStyle}>
@@ -1620,12 +1670,13 @@ export default function SubmissionsPage() {
               <span style={hoursStatStyle}>
                 <strong style={hoursStatNumStyle}>{hoursStats.nurses}</strong> {hoursStats.nurses === 1 ? 'nurse' : 'nurses'}
               </span>
-              <span style={{ color: '#64748b', fontSize: 12 }}>
-                {describeRange({ fromISO: rangeFrom, toISO: rangeTo })}
-                {rangeActive && ' · shifts are split at midnight; only the hours inside the range count'}
-                {' · RN oversight visits are shown in blue and never added to shift hours'}
-              </span>
-              <div style={{ flex: 1 }} />
+            </div>
+            <div style={hoursStripNoteStyle}>
+              {describeRange({ fromISO: rangeFrom, toISO: rangeTo })}
+              {rangeActive && ' · shifts are split at midnight; only the hours inside the range count'}
+              {' · RN oversight visits are shown in blue and never added to shift hours'}
+            </div>
+            <div style={hoursToolbarStyle}>
               <span style={segmentedStyle} role="group" aria-label="Show as">
                 {(['hours', 'units'] as QtyView[]).map((v) => (
                   <button
@@ -1642,15 +1693,16 @@ export default function SubmissionsPage() {
               <button
                 type="button"
                 onClick={() => updateParams({ usd: showDollars ? null : '1' })}
-                style={showDollars ? dollarsBtnActiveStyle : pivotBtnStyle}
+                style={{ ...(showDollars ? dollarsBtnActiveStyle : pivotBtnStyle), minWidth: 60, justifyContent: 'center' }}
                 title="Show dollars alongside: units × the rate on the client's authorization line"
                 aria-pressed={showDollars}
               >
                 $ {showDollars ? 'on' : 'off'}
               </button>
+              <div style={{ flex: 1 }} />
               <button
                 type="button"
-                onClick={() => setPivot(pivot === 'day' ? '' : 'day')}
+                onClick={() => openPivot(pivot === 'day' ? '' : 'day')}
                 style={pivot === 'day' ? pivotBtnActiveStyle : pivotBtnStyle}
                 title="Each calendar day's hours (overnight shifts split at midnight)"
               >
@@ -1658,14 +1710,14 @@ export default function SubmissionsPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setPivot(pivot === 'client' ? '' : 'client')}
+                onClick={() => openPivot(pivot === 'client' ? '' : 'client')}
                 style={pivot === 'client' ? pivotBtnActiveStyle : pivotBtnStyle}
               >
                 By client
               </button>
               <button
                 type="button"
-                onClick={() => setPivot(pivot === 'nurse' ? '' : 'nurse')}
+                onClick={() => openPivot(pivot === 'nurse' ? '' : 'nurse')}
                 style={pivot === 'nurse' ? pivotBtnActiveStyle : pivotBtnStyle}
               >
                 By nurse
@@ -1678,20 +1730,41 @@ export default function SubmissionsPage() {
               <table style={{ ...pivotTableStyle, ...(pivot === 'day' ? { maxWidth: 760 } : null) }}>
                 <thead>
                   <tr>
-                    <th style={pivotThStyle}>{pivot === 'client' ? 'Client' : pivot === 'nurse' ? 'Nurse' : 'Day'}</th>
-                    {pivot === 'day' && <th style={pivotThStyle}>Who</th>}
-                    {pivot === 'nurse' && <th style={pivotThStyle}>Type</th>}
-                    <th style={{ ...pivotThStyle, textAlign: 'right' }}>Shifts</th>
-                    <th style={{ ...pivotThStyle, textAlign: 'right' }}>{qtyView === 'hours' ? 'Shift hours' : 'Shift units'}</th>
-                    {showDollars && <th style={{ ...pivotThStyle, textAlign: 'right', color: '#166534' }}>Shift $</th>}
-                    {pivot !== 'day' && <th style={{ ...pivotThStyle, textAlign: 'right' }}>Share</th>}
-                    {hoursStats.visits > 0 && <th style={{ ...pivotThStyle, textAlign: 'right', color: '#1d4ed8' }}>RN visits</th>}
-                    {hoursStats.visits > 0 && <th style={{ ...pivotThStyle, textAlign: 'right', color: '#1d4ed8' }}>{qtyView === 'hours' ? 'RN hours' : 'RN units'}</th>}
-                    {hoursStats.visits > 0 && showDollars && <th style={{ ...pivotThStyle, textAlign: 'right', color: '#166534' }}>RN $</th>}
+                    <th style={pivotThSortStyle} onClick={() => clickPivotSort('key')}>{pivot === 'client' ? 'Client' : pivot === 'nurse' ? 'Nurse' : 'Day'}{pivotIndicator('key')}</th>
+                    {pivot === 'day' && <th style={pivotThSortStyle} onClick={() => clickPivotSort('who')}>Who{pivotIndicator('who')}</th>}
+                    {pivot === 'nurse' && <th style={pivotThSortStyle} onClick={() => clickPivotSort('who')}>Type{pivotIndicator('who')}</th>}
+                    <th style={{ ...pivotThSortStyle, textAlign: 'right' }} onClick={() => clickPivotSort('shifts')}>Shifts{pivotIndicator('shifts')}</th>
+                    <th style={{ ...pivotThSortStyle, textAlign: 'right' }} onClick={() => clickPivotSort('hours')}>{qtyView === 'hours' ? 'Shift hours' : 'Shift units'}{pivotIndicator('hours')}</th>
+                    {showDollars && <th style={{ ...pivotThSortStyle, textAlign: 'right', color: '#166534' }} onClick={() => clickPivotSort('dollars')}>Shift ${pivotIndicator('dollars')}</th>}
+                    {pivot !== 'day' && <th style={{ ...pivotThSortStyle, textAlign: 'right' }} onClick={() => clickPivotSort('hours')}>Share{pivotIndicator('hours')}</th>}
+                    {hoursStats.visits > 0 && <th style={{ ...pivotThSortStyle, textAlign: 'right', color: '#1d4ed8' }} onClick={() => clickPivotSort('visits')}>RN visits{pivotIndicator('visits')}</th>}
+                    {hoursStats.visits > 0 && <th style={{ ...pivotThSortStyle, textAlign: 'right', color: '#1d4ed8' }} onClick={() => clickPivotSort('rnHours')}>{qtyView === 'hours' ? 'RN hours' : 'RN units'}{pivotIndicator('rnHours')}</th>}
+                    {hoursStats.visits > 0 && showDollars && <th style={{ ...pivotThSortStyle, textAlign: 'right', color: '#166534' }} onClick={() => clickPivotSort('rnDollars')}>RN ${pivotIndicator('rnDollars')}</th>}
                   </tr>
                 </thead>
                 <tbody>
-                  {(pivot === 'client' ? hoursStats.byClient : pivot === 'nurse' ? hoursStats.byNurse : hoursStats.byDay).map((b) => (
+                  {(() => {
+                    const base = pivot === 'client' ? hoursStats.byClient : pivot === 'nurse' ? hoursStats.byNurse : hoursStats.byDay;
+                    if (!pivotSort) return base;
+                    const val = (b: HoursPivotRow): string | number => {
+                      switch (pivotSort.key) {
+                        case 'key': return b.key.toLowerCase();
+                        case 'who': return (b.who || '').toLowerCase();
+                        case 'shifts': return b.shifts;
+                        case 'hours': return b.hours;
+                        case 'dollars': return b.dollars ?? -1;
+                        case 'visits': return b.visits;
+                        case 'rnHours': return b.rnHours;
+                        case 'rnDollars': return b.rnDollars ?? -1;
+                      }
+                    };
+                    const dir = pivotSort.dir === 'asc' ? 1 : -1;
+                    return [...base].sort((x, y) => {
+                      const a = val(x);
+                      const b = val(y);
+                      return a < b ? -dir : a > b ? dir : x.key.localeCompare(y.key);
+                    });
+                  })().map((b) => (
                     <tr key={b.key}>
                       <td style={{ ...pivotTdStyle, whiteSpace: 'nowrap' }}>{pivot === 'day' ? formatDateUS(b.key) : b.key}</td>
                       {pivot === 'day' && <td style={{ ...pivotTdStyle, color: '#475569' }}>{b.who}</td>}
@@ -1786,7 +1859,9 @@ export default function SubmissionsPage() {
                     >
                       Nurse{sortIndicator('nurseName')}
                     </th>
-                    <th style={thStyle}>Credential</th>
+                    <th style={{ ...thStyle, cursor: 'pointer' }} onClick={() => setSort('credential')} title="Sort by nurse type (RN, LPN, CNA, HHA)">
+                      Credential{sortIndicator('credential')}
+                    </th>
                     {showHours && (
                       <th
                         style={{ ...thStyle, cursor: 'pointer', textAlign: 'right', whiteSpace: 'nowrap' }}
@@ -1796,7 +1871,9 @@ export default function SubmissionsPage() {
                         {QTY_VIEW_LABEL[qtyView]}{sortIndicator('hours')}
                       </th>
                     )}
-                    <th style={thStyle}>Flags</th>
+                    <th style={{ ...thStyle, cursor: 'pointer' }} onClick={() => setSort('flags')} title="Sort by how many flags a note has">
+                      Flags{sortIndicator('flags')}
+                    </th>
                     <th
                       style={{ ...thStyle, cursor: 'pointer' }}
                       onClick={() => setSort('submittedAt')}
@@ -2542,6 +2619,36 @@ const pivotBtnActiveStyle: React.CSSProperties = {
   // Longhand-free: overriding the `border` shorthand with borderColor makes
   // React warn about mixed shorthand/longhand on rerender.
   border: '1px solid #1a3a5c',
+};
+
+const hoursStripNoteStyle: React.CSSProperties = {
+  color: '#64748b',
+  fontSize: 12,
+  marginTop: 6,
+  lineHeight: 1.45,
+};
+
+const hoursToolbarStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+  gap: 8,
+  marginTop: 10,
+  paddingTop: 10,
+  borderTop: '1px solid #dbe7f5',
+};
+
+const pivotThSortStyle: React.CSSProperties = {
+  textAlign: 'left',
+  padding: '6px 10px',
+  fontSize: 11,
+  textTransform: 'uppercase',
+  letterSpacing: 0.4,
+  color: '#64748b',
+  borderBottom: '1px solid #e2e8f0',
+  cursor: 'pointer',
+  userSelect: 'none',
+  whiteSpace: 'nowrap',
 };
 
 const dollarsBtnActiveStyle: React.CSSProperties = {
