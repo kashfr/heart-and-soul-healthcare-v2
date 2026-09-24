@@ -1,7 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Clock, Eye, FileUp, RefreshCw, RotateCw, Search, Send, X } from 'lucide-react';
+import { AlertTriangle, CalendarClock, CheckCircle2, Clock, Eye, FileSignature, FileUp, RefreshCw, RotateCw, Search, Send, X } from 'lucide-react';
+import PpotRequestModal, { type PpotSubjectRow } from './PpotRequestModal';
+import { formatDateUS } from '@/lib/dateFormat';
+import { PPOT_REQUEST_LABEL } from '@/lib/ppotShared';
 import { authedFetch } from '@/lib/authedFetch';
 import { useEffectiveUser } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
@@ -43,6 +46,22 @@ export default function FaxCenterPage() {
   const [q, setQ] = useState('');
   const [composing, setComposing] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [ppotSubjects, setPpotSubjects] = useState<PpotSubjectRow[]>([]);
+  const [recertLeadDays, setRecertLeadDays] = useState(45);
+  const [ppotOpen, setPpotOpen] = useState<{ initial: PpotSubjectRow | null } | null>(null);
+  const deepLinkDone = useRef(false);
+
+  const loadPpot = useCallback(async () => {
+    try {
+      const res = await authedFetch('/api/fax/ppot');
+      if (!res.ok) return;
+      const data = await res.json();
+      setPpotSubjects(data.subjects ?? []);
+      if (typeof data.recertLeadDays === 'number') setRecertLeadDays(data.recertLeadDays);
+    } catch {
+      // The outbox still works; the PPOT picker just has nothing to offer.
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,8 +81,32 @@ export default function FaxCenterPage() {
   }, []);
 
   useEffect(() => {
-    if (ready && allowed) void load();
-  }, [ready, allowed, load]);
+    if (ready && allowed) {
+      void load();
+      void loadPpot();
+    }
+  }, [ready, allowed, load, loadPpot]);
+
+  // /admin/fax?ppot=client:<id> (the recertification bell) or
+  // ?ppot=referral:<id> (the referral card) opens the request for that member.
+  useEffect(() => {
+    if (deepLinkDone.current || ppotSubjects.length === 0) return;
+    const want = new URLSearchParams(window.location.search).get('ppot') || '';
+    deepLinkDone.current = true;
+    if (!want) return;
+    const [kind, id] = want.split(':');
+    const hit = ppotSubjects.find((x) => x.kind === kind && x.id === id);
+    if (hit) setPpotOpen({ initial: hit });
+    window.history.replaceState(null, '', window.location.pathname);
+  }, [ppotSubjects]);
+
+  const recertDue = useMemo(
+    () =>
+      ppotSubjects
+        .filter((x) => x.recert?.due)
+        .sort((a, b) => (a.recert?.daysLeft ?? 0) - (b.recert?.daysLeft ?? 0)),
+    [ppotSubjects],
+  );
 
   // While anything is still going out, check back every 30 seconds.
   const anySending = faxes.some((f) => f.faxDetailsId && faxDeliveryState(f.sentStatus) === 'sending');
@@ -154,8 +197,11 @@ export default function FaxCenterPage() {
             <button onClick={load} style={ghostBtnStyle} title="Refresh">
               <RefreshCw size={15} /> Refresh
             </button>
-            <button onClick={() => setComposing(true)} style={primaryBtnStyle} disabled={!configured}>
+            <button onClick={() => setComposing(true)} style={ghostBtnStyle} disabled={!configured}>
               <Send size={15} /> Send a fax
+            </button>
+            <button onClick={() => setPpotOpen({ initial: null })} style={primaryBtnStyle} disabled={!configured}>
+              <FileSignature size={15} /> Request a PPOT
             </button>
           </div>
         </header>
@@ -166,6 +212,43 @@ export default function FaxCenterPage() {
             The portal&apos;s fax service is not set up yet, so faxes can&apos;t be sent from here. Ask the admin to
             finish the SRFax setup.
           </div>
+        )}
+
+        {recertDue.length > 0 && (
+          <section style={{ marginBottom: 22 }}>
+            <h2 style={sectionTitleStyle}>
+              <CalendarClock size={16} style={{ verticalAlign: -2, marginRight: 6 }} />
+              Recertifications due ({recertDue.length})
+            </h2>
+            <p style={{ ...metaStyle, margin: '0 0 10px' }}>
+              GAPP clients whose authorization ends within {recertLeadDays} days and who have no Appendix T request yet this cycle.
+            </p>
+            <div style={tableWrapStyle}>
+              <table style={tableStyle}>
+                <tbody>
+                  {recertDue.map((c) => (
+                    <tr key={c.id}>
+                      <td style={tdStyle}>
+                        <div style={{ fontWeight: 600 }}>{c.name}</div>
+                        <div style={metaStyle}>{c.physicianName ? `Physician: ${c.physicianName}` : 'No physician on file'}{c.physicianFax ? ` · fax ${formatUSFaxNumber(c.physicianFax)}` : ''}</div>
+                      </td>
+                      <td style={tdStyle}>
+                        Authorization ends {formatDateUS(c.authEnd)}
+                        <div style={{ ...metaStyle, color: (c.recert?.daysLeft ?? 0) <= 14 ? '#b3261e' : '#7f8c8d', fontWeight: (c.recert?.daysLeft ?? 0) <= 14 ? 700 : 400 }}>
+                          {(c.recert?.daysLeft ?? 0) >= 0 ? `${c.recert?.daysLeft} day${c.recert?.daysLeft === 1 ? '' : 's'} left` : `ended ${-(c.recert?.daysLeft ?? 0)} days ago`}
+                        </div>
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>
+                        <button onClick={() => setPpotOpen({ initial: c })} style={ghostBtnStyle} disabled={!configured}>
+                          <FileSignature size={14} /> Request PPOT
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
         )}
 
         <div style={{ marginBottom: 14 }}>
@@ -213,6 +296,9 @@ export default function FaxCenterPage() {
                         <div style={metaStyle}>{[f.recipientOrg, formatUSFaxNumber(f.toNumber)].filter(Boolean).join(' · ')}</div>
                       </td>
                       <td style={tdStyle}>
+                        {f.kind === 'ppot' && f.ppot && (
+                          <div style={ppotTagStyle}>PPOT request · {PPOT_REQUEST_LABEL[f.ppot.requestType]}</div>
+                        )}
                         {f.regarding || <span style={{ color: '#94a3b8' }}>None</span>}
                         <div style={metaStyle}>
                           {f.fileName} · {f.pages} page{f.pages === 1 ? '' : 's'}{f.includeCover ? ' with cover' : ''}
@@ -247,6 +333,18 @@ export default function FaxCenterPage() {
           </div>
         )}
       </div>
+
+      {ppotOpen && (
+        <PpotRequestModal
+          subjects={ppotSubjects}
+          initial={ppotOpen.initial}
+          onClose={() => setPpotOpen(null)}
+          onSent={(fax) => {
+            setFaxes((prev) => [fax, ...prev.filter((x) => x.id !== fax.id)]);
+            void loadPpot();
+          }}
+        />
+      )}
 
       {composing && (
         <SendModal
@@ -443,6 +541,8 @@ const tableWrapStyle: React.CSSProperties = { background: 'white', border: '1px 
 const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 14 };
 const thStyle: React.CSSProperties = { textAlign: 'left', padding: '12px 16px', fontSize: 12, fontWeight: 700, color: '#5c6b7a', textTransform: 'uppercase', letterSpacing: 0.4, borderBottom: '1px solid #e5e7eb', background: '#f9fafb', whiteSpace: 'nowrap' };
 const tdStyle: React.CSSProperties = { padding: '12px 16px', borderBottom: '1px solid #f1f5f9', color: '#374151', verticalAlign: 'top' };
+const sectionTitleStyle: React.CSSProperties = { fontSize: 15, fontWeight: 700, color: '#2c3e50', margin: '0 0 4px' };
+const ppotTagStyle: React.CSSProperties = { display: 'inline-block', fontSize: 11.5, fontWeight: 700, color: '#1a3a5c', background: '#eef4fb', border: '1px solid #cfe0f1', borderRadius: 999, padding: '1px 8px', marginBottom: 4 };
 const metaStyle: React.CSSProperties = { fontSize: 12.5, color: '#7f8c8d', marginTop: 3 };
 const backdropStyle: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 };
 const modalStyle: React.CSSProperties = { background: 'white', borderRadius: 12, width: '100%', maxWidth: 620, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' };

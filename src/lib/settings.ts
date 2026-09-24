@@ -305,6 +305,10 @@ export interface VerbalOrdersSettings {
 export interface FaxSettings {
   enabled: boolean;
   userUids: string[];
+  /** GAPP clients whose authorization ends within this many days, with no
+   *  PPOT request sent yet this cycle, are flagged for recertification and
+   *  everyone with Fax Center access is notified. */
+  recertLeadDays: number;
 }
 
 export interface AppSettings {
@@ -331,7 +335,7 @@ export interface AppSettings {
  */
 export const DEFAULT_SETTINGS: AppSettings = {
   verbalOrders: { overdueDays: 14, escalateDays: 30, returnFax: '' },
-  fax: { enabled: false, userUids: [] },
+  fax: { enabled: false, userUids: [], recertLeadDays: 45 },
   submissions: {
     defaultSort: 'dateOfService',
     defaultDir: 'desc',
@@ -495,7 +499,12 @@ function mergeFax(input: unknown): FaxSettings {
   const uids = Array.isArray(src.userUids)
     ? src.userUids.filter((u): u is string => typeof u === 'string').map((u) => u.trim()).filter(Boolean)
     : [];
-  return { enabled: src.enabled === true, userUids: Array.from(new Set(uids)) };
+  const lead = typeof src.recertLeadDays === 'number' ? Math.round(src.recertLeadDays) : Number.NaN;
+  return {
+    enabled: src.enabled === true,
+    userUids: Array.from(new Set(uids)),
+    recertLeadDays: Number.isFinite(lead) && lead >= 7 && lead <= 180 ? lead : DEFAULT_SETTINGS.fax.recertLeadDays,
+  };
 }
 
 function mergeShiftChangeAlerts(input: unknown): ShiftChangeAlertsSettings {
@@ -653,6 +662,12 @@ export function validateSettings(payload: unknown): AppSettings {
     (!Array.isArray(fax.userUids) || fax.userUids.some((u) => typeof u !== 'string'))
   ) {
     throw new SettingsValidationError('fax.userUids', 'fax.userUids must be an array of staff uids.');
+  }
+  if (
+    fax.recertLeadDays !== undefined &&
+    (typeof fax.recertLeadDays !== 'number' || !Number.isFinite(fax.recertLeadDays) || fax.recertLeadDays < 7 || fax.recertLeadDays > 180)
+  ) {
+    throw new SettingsValidationError('fax.recertLeadDays', 'Enter a whole number of days from 7 to 180.');
   }
 
   if (

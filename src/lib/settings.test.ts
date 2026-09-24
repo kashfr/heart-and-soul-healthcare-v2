@@ -313,16 +313,22 @@ describe('intake settings (org service profile)', () => {
 
 describe('fax settings (Fax Center grant)', () => {
   it('defaults to off with nobody granted', () => {
-    expect(mergeWithDefaults(null).fax).toEqual({ enabled: false, userUids: [] });
+    expect(mergeWithDefaults(null).fax).toEqual({ enabled: false, userUids: [], recertLeadDays: 45 });
   });
   it('keeps the switch and dedupes / trims the granted uids', () => {
     expect(mergeWithDefaults({ fax: { enabled: true, userUids: [' rose ', 'rose', '', 'sup1', 7] } }).fax).toEqual({
       enabled: true,
       userUids: ['rose', 'sup1'],
+      recertLeadDays: 45,
     });
   });
   it('treats anything but true as off', () => {
     expect(mergeWithDefaults({ fax: { enabled: 'yes' } }).fax.enabled).toBe(false);
+  });
+  it('keeps a recertification lead time in range and falls back otherwise', () => {
+    expect(mergeWithDefaults({ fax: { recertLeadDays: 60 } }).fax.recertLeadDays).toBe(60);
+    expect(mergeWithDefaults({ fax: { recertLeadDays: 2 } }).fax.recertLeadDays).toBe(45);
+    expect(() => validateSettings({ fax: { recertLeadDays: 500 } })).toThrow(SettingsValidationError);
   });
   it('rejects a malformed payload', () => {
     expect(() => validateSettings({ fax: { enabled: 'yes' } })).toThrow(SettingsValidationError);

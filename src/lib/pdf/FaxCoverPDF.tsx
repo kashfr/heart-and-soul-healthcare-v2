@@ -37,6 +37,11 @@ const s = StyleSheet.create({
   notice: { marginTop: 18, padding: 10, borderWidth: 1, borderColor: INK },
   noticeTitle: { fontSize: 9, fontFamily: 'Helvetica-Bold', marginBottom: 3 },
   noticeText: { fontSize: 8.5, lineHeight: 1.45 },
+  ppotBox: { borderWidth: 1.5, borderColor: INK, padding: 8, marginBottom: 12 },
+  ppotTitle: { fontSize: 11, fontFamily: 'Helvetica-Bold', textAlign: 'center' },
+  ppotSub: { fontSize: 9, textAlign: 'center', marginTop: 2 },
+  blankLine: { height: 14, borderBottomWidth: 0.75, borderBottomColor: INK },
+  blankHint: { fontSize: 7.5, color: MUTED, marginTop: 2 },
   footer: { position: 'absolute', bottom: 18, left: 54, right: 54, fontSize: 7.5, color: MUTED, textAlign: 'center' },
 });
 
@@ -61,6 +66,14 @@ export interface FaxCoverPdfProps {
   regarding: string;
   note: string;
   reference: string;
+  /** A PPOT request: adds the request banner and a member block (Medicaid ID
+   *  left as a blank line for the office when we don't have it). */
+  ppot?: {
+    requestLabel: string; // "New case (initial request)" | "Recertification"
+    memberName: string;
+    dob: string;
+    medicaidId: string;
+  };
 }
 
 export default function FaxCoverPDF(p: FaxCoverPdfProps) {
@@ -79,6 +92,30 @@ export default function FaxCoverPDF(p: FaxCoverPdfProps) {
         <View style={s.headerRule} />
 
         <Text style={s.title}>FAX</Text>
+
+        {p.ppot ? (
+          <View style={s.ppotBox}>
+            <Text style={s.ppotTitle}>REQUEST FOR PHYSICIAN PLAN OF TREATMENT (GAPP APPENDIX T)</Text>
+            <Text style={s.ppotSub}>{p.ppot.requestLabel}. The blank form is attached for the physician to complete and sign.</Text>
+            <View style={[s.grid, { marginTop: 6 }]}>
+              <View style={s.rowLast}>
+                <Cell label="Member name" value={p.ppot.memberName} flex={2} />
+                <Cell label="Date of birth" value={p.ppot.dob} />
+                <View style={[s.cellLast, { flex: 2 }]}>
+                  <Text style={s.label}>Medicaid ID</Text>
+                  {p.ppot.medicaidId ? (
+                    <Text style={s.value}>{p.ppot.medicaidId}</Text>
+                  ) : (
+                    <>
+                      <View style={s.blankLine} />
+                      <Text style={s.blankHint}>Please enter on the form</Text>
+                    </>
+                  )}
+                </View>
+              </View>
+            </View>
+          </View>
+        ) : null}
 
         <View style={s.grid}>
           <View style={s.row}>

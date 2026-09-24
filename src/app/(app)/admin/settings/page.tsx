@@ -62,6 +62,9 @@ function validateSettingsDraft(d: AppSettings): Record<string, string> {
   } else if (isWholeNumberBetween(vo.overdueDays, 1, 365) && vo.escalateDays < vo.overdueDays) {
     errs['verbalOrders.escalateDays'] = `Escalation must come at or after the overdue mark (${vo.overdueDays} days).`;
   }
+  if (!isWholeNumberBetween(d.fax.recertLeadDays, 7, 180)) {
+    errs['fax.recertLeadDays'] = 'Enter a whole number of days from 7 to 180.';
+  }
   if (vo.returnFax && !/^\d{10}$/.test(vo.returnFax)) {
     errs['verbalOrders.returnFax'] = 'Enter a 10-digit fax number, or leave it blank to use the portal\'s SRFax number.';
   }
@@ -953,6 +956,28 @@ export default function AdminSettingsPage() {
             />
             Turn on the Fax Center
           </label>
+          <div style={{ maxWidth: 320, marginBottom: 12 }}>
+            <Field
+              label="Recertification reminder (days before the authorization ends)"
+              id={settingsFieldId('fax.recertLeadDays')}
+              error={fieldErrors['fax.recertLeadDays']}
+            >
+              <input
+                type="number"
+                min={7}
+                max={180}
+                value={draft.fax.recertLeadDays}
+                style={{ ...inputStyle, ...hi('fax.recertLeadDays') }}
+                aria-invalid={!!fieldErrors['fax.recertLeadDays']}
+                onChange={(e) => {
+                  clearFieldError('fax.recertLeadDays');
+                  const recertLeadDays = Number(e.target.value) || 7;
+                  setDirty(true);
+                  setDraft((prev) => ({ ...prev, fax: { ...prev.fax, recertLeadDays } }));
+                }}
+              />
+            </Field>
+          </div>
           {faxOptions.length > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, opacity: draft.fax.enabled ? 1 : 0.6 }}>
               {faxOptions.map((o) => {

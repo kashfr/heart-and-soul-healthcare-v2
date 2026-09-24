@@ -12,7 +12,8 @@ import { srfaxConfig, srfaxGetFaxStatus, srfaxQueueFax } from './fax/srfax';
 import { SHARE_SITE_URL } from './shareLink';
 import { returnFaxNumber } from './verbalOrderServer';
 import { normalizeUSFaxNumber } from './verbalOrderShared';
-import { canUseFax, FAX_MAX_PAGES, type FaxSendInput, type OutboundFax } from './faxShared';
+import { canUseFax, FAX_MAX_PAGES, type FaxSendInput, type OutboundFax, type OutboundFaxPpot } from './faxShared';
+import { PPOT_REQUEST_LABEL } from './ppotShared';
 import FaxCoverPDF from './pdf/FaxCoverPDF';
 
 /**
@@ -34,8 +35,20 @@ function toIso(ts: unknown): string | null {
 }
 
 export function serializeOutboundFax(id: string, d: FirebaseFirestore.DocumentData): OutboundFax {
+  const pp = d.ppot as Record<string, unknown> | undefined;
   return {
     id,
+    kind: d.kind === 'ppot' ? 'ppot' : 'general',
+    ppot: pp
+      ? {
+          requestType: pp.requestType === 'recert' ? 'recert' : 'new',
+          subjectKind: pp.subjectKind === 'client' ? 'client' : 'referral',
+          subjectId: String(pp.subjectId || ''),
+          memberName: String(pp.memberName || ''),
+          dob: String(pp.dob || ''),
+          medicaidId: String(pp.medicaidId || ''),
+        }
+      : null,
     recipientName: String(d.recipientName || ''),
     recipientOrg: String(d.recipientOrg || ''),
     toNumber: String(d.toNumber || ''),
@@ -115,6 +128,7 @@ async function buildFaxPdf(p: {
   toNumber: string;
   senderName: string;
   reference: string;
+  ppot?: OutboundFaxPpot;
 }): Promise<{ bytes: Buffer; pages: number }> {
   const uploadPages = p.upload.getPageCount();
   if (!p.input.includeCover) {
@@ -132,6 +146,9 @@ async function buildFaxPdf(p: {
     regarding: p.input.regarding.trim(),
     note: p.input.note.trim(),
     reference: p.reference,
+    ppot: p.ppot
+      ? { requestLabel: PPOT_REQUEST_LABEL[p.ppot.requestType], memberName: p.ppot.memberName, dob: p.ppot.dob, medicaidId: p.ppot.medicaidId }
+      : undefined,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- react-pdf's renderToBuffer wants its own element type
   }) as any;
   const cover = await PDFDocument.load(await renderToBuffer(element));
@@ -165,7 +182,14 @@ export interface SendFaxResult {
  * Build, store, and queue one fax. The record is written before SRFax is
  * called so even a failed attempt leaves an audit trail (and a Retry button).
  */
-export async function sendOutboundFax(p: { input: FaxSendInput; pdf: Buffer; fileName: string; caller: AuthedCaller }): Promise<SendFaxResult> {
+export async function sendOutboundFax(p: {
+  input: FaxSendInput;
+  pdf: Buffer;
+  fileName: string;
+  caller: AuthedCaller;
+  /** Set for a PPOT request: forces the cover sheet and adds its member block. */
+  ppot?: OutboundFaxPpot;
+}): Promise<SendFaxResult> {
   if (!srfaxConfig()) return { ok: false, status: 503, error: 'Fax service is not configured on the portal yet.' };
   const toNumber = normalizeUSFaxNumber(p.input.toNumber);
   if (!toNumber) return { ok: false, status: 400, error: 'Enter a 10-digit US fax number.' };
@@ -181,17 +205,20 @@ export async function sendOutboundFax(p: { input: FaxSendInput; pdf: Buffer; fil
   const db = adminDb();
   const ref = db.collection(COL).doc();
   const senderName = p.caller.profile.displayName || p.caller.email || '';
-  const built = await buildFaxPdf({ upload, input: p.input, toNumber, senderName, reference: ref.id.slice(0, 8).toUpperCase() });
+  const input = p.ppot ? { ...p.input, includeCover: true } : p.input;
+  const built = await buildFaxPdf({ upload, input, toNumber, senderName, reference: ref.id.slice(0, 8).toUpperCase(), ppot: p.ppot });
   const storagePath = `faxes/outbound/${ref.id}/${p.fileName}`;
   await adminBucket().file(storagePath).save(built.bytes, { contentType: 'application/pdf', resumable: false });
 
   await ref.set({
+    kind: p.ppot ? 'ppot' : 'general',
+    ppot: p.ppot ?? null,
     recipientName: p.input.recipientName.trim(),
     recipientOrg: p.input.recipientOrg.trim(),
     toNumber,
     regarding: p.input.regarding.trim(),
     note: p.input.note.trim(),
-    includeCover: p.input.includeCover,
+    includeCover: input.includeCover,
     fileName: p.fileName,
     storagePath,
     pages: built.pages,

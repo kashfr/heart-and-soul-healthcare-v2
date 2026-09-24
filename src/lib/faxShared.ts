@@ -16,7 +16,7 @@ export const FAX_GRANTABLE_ROLES: readonly Role[] = ['supervisor', 'va'];
  * then admins always may, and a supervisor or VA may when an admin checked
  * them. The server repeats this check on every route.
  */
-export function canUseFax(fax: FaxSettings | undefined, uid: string | null | undefined, role: Role | null | undefined): boolean {
+export function canUseFax(fax: Pick<FaxSettings, 'enabled' | 'userUids'> | undefined, uid: string | null | undefined, role: Role | null | undefined): boolean {
   if (!fax || !fax.enabled || !uid || !role) return false;
   if (role === 'admin') return true;
   if (!FAX_GRANTABLE_ROLES.includes(role)) return false;
@@ -69,8 +69,21 @@ export function faxDeliveryState(sentStatus: string): FaxDeliveryState {
   return 'sending';
 }
 
+/** What a PPOT request fax is about (stored on the outbox row). */
+export interface OutboundFaxPpot {
+  requestType: 'new' | 'recert';
+  subjectKind: 'referral' | 'client';
+  subjectId: string;
+  memberName: string;
+  dob: string;
+  medicaidId: string;
+}
+
 export interface OutboundFax {
   id: string;
+  /** 'ppot' for an Appendix T request, 'general' for anything else. */
+  kind: 'general' | 'ppot';
+  ppot: OutboundFaxPpot | null;
   recipientName: string;
   recipientOrg: string;
   toNumber: string;

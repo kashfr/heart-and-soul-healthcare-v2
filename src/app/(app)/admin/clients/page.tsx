@@ -989,6 +989,27 @@ function ClientsRosterInner() {
                   </Field>
                 </div>
 
+                <div style={gridTwoStyle}>
+                  <Field label="Physician fax">
+                    <input
+                      type="tel"
+                      value={clinical.physicianFax ? formatUSPhone(clinical.physicianFax) : ''}
+                      onChange={(e) => setClinical((c) => ({ ...c, physicianFax: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
+                      style={inputStyle}
+                      placeholder="(555) 123-4568"
+                    />
+                  </Field>
+                  <Field label="Medicaid ID">
+                    <input
+                      type="text"
+                      value={clinical.medicaidId || ''}
+                      onChange={(e) => setClinical((c) => ({ ...c, medicaidId: e.target.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 20) }))}
+                      style={inputStyle}
+                      placeholder="Member ID from the Medicaid card"
+                    />
+                  </Field>
+                </div>
+
                 <Field label="Diet / special instructions">
                   <textarea
                     value={clinical.diet || ''}

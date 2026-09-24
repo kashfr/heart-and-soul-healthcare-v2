@@ -3,8 +3,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   X, Phone, Mail, Printer, MessageSquare, ArrowRightLeft, UserCheck,
-  Inbox, PhoneCall, Send, Share2, Copy, Check, Trash2, Plus, Stethoscope,
+  Inbox, PhoneCall, Send, Share2, Copy, Check, Trash2, Plus, Stethoscope, FileSignature,
 } from 'lucide-react';
+import Link from 'next/link';
+import { useEffectiveUser } from '@/components/AuthProvider';
+import { useSettings } from '@/components/SettingsProvider';
+import { canUseFax } from '@/lib/faxShared';
 import { authedFetch } from '@/lib/authedFetch';
 import { formatDateUS } from '@/lib/dateFormat';
 import { buildShareUrl } from '@/lib/shareLink';
@@ -42,6 +46,9 @@ export default function ReferralDetail({
   referral, staff, busy, onClose, onStageChange, onAssign, onServiceChange,
   onPrint, onDelete, canDelete, onChanged,
 }: Props) {
+  const { uid: viewerUid, role: viewerRole } = useEffectiveUser();
+  const { settings } = useSettings();
+  const canFax = canUseFax(settings.fax, viewerUid, viewerRole);
   const [activity, setActivity] = useState<ReferralActivity[]>([]);
   const [activityLoading, setActivityLoading] = useState(true);
   const [noteText, setNoteText] = useState('');
@@ -344,6 +351,13 @@ export default function ReferralDetail({
           <button onClick={() => onPrint(referral)} style={ghostBtnStyle}>
             <Printer size={15} /> Print call sheet
           </button>
+          {canFax && /gapp/i.test(referral.program || '') && referral.stage !== 'closed' && referral.stage !== 'referred_out' && (
+            // New GAPP case: ask the child's physician for the Appendix T.
+            // Opens the Fax Center with this referral already picked.
+            <Link href={`/admin/fax?ppot=referral:${referral.id}`} style={{ ...ghostBtnStyle, textDecoration: 'none' }}>
+              <FileSignature size={15} /> Request PPOT
+            </Link>
+          )}
           {canDelete && (
             <>
               <div style={{ flex: 1 }} />

@@ -217,13 +217,18 @@ export interface PatientClinical {
   allergies?: string;
   physicianName?: string; // standing attending / primary physician
   physicianPhone?: string;
+  /** 10 digits. Where PPOT (Appendix T) requests are faxed; saved back
+   *  automatically after a request goes out. */
+  physicianFax?: string;
+  /** Georgia Medicaid member ID. Printed on the PPOT request cover sheet. */
+  medicaidId?: string;
   diet?: string; // diet / special instructions
   updatedAt?: unknown;
 }
 
 // Single well-known doc id under patients/{id}/clinical.
 const CLINICAL_DOC_ID = 'profile';
-const CLINICAL_FIELDS = ['sex', 'allergies', 'physicianName', 'physicianPhone', 'diet'] as const;
+const CLINICAL_FIELDS = ['sex', 'allergies', 'physicianName', 'physicianPhone', 'physicianFax', 'medicaidId', 'diet'] as const;
 
 /**
  * Read a client's clinical profile. Returns null when none has been saved yet.
