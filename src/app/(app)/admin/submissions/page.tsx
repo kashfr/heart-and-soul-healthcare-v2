@@ -195,6 +195,8 @@ export default function SubmissionsPage() {
   const [queryInput, setQueryInput] = useState(qParam);
   const debouncedQuery = useDebounced(queryInput, 250);
   const [draftSavedToast, setDraftSavedToast] = useState(false);
+  /** Which form the saved/discarded draft came from ('oversight' or the shift note). */
+  const [draftToastKind, setDraftToastKind] = useState<'note' | 'oversight'>('note');
   const [draftDiscardedToast, setDraftDiscardedToast] = useState(false);
   /** The notes currently shown in the co-sign modal (1 = per-note flow, many = batch). */
   const [cosignTargets, setCosignTargets] = useState<SubmissionSummary[]>([]);
@@ -208,9 +210,12 @@ export default function SubmissionsPage() {
   // Show a confirmation toast when we arrive here via Save & exit or Discard.
   // Both share the same dismissal pattern; only one can be true at a time.
   useEffect(() => {
-    const saved = searchParams.get('draftSaved') === '1';
-    const discarded = searchParams.get('discarded') === '1';
+    const savedParam = searchParams.get('draftSaved');
+    const discardedParam = searchParams.get('discarded');
+    const saved = savedParam === '1' || savedParam === 'oversight';
+    const discarded = discardedParam === '1' || discardedParam === 'oversight';
     if (!saved && !discarded) return;
+    setDraftToastKind(savedParam === 'oversight' || discardedParam === 'oversight' ? 'oversight' : 'note');
     if (saved) setDraftSavedToast(true);
     if (discarded) setDraftDiscardedToast(true);
     const params = new URLSearchParams(searchParams.toString());
@@ -1179,7 +1184,9 @@ export default function SubmissionsPage() {
               fontWeight: 500,
             }}
           >
-            ✓ Draft saved. You can resume it anytime from the progress note page.
+            {draftToastKind === 'oversight'
+              ? '✓ Oversight note draft saved. Open New oversight note to resume it.'
+              : '✓ Draft saved. You can resume it anytime from the progress note page.'}
           </div>
         )}
         {draftDiscardedToast && (

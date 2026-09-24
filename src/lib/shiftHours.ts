@@ -635,3 +635,51 @@ function fmtUS(iso: string): string {
   const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return m ? `${m[2]}/${m[3]}/${m[1]}` : iso;
 }
+
+// ---------------------------------------------------------------------------
+// RN oversight visit length (the oversight form's read-only Time out).
+// ---------------------------------------------------------------------------
+
+export interface OversightAllotment {
+  /** Authorized RN oversight hours for the visit's month; null when no line covers it. */
+  monthlyHours: number | null;
+  /** Billable units already used this month by the client's OTHER oversight visits. */
+  usedUnits: number;
+  /** Hours left for this visit (whole 15-minute units / 4); null when no line. */
+  remainingHours: number | null;
+}
+
+/**
+ * How long this oversight visit may run: the month's authorized RN hours
+ * minus what the client's other visits that month already billed (in whole
+ * units, so the remainder lands on a quarter hour). Pure: callers pass the
+ * lines and the other visits' clock windows.
+ */
+export function oversightAllotment(
+  auths: HoursAuthorization[],
+  visitDateISO: string,
+  otherVisits: { dateISO: string; timeIn: string; timeOut: string }[],
+): OversightAllotment {
+  const ym = monthKeyOf(visitDateISO);
+  const line = authForMonth(auths, ym, 'oversight');
+  const cap = line ? monthCap(line, ym) : null;
+  let usedUnits = 0;
+  for (const v of otherVisits) {
+    if (monthKeyOf(v.dateISO) !== ym) continue;
+    const segs = splitShiftByDay({ dateISO: v.dateISO, shiftStart: v.timeIn, shiftEnd: v.timeOut, shiftEndDate: v.dateISO, totalHours: '' });
+    for (const seg of segs) usedUnits += hoursToUnits(seg.hours);
+  }
+  if (cap == null) return { monthlyHours: null, usedUnits, remainingHours: null };
+  const capUnits = Math.round(cap * UNITS_PER_HOUR);
+  const remainingUnits = Math.max(0, capUnits - usedUnits);
+  return { monthlyHours: cap, usedUnits, remainingHours: remainingUnits / UNITS_PER_HOUR };
+}
+
+/** 'HH:MM' plus hours, or null when the result would pass midnight. */
+export function addHoursToTime(hm: string, hours: number): string | null {
+  const m = (hm || '').match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const total = Number(m[1]) * 60 + Number(m[2]) + Math.round(hours * 60);
+  if (total >= 24 * 60) return null;
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
