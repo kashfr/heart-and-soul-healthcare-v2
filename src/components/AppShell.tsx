@@ -18,6 +18,7 @@ import {
   ArrowLeftRight,
   PhoneCall,
   ShieldAlert,
+  Printer,
   Menu,
   X,
   PanelLeftClose,
@@ -32,6 +33,7 @@ import ClarificationGate from './ClarificationGate';
 import CorrectionsBlockGate from './CorrectionsBlockGate';
 import AnnouncementGate from './AnnouncementGate';
 import type { Role } from '@/lib/auth';
+import { canUseFax } from '@/lib/faxShared';
 import { subscribePendingDupCount } from '@/lib/drafts';
 import { subscribeMyOpenClarifications, subscribeOpenFlagsAwaitingReviewer } from '@/lib/clarifications';
 import { subscribePendingHandoffs } from '@/lib/handoffs';
@@ -43,6 +45,8 @@ interface NavItem {
   label: string;
   icon: React.ReactNode;
   allow?: Role[];
+  /** Also needs the Fax Center grant from Settings (see faxShared.canUseFax). */
+  requiresFax?: boolean;
   disabled?: boolean;
 }
 
@@ -81,6 +85,10 @@ const NAV: NavItem[] = [
   { href: '/admin/referrals', label: 'Referrals', icon: <FileText size={18} />, allow: ['admin', 'va'] },
   { href: '/admin/agencies', label: 'Agencies', icon: <Handshake size={18} />, allow: ['admin', 'va'] },
   { href: '/admin/edwp-consents', label: 'EDWP Consents', icon: <FileSignature size={18} />, allow: ['admin', 'va'] },
+  // Send a PDF to a physician's office (or anyone) through SRFax with a cover
+  // sheet, and track delivery. Shown only to people an admin granted in
+  // Settings; the /api/fax routes enforce the same rule.
+  { href: '/admin/fax', label: 'Fax Center', icon: <Printer size={18} />, allow: ['admin', 'supervisor', 'va'], requiresFax: true },
 ];
 
 const VIEW_AS_ROLE_LABELS: Record<Role, string> = {
@@ -222,7 +230,11 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
   }, [mobileOpen]);
 
-  const visibleNav = NAV.filter((item) => !item.allow || (role && item.allow.includes(role)));
+  const visibleNav = NAV.filter(
+    (item) =>
+      (!item.allow || (role && item.allow.includes(role))) &&
+      (!item.requiresFax || canUseFax(appSettings.fax, effectiveUid, role)),
+  );
 
   // Client-scoped surfaces that lost their own sidebar slot in the nav
   // consolidation still highlight the Clients item (and give the topbar a

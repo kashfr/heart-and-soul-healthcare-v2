@@ -310,3 +310,22 @@ describe('intake settings (org service profile)', () => {
     expect(merged.intake.services).toEqual(['nursing', 'pss']);
   });
 });
+
+describe('fax settings (Fax Center grant)', () => {
+  it('defaults to off with nobody granted', () => {
+    expect(mergeWithDefaults(null).fax).toEqual({ enabled: false, userUids: [] });
+  });
+  it('keeps the switch and dedupes / trims the granted uids', () => {
+    expect(mergeWithDefaults({ fax: { enabled: true, userUids: [' rose ', 'rose', '', 'sup1', 7] } }).fax).toEqual({
+      enabled: true,
+      userUids: ['rose', 'sup1'],
+    });
+  });
+  it('treats anything but true as off', () => {
+    expect(mergeWithDefaults({ fax: { enabled: 'yes' } }).fax.enabled).toBe(false);
+  });
+  it('rejects a malformed payload', () => {
+    expect(() => validateSettings({ fax: { enabled: 'yes' } })).toThrow(SettingsValidationError);
+    expect(() => validateSettings({ fax: { userUids: 'rose' } })).toThrow(SettingsValidationError);
+  });
+});

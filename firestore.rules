@@ -744,6 +744,13 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Fax Center outbox. Written and read only by the /api/fax routes (Admin
+    // SDK), which check the per-person grant in settings/global; the sent PDF
+    // lives under faxes/outbound/ in Storage, also server-only.
+    match /outboundFaxes/{faxId} {
+      allow read, write: if false;
+    }
+
     // Default deny
     match /{document=**} {
       allow read, write: if false;
