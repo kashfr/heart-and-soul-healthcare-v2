@@ -13,7 +13,9 @@ import { formatDateUSFile } from './dateFormat';
 import VerbalOrderPDF from './pdf/VerbalOrderPDF';
 import {
   normalizeUSFaxNumber,
+  parseVerbalOrderStatus,
   verbalOrderBellText,
+  type VerbalOrderBellKind,
   type VerbalOrder,
   type VerbalOrderInput,
   type VerbalOrderSignMethod,
@@ -66,6 +68,14 @@ export function serializeVerbalOrder(id: string, d: FirebaseFirestore.DocumentDa
         inboundFaxFileName: String(d.signed.inboundFaxFileName || ''),
       }
     : null;
+  const cancelled = d.cancelled
+    ? {
+        reason: String(d.cancelled.reason || ''),
+        cancelledAt: toIso(d.cancelled.cancelledAt),
+        cancelledBy: String(d.cancelled.cancelledBy || ''),
+        cancelledByName: String(d.cancelled.cancelledByName || ''),
+      }
+    : null;
   return {
     id,
     patientId: String(d.patientId || ''),
@@ -84,13 +94,14 @@ export function serializeVerbalOrder(id: string, d: FirebaseFirestore.DocumentDa
     nurseSignature: String(d.nurseSignature || ''),
     takenAt: toIso(d.takenAt),
     takenDate: String(d.takenDate || ''),
-    status: d.status === 'signed' ? 'signed' : d.status === 'faxed' ? 'faxed' : 'taken',
+    status: parseVerbalOrderStatus(d.status),
     marChangeRequestId: String(d.marChangeRequestId || ''),
     marOrderId: String(d.marOrderId || ''),
     marChangeType: (['add', 'change', 'discontinue'].includes(d.marChangeType) ? d.marChangeType : '') as VerbalOrder['marChangeType'],
     marMedName: String(d.marMedName || ''),
     fax,
     signed,
+    cancelled,
     reminderSentAt: toIso(d.reminderSentAt),
     escalatedAt: toIso(d.escalatedAt),
     createdAt: toIso(d.createdAt),
@@ -170,6 +181,7 @@ export async function createVerbalOrder(p: CreateVerbalOrderParams): Promise<{ i
       marMedName: p.mar?.medName || '',
       fax: null,
       signed: null,
+      cancelled: null,
       reminderSentAt: null,
       escalatedAt: null,
       createdAt: FieldValue.serverTimestamp(),
@@ -196,7 +208,7 @@ export async function renderVerbalOrderPdf(order: VerbalOrder, signToken?: strin
   const returnFax = await returnFaxNumber();
   let esignUrl: string | undefined;
   let esignQrDataUrl: string | undefined;
-  if (order.status !== 'signed' && signToken) {
+  if ((order.status === 'taken' || order.status === 'faxed') && signToken) {
     esignUrl = esignUrlFor(signToken);
     esignQrDataUrl = await QRCode.toDataURL(esignUrl, { margin: 1, width: 240, errorCorrectionLevel: 'M' });
   }
@@ -249,6 +261,7 @@ export async function faxVerbalOrder(orderId: string, actor: { uid: string; name
   const order = await getVerbalOrder(orderId);
   if (!order) return { configured: true, ok: false, error: 'Verbal order not found.' };
   if (order.status === 'signed') return { configured: true, ok: false, error: 'This order is already signed.' };
+  if (order.status === 'cancelled') return { configured: true, ok: false, error: 'This order was cancelled.' };
   const to = normalizeUSFaxNumber(order.physicianFax);
   if (!to) return { configured: true, ok: false, error: 'The physician fax number is missing or invalid.' };
 
@@ -307,7 +320,7 @@ export async function recordFaxStatus(orderId: string, status: { sentStatus: str
   const snap = await ref.get();
   if (!snap.exists) return;
   const d = snap.data() || {};
-  if (d.status === 'signed') return;
+  if (d.status === 'signed' || d.status === 'cancelled') return;
   // A late notification for a superseded attempt (the office hit Resend)
   // must not overwrite the current attempt's status.
   const current = String((d.fax || {}).faxDetailsId || '');
@@ -347,21 +360,24 @@ export interface RecordSignedParams {
  * currency tile stops counting it. Idempotent: a second call on a signed
  * order is a no-op.
  */
-export async function recordVerbalOrderSigned(p: RecordSignedParams): Promise<{ ok: boolean; alreadySigned?: boolean; documentId?: string; error?: string }> {
+export async function recordVerbalOrderSigned(p: RecordSignedParams): Promise<{ ok: boolean; alreadySigned?: boolean; cancelled?: boolean; documentId?: string; error?: string }> {
   const db = adminDb();
   const ref = db.collection(COL).doc(p.orderId);
   const order = await getVerbalOrder(p.orderId);
   if (!order) return { ok: false, error: 'Verbal order not found.' };
   if (order.status === 'signed') return { ok: true, alreadySigned: true, documentId: order.signed?.documentId };
+  if (order.status === 'cancelled') return { ok: false, cancelled: true, error: 'This order was cancelled and can no longer be signed.' };
   // Claim the transition atomically so two concurrent intakes (a returned fax
   // and an office record, say) can't both file a copy.
   const claimed = await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const d = snap.data() || {};
+    if (d.status === 'cancelled') return 'cancelled' as const;
     if (d.status === 'signed' || d.signingClaimedAt) return false;
     tx.update(ref, { signingClaimedAt: FieldValue.serverTimestamp() });
     return true;
   });
+  if (claimed === 'cancelled') return { ok: false, cancelled: true, error: 'This order was cancelled and can no longer be signed.' };
   if (!claimed) {
     const again = await getVerbalOrder(p.orderId);
     return { ok: true, alreadySigned: true, documentId: again?.signed?.documentId };
@@ -441,17 +457,86 @@ export async function recordVerbalOrderSigned(p: RecordSignedParams): Promise<{ 
 }
 
 // ---------------------------------------------------------------------------
+// Cancel (void)
+// ---------------------------------------------------------------------------
+
+export interface CancelVerbalOrderParams {
+  orderId: string;
+  reason: string;
+  actor: { uid: string; name: string };
+}
+
+/**
+ * Void an unsigned order: entered in error, wrong client, or the physician
+ * won't sign it. Nothing is deleted. The order keeps its text, nurse
+ * signature, and fax history, gains a `cancelled` record (who, when, why),
+ * and drops out of the queue, the sweep, the inbound-fax matcher, and e-sign.
+ *
+ * The MAR change a medication order authorized is NOT reversed here: whether
+ * that med stays is a clinical call. The MAR order's "awaiting signature"
+ * badge is cleared and it is tagged verbalOrderCancelled so the office can
+ * review it in Manage meds.
+ */
+export interface CancelVerbalOrderResult {
+  ok: boolean;
+  status?: number;
+  error?: string;
+  order?: VerbalOrder;
+}
+
+export async function cancelVerbalOrder(p: CancelVerbalOrderParams): Promise<CancelVerbalOrderResult> {
+  const db = adminDb();
+  const ref = db.collection(COL).doc(p.orderId);
+  const result = await db.runTransaction(async (tx): Promise<CancelVerbalOrderResult> => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) return { ok: false, status: 404, error: 'Verbal order not found.' };
+    const d = snap.data() || {};
+    if (d.status === 'cancelled') return { ok: false, status: 409, error: 'This order is already cancelled.' };
+    if (d.status === 'signed') return { ok: false, status: 409, error: 'This order is already signed and cannot be cancelled.' };
+    // A signature intake is mid-flight (returned fax or e-sign being filed).
+    if (d.signingClaimedAt) return { ok: false, status: 409, error: 'A signature for this order is being recorded right now. Refresh and try again.' };
+    tx.update(ref, {
+      status: 'cancelled',
+      cancelled: { reason: p.reason, cancelledAt: FieldValue.serverTimestamp(), cancelledBy: p.actor.uid, cancelledByName: p.actor.name },
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    const marOrderId = String(d.marOrderId || '');
+    if (marOrderId) {
+      tx.set(
+        db.collection('marOrders').doc(marOrderId),
+        { verbalOrderPending: false, verbalOrderCancelled: true, lastEditedAt: FieldValue.serverTimestamp(), lastEditedBy: p.actor.uid, lastEditedByName: p.actor.name },
+        { merge: true },
+      );
+    }
+    return { ok: true, order: serializeVerbalOrder(snap.id, d) };
+  });
+  if (!result.ok || !result.order) return result;
+  // Retire the e-sign link so the physician can't sign a voided order.
+  try {
+    const tokens = await db.collection(TOKENS).where('orderId', '==', p.orderId).get();
+    const batch = db.batch();
+    tokens.docs.forEach((t) => batch.set(t.ref, { cancelledAt: FieldValue.serverTimestamp() }, { merge: true }));
+    if (!tokens.empty) await batch.commit();
+  } catch (err) {
+    // lookupSignToken also checks the order's status, so this is belt and braces.
+    console.error('Verbal order cancel: retiring the e-sign token failed:', err);
+  }
+  await notifyStaff('cancelled', result.order, `/admin/verbal-orders?vo=${p.orderId}`, p.actor);
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Public e-sign token
 // ---------------------------------------------------------------------------
 
-export async function lookupSignToken(token: string): Promise<{ order: VerbalOrder; used: boolean } | null> {
+export async function lookupSignToken(token: string): Promise<{ order: VerbalOrder; used: boolean; cancelled: boolean } | null> {
   if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) return null;
   const snap = await adminDb().collection(TOKENS).doc(token).get();
   if (!snap.exists) return null;
   const d = snap.data() || {};
   const order = await getVerbalOrder(String(d.orderId || ''));
   if (!order) return null;
-  return { order, used: !!d.usedAt || order.status === 'signed' };
+  return { order, used: !!d.usedAt || order.status === 'signed', cancelled: order.status === 'cancelled' || !!d.cancelledAt };
 }
 
 export async function markSignTokenUsed(token: string): Promise<void> {
@@ -479,15 +564,16 @@ export async function notifyStaffGeneric(text: string, href: string): Promise<nu
   return n;
 }
 
-export async function notifyStaff(kind: 'taken' | 'fax-failed' | 'fax-returned' | 'signed' | 'overdue' | 'escalated', order: VerbalOrder, href: string): Promise<number> {
+export async function notifyStaff(kind: VerbalOrderBellKind, order: VerbalOrder, href: string, actor?: { uid: string; name: string }): Promise<number> {
   const db = adminDb();
   const staff = await db.collection('users').where('role', 'in', ['admin', 'supervisor']).get();
-  const text = verbalOrderBellText(kind, order);
+  const text = verbalOrderBellText(kind, order, actor?.name || '');
   let n = 0;
   for (const u of staff.docs) {
     const data = u.data() as { active?: boolean };
     if (data.active === false) continue;
     if (kind === 'taken' && u.id === order.nurseId) continue;
+    if (actor?.uid && u.id === actor.uid) continue; // don't bell someone about their own action
     try {
       await db.collection('notifications').add({ userId: u.id, kind: `verbal-order-${kind}`, text, href, createdAt: FieldValue.serverTimestamp(), readAt: null });
       n++;

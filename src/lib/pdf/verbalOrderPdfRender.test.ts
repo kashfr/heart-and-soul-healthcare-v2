@@ -35,6 +35,7 @@ function order(over: Partial<VerbalOrder> = {}): VerbalOrder {
     marMedName: '',
     fax: null,
     signed: null,
+    cancelled: null,
     reminderSentAt: null,
     escalatedAt: null,
     createdAt: null,
@@ -68,6 +69,16 @@ describe('VerbalOrderPDF', () => {
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const el = React.createElement(VerbalOrderPDF as any, { order: signed, returnFax: '4702351891' });
+    expect(await pages(el)).toBe(1);
+  }, 30000);
+
+  it('cancelled record fits on one page', async () => {
+    const voided = order({
+      status: 'cancelled',
+      cancelled: { reason: 'Entered in error: clinic instruction, not a physician order.', cancelledAt: '2026-09-24T14:00:00Z', cancelledBy: 'a1', cancelledByName: 'Office Admin' },
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const el = React.createElement(VerbalOrderPDF as any, { order: voided, returnFax: '4702351891' });
     expect(await pages(el)).toBe(1);
   }, 30000);
 });

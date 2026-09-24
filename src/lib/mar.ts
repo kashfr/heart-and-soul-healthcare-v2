@@ -131,6 +131,9 @@ export interface MarOrder {
    *  (and orderSignedDate filled) when the signed copy is received. */
   verbalOrderId?: string;
   verbalOrderPending?: boolean;
+  /** The verbal order behind this med was cancelled before it was signed, so
+   *  the office should review whether the med should stay. */
+  verbalOrderCancelled?: boolean;
 }
 
 // Who is performing the write (stamped onto the doc for the audit trail).

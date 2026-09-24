@@ -1,7 +1,7 @@
 import { collection, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
 import { db } from './firebase';
 import { authedFetch } from './authedFetch';
-import type { VerbalOrder, VerbalOrderInput, VerbalOrderType } from './verbalOrderShared';
+import { parseVerbalOrderStatus, type VerbalOrder, type VerbalOrderInput, type VerbalOrderType } from './verbalOrderShared';
 
 export type { VerbalOrder } from './verbalOrderShared';
 
@@ -18,6 +18,7 @@ function toIso(ts: unknown): string | null {
 function fromDoc(id: string, d: Record<string, unknown>): VerbalOrder {
   const fax = (d.fax as Record<string, unknown> | null) || null;
   const signed = (d.signed as Record<string, unknown> | null) || null;
+  const cancelled = (d.cancelled as Record<string, unknown> | null) || null;
   return {
     id,
     patientId: String(d.patientId || ''),
@@ -36,7 +37,7 @@ function fromDoc(id: string, d: Record<string, unknown>): VerbalOrder {
     nurseSignature: String(d.nurseSignature || ''),
     takenAt: toIso(d.takenAt),
     takenDate: String(d.takenDate || ''),
-    status: d.status === 'signed' ? 'signed' : d.status === 'faxed' ? 'faxed' : 'taken',
+    status: parseVerbalOrderStatus(d.status),
     marChangeRequestId: String(d.marChangeRequestId || ''),
     marOrderId: String(d.marOrderId || ''),
     marChangeType: (['add', 'change', 'discontinue'].includes(String(d.marChangeType)) ? d.marChangeType : '') as VerbalOrder['marChangeType'],
@@ -64,6 +65,14 @@ function fromDoc(id: string, d: Record<string, unknown>): VerbalOrder {
           receivedByName: String(signed.receivedByName || ''),
           documentId: String(signed.documentId || ''),
           inboundFaxFileName: String(signed.inboundFaxFileName || ''),
+        }
+      : null,
+    cancelled: cancelled
+      ? {
+          reason: String(cancelled.reason || ''),
+          cancelledAt: toIso(cancelled.cancelledAt),
+          cancelledBy: String(cancelled.cancelledBy || ''),
+          cancelledByName: String(cancelled.cancelledByName || ''),
         }
       : null,
     reminderSentAt: toIso(d.reminderSentAt),
@@ -110,6 +119,18 @@ export async function recordVerbalOrderSignedByOffice(id: string, params: { sign
   });
   const data = (await res.json().catch(() => ({}))) as { error?: string };
   return res.ok ? { ok: true } : { ok: false, error: data.error };
+}
+
+/** Void an unsigned order (entered in error, physician declined). Staff, or
+ *  the nurse who took it. The record stays for the audit trail. */
+export async function cancelVerbalOrder(id: string, reason: string): Promise<{ ok: boolean; error?: string; marOrderId?: string }> {
+  const res = await authedFetch(`/api/verbal-orders/${encodeURIComponent(id)}/cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
+  });
+  const data = (await res.json().catch(() => ({}))) as { error?: string; marOrderId?: string };
+  return res.ok ? { ok: true, marOrderId: data.marOrderId || '' } : { ok: false, error: data.error };
 }
 
 /** Staff: an inbound fax's PDF, for previewing before it is matched. */

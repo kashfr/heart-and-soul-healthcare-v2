@@ -41,7 +41,7 @@ export default function PhysicianVerbalOrderPage() {
 
 function Inner() {
   const token = useSearchParams().get('t') || '';
-  const [state, setState] = useState<'loading' | 'invalid' | 'used' | 'ready' | 'done'>('loading');
+  const [state, setState] = useState<'loading' | 'invalid' | 'used' | 'cancelled' | 'ready' | 'done'>('loading');
   const [order, setOrder] = useState<OrderView | null>(null);
   const [printedName, setPrintedName] = useState('');
   const [attest, setAttest] = useState(false);
@@ -56,7 +56,7 @@ function Inner() {
     let cancelled = false;
     fetch(`/api/forms/verbal-order-sign?t=${encodeURIComponent(token)}`)
       .then(async (r) => {
-        const data = (await r.json().catch(() => null)) as { used?: boolean; order?: OrderView } | null;
+        const data = (await r.json().catch(() => null)) as { used?: boolean; cancelled?: boolean; order?: OrderView } | null;
         if (cancelled) return;
         if (!r.ok || !data?.order) {
           setState('invalid');
@@ -64,7 +64,7 @@ function Inner() {
         }
         setOrder(data.order);
         setPrintedName(data.order.physicianName);
-        setState(data.used ? 'used' : 'ready');
+        setState(data.used ? 'used' : data.cancelled ? 'cancelled' : 'ready');
       })
       .catch(() => {
         if (!cancelled) setState('invalid');
@@ -118,6 +118,9 @@ function Inner() {
         {state === 'loading' && <p style={mutedStyle}>Loading the order…</p>}
         {state === 'invalid' && (
           <div style={noticeStyle}><AlertCircle size={18} /> This signing link is not valid. Please sign the faxed form and return it to Heart and Soul Healthcare, or call 678.644.0337.</div>
+        )}
+        {state === 'cancelled' && (
+          <div style={noticeStyle}><AlertCircle size={18} /> Heart and Soul Healthcare cancelled this order. No signature is needed, and the faxed form can be discarded. Questions: call 678.644.0337.</div>
         )}
         {(state === 'used' || state === 'done') && order && (
           <div style={{ ...noticeStyle, background: '#e6f6ec', color: '#1e7a44', borderColor: '#bfe3cc' }}>

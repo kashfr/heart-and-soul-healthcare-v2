@@ -2,10 +2,10 @@
 
 import { useEffect, useState, type CSSProperties } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, Check, Clock, PhoneCall, Plus } from 'lucide-react';
+import { AlertTriangle, Ban, Check, Clock, PhoneCall, Plus } from 'lucide-react';
 import { useSettings } from '@/components/SettingsProvider';
 import { getVerbalOrdersForPatient, type VerbalOrder } from '@/lib/verbalOrders';
-import { verbalOrderStatusLabel, verbalOrderUrgency } from '@/lib/verbalOrderShared';
+import { isVerbalOrderOpen, verbalOrderStatusLabel, verbalOrderUrgency } from '@/lib/verbalOrderShared';
 import { formatDateUS } from '@/lib/dateFormat';
 
 function todayISO(): string {
@@ -40,7 +40,7 @@ export default function VerbalOrdersSection({ patientId, canTake }: { patientId:
   }, [patientId]);
 
   const today = todayISO();
-  const open = (items || []).filter((o) => o.status !== 'signed');
+  const open = (items || []).filter(isVerbalOrderOpen);
 
   return (
     <section style={cardStyle}>
@@ -65,12 +65,14 @@ export default function VerbalOrdersSection({ patientId, canTake }: { patientId:
         <ul style={listStyle}>
           {items.map((o) => {
             const u = verbalOrderUrgency(o, today, settings.verbalOrders);
-            const failed = o.status !== 'signed' && o.fax?.sentStatus === 'Failed';
+            const failed = isVerbalOrderOpen(o) && o.fax?.sentStatus === 'Failed';
             return (
-              <li key={o.id} style={{ ...rowStyle, borderLeftColor: u === 'signed' ? '#27ae60' : failed || u === 'escalated' ? '#b3261e' : u === 'overdue' ? '#e0a100' : '#1a3a5c' }}>
+              <li key={o.id} style={{ ...rowStyle, borderLeftColor: u === 'signed' ? '#27ae60' : u === 'cancelled' ? '#9ca3af' : failed || u === 'escalated' ? '#b3261e' : u === 'overdue' ? '#e0a100' : '#1a3a5c' }}>
                 <div style={rowHeadStyle}>
                   {u === 'signed' ? (
                     <span style={chipSignedStyle}><Check size={11} /> Signed {formatDateUS(o.signed?.signedDate || '')}</span>
+                  ) : u === 'cancelled' ? (
+                    <span style={chipMutedStyle}><Ban size={11} /> Cancelled</span>
                   ) : (
                     <span style={failed || u === 'escalated' ? chipDangerStyle : u === 'overdue' ? chipWarnStyle : chipOpenStyle}>
                       {failed || u !== 'open' ? <AlertTriangle size={11} /> : <Clock size={11} />} {u === 'overdue' ? 'Overdue' : u === 'escalated' ? 'Escalated' : verbalOrderStatusLabel(o)}
@@ -79,7 +81,7 @@ export default function VerbalOrdersSection({ patientId, canTake }: { patientId:
                   <span style={metaStyle}>{o.physicianName} · taken {formatDateUS(o.takenDate)} by {o.nurseName}{o.marMedName ? ` · MAR: ${o.marMedName}` : ''}</span>
                   <Link href={`/admin/verbal-orders?vo=${o.id}`} style={openLinkStyle}>Open</Link>
                 </div>
-                <div style={textStyle}>{o.orderText}</div>
+                <div style={{ ...textStyle, ...(u === 'cancelled' ? { color: '#6b7280', textDecoration: 'line-through' } : null) }}>{o.orderText}</div>
               </li>
             );
           })}
@@ -106,5 +108,6 @@ const chipSignedStyle = chip('#e6f6ec', '#1e7a44');
 const chipOpenStyle = chip('#e8eef4', NAVY);
 const chipWarnStyle = chip('#fff4e0', '#9a5b00');
 const chipDangerStyle = chip('#fdeaea', '#b3261e');
+const chipMutedStyle = chip('#f1f5f9', '#6b7280');
 const countChipStyle = chip('#fff4e0', '#9a5b00');
 const errorRowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', background: '#fdeaea', color: '#b3261e', borderRadius: 8, fontSize: 13, fontWeight: 600 };
