@@ -126,6 +126,35 @@ export default function ReferralsPage() {
     load();
   }, [load]);
 
+  // Deep link from the new-referral email: /admin/referrals?open=<id> opens
+  // that card once the list has loaded. Read from window.location (not
+  // useSearchParams, which would need a Suspense boundary on this page), then
+  // stripped from the URL so closing the drawer or refreshing doesn't reopen it.
+  const linkedId = useRef<string | null>(null);
+  const [linkNotice, setLinkNotice] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      const id = url.searchParams.get('open');
+      if (!id) return;
+      linkedId.current = id;
+      url.searchParams.delete('open');
+      window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  useEffect(() => {
+    if (loading || !linkedId.current) return;
+    const id = linkedId.current;
+    linkedId.current = null;
+    if (referrals.some((r) => r.id === id)) {
+      setSelectedId(id);
+    } else if (!error) {
+      setLinkNotice('That referral is no longer on the board. It may have been deleted.');
+    }
+  }, [loading, referrals, error]);
+
   // The open drawer is derived from the live list, so it always reflects the
   // latest data for its referral without a syncing effect. Resolves to null if
   // the referral disappears (e.g. filtered out by a refetch).
@@ -429,6 +458,18 @@ export default function ReferralsPage() {
             )}
           </div>
         </div>
+
+        {linkNotice && (
+          <div
+            role="status"
+            style={{ ...emptyStyle, textAlign: 'left', padding: '10px 14px', marginBottom: 12, color: '#92400e', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}
+          >
+            <span>{linkNotice}</span>
+            <button onClick={() => setLinkNotice(null)} aria-label="Dismiss" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', display: 'flex' }}>
+              <X size={16} />
+            </button>
+          </div>
+        )}
 
         {loading ? (
           <div style={emptyStyle}>Loading…</div>

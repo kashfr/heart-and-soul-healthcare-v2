@@ -300,7 +300,7 @@ export async function POST(req: Request) {
   if (!created.deduped) {
     const r = payload.referral ?? {};
     const [notif, confirm] = await Promise.all([
-      sendReferralNotification(input),
+      sendReferralNotification(input, created.id),
       sendReferralConfirmation({
         to: input.clientEmail,
         submitterName: r.submitterName,

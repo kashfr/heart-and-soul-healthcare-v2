@@ -5,6 +5,7 @@ import { GoogleSpreadsheet } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
 import { createClickUpTask } from '@/lib/clickup';
 import { createReferral } from '@/lib/referrals';
+import { referralPortalButtonHtml } from '@/lib/emails/referralPortalLink';
 import { sendReferralConfirmation } from '@/lib/emails/referralConfirmation';
 import { paidCaregiverDiagnosisFlag, screenYoungPaidCaregiver } from '@/lib/diagnosisScreening';
 import { formatDateUS } from '@/lib/dateFormat';
@@ -237,52 +238,12 @@ export async function processReferralSubmission(data: any) {
   }
 
   try {
-    // 1. Send Email
-    const { data: result, error } = await resend.emails.send({
-      from: FROM_EMAIL,
-      to: NOTIFICATION_EMAIL,
-      replyTo: referrer.email,
-      subject: `New Client Referral: ${client.firstName} ${client.lastName}`,
-      html: `
-        <h2>New Client Referral</h2>
-
-        <h3>Client Information</h3>
-        <p><strong>Name:</strong> ${escapeHtml(client.firstName)} ${escapeHtml(client.lastName)}</p>
-        <p><strong>DOB:</strong> ${escapeHtml(formatDateUS(client.dob ?? ''))}</p>
-        <p><strong>Phone:</strong> ${escapeHtml(client.phone)}</p>
-        <p><strong>Secondary Phone:</strong> ${escapeHtml(client.secondaryPhone || 'N/A')}</p>
-        <p><strong>Email:</strong> ${escapeHtml(client.email)}</p>
-        <p><strong>Address:</strong> ${escapeHtml(client.address || '')}${client.city ? ', ' + escapeHtml(client.city) : ''}${client.state ? ', ' + escapeHtml(client.state) : ''} ${escapeHtml(client.zip || '')}</p>
-        <p><strong>County:</strong> ${escapeHtml(client.county || 'N/A')}</p>
-
-        <h3>Program & Insurance</h3>
-        <p><strong>Program Interest:</strong> ${escapeHtml(program.interest)}</p>
-        <p><strong>Medicaid #:</strong> ${escapeHtml(program.medicaidNumber || 'N/A')}</p>
-        <p><strong>Insurance Provider:</strong> ${escapeHtml(program.insuranceProvider || 'N/A')}</p>
-        <p><strong>Insurance Policy #:</strong> ${escapeHtml(program.insuranceNumber || 'N/A')}</p>
-
-        <h3>Referrer Information</h3>
-        <p><strong>Source:</strong> ${escapeHtml(referrer.source || 'N/A')}</p>
-        <p><strong>Name:</strong> ${escapeHtml(referrer.name)}</p>
-        <p><strong>Phone:</strong> ${escapeHtml(referrer.phone || 'N/A')}</p>
-        <p><strong>Email:</strong> ${escapeHtml(referrer.email || 'N/A')}</p>
-        <p><strong>Organization:</strong> ${escapeHtml(referrer.organization || 'N/A')}</p>
-
-        <h3>Details</h3>
-        <p><strong>Urgency:</strong> ${escapeHtml(details.urgency)}</p>
-        <p><strong>Service Needs:</strong> ${escapeHtml(details.serviceNeeds || 'N/A')}</p>
-        <p><strong>Additional Notes:</strong> ${escapeHtml(details.additionalNotes || 'N/A')}</p>
-      `,
-    });
-
-    if (error) {
-      console.error('Resend error:', error);
-      throw new Error(error.message);
-    }
-
-    // 1.5 Store in the unified referrals collection so it appears in the admin
-    // Referrals tab alongside referrals forwarded from the GAPP site. Non-fatal:
-    // a storage failure must never block the email/Sheets/ClickUp flow.
+    // 1. Store in the unified referrals collection so it appears in the admin
+    // Referrals tab alongside referrals forwarded from the GAPP site. Done
+    // before the email so the email can link straight to the card. Non-fatal:
+    // a storage failure must never block the email/Sheets/ClickUp flow (the
+    // email then just goes out without the link).
+    let storedId: string | null = null;
     try {
       // Mixed diagnosis + paid request: what the family said the hands-on
       // care is for. Falls back to the free-text screen (mirrors the GAPP
@@ -317,7 +278,7 @@ export async function processReferralSubmission(data: any) {
       const behaviorFlag =
         program.interest === 'gapp' ? highBehaviorPaidFlag(details) : null;
 
-      await createReferral({
+      const stored = await createReferral({
         source: 'hs-website',
         clientName: `${client.firstName ?? ''} ${client.lastName ?? ''}`.trim(),
         clientEmail: client.email ?? '',
@@ -406,9 +367,56 @@ export async function processReferralSubmission(data: any) {
             : []),
         ],
       });
+      storedId = stored.id;
     } catch (storeErr) {
       console.error('Referral Firestore store failed (non-fatal):', storeErr);
     }
+
+    // 2. Send Email
+    const { data: result, error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: NOTIFICATION_EMAIL,
+      replyTo: referrer.email,
+      subject: `New Client Referral: ${client.firstName} ${client.lastName}`,
+      html: `
+        <h2>New Client Referral</h2>
+        ${storedId ? referralPortalButtonHtml(storedId) : ''}
+
+        <h3>Client Information</h3>
+        <p><strong>Name:</strong> ${escapeHtml(client.firstName)} ${escapeHtml(client.lastName)}</p>
+        <p><strong>DOB:</strong> ${escapeHtml(formatDateUS(client.dob ?? ''))}</p>
+        <p><strong>Phone:</strong> ${escapeHtml(client.phone)}</p>
+        <p><strong>Secondary Phone:</strong> ${escapeHtml(client.secondaryPhone || 'N/A')}</p>
+        <p><strong>Email:</strong> ${escapeHtml(client.email)}</p>
+        <p><strong>Address:</strong> ${escapeHtml(client.address || '')}${client.city ? ', ' + escapeHtml(client.city) : ''}${client.state ? ', ' + escapeHtml(client.state) : ''} ${escapeHtml(client.zip || '')}</p>
+        <p><strong>County:</strong> ${escapeHtml(client.county || 'N/A')}</p>
+
+        <h3>Program & Insurance</h3>
+        <p><strong>Program Interest:</strong> ${escapeHtml(program.interest)}</p>
+        <p><strong>Medicaid #:</strong> ${escapeHtml(program.medicaidNumber || 'N/A')}</p>
+        <p><strong>Insurance Provider:</strong> ${escapeHtml(program.insuranceProvider || 'N/A')}</p>
+        <p><strong>Insurance Policy #:</strong> ${escapeHtml(program.insuranceNumber || 'N/A')}</p>
+
+        <h3>Referrer Information</h3>
+        <p><strong>Source:</strong> ${escapeHtml(referrer.source || 'N/A')}</p>
+        <p><strong>Name:</strong> ${escapeHtml(referrer.name)}</p>
+        <p><strong>Phone:</strong> ${escapeHtml(referrer.phone || 'N/A')}</p>
+        <p><strong>Email:</strong> ${escapeHtml(referrer.email || 'N/A')}</p>
+        <p><strong>Organization:</strong> ${escapeHtml(referrer.organization || 'N/A')}</p>
+
+        <h3>Details</h3>
+        <p><strong>Urgency:</strong> ${escapeHtml(details.urgency)}</p>
+        <p><strong>Service Needs:</strong> ${escapeHtml(details.serviceNeeds || 'N/A')}</p>
+        <p><strong>Additional Notes:</strong> ${escapeHtml(details.additionalNotes || 'N/A')}</p>
+        ${storedId ? referralPortalButtonHtml(storedId) : ''}
+      `,
+    });
+
+    if (error) {
+      console.error('Resend error:', error);
+      throw new Error(error.message);
+    }
+
 
     // 1.6 Confirmation auto-responder to the submitter (non-fatal). Goes to the
     // referrer's email if given, otherwise the client/contact email.
@@ -424,7 +432,7 @@ export async function processReferralSubmission(data: any) {
       console.error('Referral confirmation email failed (non-fatal):', confirmErr);
     }
 
-    // 2. Add to Google Sheet
+    // 3. Add to Google Sheet
     await addToGoogleSheet('Referral Submissions', {
       Date: new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }),
       'Client Name': `${client.firstName} ${client.lastName}`,
@@ -453,7 +461,7 @@ export async function processReferralSubmission(data: any) {
 
 
 
-    // 3. Create ClickUp Task
+    // 4. Create ClickUp Task
     const referralListId = process.env.CLICKUP_REFERRAL_LIST_ID;
     if (referralListId) {
       await createClickUpTask(referralListId, {
