@@ -75,7 +75,6 @@ export async function sendReferralNotification(
       <p style="margin:0 0 16px;color:#6b7280;font-size:13px;">via ${escapeHtml(
         sourceLabel
       )}</p>
-      ${referralId ? referralPortalButtonHtml(referralId) : ''}
       <table style="border-collapse:collapse;width:100%;font-size:14px;">${rowsHtml}</table>
       ${
         referralId
