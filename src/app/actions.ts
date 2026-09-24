@@ -380,7 +380,6 @@ export async function processReferralSubmission(data: any) {
       subject: `New Client Referral: ${client.firstName} ${client.lastName}`,
       html: `
         <h2>New Client Referral</h2>
-        ${storedId ? referralPortalButtonHtml(storedId) : ''}
 
         <h3>Client Information</h3>
         <p><strong>Name:</strong> ${escapeHtml(client.firstName)} ${escapeHtml(client.lastName)}</p>
