@@ -41,6 +41,7 @@ import {
 import { useAuth } from '@/components/AuthProvider';
 import { authedFetch } from '@/lib/authedFetch';
 import { fileNoteDocument } from '@/lib/patientDocuments';
+import { addHoursToTime, fmtH, monthLabel, type OversightAllotment } from '@/lib/shiftHours';
 import { escortToField, FieldError, FIELD_ERROR_STYLE, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
 import SignatureCanvas, { type SignatureCanvasHandle } from '@/components/SignatureCanvas';
 import DeselectableRadio, {
@@ -348,6 +349,100 @@ function OversightNotePageInner() {
     if (user?.uid) void clearOversightDraft(user.uid);
   }, [user?.uid]);
 
+  // --- Visit length from the client's RN oversight authorization ----------
+  // Billing is by the month's authorized RN hours, so the documented visit
+  // must match: once the client, date, and Time in are set, Time out is
+  // computed (Time in + the hours left this month) and locked. When there is
+  // no oversight line, nothing left this month, or the visit would pass
+  // midnight, Time out stays editable and a note explains why.
+  const visitPatientId = watch('patientId');
+  const visitDate = watch('q6_dateofService');
+  const visitTimeIn = watch('ov_timeIn');
+  const [allotment, setAllotment] = useState<OversightAllotment | null>(null);
+  const [allotmentKey, setAllotmentKey] = useState('');
+  useEffect(() => {
+    const pid = String(visitPatientId || '');
+    const date = String(visitDate || '');
+    if (!pid || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+    const key = `${pid}|${date}`;
+    let cancelled = false;
+    const qs = new URLSearchParams({ patientId: pid, date, ...(editId ? { exclude: editId } : {}) });
+    authedFetch(`/api/oversight/allotment?${qs.toString()}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: OversightAllotment | null) => {
+        if (cancelled) return;
+        setAllotment(data);
+        setAllotmentKey(key);
+      })
+      .catch((err) => console.warn('Oversight allotment lookup failed:', err));
+    return () => { cancelled = true; };
+  }, [visitPatientId, visitDate, editId]);
+  const allotmentCurrent =
+    allotmentKey === `${String(visitPatientId || '')}|${String(visitDate || '')}` ? allotment : null;
+  const lockedTimeOut =
+    allotmentCurrent?.remainingHours && allotmentCurrent.remainingHours > 0 && visitTimeIn
+      ? addHoursToTime(String(visitTimeIn), allotmentCurrent.remainingHours)
+      : null;
+  useEffect(() => {
+    if (lockedTimeOut && getValues('ov_timeOut') !== lockedTimeOut) {
+      setValue('ov_timeOut', lockedTimeOut, { shouldDirty: true });
+    }
+  }, [lockedTimeOut, getValues, setValue]);
+  const visitMonthName = visitDate ? monthLabel(String(visitDate).slice(0, 7)).split(' ')[0] : '';
+  const timeOutHint: { tone: 'info' | 'warn'; text: string } | null = !allotmentCurrent
+    ? null
+    : allotmentCurrent.monthlyHours == null
+      ? { tone: 'warn', text: 'No RN oversight authorization on file for this month, so enter the time out yourself.' }
+      : (allotmentCurrent.remainingHours ?? 0) <= 0
+        ? { tone: 'warn', text: `${visitMonthName}'s ${fmtH(allotmentCurrent.monthlyHours)} RN hours are already used by another visit. This visit is not billable; enter the actual time out.` }
+        : !visitTimeIn
+          ? { tone: 'info', text: `Enter Time in; Time out fills in from the ${fmtH(allotmentCurrent.remainingHours ?? 0)} hours authorized for ${visitMonthName}.` }
+          : !lockedTimeOut
+            ? { tone: 'warn', text: `A ${fmtH(allotmentCurrent.remainingHours ?? 0)}-hour visit from this time in would pass midnight. Check Time in.` }
+            : {
+                tone: 'info',
+                text: `Set from the ${fmtH(allotmentCurrent.remainingHours ?? 0)} hours authorized for ${visitMonthName}${allotmentCurrent.usedUnits > 0 ? ` (after ${fmtH(allotmentCurrent.usedUnits / 4)} h used by another visit)` : ''}.`,
+              };
+
+  // --- Leaving the form ---------------------------------------------------
+  const [showDiscard, setShowDiscard] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const stopAutosave = () => {
+    hasSubmittedRef.current = true; // blocks any further autosave writes
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+  };
+  /** Keep the draft and go back to Submissions. */
+  const saveAndExit = async () => {
+    if (leaving) return;
+    setLeaving(true);
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    try {
+      await persistDraftRef.current();
+    } finally {
+      stopAutosave();
+      clearRadioStorage();
+      router.push('/admin/submissions?draftSaved=oversight');
+    }
+  };
+  /** Throw the draft away and go back to Submissions. */
+  const discardAndExit = async () => {
+    if (leaving) return;
+    setLeaving(true);
+    stopAutosave();
+    try {
+      if (user?.uid) await clearOversightDraft(user.uid);
+    } catch (err) {
+      console.warn('Clearing the oversight draft failed:', err);
+    }
+    clearRadioStorage();
+    router.push('/admin/submissions?discarded=oversight');
+  };
+  /** Amend mode: leave without saving any changes. */
+  const cancelAmend = () => {
+    clearRadioStorage();
+    router.push(editId ? `/admin/submissions/${editId}` : '/admin/submissions');
+  };
+
   // Autosave. Driven by RHF's change SUBSCRIPTION, never by render identity:
   // no-arg watch() returns a fresh object every render, so using it as an
   // effect dependency (with setDraftSavedAt re-rendering on success) produced
@@ -361,15 +456,12 @@ function OversightNotePageInner() {
     pendingDraftRef.current = !!pendingDraft;
   }, [pendingDraft]);
 
-  const scheduleAutosave = useCallback(() => {
+  // Write the current form state as this RN's oversight draft. Used by the
+  // autosave above and by "Save & exit" (which can't wait for the debounce).
+  const persistDraftRef = useRef<() => Promise<void>>(async () => {});
+  const persistDraft = useCallback(async () => {
     if (isEditMode || !user?.uid) return;
-    // Never before the stored-draft lookup resolves (we'd overwrite it with a
-    // blank form), never after submit (we'd resurrect the note we just
-    // filed), and never while the resume banner is still a live question.
-    if (!draftLookupDoneRef.current || pendingDraftRef.current || hasSubmittedRef.current) return;
-    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-    autosaveTimerRef.current = setTimeout(() => {
-      if (hasSubmittedRef.current) return;
+    {
       const values = getValues();
       const filled = Object.entries(values).filter(
         ([, v]) => typeof v === 'string' && v.trim() !== '',
@@ -382,7 +474,7 @@ function OversightNotePageInner() {
         if (!checkboxState[cb.name]) checkboxState[cb.name] = [];
         if (cb.checked) checkboxState[cb.name].push(cb.value);
       });
-      void saveOversightDraft(user.uid, {
+      await saveOversightDraft(user.uid, {
         clientName: String(values.q3_clientName || ''),
         dateOfService: String(values.q6_dateofService || ''),
         submissionId: submissionIdRef.current || undefined,
@@ -395,8 +487,25 @@ function OversightNotePageInner() {
       })
         .then(() => setDraftSavedAt(new Date()))
         .catch((err) => console.warn('Oversight draft autosave failed:', err));
-    }, 2500);
+    }
   }, [isEditMode, user?.uid, getValues]);
+  useEffect(() => {
+    persistDraftRef.current = persistDraft;
+  }, [persistDraft]);
+
+
+  const scheduleAutosave = useCallback(() => {
+    if (isEditMode || !user?.uid) return;
+    // Never before the stored-draft lookup resolves (we'd overwrite it with a
+    // blank form), never after submit (we'd resurrect the note we just
+    // filed), and never while the resume banner is still a live question.
+    if (!draftLookupDoneRef.current || pendingDraftRef.current || hasSubmittedRef.current) return;
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => {
+      if (hasSubmittedRef.current) return;
+      void persistDraftRef.current();
+    }, 2500);
+  }, [isEditMode, user?.uid]);
 
   useEffect(() => {
     if (isEditMode) return;
@@ -611,9 +720,35 @@ function OversightNotePageInner() {
 
   return (
     <div className={`${styles.container} ${styles.wrap}`}>
-      <h1 style={{ textAlign: 'center', fontSize: 22, marginBottom: 2 }}>
-        RN Oversight Visit Note{isEditMode ? ' — Amend' : ''}
-      </h1>
+      <div style={{ position: 'relative' }}>
+        {/* Close: amend mode leaves without saving; a new note asks whether
+            to keep the draft or throw it away. */}
+        <button
+          type="button"
+          onClick={() => (isEditMode ? cancelAmend() : setShowDiscard(true))}
+          aria-label={isEditMode ? 'Cancel changes and close' : 'Close this note'}
+          title={isEditMode ? 'Cancel changes' : 'Close (save or discard)'}
+          style={{
+            position: 'absolute',
+            top: -4,
+            right: 0,
+            width: 34,
+            height: 34,
+            borderRadius: 8,
+            border: '1px solid #d0d7de',
+            background: 'white',
+            color: '#475569',
+            fontSize: 18,
+            lineHeight: 1,
+            cursor: 'pointer',
+          }}
+        >
+          ✕
+        </button>
+        <h1 style={{ textAlign: 'center', fontSize: 22, marginBottom: 2, padding: '0 40px' }}>
+          RN Oversight Visit Note{isEditMode ? ' — Amend' : ''}
+        </h1>
+      </div>
       <p style={{ textAlign: 'center', color: '#5c6b7a', fontSize: 13, marginTop: 0 }}>
         NOW/COMP nursing services, RN oversight model. One note per oversight visit.
       </p>
@@ -746,8 +881,23 @@ function OversightNotePageInner() {
                 <label className={styles.label} htmlFor="ov_timeOut">
                   Time out *
                 </label>
-                <input className={styles.input} type="time" id="ov_timeOut" style={hi('ov_timeOut')} aria-invalid={!!fe('ov_timeOut')} {...register('ov_timeOut')} />
+                <input
+                  className={styles.input}
+                  type="time"
+                  id="ov_timeOut"
+                  readOnly={!!lockedTimeOut}
+                  tabIndex={lockedTimeOut ? -1 : undefined}
+                  title={lockedTimeOut ? 'Set from the client\'s authorized RN hours' : undefined}
+                  style={{ ...hi('ov_timeOut'), ...(lockedTimeOut ? { background: '#f1f5f9', color: '#334155', cursor: 'not-allowed' } : null) }}
+                  aria-invalid={!!fe('ov_timeOut')}
+                  {...register('ov_timeOut')}
+                />
                 <FieldError message={fe('ov_timeOut')} />
+                {timeOutHint && (
+                  <div style={{ fontSize: 12, marginTop: 4, lineHeight: 1.4, color: timeOutHint.tone === 'warn' ? '#b45309' : '#475569' }}>
+                    {lockedTimeOut ? '🔒 ' : ''}{timeOutHint.text}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1198,7 +1348,21 @@ function OversightNotePageInner() {
             </p>
           )}
 
-          <div className={styles.navigationControls}>
+          <div className={styles.navigationControls} style={{ gap: 10, flexWrap: 'wrap' }}>
+            {isEditMode ? (
+              <button type="button" className={styles.navBtn} onClick={cancelAmend} disabled={submitting}>
+                Cancel changes
+              </button>
+            ) : (
+              <>
+                <button type="button" className={styles.navBtn} onClick={() => setShowDiscard(true)} disabled={submitting || leaving}>
+                  Discard
+                </button>
+                <button type="button" className={styles.navBtn} onClick={saveAndExit} disabled={submitting || leaving}>
+                  {leaving ? 'Saving…' : 'Save & exit'}
+                </button>
+              </>
+            )}
             <button
               type="submit"
               className={styles.submitBtn}
@@ -1215,6 +1379,36 @@ function OversightNotePageInner() {
           </div>
         </div>
       </form>
+
+      {showDiscard && (
+        <div className={`${styles.confirmModal} ${styles.active}`} role="dialog" aria-modal="true" aria-label="Discard this oversight note">
+          <div className={styles.modalContent}>
+            <h2 style={{ color: '#1f2937', marginTop: 0 }}>Leave this oversight note?</h2>
+            <p style={{ color: '#555', lineHeight: 1.6 }}>
+              <strong>Save &amp; exit</strong> keeps a draft you can resume from New oversight note.{' '}
+              <strong>Discard note</strong> deletes everything entered so far, including the draft. Nothing is submitted
+              either way.
+            </p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <button type="button" className={styles.navBtn} onClick={() => setShowDiscard(false)} disabled={leaving}>
+                Keep editing
+              </button>
+              <button type="button" className={styles.navBtn} onClick={saveAndExit} disabled={leaving}>
+                Save &amp; exit
+              </button>
+              <button
+                type="button"
+                className={styles.submitBtn}
+                style={{ background: '#b3261e', borderColor: '#b3261e' }}
+                onClick={discardAndExit}
+                disabled={leaving}
+              >
+                {leaving ? 'Discarding…' : 'Discard note'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showEditReason && (
         <div className={`${styles.confirmModal} ${styles.active}`}>

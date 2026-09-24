@@ -19,6 +19,8 @@ import {
   fmtQty,
   segmentsToDollars,
   segmentsToUnits,
+  oversightAllotment,
+  addHoursToTime,
   type HoursAuthorization,
 } from './shiftHours';
 
@@ -368,5 +370,32 @@ describe('units and dollars', () => {
     expect(segmentsToDollars(segs, (d) => (d === '2026-09-14' ? null : 24.36))).toBeNull();
     // a shift split into two short pieces bills the started quarter on each day
     expect(segmentsToUnits([{ dateISO: '2026-09-13', hours: 5.05 }, { dateISO: '2026-09-14', hours: 7.05 }])).toBe(50);
+  });
+});
+
+describe('oversight visit allotment', () => {
+  // Aaronesse-style line: 3 h monthly RN oversight.
+  const rn3 = { ...kimRn, rateHours: 3, totalUnits: 144 };
+  it('a first visit in the month gets the full monthly hours', () => {
+    const a = oversightAllotment([rn3], '2026-09-22', []);
+    expect(a).toEqual({ monthlyHours: 3, usedUnits: 0, remainingHours: 3 });
+    expect(addHoursToTime('16:45', a.remainingHours!)).toBe('19:45');
+  });
+  it('subtracts the other visits that month in whole units', () => {
+    // an earlier 09/05 visit of 1:10 bills 5 units (1.25 h), leaving 7 units = 1.75 h
+    const a = oversightAllotment([rn3], '2026-09-22', [{ dateISO: '2026-09-05', timeIn: '10:00', timeOut: '11:10' }]);
+    expect(a.usedUnits).toBe(5);
+    expect(a.remainingHours).toBe(1.75);
+    // visits in another month don't count
+    expect(oversightAllotment([rn3], '2026-09-22', [{ dateISO: '2026-08-30', timeIn: '10:00', timeOut: '13:00' }]).remainingHours).toBe(3);
+  });
+  it('never goes below zero, and is null without an oversight line', () => {
+    expect(oversightAllotment([rn3], '2026-09-22', [{ dateISO: '2026-09-01', timeIn: '09:00', timeOut: '13:00' }]).remainingHours).toBe(0);
+    expect(oversightAllotment([kimLpn], '2026-09-22', []).remainingHours).toBeNull();
+  });
+  it('addHoursToTime refuses to cross midnight', () => {
+    expect(addHoursToTime('09:08', 6)).toBe('15:08');
+    expect(addHoursToTime('22:30', 3)).toBeNull();
+    expect(addHoursToTime('', 3)).toBeNull();
   });
 });
