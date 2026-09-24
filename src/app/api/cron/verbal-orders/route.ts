@@ -11,6 +11,7 @@ import {
   serializeVerbalOrder,
   verbalOrderThresholds,
 } from '@/lib/verbalOrderServer';
+import { pollInFlightFaxes } from '@/lib/faxCenterServer';
 import { candidateOrdersForInboundFax, verbalOrderUrgency } from '@/lib/verbalOrderShared';
 
 export const runtime = 'nodejs';
@@ -36,6 +37,8 @@ function ymd(d: Date): string {
  *     staff are told.
  *  4. Escalation: an open order at the escalation threshold rings the admin
  *     bell once.
+ *  5. Fax Center: poll outbound faxes still 'In Progress' (same safety net
+ *     as step 2, for faxes sent from /admin/fax).
  */
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -45,7 +48,7 @@ export async function GET(request: Request) {
   const db = adminDb();
   const today = agencyTodayISO();
   const thresholds = await verbalOrderThresholds();
-  const summary = { inboundSeen: 0, inboundUnmatched: 0, statusPolled: 0, reminded: 0, escalated: 0, errors: [] as string[] };
+  const summary = { inboundSeen: 0, inboundUnmatched: 0, statusPolled: 0, reminded: 0, escalated: 0, faxCenterPolled: 0, errors: [] as string[] };
 
   const openSnap = await db.collection('verbalOrders').where('status', 'in', ['taken', 'faxed']).get();
   const open = openSnap.docs.map((d) => serializeVerbalOrder(d.id, d.data() || {}));
@@ -135,6 +138,17 @@ export async function GET(request: Request) {
       }
     } catch (err) {
       summary.errors.push(`remind ${o.id}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  // 5. Fax Center outbound status
+  if (srfaxConfigured()) {
+    try {
+      const r = await pollInFlightFaxes({ olderThanMs: 5 * 60 * 1000, limit: 50 });
+      summary.faxCenterPolled = r.polled;
+      summary.errors.push(...r.errors);
+    } catch (err) {
+      summary.errors.push(`fax center: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

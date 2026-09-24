@@ -124,6 +124,9 @@ export default function AdminSettingsPage() {
   // The long per-age-group vitals grid is collapsed by default so the page
   // stays scannable; expanding it is one click.
   const [vitalsOpen, setVitalsOpen] = useState(false);
+  // Fax Center grant picker: supervisors and the VA (admins always have
+  // access once the feature is on, so they aren't listed).
+  const [faxOptions, setFaxOptions] = useState<Array<{ uid: string; displayName: string; role: string }>>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -149,6 +152,12 @@ export default function AdminSettingsPage() {
           }))
           .sort((a, b) => a.displayName.localeCompare(b.displayName));
         setReviewerOptions(opts);
+        setFaxOptions(
+          data.users
+            .filter((u) => u.active !== false && (u.role === 'supervisor' || u.role === 'va'))
+            .map((u) => ({ uid: u.uid, displayName: u.displayName || '(no name)', role: u.role || '' }))
+            .sort((a, b) => a.displayName.localeCompare(b.displayName)),
+        );
       } catch {
         // Picker degrades to a read-only summary; the saved value is untouched.
       }
@@ -280,6 +289,15 @@ export default function AdminSettingsPage() {
       const cur = prev.shiftChangeAlerts.recipientUids;
       const next = on ? Array.from(new Set([...cur, uid])) : cur.filter((u) => u !== uid);
       return { ...prev, shiftChangeAlerts: { recipientUids: next } };
+    });
+  };
+
+  const toggleFaxUser = (uid: string, on: boolean) => {
+    setDirty(true);
+    setDraft((prev) => {
+      const cur = prev.fax.userUids;
+      const next = on ? Array.from(new Set([...cur, uid])) : cur.filter((u) => u !== uid);
+      return { ...prev, fax: { ...prev.fax, userUids: next } };
     });
   };
 
@@ -906,6 +924,60 @@ export default function AdminSettingsPage() {
                 }} />
             </Field>
           </div>
+        </section>
+
+        {/* --- Fax Center --- */}
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Fax Center</h2>
+          <p style={sectionSubStyle}>
+            The Fax Center sends a PDF to any fax number through the portal&apos;s SRFax line, with a cover
+            sheet, and tracks whether it went through. When it is on, every admin can use it. Check the
+            supervisors and virtual assistants who should have it too. Anyone you check can see every fax in
+            the outbox, which may include client information.
+          </p>
+          <label
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', marginBottom: 12,
+              background: draft.fax.enabled ? '#eef4fb' : '#f8fafc', border: '1px solid #e5e7eb',
+              borderRadius: 6, cursor: 'pointer', fontSize: 14, color: '#2c3e50', fontWeight: 600,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={draft.fax.enabled}
+              onChange={(e) => {
+                const enabled = e.target.checked;
+                setDirty(true);
+                setDraft((prev) => ({ ...prev, fax: { ...prev.fax, enabled } }));
+              }}
+            />
+            Turn on the Fax Center
+          </label>
+          {faxOptions.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, opacity: draft.fax.enabled ? 1 : 0.6 }}>
+              {faxOptions.map((o) => {
+                const checked = draft.fax.userUids.includes(o.uid);
+                return (
+                  <label
+                    key={o.uid}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+                      background: checked ? '#eef4fb' : '#f8fafc', border: '1px solid #e5e7eb',
+                      borderRadius: 6, cursor: 'pointer', fontSize: 13.5, color: '#2c3e50',
+                    }}
+                  >
+                    <input type="checkbox" checked={checked} onChange={(e) => toggleFaxUser(o.uid, e.target.checked)} />
+                    <span style={{ fontWeight: 600 }}>{o.displayName}</span>
+                    <span style={{ color: '#5c6b7a', fontSize: 12.5 }}>{o.role === 'va' ? 'Virtual Assistant' : 'Supervisor'}</span>
+                  </label>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ fontSize: 13.5, color: '#5c6b7a', padding: '9px 0' }}>
+              No active supervisors or virtual assistants to list (or the staff list is unavailable right now).
+            </div>
+          )}
         </section>
 
         {/* --- Pediatric vital ranges (collapsed by default: the per-age-group

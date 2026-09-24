@@ -294,8 +294,22 @@ export interface VerbalOrdersSettings {
   returnFax: string;
 }
 
+/**
+ * Fax Center (/admin/fax): send any PDF to a fax number through SRFax, with a
+ * cover sheet, and track delivery. Off until an admin turns it on. Admins can
+ * always use it once it is on; anyone else needs to be on userUids (the
+ * picker offers supervisors and the virtual assistant). Every fax route
+ * checks this server-side (src/lib/faxAccess.ts); hiding the nav item is
+ * only the convenience half.
+ */
+export interface FaxSettings {
+  enabled: boolean;
+  userUids: string[];
+}
+
 export interface AppSettings {
   verbalOrders: VerbalOrdersSettings;
+  fax: FaxSettings;
   submissions: SubmissionsSettings;
   cosign: CosignSettings;
   patient: PatientSettings;
@@ -317,6 +331,7 @@ export interface AppSettings {
  */
 export const DEFAULT_SETTINGS: AppSettings = {
   verbalOrders: { overdueDays: 14, escalateDays: 30, returnFax: '' },
+  fax: { enabled: false, userUids: [] },
   submissions: {
     defaultSort: 'dateOfService',
     defaultDir: 'desc',
@@ -442,6 +457,7 @@ export function mergeWithDefaults(partial: unknown): AppSettings {
     corrections: mergeCorrections(p.corrections),
     shiftChangeAlerts: mergeShiftChangeAlerts(p.shiftChangeAlerts),
     verbalOrders: mergeVerbalOrders(p.verbalOrders),
+    fax: mergeFax(p.fax),
     branding: mergeBranding(p.branding),
     emails: mergeEmails(p.emails),
     intake: mergeIntake(p.intake),
@@ -472,6 +488,14 @@ function mergeVerbalOrders(input: unknown): VerbalOrdersSettings {
   const escalateDays = Math.max(overdueDays, clampDays(src.escalateDays, d.escalateDays));
   const returnFax = typeof src.returnFax === 'string' ? src.returnFax.replace(/\D/g, '').slice(-10) : '';
   return { overdueDays, escalateDays, returnFax: returnFax.length === 10 ? returnFax : '' };
+}
+
+function mergeFax(input: unknown): FaxSettings {
+  const src = (input ?? {}) as Partial<FaxSettings>;
+  const uids = Array.isArray(src.userUids)
+    ? src.userUids.filter((u): u is string => typeof u === 'string').map((u) => u.trim()).filter(Boolean)
+    : [];
+  return { enabled: src.enabled === true, userUids: Array.from(new Set(uids)) };
 }
 
 function mergeShiftChangeAlerts(input: unknown): ShiftChangeAlertsSettings {
@@ -619,6 +643,17 @@ export function validateSettings(payload: unknown): AppSettings {
   const pat = (p.patient ?? {}) as Partial<PatientSettings>;
   const vit = (p.vitals ?? {}) as Partial<VitalsSettings>;
   const sca = (p.shiftChangeAlerts ?? {}) as Partial<ShiftChangeAlertsSettings>;
+  const fax = (p.fax ?? {}) as Partial<FaxSettings>;
+
+  if (fax.enabled !== undefined && typeof fax.enabled !== 'boolean') {
+    throw new SettingsValidationError('fax.enabled', 'fax.enabled must be true or false.');
+  }
+  if (
+    fax.userUids !== undefined &&
+    (!Array.isArray(fax.userUids) || fax.userUids.some((u) => typeof u !== 'string'))
+  ) {
+    throw new SettingsValidationError('fax.userUids', 'fax.userUids must be an array of staff uids.');
+  }
 
   if (
     sca.recipientUids !== undefined &&
