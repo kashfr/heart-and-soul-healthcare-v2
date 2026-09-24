@@ -86,13 +86,13 @@ export default function VerbalOrderPDF({ order, returnFax, esignUrl, esignQrData
     <Document title={`Verbal Order - ${order.patientName}`} author="Heart and Soul Healthcare, LLC">
       <Page size="LETTER" style={s.page}>
         <Text style={s.footer} fixed>
-          Verbal order reference {order.id}. Confidential: contains protected health information. If received in error, call 678.644.0337.
+          Verbal order reference {order.id}. Confidential: contains protected health information. If received in error, call (678) 644-0337.
         </Text>
         <View style={s.header}>
           {/* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf Image has no alt prop */}
           <Image src={BRAND_LOGO_DATA_URL} style={s.logo} />
           <Text style={s.company}>Heart and Soul Healthcare, LLC</Text>
-          <Text style={s.contact}>1372 Peachtree St NE, Atlanta, GA 30309   |   Phone: 678.644.0337   |   Fax: {formatUSFaxNumber(returnFax)}</Text>
+          <Text style={s.contact}>1372 Peachtree St NE, Atlanta, GA 30309   |   Phone: (678) 644-0337   |   Fax: {formatUSFaxNumber(returnFax)}</Text>
         </View>
         <View style={s.headerRule} />
 

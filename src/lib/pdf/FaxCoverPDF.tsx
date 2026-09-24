@@ -81,13 +81,13 @@ export default function FaxCoverPDF(p: FaxCoverPdfProps) {
     <Document title="Fax cover sheet" author="Heart and Soul Healthcare, LLC">
       <Page size="LETTER" style={s.page}>
         <Text style={s.footer} fixed>
-          Fax reference {p.reference}. If you did not receive all pages, call 678.644.0337.
+          Fax reference {p.reference}. If you did not receive all pages, call (678) 644-0337.
         </Text>
         <View style={s.header}>
           {/* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf Image has no alt prop */}
           <Image src={BRAND_LOGO_DATA_URL} style={s.logo} />
           <Text style={s.company}>Heart and Soul Healthcare, LLC</Text>
-          <Text style={s.contact}>1372 Peachtree St NE, Atlanta, GA 30309   |   Phone: 678.644.0337   |   Fax: {formatUSFaxNumber(p.returnFax)}</Text>
+          <Text style={s.contact}>1372 Peachtree St NE, Atlanta, GA 30309   |   Phone: (678) 644-0337   |   Fax: {formatUSFaxNumber(p.returnFax)}</Text>
         </View>
         <View style={s.headerRule} />
 
@@ -131,7 +131,7 @@ export default function FaxCoverPDF(p: FaxCoverPdfProps) {
             <Cell label="Pages (including cover)" value={String(p.totalPages)} last />
           </View>
           <View style={s.row}>
-            <Cell label="Phone" value="678.644.0337" flex={2} />
+            <Cell label="Phone" value="(678) 644-0337" flex={2} />
             <Cell label="Return fax" value={formatUSFaxNumber(p.returnFax)} last />
           </View>
           <View style={s.rowLast}>
@@ -150,7 +150,7 @@ export default function FaxCoverPDF(p: FaxCoverPdfProps) {
             This fax may contain protected health information that is privileged and confidential under
             federal and state law (including HIPAA). It is intended only for the person or office named above.
             If you are not the intended recipient, you are notified that any review, disclosure, copying, or
-            distribution of this fax is prohibited. If you received it in error, please call 678.644.0337 right
+            distribution of this fax is prohibited. If you received it in error, please call (678) 644-0337 right
             away and destroy all pages.
           </Text>
         </View>
