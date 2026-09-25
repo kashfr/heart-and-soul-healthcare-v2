@@ -5,6 +5,7 @@ import {
   isVerbalOrderOpen,
   parseVerbalOrderStatus,
   formatUSFaxNumber,
+  inboundFaxSender,
   normalizeUSFaxNumber,
   validateVerbalOrderInput,
   verbalOrderBellText,
@@ -112,5 +113,21 @@ describe('candidateOrdersForInboundFax', () => {
     expect(candidateOrdersForInboundFax(['5034367151', '4045550101'], orders)).toEqual(['a']);
     expect(candidateOrdersForInboundFax(['', '4045550101'], orders)).toEqual(['a']);
     expect(candidateOrdersForInboundFax(['5034367151', ''], orders)).toEqual([]);
+  });
+});
+
+describe('inboundFaxSender', () => {
+  it('prefers the fax header ID and shows a different caller ID as the line', () => {
+    expect(inboundFaxSender('3055038807', '6788023121')).toEqual({ from: '(678) 802-3121', line: '(305) 503-8807' });
+  });
+  it('shows no separate line when both numbers match', () => {
+    expect(inboundFaxSender('16788023121', '678-802-3121')).toEqual({ from: '(678) 802-3121', line: '' });
+  });
+  it('falls back to the caller ID when the header is not a number', () => {
+    expect(inboundFaxSender('4045551212', 'DR OFFICE')).toEqual({ from: '(404) 555-1212', line: '' });
+  });
+  it('returns raw text, or nothing, when neither is a US number', () => {
+    expect(inboundFaxSender('', 'DR OFFICE')).toEqual({ from: 'DR OFFICE', line: '' });
+    expect(inboundFaxSender('', '')).toEqual({ from: '', line: '' });
   });
 });

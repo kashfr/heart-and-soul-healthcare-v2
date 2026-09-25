@@ -19,7 +19,7 @@ import {
   type UnmatchedInboundFax,
   type VerbalOrder,
 } from '@/lib/verbalOrders';
-import { formatUSFaxNumber, isVerbalOrderOpen, VERBAL_ORDER_CANCEL_REASON_MAX, verbalOrderAgeDays, verbalOrderStatusLabel, verbalOrderUrgency, type VerbalOrderUrgency } from '@/lib/verbalOrderShared';
+import { formatUSFaxNumber, inboundFaxSender, isVerbalOrderOpen, VERBAL_ORDER_CANCEL_REASON_MAX, verbalOrderAgeDays, verbalOrderStatusLabel, verbalOrderUrgency, type VerbalOrderUrgency } from '@/lib/verbalOrderShared';
 import { formatDateUS } from '@/lib/dateFormat';
 import { escortToField, FieldError, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
 
@@ -188,7 +188,7 @@ function VerbalOrdersInner() {
               {inbound.map((f) => (
                 <li key={f.id} style={rowStyle}>
                   <div style={rowHeadStyle}>
-                    <span style={{ fontWeight: 700, color: '#2c3e50' }}>From {formatUSFaxNumber(f.remoteId) || formatUSFaxNumber(f.callerId) || 'unknown sender'}</span>
+                    <span style={{ fontWeight: 700, color: '#2c3e50' }}>From {inboundFaxSender(f.callerId, f.remoteId).from || 'unknown sender'}</span>
                     <span style={metaStyle}>{f.receivedAt} · {f.pages} page{f.pages === 1 ? '' : 's'}{f.candidateOrderIds.length ? ' · sender matches an open order' : ''}</span>
                     <span style={{ display: 'inline-flex', gap: 6, marginLeft: 'auto', flexWrap: 'wrap' }}>
                       <button type="button" style={smallBtnStyle} onClick={() => void previewFax(f)}><Eye size={13} /> Preview</button>
@@ -388,7 +388,7 @@ function RecordSignatureModal({ order, fax, onClose, onDone }: { order: VerbalOr
         </div>
         <div style={sheetHintStyle}>
           {fax
-            ? `Files the fax from ${formatUSFaxNumber(fax.callerId) || 'the sender'} as the signed copy of this order and updates the MAR.`
+            ? `Files the fax from ${inboundFaxSender(fax.callerId, fax.remoteId).from || 'the sender'} as the signed copy of this order and updates the MAR.`
             : 'Use this when the signed order came back on paper or by email. Attach the signed copy if you have it as a PDF; it is filed under the client\'s Documents.'}
         </div>
         <div style={{ ...mutedStyle, marginBottom: 10 }}>
@@ -542,7 +542,7 @@ function MatchFaxModal({ fax, openOrders, onClose, onPick, onPreview }: { fax: U
         ) : (
         <>
         <div style={{ ...sheetHintStyle, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <span>From {formatUSFaxNumber(fax.remoteId) || formatUSFaxNumber(fax.callerId) || 'unknown'} · {fax.receivedAt} · {fax.pages} page{fax.pages === 1 ? '' : 's'}</span>
+          <span>From {inboundFaxSender(fax.callerId, fax.remoteId).from || 'unknown'} · {fax.receivedAt} · {fax.pages} page{fax.pages === 1 ? '' : 's'}</span>
           <button type="button" style={smallBtnStyle} onClick={onPreview}><Eye size={13} /> Preview the fax</button>
         </div>
         <div style={{ ...mutedStyle, marginBottom: 10 }}>Open the preview and check the client name and order on the page before choosing.</div>
