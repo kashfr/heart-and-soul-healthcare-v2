@@ -12,7 +12,7 @@ import {
   verbalOrderThresholds,
 } from '@/lib/verbalOrderServer';
 import { pollInFlightFaxes } from '@/lib/faxCenterServer';
-import { faxRecipientUids, listOpenPpotRequests, ppotInboundBellText, runPpotRecertSweep } from '@/lib/ppotServer';
+import { faxRecipientUids, listOpenPpotRequests, ppotInboundBellText, runPpotRecertSweep, runPpotReminderSweep } from '@/lib/ppotServer';
 import { createPortalNotification } from '@/lib/notificationsServer';
 import { ppotCandidatesForInbound } from '@/lib/ppotShared';
 import { candidateOrdersForInboundFax, inboundFaxSender, verbalOrderUrgency } from '@/lib/verbalOrderShared';
@@ -48,6 +48,11 @@ function ymd(d: Date): string {
  *     the Settings lead time, with no Appendix T request sent this cycle,
  *     rings everyone with Fax Center access (once per authorization period;
  *     checked hourly during weekday office hours).
+ *  7. PPOT follow-up: a request still unsigned at the Verbal Orders overdue
+ *     threshold is re-faxed once as a second request; at the escalation
+ *     threshold Fax Center users are rung to call the office. Same hourly,
+ *     office-hours slot as step 6, so the re-fax lands while the office is
+ *     open.
  */
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -57,7 +62,7 @@ export async function GET(request: Request) {
   const db = adminDb();
   const today = agencyTodayISO();
   const thresholds = await verbalOrderThresholds();
-  const summary = { inboundSeen: 0, inboundUnmatched: 0, statusPolled: 0, reminded: 0, escalated: 0, faxCenterPolled: 0, ppotRecertReminded: 0, errors: [] as string[] };
+  const summary = { inboundSeen: 0, inboundUnmatched: 0, statusPolled: 0, reminded: 0, escalated: 0, faxCenterPolled: 0, ppotRecertReminded: 0, ppotRefaxed: 0, ppotEscalated: 0, errors: [] as string[] };
 
   const openSnap = await db.collection('verbalOrders').where('status', 'in', ['taken', 'faxed']).get();
   const open = openSnap.docs.map((d) => serializeVerbalOrder(d.id, d.data() || {}));
@@ -189,6 +194,14 @@ export async function GET(request: Request) {
       summary.errors.push(...r.errors);
     } catch (err) {
       summary.errors.push(`ppot recert: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    try {
+      const r = await runPpotReminderSweep(thresholds, srfaxConfigured());
+      summary.ppotRefaxed = r.refaxed;
+      summary.ppotEscalated = r.escalated;
+      summary.errors.push(...r.errors);
+    } catch (err) {
+      summary.errors.push(`ppot reminders: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

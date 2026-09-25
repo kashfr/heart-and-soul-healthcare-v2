@@ -181,6 +181,52 @@ export interface PpotOpenRequest {
   toNumber: string;
   /** YYYY-MM-DD the request went out. */
   date: string;
+  /** YYYY-MM-DD the automatic reminder was re-faxed, or '' if not yet. */
+  remindedDate: string;
+}
+
+/**
+ * Where a PPOT request stands against the Verbal Orders thresholds in
+ * Settings: 'overdue' re-faxes the request once, 'escalated' rings the Fax
+ * Center users one more time so someone calls the office.
+ */
+export type PpotRequestUrgency = 'open' | 'overdue' | 'escalated';
+
+export function ppotRequestUrgency(
+  sentYmd: string,
+  todayYmd: string,
+  thresholds: { overdueDays: number; escalateDays: number },
+): PpotRequestUrgency {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(sentYmd) || !/^\d{4}-\d{2}-\d{2}$/.test(todayYmd)) return 'open';
+  const age = daysBetween(sentYmd, todayYmd);
+  if (age >= thresholds.escalateDays) return 'escalated';
+  if (age >= thresholds.overdueDays) return 'overdue';
+  return 'open';
+}
+
+/** Cover-sheet note on the automatic second request. */
+export function ppotReminderNote(requestType: PpotRequestType, firstSentUS: string, hasMedicaidId: boolean): string {
+  return `Second request. We faxed this Appendix T request on ${firstSentUS} and have not received the signed form yet. ${defaultPpotNote(requestType, hasMedicaidId)}`;
+}
+
+/**
+ * Whether filing a signed Appendix T dated `signedYmd` should move an order's
+ * signed date. Only forward: an older form never overwrites a newer date
+ * already on the order (a renewal the RN entered by hand, say).
+ */
+export function shouldAdvanceOrderDate(currentYmd: string | undefined, signedYmd: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(signedYmd)) return false;
+  const cur = String(currentYmd || '').trim();
+  return !/^\d{4}-\d{2}-\d{2}$/.test(cur) || cur < signedYmd;
+}
+
+/** An active care-plan task or MAR medication the signed Appendix T can date. */
+export interface PpotOrderLine {
+  id: string;
+  kind: 'task' | 'med';
+  name: string;
+  /** Current signed-order date on the line, '' when unknown. */
+  orderSignedDate: string;
 }
 
 /**

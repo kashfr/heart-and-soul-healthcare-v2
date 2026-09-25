@@ -8,6 +8,9 @@ import {
   ppotSubjectFromReferral,
   recertStatus,
   validatePpotSendInput,
+  ppotReminderNote,
+  ppotRequestUrgency,
+  shouldAdvanceOrderDate,
 } from './ppotShared';
 
 describe('cleanMedicaidId', () => {
@@ -108,8 +111,8 @@ describe('defaultPpotNote', () => {
 
 describe('ppotCandidatesForInbound', () => {
   const open = [
-    { key: 'client_p1', subjectKind: 'client' as const, subjectId: 'p1', memberName: 'Jane', requestType: 'recert' as const, recipientName: 'Dr. Patel', toNumber: '4045550101', date: '2026-09-20' },
-    { key: 'referral_r1', subjectKind: 'referral' as const, subjectId: 'r1', memberName: 'Sam', requestType: 'new' as const, recipientName: 'Dr. Lee', toNumber: '7705550199', date: '2026-09-21' },
+    { key: 'client_p1', subjectKind: 'client' as const, subjectId: 'p1', memberName: 'Jane', requestType: 'recert' as const, recipientName: 'Dr. Patel', toNumber: '4045550101', date: '2026-09-20', remindedDate: '' },
+    { key: 'referral_r1', subjectKind: 'referral' as const, subjectId: 'r1', memberName: 'Sam', requestType: 'new' as const, recipientName: 'Dr. Lee', toNumber: '7705550199', date: '2026-09-21', remindedDate: '' },
   ];
   it('matches on caller ID or station ID, with or without the leading 1', () => {
     expect(ppotCandidatesForInbound(['14045550101', ''], open)).toEqual(['client_p1']);
@@ -127,5 +130,39 @@ describe('validatePpotFiling', () => {
     expect(validatePpotFiling({ requestKey: '', signedDate: '2026-09-24' }, '2026-09-24')).toMatch(/Choose/);
     expect(validatePpotFiling({ requestKey: 'client_p1', signedDate: '09/24/2026' }, '2026-09-24')).toMatch(/date/);
     expect(validatePpotFiling({ requestKey: 'client_p1', signedDate: '2026-09-25' }, '2026-09-24')).toMatch(/future/);
+  });
+});
+
+describe('ppotRequestUrgency', () => {
+  const t = { overdueDays: 14, escalateDays: 30 };
+  it('is open before the overdue threshold, then overdue, then escalated', () => {
+    expect(ppotRequestUrgency('2026-09-01', '2026-09-14', t)).toBe('open');
+    expect(ppotRequestUrgency('2026-09-01', '2026-09-15', t)).toBe('overdue');
+    expect(ppotRequestUrgency('2026-09-01', '2026-10-01', t)).toBe('escalated');
+  });
+  it('treats an undated request as open', () => {
+    expect(ppotRequestUrgency('', '2026-10-01', t)).toBe('open');
+  });
+});
+
+describe('ppotReminderNote', () => {
+  it('says it is a second request with the first date, and never uses a dash', () => {
+    const n = ppotReminderNote('recert', '09/01/2026', true);
+    expect(n).toMatch(/^Second request\. We faxed this Appendix T request on 09\/01\/2026/);
+    expect(n).toMatch(/recertification/);
+    expect(n).not.toMatch(/[–—]/);
+  });
+});
+
+describe('shouldAdvanceOrderDate', () => {
+  it('moves a blank or older date forward, never backward', () => {
+    expect(shouldAdvanceOrderDate('', '2026-09-25')).toBe(true);
+    expect(shouldAdvanceOrderDate(undefined, '2026-09-25')).toBe(true);
+    expect(shouldAdvanceOrderDate('2025-10-01', '2026-09-25')).toBe(true);
+    expect(shouldAdvanceOrderDate('2026-09-25', '2026-09-25')).toBe(false);
+    expect(shouldAdvanceOrderDate('2026-09-30', '2026-09-25')).toBe(false);
+  });
+  it('ignores a bad signed date', () => {
+    expect(shouldAdvanceOrderDate('', 'soon')).toBe(false);
   });
 });
