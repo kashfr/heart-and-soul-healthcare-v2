@@ -167,3 +167,39 @@ export function defaultPpotNote(requestType: PpotRequestType, hasMedicaidId: boo
   const medicaid = hasMedicaidId ? '' : ' Please also fill in the member’s Medicaid number on the form.';
   return `${lead} and fax it back to us along with any office notes that support the hours recommended.${medicaid} Thank you.`;
 }
+
+/** A PPOT request still waiting on the signed form (ppotRequests, status 'sent'). */
+export interface PpotOpenRequest {
+  /** ppotRequests doc id: `${subjectKind}_${subjectId}`. */
+  key: string;
+  subjectKind: PpotSubjectKind;
+  subjectId: string;
+  memberName: string;
+  requestType: PpotRequestType;
+  recipientName: string;
+  /** 10 digits: the number the request went to. */
+  toNumber: string;
+  /** YYYY-MM-DD the request went out. */
+  date: string;
+}
+
+/**
+ * Open requests whose physician fax matches the number an inbound fax came
+ * from (SRFax caller ID or the sending machine's station ID). A suggestion
+ * only: a person looks at the fax before anything is filed, because the same
+ * office also sends labs, records requests, and signed verbal orders.
+ */
+export function ppotCandidatesForInbound(fromNumbers: string[], open: PpotOpenRequest[]): string[] {
+  const froms = new Set(fromNumbers.map(normalizeUSFaxNumber).filter(Boolean));
+  if (froms.size === 0) return [];
+  return open.filter((r) => froms.has(normalizeUSFaxNumber(r.toNumber))).map((r) => r.key);
+}
+
+/** Validate the office's "file this fax as the signed PPOT" step. */
+export function validatePpotFiling(input: { requestKey?: string; signedDate?: string }, today: string): string | null {
+  if (!/^(referral|client)_[A-Za-z0-9_-]{1,128}$/.test(String(input.requestKey || ''))) return 'Choose which PPOT request this fax answers.';
+  const d = String(input.signedDate || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(`${d}T00:00:00Z`))) return 'Enter the date the physician signed the form.';
+  if (d > today) return 'The signed date cannot be in the future.';
+  return null;
+}

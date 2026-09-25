@@ -12,7 +12,9 @@ import {
   verbalOrderThresholds,
 } from '@/lib/verbalOrderServer';
 import { pollInFlightFaxes } from '@/lib/faxCenterServer';
-import { runPpotRecertSweep } from '@/lib/ppotServer';
+import { faxRecipientUids, listOpenPpotRequests, ppotInboundBellText, runPpotRecertSweep } from '@/lib/ppotServer';
+import { createPortalNotification } from '@/lib/notificationsServer';
+import { ppotCandidatesForInbound } from '@/lib/ppotShared';
 import { candidateOrdersForInboundFax, verbalOrderUrgency } from '@/lib/verbalOrderShared';
 
 export const runtime = 'nodejs';
@@ -40,6 +42,8 @@ function ymd(d: Date): string {
  *     bell once.
  *  5. Fax Center: poll outbound faxes still 'In Progress' (same safety net
  *     as step 2, for faxes sent from /admin/fax).
+ *     Faxes from a number an open PPOT (Appendix T) request went to are also
+ *     suggested as that signed PPOT and ring Fax Center users instead.
  *  6. PPOT recertification: a GAPP client whose authorization ends within
  *     the Settings lead time, with no Appendix T request sent this cycle,
  *     rings everyone with Fax Center access (once per authorization period;
@@ -67,12 +71,17 @@ export async function GET(request: Request) {
       const end = new Date();
       const start = new Date(Date.now() - 14 * 86400000);
       const inbox = await srfaxGetInbox({ startYmd: ymd(start), endYmd: ymd(end), unreadOnly: true });
+      // Open PPOT (Appendix T) requests: a fax back from a number we sent one
+      // to is suggested as the signed copy in the Fax Center.
+      const openPpot = await listOpenPpotRequests().catch(() => []);
+      let ppotRecipients: string[] | null = null;
       if (!inbox.ok) summary.errors.push(`inbox: ${inbox.error || 'failed'}`);
       for (const fax of inbox.faxes) {
         summary.inboundSeen++;
         if (!fax.faxDetailsId) continue;
         const seenRef = db.collection('verbalOrderInbound').doc(fax.faxDetailsId);
         const candidates = candidateOrdersForInboundFax([fax.callerId, fax.remoteId], open);
+        const ppotCandidateKeys = ppotCandidatesForInbound([fax.callerId, fax.remoteId], openPpot);
         // create() is the race guard: two overlapping sweeps can't both record
         // (and bell) the same fax.
         try {
@@ -83,8 +92,9 @@ export async function GET(request: Request) {
             pages: fax.pages,
             receivedAt: fax.date,
             epochTime: fax.epochTime,
-            status: candidates.length > 0 ? 'suggested' : 'unmatched',
+            status: candidates.length > 0 || ppotCandidateKeys.length > 0 ? 'suggested' : 'unmatched',
             candidateOrderIds: candidates,
+            ppotCandidateKeys,
             matchedOrderId: '',
             firstSeenAt: FieldValue.serverTimestamp(),
           });
@@ -92,6 +102,15 @@ export async function GET(request: Request) {
           continue; // already recorded
         }
         summary.inboundUnmatched++;
+        if (ppotCandidateKeys.length > 0) {
+          ppotRecipients ??= await faxRecipientUids();
+          const text = ppotInboundBellText(fax.callerId || fax.remoteId, openPpot.filter((r) => ppotCandidateKeys.includes(r.key)));
+          for (const uid of ppotRecipients) await createPortalNotification(db, { userId: uid, kind: 'ppot-returned', text, href: '/admin/fax' });
+          // A fax from a PPOT physician with no open verbal order from that
+          // number is almost certainly the PPOT: don't also ring the
+          // verbal-order bell for it.
+          if (candidates.length === 0) continue;
+        }
         if (candidates.length === 1) {
           const o = open.find((x) => x.id === candidates[0]);
           if (o) await notifyStaff('fax-returned', o, `/admin/verbal-orders?vo=${o.id}`);
