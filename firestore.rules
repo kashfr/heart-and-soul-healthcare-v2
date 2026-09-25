@@ -756,6 +756,11 @@ service cloud.firestore {
     match /ppotRequests/{key} {
       allow read, write: if false;
     }
+    // Releases of Information (DBHDD Attachment A): who, which way, the signed
+    // copy, and every fax of it. Server-only (Fax Center routes).
+    match /roiRequests/{id} {
+      allow read, write: if false;
+    }
     match /ppotRecertReminders/{key} {
       allow read, write: if false;
     }

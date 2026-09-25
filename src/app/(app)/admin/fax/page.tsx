@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Archive, ArchiveRestore, BellOff, CalendarClock, CheckCircle2, Clock, Eye, FileSignature, FileUp, RefreshCw, RotateCw, Search, Send, X } from 'lucide-react';
+import { AlertTriangle, Archive, ArchiveRestore, BellOff, CalendarClock, CheckCircle2, Clock, Eye, FileSignature, FileUp, RefreshCw, RotateCw, Search, Send, ShieldCheck, X } from 'lucide-react';
 import PpotRequestModal, { type PpotSubjectRow } from './PpotRequestModal';
 import PpotInbox from './PpotInbox';
+import RoiSection from './RoiSection';
 import { formatDateUS } from '@/lib/dateFormat';
 import { PPOT_REQUEST_LABEL } from '@/lib/ppotShared';
 import { authedFetch } from '@/lib/authedFetch';
@@ -54,6 +55,7 @@ export default function FaxCenterPage() {
   const deepLinkDone = useRef(false);
   // Bumped on Refresh and after a PPOT request so the inbox section reloads too.
   const [inboxKey, setInboxKey] = useState(0);
+  const [roiOpen, setRoiOpen] = useState(0);
 
   const loadPpot = useCallback(async () => {
     try {
@@ -237,6 +239,9 @@ export default function FaxCenterPage() {
             <button onClick={() => setComposing(true)} style={ghostBtnStyle} disabled={!configured}>
               <Send size={15} /> Send a fax
             </button>
+            <button onClick={() => setRoiOpen((n) => n + 1)} style={ghostBtnStyle}>
+              <ShieldCheck size={15} /> Release of Information
+            </button>
             <button onClick={() => setPpotOpen({ initial: null })} style={primaryBtnStyle} disabled={!configured}>
               <FileSignature size={15} /> Request a PPOT
             </button>
@@ -292,6 +297,13 @@ export default function FaxCenterPage() {
         )}
 
         <PpotInbox refreshKey={inboxKey} />
+
+        <RoiSection
+          refreshKey={inboxKey}
+          openRequest={roiOpen}
+          faxConfigured={configured}
+          onFaxSent={(fax) => setFaxes((prev) => [fax, ...prev.filter((x) => x.id !== fax.id)])}
+        />
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <h2 style={sectionTitleStyle}>Sent faxes</h2>
