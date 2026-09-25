@@ -5,6 +5,7 @@ import { AlertTriangle, Archive, ArchiveRestore, BellOff, CalendarClock, CheckCi
 import PpotRequestModal, { type PpotSubjectRow } from './PpotRequestModal';
 import PpotInbox from './PpotInbox';
 import RoiSection from './RoiSection';
+import PdfPreviewModal from '@/components/PdfPreviewModal';
 import { formatDateUS } from '@/lib/dateFormat';
 import { PPOT_REQUEST_LABEL } from '@/lib/ppotShared';
 import { authedFetch } from '@/lib/authedFetch';
@@ -168,23 +169,7 @@ export default function FaxCenterPage() {
     }
   };
 
-  const view = async (f: OutboundFax) => {
-    setBusyId(f.id);
-    try {
-      const res = await authedFetch(`/api/fax/${f.id}/pdf`);
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || `Request failed (${res.status}).`);
-      }
-      const url = URL.createObjectURL(await res.blob());
-      window.open(url, '_blank', 'noopener');
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Could not open the fax.');
-    } finally {
-      setBusyId(null);
-    }
-  };
+  const [preview, setPreview] = useState<OutboundFax | null>(null);
 
   const retry = async (f: OutboundFax) => {
     if (!confirm(`Resend this fax to ${formatUSFaxNumber(f.toNumber)} (${f.recipientName})?`)) return;
@@ -379,7 +364,7 @@ export default function FaxCenterPage() {
                         <div style={metaStyle}>{fmtDateTime(f.createdAt)}</div>
                       </td>
                       <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        <button onClick={() => view(f)} style={ghostBtnStyle} disabled={busyId === f.id} title="Open the PDF that was faxed">
+                        <button onClick={() => setPreview(f)} style={ghostBtnStyle} title="See exactly what was faxed, cover sheet included">
                           <Eye size={14} /> View
                         </button>
                         {state === 'failed' && (
@@ -417,6 +402,14 @@ export default function FaxCenterPage() {
             void loadPpot();
             setInboxKey((k) => k + 1);
           }}
+        />
+      )}
+
+      {preview && (
+        <PdfPreviewModal
+          title={`Fax to ${preview.recipientName}${preview.recipientOrg ? `, ${preview.recipientOrg}` : ''}`}
+          url={`/api/fax/${preview.id}/pdf`}
+          onClose={() => setPreview(null)}
         />
       )}
 

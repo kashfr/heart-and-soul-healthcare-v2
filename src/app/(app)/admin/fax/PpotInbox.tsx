@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Ban, CheckCircle2, EyeOff, Eye, FileCheck2, Hourglass, Inbox, X } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
+import PdfPreviewModal from '@/components/PdfPreviewModal';
 import { formatDateUS } from '@/lib/dateFormat';
 import { formatUSFaxNumber, inboundFaxSender } from '@/lib/verbalOrderShared';
 import { daysBetween, PPOT_REQUEST_LABEL, shouldAdvanceOrderDate, validatePpotFiling, type PpotOpenRequest, type PpotOrderLine, type PpotRequestType } from '@/lib/ppotShared';
@@ -36,17 +37,6 @@ function todayET(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 }
 
-async function openPdf(url: string) {
-  const res = await authedFetch(url);
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || `Request failed (${res.status}).`);
-  }
-  const blobUrl = URL.createObjectURL(await res.blob());
-  window.open(blobUrl, '_blank', 'noopener');
-  window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
-}
-
 export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
   const [incoming, setIncoming] = useState<IncomingFax[]>([]);
   const [openRequests, setOpenRequests] = useState<PpotOpenRequest[]>([]);
@@ -76,16 +66,8 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
     void load();
   }, [load, refreshKey]);
 
-  const view = async (key: string, url: string) => {
-    setBusy(key);
-    try {
-      await openPdf(url);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Could not open the fax.');
-    } finally {
-      setBusy(null);
-    }
-  };
+  const [preview, setPreview] = useState<{ title: string; url: string } | null>(null);
+  const view = (title: string, url: string) => setPreview({ title, url });
 
   // One helper for the three "clear it off the list" actions.
   const act = async (key: string, url: string, body: object, question: string) => {
@@ -156,7 +138,7 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
                         )}
                       </td>
                       <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        <button onClick={() => view(f.id, `/api/fax/inbound/${f.id}/pdf`)} style={ghostBtnStyle} disabled={busy === f.id}>
+                        <button onClick={() => view(`Fax from ${sender.from || 'unknown sender'}, ${f.receivedAt}`, `/api/fax/inbound/${f.id}/pdf`)} style={ghostBtnStyle}>
                           <Eye size={14} /> View
                         </button>
                         <button onClick={() => setFiling(f)} style={{ ...ghostBtnStyle, marginLeft: 6 }} disabled={openRequests.length === 0} title={openRequests.length === 0 ? 'No PPOT request is waiting on a signed copy' : undefined}>
@@ -255,7 +237,7 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
                       <div style={metaStyle}>{[r.recipientName, r.byName ? `filed by ${r.byName}` : ''].filter(Boolean).join(' · ')}</div>
                     </td>
                     <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      <button onClick={() => view(r.key, `/api/fax/ppot/signed/${r.key}`)} style={ghostBtnStyle} disabled={busy === r.key}>
+                      <button onClick={() => view(`Signed Appendix T: ${r.memberName}`, `/api/fax/ppot/signed/${r.key}`)} style={ghostBtnStyle}>
                         <Eye size={14} /> View
                       </button>
                       <button
@@ -279,7 +261,7 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
           fax={filing}
           openRequests={openRequests}
           today={today}
-          onView={() => view(filing.id, `/api/fax/inbound/${filing.id}/pdf`)}
+          onView={() => view(`Fax from ${inboundFaxSender(filing.callerId, filing.remoteId).from || 'unknown sender'}, ${filing.receivedAt}`, `/api/fax/inbound/${filing.id}/pdf`)}
           onClose={() => setFiling(null)}
           onFiled={(msg) => {
             setFiling(null);
@@ -288,6 +270,7 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
           }}
         />
       )}
+      {preview && <PdfPreviewModal title={preview.title} url={preview.url} onClose={() => setPreview(null)} />}
     </>
   );
 }
