@@ -66,6 +66,7 @@ export function serializeOutboundFax(id: string, d: FirebaseFirestore.DocumentDa
     sentBy: String(d.sentBy || ''),
     sentByName: String(d.sentByName || ''),
     createdAt: toIso(d.createdAt),
+    archived: d.archived === true,
   };
 }
 
@@ -357,4 +358,21 @@ export async function pollInFlightFaxes(opts: { olderThanMs: number; limit: numb
 export async function listOutboundFaxes(limit: number): Promise<OutboundFax[]> {
   const snap = await adminDb().collection(COL).orderBy('createdAt', 'desc').limit(limit).get();
   return snap.docs.map((d) => serializeOutboundFax(d.id, d.data() || {}));
+}
+
+/**
+ * Hide a sent fax from the outbox, or bring it back. Never deleted: the row
+ * and the stored PDF are the record of what went to which number.
+ */
+export async function setOutboundFaxArchived(faxId: string, archived: boolean, caller: AuthedCaller): Promise<boolean> {
+  const ref = adminDb().collection(COL).doc(faxId);
+  const snap = await ref.get();
+  if (!snap.exists) return false;
+  await ref.update({
+    archived,
+    archivedBy: archived ? caller.uid : FieldValue.delete(),
+    archivedByName: archived ? caller.profile.displayName || caller.email || '' : FieldValue.delete(),
+    archivedAt: archived ? FieldValue.serverTimestamp() : FieldValue.delete(),
+  });
+  return true;
 }

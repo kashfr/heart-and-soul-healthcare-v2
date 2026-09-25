@@ -102,6 +102,8 @@ export interface OutboundFax {
   sentBy: string;
   sentByName: string;
   createdAt: string | null;
+  /** Hidden from the outbox by staff. Kept as the record of the disclosure. */
+  archived: boolean;
 }
 
 /** A safe download name for the uploaded PDF. */

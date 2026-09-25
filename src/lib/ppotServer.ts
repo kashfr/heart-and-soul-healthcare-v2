@@ -110,6 +110,9 @@ async function lastRequests(): Promise<Map<string, PpotLastRequest>> {
   const out = new Map<string, PpotLastRequest>();
   for (const d of snap.docs) {
     const x = d.data();
+    // A cancelled request doesn't count: the member is back to "no request
+    // this cycle", so recertification reminders resume.
+    if (x.status === 'cancelled') continue;
     const t = x.sentAt as { toDate?: () => Date } | undefined;
     out.set(d.id, {
       sentAt: t?.toDate ? t.toDate().toISOString() : null,
@@ -125,16 +128,23 @@ async function lastRequests(): Promise<Map<string, PpotLastRequest>> {
 export interface PpotSubjectRow extends PpotSubject {
   lastRequest: PpotLastRequest | null;
   /** Clients on GAPP only. */
-  recert: { due: boolean; daysLeft: number | null; requestedThisCycle: boolean } | null;
+  recert: { due: boolean; daysLeft: number | null; requestedThisCycle: boolean; dismissed: boolean } | null;
+}
+
+/** Reminder docs someone dismissed ("not needed this cycle"), by `${pid}_${authEnd}`. */
+async function dismissedRecerts(): Promise<Set<string>> {
+  const snap = await adminDb().collection(REMINDERS).where('dismissed', '==', true).get();
+  return new Set(snap.docs.map((d) => d.id));
 }
 
 /** Everyone a PPOT can be requested for: open referrals and all clients. */
 export async function listPpotSubjects(): Promise<{ subjects: PpotSubjectRow[]; recertLeadDays: number }> {
-  const [settings, referrals, clients, last] = await Promise.all([
+  const [settings, referrals, clients, last, dismissed] = await Promise.all([
     getServerSettings(),
     listReferrals(),
     clientSubjects(),
     lastRequests(),
+    dismissedRecerts(),
   ]);
   const today = agencyTodayISO();
   const lead = settings.fax.recertLeadDays;
@@ -146,7 +156,12 @@ export async function listPpotSubjects(): Promise<{ subjects: PpotSubjectRow[]; 
   }
   for (const c of clients) {
     const lr = last.get(requestKey('client', c.id)) ?? null;
-    const recert = c.context === 'gapp' ? recertStatus({ today, authEnd: c.authEnd, leadDays: lead, lastRequestDate: lr?.date || '' }) : null;
+    let recert: PpotSubjectRow['recert'] = null;
+    if (c.context === 'gapp') {
+      const st = recertStatus({ today, authEnd: c.authEnd, leadDays: lead, lastRequestDate: lr?.date || '' });
+      const isDismissed = dismissed.has(`${c.id}_${c.authEnd}`);
+      recert = { ...st, due: st.due && !isDismissed, dismissed: isDismissed };
+    }
     rows.push({ ...c, lastRequest: lr, recert });
   }
   return { subjects: rows, recertLeadDays: lead };
@@ -489,6 +504,7 @@ export interface ReceivedPpot {
 export async function listReceivedPpots(limit = 25): Promise<ReceivedPpot[]> {
   const snap = await adminDb().collection(REQUESTS).where('status', '==', 'received').get();
   return snap.docs
+    .filter((d) => d.data().listHidden !== true)
     .map((d) => {
       const x = d.data();
       const r = (x.received || {}) as Record<string, unknown>;
@@ -523,4 +539,67 @@ export function ppotInboundBellText(fromNumber: string, candidates: PpotOpenRequ
     return `A fax${from} may be the signed Appendix T for ${candidates[0].memberName}. Check it and file it in the Fax Center.`;
   }
   return `A fax${from} may be a signed Appendix T. Check it and file it in the Fax Center.`;
+}
+
+// ---------------------------------------------------------------------------
+// Clearing the lists
+// ---------------------------------------------------------------------------
+
+function actor(caller: AuthedCaller) {
+  return { uid: caller.uid, name: caller.profile.displayName || caller.email || '' };
+}
+
+/**
+ * Withdraw an open PPOT request (sent to the wrong office, not needed after
+ * all, or a test). It leaves "Waiting on physicians" and stops counting as
+ * this cycle's request. The outbox keeps the fax itself.
+ */
+export async function cancelPpotRequest(key: string, caller: AuthedCaller): Promise<{ ok: boolean; status?: number; error?: string }> {
+  const ref = adminDb().collection(REQUESTS).doc(key);
+  const snap = await ref.get();
+  if (!snap.exists) return { ok: false, status: 404, error: 'Request not found.' };
+  if (snap.data()?.status !== 'sent') return { ok: false, status: 409, error: 'Only a request still waiting on the physician can be cancelled.' };
+  const a = actor(caller);
+  await ref.update({ status: 'cancelled', cancelled: { byUid: a.uid, byName: a.name, at: FieldValue.serverTimestamp() } });
+  return { ok: true };
+}
+
+/** Take a filed PPOT off the "Signed PPOTs" list. The copy stays filed. */
+export async function hideReceivedPpot(key: string, caller: AuthedCaller): Promise<{ ok: boolean; status?: number; error?: string }> {
+  const ref = adminDb().collection(REQUESTS).doc(key);
+  const snap = await ref.get();
+  if (!snap.exists || snap.data()?.status !== 'received') return { ok: false, status: 404, error: 'Signed PPOT not found.' };
+  const a = actor(caller);
+  await ref.update({ listHidden: true, listHiddenBy: a.uid, listHiddenByName: a.name, listHiddenAt: FieldValue.serverTimestamp() });
+  return { ok: true };
+}
+
+/**
+ * "Not needed this cycle" for a recertification (discharged, transferred,
+ * handled another way). Keyed to the authorization end date, so the next
+ * authorization period reminds as usual. Also stops the bell for this one.
+ */
+export async function dismissRecert(patientId: string, authEnd: string, caller: AuthedCaller): Promise<{ ok: boolean; status?: number; error?: string }> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(authEnd)) return { ok: false, status: 400, error: 'Bad authorization date.' };
+  const a = actor(caller);
+  await adminDb()
+    .collection(REMINDERS)
+    .doc(`${patientId}_${authEnd}`)
+    .set({ patientId, authEnd, dismissed: true, dismissedBy: a.uid, dismissedByName: a.name, dismissedAt: FieldValue.serverTimestamp() }, { merge: true });
+  return { ok: true };
+}
+
+/**
+ * Dismiss an inbound fax that isn't anything to file (junk, a duplicate, a
+ * test). Admins and supervisors only (the route checks): the same line
+ * receives signed verbal orders, which the Verbal Orders queue owns.
+ */
+export async function dismissIncomingFax(faxId: string, caller: AuthedCaller): Promise<{ ok: boolean; status?: number; error?: string }> {
+  const ref = adminDb().collection(INBOUND).doc(faxId);
+  const snap = await ref.get();
+  if (!snap.exists) return { ok: false, status: 404, error: 'Fax not found.' };
+  if (!OPEN_INBOUND.includes(String(snap.data()?.status || ''))) return { ok: true };
+  const a = actor(caller);
+  await ref.update({ status: 'ignored', ignoredAt: FieldValue.serverTimestamp(), ignoredBy: a.uid, ignoredByName: a.name });
+  return { ok: true };
 }

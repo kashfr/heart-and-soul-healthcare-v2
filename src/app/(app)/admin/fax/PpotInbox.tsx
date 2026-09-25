@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, Eye, FileCheck2, Hourglass, Inbox, X } from 'lucide-react';
+import { Ban, CheckCircle2, EyeOff, Eye, FileCheck2, Hourglass, Inbox, X } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { formatDateUS } from '@/lib/dateFormat';
 import { formatUSFaxNumber } from '@/lib/verbalOrderShared';
@@ -54,6 +54,7 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [filing, setFiling] = useState<IncomingFax | null>(null);
+  const [canDismiss, setCanDismiss] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -63,6 +64,7 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
       setIncoming(data.incoming ?? []);
       setOpenRequests(data.openRequests ?? []);
       setReceived(data.received ?? []);
+      setCanDismiss(data.canDismissIncoming === true);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load incoming faxes.');
@@ -79,6 +81,22 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
       await openPdf(url);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Could not open the fax.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // One helper for the three "clear it off the list" actions.
+  const act = async (key: string, url: string, body: object, question: string) => {
+    if (!confirm(question)) return;
+    setBusy(key);
+    try {
+      const res = await authedFetch(url, { method: 'POST', body: JSON.stringify(body) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
+      await load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not update the list.');
     } finally {
       setBusy(null);
     }
@@ -131,6 +149,16 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
                         <button onClick={() => setFiling(f)} style={{ ...ghostBtnStyle, marginLeft: 6 }} disabled={openRequests.length === 0} title={openRequests.length === 0 ? 'No PPOT request is waiting on a signed copy' : undefined}>
                           <FileCheck2 size={14} /> File as signed PPOT
                         </button>
+                        {canDismiss && (
+                          <button
+                            onClick={() => act(f.id, `/api/fax/inbound/${f.id}/dismiss`, {}, 'Dismiss this fax without filing it? It also leaves the Verbal Orders queue, so only do this if it is not a signed verbal order.')}
+                            style={{ ...ghostBtnStyle, marginLeft: 6 }}
+                            disabled={busy === f.id}
+                            title="Not anything to file (junk, duplicate, test)"
+                          >
+                            <X size={14} /> Dismiss
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -168,6 +196,16 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
                           {waited <= 0 ? 'today' : `${waited} day${waited === 1 ? '' : 's'} waiting`}
                         </div>
                       </td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>
+                        <button
+                          onClick={() => act(r.key, `/api/fax/ppot/requests/${r.key}`, { action: 'cancel' }, `Cancel the Appendix T request for ${r.memberName}? It leaves this list and no longer counts as this cycle's request. The fax itself stays in Sent faxes.`)}
+                          style={ghostBtnStyle}
+                          disabled={busy === r.key}
+                          title="Withdraw it (wrong office, no longer needed, or a test)"
+                        >
+                          <Ban size={14} /> Cancel request
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -197,9 +235,16 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
                       Signed {formatDateUS(r.signedDate)}
                       <div style={metaStyle}>{[r.recipientName, r.byName ? `filed by ${r.byName}` : ''].filter(Boolean).join(' · ')}</div>
                     </td>
-                    <td style={{ ...tdStyle, textAlign: 'right' }}>
+                    <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <button onClick={() => view(r.key, `/api/fax/ppot/signed/${r.key}`)} style={ghostBtnStyle} disabled={busy === r.key}>
                         <Eye size={14} /> View
+                      </button>
+                      <button
+                        onClick={() => act(r.key, `/api/fax/ppot/requests/${r.key}`, { action: 'hide' }, `Remove ${r.memberName}'s signed PPOT from this list? The signed copy stays filed${r.subjectKind === 'client' ? " under the client's Documents" : ''}.`)}
+                        style={{ ...ghostBtnStyle, marginLeft: 6 }}
+                        disabled={busy === r.key}
+                      >
+                        <EyeOff size={14} /> Remove from list
                       </button>
                     </td>
                   </tr>

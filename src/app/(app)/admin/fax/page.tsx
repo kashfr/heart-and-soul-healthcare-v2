@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CalendarClock, CheckCircle2, Clock, Eye, FileSignature, FileUp, RefreshCw, RotateCw, Search, Send, X } from 'lucide-react';
+import { AlertTriangle, Archive, ArchiveRestore, BellOff, CalendarClock, CheckCircle2, Clock, Eye, FileSignature, FileUp, RefreshCw, RotateCw, Search, Send, X } from 'lucide-react';
 import PpotRequestModal, { type PpotSubjectRow } from './PpotRequestModal';
 import PpotInbox from './PpotInbox';
 import { formatDateUS } from '@/lib/dateFormat';
@@ -119,18 +119,51 @@ export default function FaxCenterPage() {
     return () => window.clearInterval(t);
   }, [anySending, load]);
 
+  const [showArchived, setShowArchived] = useState(false);
+  const archivedCount = faxes.filter((f) => f.archived).length;
   const needle = q.trim().toLowerCase();
   const shown = useMemo(
     () =>
       faxes.filter(
         (f) =>
-          !needle ||
+          (showArchived || !f.archived) &&
+          (!needle ||
           `${f.recipientName} ${f.recipientOrg} ${f.regarding} ${f.toNumber} ${formatUSFaxNumber(f.toNumber)} ${f.sentByName} ${f.fileName}`
             .toLowerCase()
-            .includes(needle),
+            .includes(needle)),
       ),
-    [faxes, needle],
+    [faxes, needle, showArchived],
   );
+
+  // Archive hides a sent fax from the outbox; it is never deleted (it is the
+  // record of what went to which number). "Show archived" brings it back.
+  const setArchived = async (f: OutboundFax, archived: boolean) => {
+    if (archived && !confirm(`Archive the fax to ${f.recipientName}? It leaves this list but stays on record; turn on "Show archived" to see it again.`)) return;
+    setBusyId(f.id);
+    try {
+      const res = await authedFetch(`/api/fax/${f.id}/archive`, { method: 'POST', body: JSON.stringify({ archived }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
+      setFaxes((prev) => prev.map((x) => (x.id === f.id ? { ...x, archived } : x)));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not update the fax.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // "Not needed this cycle" for a recertification reminder.
+  const dismissRecert = async (c: PpotSubjectRow) => {
+    if (!confirm(`Dismiss the recertification reminder for ${c.name}? It won't come back for this authorization (ending ${formatDateUS(c.authEnd)}); the next one reminds as usual.`)) return;
+    try {
+      const res = await authedFetch(`/api/fax/ppot/recert/${c.id}`, { method: 'POST', body: JSON.stringify({ authEnd: c.authEnd }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
+      void loadPpot();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not dismiss the reminder.');
+    }
+  };
 
   const view = async (f: OutboundFax) => {
     setBusyId(f.id);
@@ -245,6 +278,9 @@ export default function FaxCenterPage() {
                         <button onClick={() => setPpotOpen({ initial: c })} style={ghostBtnStyle} disabled={!configured}>
                           <FileSignature size={14} /> Request PPOT
                         </button>
+                        <button onClick={() => dismissRecert(c)} style={{ ...ghostBtnStyle, marginLeft: 6 }} title="Not needed this cycle (discharged, transferred, handled another way)">
+                          <BellOff size={14} /> Dismiss
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -256,7 +292,15 @@ export default function FaxCenterPage() {
 
         <PpotInbox refreshKey={inboxKey} />
 
-        <h2 style={sectionTitleStyle}>Sent faxes</h2>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <h2 style={sectionTitleStyle}>Sent faxes</h2>
+          {archivedCount > 0 && (
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#5c6b7a', cursor: 'pointer' }}>
+              <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+              Show archived ({archivedCount})
+            </label>
+          )}
+        </div>
         <div style={{ marginBottom: 14 }}>
           <div style={searchWrapStyle}>
             <Search size={15} style={{ color: '#94a3b8', flexShrink: 0 }} />
@@ -279,7 +323,7 @@ export default function FaxCenterPage() {
             </div>
           </div>
         ) : shown.length === 0 ? (
-          <div style={emptyStyle}>{q ? 'No faxes match your search.' : 'Nothing sent yet. Use Send a fax to get started.'}</div>
+          <div style={emptyStyle}>{q ? 'No faxes match your search.' : archivedCount > 0 ? 'Nothing on the list. Archived faxes are hidden.' : 'Nothing sent yet. Use Send a fax to get started.'}</div>
         ) : (
           <div style={tableWrapStyle}>
             <table style={tableStyle}>
@@ -296,9 +340,9 @@ export default function FaxCenterPage() {
                 {shown.map((f) => {
                   const state = faxDeliveryState(f.sentStatus);
                   return (
-                    <tr key={f.id}>
+                    <tr key={f.id} style={f.archived ? { opacity: 0.6 } : undefined}>
                       <td style={tdStyle}>
-                        <div style={{ fontWeight: 600 }}>{f.recipientName}</div>
+                        <div style={{ fontWeight: 600 }}>{f.recipientName}{f.archived ? ' (archived)' : ''}</div>
                         <div style={metaStyle}>{[f.recipientOrg, formatUSFaxNumber(f.toNumber)].filter(Boolean).join(' · ')}</div>
                       </td>
                       <td style={tdStyle}>
@@ -328,6 +372,16 @@ export default function FaxCenterPage() {
                         {state === 'failed' && (
                           <button onClick={() => retry(f)} style={{ ...ghostBtnStyle, marginLeft: 6 }} disabled={busyId === f.id || !configured}>
                             <RotateCw size={14} /> Resend
+                          </button>
+                        )}
+                        {state !== 'sending' && (
+                          <button
+                            onClick={() => setArchived(f, !f.archived)}
+                            style={{ ...ghostBtnStyle, marginLeft: 6 }}
+                            disabled={busyId === f.id}
+                            title={f.archived ? 'Put it back on the list' : 'Hide it from this list (kept on record)'}
+                          >
+                            {f.archived ? <><ArchiveRestore size={14} /> Restore</> : <><Archive size={14} /> Archive</>}
                           </button>
                         )}
                       </td>

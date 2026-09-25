@@ -163,6 +163,8 @@ export interface TrackedPacket {
   /** The portal staff member the packet is for, matched by email ('' when none). */
   staffUid: string;
   staffName: string;
+  /** Removed from the E-signatures list by staff (kept, restorable). */
+  hidden: boolean;
   signedCopy: { fileName: string; uploadedByName: string; uploadedAt: string | null } | null;
 }
 
@@ -192,9 +194,29 @@ export async function listTrackedPackets(): Promise<TrackedPacket[]> {
       subjectName: String(x.subjectName || ''),
       staffUid: match?.uid || '',
       staffName: match?.name || '',
+      hidden: x.hidden === true,
       signedCopy: sc ? { fileName: String(sc.fileName || ''), uploadedByName: String(sc.uploadedByName || ''), uploadedAt: toIso(sc.uploadedAt) } : null,
     };
   });
+}
+
+/**
+ * Remove a packet from the E-signatures list, or put it back. Kept rather
+ * than deleted: the record (and any signed copy) stays for the staff file,
+ * and a later PandaDoc event never un-hides it (the webhook doesn't touch
+ * `hidden`).
+ */
+export async function setPacketHidden(packetId: string, hidden: boolean, caller: AuthedCaller): Promise<boolean> {
+  const ref = adminDb().collection(COL).doc(packetId);
+  const snap = await ref.get();
+  if (!snap.exists) return false;
+  await ref.update({
+    hidden,
+    hiddenBy: hidden ? caller.uid : FieldValue.delete(),
+    hiddenByName: hidden ? caller.profile.displayName || caller.email || '' : FieldValue.delete(),
+    hiddenAt: hidden ? FieldValue.serverTimestamp() : FieldValue.delete(),
+  });
+  return true;
 }
 
 /**
