@@ -48,6 +48,7 @@ import { resolveRate, resolveRateRow } from '@/lib/billingRatesShared';
 import { getPatients } from '@/lib/patients';
 import { getProgram } from '@/lib/programs';
 import { formatDateUS, formatDateUSFile } from '@/lib/dateFormat';
+import styles from './page.module.css';
 
 const MAX_BATCH = 50;
 // PAGE_SIZE used to be a constant here; it's now driven by
@@ -1164,12 +1165,19 @@ export default function SubmissionsPage() {
   // page since it isn't counted in the paginator.
   const showDraftRow = myDraft != null && scope !== 'archived' && safePage === 1;
 
+  // Header buttons. Progress notes: anyone with a clinical credential, or an
+  // admin. Oversight notes: the same gate the form enforces (RN credential,
+  // or an admin/supervisor signing in their own name).
+  const canAuthorProgressNote = !isViewingAs && (!!profile?.credential || role === 'admin');
+  const canAuthorOversightNote =
+    !isViewingAs && (profile?.credential === 'RN' || role === 'admin' || role === 'supervisor');
+
   const sortIndicator = (key: SortKey) =>
     sortParam === key ? (dirParam === 'asc' ? ' ↑' : ' ↓') : '';
 
   return (
-    <div style={containerStyle}>
-      <div style={wrapStyle}>
+    <div className={styles.container}>
+      <div className={styles.wrap}>
         {draftSavedToast && (
           <div
             role="status"
@@ -1223,11 +1231,13 @@ export default function SubmissionsPage() {
             ✓ Co-signed {cosignToast} {cosignToast === 1 ? 'note' : 'notes'}.
           </div>
         )}
-        <div style={headerStyle}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h1 style={titleStyle}>Progress Note Submissions</h1>
-            <p style={subtitleStyle}>All submitted nursing progress notes</p>
+        <div className={styles.header}>
+          <div className={styles.headerText}>
+            <h1 className={styles.title}>Progress Note Submissions</h1>
+            <p className={styles.subtitle}>All submitted nursing progress notes</p>
           </div>
+          {(canAuthorProgressNote || canAuthorOversightNote) && (
+          <div className={styles.actions}>
           {/* Visible to anyone who can author a progress note: any user with
               a clinical credential (HHA / CNA / LPN / RN), OR an admin (so
               they can still demo / test the flow). This catches RN-credentialed
@@ -1237,10 +1247,10 @@ export default function SubmissionsPage() {
               user never gets a "wait, what's this banner?" moment after
               clicking. The link target is the same either way; the
               progress-note page's existing resume-banner logic hydrates. */}
-          {!isViewingAs && (!!profile?.credential || role === 'admin') && (
+          {canAuthorProgressNote && (
             <Link
               href={myDraft ? '/progress-note?resume=1' : '/progress-note'}
-              style={newNoteBtnStyle}
+              className={styles.newNoteBtn}
             >
               <Plus size={16} />
               {myDraft ? 'Resume draft' : 'New progress note'}
@@ -1248,22 +1258,24 @@ export default function SubmissionsPage() {
           )}
           {/* RN oversight visit note — same gate the form enforces: an RN
               credential, or an admin/supervisor signing in their own name. */}
-          {!isViewingAs &&
-            (profile?.credential === 'RN' || role === 'admin' || role === 'supervisor') && (
-              <Link href="/oversight-note" style={newNoteBtnStyle}>
-                <Plus size={16} />
-                New oversight note
-              </Link>
-            )}
+          {canAuthorOversightNote && (
+            <Link href="/oversight-note" className={styles.newNoteBtnSecondary}>
+              <Plus size={16} />
+              New oversight note
+            </Link>
+          )}
+          </div>
+          )}
         </div>
 
-        <div style={tabsStyle} role="tablist" aria-label="Submissions view">
+        <div style={tabsStyle} className={styles.tabs} role="tablist" aria-label="Submissions view">
           <button
             type="button"
             role="tab"
             aria-selected={scope === 'active'}
             onClick={() => setScope('active')}
             style={scope === 'active' ? tabActiveStyle : tabStyle}
+            className={styles.tab}
           >
             Active <span style={tabCountStyle}>{activeCount}</span>
           </button>
@@ -1273,6 +1285,7 @@ export default function SubmissionsPage() {
             aria-selected={scope === 'archived'}
             onClick={() => setScope('archived')}
             style={scope === 'archived' ? tabActiveStyle : tabStyle}
+            className={styles.tab}
           >
             Archived <span style={tabCountStyle}>{archivedCount}</span>
           </button>
@@ -1282,6 +1295,7 @@ export default function SubmissionsPage() {
             aria-selected={scope === 'all'}
             onClick={() => setScope('all')}
             style={scope === 'all' ? tabActiveStyle : tabStyle}
+            className={styles.tab}
             title="Search across active + archived"
           >
             All <span style={tabCountStyle}>{allSubmissions.length}</span>
@@ -1296,6 +1310,7 @@ export default function SubmissionsPage() {
               aria-selected={scope === 'team'}
               onClick={() => setScope('team')}
               style={scope === 'team' ? tabActiveStyle : tabStyle}
+            className={styles.tab}
               title="Notes from other nurses on patients you also work with"
             >
               Care team <span style={tabCountStyle}>{teamCount}</span>
@@ -1304,8 +1319,8 @@ export default function SubmissionsPage() {
         </div>
 
         {/* Filter bar */}
-        <div style={filterBarStyle}>
-          <div style={searchWrapStyle}>
+        <div style={filterBarStyle} className={styles.filterBar}>
+          <div style={searchWrapStyle} className={styles.search}>
             <Search size={14} style={searchIconStyle} aria-hidden />
             <input
               type="search"
@@ -1313,6 +1328,7 @@ export default function SubmissionsPage() {
               onChange={(e) => setQueryInput(e.target.value)}
               placeholder="Search client, nurse, diagnosis, date…"
               style={searchInputStyle}
+              className={styles.searchInput}
               aria-label="Search submissions"
             />
           </div>
@@ -1333,6 +1349,7 @@ export default function SubmissionsPage() {
               });
             }}
             style={selectStyle}
+            className={styles.select}
             aria-label="Date of service range"
           >
             {RANGE_PRESETS.map((p) => (
@@ -1349,7 +1366,7 @@ export default function SubmissionsPage() {
             />
           )}
           {rangePreset === 'c' && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} className={styles.rangeInputs}>
               <input
                 type="date"
                 value={fromParam}
@@ -1374,6 +1391,7 @@ export default function SubmissionsPage() {
             value={credParam}
             onChange={(e) => updateParams({ cred: e.target.value || null, p: null })}
             style={selectStyle}
+            className={styles.select}
             aria-label="Credential"
           >
             <option value="">All credentials</option>
@@ -1388,6 +1406,7 @@ export default function SubmissionsPage() {
               value={nurseParam}
               onChange={(e) => updateParams({ nurse: e.target.value || null, p: null })}
               style={selectStyle}
+            className={styles.select}
               aria-label="Nurse"
             >
               <option value="">All nurses</option>
@@ -1404,6 +1423,7 @@ export default function SubmissionsPage() {
               value={clientParam}
               onChange={(e) => updateParams({ client: e.target.value || null, p: null })}
               style={selectStyle}
+            className={styles.select}
               aria-label="Client"
             >
               <option value="">All clients</option>
@@ -1422,6 +1442,7 @@ export default function SubmissionsPage() {
               updateParams({ sort: k, dir: d, p: null });
             }}
             style={selectStyle}
+            className={styles.select}
             aria-label="Sort by"
           >
             <option value="submittedAt:desc">Newest submitted</option>
@@ -1439,8 +1460,8 @@ export default function SubmissionsPage() {
           </select>
         </div>
 
-        <div style={flagsRowStyle}>
-          <label style={flagLabelStyle}>
+        <div style={flagsRowStyle} className={styles.flagsRow}>
+          <label style={flagLabelStyle} className={styles.flagChip}>
             <input
               type="checkbox"
               checked={flagAbnormal}
@@ -1448,7 +1469,7 @@ export default function SubmissionsPage() {
             />
             Abnormal vitals
           </label>
-          <label style={flagLabelStyle}>
+          <label style={flagLabelStyle} className={styles.flagChip}>
             <input
               type="checkbox"
               checked={flagIncident}
@@ -1456,7 +1477,7 @@ export default function SubmissionsPage() {
             />
             Incident reported
           </label>
-          <label style={flagLabelStyle}>
+          <label style={flagLabelStyle} className={styles.flagChip}>
             <input
               type="checkbox"
               checked={flagPhysNotified}
@@ -1464,7 +1485,7 @@ export default function SubmissionsPage() {
             />
             Physician notified
           </label>
-          <label style={flagLabelStyle}>
+          <label style={flagLabelStyle} className={styles.flagChip}>
             <input
               type="checkbox"
               checked={flagNeedsCosign}
@@ -1472,7 +1493,7 @@ export default function SubmissionsPage() {
             />
             Needs co-signature
           </label>
-          <label style={flagLabelStyle}>
+          <label style={flagLabelStyle} className={styles.flagChip}>
             <input
               type="checkbox"
               checked={flagHospitalEr}
@@ -1480,7 +1501,7 @@ export default function SubmissionsPage() {
             />
             Hospital / ER visit
           </label>
-          <label style={flagLabelStyle}>
+          <label style={flagLabelStyle} className={styles.flagChip}>
             <input
               type="checkbox"
               checked={flagMedChange}
@@ -1488,7 +1509,7 @@ export default function SubmissionsPage() {
             />
             Med change reported
           </label>
-          <label style={flagLabelStyle} title="Notes with an open correction or clarification flag">
+          <label style={flagLabelStyle} className={styles.flagChip} title="Notes with an open correction or clarification flag">
             <input
               type="checkbox"
               checked={flagOpen}
@@ -1497,7 +1518,7 @@ export default function SubmissionsPage() {
             Flagged
           </label>
 
-          <div style={{ flex: 1 }} />
+          <div style={{ flex: 1 }} className={styles.flagsSpacer} />
 
           {/* Always rendered so its (taller-than-the-checkboxes) box reserves the
               row height — the row no longer grows when a filter is applied. Just
@@ -1505,6 +1526,7 @@ export default function SubmissionsPage() {
           <button
             type="button"
             onClick={clearAllFilters}
+            className={styles.clearFilters}
             style={{
               ...clearFiltersBtnStyle,
               ...(hasAnyFilter ? {} : { visibility: 'hidden', pointerEvents: 'none' }),
@@ -1582,7 +1604,7 @@ export default function SubmissionsPage() {
             co-sign are live writes, and a "(read-only)" preview must not
             offer them. */}
         {!isViewingAs && selected.size > 0 && (
-          <div style={bulkBarStyle}>
+          <div style={bulkBarStyle} className={styles.bulkBar}>
             <span style={{ fontWeight: 600, color: '#2c3e50' }}>
               {selected.size} selected
             </span>
@@ -1650,7 +1672,7 @@ export default function SubmissionsPage() {
             {/* Row 1: the numbers. Row 2: what they cover. Row 3: the
                 controls, always on their own line, so toggling $ (which adds
                 two dollar figures to row 1) never reflows the buttons. */}
-            <div style={hoursStripRowStyle}>
+            <div style={hoursStripRowStyle} className={styles.hoursRow}>
               <span style={hoursStripIconStyle}><Clock size={14} /></span>
               <span style={hoursStatStyle}>
                 <strong style={hoursStatNumStyle}>{pq(hoursStats.hours, hoursStats.units)}</strong>
@@ -1683,7 +1705,7 @@ export default function SubmissionsPage() {
               {rangeActive && ' · shifts are split at midnight; only the hours inside the range count'}
               {' · RN oversight visits are shown in blue and never added to shift hours'}
             </div>
-            <div style={hoursToolbarStyle}>
+            <div style={hoursToolbarStyle} className={styles.hoursToolbar}>
               <span style={segmentedStyle} role="group" aria-label="Show as">
                 {(['hours', 'units'] as QtyView[]).map((v) => (
                   <button
@@ -1706,7 +1728,7 @@ export default function SubmissionsPage() {
               >
                 $ {showDollars ? 'on' : 'off'}
               </button>
-              <div style={{ flex: 1 }} />
+              <div style={{ flex: 1 }} className={styles.hoursSpacer} />
               <button
                 type="button"
                 onClick={() => openPivot(pivot === 'day' ? '' : 'day')}
@@ -1734,6 +1756,7 @@ export default function SubmissionsPage() {
               </button>
             </div>
             {pivot && (
+              <div className={styles.pivotWrap}>
               <table style={{ ...pivotTableStyle, ...(pivot === 'day' ? { maxWidth: 760 } : null) }}>
                 <thead>
                   <tr>
@@ -1804,6 +1827,7 @@ export default function SubmissionsPage() {
                   </tfoot>
                 )}
               </table>
+              </div>
             )}
           </div>
         )}
@@ -1826,7 +1850,7 @@ export default function SubmissionsPage() {
         ) : (
           <>
             <div style={tableWrapStyle}>
-              <table style={tableStyle}>
+              <table style={tableStyle} className={styles.table}>
                 <thead>
                   <tr>
                     <th style={{ ...thStyle, width: 40 }}>
@@ -1892,8 +1916,8 @@ export default function SubmissionsPage() {
                 </thead>
                 <tbody>
                   {showDraftRow && myDraft && (
-                    <tr style={{ background: '#fffbeb', borderLeft: '3px solid #f59e0b' }}>
-                      <td style={tdStyle}>
+                    <tr className={styles.row} data-draft="true" style={{ background: '#fffbeb', borderLeft: '3px solid #f59e0b' }}>
+                      <td style={tdStyle} className={styles.cSelect}>
                         {/* Draft rows are never bulk-selectable — batch export
                             and archive only apply to submitted notes. */}
                         <input
@@ -1903,8 +1927,8 @@ export default function SubmissionsPage() {
                           style={{ ...checkboxStyle, cursor: 'not-allowed', opacity: 0.4 }}
                         />
                       </td>
-                      <td style={{ ...tdStyle, textAlign: 'right', color: '#cbd5e1' }}>—</td>
-                      <td style={tdStyle}>
+                      <td style={{ ...tdStyle, textAlign: 'right', color: '#cbd5e1' }} className={styles.cNum}>—</td>
+                      <td style={tdStyle} className={styles.cDate}>
                         {myDraft.dateOfService
                           ? (() => {
                               // dateOfService is stored as YYYY-MM-DD in the draft
@@ -1913,18 +1937,18 @@ export default function SubmissionsPage() {
                             })()
                           : '—'}
                       </td>
-                      <td style={tdStyle}>{myDraft.clientName || <em style={{ color: '#94a3b8' }}>Not set</em>}</td>
-                      <td style={tdStyle}>{myDraft.nurseName || <em style={{ color: '#94a3b8' }}>Not set</em>}</td>
-                      <td style={tdStyle}>
+                      <td style={tdStyle} className={styles.cClient}>{myDraft.clientName || <em style={{ color: '#94a3b8' }}>Not set</em>}</td>
+                      <td style={tdStyle} className={styles.cNurse}>{myDraft.nurseName || <em style={{ color: '#94a3b8' }}>Not set</em>}</td>
+                      <td style={tdStyle} className={styles.cCred}>
                         <span style={{ color: '#94a3b8', fontSize: 12 }}>—</span>
                       </td>
-                      {showHours && <td style={{ ...tdStyle, textAlign: 'right', color: '#cbd5e1' }}>—</td>}
-                      <td style={tdStyle}>
+                      {showHours && <td style={{ ...tdStyle, textAlign: 'right', color: '#cbd5e1' }} className={styles.cHours}>—</td>}
+                      <td style={tdStyle} className={styles.cFlags}>
                         <span style={draftBadgeStyle} title="This note hasn't been submitted yet">
                           Draft
                         </span>
                       </td>
-                      <td style={tdStyle}>
+                      <td style={tdStyle} className={styles.cSubmitted}>
                         {myDraft.updatedAt ? (
                           <span title={myDraft.updatedAt.toLocaleString()}>
                             Saved {myDraft.updatedAt.toLocaleString([], {
@@ -1934,7 +1958,7 @@ export default function SubmissionsPage() {
                           </span>
                         ) : '--'}
                       </td>
-                      <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }} className={styles.cActions}>
                         <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
                           <Link href="/progress-note?resume=1" style={viewBtnStyle}>
                             Resume
@@ -1960,6 +1984,8 @@ export default function SubmissionsPage() {
                     return (
                       <tr
                         key={s.id}
+                        className={styles.row}
+                        data-selected={isSelected ? 'true' : undefined}
                         onClick={() => router.push(viewHref)}
                         style={{
                           ...(i % 2 === 1 ? altRowStyle : {}),
@@ -1970,7 +1996,7 @@ export default function SubmissionsPage() {
                         onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = '#f1f5f9'; }}
                         onMouseLeave={(e) => { e.currentTarget.style.background = restingBg; }}
                       >
-                        <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
+                        <td style={tdStyle} className={styles.cSelect} onClick={(e) => e.stopPropagation()}>
                           <input
                             type="checkbox"
                             checked={isSelected}
@@ -1980,13 +2006,13 @@ export default function SubmissionsPage() {
                             style={checkboxStyle}
                           />
                         </td>
-                        <td style={{ ...tdStyle, textAlign: 'right', color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>
+                        <td style={{ ...tdStyle, textAlign: 'right', color: '#64748b', fontVariantNumeric: 'tabular-nums' }} className={styles.cNum}>
                           {pageStart + i + 1}
                         </td>
-                        <td style={tdStyle}>
+                        <td style={tdStyle} className={styles.cDate}>
                           {s.dateOfService}
                         </td>
-                        <td style={tdStyle}>
+                        <td style={tdStyle} className={styles.cClient}>
                           {s.clientName}
                           {s.noteType === 'rn-oversight-visit' && (
                             <span
@@ -2007,8 +2033,8 @@ export default function SubmissionsPage() {
                             </span>
                           )}
                         </td>
-                        <td style={tdStyle}>{s.nurseName}</td>
-                        <td style={tdStyle}>
+                        <td style={tdStyle} className={styles.cNurse}>{s.nurseName}</td>
+                        <td style={tdStyle} className={styles.cCred}>
                           <span style={credentialBadge}>{s.credential}</span>
                         </td>
                         {showHours && (() => {
@@ -2018,6 +2044,7 @@ export default function SubmissionsPage() {
                           const partial = h != null && rangeActive && Math.abs(total - h) >= 0.01;
                           return (
                             <td
+                              className={styles.cHours}
                               style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}
                               title={
                                 h == null
@@ -2045,7 +2072,7 @@ export default function SubmissionsPage() {
                             </td>
                           );
                         })()}
-                        <td style={tdStyle}>
+                        <td style={tdStyle} className={styles.cFlags}>
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                             {s.hasCriticalVitals ? (
                               <span style={{ ...flagBadgeRed, fontWeight: 700 }} title="Critical vital — provider-notification threshold">
@@ -2126,14 +2153,14 @@ export default function SubmissionsPage() {
                             )}
                           </div>
                         </td>
-                        <td style={tdStyle}>
+                        <td style={tdStyle} className={styles.cSubmitted}>
                           {s.submittedAt ? s.submittedAt.toLocaleString() : '--'}
                         </td>
                         {/* Actions cell stops click-propagation so the buttons
                             don't also trigger the row's open-note navigation.
                             whiteSpace:nowrap + flex nowrap keep all buttons on a
                             single line (the column claims the width it needs). */}
-                        <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
+                        <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }} className={styles.cActions} onClick={(e) => e.stopPropagation()}>
                           <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
                             {!isViewingAs && isRn && needsCosign(s, requiredCosignCreds) && s.nurseId !== user?.uid && (
                               // The row button is now a *navigation* into the
@@ -2354,60 +2381,6 @@ export default function SubmissionsPage() {
 }
 
 // --- Inline styles ---
-
-const containerStyle: React.CSSProperties = {
-  maxWidth: 1400,
-  margin: '0 auto',
-  padding: 20,
-};
-
-const wrapStyle: React.CSSProperties = {
-  background: 'white',
-  padding: 30,
-  borderRadius: 8,
-  boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-};
-
-const headerStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: 16,
-  flexWrap: 'wrap',
-  marginBottom: 24,
-  borderBottom: '3px solid #2c3e50',
-  paddingBottom: 16,
-};
-
-const titleStyle: React.CSSProperties = {
-  color: '#2c3e50',
-  fontSize: 24,
-  marginBottom: 4,
-  marginTop: 0,
-};
-
-const newNoteBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: '#27ae60',
-  color: 'white',
-  padding: '10px 14px',
-  borderRadius: 6,
-  border: 'none',
-  fontSize: 14,
-  fontWeight: 700,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-  textDecoration: 'none',
-  flexShrink: 0,
-};
-
-const subtitleStyle: React.CSSProperties = {
-  color: '#7f8c8d',
-  fontSize: 14,
-  margin: 0,
-};
 
 const bulkBarStyle: React.CSSProperties = {
   display: 'flex',
