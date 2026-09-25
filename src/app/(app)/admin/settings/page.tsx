@@ -1032,6 +1032,40 @@ export default function AdminSettingsPage() {
           )}
         </section>
 
+        {/* --- E-signature tracking (PandaDoc webhook) --- */}
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>E-signature tracking (PandaDoc)</h2>
+          <p style={sectionSubStyle}>
+            Packets are still sent from PandaDoc. A PandaDoc webhook tells the portal each time one is viewed, signed,
+            or completed, and the E-signatures page shows where each stands (same people as the Fax Center). A PandaDoc
+            document is tracked when its document or template name contains one of these words. Start of care packets
+            carry client information, so leave them out until PandaDoc has signed a BAA with the agency.
+          </p>
+          <Field label="Track documents whose name contains (comma separated)" id={settingsFieldId('esign.trackKeywords')} error={fieldErrors['esign.trackKeywords']}>
+            <input
+              type="text"
+              value={draft.esign.trackKeywords.join(', ')}
+              style={{ ...inputStyle, ...hi('esign.trackKeywords') }}
+              placeholder="onboarding"
+              onChange={(e) => {
+                clearFieldError('esign.trackKeywords');
+                const trackKeywords = e.target.value.split(',').map((w) => w.trimStart());
+                setDirty(true);
+                setDraft((prev) => ({ ...prev, esign: { trackKeywords } }));
+              }}
+            />
+          </Field>
+          <details style={{ marginTop: 10, fontSize: 13, color: '#5c6b7a' }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 600, color: '#2c3e50' }}>How to connect the webhook</summary>
+            <ol style={{ margin: '8px 0 0', paddingLeft: 20, lineHeight: 1.6 }}>
+              <li>In PandaDoc, open Dev Center, Configuration, then Create webhook.</li>
+              <li>URL: <code>https://www.heartandsoulhc.org/api/pandadoc/webhook</code></li>
+              <li>Events: Document state changed, Recipient completed, and Document deleted. Leave payload options at their defaults.</li>
+              <li>Save, then copy the webhook&apos;s shared key and give it to whoever manages the portal&apos;s Cloud Run secrets (it becomes PANDADOC_WEBHOOK_KEY).</li>
+            </ol>
+          </details>
+        </section>
+
         {/* --- Pediatric vital ranges (collapsed by default: the per-age-group
             grid is by far the longest block on this page) --- */}
         <section style={sectionStyle}>

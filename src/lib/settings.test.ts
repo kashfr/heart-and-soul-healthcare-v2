@@ -341,3 +341,16 @@ describe('fax settings (Fax Center grant)', () => {
     expect(() => validateSettings({ fax: { userUids: 'rose' } })).toThrow(SettingsValidationError);
   });
 });
+
+describe('esign settings (PandaDoc tracking)', () => {
+  it('tracks onboarding packets by default', () => {
+    expect(mergeWithDefaults(null).esign).toEqual({ trackKeywords: ['onboarding'] });
+  });
+  it('trims, lowercases, and dedupes keywords; an explicit empty list means track nothing', () => {
+    expect(mergeWithDefaults({ esign: { trackKeywords: [' Onboarding ', 'onboarding', '', 'Handbook'] } }).esign.trackKeywords).toEqual(['onboarding', 'handbook']);
+    expect(mergeWithDefaults({ esign: { trackKeywords: [] } }).esign.trackKeywords).toEqual([]);
+  });
+  it('rejects a malformed payload', () => {
+    expect(() => validateSettings({ esign: { trackKeywords: 'onboarding' } })).toThrow(SettingsValidationError);
+  });
+});

@@ -19,6 +19,7 @@ import {
   PhoneCall,
   ShieldAlert,
   Printer,
+  PenLine,
   Menu,
   X,
   PanelLeftClose,
@@ -89,6 +90,9 @@ const NAV: NavItem[] = [
   // sheet, and track delivery. Shown only to people an admin granted in
   // Settings; the /api/fax routes enforce the same rule.
   { href: '/admin/fax', label: 'Fax Center', icon: <Printer size={18} />, allow: ['admin', 'supervisor', 'va'], requiresFax: true },
+  // PandaDoc packets (onboarding by default) and where each stands, kept
+  // current by a PandaDoc webhook. Same access as the Fax Center.
+  { href: '/admin/esign', label: 'E-signatures', icon: <PenLine size={18} />, allow: ['admin', 'supervisor', 'va'], requiresFax: true },
 ];
 
 const VIEW_AS_ROLE_LABELS: Record<Role, string> = {

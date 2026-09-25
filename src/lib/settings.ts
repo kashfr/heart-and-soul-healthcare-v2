@@ -316,9 +316,20 @@ export interface FaxSettings {
   ppotPrefillIdentity: boolean;
 }
 
+/**
+ * PandaDoc tracking (webhook only; see src/lib/pandadocShared.ts). A PandaDoc
+ * document is tracked when its document or template name contains one of
+ * these words. Start of care packets carry client information and PandaDoc has
+ * no BAA with the agency yet, so they are deliberately not tracked by default.
+ */
+export interface EsignSettings {
+  trackKeywords: string[];
+}
+
 export interface AppSettings {
   verbalOrders: VerbalOrdersSettings;
   fax: FaxSettings;
+  esign: EsignSettings;
   submissions: SubmissionsSettings;
   cosign: CosignSettings;
   patient: PatientSettings;
@@ -341,6 +352,7 @@ export interface AppSettings {
 export const DEFAULT_SETTINGS: AppSettings = {
   verbalOrders: { overdueDays: 14, escalateDays: 30, returnFax: '' },
   fax: { enabled: false, userUids: [], recertLeadDays: 45, ppotPrefillIdentity: false },
+  esign: { trackKeywords: ['onboarding'] },
   submissions: {
     defaultSort: 'dateOfService',
     defaultDir: 'desc',
@@ -467,6 +479,7 @@ export function mergeWithDefaults(partial: unknown): AppSettings {
     shiftChangeAlerts: mergeShiftChangeAlerts(p.shiftChangeAlerts),
     verbalOrders: mergeVerbalOrders(p.verbalOrders),
     fax: mergeFax(p.fax),
+    esign: mergeEsign(p.esign),
     branding: mergeBranding(p.branding),
     emails: mergeEmails(p.emails),
     intake: mergeIntake(p.intake),
@@ -497,6 +510,16 @@ function mergeVerbalOrders(input: unknown): VerbalOrdersSettings {
   const escalateDays = Math.max(overdueDays, clampDays(src.escalateDays, d.escalateDays));
   const returnFax = typeof src.returnFax === 'string' ? src.returnFax.replace(/\D/g, '').slice(-10) : '';
   return { overdueDays, escalateDays, returnFax: returnFax.length === 10 ? returnFax : '' };
+}
+
+function mergeEsign(input: unknown): EsignSettings {
+  const src = (input ?? {}) as Partial<EsignSettings>;
+  if (!Array.isArray(src.trackKeywords)) return { trackKeywords: [...DEFAULT_SETTINGS.esign.trackKeywords] };
+  const words = src.trackKeywords
+    .filter((w): w is string => typeof w === 'string')
+    .map((w) => w.trim().slice(0, 60))
+    .filter(Boolean);
+  return { trackKeywords: Array.from(new Set(words.map((w) => w.toLowerCase()))).slice(0, 20) };
 }
 
 function mergeFax(input: unknown): FaxSettings {
@@ -659,6 +682,13 @@ export function validateSettings(payload: unknown): AppSettings {
   const vit = (p.vitals ?? {}) as Partial<VitalsSettings>;
   const sca = (p.shiftChangeAlerts ?? {}) as Partial<ShiftChangeAlertsSettings>;
   const fax = (p.fax ?? {}) as Partial<FaxSettings>;
+  const esign = (p.esign ?? {}) as Partial<EsignSettings>;
+  if (
+    esign.trackKeywords !== undefined &&
+    (!Array.isArray(esign.trackKeywords) || esign.trackKeywords.some((w) => typeof w !== 'string'))
+  ) {
+    throw new SettingsValidationError('esign.trackKeywords', 'trackKeywords must be a list of words.');
+  }
 
   if (fax.ppotPrefillIdentity !== undefined && typeof fax.ppotPrefillIdentity !== 'boolean') {
     throw new SettingsValidationError('fax.ppotPrefillIdentity', 'fax.ppotPrefillIdentity must be true or false.');
