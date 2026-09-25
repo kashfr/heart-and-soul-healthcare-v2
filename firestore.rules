@@ -724,13 +724,14 @@ service cloud.firestore {
 
     // In-portal notifications (the bell). Written ONLY server-side (Admin
     // SDK: visit assign/cancel/restore + the day-of reminder cron), so client
-    // create/delete are denied. A user reads only her own and may flip ONLY
-    // readAt (mark-as-read) — recipient, text, and links are immutable.
+    // create/delete are denied. A user reads only her own and may set ONLY
+    // readAt (mark-as-read) and dismissedAt (clear from the bell; the doc is
+    // kept) — recipient, text, and links are immutable.
     match /notifications/{noteId} {
       allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow update: if isSignedIn()
         && resource.data.userId == request.auth.uid
-        && incomingData().diff(resource.data).affectedKeys().hasOnly(['readAt']);
+        && incomingData().diff(resource.data).affectedKeys().hasOnly(['readAt', 'dismissedAt']);
       allow create, delete: if false;
     }
 
