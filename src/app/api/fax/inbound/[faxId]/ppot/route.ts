@@ -9,8 +9,10 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * POST /api/fax/inbound/[faxId]/ppot  { requestKey, signedDate }
+ * POST /api/fax/inbound/[faxId]/ppot  { requestKey, signedDate, orderLineIds? }
  * File this inbound fax as the signed Appendix T for an open PPOT request.
+ * orderLineIds ('task:<id>' / 'med:<id>') are the client's care-plan tasks
+ * and MAR meds whose signed-order date moves to signedDate.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ faxId: string }> }) {
   let caller;
@@ -32,7 +34,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ fax
   const signedDate = String(body.signedDate || '');
   const invalid = validatePpotFiling({ requestKey, signedDate }, agencyTodayISO());
   if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
-  const result = await fileSignedPpot({ faxId, requestKey, signedDate, caller });
+  const rawLines = Array.isArray(body.orderLineIds) ? body.orderLineIds : [];
+  if (rawLines.length > 200 || !rawLines.every((x) => typeof x === 'string' && /^(task|med):[A-Za-z0-9_-]{1,128}$/.test(x))) {
+    return NextResponse.json({ error: 'Bad order list.' }, { status: 400 });
+  }
+  const result = await fileSignedPpot({ faxId, requestKey, signedDate, caller, orderLineIds: rawLines as string[] });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status || 500 });
-  return NextResponse.json({ ok: true, documentId: result.documentId });
+  return NextResponse.json({ ok: true, documentId: result.documentId, ordersUpdated: result.ordersUpdated ?? 0 });
 }

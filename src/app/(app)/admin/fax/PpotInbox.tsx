@@ -5,7 +5,7 @@ import { Ban, CheckCircle2, EyeOff, Eye, FileCheck2, Hourglass, Inbox, X } from 
 import { authedFetch } from '@/lib/authedFetch';
 import { formatDateUS } from '@/lib/dateFormat';
 import { formatUSFaxNumber, inboundFaxSender } from '@/lib/verbalOrderShared';
-import { daysBetween, PPOT_REQUEST_LABEL, validatePpotFiling, type PpotOpenRequest, type PpotRequestType } from '@/lib/ppotShared';
+import { daysBetween, PPOT_REQUEST_LABEL, shouldAdvanceOrderDate, validatePpotFiling, type PpotOpenRequest, type PpotOrderLine, type PpotRequestType } from '@/lib/ppotShared';
 
 // The return half of PPOT requests: faxes that arrived on the portal line,
 // the requests still waiting on a physician, and the signed copies filed.
@@ -55,6 +55,7 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [filing, setFiling] = useState<IncomingFax | null>(null);
   const [canDismiss, setCanDismiss] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -108,6 +109,13 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
   return (
     <>
       {error && <div role="alert" style={{ ...noteStyle, color: '#b3261e', marginBottom: 14 }}>{error}</div>}
+      {notice && (
+        <div role="status" style={noticeStyle}>
+          <CheckCircle2 size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span style={{ flex: 1 }}>{notice}</span>
+          <button onClick={() => setNotice(null)} style={closeBtnStyle} aria-label="Dismiss message"><X size={15} /></button>
+        </div>
+      )}
 
       {incoming.length > 0 && (
         <section style={{ marginBottom: 22 }}>
@@ -182,7 +190,8 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
           </h2>
           <p style={noteStyle}>
             Requests sent and not yet answered. A request stays here until someone files the returned fax from Incoming faxes
-            with File as signed PPOT; nothing is filed automatically.
+            with File as signed PPOT; nothing is filed automatically. If one isn&apos;t back by the Verbal Orders overdue days in
+            Settings, the portal faxes it once more as a second request, and rings you again at the escalation days.
           </p>
           <div style={tableWrapStyle}>
             <table style={tableStyle}>
@@ -204,6 +213,7 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
                         <div style={{ ...metaStyle, color: waited >= 14 ? '#b3261e' : '#7f8c8d', fontWeight: waited >= 14 ? 700 : 400 }}>
                           {waited <= 0 ? 'today' : `${waited} day${waited === 1 ? '' : 's'} waiting`}
                         </div>
+                        {r.remindedDate && <div style={metaStyle}>Second request faxed {formatDateUS(r.remindedDate)}</div>}
                       </td>
                       <td style={{ ...tdStyle, textAlign: 'right' }}>
                         <button
@@ -271,8 +281,9 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
           today={today}
           onView={() => view(filing.id, `/api/fax/inbound/${filing.id}/pdf`)}
           onClose={() => setFiling(null)}
-          onFiled={() => {
+          onFiled={(msg) => {
             setFiling(null);
+            setNotice(msg);
             void load();
           }}
         />
@@ -294,13 +305,50 @@ function FileModal({
   today: string;
   onView: () => void;
   onClose: () => void;
-  onFiled: () => void;
+  onFiled: (message: string) => void;
 }) {
   const suggestedKey = fax.ppotCandidateKeys.find((k) => openRequests.some((r) => r.key === k)) || '';
   const [requestKey, setRequestKey] = useState(suggestedKey);
   const [signedDate, setSignedDate] = useState(today);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // The client's active care-plan tasks and meds: a signed Appendix T is the
+  // physician order behind them, so filing it can renew their order date.
+  const [lines, setLines] = useState<PpotOrderLine[] | null>(null);
+  const [linesErr, setLinesErr] = useState<string | null>(null);
+  const [unticked, setUnticked] = useState<Set<string>>(new Set());
+  const isClient = requestKey.startsWith('client_');
+
+  useEffect(() => {
+    setLines(null);
+    setLinesErr(null);
+    setUnticked(new Set());
+    if (!requestKey.startsWith('client_')) return;
+    let live = true;
+    (async () => {
+      try {
+        const res = await authedFetch(`/api/fax/ppot/requests/${requestKey}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
+        if (live) setLines(data.lines ?? []);
+      } catch (e2) {
+        if (live) setLinesErr(e2 instanceof Error ? e2.message : 'Could not load the care plan.');
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [requestKey]);
+
+  const lineKey = (l: PpotOrderLine) => `${l.kind}:${l.id}`;
+  const toggle = (k: string) =>
+    setUnticked((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  const chosen = (lines ?? []).filter((l) => !unticked.has(lineKey(l)) && shouldAdvanceOrderDate(l.orderSignedDate, signedDate));
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -312,10 +360,17 @@ function FileModal({
     setBusy(true);
     setErr(null);
     try {
-      const res = await authedFetch(`/api/fax/inbound/${fax.id}/ppot`, { method: 'POST', body: JSON.stringify({ requestKey, signedDate }) });
+      const orderLineIds = isClient ? chosen.map(lineKey) : [];
+      const res = await authedFetch(`/api/fax/inbound/${fax.id}/ppot`, { method: 'POST', body: JSON.stringify({ requestKey, signedDate, orderLineIds }) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
-      onFiled();
+      const n = Number(data.ordersUpdated || 0);
+      const who = req?.memberName || 'the member';
+      onFiled(
+        n > 0
+          ? `Filed the signed Appendix T for ${who}, and dated ${n} care plan and medication order${n === 1 ? '' : 's'} ${formatDateUS(signedDate)}.`
+          : `Filed the signed Appendix T for ${who}.`,
+      );
     } catch (e2) {
       setErr(e2 instanceof Error ? e2.message : 'Could not file the fax.');
     } finally {
@@ -332,8 +387,8 @@ function FileModal({
             <X size={18} />
           </button>
         </div>
-        <form onSubmit={submit} noValidate>
-          <div style={{ padding: 20, display: 'grid', gap: 14 }}>
+        <form onSubmit={submit} noValidate style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          <div style={{ padding: 20, display: 'grid', gap: 14, overflowY: 'auto' }}>
             <p style={{ margin: 0, fontSize: 13, color: '#5c6b7a', lineHeight: 1.5 }}>
               Fax from {inboundFaxSender(fax.callerId, fax.remoteId).from || 'an unknown sender'}, {fax.pages} page
               {fax.pages === 1 ? '' : 's'}.{' '}
@@ -356,6 +411,43 @@ function FileModal({
               <span style={fieldLabelStyle}>Date the physician signed</span>
               <input type="date" value={signedDate} max={today} onChange={(e) => { setSignedDate(e.target.value); setErr(null); }} style={{ ...inp, maxWidth: 200 }} />
             </label>
+            {isClient && (
+              <div style={fieldStyle}>
+                <span style={fieldLabelStyle}>Update the Appendix T date on</span>
+                {linesErr ? (
+                  <span style={{ fontSize: 12.5, color: '#b3261e' }}>{linesErr} You can still file the fax and set the dates on the care plan and MAR.</span>
+                ) : lines === null ? (
+                  <span style={metaStyle}>Loading the care plan…</span>
+                ) : lines.length === 0 ? (
+                  <span style={metaStyle}>This client has no active care plan tasks or medications to date.</span>
+                ) : (
+                  <>
+                    <span style={{ fontSize: 12, color: '#7f8c8d', lineHeight: 1.45 }}>
+                      Untick anything the signed form doesn&apos;t cover. Ticked items get the signed date as their physician order
+                      date. RN approvals are kept.
+                    </span>
+                    <div style={checklistStyle}>
+                      {lines.map((l) => {
+                        const k = lineKey(l);
+                        const current = !shouldAdvanceOrderDate(l.orderSignedDate, signedDate);
+                        return (
+                          <label key={k} style={{ ...checkRowStyle, opacity: current ? 0.6 : 1 }}>
+                            <input type="checkbox" checked={!current && !unticked.has(k)} disabled={current || busy} onChange={() => toggle(k)} />
+                            <span style={{ flex: 1 }}>
+                              {l.name}
+                              <span style={{ color: '#7f8c8d' }}> · {l.kind === 'task' ? 'Care plan' : 'Medication'}</span>
+                            </span>
+                            <span style={{ fontSize: 12, color: '#7f8c8d', whiteSpace: 'nowrap' }}>
+                              {current ? `already ${formatDateUS(l.orderSignedDate)}` : l.orderSignedDate ? `now ${formatDateUS(l.orderSignedDate)}` : 'no date'}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
             {err && <div role="alert" style={{ color: '#b3261e', fontSize: 13, fontWeight: 600 }}>{err}</div>}
           </div>
           <div style={modalFooterStyle}>
@@ -370,6 +462,9 @@ function FileModal({
   );
 }
 
+const noticeStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#1e7e34', background: '#e6f4ea', border: '1px solid #b7dfc1', borderRadius: 8, padding: '10px 12px', marginBottom: 14 };
+const checklistStyle: React.CSSProperties = { border: '1px solid #e5e7eb', borderRadius: 8, maxHeight: 220, overflowY: 'auto' };
+const checkRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderBottom: '1px solid #f1f5f9', fontSize: 13, color: '#374151', cursor: 'pointer' };
 const sectionTitleStyle: React.CSSProperties = { fontSize: 15, fontWeight: 700, color: '#2c3e50', margin: '0 0 4px' };
 const noteStyle: React.CSSProperties = { fontSize: 12.5, color: '#7f8c8d', margin: '0 0 10px' };
 const tableWrapStyle: React.CSSProperties = { background: 'white', border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'auto' };

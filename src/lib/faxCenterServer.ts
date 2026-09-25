@@ -172,6 +172,10 @@ async function queue(faxId: string, toNumber: string, fileName: string, pdf: Buf
   });
 }
 
+/** Who a fax is sent as: a signed-in caller, or (for the automatic PPOT
+ *  reminder) the person who sent the original request. */
+export type FaxSender = Pick<AuthedCaller, 'uid' | 'email'> & { profile: Pick<AuthedCaller['profile'], 'displayName'> };
+
 export interface SendFaxResult {
   ok: boolean;
   fax?: OutboundFax;
@@ -187,7 +191,7 @@ export async function sendOutboundFax(p: {
   input: FaxSendInput;
   pdf: Buffer;
   fileName: string;
-  caller: AuthedCaller;
+  caller: FaxSender;
   /** Set for a PPOT request: forces the cover sheet and adds its member block. */
   ppot?: OutboundFaxPpot;
 }): Promise<SendFaxResult> {

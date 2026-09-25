@@ -7,7 +7,7 @@ import type { AuthedCaller } from './adminAuthGuard';
 import { getServerSettings } from './settingsServer';
 import { createPortalNotification } from './notificationsServer';
 import { getReferral, listReferrals, logReferralActivity } from './referrals';
-import { sendOutboundFax, type SendFaxResult } from './faxCenterServer';
+import { sendOutboundFax, type FaxSender, type SendFaxResult } from './faxCenterServer';
 import { agencyTodayISO } from './verbalOrderServer';
 import { formatUSFaxNumber, normalizeUSFaxNumber } from './verbalOrderShared';
 import { srfaxRetrieveInbound } from './fax/srfax';
@@ -20,8 +20,12 @@ import {
   latestAuthEnd,
   ppotSubjectFromReferral,
   PPOT_REQUEST_LABEL,
+  ppotReminderNote,
+  ppotRequestUrgency,
   recertStatus,
+  shouldAdvanceOrderDate,
   type PpotOpenRequest,
+  type PpotOrderLine,
   type PpotRequestType,
   type PpotSendInput,
   type PpotSubject,
@@ -31,7 +35,8 @@ import {
 /**
  * PPOT (GAPP Appendix T) requests, server side.
  *
- *   ppotRequests/{kind_id}          latest request per member (drives "requested this cycle")
+ *   ppotRequests/{kind_id}          latest request per member (drives "requested this cycle");
+ *                                   reminderDate/escalatedAt mark the automatic follow-ups
  *   ppotRecertReminders/{pid_end}   one reminder per client per authorization end date
  *
  * A request is a Fax Center send (outboundFaxes, kind 'ppot') of the blank
@@ -168,6 +173,19 @@ export async function listPpotSubjects(): Promise<{ subjects: PpotSubjectRow[]; 
 }
 
 /**
+ * The form that goes out. Blank by default. With the Settings opt-in, only
+ * the identity line (name, Medicaid ID) is printed; the physician completes
+ * everything else.
+ */
+async function appendixTForFax(memberName: string, medicaidId: string): Promise<{ pdf: Buffer; fileName: string }> {
+  const blank = await readFile(APPENDIX_T_PATH);
+  const settings = await getServerSettings();
+  const pdf = settings.fax.ppotPrefillIdentity ? await stampAppendixTIdentity(blank, { name: memberName, medicaidId }) : blank;
+  const fileName = `Appendix_T_${memberName.replace(/[^A-Za-z0-9]+/g, '_').slice(0, 40) || 'member'}.pdf`;
+  return { pdf, fileName };
+}
+
+/**
  * Fax the physician a PPOT request. The member's identity is read fresh from
  * the record (never trusted from the browser); only the Medicaid ID may be
  * supplied by the sender, for a record that doesn't have one yet.
@@ -179,12 +197,7 @@ export async function sendPpotRequest(input: PpotSendInput, caller: AuthedCaller
   // The member block on the cover carries DOB and Medicaid ID; this line is
   // what the outbox lists and searches.
   const regarding = `Appendix T, ${PPOT_REQUEST_LABEL[input.requestType].toLowerCase()}: ${subject.name}`;
-  // Blank by default. With the Settings opt-in, only the identity line
-  // (name, Medicaid ID) is printed; the physician completes everything else.
-  const blank = await readFile(APPENDIX_T_PATH);
-  const settings = await getServerSettings();
-  const pdf = settings.fax.ppotPrefillIdentity ? await stampAppendixTIdentity(blank, { name: subject.name, medicaidId }) : blank;
-  const fileName = `Appendix_T_${subject.name.replace(/[^A-Za-z0-9]+/g, '_').slice(0, 40) || 'member'}.pdf`;
+  const { pdf, fileName } = await appendixTForFax(subject.name, medicaidId);
 
   const result = await sendOutboundFax({
     input: {
@@ -311,6 +324,171 @@ export async function runPpotRecertSweep(): Promise<{ reminded: number; errors: 
   return { reminded, errors };
 }
 
+/**
+ * Follow-ups on requests still waiting on the signed form, on the Verbal
+ * Orders thresholds in Settings (the plan's "reuse the verbal-order
+ * settings"). At overdueDays the request is re-faxed once, marked "Second
+ * request" and sent in the name of whoever sent the first one (their bell
+ * rings if it fails), and Fax Center users are told. At escalateDays their
+ * bell rings once more so someone calls the office. Each step is stamped
+ * before it runs, so an overlapping tick can't repeat it.
+ */
+export async function runPpotReminderSweep(
+  thresholds: { overdueDays: number; escalateDays: number },
+  canFax: boolean,
+): Promise<{ refaxed: number; escalated: number; errors: string[] }> {
+  const out = { refaxed: 0, escalated: 0, errors: [] as string[] };
+  const settings = await getServerSettings();
+  if (!settings.fax.enabled) return out;
+  const db = adminDb();
+  const today = agencyTodayISO();
+  const snap = await db.collection(REQUESTS).where('status', '==', 'sent').get();
+  let recipients: string[] | null = null;
+  const ring = async (text: string) => {
+    recipients ??= await faxRecipientUids();
+    for (const uid of recipients) await createPortalNotification(db, { userId: uid, kind: 'ppot-overdue', text, href: '/admin/fax' });
+  };
+  for (const d of snap.docs) {
+    const x = d.data();
+    const urgency = ppotRequestUrgency(String(x.date || ''), today, thresholds);
+    if (urgency === 'open') continue;
+    const memberName = String(x.memberName || 'a member');
+    const sentUS = formatDateUS(String(x.date || ''));
+    try {
+      if (!x.reminderSentAt && canFax) {
+        // Claim the reminder first; a lost race means another tick has it.
+        const claimed = await db.runTransaction(async (tx) => {
+          const cur = await tx.get(d.ref);
+          if (cur.data()?.status !== 'sent' || cur.data()?.reminderSentAt) return false;
+          tx.update(d.ref, { reminderSentAt: FieldValue.serverTimestamp(), reminderDate: today });
+          return true;
+        });
+        if (claimed) {
+          const faxId = await refaxPpotRequest(x);
+          if (faxId) await d.ref.update({ reminderFaxId: faxId });
+          await ring(
+            faxId
+              ? `The Appendix T request for ${memberName} (sent ${sentUS}) hasn't come back, so the portal faxed it to ${x.recipientName || 'the physician'} again as a second request.`
+              : `The Appendix T request for ${memberName} (sent ${sentUS}) hasn't come back, and the automatic second request could not be faxed. Resend it from the Fax Center or call the office.`,
+          );
+          out.refaxed++;
+        }
+      }
+      if (urgency === 'escalated' && !x.escalatedAt) {
+        await d.ref.update({ escalatedAt: FieldValue.serverTimestamp() });
+        await ring(`The Appendix T for ${memberName} is still not back ${daysSinceText(String(x.date || ''), today)} after it was requested. Please call ${x.recipientName || 'the physician'}'s office.`);
+        out.escalated++;
+      }
+    } catch (err) {
+      out.errors.push(`ppot reminder ${d.id}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return out;
+}
+
+function daysSinceText(fromYmd: string, today: string): string {
+  const n = Math.max(0, Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${fromYmd}T00:00:00Z`)) / 86_400_000));
+  return `${n} day${n === 1 ? '' : 's'}`;
+}
+
+/** Fax the same request again. Returns the new outbound fax id, or '' when
+ *  the member is gone or the fax could not be built. */
+async function refaxPpotRequest(req: FirebaseFirestore.DocumentData): Promise<string> {
+  const kind: PpotSubjectKind = req.subjectKind === 'client' ? 'client' : 'referral';
+  const subject = await loadPpotSubject(kind, String(req.subjectId || ''));
+  if (!subject) return '';
+  const firstFax = req.faxId ? await adminDb().collection('outboundFaxes').doc(String(req.faxId)).get() : null;
+  const first = firstFax?.data() || {};
+  const firstPpot = (first.ppot || {}) as { medicaidId?: string };
+  const medicaidId = subject.medicaidId || cleanMedicaidId(String(firstPpot.medicaidId || ''));
+  const requestType: PpotRequestType = req.requestType === 'recert' ? 'recert' : 'new';
+  const { pdf, fileName } = await appendixTForFax(subject.name, medicaidId);
+  const toNumber = String(req.toNumber || '');
+  const sender: FaxSender = { uid: String(req.byUid || ''), email: null, profile: { displayName: String(req.byName || 'Heart and Soul Healthcare') } };
+  const result = await sendOutboundFax({
+    input: {
+      recipientName: String(req.recipientName || first.recipientName || 'Physician'),
+      recipientOrg: String(first.recipientOrg || ''),
+      toNumber,
+      confirmNumber: toNumber,
+      regarding: `Second request, Appendix T, ${PPOT_REQUEST_LABEL[requestType].toLowerCase()}: ${subject.name}`,
+      note: ppotReminderNote(requestType, formatDateUS(String(req.date || '')), !!medicaidId),
+      includeCover: true,
+    },
+    pdf,
+    fileName,
+    caller: sender,
+    ppot: { requestType, subjectKind: subject.kind, subjectId: subject.id, memberName: subject.name, dob: subject.dob, medicaidId },
+  });
+  // A fax that SRFax refused still has an outbox row (with Resend).
+  return result.fax?.id || '';
+}
+
+// ---------------------------------------------------------------------------
+// Order dates on the care plan and MAR
+// ---------------------------------------------------------------------------
+
+/**
+ * A client's active care-plan tasks and MAR medications, for the filing
+ * dialog's "update the Appendix T date on" checklist. The Appendix T is the
+ * physician order behind a GAPP member's treatments and meds, so a signed one
+ * renews their signed-order date; staff untick anything the form left off.
+ */
+export async function listPpotOrderLines(requestKey: string): Promise<PpotOrderLine[] | null> {
+  const req = await adminDb().collection(REQUESTS).doc(requestKey).get();
+  if (!req.exists) return null;
+  if (req.data()?.subjectKind !== 'client') return [];
+  return activeOrderLines(String(req.data()?.subjectId || ''));
+}
+
+async function activeOrderLines(patientId: string): Promise<PpotOrderLine[]> {
+  if (!patientId) return [];
+  const db = adminDb();
+  const [tasks, meds] = await Promise.all([
+    db.collection('careTasks').where('patientId', '==', patientId).get(),
+    db.collection('marOrders').where('patientId', '==', patientId).get(),
+  ]);
+  const lines: PpotOrderLine[] = [];
+  for (const d of tasks.docs) {
+    const x = d.data();
+    if (x.status !== 'active') continue;
+    lines.push({ id: d.id, kind: 'task', name: String(x.name || 'Treatment'), orderSignedDate: String(x.orderSignedDate || '') });
+  }
+  for (const d of meds.docs) {
+    const x = d.data();
+    if (x.status !== 'active') continue;
+    const dose = [x.dose, x.units].filter(Boolean).join(' ');
+    lines.push({ id: d.id, kind: 'med', name: [x.medName || 'Medication', dose].filter(Boolean).join(' '), orderSignedDate: String(x.orderSignedDate || x.startDate || '') });
+  }
+  const order = (l: PpotOrderLine) => (l.kind === 'task' ? 0 : 1);
+  return lines.sort((a, b) => order(a) - order(b) || a.name.localeCompare(b.name));
+}
+
+/**
+ * Move the signed-order date forward on the chosen lines. Only lines that are
+ * this client's and still active are touched (ids from the browser are never
+ * trusted), and never backward. RN approval is kept: what the task or med
+ * says hasn't changed, only the date of the order behind it (the same as the
+ * signed verbal-order filing does on the MAR).
+ */
+async function advanceOrderDates(patientId: string, lineIds: string[], signedDate: string, by: { uid: string; name: string }): Promise<number> {
+  const wanted = new Set(lineIds);
+  const lines = (await activeOrderLines(patientId)).filter((l) => wanted.has(`${l.kind}:${l.id}`) && shouldAdvanceOrderDate(l.orderSignedDate, signedDate));
+  if (lines.length === 0) return 0;
+  const db = adminDb();
+  const batch = db.batch();
+  for (const l of lines) {
+    batch.update(db.collection(l.kind === 'task' ? 'careTasks' : 'marOrders').doc(l.id), {
+      orderSignedDate: signedDate,
+      lastEditedAt: FieldValue.serverTimestamp(),
+      lastEditedBy: by.uid,
+      lastEditedByName: `${by.name} (signed Appendix T filed)`,
+    });
+  }
+  await batch.commit();
+  return lines.length;
+}
+
 // ---------------------------------------------------------------------------
 // Signed PPOT coming back
 // ---------------------------------------------------------------------------
@@ -332,6 +510,7 @@ export async function listOpenPpotRequests(): Promise<PpotOpenRequest[]> {
       recipientName: String(x.recipientName || ''),
       toNumber: String(x.toNumber || ''),
       date: String(x.date || ''),
+      remindedDate: String(x.reminderDate || ''),
     };
   });
 }
@@ -380,6 +559,8 @@ export interface FilePpotResult {
   status?: number;
   error?: string;
   documentId?: string;
+  /** Care-plan tasks and MAR meds whose signed-order date moved forward. */
+  ordersUpdated?: number;
 }
 
 /**
@@ -389,7 +570,14 @@ export interface FilePpotResult {
  * timeline. The inbound fax is claimed in a transaction first, so two people
  * matching it at once can't both file it.
  */
-export async function fileSignedPpot(p: { faxId: string; requestKey: string; signedDate: string; caller: AuthedCaller }): Promise<FilePpotResult> {
+export async function fileSignedPpot(p: {
+  faxId: string;
+  requestKey: string;
+  signedDate: string;
+  caller: AuthedCaller;
+  /** Order lines (see listPpotOrderLines) to date with signedDate. Client requests only. */
+  orderLineIds?: string[];
+}): Promise<FilePpotResult> {
   const db = adminDb();
   const inboundRef = db.collection(INBOUND).doc(p.faxId);
   const requestRef = db.collection(REQUESTS).doc(p.requestKey);
@@ -485,8 +673,17 @@ export async function fileSignedPpot(p: { faxId: string; requestKey: string; sig
       console.error('PPOT filing: referral activity failed (non-fatal):', err);
     }
   }
-  console.info(`PPOT filed: ${p.requestKey} (${memberName}) from inbound fax ${p.faxId}`);
-  return { ok: true, documentId };
+  let ordersUpdated = 0;
+  if (kind === 'client' && p.orderLineIds && p.orderLineIds.length > 0) {
+    try {
+      ordersUpdated = await advanceOrderDates(subjectId, p.orderLineIds, p.signedDate, { uid: p.caller.uid, name: byName });
+    } catch (err) {
+      // The signed copy is filed; the dates can still be set by hand.
+      console.error('PPOT filing: order date update failed (non-fatal):', err);
+    }
+  }
+  console.info(`PPOT filed: ${p.requestKey} (${memberName}) from inbound fax ${p.faxId}; ${ordersUpdated} order date(s) updated`);
+  return { ok: true, documentId, ordersUpdated };
 }
 
 export interface ReceivedPpot {
