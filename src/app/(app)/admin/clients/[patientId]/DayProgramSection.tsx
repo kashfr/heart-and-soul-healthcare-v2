@@ -13,6 +13,7 @@ import {
 } from '@/lib/dayProgramShared';
 import { FieldError, FIELD_ERROR_STYLE, applyFieldErrors } from '@/lib/formEscort';
 import { withSelectChevron } from '@/lib/selectChevron';
+import { formatUSPhone } from '@/lib/phone';
 
 const NAVY = '#1a3a5c';
 
@@ -195,16 +196,16 @@ export default function DayProgramSection({ patientId, canEdit, actorName, onToa
                 <input style={input} value={draft.contactTitle || ''} onChange={(e) => set('contactTitle', e.target.value)} />
               </Field>
               <Field id={fieldId('contact')} label="Office phone" error={errors.contact}>
-                <input type="tel" style={inputFor(errors.contact)} value={draft.phone || ''} onChange={(e) => set('phone', e.target.value)} />
+                <input type="tel" style={inputFor(errors.contact)} value={draft.phone || ''} onChange={(e) => set('phone', formatUSPhone(e.target.value))} />
               </Field>
               <Field label="Cell">
-                <input type="tel" style={inputFor(errors.contact)} value={draft.cell || ''} onChange={(e) => set('cell', e.target.value)} />
+                <input type="tel" style={inputFor(errors.contact)} value={draft.cell || ''} onChange={(e) => set('cell', formatUSPhone(e.target.value))} />
               </Field>
               <Field id={fieldId('email')} label="Email" error={errors.email}>
                 <input type="email" style={inputFor(errors.email || errors.contact)} value={draft.email || ''} onChange={(e) => set('email', e.target.value)} />
               </Field>
               <Field label="Fax">
-                <input type="tel" style={input} value={draft.fax || ''} onChange={(e) => set('fax', e.target.value)} />
+                <input type="tel" style={input} value={draft.fax || ''} onChange={(e) => set('fax', formatUSPhone(e.target.value))} />
               </Field>
               <Field label="Program staff who support this client" wide hint="Names and roles. Used as the roster for HCP and proxy-caregiver training.">
                 <textarea style={{ ...input, minHeight: 56, resize: 'vertical' }} value={draft.staff || ''} onChange={(e) => set('staff', e.target.value)} />
