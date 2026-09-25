@@ -758,6 +758,10 @@ service cloud.firestore {
     match /ppotRecertReminders/{key} {
       allow read, write: if false;
     }
+    // PandaDoc packets tracked from the webhook (E-signatures page). Server-only.
+    match /pandadocDocuments/{docId} {
+      allow read, write: if false;
+    }
 
     // Default deny
     match /{document=**} {
