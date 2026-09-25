@@ -28,9 +28,19 @@ export interface PortalNotification {
   href?: string; // in-app deep link (e.g. /admin/clients/{id}?tab=schedule)
   createdAt?: Timestamp;
   readAt?: Timestamp | null;
+  /** Set when the recipient clears it from the bell. Hidden, never deleted. */
+  dismissedAt?: Timestamp | null;
 }
 
-/** Live subscription to the caller's latest notifications, newest first. */
+/** How many notifications the bell shows at once. */
+const SHOWN = 25;
+
+/**
+ * Live subscription to the caller's latest notifications, newest first,
+ * minus any she has dismissed. Firestore can't match a field that is absent
+ * on older docs, so dismissed ones are filtered here; the query over-fetches
+ * so clearing a batch still leaves a full list behind it.
+ */
 export function subscribeNotifications(
   uid: string,
   cb: (items: PortalNotification[]) => void,
@@ -39,11 +49,17 @@ export function subscribeNotifications(
     collection(db, 'notifications'),
     where('userId', '==', uid),
     orderBy('createdAt', 'desc'),
-    limit(25),
+    limit(SHOWN * 3),
   );
   return onSnapshot(
     q,
-    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as PortalNotification)),
+    (snap) =>
+      cb(
+        snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }) as PortalNotification)
+          .filter((n) => !n.dismissedAt)
+          .slice(0, SHOWN),
+      ),
     (err) => {
       console.error('Notifications subscription failed:', err);
       cb([]);
@@ -53,6 +69,21 @@ export function subscribeNotifications(
 
 export async function markNotificationRead(id: string): Promise<void> {
   await updateDoc(doc(db, 'notifications', id), { readAt: serverTimestamp() });
+}
+
+/** Clear one notification from the bell. Also marks it read so it stops
+ *  counting toward the badge. */
+export async function dismissNotification(n: PortalNotification): Promise<void> {
+  if (!n.id) return;
+  await updateDoc(doc(db, 'notifications', n.id), {
+    dismissedAt: serverTimestamp(),
+    ...(n.readAt ? {} : { readAt: serverTimestamp() }),
+  });
+}
+
+/** Clear every notification that has already been read. */
+export async function dismissReadNotifications(items: PortalNotification[]): Promise<void> {
+  await Promise.all(items.filter((n) => n.readAt).map(dismissNotification));
 }
 
 export async function markAllNotificationsRead(items: PortalNotification[]): Promise<void> {
