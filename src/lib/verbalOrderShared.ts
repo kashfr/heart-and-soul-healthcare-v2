@@ -134,6 +134,22 @@ export function formatUSFaxNumber(tenDigits: string): string {
   return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
 }
 
+/**
+ * Who an incoming fax is from, for display. A fax carries two sender numbers:
+ * the fax header ID (RemoteID, the number the sender's fax account prints as
+ * "from") and the caller ID (the phone line that dialed). Online fax services
+ * such as MetroFax dial from shared lines, so the caller ID is often a number
+ * the sender has never seen. Prefer the header ID when it is a real US number,
+ * and return the caller ID separately when it differs.
+ */
+export function inboundFaxSender(callerId: string, remoteId: string): { from: string; line: string } {
+  const header = normalizeUSFaxNumber(remoteId || '');
+  const caller = normalizeUSFaxNumber(callerId || '');
+  const primary = header || caller;
+  if (!primary) return { from: String(remoteId || callerId || '').trim(), line: '' };
+  return { from: formatUSFaxNumber(primary), line: caller && caller !== primary ? formatUSFaxNumber(caller) : '' };
+}
+
 export function validateVerbalOrderInput(input: Partial<VerbalOrderInput>): VerbalOrderFieldErrors {
   const e: VerbalOrderFieldErrors = {};
   if (!String(input.patientId || '').trim()) e.patientId = 'Choose the client.';

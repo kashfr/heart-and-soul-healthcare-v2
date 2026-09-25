@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Ban, CheckCircle2, EyeOff, Eye, FileCheck2, Hourglass, Inbox, X } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { formatDateUS } from '@/lib/dateFormat';
-import { formatUSFaxNumber } from '@/lib/verbalOrderShared';
+import { formatUSFaxNumber, inboundFaxSender } from '@/lib/verbalOrderShared';
 import { daysBetween, PPOT_REQUEST_LABEL, validatePpotFiling, type PpotOpenRequest, type PpotRequestType } from '@/lib/ppotShared';
 
 // The return half of PPOT requests: faxes that arrived on the portal line,
@@ -124,11 +124,16 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
               <tbody>
                 {incoming.map((f) => {
                   const suggested = f.ppotCandidateKeys.map((k) => byKey.get(k)).filter((r): r is PpotOpenRequest => !!r);
-                  const from = f.callerId || f.remoteId;
+                  const sender = inboundFaxSender(f.callerId, f.remoteId);
                   return (
                     <tr key={f.id}>
                       <td style={tdStyle}>
-                        <div style={{ fontWeight: 600 }}>{from ? formatUSFaxNumber(from) : 'Unknown sender'}</div>
+                        <div style={{ fontWeight: 600 }}>{sender.from || 'Unknown sender'}</div>
+                        {sender.line && (
+                          <div style={metaStyle} title="The phone line that dialed in. Online fax services send from shared lines, so this is often not the sender's own number.">
+                            Dialed from {sender.line}
+                          </div>
+                        )}
                         <div style={metaStyle}>{f.receivedAt} · {f.pages} page{f.pages === 1 ? '' : 's'}</div>
                       </td>
                       <td style={tdStyle}>
@@ -175,6 +180,10 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
             <Hourglass size={16} style={{ verticalAlign: -2, marginRight: 6 }} />
             Waiting on physicians ({openRequests.length})
           </h2>
+          <p style={noteStyle}>
+            Requests sent and not yet answered. A request stays here until someone files the returned fax from Incoming faxes
+            with File as signed PPOT; nothing is filed automatically.
+          </p>
           <div style={tableWrapStyle}>
             <table style={tableStyle}>
               <tbody>
@@ -326,7 +335,7 @@ function FileModal({
         <form onSubmit={submit} noValidate>
           <div style={{ padding: 20, display: 'grid', gap: 14 }}>
             <p style={{ margin: 0, fontSize: 13, color: '#5c6b7a', lineHeight: 1.5 }}>
-              Fax from {fax.callerId || fax.remoteId ? formatUSFaxNumber(fax.callerId || fax.remoteId) : 'an unknown sender'}, {fax.pages} page
+              Fax from {inboundFaxSender(fax.callerId, fax.remoteId).from || 'an unknown sender'}, {fax.pages} page
               {fax.pages === 1 ? '' : 's'}.{' '}
               <button type="button" onClick={onView} style={linkBtnStyle}>Open it</button> and check that it is the completed,
               signed form before filing. A client&apos;s copy goes under Documents (ISP / Plan of Treatment).

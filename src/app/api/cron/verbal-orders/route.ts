@@ -15,7 +15,7 @@ import { pollInFlightFaxes } from '@/lib/faxCenterServer';
 import { faxRecipientUids, listOpenPpotRequests, ppotInboundBellText, runPpotRecertSweep } from '@/lib/ppotServer';
 import { createPortalNotification } from '@/lib/notificationsServer';
 import { ppotCandidatesForInbound } from '@/lib/ppotShared';
-import { candidateOrdersForInboundFax, verbalOrderUrgency } from '@/lib/verbalOrderShared';
+import { candidateOrdersForInboundFax, inboundFaxSender, verbalOrderUrgency } from '@/lib/verbalOrderShared';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -104,7 +104,7 @@ export async function GET(request: Request) {
         summary.inboundUnmatched++;
         if (ppotCandidateKeys.length > 0) {
           ppotRecipients ??= await faxRecipientUids();
-          const text = ppotInboundBellText(fax.callerId || fax.remoteId, openPpot.filter((r) => ppotCandidateKeys.includes(r.key)));
+          const text = ppotInboundBellText(inboundFaxSender(fax.callerId, fax.remoteId).from, openPpot.filter((r) => ppotCandidateKeys.includes(r.key)));
           for (const uid of ppotRecipients) await createPortalNotification(db, { userId: uid, kind: 'ppot-returned', text, href: '/admin/fax' });
           // A fax from a PPOT physician with no open verbal order from that
           // number is almost certainly the PPOT: don't also ring the
