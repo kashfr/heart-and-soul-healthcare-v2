@@ -122,9 +122,13 @@
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 4px 16px rgba(15, 23, 42, 0.06);
   }
 
-  /* Header: title and subtitle on top, full-width buttons underneath. */
+  /* Header: title and subtitle on top, full-width buttons underneath.
+     nowrap matters: a wrapping column flexbox sizes the button grid at its
+     narrowest (one column, buttons stacked) and keeps that height even
+     after the buttons settle side by side, doubling their height. */
   .header {
     flex-direction: column;
+    flex-wrap: nowrap;
     align-items: stretch;
     gap: 18px;
     border-bottom-width: 2px;
