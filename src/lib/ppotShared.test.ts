@@ -3,6 +3,8 @@ import {
   cleanMedicaidId,
   defaultPpotNote,
   latestAuthEnd,
+  ppotCandidatesForInbound,
+  validatePpotFiling,
   ppotSubjectFromReferral,
   recertStatus,
   validatePpotSendInput,
@@ -101,5 +103,29 @@ describe('defaultPpotNote', () => {
     expect(defaultPpotNote('recert', true)).not.toMatch(/Medicaid number/);
     expect(defaultPpotNote('recert', true)).toMatch(/recertification/);
     expect(defaultPpotNote('new', false)).not.toMatch(/[–—]/);
+  });
+});
+
+describe('ppotCandidatesForInbound', () => {
+  const open = [
+    { key: 'client_p1', subjectKind: 'client' as const, subjectId: 'p1', memberName: 'Jane', requestType: 'recert' as const, recipientName: 'Dr. Patel', toNumber: '4045550101', date: '2026-09-20' },
+    { key: 'referral_r1', subjectKind: 'referral' as const, subjectId: 'r1', memberName: 'Sam', requestType: 'new' as const, recipientName: 'Dr. Lee', toNumber: '7705550199', date: '2026-09-21' },
+  ];
+  it('matches on caller ID or station ID, with or without the leading 1', () => {
+    expect(ppotCandidatesForInbound(['14045550101', ''], open)).toEqual(['client_p1']);
+    expect(ppotCandidatesForInbound(['', '(770) 555-0199'], open)).toEqual(['referral_r1']);
+  });
+  it('suggests nothing for an unknown or blank sender', () => {
+    expect(ppotCandidatesForInbound(['6785550000'], open)).toEqual([]);
+    expect(ppotCandidatesForInbound(['', 'FAX'], open)).toEqual([]);
+  });
+});
+
+describe('validatePpotFiling', () => {
+  it('needs a request and a real, past-or-today signed date', () => {
+    expect(validatePpotFiling({ requestKey: 'client_p1', signedDate: '2026-09-24' }, '2026-09-24')).toBeNull();
+    expect(validatePpotFiling({ requestKey: '', signedDate: '2026-09-24' }, '2026-09-24')).toMatch(/Choose/);
+    expect(validatePpotFiling({ requestKey: 'client_p1', signedDate: '09/24/2026' }, '2026-09-24')).toMatch(/date/);
+    expect(validatePpotFiling({ requestKey: 'client_p1', signedDate: '2026-09-25' }, '2026-09-24')).toMatch(/future/);
   });
 });

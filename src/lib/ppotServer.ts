@@ -2,15 +2,16 @@ import 'server-only';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { FieldValue } from 'firebase-admin/firestore';
-import { adminDb } from './firebaseAdmin';
+import { adminBucket, adminDb } from './firebaseAdmin';
 import type { AuthedCaller } from './adminAuthGuard';
 import { getServerSettings } from './settingsServer';
 import { createPortalNotification } from './notificationsServer';
 import { getReferral, listReferrals, logReferralActivity } from './referrals';
 import { sendOutboundFax, type SendFaxResult } from './faxCenterServer';
 import { agencyTodayISO } from './verbalOrderServer';
-import { normalizeUSFaxNumber } from './verbalOrderShared';
-import { formatDateUS } from './dateFormat';
+import { formatUSFaxNumber, normalizeUSFaxNumber } from './verbalOrderShared';
+import { srfaxRetrieveInbound } from './fax/srfax';
+import { formatDateUS, formatDateUSFile } from './dateFormat';
 import { stampAppendixTIdentity } from './pdf/appendixTStamp';
 import { canUseFax } from './faxShared';
 import {
@@ -20,6 +21,8 @@ import {
   ppotSubjectFromReferral,
   PPOT_REQUEST_LABEL,
   recertStatus,
+  type PpotOpenRequest,
+  type PpotRequestType,
   type PpotSendInput,
   type PpotSubject,
   type PpotSubjectKind,
@@ -203,6 +206,13 @@ export async function sendPpotRequest(input: PpotSendInput, caller: AuthedCaller
     memberName: subject.name,
     requestType: input.requestType,
     faxId: result.fax.id,
+    // Where it went, so a returned fax from the same number is suggested as
+    // the signed copy (see ppotCandidatesForInbound).
+    toNumber,
+    recipientName: input.recipientName.trim(),
+    // 'sent' until the signed form is filed; a new request starts over.
+    status: 'sent',
+    received: null,
     date: agencyTodayISO(),
     sentAt: FieldValue.serverTimestamp(),
     byUid: caller.uid,
@@ -232,7 +242,7 @@ export async function sendPpotRequest(input: PpotSendInput, caller: AuthedCaller
 }
 
 /** Everyone who should hear about recertifications: Fax Center users. */
-async function faxRecipientUids(): Promise<string[]> {
+export async function faxRecipientUids(): Promise<string[]> {
   const settings = await getServerSettings();
   if (!settings.fax.enabled) return [];
   const snap = await adminDb().collection('users').where('role', 'in', ['admin', 'supervisor', 'va']).get();
@@ -284,4 +294,233 @@ export async function runPpotRecertSweep(): Promise<{ reminded: number; errors: 
     }
   }
   return { reminded, errors };
+}
+
+// ---------------------------------------------------------------------------
+// Signed PPOT coming back
+// ---------------------------------------------------------------------------
+
+const INBOUND = 'verbalOrderInbound'; // the portal fax line's inbox (shared with verbal orders)
+const OPEN_INBOUND = ['unmatched', 'suggested'];
+
+/** Requests still waiting on the signed form. */
+export async function listOpenPpotRequests(): Promise<PpotOpenRequest[]> {
+  const snap = await adminDb().collection(REQUESTS).where('status', '==', 'sent').get();
+  return snap.docs.map((d) => {
+    const x = d.data();
+    return {
+      key: d.id,
+      subjectKind: x.subjectKind === 'client' ? 'client' : 'referral',
+      subjectId: String(x.subjectId || ''),
+      memberName: String(x.memberName || ''),
+      requestType: x.requestType === 'recert' ? 'recert' : 'new',
+      recipientName: String(x.recipientName || ''),
+      toNumber: String(x.toNumber || ''),
+      date: String(x.date || ''),
+    };
+  });
+}
+
+export interface IncomingFax {
+  id: string; // SRFax FaxDetailsID
+  callerId: string;
+  remoteId: string;
+  pages: number;
+  receivedAt: string;
+  /** Open PPOT requests sent to the number this fax came from. */
+  ppotCandidateKeys: string[];
+  /** Open verbal orders the sweep tied to it (it may be one of those instead). */
+  verbalOrderCandidates: number;
+}
+
+/** Unfiled faxes on the portal line, newest first. */
+export async function listIncomingFaxes(): Promise<IncomingFax[]> {
+  const snap = await adminDb().collection(INBOUND).where('status', 'in', OPEN_INBOUND).orderBy('epochTime', 'desc').limit(50).get();
+  return snap.docs.map((d) => {
+    const x = d.data();
+    return {
+      id: d.id,
+      callerId: String(x.callerId || ''),
+      remoteId: String(x.remoteId || ''),
+      pages: Number(x.pages || 0),
+      receivedAt: String(x.receivedAt || ''),
+      ppotCandidateKeys: Array.isArray(x.ppotCandidateKeys) ? (x.ppotCandidateKeys as string[]) : [],
+      verbalOrderCandidates: Array.isArray(x.candidateOrderIds) ? (x.candidateOrderIds as string[]).length : 0,
+    };
+  });
+}
+
+/** Download an unfiled inbound fax for preview (stays unread in SRFax). */
+export async function readIncomingFaxPdf(faxId: string): Promise<{ ok: boolean; pdf?: Buffer; error?: string; status?: number }> {
+  const snap = await adminDb().collection(INBOUND).doc(faxId).get();
+  const d = snap.data() || {};
+  if (!snap.exists || !d.fileName) return { ok: false, status: 404, error: 'Fax not found.' };
+  const got = await srfaxRetrieveInbound(String(d.fileName), false);
+  if (!got.ok || !got.pdf) return { ok: false, status: 502, error: got.error || 'Could not download the fax.' };
+  return { ok: true, pdf: got.pdf };
+}
+
+export interface FilePpotResult {
+  ok: boolean;
+  status?: number;
+  error?: string;
+  documentId?: string;
+}
+
+/**
+ * File an inbound fax as the signed PPOT for an open request. A client's copy
+ * goes under Documents (ISP / Plan of Treatment); a referral has no record
+ * yet, so its copy is kept with the request and noted on the referral's
+ * timeline. The inbound fax is claimed in a transaction first, so two people
+ * matching it at once can't both file it.
+ */
+export async function fileSignedPpot(p: { faxId: string; requestKey: string; signedDate: string; caller: AuthedCaller }): Promise<FilePpotResult> {
+  const db = adminDb();
+  const inboundRef = db.collection(INBOUND).doc(p.faxId);
+  const requestRef = db.collection(REQUESTS).doc(p.requestKey);
+  const byName = p.caller.profile.displayName || p.caller.email || '';
+
+  const claim = await db.runTransaction(async (tx) => {
+    const [inb, req] = await Promise.all([tx.get(inboundRef), tx.get(requestRef)]);
+    if (!inb.exists || !OPEN_INBOUND.includes(String(inb.data()?.status || ''))) return { error: 'That fax has already been filed or dismissed.', status: 409 };
+    if (!req.exists) return { error: 'That PPOT request was not found.', status: 404 };
+    if (req.data()?.status !== 'sent') return { error: 'That PPOT request already has a signed copy on file.', status: 409 };
+    tx.update(inboundRef, { status: 'filing', filingBy: p.caller.uid, filingAt: FieldValue.serverTimestamp() });
+    return { fileName: String(inb.data()?.fileName || ''), prevStatus: String(inb.data()?.status || 'unmatched'), request: req.data() || {} };
+  });
+  if ('error' in claim) return { ok: false, status: claim.status, error: claim.error };
+
+  const release = () => inboundRef.update({ status: claim.prevStatus, filingBy: FieldValue.delete(), filingAt: FieldValue.delete() }).catch(() => undefined);
+  const got = await srfaxRetrieveInbound(claim.fileName, true);
+  if (!got.ok || !got.pdf) {
+    await release();
+    return { ok: false, status: 502, error: got.error || 'Could not download the fax from SRFax.' };
+  }
+
+  const req = claim.request;
+  const kind: PpotSubjectKind = req.subjectKind === 'client' ? 'client' : 'referral';
+  const subjectId = String(req.subjectId || '');
+  const memberName = String(req.memberName || '');
+  const typeLabel = req.requestType === 'recert' ? 'recertification' : 'new case';
+  const fileName = `Appendix_T_Signed_${formatDateUSFile(p.signedDate)}.pdf`;
+  let documentId = '';
+  let storagePath = '';
+  try {
+    if (kind === 'client') {
+      const docRef = db.collection('patientDocuments').doc();
+      documentId = docRef.id;
+      storagePath = `patients/${subjectId}/documents/${docRef.id}/${fileName}`;
+      await adminBucket().file(storagePath).save(got.pdf, { contentType: 'application/pdf', resumable: false });
+      await docRef.set({
+        patientId: subjectId,
+        category: 'ISP / Plan of Treatment',
+        title: `Signed Appendix T (PPOT), ${typeLabel}${req.recipientName ? `: ${req.recipientName}` : ''} (${formatDateUS(p.signedDate)})`,
+        fileName,
+        storagePath,
+        contentType: 'application/pdf',
+        size: got.pdf.length,
+        docDate: p.signedDate,
+        uploadedBy: p.caller.uid,
+        uploadedByName: byName,
+        uploadedByRole: p.caller.role,
+        uploadedAt: FieldValue.serverTimestamp(),
+        archived: false,
+        ppotRequestKey: p.requestKey,
+        inboundFaxId: p.faxId,
+      });
+    } else {
+      storagePath = `ppot/signed/${p.requestKey}/${p.faxId}/${fileName}`;
+      await adminBucket().file(storagePath).save(got.pdf, { contentType: 'application/pdf', resumable: false });
+    }
+  } catch (err) {
+    await release();
+    console.error('PPOT filing failed:', err);
+    return { ok: false, status: 500, error: 'Could not save the signed copy. Please try again.' };
+  }
+
+  await requestRef.update({
+    status: 'received',
+    received: {
+      signedDate: p.signedDate,
+      inboundFaxId: p.faxId,
+      documentId,
+      storagePath,
+      byUid: p.caller.uid,
+      byName,
+      at: FieldValue.serverTimestamp(),
+    },
+  });
+  await inboundRef.update({
+    status: 'filed',
+    matchedPpotKey: p.requestKey,
+    filedAt: FieldValue.serverTimestamp(),
+    filedBy: p.caller.uid,
+    filedByName: byName,
+  });
+  if (kind === 'referral') {
+    try {
+      await logReferralActivity(subjectId, {
+        type: 'contact',
+        text: `Signed plan of treatment (Appendix T) received by fax, signed ${formatDateUS(p.signedDate)}. The copy is in the Fax Center under Signed PPOTs.`,
+        byUid: p.caller.uid,
+        byName,
+        byRole: p.caller.role,
+      });
+    } catch (err) {
+      console.error('PPOT filing: referral activity failed (non-fatal):', err);
+    }
+  }
+  console.info(`PPOT filed: ${p.requestKey} (${memberName}) from inbound fax ${p.faxId}`);
+  return { ok: true, documentId };
+}
+
+export interface ReceivedPpot {
+  key: string;
+  subjectKind: PpotSubjectKind;
+  memberName: string;
+  requestType: PpotRequestType;
+  recipientName: string;
+  signedDate: string;
+  byName: string;
+  documentId: string;
+}
+
+/** The most recent signed copies filed, for the Fax Center list. */
+export async function listReceivedPpots(limit = 25): Promise<ReceivedPpot[]> {
+  const snap = await adminDb().collection(REQUESTS).where('status', '==', 'received').get();
+  return snap.docs
+    .map((d) => {
+      const x = d.data();
+      const r = (x.received || {}) as Record<string, unknown>;
+      return {
+        key: d.id,
+        subjectKind: (x.subjectKind === 'client' ? 'client' : 'referral') as PpotSubjectKind,
+        memberName: String(x.memberName || ''),
+        requestType: (x.requestType === 'recert' ? 'recert' : 'new') as PpotRequestType,
+        recipientName: String(x.recipientName || ''),
+        signedDate: String(r.signedDate || ''),
+        byName: String(r.byName || ''),
+        documentId: String(r.documentId || ''),
+      };
+    })
+    .sort((a, b) => b.signedDate.localeCompare(a.signedDate))
+    .slice(0, limit);
+}
+
+/** The filed signed copy for a request (client or referral). */
+export async function readSignedPpotPdf(requestKey: string): Promise<{ bytes: Buffer; fileName: string } | null> {
+  const snap = await adminDb().collection(REQUESTS).doc(requestKey).get();
+  const path = String(((snap.data() || {}).received || {}).storagePath || '');
+  if (!snap.exists || !path) return null;
+  const [bytes] = await adminBucket().file(path).download();
+  return { bytes, fileName: path.split('/').pop() || 'Appendix_T_Signed.pdf' };
+}
+
+/** Bell text for the inbound sweep when a fax looks like a signed PPOT. */
+export function ppotInboundBellText(fromNumber: string, candidates: PpotOpenRequest[]): string {
+  const from = fromNumber ? ` from ${formatUSFaxNumber(fromNumber)}` : '';
+  if (candidates.length === 1) {
+    return `A fax${from} may be the signed Appendix T for ${candidates[0].memberName}. Check it and file it in the Fax Center.`;
+  }
+  return `A fax${from} may be a signed Appendix T. Check it and file it in the Fax Center.`;
 }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CalendarClock, CheckCircle2, Clock, Eye, FileSignature, FileUp, RefreshCw, RotateCw, Search, Send, X } from 'lucide-react';
 import PpotRequestModal, { type PpotSubjectRow } from './PpotRequestModal';
+import PpotInbox from './PpotInbox';
 import { formatDateUS } from '@/lib/dateFormat';
 import { PPOT_REQUEST_LABEL } from '@/lib/ppotShared';
 import { authedFetch } from '@/lib/authedFetch';
@@ -50,6 +51,8 @@ export default function FaxCenterPage() {
   const [recertLeadDays, setRecertLeadDays] = useState(45);
   const [ppotOpen, setPpotOpen] = useState<{ initial: PpotSubjectRow | null } | null>(null);
   const deepLinkDone = useRef(false);
+  // Bumped on Refresh and after a PPOT request so the inbox section reloads too.
+  const [inboxKey, setInboxKey] = useState(0);
 
   const loadPpot = useCallback(async () => {
     try {
@@ -194,7 +197,7 @@ export default function FaxCenterPage() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <button onClick={load} style={ghostBtnStyle} title="Refresh">
+            <button onClick={() => { void load(); void loadPpot(); setInboxKey((k) => k + 1); }} style={ghostBtnStyle} title="Refresh">
               <RefreshCw size={15} /> Refresh
             </button>
             <button onClick={() => setComposing(true)} style={ghostBtnStyle} disabled={!configured}>
@@ -251,6 +254,9 @@ export default function FaxCenterPage() {
           </section>
         )}
 
+        <PpotInbox refreshKey={inboxKey} />
+
+        <h2 style={sectionTitleStyle}>Sent faxes</h2>
         <div style={{ marginBottom: 14 }}>
           <div style={searchWrapStyle}>
             <Search size={15} style={{ color: '#94a3b8', flexShrink: 0 }} />
@@ -342,6 +348,7 @@ export default function FaxCenterPage() {
           onSent={(fax) => {
             setFaxes((prev) => [fax, ...prev.filter((x) => x.id !== fax.id)]);
             void loadPpot();
+            setInboxKey((k) => k + 1);
           }}
         />
       )}
