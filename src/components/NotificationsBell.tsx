@@ -10,6 +10,7 @@ import {
   subscribeNotifications,
   type PortalNotification,
 } from '@/lib/notifications';
+import styles from './NotificationsBell.module.css';
 
 function ago(n: PortalNotification): string {
   const t = n.createdAt?.toDate?.();
@@ -73,7 +74,7 @@ export default function NotificationsBell() {
       </button>
 
       {open && (
-        <div style={panelStyle} role="menu" aria-label="Notifications">
+        <div className={styles.panel} role="menu" aria-label="Notifications">
           <div style={panelHeadStyle}>
             <span style={{ fontWeight: 700, fontSize: 13.5, color: '#1f2937' }}>Notifications</span>
             {unread > 0 && (
@@ -108,7 +109,6 @@ export default function NotificationsBell() {
 const NAVY = '#1a3a5c';
 const bellBtnStyle: CSSProperties = { position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, background: 'transparent', border: 'none', borderRadius: 9, color: '#3d4f61', cursor: 'pointer' };
 const badgeStyle: CSSProperties = { position: 'absolute', top: 3, right: 2, minWidth: 16, height: 16, padding: '0 4px', borderRadius: 999, background: '#b3261e', color: 'white', fontSize: 10, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 };
-const panelStyle: CSSProperties = { position: 'absolute', top: 42, right: 0, width: 340, maxWidth: 'calc(100vw - 24px)', maxHeight: 420, overflowY: 'auto', background: 'white', border: '1px solid #dde3e9', borderRadius: 12, boxShadow: '0 12px 32px rgba(15,23,42,0.18)', zIndex: 3000 };
 const panelHeadStyle: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 14px', borderBottomWidth: 1, borderBottomStyle: 'solid', borderBottomColor: '#eef1f4', position: 'sticky', top: 0, background: 'white' };
 const markAllStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'transparent', border: 'none', color: NAVY, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', padding: 0 };
 const listStyle: CSSProperties = { listStyle: 'none', margin: 0, padding: 6 };
