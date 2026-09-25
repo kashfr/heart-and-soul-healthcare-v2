@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Clock, Download, PenLine, RefreshCw, Search, Upload, X, XCircle } from 'lucide-react';
+import { AlertTriangle, ArchiveRestore, CheckCircle2, Clock, Download, EyeOff, PenLine, RefreshCw, Search, Upload, X, XCircle } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { useEffectiveUser } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
@@ -26,6 +26,7 @@ interface Packet {
   subjectName: string;
   staffUid: string;
   staffName: string;
+  hidden: boolean;
   signedCopy: { fileName: string; uploadedByName: string; uploadedAt: string | null } | null;
 }
 
@@ -57,6 +58,7 @@ export default function EsignPage() {
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
+  const [showRemoved, setShowRemoved] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const uploadFor = useRef<string>('');
 
@@ -82,15 +84,34 @@ export default function EsignPage() {
   }, [ready, allowed, load]);
 
   const needle = q.trim().toLowerCase();
+  const removedCount = packets.filter((p) => p.hidden).length;
   const shown = useMemo(
     () =>
       packets.filter(
-        (p) => !needle || `${p.subjectName} ${p.subjectEmail} ${p.staffName} ${p.name} ${p.templateName}`.toLowerCase().includes(needle),
+        (p) => (showRemoved || !p.hidden) && (!needle || `${p.subjectName} ${p.subjectEmail} ${p.staffName} ${p.name} ${p.templateName}`.toLowerCase().includes(needle)),
       ),
-    [packets, needle],
+    [packets, needle, showRemoved],
   );
   const open = shown.filter((p) => OPEN.includes(p.stage)).sort((a, b) => OPEN.indexOf(a.stage) - OPEN.indexOf(b.stage));
   const done = shown.filter((p) => !OPEN.includes(p.stage));
+
+  // Remove only hides the packet here (kept with any signed copy; a later
+  // PandaDoc update never brings it back). "Show removed" lists it again.
+  const setHidden = async (p: Packet, hidden: boolean) => {
+    const who = p.staffName || p.subjectName || p.subjectEmail || 'this recipient';
+    if (hidden && !confirm(`Remove ${who}'s ${p.templateName || p.name} from this list? Nothing changes in PandaDoc, and any signed copy is kept.`)) return;
+    setBusy(p.id);
+    try {
+      const res = await authedFetch(`/api/esign/${p.id}/hide`, { method: 'POST', body: JSON.stringify({ hidden }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
+      setPackets((prev) => prev.map((x) => (x.id === p.id ? { ...x, hidden } : x)));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not update the packet.');
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const pickUpload = (id: string) => {
     uploadFor.current = id;
@@ -151,9 +172,9 @@ export default function EsignPage() {
     const outside = p.recipients.filter((r) => !r.internal);
     const inside = p.recipients.filter((r) => r.internal);
     return (
-      <tr key={p.id}>
+      <tr key={p.id} style={p.hidden ? { opacity: 0.6 } : undefined}>
         <td style={tdStyle}>
-          <div style={{ fontWeight: 600 }}>{p.staffName || p.subjectName || p.subjectEmail || 'Unknown recipient'}</div>
+          <div style={{ fontWeight: 600 }}>{p.staffName || p.subjectName || p.subjectEmail || 'Unknown recipient'}{p.hidden ? ' (removed)' : ''}</div>
           <div style={metaStyle}>{p.subjectEmail}{p.staffUid ? '' : p.subjectEmail ? ' · not in Staff & Roles yet' : ''}</div>
         </td>
         <td style={tdStyle}>
@@ -181,6 +202,19 @@ export default function EsignPage() {
           {!canFiles && p.stage === 'completed' && (
             <span style={metaStyle}>{p.signedCopy ? 'Signed copy on file' : 'Signed copy not attached yet'}</span>
           )}
+          {canFiles && p.signedCopy && (
+            <button onClick={() => pickUpload(p.id)} style={{ ...ghostBtnStyle, marginLeft: 6 }} disabled={busy === p.id} title="Attach a different PDF in its place">
+              <Upload size={14} /> Replace
+            </button>
+          )}
+          <button
+            onClick={() => setHidden(p, !p.hidden)}
+            style={{ ...ghostBtnStyle, marginLeft: 6 }}
+            disabled={busy === p.id}
+            title={p.hidden ? 'Put it back on the list' : 'Take it off this list'}
+          >
+            {p.hidden ? <><ArchiveRestore size={14} /> Restore</> : <><EyeOff size={14} /> Remove</>}
+          </button>
         </td>
       </tr>
     );
@@ -211,8 +245,14 @@ export default function EsignPage() {
           </div>
         )}
 
-        <div style={{ marginBottom: 14 }}>
-          <div style={searchWrapStyle}>
+        <div style={{ marginBottom: 14, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+          {removedCount > 0 && (
+            <label style={{ order: 2, display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#5c6b7a', cursor: 'pointer' }}>
+              <input type="checkbox" checked={showRemoved} onChange={(e) => setShowRemoved(e.target.checked)} />
+              Show removed ({removedCount})
+            </label>
+          )}
+          <div style={{ ...searchWrapStyle, flex: '1 1 280px' }}>
             <Search size={15} style={{ color: '#94a3b8', flexShrink: 0 }} />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, email, packet…" style={searchInputStyle} />
             {q && (
@@ -228,7 +268,7 @@ export default function EsignPage() {
         ) : error ? (
           <div style={{ ...emptyStyle, color: '#b3261e' }}>{error}</div>
         ) : shown.length === 0 ? (
-          <div style={emptyStyle}>{q ? 'No packets match your search.' : 'No packets yet. They appear here as soon as one is sent from PandaDoc.'}</div>
+          <div style={emptyStyle}>{q ? 'No packets match your search.' : removedCount > 0 ? 'Nothing on the list. Removed packets are hidden.' : 'No packets yet. They appear here as soon as one is sent from PandaDoc.'}</div>
         ) : (
           <>
             <section style={{ marginBottom: 22 }}>

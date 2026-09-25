@@ -12,13 +12,14 @@ export const dynamic = 'force-dynamic';
  * a signed copy, and the signed copies filed most recently. Fax Center only.
  */
 export async function GET(request: Request) {
+  let caller;
   try {
-    await requireFaxAccess(request);
+    caller = await requireFaxAccess(request);
   } catch (err) {
     if (err instanceof AdminAuthError) return NextResponse.json({ error: err.message }, { status: err.status });
     throw err;
   }
   const [incoming, openRequests, received] = await Promise.all([listIncomingFaxes(), listOpenPpotRequests(), listReceivedPpots()]);
   openRequests.sort((a, b) => a.date.localeCompare(b.date));
-  return NextResponse.json({ incoming, openRequests, received });
+  return NextResponse.json({ incoming, openRequests, received, canDismissIncoming: caller.role === 'admin' || caller.role === 'supervisor' });
 }
