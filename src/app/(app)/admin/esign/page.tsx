@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, ArchiveRestore, CheckCircle2, Clock, Download, EyeOff, PenLine, RefreshCw, Search, Upload, X, XCircle } from 'lucide-react';
+import { AlertTriangle, ArchiveRestore, CheckCircle2, Clock, Eye, EyeOff, ExternalLink, PenLine, RefreshCw, Search, Upload, X, XCircle } from 'lucide-react';
+import PdfPreviewModal from '@/components/PdfPreviewModal';
 import { authedFetch } from '@/lib/authedFetch';
 import { useEffectiveUser } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
@@ -32,6 +33,13 @@ interface Packet {
 
 const OPEN: PacketStage[] = ['awaiting-countersign', 'with-recipient', 'draft', 'other'];
 
+/** The document in the PandaDoc web app (needs a PandaDoc login with access
+ *  to it). The only way to see a packet before its signed copy is attached:
+ *  the current plan's API can't download documents. */
+function pandadocUrl(id: string): string {
+  return `https://app.pandadoc.com/a/#/documents/${encodeURIComponent(id)}`;
+}
+
 function fmt(iso: string | null): string {
   if (!iso) return '';
   const d = new Date(iso);
@@ -61,6 +69,7 @@ export default function EsignPage() {
   const [showRemoved, setShowRemoved] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const uploadFor = useRef<string>('');
+  const [preview, setPreview] = useState<Packet | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -136,24 +145,6 @@ export default function EsignPage() {
     }
   };
 
-  const view = async (id: string) => {
-    setBusy(id);
-    try {
-      const res = await authedFetch(`/api/esign/${id}/signed-copy`);
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || `Request failed (${res.status}).`);
-      }
-      const url = URL.createObjectURL(await res.blob());
-      window.open(url, '_blank', 'noopener');
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Could not open the signed copy.');
-    } finally {
-      setBusy(null);
-    }
-  };
-
   if (!ready) return <div style={containerStyle}><div style={wrapStyle}><div style={emptyStyle}>Loading…</div></div></div>;
   if (!allowed) {
     return (
@@ -190,12 +181,17 @@ export default function EsignPage() {
         </td>
         <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
           {canFiles && p.signedCopy && (
-            <button onClick={() => view(p.id)} style={ghostBtnStyle} disabled={busy === p.id} title={`Uploaded by ${p.signedCopy.uploadedByName}`}>
-              <Download size={14} /> Signed copy
+            <button onClick={() => setPreview(p)} style={ghostBtnStyle} disabled={busy === p.id} title={`View the signed copy (uploaded by ${p.signedCopy.uploadedByName})`}>
+              <Eye size={14} /> View signed copy
             </button>
           )}
+          {!p.signedCopy && (
+            <a href={pandadocUrl(p.id)} target="_blank" rel="noopener noreferrer" style={{ ...ghostBtnStyle, textDecoration: 'none' }} title="Open this document in PandaDoc (sign in to PandaDoc if asked)">
+              <ExternalLink size={14} /> View in PandaDoc
+            </a>
+          )}
           {canFiles && p.stage === 'completed' && !p.signedCopy && (
-            <button onClick={() => pickUpload(p.id)} style={ghostBtnStyle} disabled={busy === p.id}>
+            <button onClick={() => pickUpload(p.id)} style={{ ...ghostBtnStyle, marginLeft: 6 }} disabled={busy === p.id}>
               <Upload size={14} /> {busy === p.id ? 'Saving…' : 'Attach signed PDF'}
             </button>
           )}
@@ -288,6 +284,13 @@ export default function EsignPage() {
           </>
         )}
         <input ref={fileRef} type="file" accept="application/pdf,.pdf" style={{ display: 'none' }} onChange={(e) => upload(e.target.files?.[0] ?? null)} />
+        {preview && (
+          <PdfPreviewModal
+            title={`${preview.staffName || preview.subjectName || preview.subjectEmail || 'Packet'}: ${preview.templateName || preview.name}`}
+            url={`/api/esign/${preview.id}/signed-copy`}
+            onClose={() => setPreview(null)}
+          />
+        )}
       </div>
     </div>
   );

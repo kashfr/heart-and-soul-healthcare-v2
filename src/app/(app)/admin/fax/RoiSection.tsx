@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Ban, Download, Eye, EyeOff, FileSignature, FileUp, Search, Send, ShieldCheck, Undo2, X } from 'lucide-react';
+import { Ban, Eye, EyeOff, FileSignature, FileUp, Search, Send, ShieldCheck, Undo2, X } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
+import PdfPreviewModal from '@/components/PdfPreviewModal';
 import { formatDateUS } from '@/lib/dateFormat';
 import { formatUSPhone } from '@/lib/phone';
 import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
@@ -48,36 +49,6 @@ function readAsBase64(file: File): Promise<string> {
   });
 }
 
-async function fetchPdf(url: string): Promise<{ blob: Blob; name: string }> {
-  const res = await authedFetch(url);
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || `Request failed (${res.status}).`);
-  }
-  const cd = res.headers.get('content-disposition') || '';
-  const name = /filename="([^"]+)"/.exec(cd)?.[1] || 'document.pdf';
-  return { blob: await res.blob(), name };
-}
-
-async function downloadPdf(url: string) {
-  const { blob, name } = await fetchPdf(url);
-  const href = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = href;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  window.setTimeout(() => URL.revokeObjectURL(href), 60_000);
-}
-
-async function viewPdf(url: string) {
-  const { blob } = await fetchPdf(url);
-  const href = URL.createObjectURL(blob);
-  window.open(href, '_blank', 'noopener');
-  window.setTimeout(() => URL.revokeObjectURL(href), 60_000);
-}
-
 function daysUntil(ymd: string, today: string): number {
   return Math.round((Date.parse(`${ymd}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000);
 }
@@ -104,6 +75,7 @@ export default function RoiSection({
   const [preparing, setPreparing] = useState(false);
   const [uploading, setUploading] = useState<RoiRecord | null>(null);
   const [faxing, setFaxing] = useState<RoiRecord | null>(null);
+  const [preview, setPreview] = useState<{ title: string; url: string } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -230,8 +202,8 @@ export default function RoiSection({
                     <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
                       {r.status === 'awaiting-signature' && (
                         <>
-                          <button onClick={() => run(r.id, () => downloadPdf(`/api/fax/roi/${r.id}/form`))} style={ghostBtnStyle} disabled={busy === r.id} title="Download the prepared form to send for signature">
-                            <Download size={14} /> Form
+                          <button onClick={() => setPreview({ title: `Release to sign: ${r.memberName}, ${r.facility.name}`, url: `/api/fax/roi/${r.id}/form` })} style={ghostBtnStyle} title="See the prepared form, and download it to send for signature">
+                            <Eye size={14} /> Form
                           </button>
                           <button onClick={() => setUploading(r)} style={{ ...ghostBtnStyle, marginLeft: 6 }}>
                             <FileUp size={14} /> Upload signed
@@ -243,7 +215,7 @@ export default function RoiSection({
                       )}
                       {r.status === 'signed' && (
                         <>
-                          <button onClick={() => run(r.id, () => viewPdf(`/api/fax/roi/${r.id}/signed`))} style={ghostBtnStyle} disabled={busy === r.id}>
+                          <button onClick={() => setPreview({ title: `Signed release: ${r.memberName}, ${r.facility.name}`, url: `/api/fax/roi/${r.id}/signed` })} style={ghostBtnStyle}>
                             <Eye size={14} /> View
                           </button>
                           <button onClick={() => setFaxing(r)} style={{ ...primaryBtnStyle, marginLeft: 6 }} disabled={!faxConfigured}>
@@ -280,12 +252,10 @@ export default function RoiSection({
           onCreated={async (roi) => {
             setPreparing(false);
             await load();
-            try {
-              await downloadPdf(`/api/fax/roi/${roi.id}/form`);
-              setNotice(`The release for ${roi.memberName} is ready and downloaded. Upload it to PandaDoc, add the guardian's initials, signature, printed name, date, and Guardian checkbox fields, and send it. When it comes back signed, use Upload signed.`);
-            } catch {
-              setNotice(`The release for ${roi.memberName} is ready. Use Form to download it for PandaDoc.`);
-            }
+            // Show it right away so it can be checked before it goes out;
+            // Download in the preview saves the copy for PandaDoc.
+            setPreview({ title: `Release to sign: ${roi.memberName}, ${roi.facility.name}`, url: `/api/fax/roi/${roi.id}/form` });
+            setNotice(`The release for ${roi.memberName} is ready. Check it, then use Download to save it for PandaDoc. In PandaDoc, add the guardian's initials, signature, printed name, date, and Guardian checkbox fields, and send it. When it comes back signed, use Upload signed. Form opens it again any time.`);
           }}
         />
       )}
@@ -301,6 +271,7 @@ export default function RoiSection({
           }}
         />
       )}
+      {preview && <PdfPreviewModal title={preview.title} url={preview.url} onClose={() => setPreview(null)} />}
       {faxing && (
         <FaxModal
           roi={faxing}
@@ -486,7 +457,7 @@ function PrepareModal({ clients, onClose, onCreated }: { clients: RoiClient[]; o
         <div style={footerStyle}>
           <button type="button" onClick={onClose} style={ghostBtnStyle} disabled={busy}>Cancel</button>
           <button type="submit" style={primaryBtnStyle} disabled={busy}>
-            <FileSignature size={14} /> {busy ? 'Preparing…' : 'Prepare and download'}
+            <FileSignature size={14} /> {busy ? 'Preparing…' : 'Prepare and preview'}
           </button>
         </div>
       </form>
