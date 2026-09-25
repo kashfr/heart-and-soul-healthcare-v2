@@ -449,7 +449,7 @@ export default function ReferralPage() {
     const { name, value } = e.target;
 
     // Auto-format phone number fields
-    if (name === 'clientPhone' || name === 'clientSecondaryPhone' || name === 'referrerPhone') {
+    if (name === 'clientPhone' || name === 'clientSecondaryPhone' || name === 'referrerPhone' || name === 'physicianPhone' || name === 'physicianFax') {
       setFormData({ ...formData, [name]: formatPhoneNumber(value) });
       return;
     }

@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { ExternalLink, FileText, Search, Send, X } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
+import { formatUSPhone } from '@/lib/phone';
 import { formatDateUS } from '@/lib/dateFormat';
 import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
 import { formatUSFaxNumber, normalizeUSFaxNumber } from '@/lib/verbalOrderShared';
@@ -213,12 +214,12 @@ export default function PpotRequestModal({
             <div style={twoColStyle}>
               <label style={fieldStyle} id={fieldId('toNumber')}>
                 <span style={fieldLabelStyle}>Physician fax{subject?.physicianFax ? ' (from the record)' : ''}</span>
-                <input type="tel" inputMode="tel" autoComplete="off" value={toNumber} onChange={(e) => { setToNumber(e.target.value); clear('toNumber'); clear('confirmNumber'); }} style={{ ...inp, ...(fieldErrors.toNumber ? FIELD_ERROR_STYLE : null) }} aria-invalid={!!fieldErrors.toNumber} placeholder="(404) 555-0101" />
+                <input type="tel" inputMode="tel" autoComplete="off" value={toNumber} onChange={(e) => { setToNumber(formatUSPhone(e.target.value)); clear('toNumber'); clear('confirmNumber'); }} style={{ ...inp, ...(fieldErrors.toNumber ? FIELD_ERROR_STYLE : null) }} aria-invalid={!!fieldErrors.toNumber} placeholder="(404) 555-0101" />
                 <FieldError message={fieldErrors.toNumber} />
               </label>
               <label style={fieldStyle} id={fieldId('confirmNumber')}>
                 <span style={fieldLabelStyle}>Type it again</span>
-                <input type="tel" inputMode="tel" autoComplete="off" value={confirmNumber} onChange={(e) => { setConfirmNumber(e.target.value); clear('confirmNumber'); }} onPaste={(e) => e.preventDefault()} style={{ ...inp, ...(fieldErrors.confirmNumber ? FIELD_ERROR_STYLE : null) }} aria-invalid={!!fieldErrors.confirmNumber} placeholder="Retype, don't paste" />
+                <input type="tel" inputMode="tel" autoComplete="off" value={confirmNumber} onChange={(e) => { setConfirmNumber(formatUSPhone(e.target.value)); clear('confirmNumber'); }} onPaste={(e) => e.preventDefault()} style={{ ...inp, ...(fieldErrors.confirmNumber ? FIELD_ERROR_STYLE : null) }} aria-invalid={!!fieldErrors.confirmNumber} placeholder="Retype, don't paste" />
                 <FieldError message={fieldErrors.confirmNumber} />
               </label>
             </div>

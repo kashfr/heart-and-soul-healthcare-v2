@@ -6,6 +6,7 @@ import { ArrowLeft, Save, RotateCcw, Plus, X, Eye, Send } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
 import { authedFetch } from '@/lib/authedFetch';
+import { formatUSPhone } from '@/lib/phone';
 import { escortToField, FieldError, firstErrorKey, FIELD_ERROR_STYLE } from '@/lib/formEscort';
 import {
   DEFAULT_SETTINGS,
@@ -830,9 +831,9 @@ export default function AdminSettingsPage() {
               hint="Displayed as a tap-to-call link on the block screen so a nurse can discuss the correction."
             >
               <input
-                type="text"
+                type="tel"
                 value={draft.corrections.reviewerPhone}
-                onChange={(e) => updateCorrections('reviewerPhone', e.target.value)}
+                onChange={(e) => updateCorrections('reviewerPhone', formatUSPhone(e.target.value))}
                 maxLength={20}
                 style={inputStyle}
               />
@@ -919,7 +920,7 @@ export default function AdminSettingsPage() {
                 }} />
             </Field>
             <Field label="Return fax number (optional)" id={settingsFieldId('verbalOrders.returnFax')} error={fieldErrors['verbalOrders.returnFax']}>
-              <input type="tel" placeholder="(470) 235-1891" value={draft.verbalOrders.returnFax} style={{ ...inputStyle, ...hi('verbalOrders.returnFax') }} aria-invalid={!!fieldErrors['verbalOrders.returnFax']}
+              <input type="tel" placeholder="(470) 235-1891" value={formatUSPhone(draft.verbalOrders.returnFax)} style={{ ...inputStyle, ...hi('verbalOrders.returnFax') }} aria-invalid={!!fieldErrors['verbalOrders.returnFax']}
                 onChange={(e) => {
                   clearFieldError('verbalOrders.returnFax');
                   setDraft((prev) => ({ ...prev, verbalOrders: { ...prev.verbalOrders, returnFax: e.target.value.replace(/\D/g, '').slice(0, 10) } }));
@@ -1446,9 +1447,9 @@ export default function AdminSettingsPage() {
             </Field>
             <Field label="Callback number" hint="Shown in the body and used for {{phone}}." id={settingsFieldId('emails.providerList.phone')} error={fieldErrors['emails.providerList.phone']}>
               <input
-                type="text"
+                type="tel"
                 value={draft.emails.providerList.phone}
-                onChange={(e) => updateProviderListCopy('phone', e.target.value)}
+                onChange={(e) => updateProviderListCopy('phone', formatUSPhone(e.target.value))}
                 maxLength={40}
                 style={{ ...inputStyle, maxWidth: 220, ...hi('emails.providerList.phone') }}
                 aria-invalid={!!fieldErrors['emails.providerList.phone']}
