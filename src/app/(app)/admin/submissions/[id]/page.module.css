@@ -1,0 +1,136 @@
+/*
+ * Layout + small-screen styles for a single note. Most of the note is
+ * styled inline; the pieces that must reflow on phones live here, since
+ * inline styles can't carry media queries. The phone rules are scoped to
+ * `screen` so printing a note keeps the paper layout.
+ */
+
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.wrap {
+  background: white;
+  padding: 30px;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.actionsBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #27ae60;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.btn,
+.btnPrimary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 20px;
+  border: none;
+  border-radius: 6px;
+  color: white;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.btn {
+  background: #34495e;
+}
+
+.btn:hover {
+  background: #2c3e50;
+}
+
+.btnPrimary {
+  background: #27ae60;
+}
+
+.btnPrimary:hover {
+  background: #229954;
+}
+
+.btnPrimary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media screen and (max-width: 640px) {
+  .container {
+    padding: 12px;
+  }
+
+  .wrap {
+    padding: 20px 16px;
+    border-radius: 14px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 4px 16px rgba(15, 23, 42, 0.06);
+  }
+
+  /* Back link on its own line, then the buttons as an even grid. */
+  .actionsBar {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 14px;
+  }
+
+  .backLink {
+    align-self: flex-start;
+    min-height: 32px;
+    font-size: 15px;
+  }
+
+  .actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .btn,
+  .btnPrimary {
+    min-height: 46px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 15px;
+  }
+
+  /* An odd button out (e.g. no MAR link) spans the last row. */
+  .actions > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  /* Vitals: two readable columns instead of three cramped ones. */
+  .vitalsGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}

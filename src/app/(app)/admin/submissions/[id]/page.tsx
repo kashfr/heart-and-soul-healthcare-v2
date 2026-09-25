@@ -29,6 +29,7 @@ import { clarificationTurn } from '@/lib/clarificationShared';
 import { readShiftChange } from '@/lib/shiftChange';
 import { buildFieldAmendments, type FieldVersion } from '@/lib/revisionFormat';
 import { programLabel } from '@/lib/programs';
+import styles from './page.module.css';
 
 // Field key -> its prior values (oldest-first) for inline "struck old -> current"
 // rendering. Provided by the page; read by Field / TextBlock / VitalCard.
@@ -187,8 +188,8 @@ export default function SubmissionDetailPage({ params }: PageProps) {
 
   if (loading) {
     return (
-      <div style={containerStyle}>
-        <div style={wrapStyle}>
+      <div className={styles.container}>
+        <div className={styles.wrap}>
           <div style={{ textAlign: 'center', padding: '40px 20px' }}>
             <p>Loading submission...</p>
           </div>
@@ -199,13 +200,13 @@ export default function SubmissionDetailPage({ params }: PageProps) {
 
   if (notFound || !formData) {
     return (
-      <div style={containerStyle}>
-        <div style={wrapStyle}>
+      <div className={styles.container}>
+        <div className={styles.wrap}>
           <div style={{ textAlign: 'center', padding: '40px 20px' }}>
             <p style={{ fontSize: 18, fontWeight: 600, color: '#c62828' }}>
               Submission not found
             </p>
-            <Link href={backHref} style={backLinkStyle}>
+            <Link href={backHref} className={styles.backLink}>
               &larr; Back to Submissions
             </Link>
           </div>
@@ -436,14 +437,14 @@ export default function SubmissionDetailPage({ params }: PageProps) {
 
   return (
     <AmendmentContext.Provider value={fieldAmendments}>
-    <div style={containerStyle}>
-      <div style={wrapStyle}>
+    <div className={styles.container}>
+      <div className={styles.wrap}>
         {/* Actions bar - hidden on print */}
-        <div style={actionsBarStyle} className="no-print">
-          <Link href={backHref} style={backLinkStyle}>
+        <div className={`${styles.actionsBar} no-print`}>
+          <Link href={backHref} className={styles.backLink}>
             &larr; Back to Submissions
           </Link>
-          <div style={{ display: 'flex', gap: 10 }}>
+          <div className={styles.actions}>
             {canEdit && (
               <Link
                 href={
@@ -451,7 +452,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
                     ? `/oversight-note?edit=${id}`
                     : `/progress-note?edit=${id}`
                 }
-                style={editBtnStyle}
+                className={styles.btn}
               >
                 Amend
               </Link>
@@ -459,7 +460,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             {hasValue(data.patientId) && data.noteType !== 'rn-oversight-visit' && (
               <Link
                 href={`/admin/records/${data.patientId}/mar`}
-                style={editBtnStyle}
+                className={styles.btn}
                 title="Open this client's MAR to check the orders against what the note reports"
               >
                 MAR
@@ -468,7 +469,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             <button
               onClick={handleDownloadPdf}
               disabled={downloadingPdf}
-              style={{ ...primaryBtnStyle, opacity: downloadingPdf ? 0.6 : 1, cursor: downloadingPdf ? 'not-allowed' : 'pointer' }}
+              className={styles.btnPrimary}
             >
               {downloadingPdf ? 'Generating PDF…' : 'Download PDF'}
             </button>
@@ -476,14 +477,14 @@ export default function SubmissionDetailPage({ params }: PageProps) {
               isArchivedForViewer ? (
                 <button
                   onClick={() => handleArchiveToggle('restore')}
-                  style={editBtnStyle}
+                  className={styles.btn}
                 >
                   Restore
                 </button>
               ) : (
                 <button
                   onClick={() => handleArchiveToggle('archive')}
-                  style={editBtnStyle}
+                  className={styles.btn}
                 >
                   Archive
                 </button>
@@ -769,7 +770,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           ]}
           data={data}
         >
-          <div style={vitalsGridStyle}>
+          <div style={vitalsGridStyle} className={styles.vitalsGrid}>
             <VitalCard fieldKey="q16_temperature"
               label="Temperature"
               value={
@@ -823,7 +824,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
                   <RecheckAddedLine index={r.index} />
                   <AmendedVersions fieldKey={key('time')} />
                 </div>
-                <div style={vitalsGridStyle}>
+                <div style={vitalsGridStyle} className={styles.vitalsGrid}>
                   {hasValue(r.temperature) && (
                     <VitalCard fieldKey={key('temperature')} label="Temperature" alert={!!ab.temperature}
                       value={`${r.temperature}${r.temperatureRoute ? ` (${r.temperatureRoute})` : ''}`} />
@@ -1683,12 +1684,6 @@ function VitalCard({ label, value, fieldKey, alert }: { label: string; value: st
 const NAVY = '#1a3a5c';
 const LIGHT_BLUE = '#e8eef4';
 
-const containerStyle: React.CSSProperties = {
-  maxWidth: 900,
-  margin: '0 auto',
-  padding: 20,
-};
-
 const stickyCosignBarStyle: React.CSSProperties = {
   position: 'fixed',
   bottom: 0,
@@ -1739,53 +1734,6 @@ const cosignToastStyle: React.CSSProperties = {
   fontWeight: 600,
   zIndex: 60,
   boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-};
-
-const wrapStyle: React.CSSProperties = {
-  background: 'white',
-  padding: 30,
-  borderRadius: 8,
-  boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-};
-
-const actionsBarStyle: React.CSSProperties = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  marginBottom: 20,
-  paddingBottom: 16,
-  borderBottom: '1px solid #e0e0e0',
-};
-
-const backLinkStyle: React.CSSProperties = {
-  color: '#27ae60',
-  textDecoration: 'none',
-  fontWeight: 600,
-  fontSize: 14,
-};
-
-const primaryBtnStyle: React.CSSProperties = {
-  background: '#27ae60',
-  color: 'white',
-  border: 'none',
-  padding: '8px 20px',
-  borderRadius: 4,
-  cursor: 'pointer',
-  fontWeight: 600,
-  fontSize: 14,
-};
-
-const editBtnStyle: React.CSSProperties = {
-  display: 'inline-block',
-  background: '#34495e',
-  color: 'white',
-  border: 'none',
-  padding: '8px 20px',
-  borderRadius: 4,
-  cursor: 'pointer',
-  fontWeight: 600,
-  fontSize: 14,
-  textDecoration: 'none',
 };
 
 const headerStyle: React.CSSProperties = {
