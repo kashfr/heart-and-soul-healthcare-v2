@@ -26,6 +26,8 @@ function completeVisit(): Record<string, string> {
     sv_staffName: 'Ann Lee, CNA',
     q11_nurseName: 'Souz Payne',
     q12_credential: 'RN',
+    sv_complaint: 'Call the office and ask for the supervisor.',
+    sv_anythingElse: 'Nothing else.',
     sv_temp: '98.4',
     sv_bp: '118/76',
     sv_pulse: '72',

@@ -135,6 +135,8 @@ const SUPERVISORY_FIELD_MESSAGES: Record<string, string> = {
   sv_address: 'Enter the address where the visit took place.',
   sv_staffName: 'Choose the staff member performing duties.',
   q11_nurseName: 'Enter the supervisor name.',
+  sv_complaint: "Record the client's answer to the complaint question.",
+  sv_anythingElse: "Record the client's answer, or note that they had nothing to add.",
   sv_temp: 'Enter the temperature.',
   sv_bp: 'Enter the blood pressure.',
   sv_pulse: 'Enter the pulse.',
@@ -819,6 +821,7 @@ function SupervisoryVisitPageInner() {
               error={fe('sv_complaint')}
               label="What would you do if you had a complaint?"
               register={register}
+              required
               rows={2}
             />
             <Area
@@ -826,6 +829,7 @@ function SupervisoryVisitPageInner() {
               error={fe('sv_anythingElse')}
               label="Is there anything else you would like to tell me?"
               register={register}
+              required
               rows={2}
             />
           </div>

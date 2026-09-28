@@ -47,6 +47,9 @@ const SUPERVISORY_RULES: SvRule[] = [
   { key: 'sv_staffName', label: 'Staff performing duties' },
   { key: 'q11_nurseName', label: 'Supervisor' },
 
+  { key: 'sv_complaint', label: 'What would you do if you had a complaint?' },
+  { key: 'sv_anythingElse', label: 'Is there anything else you would like to tell me?' },
+
   { key: 'sv_temp', label: 'Temp' },
   { key: 'sv_bp', label: 'BP' },
   { key: 'sv_pulse', label: 'Pulse' },
