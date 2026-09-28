@@ -40,6 +40,7 @@ import SeizureLogSection from './SeizureLogSection';
 import CarePlanSection from './CarePlanSection';
 import HoursSection from './HoursSection';
 import DayProgramSection from './DayProgramSection';
+import PhysiciansSection from './PhysiciansSection';
 import ServicePlanSection from './ServicePlanSection';
 import CommunicationsLog from '@/components/CommunicationsLog';
 import { SERVICE_PLAN_DOC_CATEGORY, SERVICE_PLAN_MAX_DAYS } from '@/lib/servicePlanShared';
@@ -681,6 +682,18 @@ function ClientDashboardInner() {
               {realRole !== 'va' && (
                 <DayProgramSection
                   key={`dp-${patientId}`}
+                  patientId={patientId}
+                  canEdit={realStaff && !isViewingAs}
+                  actorName={profile?.displayName || user?.email || ''}
+                  onToast={showToast}
+                />
+              )}
+              {/* Physicians: every doctor with phone and fax (reference
+                  directory; the attending on the clinical profile drives
+                  verbal orders and PPOT). */}
+              {realRole !== 'va' && (
+                <PhysiciansSection
+                  key={`ph-${patientId}`}
                   patientId={patientId}
                   canEdit={realStaff && !isViewingAs}
                   actorName={profile?.displayName || user?.email || ''}
