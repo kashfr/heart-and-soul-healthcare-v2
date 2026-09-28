@@ -4,8 +4,11 @@ import { adminDb } from '@/lib/firebaseAdmin';
 import { sendSms } from '@/lib/sms/sendSms';
 import { sendVisitNotice } from '@/lib/emails/visitNotice';
 import { createPortalNotification } from '@/lib/notificationsServer';
+import { recordCommunication } from '@/lib/communicationsServer';
 import {
   needsMorningNudge,
+  visitEmailBody,
+  visitEmailSubject,
   visitSmsBody,
   whenPhrase,
   type VisitNotifyFacts,
@@ -123,7 +126,7 @@ export async function GET(request: Request) {
         const what = facts.type === 'supervisory' ? 'supervisory visit' : 'shift visit';
         const bellText = `Reminder: ${what} ${dayWord}${clientName ? ` for ${clientName}` : ''}, ${whenPhrase(facts)}`;
 
-        await Promise.all([
+        const [sms, email] = await Promise.all([
           sendSms(assignee.phone || '', visitSmsBody(smsEvent, facts)),
           sendVisitNotice({
             to: assignee.email || '',
@@ -138,6 +141,27 @@ export async function GET(request: Request) {
             href: `/admin/clients/${String(v.patientId || '')}?tab=schedule`,
           }),
         ]);
+
+        const firstName = (assignee.displayName || '').trim().split(/\s+/)[0] || '';
+        await recordCommunication({
+          source: 'automated',
+          event: window === 'evening' ? 'visit-reminder-tomorrow' : 'visit-reminder',
+          direction: 'outbound',
+          patientId: String(v.patientId || ''),
+          patientName: clientName,
+          staffUid: v.nurseId,
+          staffName: assignee.displayName || '',
+          counterpartyName: '',
+          summary: bellText,
+          channels: [
+            { channel: 'email', to: assignee.email || '', ok: email.ok, ...(email.ok ? {} : { error: email.error || 'Not sent.' }), subject: visitEmailSubject(smsEvent, facts), body: visitEmailBody(smsEvent, facts, firstName) },
+            { channel: 'sms', to: assignee.phone || '', ok: sms.ok, ...(sms.ok ? {} : { error: sms.error || 'Not sent.', skipped: !!sms.skipped }), body: visitSmsBody(smsEvent, facts) },
+            { channel: 'portal', to: assignee.displayName || '', ok: true, body: bellText },
+          ],
+          relatedVisitId: docSnap.id,
+          loggedByUid: '',
+          loggedByName: 'Portal (scheduled reminder)',
+        });
 
         await docSnap.ref.update({ [stampField]: FieldValue.serverTimestamp() });
         reminded++;

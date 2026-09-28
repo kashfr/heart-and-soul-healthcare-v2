@@ -15,4 +15,6 @@ Read the matching note before changing one of these features.
   ranges are judged): docs/features/vitals-baselines.md
 - Service Plan (per-client signed plan, tab + form + PDF filing):
   docs/features/service-plan.md
+- Communications log (visit notices word for word, manual log):
+  docs/features/communications-log.md
 - Declared test account and test client: TEST-ACCOUNT.md

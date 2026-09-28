@@ -326,9 +326,21 @@ export interface EsignSettings {
   trackKeywords: string[];
 }
 
+/**
+ * EDWP Consents (/admin/edwp-consents): who besides admins may read signed
+ * EDWP consent forms (client names, contact details, signatures) and email
+ * the form to clients. null means "not set yet", which keeps the original
+ * rule of every virtual assistant; the first save from Settings turns it into
+ * an explicit list. Checked server-side on every route (edwpAccessServer.ts).
+ */
+export interface EdwpSettings {
+  userUids: string[] | null;
+}
+
 export interface AppSettings {
   verbalOrders: VerbalOrdersSettings;
   fax: FaxSettings;
+  edwp: EdwpSettings;
   esign: EsignSettings;
   submissions: SubmissionsSettings;
   cosign: CosignSettings;
@@ -352,6 +364,7 @@ export interface AppSettings {
 export const DEFAULT_SETTINGS: AppSettings = {
   verbalOrders: { overdueDays: 14, escalateDays: 30, returnFax: '' },
   fax: { enabled: false, userUids: [], recertLeadDays: 45, ppotPrefillIdentity: false },
+  edwp: { userUids: null },
   esign: { trackKeywords: ['onboarding'] },
   submissions: {
     defaultSort: 'dateOfService',
@@ -479,6 +492,7 @@ export function mergeWithDefaults(partial: unknown): AppSettings {
     shiftChangeAlerts: mergeShiftChangeAlerts(p.shiftChangeAlerts),
     verbalOrders: mergeVerbalOrders(p.verbalOrders),
     fax: mergeFax(p.fax),
+    edwp: mergeEdwp(p.edwp),
     esign: mergeEsign(p.esign),
     branding: mergeBranding(p.branding),
     emails: mergeEmails(p.emails),
@@ -520,6 +534,13 @@ function mergeEsign(input: unknown): EsignSettings {
     .map((w) => w.trim().slice(0, 60))
     .filter(Boolean);
   return { trackKeywords: Array.from(new Set(words.map((w) => w.toLowerCase()))).slice(0, 20) };
+}
+
+function mergeEdwp(input: unknown): EdwpSettings {
+  const src = (input ?? {}) as Partial<EdwpSettings>;
+  if (!Array.isArray(src.userUids)) return { userUids: null };
+  const uids = src.userUids.filter((u): u is string => typeof u === 'string').map((u) => u.trim()).filter(Boolean);
+  return { userUids: Array.from(new Set(uids)) };
 }
 
 function mergeFax(input: unknown): FaxSettings {
@@ -688,6 +709,15 @@ export function validateSettings(payload: unknown): AppSettings {
     (!Array.isArray(esign.trackKeywords) || esign.trackKeywords.some((w) => typeof w !== 'string'))
   ) {
     throw new SettingsValidationError('esign.trackKeywords', 'trackKeywords must be a list of words.');
+  }
+
+  const edwp = (p.edwp ?? {}) as Partial<EdwpSettings>;
+  if (
+    edwp.userUids !== undefined &&
+    edwp.userUids !== null &&
+    (!Array.isArray(edwp.userUids) || edwp.userUids.some((u) => typeof u !== 'string'))
+  ) {
+    throw new SettingsValidationError('edwp.userUids', 'edwp.userUids must be a list of staff uids.');
   }
 
   if (fax.ppotPrefillIdentity !== undefined && typeof fax.ppotPrefillIdentity !== 'boolean') {

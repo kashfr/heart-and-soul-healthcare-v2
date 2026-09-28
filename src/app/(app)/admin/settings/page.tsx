@@ -296,6 +296,17 @@ export default function AdminSettingsPage() {
     });
   };
 
+  // EDWP Consents grant. null = not set yet (every VA), so the first change
+  // starts from exactly who has access today.
+  const toggleEdwpUser = (uid: string, on: boolean) => {
+    setDirty(true);
+    setDraft((prev) => {
+      const cur = prev.edwp.userUids ?? faxOptions.filter((o) => o.role === 'va').map((o) => o.uid);
+      const next = on ? Array.from(new Set([...cur, uid])) : cur.filter((u) => u !== uid);
+      return { ...prev, edwp: { userUids: next } };
+    });
+  };
+
   const toggleFaxUser = (uid: string, on: boolean) => {
     setDirty(true);
     setDraft((prev) => {
@@ -1020,6 +1031,46 @@ export default function AdminSettingsPage() {
                     }}
                   >
                     <input type="checkbox" checked={checked} onChange={(e) => toggleFaxUser(o.uid, e.target.checked)} />
+                    <span style={{ fontWeight: 600 }}>{o.displayName}</span>
+                    <span style={{ color: '#5c6b7a', fontSize: 12.5 }}>{o.role === 'va' ? 'Virtual Assistant' : 'Supervisor'}</span>
+                  </label>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ fontSize: 13.5, color: '#5c6b7a', padding: '9px 0' }}>
+              No active supervisors or virtual assistants to list (or the staff list is unavailable right now).
+            </div>
+          )}
+        </section>
+
+        {/* --- EDWP Consents access --- */}
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>EDWP Consents access</h2>
+          <p style={sectionSubStyle}>
+            EDWP Consents shows every signed EDWP consent form (client names, contact details, and signatures) and
+            emails the form to clients. Admins always have access. Check the supervisors and virtual assistants who
+            should have it too; everyone else no longer sees the page, and the portal refuses its data.
+          </p>
+          {draft.edwp.userUids === null && (
+            <div style={{ fontSize: 13, color: '#5c6b7a', background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 6, padding: '8px 12px', marginBottom: 8 }}>
+              Not set yet: every virtual assistant has access. Checking or unchecking anyone saves an exact list.
+            </div>
+          )}
+          {faxOptions.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {faxOptions.map((o) => {
+                const checked = draft.edwp.userUids === null ? o.role === 'va' : draft.edwp.userUids.includes(o.uid);
+                return (
+                  <label
+                    key={o.uid}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+                      background: checked ? '#eef4fb' : '#f8fafc', border: '1px solid #e5e7eb',
+                      borderRadius: 6, cursor: 'pointer', fontSize: 13.5, color: '#2c3e50',
+                    }}
+                  >
+                    <input type="checkbox" checked={checked} onChange={(e) => toggleEdwpUser(o.uid, e.target.checked)} />
                     <span style={{ fontWeight: 600 }}>{o.displayName}</span>
                     <span style={{ color: '#5c6b7a', fontSize: 12.5 }}>{o.role === 'va' ? 'Virtual Assistant' : 'Supervisor'}</span>
                   </label>
