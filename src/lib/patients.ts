@@ -16,6 +16,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import type { PatientAuthorization } from './reconcile';
+import type { VitalsBaselines } from './vitalRanges';
 
 export interface Patient {
   id?: string;
@@ -223,12 +224,27 @@ export interface PatientClinical {
   /** Georgia Medicaid member ID. Printed on the PPOT request cover sheet. */
   medicaidId?: string;
   diet?: string; // diet / special instructions
+  /**
+   * The client's own normal ranges for individual vitals, set by a supervisor
+   * from the care plan or a physician's order. A vital with a baseline is
+   * judged by it instead of the age-based screening range; vitals without
+   * one keep the age range. See VitalsBaselines in vitalRanges.ts.
+   */
+  vitalsBaselines?: VitalsBaselines;
+  /** Where the baselines come from, e.g. "care plan dated 03/2026, Dr. Patel". */
+  vitalsBaselinesNote?: string;
+  vitalsBaselinesSetBy?: string;
+  /** 'YYYY-MM-DD' */
+  vitalsBaselinesSetAt?: string;
   updatedAt?: unknown;
 }
 
 // Single well-known doc id under patients/{id}/clinical.
 const CLINICAL_DOC_ID = 'profile';
-const CLINICAL_FIELDS = ['sex', 'allergies', 'physicianName', 'physicianPhone', 'physicianFax', 'medicaidId', 'diet'] as const;
+const CLINICAL_FIELDS = [
+  'sex', 'allergies', 'physicianName', 'physicianPhone', 'physicianFax', 'medicaidId', 'diet',
+  'vitalsBaselines', 'vitalsBaselinesNote', 'vitalsBaselinesSetBy', 'vitalsBaselinesSetAt',
+] as const;
 
 /**
  * Read a client's clinical profile. Returns null when none has been saved yet.

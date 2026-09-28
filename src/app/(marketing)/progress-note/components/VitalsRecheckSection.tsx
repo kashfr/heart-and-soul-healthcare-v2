@@ -5,7 +5,8 @@ import type { UseFormRegister, UseFormSetValue, UseFormWatch } from 'react-hook-
 import type { FormValues } from '../types';
 import styles from '../page.module.css';
 import { rangeValidator, VITAL_RANGE as RANGE } from '../validators';
-import { getVitalRanges } from '@/lib/vitalRanges';
+import { noteVitalRanges, readNoteBaselines } from '@/lib/vitalRanges';
+import { baselineCoversGroup } from '@/lib/vitalsBaselines';
 import {
   MAX_VITALS_RECHECKS,
   VITALS_RECHECK_CONTEXTS,
@@ -37,8 +38,6 @@ interface Props {
   register: UseFormRegister<FormValues>;
   watch: UseFormWatch<FormValues>;
   setValue: UseFormSetValue<FormValues>;
-  ageStr: string;
-  dob?: string;
 }
 
 const alertInputStyle: CSSProperties = { border: '2px solid #c62828', background: '#fff5f5' };
@@ -66,11 +65,14 @@ const GROUP_FIELDS: Record<VitalGroup, VitalsRecheckField[]> = {
  * recheck is still out of range, asks what was done about it. The rules
  * live in src/lib/vitalsFollowUp.ts and are enforced at submit.
  */
-export default function VitalsRecheckSection({ register, watch, setValue, ageStr, dob }: Props) {
+export default function VitalsRecheckSection({ register, watch, setValue }: Props) {
   const count = Math.max(0, Math.min(MAX_VITALS_RECHECKS, Number(watch(VITALS_RECHECK_COUNT_KEY)) || 0));
   const allValues = watch();
   const entries = useMemo(() => readVitalsRechecks(allValues as Record<string, unknown>), [allValues]);
-  const ranges = useMemo(() => getVitalRanges(ageStr || '', dob), [ageStr, dob]);
+  // Age range (from the note's own q5/q4 fields) plus this note's baseline
+  // snapshot (q16b_*), see vitalRanges.ts.
+  const ranges = useMemo(() => noteVitalRanges(allValues as Record<string, unknown>), [allValues]);
+  const noteBaselines = useMemo(() => readNoteBaselines(allValues as Record<string, unknown>), [allValues]);
   const followUp = useMemo(() => assessVitalsFollowUp(allValues as Record<string, unknown>, ranges), [allValues, ranges]);
   const gateOn = vitalsFollowUpApplies(allValues as Record<string, unknown>);
   const abnormalGroups = VITAL_GROUPS.filter((g) => followUp.abnormal[g]);
@@ -437,6 +439,12 @@ export default function VitalsRecheckSection({ register, watch, setValue, ageStr
           <p style={{ ...helper, margin: '0 0 8px' }}>
             No need to keep retaking it. Document what you did about it; the RN supervisor reviews this note.
           </p>
+          {action === FOLLOW_UP_BASELINE && !stillAbnormal.every((g) => baselineCoversGroup(noteBaselines, g)) && (
+            <p style={{ ...helper, color: '#b45309', margin: '0 0 8px' }}>
+              No baseline for {stillAbnormal.filter((g) => !baselineCoversGroup(noteBaselines, g)).map((g) => VITAL_GROUP_LABELS[g].toLowerCase()).join(', ')} is
+              on this client&apos;s record yet. Say what the baseline is and where it is documented; the supervisor will add it to the client record.
+            </p>
+          )}
           <div className={styles.row}>
             <div className={styles.f} style={{ flex: '2 1 60%' }}>
               <label className={styles.label} htmlFor={FOLLOW_UP_ACTION_KEY}>Action taken *</label>

@@ -26,6 +26,75 @@ export interface VitalRangeSet {
 
 export type VitalKey = keyof VitalRangeSet;
 
+/**
+ * Per-client vitals baselines: a client's own normal range for a vital, set
+ * by a supervisor on the clinical profile (patients/{id}/clinical/profile)
+ * from the care plan or a physician's order. A baseline REPLACES the
+ * age-based screening bounds for that vital only; every vital without one
+ * keeps the age range, and a client with none behaves exactly as before.
+ *
+ * Each note carries a snapshot of the baselines in effect when it was
+ * written (q16b_<vital>_low / _high, plus q16b_note), so the form, the
+ * submit gate, the admin view, the PDF, and the Submissions flags all judge
+ * the note by the same bounds, and a later change to the client's baseline
+ * never rewrites how an old note reads.
+ */
+export type VitalsBaselines = Partial<Record<VitalKey, { low: number; high: number }>>;
+
+export const VITAL_KEYS: VitalKey[] = ['temperature', 'systolic', 'diastolic', 'pulse', 'respiration', 'oxygenSaturation'];
+
+export const BASELINE_NOTE_PREFIX = 'q16b_';
+export const BASELINE_NOTE_NOTE_KEY = 'q16b_note';
+export const baselineNoteKey = (vital: VitalKey, bound: 'low' | 'high'): string => `${BASELINE_NOTE_PREFIX}${vital}_${bound}`;
+/** Every flat key a note's baseline snapshot can carry. */
+export const BASELINE_NOTE_KEYS: string[] = [
+  ...VITAL_KEYS.flatMap((v) => [baselineNoteKey(v, 'low'), baselineNoteKey(v, 'high')]),
+  BASELINE_NOTE_NOTE_KEY,
+];
+
+/** Drop malformed pairs: both bounds finite and low <= high. */
+export function cleanBaselines(raw: unknown): VitalsBaselines {
+  const out: VitalsBaselines = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const key of VITAL_KEYS) {
+    const pair = (raw as Record<string, unknown>)[key];
+    if (!pair || typeof pair !== 'object') continue;
+    const low = Number((pair as { low?: unknown }).low);
+    const high = Number((pair as { high?: unknown }).high);
+    if (Number.isFinite(low) && Number.isFinite(high) && low <= high) out[key] = { low, high };
+  }
+  return out;
+}
+
+/** The baseline snapshot stored on a note (flat q16b_* fields). */
+export function readNoteBaselines(values: Record<string, unknown>): VitalsBaselines {
+  const raw: Record<string, { low: unknown; high: unknown }> = {};
+  for (const key of VITAL_KEYS) {
+    const low = values[baselineNoteKey(key, 'low')];
+    const high = values[baselineNoteKey(key, 'high')];
+    if (low === '' || low == null || high === '' || high == null) continue;
+    raw[key] = { low, high };
+  }
+  return cleanBaselines(raw);
+}
+
+/** Replace the bounds of every vital that has a baseline; the rest keep the age range. */
+export function applyBaselines(ranges: VitalRangeSet, baselines?: VitalsBaselines): VitalRangeSet {
+  if (!baselines) return ranges;
+  const out = { ...ranges };
+  let changed = false;
+  for (const key of VITAL_KEYS) {
+    const b = baselines[key];
+    if (!b) continue;
+    out[key] = { ...ranges[key], low: b.low, high: b.high, label: `${ranges[key].label} (client baseline)` };
+    changed = true;
+  }
+  return changed ? out : ranges;
+}
+
+/** True when this vital's bounds come from the client's baseline rather than the age range. */
+export const isBaselineRange = (range: VitalRange): boolean => range.label.endsWith('(client baseline)');
+
 export type AgeGroup =
   | 'newborn'     // 0-28 days
   | 'infant'      // 1-12 months
@@ -283,6 +352,16 @@ export function getVitalRanges(
 }
 
 /**
+ * The ranges a NOTE is judged by: the client's age range (with admin
+ * overrides), then the baseline snapshot the note carries on top. Every
+ * consumer that scores a note's vitals goes through here so they agree.
+ */
+export function noteVitalRanges(values: Record<string, unknown>, overrides?: VitalRangesOverride): VitalRangeSet {
+  const s = (k: string) => (typeof values[k] === 'string' ? (values[k] as string) : '');
+  return applyBaselines(getVitalRanges(s('q5_ageYears'), s('q4_dateofBirth'), overrides), readNoteBaselines(values));
+}
+
+/**
  * Get a human-readable label for the age group (for display purposes).
  */
 export function getAgeGroupLabel(ageStr: string, dob?: string): string {
@@ -325,9 +404,7 @@ export function hasAnyAbnormalVital(
   overrides?: VitalRangesOverride,
 ): boolean {
   const s = (k: string) => (typeof data[k] === 'string' ? (data[k] as string) : '');
-  const ageStr = s('q5_ageYears');
-  const dob = s('q4_dateofBirth');
-  const ranges = getVitalRanges(ageStr, dob, overrides);
+  const ranges = noteVitalRanges(data, overrides);
   const parseNum = (v: string) => parseFloat((v || '').replace(/[^0-9.]/g, ''));
 
   const checks: Array<[string, VitalKey]> = [

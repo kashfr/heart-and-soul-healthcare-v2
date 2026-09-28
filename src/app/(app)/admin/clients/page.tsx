@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -44,6 +44,8 @@ import { addDaysISO, emptyBucketDayHours, hoursFindings, monthStartISO, type Buc
 import { db } from '@/lib/firebase';
 import { authedFetch } from '@/lib/authedFetch';
 import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
+import { baselinesToDraft, parseBaselineDraft, hasAnyBaseline, BASELINE_LABELS, BASELINE_LIMITS, type BaselineDraft } from '@/lib/vitalsBaselines';
+import { VITAL_KEYS } from '@/lib/vitalRanges';
 
 type ClientField = 'name' | 'dob';
 const CLIENT_FIELD_ORDER: readonly ClientField[] = ['name', 'dob'];
@@ -139,6 +141,8 @@ function ClientsRosterInner() {
   // Sensitive clinical fields live in a separate care-team-gated sub-record,
   // so they're tracked apart from the directory formData and saved alongside it.
   const [clinical, setClinical] = useState<PatientClinical>({});
+  // Vitals baselines as typed (text), parsed and validated on save.
+  const [baselineDraft, setBaselineDraft] = useState<BaselineDraft>(() => baselinesToDraft());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<ClientField, string>>>({});
@@ -259,12 +263,16 @@ function ClientsRosterInner() {
     if (!formOpen) return;
     if (!editingId) {
       setClinical({});
+      setBaselineDraft(baselinesToDraft());
       return;
     }
     let cancelled = false;
     (async () => {
       const data = await getPatientClinical(editingId);
-      if (!cancelled) setClinical(data ?? {});
+      if (!cancelled) {
+        setClinical(data ?? {});
+        setBaselineDraft(baselinesToDraft(data?.vitalsBaselines));
+      }
     })();
     return () => {
       cancelled = true;
@@ -279,6 +287,7 @@ function ClientsRosterInner() {
   const resetForm = () => {
     setFormData(emptyPatient);
     setClinical({});
+    setBaselineDraft(baselinesToDraft());
     setEditingId(null);
     setFieldErrors({});
     setSaveError(null);
@@ -436,6 +445,23 @@ function ClientsRosterInner() {
     else if (dob > todayISO) errs.dob = 'The date of birth cannot be in the future.';
     setSaveError(null);
     if (!applyFieldErrors(errs, CLIENT_FIELD_ORDER, setFieldErrors, clientFieldId)) return;
+    // Vitals baselines: both bounds or neither, numbers, low <= high, inside
+    // the physiologic limits. Stamp who set them when they change.
+    const parsed = parseBaselineDraft(baselineDraft);
+    if (parsed.errors.length > 0) {
+      setSaveError(`Vitals baselines: ${parsed.errors.join(' ')}`);
+      document.getElementById('vitalsBaselines')?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    const baselinesChanged = JSON.stringify(parsed.baselines) !== JSON.stringify(clinical.vitalsBaselines ?? {});
+    const clinicalToSave: PatientClinical = {
+      ...clinical,
+      vitalsBaselines: parsed.baselines,
+      vitalsBaselinesNote: hasAnyBaseline(parsed.baselines) ? (clinical.vitalsBaselinesNote || '') : '',
+      ...(baselinesChanged
+        ? { vitalsBaselinesSetBy: profile?.displayName || '', vitalsBaselinesSetAt: todayISO }
+        : {}),
+    };
     try {
       setSubmitting(true);
       let savedId = editingId;
@@ -450,7 +476,7 @@ function ClientsRosterInner() {
       }
       // Persist the sensitive clinical fields to the care-team-gated sub-record.
       if (savedId) {
-        await savePatientClinical(savedId, clinical);
+        await savePatientClinical(savedId, clinicalToSave);
       }
       showToast(`${formData.name} ${editingId ? 'updated' : 'added'}`);
       resetForm();
@@ -1018,6 +1044,67 @@ function ClientsRosterInner() {
                     placeholder="e.g., Mechanical soft, thickened liquids, upright positioning"
                   />
                 </Field>
+
+                {/* Per-client vitals baselines. Optional: a vital left blank
+                    keeps the age-based screening range. A baseline replaces
+                    that range for this client only, so a reading inside it is
+                    not flagged and needs no recheck on the progress note. */}
+                <div id="vitalsBaselines" style={{ marginTop: 6, paddingTop: 12, borderTop: '1px solid #f1f3f5' }}>
+                  <div style={careTeamHeaderStyle}>Vitals baselines</div>
+                  <div style={careTeamHelpStyle}>
+                    Optional. Set a vital&apos;s normal range for this client when the care plan or a physician documents one
+                    (for example a resting pulse of 100 to 110). That range replaces the age-based screening range for that
+                    vital on this client&apos;s notes: a reading inside it is not flagged and needs no recheck. Leave a vital
+                    blank to keep the age-based range.
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr)', gap: 8, alignItems: 'center' }}>
+                    <span style={baselineHeadStyle}>Vital</span>
+                    <span style={baselineHeadStyle}>Low</span>
+                    <span style={baselineHeadStyle}>High</span>
+                    {VITAL_KEYS.map((k) => (
+                      <React.Fragment key={k}>
+                        <span style={{ fontSize: 13, color: '#2c3e50' }}>
+                          {BASELINE_LABELS[k]} <span style={{ color: '#7f8c8d' }}>({BASELINE_LIMITS[k].unit})</span>
+                        </span>
+                        <input
+                          type="number"
+                          step={k === 'temperature' ? '0.1' : '1'}
+                          inputMode="decimal"
+                          aria-label={`${BASELINE_LABELS[k]} baseline low`}
+                          value={baselineDraft[k]?.low ?? ''}
+                          onChange={(e) => setBaselineDraft((d) => ({ ...d, [k]: { low: e.target.value, high: d[k]?.high ?? '' } }))}
+                          style={inputStyle}
+                          placeholder="age range"
+                        />
+                        <input
+                          type="number"
+                          step={k === 'temperature' ? '0.1' : '1'}
+                          inputMode="decimal"
+                          aria-label={`${BASELINE_LABELS[k]} baseline high`}
+                          value={baselineDraft[k]?.high ?? ''}
+                          onChange={(e) => setBaselineDraft((d) => ({ ...d, [k]: { low: d[k]?.low ?? '', high: e.target.value } }))}
+                          style={inputStyle}
+                          placeholder="age range"
+                        />
+                      </React.Fragment>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 10 }}>
+                    <Field label="Where the baselines are documented">
+                      <input
+                        value={clinical.vitalsBaselinesNote || ''}
+                        onChange={(e) => setClinical((c) => ({ ...c, vitalsBaselinesNote: e.target.value }))}
+                        style={inputStyle}
+                        placeholder="e.g., care plan dated 03/2026; Dr. Patel order 08/12/2026"
+                      />
+                    </Field>
+                  </div>
+                  {clinical.vitalsBaselinesSetBy && (
+                    <div style={{ fontSize: 12, color: '#7f8c8d' }}>
+                      Last set by {clinical.vitalsBaselinesSetBy}{clinical.vitalsBaselinesSetAt ? ` on ${clinical.vitalsBaselinesSetAt}` : ''}.
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Care team — visible only when editing an existing
@@ -1334,6 +1421,7 @@ const toastStyle: React.CSSProperties = { position: 'fixed', bottom: 20, right: 
 // section to render assigned nurses as chips + the add-nurse picker.
 const careTeamHeaderStyle: React.CSSProperties = { fontSize: 13, fontWeight: 700, color: '#2c3e50', marginBottom: 4 };
 const careTeamHelpStyle: React.CSSProperties = { fontSize: 12, color: '#7f8c8d', marginBottom: 10, lineHeight: 1.5 };
+const baselineHeadStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: '#5c6b7a', textTransform: 'uppercase', letterSpacing: '0.04em' };
 const chipsRowStyle: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 };
 const emptyCareTeamStyle: React.CSSProperties = { fontSize: 13, color: '#7f8c8d', fontStyle: 'italic' };
 const chipStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#eef4fb', color: '#1a3a5c', padding: '6px 6px 6px 12px', borderRadius: 999, fontSize: 13, border: '1px solid #c8def5' };

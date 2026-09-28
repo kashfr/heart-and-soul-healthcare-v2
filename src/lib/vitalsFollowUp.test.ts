@@ -12,7 +12,7 @@ import {
   FOLLOW_UP_TIME_KEY,
 } from './vitalsFollowUp';
 import { VITALS_RECHECK_COUNT_KEY, vitalsRecheckFieldKey } from './vitalsRecheck';
-import { getVitalRanges } from './vitalRanges';
+import { getVitalRanges, noteVitalRanges } from './vitalRanges';
 import { getIncompleteRequired } from './noteValidation';
 
 const k = vitalsRecheckFieldKey;
@@ -119,6 +119,17 @@ describe('vitalsFollowUpGaps', () => {
   it('counts every recheck when the shift start is unknown', () => {
     const n = note({ q7_shiftStart: '', [VITALS_RECHECK_COUNT_KEY]: '1', ...recheck(1, { time: '09:05', pulse: '90' }) });
     expect(vitalsFollowUpGaps(n, ranges)).toEqual([]);
+  });
+});
+
+describe('client baselines', () => {
+  it('a pulse inside the client baseline snapshot is not abnormal, so no recheck is required', () => {
+    const n = note({ q16b_pulse_low: '95', q16b_pulse_high: '110' });
+    expect(vitalsFollowUpGaps(n, noteVitalRanges(n))).toEqual([]);
+  });
+  it('the baseline applies to that vital only', () => {
+    const n = note({ q16b_pulse_low: '95', q16b_pulse_high: '110', q20_oxygenSaturation: '88' });
+    expect(vitalsFollowUpGaps(n, noteVitalRanges(n)).map((g) => g.label)).toEqual([expect.stringMatching(/Recheck the spo2/)]);
   });
 });
 

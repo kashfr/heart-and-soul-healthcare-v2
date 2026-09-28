@@ -15,7 +15,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { getVitalRanges, type VitalRangesOverride } from '@/lib/vitalRanges';
+import { getVitalRanges, type VitalRangesOverride, applyBaselines, type VitalsBaselines } from '@/lib/vitalRanges';
 import {
   notesInWindow,
   shiftISO,
@@ -59,6 +59,8 @@ interface Props {
   admins: DashAdmin[];
   dob?: string;
   vitalsOverride?: VitalRangesOverride;
+  /** The client's current baselines (clinical profile); shade the band by them. */
+  baselines?: VitalsBaselines;
 }
 
 /**
@@ -67,13 +69,13 @@ interface Props {
  * visits + care hours. Pure presentation — every series comes pre-parsed and
  * bounds-guarded from clientDashboardShared.
  */
-export default function ClientCharts({ notes, admins, dob, vitalsOverride }: Props) {
+export default function ClientCharts({ notes, admins, dob, vitalsOverride, baselines }: Props) {
   const [metric, setMetric] = useState<Metric>('bp');
   const [rangeDays, setRangeDays] = useState<30 | 90>(90);
   const today = todayISO();
 
   // Age-aware normal ranges (admin overrides applied) drive the shaded band.
-  const ranges = useMemo(() => getVitalRanges('', dob, vitalsOverride), [dob, vitalsOverride]);
+  const ranges = useMemo(() => applyBaselines(getVitalRanges('', dob, vitalsOverride), baselines), [dob, vitalsOverride, baselines]);
 
   // One x-category per point. A recheck (later reading in the same shift)
   // gets its clock time appended so two readings on one date never share a
