@@ -104,7 +104,7 @@ describe('SupervisoryVisitPage', () => {
     ]) {
       expect(screen.getByText(section)).toBeInTheDocument();
     }
-    expect(screen.getByText('What would you do if you had a complaint?')).toBeInTheDocument();
+    expect(screen.getByText(/What would you do if you had a complaint?/)).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByLabelText(/^Supervisor \*/)).toHaveValue('Souz Payne');
     });
