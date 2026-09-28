@@ -32,6 +32,9 @@
 import { isBpRoutinelyRequired } from './vitalRanges';
 import { SHIFT_CHANGE_KEYS, shiftChangeAnyYes } from './shiftChange';
 import { vitalsRecheckGaps } from './vitalsRecheck';
+import { vitalsFollowUpApplies, vitalsFollowUpGaps } from './vitalsFollowUp';
+import { getVitalRanges } from './vitalRanges';
+import { SUPERVISORY_NOTE_TYPE } from './supervisoryVisit';
 
 export interface NoteIssue {
   /** Field key (also the DOM id the nurse form scrolls to). */
@@ -236,9 +239,11 @@ const RULES: Rule[] = [
  */
 export function getIncompleteRequired(flat: Record<string, string>): NoteIssue[] {
   // These rules describe the SHIFT progress note. Other document types in the
-  // same collection (RN oversight visit notes) have their own rules — see
-  // src/lib/oversightNote.ts — and must never be scored against these.
+  // same collection (RN oversight visit notes, home supervisory visits) have
+  // their own rules — see src/lib/oversightNote.ts and supervisoryVisit.ts —
+  // and must never be scored against these.
   if ((flat['noteType'] || '') === 'rn-oversight-visit') return [];
+  if ((flat['noteType'] || '') === SUPERVISORY_NOTE_TYPE) return [];
   const cred = (flat['q12_credential'] || '').trim();
   const issues: NoteIssue[] = [];
   for (const r of RULES) {
@@ -250,6 +255,14 @@ export function getIncompleteRequired(flat: Record<string, string>): NoteIssue[]
   // than listed. Each gap's targetId is the input's DOM id, same as `key`.
   for (const g of vitalsRecheckGaps(flat)) {
     issues.push({ key: g.targetId, label: g.label, tab: 2, tabName: NOTE_TAB_NAMES[2] });
+  }
+  // Abnormal-vitals follow-up (rev 4+): an out-of-range first reading needs a
+  // recheck, and a recheck still out of range needs a documented action.
+  if (vitalsFollowUpApplies(flat)) {
+    const ranges = getVitalRanges(flat['q5_ageYears'] || '', flat['q4_dateofBirth'] || '');
+    for (const g of vitalsFollowUpGaps(flat, ranges)) {
+      issues.push({ key: g.targetId, label: g.label, tab: 2, tabName: NOTE_TAB_NAMES[2] });
+    }
   }
   return issues;
 }

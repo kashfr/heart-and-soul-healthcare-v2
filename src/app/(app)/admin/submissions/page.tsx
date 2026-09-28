@@ -48,6 +48,7 @@ import { resolveRate, resolveRateRow } from '@/lib/billingRatesShared';
 import { getPatients } from '@/lib/patients';
 import { getProgram } from '@/lib/programs';
 import { formatDateUS, formatDateUSFile } from '@/lib/dateFormat';
+import { SUPERVISORY_NOTE_TYPE, canAuthorSupervisoryVisit } from '@/lib/supervisoryVisit';
 import styles from './page.module.css';
 
 const MAX_BATCH = 50;
@@ -196,8 +197,8 @@ export default function SubmissionsPage() {
   const [queryInput, setQueryInput] = useState(qParam);
   const debouncedQuery = useDebounced(queryInput, 250);
   const [draftSavedToast, setDraftSavedToast] = useState(false);
-  /** Which form the saved/discarded draft came from ('oversight' or the shift note). */
-  const [draftToastKind, setDraftToastKind] = useState<'note' | 'oversight'>('note');
+  /** Which form the saved/discarded draft came from (oversight, supervisory, or the shift note). */
+  const [draftToastKind, setDraftToastKind] = useState<'note' | 'oversight' | 'supervisory'>('note');
   const [draftDiscardedToast, setDraftDiscardedToast] = useState(false);
   /** The notes currently shown in the co-sign modal (1 = per-note flow, many = batch). */
   const [cosignTargets, setCosignTargets] = useState<SubmissionSummary[]>([]);
@@ -213,10 +214,13 @@ export default function SubmissionsPage() {
   useEffect(() => {
     const savedParam = searchParams.get('draftSaved');
     const discardedParam = searchParams.get('discarded');
-    const saved = savedParam === '1' || savedParam === 'oversight';
-    const discarded = discardedParam === '1' || discardedParam === 'oversight';
+    const kindOf = (v: string | null) => (v === 'oversight' || v === 'supervisory' ? v : v === '1' ? 'note' : null);
+    const savedKind = kindOf(savedParam);
+    const discardedKind = kindOf(discardedParam);
+    const saved = !!savedKind;
+    const discarded = !!discardedKind;
     if (!saved && !discarded) return;
-    setDraftToastKind(savedParam === 'oversight' || discardedParam === 'oversight' ? 'oversight' : 'note');
+    setDraftToastKind(savedKind || discardedKind || 'note');
     if (saved) setDraftSavedToast(true);
     if (discarded) setDraftDiscardedToast(true);
     const params = new URLSearchParams(searchParams.toString());
@@ -845,7 +849,7 @@ export default function SubmissionsPage() {
         s.clientName,
         s.nurseName,
         s.credential,
-        rn ? 'RN oversight visit' : 'Shift note',
+        rn ? 'RN oversight visit' : s.noteType === SUPERVISORY_NOTE_TYPE ? 'Home supervisory visit' : 'Shift note',
         s.shiftStart,
         formatDateUS(s.shiftEndDate),
         s.shiftEnd,
@@ -1171,6 +1175,7 @@ export default function SubmissionsPage() {
   const canAuthorProgressNote = !isViewingAs && (!!profile?.credential || role === 'admin');
   const canAuthorOversightNote =
     !isViewingAs && (profile?.credential === 'RN' || role === 'admin' || role === 'supervisor');
+  const canAuthorSupervisory = !isViewingAs && canAuthorSupervisoryVisit(role);
 
   const sortIndicator = (key: SortKey) =>
     sortParam === key ? (dirParam === 'asc' ? ' ↑' : ' ↓') : '';
@@ -1194,7 +1199,9 @@ export default function SubmissionsPage() {
           >
             {draftToastKind === 'oversight'
               ? '✓ Oversight note draft saved. Open New oversight note to resume it.'
-              : '✓ Draft saved. You can resume it anytime from the progress note page.'}
+              : draftToastKind === 'supervisory'
+                ? '✓ Supervisory visit draft saved. Open New supervisory visit to resume it.'
+                : '✓ Draft saved. You can resume it anytime from the progress note page.'}
           </div>
         )}
         {draftDiscardedToast && (
@@ -1236,7 +1243,7 @@ export default function SubmissionsPage() {
             <h1 className={styles.title}>Progress Note Submissions</h1>
             <p className={styles.subtitle}>All submitted nursing progress notes</p>
           </div>
-          {(canAuthorProgressNote || canAuthorOversightNote) && (
+          {(canAuthorProgressNote || canAuthorOversightNote || canAuthorSupervisory) && (
           <div className={styles.actions}>
           {/* Visible to anyone who can author a progress note: any user with
               a clinical credential (HHA / CNA / LPN / RN), OR an admin (so
@@ -1262,6 +1269,13 @@ export default function SubmissionsPage() {
             <Link href="/oversight-note" className={styles.newNoteBtnSecondary}>
               <Plus size={16} />
               New oversight note
+            </Link>
+          )}
+          {/* Home supervisory visit — supervisors and admins only, like the form. */}
+          {canAuthorSupervisory && (
+            <Link href="/supervisory-visit" className={styles.newNoteBtnSecondary}>
+              <Plus size={16} />
+              New supervisory visit
             </Link>
           )}
           </div>
@@ -2032,6 +2046,24 @@ export default function SubmissionsPage() {
                               OVERSIGHT
                             </span>
                           )}
+                          {s.noteType === SUPERVISORY_NOTE_TYPE && (
+                            <span
+                              style={{
+                                marginLeft: 6,
+                                padding: '1px 6px',
+                                borderRadius: 4,
+                                fontSize: 10.5,
+                                fontWeight: 700,
+                                background: '#f3eefb',
+                                color: '#4a2a7a',
+                                border: '1px solid #dccdf2',
+                                whiteSpace: 'nowrap',
+                              }}
+                              title="Home supervisory visit"
+                            >
+                              SUPERVISORY
+                            </span>
+                          )}
                         </td>
                         <td style={tdStyle} className={styles.cNurse}>{s.nurseName}</td>
                         <td style={tdStyle} className={styles.cCred}>
@@ -2047,7 +2079,9 @@ export default function SubmissionsPage() {
                               className={styles.cHours}
                               style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}
                               title={
-                                h == null
+                                s.noteType === SUPERVISORY_NOTE_TYPE
+                                  ? 'Home supervisory visit. Not counted toward shift or oversight hours.'
+                                  : h == null
                                   ? 'No usable time window on this note'
                                   : rn
                                     ? `RN oversight visit, ${s.shiftStart || '?'} to ${s.shiftEnd || '?'}. Counted as RN oversight hours, not shift hours.`

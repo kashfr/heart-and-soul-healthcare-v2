@@ -45,6 +45,8 @@ import {
 import { classifyDoseAgainstShift, computeRequiredDoseGaps, resolveCurrentAdministrations } from '@/lib/marShared';
 import { seizureGaps } from '@/lib/seizureShared';
 import { vitalsRecheckGaps } from '@/lib/vitalsRecheck';
+import { vitalsFollowUpApplies, vitalsFollowUpGaps } from '@/lib/vitalsFollowUp';
+import { getVitalRanges } from '@/lib/vitalRanges';
 import { writeSeizureEvents } from '@/lib/seizures';
 import { postHandoff } from '@/lib/handoffs';
 import { isSubstantiveHandoffText } from '@/lib/handoffShared';
@@ -344,7 +346,7 @@ function ProgressNotePageInner() {
   // (no stamp) stays unstamped so it is never retroactively flagged, and a
   // rev-2 note keeps the program it was written under (see docReqs above).
   useEffect(() => {
-    if (!isEditMode) setValue('q1_formRev', '3');
+    if (!isEditMode) setValue('q1_formRev', '4');
   }, [isEditMode, setValue]);
   useEffect(() => {
     if (isEditMode) return;
@@ -590,11 +592,11 @@ function ProgressNotePageInner() {
     prevClientKeyRef.current = null;
     skipFirstSelectionClearRef.current = true;
     reset(draft.formValues as FormValues);
-    // reset() replaces the whole RHF store, which erases the q1_formRev='3'
+    // reset() replaces the whole RHF store, which erases the q1_formRev='4'
     // stamp the mount effect wrote (drafts saved before the QEPR update have
     // no stamp in formValues, and the mount effect never re-runs). A draft is
     // by definition a NEW note being finished on today's form, so re-stamp.
-    setValue('q1_formRev', '3');
+    setValue('q1_formRev', '4');
     // Carry the draft's reserved submission id so a resume-then-submit
     // (or a retry after reload) overwrites the same note rather than
     // duplicating. Drafts written before this field fall back to '' and
@@ -852,6 +854,11 @@ function ProgressNotePageInner() {
         // shift required-field gates — send the user back to the detail view.
         if (data && data.noteType === 'rn-oversight-visit') {
           alert('This is an RN oversight visit note; it cannot be edited in the progress note form.');
+          router.push(`/admin/submissions/${editId}`);
+          return;
+        }
+        if (data && data.noteType === 'home-supervisory-visit') {
+          alert('This is a home supervisory visit; it cannot be edited in the progress note form.');
           router.push(`/admin/submissions/${editId}`);
           return;
         }
@@ -1252,6 +1259,46 @@ function ProgressNotePageInner() {
             `We've taken you to the first one and highlighted it in red. (Remove a recheck you didn't mean to add.)`
         );
         return;
+      }
+    }
+
+    // Abnormal-vitals follow-up (rev 4+): a first-set vital outside the
+    // age range must be retaken after a rest interval, and one that stays
+    // out of range needs a documented action (src/lib/vitalsFollowUp.ts).
+    // Same escort as the recheck gate. Critical values additionally get the
+    // escalation modal below.
+    {
+      const all = getValues() as Record<string, unknown>;
+      if (vitalsFollowUpApplies(all)) {
+        const ranges = getVitalRanges(String(all.q5_ageYears || ''), String(all.q4_dateofBirth || ''));
+        const followUpGaps = vitalsFollowUpGaps(all, ranges);
+        if (followUpGaps.length > 0) {
+          setCurrentPage(2);
+          const firstTarget = followUpGaps[0].targetId;
+          setTimeout(() => {
+            const el = formRef.current?.querySelector(`#${firstTarget}`) as HTMLElement | null;
+            if (!el) return;
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            el.style.outline = '2px solid #c62828';
+            el.style.outlineOffset = '2px';
+            const clearHighlight = () => {
+              el.style.outline = '';
+              el.style.outlineOffset = '';
+              el.removeEventListener('input', clearHighlight);
+              el.removeEventListener('change', clearHighlight);
+              el.removeEventListener('click', clearHighlight);
+            };
+            el.addEventListener('input', clearHighlight);
+            el.addEventListener('change', clearHighlight);
+            el.addEventListener('click', clearHighlight);
+            if (el.tagName === 'INPUT' || el.tagName === 'SELECT') (el as HTMLInputElement).focus();
+          }, 150);
+          alert(
+            `A vital sign was outside the expected range and needs a follow-up before this note can be submitted:\n\n${followUpGaps.map((g) => `• ${g.label}`).join('\n')}\n\n` +
+              `We've taken you to the Vitals section and highlighted it in red.`
+          );
+          return;
+        }
       }
     }
 
@@ -1886,7 +1933,7 @@ function ProgressNotePageInner() {
         // values after a mid-note client or credential switch unmounts their
         // sections, and without this a previous client's choice/oversight
         // narrative would ride along into the wrong chart.
-        values.q1_formRev = '3';
+        values.q1_formRev = '4';
         stripInapplicableQeprFields(values, docReqs);
       }
 

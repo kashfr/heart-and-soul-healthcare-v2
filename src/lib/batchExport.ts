@@ -5,6 +5,7 @@ import { compareChronological, isoDate } from './batchExportShared';
 import { getSubmission } from './submissions';
 import { authedFetch } from './authedFetch';
 import type { ProgressNoteFormData } from './submissions';
+import { SUPERVISORY_NOTE_TYPE } from './supervisoryVisit';
 
 export type ExportFormat = 'zip' | 'merged-pdf';
 
@@ -34,7 +35,12 @@ export function pdfFilenameFor(form: ProgressNoteFormData): string {
   const nurse = sanitize(form.q11_nurseName || 'nurse');
   // Discriminate document types so a same-day shift note and oversight
   // note for the same client/nurse can't collide inside one export.
-  const kind = form.noteType === 'rn-oversight-visit' ? '_oversight' : '';
+  const kind =
+    form.noteType === 'rn-oversight-visit'
+      ? '_oversight'
+      : form.noteType === SUPERVISORY_NOTE_TYPE
+        ? '_supervisory'
+        : '';
   return `${formatDateUSFile(date)}_${client}_${nurse}${kind}.pdf`;
 }
 

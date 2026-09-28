@@ -11,6 +11,8 @@ import { getVitalRanges, getAgeGroupLabel, type VitalRangesOverride } from '@/li
 import { readVitalsRechecks, recheckAbnormalVitals, recheckBloodPressure, recheckWhen, vitalsRecheckAllKeys, MAX_VITALS_RECHECKS, recheckAddedKey, type VitalsRecheck } from '@/lib/vitalsRecheck';
 import { formatDuration, readSeizureEntries, seizureDurationSeconds, sortSeizuresByStart } from '../seizureShared';
 import { parseCareTaskCharting } from '@/lib/careTaskCharting';
+import { SUPERVISORY_NOTE_TYPE } from '@/lib/supervisoryVisit';
+import { followUpSummary, FOLLOW_UP_ACTION_KEY } from '@/lib/vitalsFollowUp';
 
 /**
  * Raw form data stored on a progress-note document. Every field is a string
@@ -997,6 +999,11 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
   // it synchronously during this same render).
   currentFieldAmendments = fieldAmendments || {};
 
+  const isOversight = data.noteType === 'rn-oversight-visit';
+  const isSupervisory = data.noteType === SUPERVISORY_NOTE_TYPE;
+  /** Shift progress note: the only type that renders the shift groups. */
+  const isShift = !isOversight && !isSupervisory;
+
   return (
     <Document>
       <Page size="LETTER" style={s.page}>
@@ -1004,9 +1011,11 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
           <Text style={s.companyName}>{orgName}</Text>
           <Text style={s.companyTagline}>{tagline}</Text>
           <Text style={s.formTitle}>
-            {data.noteType === 'rn-oversight-visit'
+            {isOversight
               ? 'RN Oversight Visit Note'
-              : 'Home Health Progress Note'}
+              : isSupervisory
+                ? 'Home Supervisory Visit'
+                : 'Home Health Progress Note'}
           </Text>
           <Text style={s.formDate}>
             Form Date: {fmtDate(data.q6_dateofService) || data.q6_dateofService || ''}
@@ -1024,7 +1033,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         )}
 
         {/* === GROUP 1: Client & Shift === */}
-        <GroupHeader title="Client & Shift" />
+        <GroupHeader title={isSupervisory ? 'Client' : 'Client & Shift'} />
 
         {/* 1. Client Information */}
         {anyHasValue(data, ['q3_clientName', 'q4_dateofBirth', 'q5_ageYears', 'q10_primaryDiagnosis', 'q200_addr_line1']) && (
@@ -1042,7 +1051,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         )}
 
         {/* 2. Shift Information (shift notes only; oversight notes carry times in Visit Details) */}
-        {data.noteType !== 'rn-oversight-visit' && anyHasValue(data, ['q6_dateofService', 'q7_shiftStart', 'q62_shiftEndTime', 'q9_totalHours']) && (
+        {isShift && anyHasValue(data, ['q6_dateofService', 'q7_shiftStart', 'q62_shiftEndTime', 'q9_totalHours']) && (
           <Section title="Shift Information">
             <FieldRow>
               <FieldCol><Field fieldKey="q6_dateofService" label="Date of Service" value={fmtDate(data.q6_dateofService)} /></FieldCol>
@@ -1054,7 +1063,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         )}
 
         {/* 3. Nurse / Caregiver */}
-        {anyHasValue(data, ['q11_nurseName', 'q12_credential']) && (
+        {!isSupervisory && anyHasValue(data, ['q11_nurseName', 'q12_credential']) && (
           <Section title="Nurse / Caregiver">
             <FieldRow>
               <FieldCol><Field fieldKey="q11_nurseName" label="Name" value={data.q11_nurseName} /></FieldCol>
@@ -1166,7 +1175,57 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
           </>
         )}
 
-        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Status & Vitals" />}
+        {/* Home Supervisory Visit sections (noteType 'home-supervisory-visit' only) */}
+        {isSupervisory && (
+          <>
+            <GroupHeader title="Home Supervisory Visit" />
+            <Section title="Visit Details">
+              <FieldRow>
+                <FieldCol><Field fieldKey="q6_dateofService" label="Date" value={fmtDate(data.q6_dateofService)} /></FieldCol>
+                <FieldCol><Field fieldKey="sv_timeIn" label="Time In" value={data.sv_timeIn} /></FieldCol>
+                <FieldCol><Field fieldKey="sv_timeOut" label="Time Out" value={data.sv_timeOut} /></FieldCol>
+              </FieldRow>
+              {hasValue(data.sv_address) && <Field fieldKey="sv_address" label="Address" value={data.sv_address} />}
+              <Field fieldKey="sv_staffName" label="Staff Performing Duties" value={data.sv_staffName} />
+              <Field fieldKey="q11_nurseName" label="Supervisor" value={data.q11_nurseName} />
+            </Section>
+            {anyHasValue(data, ['sv_complaint', 'sv_anythingElse']) && (
+              <SectionBreakable title="Client Questions">
+                {hasValue(data.sv_complaint) && <TextBlock fieldKey="sv_complaint" label="What would you do if you had a complaint?" value={data.sv_complaint} />}
+                {hasValue(data.sv_anythingElse) && <TextBlock fieldKey="sv_anythingElse" label="Is there anything else you would like to tell me?" value={data.sv_anythingElse} />}
+              </SectionBreakable>
+            )}
+            <SectionBreakable title="Overall Assessment of Client">
+              <FieldRow>
+                <FieldCol><Field fieldKey="q16_temperature" label="Temp" value={data.q16_temperature ? `${data.q16_temperature} °F${data.q16_temperatureRoute ? ` (${data.q16_temperatureRoute})` : ''}` : ''} /></FieldCol>
+                <FieldCol><Field fieldKey="q17_bloodPressure" label="BP" value={data.q17_bloodPressure ? `${data.q17_bloodPressure} mmHg` : ''} /></FieldCol>
+                <FieldCol><Field fieldKey="q18_pulse" label="Pulse" value={data.q18_pulse ? `${data.q18_pulse} bpm` : ''} /></FieldCol>
+              </FieldRow>
+              {hasValue(data.sv_generalConditions) && <TextBlock fieldKey="sv_generalConditions" label="General Conditions" value={data.sv_generalConditions} />}
+              {hasValue(data.sv_clientProgress) && <TextBlock fieldKey="sv_clientProgress" label="Client Progress" value={data.sv_clientProgress} />}
+              <Field fieldKey="sv_problems" label="Problems Encountered by Client" value={data.sv_problems} />
+              {hasValue(data.sv_problemsDetail) && <TextBlock fieldKey="sv_problemsDetail" label="Problems Encountered" value={data.sv_problemsDetail} />}
+              <Field fieldKey="sv_rightsInformed" label="Client Informed of Rights" value={data.sv_rightsInformed} />
+              <Field fieldKey="sv_clientSatisfied" label="Client Satisfied with the Services" value={data.sv_clientSatisfied} />
+              {hasValue(data.sv_dissatisfaction) && <TextBlock fieldKey="sv_dissatisfaction" label="Client's Dissatisfaction" value={data.sv_dissatisfaction} />}
+            </SectionBreakable>
+            <SectionBreakable title="Interview with the Client">
+              <Field fieldKey="sv_interviewMethod" label="Interview" value={data.sv_interviewMethod} />
+              {hasValue(data.sv_interviewNotes) && <TextBlock fieldKey="sv_interviewNotes" label="Interview Notes" value={data.sv_interviewNotes} />}
+              <Field fieldKey="sv_levelOfCare" label="Level of Care Appropriate for Client's Needs" value={data.sv_levelOfCare} />
+              {hasValue(data.sv_levelOfCareRecs) && <TextBlock fieldKey="sv_levelOfCareRecs" label="Level of Care Recommendations" value={data.sv_levelOfCareRecs} />}
+              <Field fieldKey="sv_satisfiedWithStaff" label="Client Satisfied with the Staff" value={data.sv_satisfiedWithStaff} />
+              {hasValue(data.sv_staffFeedback) && <TextBlock fieldKey="sv_staffFeedback" label="Client's Feedback on Staff Performance" value={data.sv_staffFeedback} />}
+            </SectionBreakable>
+            {hasValue(data.sv_recommendations) && (
+              <SectionBreakable title="Recommendations">
+                <TextBlock fieldKey="sv_recommendations" label="Recommendations" value={data.sv_recommendations} />
+              </SectionBreakable>
+            )}
+          </>
+        )}
+
+        {isShift && <GroupHeader title="Status & Vitals" />}
 
         {/* 3b. Since Your Last Shift (rev 3+) */}
         {anyHasValue(data, ['q68_sinceHospitalAdmission', 'q68_sinceErUrgentCare', 'q68_sinceMedChange', 'q68_sinceDetails']) && (
@@ -1240,6 +1299,12 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
             {vitalRechecks.map((r) => (
               <VitalsRecheckBlock key={r.index} reading={r} ranges={vitalRangeSet} />
             ))}
+            {hasValue(data[FOLLOW_UP_ACTION_KEY]) && (
+              <View style={s.sectionBody}>
+                {/* What was done about a vital still out of range after its recheck. */}
+                <TextBlock fieldKey={FOLLOW_UP_ACTION_KEY} label="Abnormal Vitals Follow-Up" value={followUpSummary(data as unknown as Record<string, unknown>)} />
+              </View>
+            )}
             {(hasValue(data.q16_vitalsNotObtainedReason) || hasValue(data.q22_additionalObservations)) && (
               <View style={s.sectionBody}>
                 {hasValue(data.q16_vitalsNotObtainedReason) && (
@@ -1261,7 +1326,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         )}
 
         {/* === GROUP 3: Observations & Systems === */}
-        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Observations & Systems" />}
+        {isShift && <GroupHeader title="Observations & Systems" />}
 
         {/* 6. Observations */}
         {anyHasValue(data, [
@@ -1321,7 +1386,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         )}
 
         {/* === GROUP 4: Personal Care & Nutrition === */}
-        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Personal Care & Nutrition" />}
+        {isShift && <GroupHeader title="Personal Care & Nutrition" />}
 
         {/* 8b. Care Plan Tasks — plan-of-care charting. Renders from the
             careTasksMeta snapshot stored on the note, so it prints exactly
@@ -1384,7 +1449,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         )}
 
         {/* === GROUP 5: Meds & Interventions === */}
-        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Meds & Interventions" />}
+        {isShift && <GroupHeader title="Meds & Interventions" />}
 
         {/* 13. Skilled Nursing Interventions (LPN/RN only) */}
         {isLpnRn && anyHasValue(data, ['q38_interventions', 'q39_interventionDetails', 'q39_individualResponse', 'q40_skillJustification']) && (
@@ -1439,7 +1504,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         )}
 
         {/* === GROUP 6: Education & Notifications === */}
-        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Education & Notifications" />}
+        {isShift && <GroupHeader title="Education & Notifications" />}
 
         {/* 15. Education */}
         {anyHasValue(data, [

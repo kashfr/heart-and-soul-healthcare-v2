@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Users, ClipboardList, UserCog, FileText, FilePlus, FileEdit, ShieldAlert, MessageCircleQuestion, Stethoscope, PhoneCall } from 'lucide-react';
+import { Users, ClipboardList, UserCog, FileText, FilePlus, FileEdit, ShieldAlert, MessageCircleQuestion, Stethoscope, PhoneCall, HomeIcon } from 'lucide-react';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { loadDraft, subscribePendingDupCount, type NoteDraft } from '@/lib/drafts';
 import { subscribeMyOpenClarifications } from '@/lib/clarifications';
 import type { Role } from '@/lib/auth';
+import { canAuthorSupervisoryVisit } from '@/lib/supervisoryVisit';
 import HandoffInbox, { HandoffInboxTitle } from '@/components/HandoffInbox';
 
 interface Card {
@@ -152,6 +153,16 @@ export default function AdminDashboardPage() {
     allow: ['nurse', 'admin', 'supervisor'],
   };
 
+  // Home supervisory visit: nurse supervisors and admins, like the form.
+  const canAuthorSupervisory = !isViewingAs && canAuthorSupervisoryVisit(role);
+  const supervisoryCard: Card = {
+    href: '/supervisory-visit',
+    icon: <HomeIcon size={22} />,
+    title: 'Home supervisory visit',
+    description: "Document a supervisory visit at a client's home: vitals, client interview, satisfaction, and recommendations.",
+    allow: ['admin', 'supervisor'],
+  };
+
   // Verbal orders: taking one needs an RN/LPN credential (or staff); the
   // queue itself is readable by every clinical role.
   const canTakeVerbalOrder =
@@ -180,6 +191,7 @@ export default function AdminDashboardPage() {
   const visibleCards = [
     ...(canAuthorNote ? [noteCard] : []),
     ...(canAuthorOversight ? [oversightCard] : []),
+    ...(canAuthorSupervisory ? [supervisoryCard] : []),
     ...(role !== 'va' ? [verbalOrderCard] : []),
     ...(role !== 'va' ? [medErrorCard] : []),
     ...CARDS.filter((c) => role && c.allow.includes(role)),

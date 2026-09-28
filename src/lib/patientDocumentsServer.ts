@@ -24,17 +24,23 @@ import { formatDateUS } from './dateFormat';
  * these helpers are the only path, and the routes gate them by role.
  */
 
-/** Note types that file themselves into Documents, and where. Adding the
- *  future supervisory-visit form is one line here. */
+/** Note types that file themselves into Documents, and where. */
 export const NOTE_DOC_CATEGORY: Record<string, string> = {
   'rn-oversight-visit': 'RN Oversight',
+  'home-supervisory-visit': 'Supervisory Visit',
+};
+
+/** Title prefix per note type, e.g. "RN Oversight Visit, 09/07/2026, …". */
+const NOTE_DOC_TITLE: Record<string, string> = {
+  'rn-oversight-visit': 'RN Oversight Visit',
+  'home-supervisory-visit': 'Home Supervisory Visit',
 };
 
 export function noteDocTitle(data: Record<string, unknown>): string {
-  const kind = NOTE_DOC_CATEGORY[String(data.noteType || '')] || 'Note';
+  const kind = NOTE_DOC_TITLE[String(data.noteType || '')] || 'Note';
   const date = formatDateUS(isoFromAnyDate(String(data.q6_dateofService || '')));
   const nurse = String(data.q11_nurseName || '').trim();
-  return `${kind} Visit, ${date}${nurse ? `, ${nurse}` : ''}`;
+  return `${kind}, ${date}${nurse ? `, ${nurse}` : ''}`;
 }
 
 export type FileNoteResult =
@@ -51,7 +57,7 @@ export async function fileNoteAsDocument(noteId: string, caller: AuthedCaller): 
   if (!noteSnap.exists) return { ok: false, reason: 'not-found', message: 'Note not found.' };
   const data = noteSnap.data() as Record<string, unknown>;
   const category = NOTE_DOC_CATEGORY[String(data.noteType || '')];
-  if (!category) return { ok: false, reason: 'not-eligible', message: 'Only RN oversight visit notes file into Documents.' };
+  if (!category) return { ok: false, reason: 'not-eligible', message: 'Only RN oversight visit notes and home supervisory visits file into Documents.' };
   const patientId = String(data.patientId || '');
   if (!patientId) return { ok: false, reason: 'no-patient', message: 'The note is not linked to a client on the roster.' };
   const isStaff = caller.role === 'admin' || caller.role === 'supervisor';

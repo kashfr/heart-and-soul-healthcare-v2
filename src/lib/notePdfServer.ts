@@ -8,6 +8,7 @@ import { getEditHistoryServer } from '@/lib/editHistoryServer';
 import { buildFieldAmendments } from '@/lib/revisionFormat';
 import { collapseAddedRechecks } from '@/lib/vitalsRecheck';
 import { formatDateUS, formatDateUSFile } from '@/lib/dateFormat';
+import { SUPERVISORY_NOTE_TYPE } from './supervisoryVisit';
 
 /**
  * Server-side rendering of a progress / oversight note to PDF bytes, shared
@@ -108,6 +109,11 @@ export async function renderNotePdf(data: ProgressNoteFormData, noteId?: string 
 export function notePdfFilename(data: { q3_clientName?: string; q6_dateofService?: string; noteType?: string }): string {
   const clientName = sanitize(data.q3_clientName || 'client');
   const dateStr = isoFromAnyDate(data.q6_dateofService);
-  const kind = data.noteType === 'rn-oversight-visit' ? 'Oversight_Note' : 'Progress_Note';
+  const kind =
+    data.noteType === 'rn-oversight-visit'
+      ? 'Oversight_Note'
+      : data.noteType === SUPERVISORY_NOTE_TYPE
+        ? 'Supervisory_Visit'
+        : 'Progress_Note';
   return `${kind}_${clientName}_${formatDateUSFile(dateStr)}.pdf`;
 }
