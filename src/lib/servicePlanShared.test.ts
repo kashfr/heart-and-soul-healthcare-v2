@@ -110,6 +110,13 @@ describe('draftFromPlan', () => {
     expect(d.supervisorCredentials).toBe('');
     expect(d.revisesPlanId).toBe('plan1');
   });
+
+  it('keeps the credentials the same signer typed before when the profile has none', () => {
+    const plan = { ...complete, id: 'plan1', clientName: '', dob: '', signedDate: '', createdAt: null, createdBy: '', createdByName: '', documentId: '', supervisorName: 'Kaheem Freeman', supervisorCredentials: 'RN' } as ServicePlanRecord;
+    expect(draftFromPlan(plan, { name: 'kaheem freeman ', credentials: '' }).supervisorCredentials).toBe('RN');
+    expect(draftFromPlan(plan, { name: 'Kaheem Freeman', credentials: 'MSN, RN' }).supervisorCredentials).toBe('MSN, RN');
+    expect(draftFromPlan(plan, { name: 'S. Lilian Payne', credentials: '' }).supervisorCredentials).toBe('');
+  });
 });
 
 describe('prefill text', () => {

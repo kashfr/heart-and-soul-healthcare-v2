@@ -273,6 +273,8 @@ export function sanitizeServicePlanInput(raw: unknown): ServicePlanInput {
   };
 }
 
+const sameName = (a: string, b: string) => !!a.trim() && a.trim().toLowerCase() === b.trim().toLowerCase();
+
 /** A filed plan, opened as the starting point of a revision. The signature and
  *  the signer are never carried over: the new plan is signed fresh. */
 export function draftFromPlan(plan: ServicePlanRecord, signer: { name: string; credentials: string }): ServicePlanInput {
@@ -282,7 +284,9 @@ export function draftFromPlan(plan: ServicePlanRecord, signer: { name: string; c
     ...base,
     goals: goals.length ? goals : [{ goal: '', objective: '' }],
     supervisorName: signer.name,
-    supervisorCredentials: signer.credentials,
+    // A profile without a credential falls back to what the same person
+    // typed on the earlier plan, so they don't retype it every revision.
+    supervisorCredentials: signer.credentials || (sameName(plan.supervisorName, signer.name) ? base.supervisorCredentials : ''),
     signature: '',
     revisesPlanId: plan.id,
   };
