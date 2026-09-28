@@ -61,9 +61,20 @@ supervisor. Built 09/28/2026 at the owner's request.
 - Survey readiness: "Service plan" card and an Overview alert from the
   "Service Plan" document currency, `SERVICE_PLAN_MAX_DAYS` = 365 as a
   baseline for the compliance nurse to tune.
-- Documents tab: the filed PDF shows a "From service plan" chip; Edit,
-  Replace and Move are hidden like other auto-filed documents; the admin
-  delete confirmation explains the signed plan stays on the tab.
+- Documents tab: the filed PDF shows a "From service plan" chip. Like the
+  other auto-filed PDFs, Replace and Move are hidden (Edit, Archive and
+  Delete remain); the admin delete confirmation explains the signed plan
+  stays on the tab.
+
+## PDF gotchas
+
+- react-pdf resolves a unitless `lineHeight` against its default 18 pt font
+  size when the style inherits its size from the page, so 1.3 came out as
+  23.4 pt. Every style with a `lineHeight` sets `fontSize` explicitly.
+- Multi-line values render one `Text` per line (`Lines`), and
+  `hyphenationCallback` keeps whole words (the default split "in-juries").
+- The PDF is rebuilt from the record on every "View PDF"; the copy filed
+  under Documents is the one rendered at signing.
 
 ## Tests
 

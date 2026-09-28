@@ -1,4 +1,5 @@
 import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/renderer';
+import type { Style } from '@react-pdf/types';
 import { BRAND_LOGO_DATA_URL, BRAND_LOGO_ASPECT } from './brandLogo';
 import { serviceTypesLabel, specialDietLabel, usedGoals, yesNoLabel, type ServicePlanRecord } from '@/lib/servicePlanShared';
 
@@ -24,10 +25,11 @@ const s = StyleSheet.create({
   title: { fontSize: 15, fontFamily: 'Helvetica-Bold', textAlign: 'center', marginBottom: 10, letterSpacing: 0.5 },
   row: { flexDirection: 'row', marginBottom: 4 },
   label: { fontFamily: 'Helvetica-Bold', width: 168, paddingRight: 6 },
-  value: { flex: 1, lineHeight: 1.3 },
+  value: { fontSize: 10, lineHeight: 1.3 },
+  inline: { marginBottom: 4, fontSize: 10, lineHeight: 1.3 },
   block: { marginBottom: 5 },
   blockLabel: { fontFamily: 'Helvetica-Bold', marginBottom: 2 },
-  blockValue: { lineHeight: 1.3, paddingLeft: 2 },
+  blockValue: { fontSize: 10, lineHeight: 1.3, paddingLeft: 2 },
   twoUp: { flexDirection: 'row', gap: 18 },
   half: { flex: 1 },
   section: { fontSize: 11, fontFamily: 'Helvetica-Bold', marginTop: 6, marginBottom: 6, paddingBottom: 2, borderBottomWidth: 0.75, borderBottomColor: RULE },
@@ -35,7 +37,8 @@ const s = StyleSheet.create({
   tr: { flexDirection: 'row', borderBottomWidth: 0.75, borderBottomColor: RULE },
   trLast: { flexDirection: 'row' },
   th: { flex: 1, padding: 5, fontFamily: 'Helvetica-Bold', backgroundColor: '#f3f4f6', textAlign: 'center' },
-  td: { flex: 1, padding: 5, lineHeight: 1.3 },
+  td: { flex: 1, padding: 5 },
+  cell: { fontSize: 10, lineHeight: 1.3 },
   tdLeft: { borderRightWidth: 0.75, borderRightColor: RULE },
   sigBlock: { marginTop: 14, flexDirection: 'row', gap: 30 },
   sigCol: { flex: 1 },
@@ -44,12 +47,38 @@ const s = StyleSheet.create({
   footer: { position: 'absolute', bottom: 20, left: 54, right: 54, flexDirection: 'row', justifyContent: 'space-between', fontSize: 7.5, color: MUTED },
 });
 
+// Whole words only: react-pdf hyphenates by default ("in-juries").
+const noHyphen = (word: string) => [word];
+
+/** Multi-line text, one Text per line. A single Text with embedded newlines
+ *  renders nearly double-spaced in react-pdf. */
+function Lines({ text, style, grow }: { text: string; style?: Style; grow?: boolean }) {
+  const lines = (text || ' ').split(/\r?\n/);
+  return (
+    <View style={grow ? { flex: 1 } : undefined}>
+      {lines.map((l, i) => (
+        <Text key={i} style={style} hyphenationCallback={noHyphen}>{l || ' '}</Text>
+      ))}
+    </View>
+  );
+}
+
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <View style={s.row} wrap={false}>
-      <Text style={s.label}>{label}:</Text>
-      <Text style={s.value}>{value || ' '}</Text>
+      <Text style={s.label} hyphenationCallback={noHyphen}>{label}:</Text>
+      <Lines text={value} style={s.value} grow />
     </View>
+  );
+}
+
+/** Label and value run together, for the short answers set side by side. */
+function Inline({ label, value }: { label: string; value: string }) {
+  return (
+    <Text style={s.inline} hyphenationCallback={noHyphen}>
+      <Text style={{ fontFamily: 'Helvetica-Bold' }}>{label}: </Text>
+      {value}
+    </Text>
   );
 }
 
@@ -57,7 +86,7 @@ function Block({ label, value }: { label: string; value: string }) {
   return (
     <View style={s.block}>
       <Text style={s.blockLabel}>{label}:</Text>
-      <Text style={s.blockValue}>{value || ' '}</Text>
+      <Lines text={value} style={s.blockValue} />
     </View>
   );
 }
@@ -87,8 +116,8 @@ export default function ServicePlanPDF({ plan, dob, signedDate }: ServicePlanPdf
           <View style={s.half}>
             <Row label="Name of Client" value={plan.clientName} />
           </View>
-          <View style={{ width: 190 }}>
-            <Row label="Date of Birth" value={dob} />
+          <View style={{ width: 150 }}>
+            <Inline label="Date of Birth" value={dob} />
           </View>
         </View>
         <Row label="Address" value={plan.address} />
@@ -103,11 +132,11 @@ export default function ServicePlanPDF({ plan, dob, signedDate }: ServicePlanPdf
 
         <Text style={s.section}>Diet and Personal Care</Text>
         <View style={s.twoUp}>
-          <View style={s.half}>
-            <Row label="Regular Diet" value={yesNoLabel(plan.regularDiet)} />
+          <View style={{ width: 150 }}>
+            <Inline label="Regular Diet" value={yesNoLabel(plan.regularDiet)} />
           </View>
           <View style={s.half}>
-            <Row label="Special Diet" value={specialDietLabel(plan.specialDiets, plan.specialDietOther) || 'None'} />
+            <Inline label="Special Diet" value={specialDietLabel(plan.specialDiets, plan.specialDietOther) || 'None'} />
           </View>
         </View>
         <Row label="Special Treatments" value={plan.specialTreatments || 'None'} />
@@ -115,13 +144,13 @@ export default function ServicePlanPDF({ plan, dob, signedDate }: ServicePlanPdf
         <Block label="Behaviors that may interfere with delivering services" value={plan.behaviors || 'None'} />
         <View style={s.twoUp}>
           <View style={s.half}>
-            <Row label="Tub Bath" value={yesNoLabel(plan.tubBath)} />
+            <Inline label="Tub Bath" value={yesNoLabel(plan.tubBath)} />
           </View>
           <View style={s.half}>
-            <Row label="Bed Bath" value={yesNoLabel(plan.bedBath)} />
+            <Inline label="Bed Bath" value={yesNoLabel(plan.bedBath)} />
           </View>
           <View style={s.half}>
-            <Row label="Applying Lotion to Back" value={yesNoLabel(plan.lotionToBack)} />
+            <Inline label="Applying Lotion to Back" value={yesNoLabel(plan.lotionToBack)} />
           </View>
         </View>
 
@@ -133,8 +162,8 @@ export default function ServicePlanPDF({ plan, dob, signedDate }: ServicePlanPdf
           </View>
           {goals.map((g, i) => (
             <View key={i} style={i === goals.length - 1 ? s.trLast : s.tr} wrap={false}>
-              <Text style={[s.td, s.tdLeft]}>{g.goal}</Text>
-              <Text style={s.td}>{g.objective}</Text>
+              <View style={[s.td, s.tdLeft]}><Lines text={g.goal} style={s.cell} /></View>
+              <View style={s.td}><Lines text={g.objective} style={s.cell} /></View>
             </View>
           ))}
         </View>
