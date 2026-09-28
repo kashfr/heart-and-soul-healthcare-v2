@@ -36,6 +36,7 @@ import CorrectionsBlockGate from './CorrectionsBlockGate';
 import AnnouncementGate from './AnnouncementGate';
 import type { Role } from '@/lib/auth';
 import { canUseFax } from '@/lib/faxShared';
+import { canUseEdwp } from '@/lib/edwpAccess';
 import { subscribePendingDupCount } from '@/lib/drafts';
 import { subscribeMyOpenClarifications, subscribeOpenFlagsAwaitingReviewer } from '@/lib/clarifications';
 import { subscribePendingHandoffs } from '@/lib/handoffs';
@@ -49,6 +50,8 @@ interface NavItem {
   allow?: Role[];
   /** Also needs the Fax Center grant from Settings (see faxShared.canUseFax). */
   requiresFax?: boolean;
+  /** Also needs the EDWP Consents grant from Settings (see edwpAccess.canUseEdwp). */
+  requiresEdwp?: boolean;
   disabled?: boolean;
 }
 
@@ -89,7 +92,9 @@ const NAV: NavItem[] = [
   { href: '/admin/announcements', label: 'Announcements', icon: <Megaphone size={18} />, allow: ['admin'] },
   { href: '/admin/referrals', label: 'Referrals', icon: <FileText size={18} />, allow: ['admin', 'va'] },
   { href: '/admin/agencies', label: 'Agencies', icon: <Handshake size={18} />, allow: ['admin', 'va'] },
-  { href: '/admin/edwp-consents', label: 'EDWP Consents', icon: <FileSignature size={18} />, allow: ['admin', 'va'] },
+  // Signed EDWP consents (client PHI). Admins, plus the supervisors and VAs
+  // an admin checks in Settings (every VA until that list is first saved).
+  { href: '/admin/edwp-consents', label: 'EDWP Consents', icon: <FileSignature size={18} />, allow: ['admin', 'supervisor', 'va'], requiresEdwp: true },
   // Send a PDF to a physician's office (or anyone) through SRFax with a cover
   // sheet, and track delivery. Shown only to people an admin granted in
   // Settings; the /api/fax routes enforce the same rule.
@@ -241,7 +246,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const visibleNav = NAV.filter(
     (item) =>
       (!item.allow || (role && item.allow.includes(role))) &&
-      (!item.requiresFax || canUseFax(appSettings.fax, effectiveUid, role)),
+      (!item.requiresFax || canUseFax(appSettings.fax, effectiveUid, role)) &&
+      (!item.requiresEdwp || canUseEdwp(appSettings.edwp, effectiveUid, role)),
   );
 
   // Client-scoped surfaces that lost their own sidebar slot in the nav

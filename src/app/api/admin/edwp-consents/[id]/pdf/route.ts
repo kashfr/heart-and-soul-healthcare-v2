@@ -1,7 +1,8 @@
 import { renderToBuffer } from '@react-pdf/renderer';
 import React from 'react';
 import { NextResponse } from 'next/server';
-import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
+import { AdminAuthError } from '@/lib/adminAuthGuard';
+import { requireEdwpAccess } from '@/lib/edwpAccessServer';
 import { getEdwpConsent } from '@/lib/edwpConsentServer';
 import EdwpConsentPDF from '@/lib/pdf/EdwpConsentPDF';
 
@@ -15,7 +16,7 @@ function sanitize(part: string): string {
 /** Re-render the signed consent PDF for staff download. */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireRole(request, ['admin', 'va']);
+    await requireEdwpAccess(request);
   } catch (err) {
     if (err instanceof AdminAuthError) {
       return NextResponse.json({ error: err.message }, { status: err.status });

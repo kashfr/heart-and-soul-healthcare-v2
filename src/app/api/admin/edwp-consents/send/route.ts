@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
+import { AdminAuthError } from '@/lib/adminAuthGuard';
+import { requireEdwpAccess } from '@/lib/edwpAccessServer';
 import { createEdwpConsentInvite } from '@/lib/edwpConsentServer';
 import { sendEdwpConsentRequest } from '@/lib/emails/edwpConsent';
 import { buildEdwpConsentUrl } from '@/lib/shareLink';
@@ -13,7 +14,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export async function POST(request: Request) {
   let caller;
   try {
-    caller = await requireRole(request, ['admin', 'va']);
+    caller = await requireEdwpAccess(request);
   } catch (err) {
     if (err instanceof AdminAuthError) {
       return NextResponse.json({ error: err.message }, { status: err.status });
