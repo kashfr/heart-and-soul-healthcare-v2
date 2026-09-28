@@ -58,6 +58,8 @@ import DeselectableRadio, {
   radioGetSnapshot,
 } from '../progress-note/components/DeselectableRadio';
 import VitalSignsFields from '../progress-note/components/VitalSignsFields';
+import VitalsRecheckSection from '../progress-note/components/VitalsRecheckSection';
+import { isBpRoutinelyRequired } from '@/lib/vitalRanges';
 import type { FormValues } from '../progress-note/types';
 import styles from '../progress-note/page.module.css';
 
@@ -139,10 +141,13 @@ const SUPERVISORY_FIELD_MESSAGES: Record<string, string> = {
   q11_nurseName: 'Enter the supervisor name.',
   sv_complaint: "Record the client's answer to the complaint question.",
   sv_anythingElse: "Record the client's answer, or note that they had nothing to add.",
-  q16_temperature: 'Enter the temperature.',
+  q16_temperature: 'Enter the temperature, or choose why vitals could not be obtained.',
   q16_temperatureRoute: 'Choose how the temperature was taken.',
-  q17_bloodPressure: 'Enter both blood pressure numbers.',
-  q18_pulse: 'Enter the pulse.',
+  q17_bloodPressure: 'Enter both blood pressure numbers, or choose why it could not be obtained.',
+  q18_pulse: 'Enter the pulse, or choose why vitals could not be obtained.',
+  q19_respiration: 'Enter the respirations, or choose why vitals could not be obtained.',
+  q20_oxygenSaturation: 'Enter the O2 saturation, or choose why vitals could not be obtained.',
+  q21_oxygenSource: 'Choose the oxygen source for the recorded saturation.',
   sv_generalConditions: "Describe the client's general conditions.",
   sv_clientProgress: "Document the client's progress.",
   sv_problems: 'Choose whether the client encountered any problems.',
@@ -499,7 +504,9 @@ function SupervisoryVisitPageInner() {
     if (values.sv_clientSatisfied !== 'No') values.sv_dissatisfaction = '';
 
     values.noteType = SUPERVISORY_NOTE_TYPE;
-    values.q1_formRev = '1';
+    // Rev 2 (09/2026): the full vitals block (respiration, SpO2 + source,
+    // "unable to obtain" reasons, rechecks), matching the shift note.
+    values.q1_formRev = '2';
     // Signed at the end of the visit; stamp the signed date from the visit
     // date so the signature block never renders "Date Signed: --".
     values.q62_shiftEndDate = String(values.q6_dateofService || '');
@@ -516,9 +523,10 @@ function SupervisoryVisitPageInner() {
     setMissing([]);
 
     // Typo guard on the vitals (the same bounds as the shift note).
-    const vitalsOk = await trigger(['q16_temperature', 'q17_systolic', 'q17_diastolic', 'q18_pulse']);
+    const VITAL_INPUTS = ['q16_temperature', 'q17_systolic', 'q17_diastolic', 'q18_pulse', 'q19_respiration', 'q20_oxygenSaturation'] as const;
+    const vitalsOk = await trigger([...VITAL_INPUTS]);
     if (!vitalsOk) {
-      const firstBad = ['q16_temperature', 'q17_systolic', 'q17_diastolic', 'q18_pulse'].find((k) => rhfErrors[k]);
+      const firstBad = VITAL_INPUTS.find((k) => rhfErrors[k]);
       escortToField(firstBad === 'q17_systolic' || firstBad === 'q17_diastolic' ? 'q17_bloodPressure' : firstBad || 'q16_temperature');
       return;
     }
@@ -631,6 +639,8 @@ function SupervisoryVisitPageInner() {
     }
   };
 
+  // BP is routinely required from age 3 (AAP); under 3 it is optional, as on the shift note.
+  const bpRequired = isBpRoutinelyRequired(String(watch('q5_ageYears') || ''), String(watch('q4_dateofBirth') || ''));
   const fe = (k: string) => fieldErrors[k] || (rhfErrors[k]?.message ? String(rhfErrors[k]?.message) : undefined);
   const hi = (k: string) => (fieldErrors[k] ? FIELD_ERROR_STYLE : undefined);
 
@@ -867,16 +877,23 @@ function SupervisoryVisitPageInner() {
           {/* ASSESSMENT */}
           <div className={styles.section}>
             <span className={styles.sectionLabel}>OVERALL ASSESSMENT OF CLIENT</span>
+            {/* The shift note's vitals block, unchanged: all five vitals, the
+                "unable to obtain" reasons, the clinical detail selects, and
+                later rechecks, so every note captures vitals the same way. */}
             <VitalSignsFields
               register={register}
               watch={watch}
               setValue={setValue}
               ageStr={String(watch('q5_ageYears') || '')}
               dob={String(watch('q4_dateofBirth') || '')}
-              fields={['temperature', 'bloodPressure', 'pulse']}
               required
+              notObtainedReason
+              bpNotObtainedReason={bpRequired}
+              bpOptional={!bpRequired}
+              details
               errorFor={fe}
             />
+            <VitalsRecheckSection register={register} watch={watch} setValue={setValue} />
             <Area id="sv_generalConditions" error={fe('sv_generalConditions')} label="General conditions:" register={register} required />
             <Area id="sv_clientProgress" error={fe('sv_clientProgress')} label="Document client progress:" register={register} required />
             {yesNo('sv_problems', 'Were there any problems encountered by the client?')}
