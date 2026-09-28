@@ -29,6 +29,8 @@ function completeVisit(): Record<string, string> {
     sv_temp: '98.4',
     sv_bp: '118/76',
     sv_pulse: '72',
+    sv_generalConditions: 'Alert, oriented, home clean.',
+    sv_clientProgress: 'Walking further with the walker.',
     sv_problems: 'No',
     sv_rightsInformed: 'Yes',
     sv_clientSatisfied: 'Yes',
@@ -48,8 +50,9 @@ describe('getSupervisoryIncomplete', () => {
     const d = completeVisit();
     delete d.sv_bp;
     delete d.sv_staffName;
+    delete d.sv_clientProgress;
     delete d.q61_signature;
-    expect(getSupervisoryIncomplete(d).map((i) => i.key)).toEqual(['sv_staffName', 'sv_bp', 'q61_signature']);
+    expect(getSupervisoryIncomplete(d).map((i) => i.key)).toEqual(['sv_staffName', 'sv_bp', 'sv_clientProgress', 'q61_signature']);
   });
 
   it('requires an explanation only when the answer calls for one', () => {

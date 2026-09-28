@@ -50,6 +50,8 @@ const SUPERVISORY_RULES: SvRule[] = [
   { key: 'sv_temp', label: 'Temp' },
   { key: 'sv_bp', label: 'BP' },
   { key: 'sv_pulse', label: 'Pulse' },
+  { key: 'sv_generalConditions', label: 'General conditions' },
+  { key: 'sv_clientProgress', label: 'Client progress' },
 
   { key: 'sv_problems', label: 'Problems encountered by the client' },
   {

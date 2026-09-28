@@ -148,6 +148,8 @@ describe('SupervisoryVisitPage', () => {
     await waitFor(() => expect(screen.getByText(/Missing required fields/)).toBeInTheDocument());
     expect(screen.getByText('Select the client from the roster.')).toBeInTheDocument();
     expect(screen.getByText('Choose the staff member performing duties.')).toBeInTheDocument();
+    expect(screen.getByText("Describe the client's general conditions.")).toBeInTheDocument();
+    expect(screen.getByText("Document the client's progress.")).toBeInTheDocument();
     expect(mockSubmissions.saveSubmission).not.toHaveBeenCalled();
   });
 
@@ -163,6 +165,8 @@ describe('SupervisoryVisitPage', () => {
     fireEvent.change(screen.getByLabelText(/^Temp/), { target: { value: '98.4' } });
     fireEvent.change(screen.getByLabelText(/^BP/), { target: { value: '118/76' } });
     fireEvent.change(screen.getByLabelText(/^Pulse/), { target: { value: '72' } });
+    fireEvent.change(screen.getByLabelText(/General conditions/), { target: { value: 'Alert, home clean.' } });
+    fireEvent.change(screen.getByLabelText(/Document client progress/), { target: { value: 'Walking further.' } });
     const pick = (name: string, value: string) =>
       fireEvent.click(document.getElementById(name)!.querySelector(`input[value="${value}"]`)!);
     pick('sv_problems', 'No');

@@ -138,6 +138,8 @@ const SUPERVISORY_FIELD_MESSAGES: Record<string, string> = {
   sv_temp: 'Enter the temperature.',
   sv_bp: 'Enter the blood pressure.',
   sv_pulse: 'Enter the pulse.',
+  sv_generalConditions: "Describe the client's general conditions.",
+  sv_clientProgress: "Document the client's progress.",
   sv_problems: 'Choose whether the client encountered any problems.',
   sv_problemsDetail: 'Describe the problems the client encountered.',
   sv_rightsInformed: 'Choose whether the client was informed of their rights.',
@@ -836,8 +838,8 @@ function SupervisoryVisitPageInner() {
               {input('sv_bp', 'BP', { placeholder: 'e.g. 120/80' })}
               {input('sv_pulse', 'Pulse', { inputMode: 'numeric', placeholder: 'e.g. 72' })}
             </div>
-            <Area id="sv_generalConditions" error={fe('sv_generalConditions')} label="General conditions:" register={register} />
-            <Area id="sv_clientProgress" error={fe('sv_clientProgress')} label="Document client progress:" register={register} />
+            <Area id="sv_generalConditions" error={fe('sv_generalConditions')} label="General conditions:" register={register} required />
+            <Area id="sv_clientProgress" error={fe('sv_clientProgress')} label="Document client progress:" register={register} required />
             {yesNo('sv_problems', 'Were there any problems encountered by the client?')}
             {answers.sv_problems === 'Yes' && (
               <Area
