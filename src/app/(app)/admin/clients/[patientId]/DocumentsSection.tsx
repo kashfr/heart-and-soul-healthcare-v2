@@ -144,7 +144,9 @@ export default function DocumentsSection({
 
   const remove = async (d: PatientDocument) => {
     if (!d.id || !isAdmin) return;
-    const what = d.autoFiled
+    const what = d.servicePlanId
+      ? `Delete "${d.title}"?\n\nThis is the PDF filed when the service plan was signed. The signed plan itself stays on the Service plan tab, where its PDF can still be opened. The file and its entry are removed (a snapshot is kept in the deletion audit).`
+      : d.autoFiled
       ? `Delete "${d.title}"?\n\nThis is the PDF filed from an oversight note or supervisory visit. The note itself stays; Sync would file it again. The file and its entry are removed (a snapshot is kept in the deletion audit).`
       : `Delete "${d.title}"?\n\nThe file and its entry are permanently removed from this client's documents (a snapshot is kept in the deletion audit). This cannot be undone.`;
     if (!window.confirm(what)) return;
@@ -235,8 +237,8 @@ export default function DocumentsSection({
                 <div style={docTitleStyle}>
                   {d.title}
                   {d.autoFiled && (
-                    <span style={autoChipStyle} title="Filed automatically from the submitted note; re-filed when the note is amended">
-                      From note
+                    <span style={autoChipStyle} title={d.servicePlanId ? 'Filed automatically when the service plan was signed' : 'Filed automatically from the submitted note; re-filed when the note is amended'}>
+                      {d.servicePlanId ? 'From service plan' : 'From note'}
                     </span>
                   )}
                   {d.archived && <span style={archivedChipStyle}>Archived</span>}

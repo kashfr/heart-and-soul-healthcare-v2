@@ -764,6 +764,12 @@ service cloud.firestore {
     match /ppotRecertReminders/{key} {
       allow read, write: if false;
     }
+    // Signed Service Plans (the agency's form), one doc per revision.
+    // Server-only: the API routes check a nurse's care-team scope against the
+    // client record on every read, and only staff may sign one.
+    match /servicePlans/{id} {
+      allow read, write: if false;
+    }
     // PandaDoc packets tracked from the webhook (E-signatures page). Server-only.
     match /pandadocDocuments/{docId} {
       allow read, write: if false;

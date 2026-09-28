@@ -32,7 +32,7 @@ import { authedFetch } from './authedFetch';
 export const DOC_CATEGORY_GROUPS = [
   {
     label: 'Care planning & orders',
-    categories: ['Plan of Care (485)', 'Initial Assessment', 'Nursing Assessment / 60-Day Summary', 'Physician Orders', 'Medication List'],
+    categories: ['Plan of Care (485)', 'Service Plan', 'Initial Assessment', 'Nursing Assessment / 60-Day Summary', 'Physician Orders', 'Medication List'],
   },
   {
     label: 'Visits & notes',
@@ -101,6 +101,8 @@ export interface PatientDocument {
   /** Present on documents the server filed from a submitted note. */
   sourceNoteId?: string;
   autoFiled?: boolean;
+  /** Present on the PDF filed when a Service Plan is signed. */
+  servicePlanId?: string;
   /** Set when an admin moved the document here from another client's chart. */
   movedFrom?: { patientId: string; documentId: string };
   movedAt?: unknown;
