@@ -103,6 +103,8 @@ export interface PatientDocument {
   autoFiled?: boolean;
   /** Present on the PDF filed when a Service Plan is signed. */
   servicePlanId?: string;
+  /** Present on the one-page PDF filed for a "reviewed, no changes" review. */
+  servicePlanReviewId?: string;
   /** Set when an admin moved the document here from another client's chart. */
   movedFrom?: { patientId: string; documentId: string };
   movedAt?: unknown;

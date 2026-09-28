@@ -15,6 +15,7 @@ import { getServicePlans, postServicePlan } from '@/lib/servicePlans';
 import { formatDateUS } from '@/lib/dateFormat';
 import { escortToField, firstErrorKey, FieldError, FIELD_ERROR_STYLE, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
 import {
+  DEVELOPED_WITH,
   draftFromPlan,
   EMPTY_SERVICE_PLAN_INPUT,
   medicationsText,
@@ -71,6 +72,7 @@ function Inner() {
   const [submitError, setSubmitError] = useState('');
   const [done, setDone] = useState<{ id: string; filed: boolean } | null>(null);
   const sigRef = useRef<SignatureCanvasHandle>(null);
+  const cgSigRef = useRef<SignatureCanvasHandle>(null);
 
   const signer = useMemo(
     () => ({ name: profile?.displayName || user?.email || '', credentials: profile?.credential || '' }),
@@ -133,7 +135,7 @@ function Inner() {
     setForm((f) => (f ? { ...f, [k]: v } : f));
     if (errors[k as ServicePlanErrorKey]) setErrors((e) => ({ ...e, [k]: undefined }));
   };
-  const toggle = (k: 'serviceTypes' | 'specialDiets', v: string) => {
+  const toggle = (k: 'serviceTypes' | 'specialDiets' | 'developedWith', v: string) => {
     if (!form) return;
     const cur = form[k] as string[];
     set(k, (cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v]) as never);
@@ -373,6 +375,25 @@ function Inner() {
         </section>
 
         <section style={cardStyle}>
+          <h2 style={sectionTitleStyle}>Plan developed with</h2>
+          <p style={{ ...hintStyle, margin: '-6px 0 10px' }}>
+            State rules call for the plan to be written with the client, the responsible party, and for nursing services the client&apos;s personal physician. Check who took part.
+          </p>
+          <div style={fieldStyle}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {DEVELOPED_WITH.map((t) => (
+                <button key={t.key} type="button" aria-pressed={form.developedWith.includes(t.key)} style={form.developedWith.includes(t.key) ? chipActiveStyle : chipStyle} onClick={() => toggle('developedWith', t.key)}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <Field label="Names and how (optional)">
+            <input style={inputStyle} value={form.developedWithNotes} onChange={(e) => set('developedWithNotes', e.target.value)} placeholder="e.g. Mother, Jane Doe, in person; Dr. Patel by phone on 09/25/2026" />
+          </Field>
+        </section>
+
+        <section style={cardStyle}>
           <h2 style={sectionTitleStyle}>Supervisor signature</h2>
           <div style={rowStyle}>
             <Field id={fieldId('supervisorName')} label="Supervisor printed name *" error={fe('supervisorName')}>
@@ -396,6 +417,31 @@ function Inner() {
               <button type="button" style={linkBtnStyle} onClick={() => { sigRef.current?.clear(); set('signature', ''); }}>Clear signature</button>
             </div>
             <FieldError message={fe('signature')} />
+          </div>
+        </section>
+
+        <section style={cardStyle}>
+          <h2 style={sectionTitleStyle}>Caregiver signature (optional)</h2>
+          <p style={{ ...hintStyle, margin: '-6px 0 10px' }}>
+            GAPP requires the caregiver to sign the nursing care plan (GAPP manual section 916). For other programs, leave this blank.
+          </p>
+          <div style={rowStyle}>
+            <Field id={fieldId('caregiverName')} label="Caregiver printed name" error={fe('caregiverName')}>
+              <input style={{ ...inputStyle, ...hi('caregiverName') }} value={form.caregiverName} onChange={(e) => set('caregiverName', e.target.value)} />
+            </Field>
+            <Field label="Relationship to client">
+              <input style={inputStyle} value={form.caregiverRelationship} onChange={(e) => set('caregiverRelationship', e.target.value)} placeholder="e.g. Mother" />
+            </Field>
+          </div>
+          <div id={fieldId('caregiverSignature')} style={fieldStyle}>
+            <span style={labelStyle}>Caregiver signature</span>
+            <div style={{ ...sigWrapStyle, ...(fe('caregiverSignature') ? FIELD_ERROR_STYLE : null) }}>
+              <SignatureCanvas ref={cgSigRef} className="service-plan-sig" onChange={(dataUrl) => set('caregiverSignature', dataUrl)} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button type="button" style={linkBtnStyle} onClick={() => { cgSigRef.current?.clear(); set('caregiverSignature', ''); }}>Clear caregiver signature</button>
+            </div>
+            <FieldError message={fe('caregiverSignature')} />
           </div>
         </section>
 

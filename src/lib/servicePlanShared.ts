@@ -22,6 +22,15 @@ export type SpecialDietKey = (typeof SPECIAL_DIETS)[number]['key'];
 
 export type YesNo = 'yes' | 'no';
 
+/** Who the plan was developed with (111-8-65-.11(1): the client, the
+ *  responsible party, and for nursing services the personal physician). */
+export const DEVELOPED_WITH = [
+  { key: 'client', label: 'Client' },
+  { key: 'responsible-party', label: 'Responsible party / caregiver' },
+  { key: 'physician', label: 'Personal physician' },
+] as const;
+export type DevelopedWithKey = (typeof DEVELOPED_WITH)[number]['key'];
+
 export interface ServicePlanGoal {
   goal: string;
   objective: string;
@@ -57,6 +66,14 @@ export interface ServicePlanInput {
   supervisorCredentials: string;
   /** PNG data URL from the signature pad. */
   signature: string;
+  /** Optional. GAPP section 916 asks for the caregiver's signature on the
+   *  nursing care plan; other programs may leave it blank. */
+  caregiverName: string;
+  caregiverRelationship: string;
+  caregiverSignature: string;
+  /** Optional: who took part in writing the plan, and their names. */
+  developedWith: DevelopedWithKey[];
+  developedWithNotes: string;
   /** The plan this one revises, when it was started from an earlier plan. */
   revisesPlanId: string;
 }
@@ -74,6 +91,83 @@ export interface ServicePlanRecord extends ServicePlanInput {
   createdByName: string;
   /** The PDF filed under the client's Documents, when filing succeeded. */
   documentId: string;
+  /** "Reviewed, no changes" attestations on this plan, oldest first. */
+  reviews: ServicePlanReview[];
+}
+
+/**
+ * A supervisor's attestation that the plan was reviewed and still reflects
+ * the client's needs. Restarts the 62-day clock without writing a new plan.
+ */
+export interface ServicePlanReview {
+  id: string;
+  planId: string;
+  patientId: string;
+  /** YYYY-MM-DD, agency time, set by the server. */
+  reviewedDate: string;
+  reviewerUid: string;
+  reviewerName: string;
+  reviewerCredentials: string;
+  signature: string;
+  note: string;
+  /** Differences from the current record the reviewer confirmed do not change
+   *  the plan, as shown to them at review time. */
+  differencesAcknowledged: string[];
+  documentId: string;
+  createdAt: string | null;
+}
+
+export interface ServicePlanReviewInput {
+  reviewerName: string;
+  reviewerCredentials: string;
+  signature: string;
+  note: string;
+  differencesAcknowledged: string[];
+  /** The reviewer ticked "still reflects the client's needs". */
+  attested: boolean;
+}
+
+export const EMPTY_REVIEW_INPUT: ServicePlanReviewInput = {
+  reviewerName: '',
+  reviewerCredentials: '',
+  signature: '',
+  note: '',
+  differencesAcknowledged: [],
+  attested: false,
+};
+
+export type ReviewErrorKey = 'attested' | 'note' | 'reviewerName' | 'reviewerCredentials' | 'signature';
+export const REVIEW_ERROR_ORDER: readonly ReviewErrorKey[] = ['attested', 'note', 'reviewerName', 'reviewerCredentials', 'signature'];
+export const REVIEW_FIELD_LABEL: Record<ReviewErrorKey, string> = {
+  attested: 'Review statement',
+  note: 'Note',
+  reviewerName: 'Reviewer printed name',
+  reviewerCredentials: 'Reviewer credentials',
+  signature: 'Reviewer signature',
+};
+
+/** When the record differs from the plan, the reviewer must say why the plan
+ *  still stands, in at least a sentence. */
+export function validateReview(r: ServicePlanReviewInput): Partial<Record<ReviewErrorKey, string>> {
+  const e: Partial<Record<ReviewErrorKey, string>> = {};
+  if (!r.attested) e.attested = 'Confirm the plan still reflects the client\'s needs, or revise the plan instead.';
+  if (r.differencesAcknowledged.length > 0 && r.note.trim().length < 15) e.note = 'Explain why the differences listed above do not change the plan, or revise the plan instead.';
+  if (!r.reviewerName.trim()) e.reviewerName = "Enter the reviewer's printed name.";
+  if (!r.reviewerCredentials.trim()) e.reviewerCredentials = "Enter the reviewer's credentials (for example RN).";
+  if (!r.signature) e.signature = 'Sign the review.';
+  return e;
+}
+
+export function sanitizeReviewInput(raw: unknown): ServicePlanReviewInput {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  return {
+    reviewerName: String(r.reviewerName ?? '').slice(0, 200),
+    reviewerCredentials: String(r.reviewerCredentials ?? '').slice(0, 60),
+    signature: String(r.signature ?? ''),
+    note: String(r.note ?? '').slice(0, 2000),
+    differencesAcknowledged: (Array.isArray(r.differencesAcknowledged) ? r.differencesAcknowledged : []).slice(0, 50).map((x) => String(x).slice(0, 400)),
+    attested: r.attested === true,
+  };
 }
 
 export const EMPTY_SERVICE_PLAN_INPUT: ServicePlanInput = {
@@ -102,6 +196,11 @@ export const EMPTY_SERVICE_PLAN_INPUT: ServicePlanInput = {
   supervisorName: '',
   supervisorCredentials: '',
   signature: '',
+  caregiverName: '',
+  caregiverRelationship: '',
+  caregiverSignature: '',
+  developedWith: [],
+  developedWithNotes: '',
   revisesPlanId: '',
 };
 
@@ -129,7 +228,9 @@ export type ServicePlanErrorKey =
   | 'dischargePlans'
   | 'supervisorName'
   | 'supervisorCredentials'
-  | 'signature';
+  | 'signature'
+  | 'caregiverName'
+  | 'caregiverSignature';
 
 export type ServicePlanFieldErrors = Partial<Record<ServicePlanErrorKey, string>>;
 
@@ -155,6 +256,8 @@ export const SERVICE_PLAN_ERROR_ORDER: readonly ServicePlanErrorKey[] = [
   'supervisorName',
   'supervisorCredentials',
   'signature',
+  'caregiverName',
+  'caregiverSignature',
 ];
 
 export const SERVICE_PLAN_FIELD_LABEL: Record<ServicePlanErrorKey, string> = {
@@ -178,6 +281,8 @@ export const SERVICE_PLAN_FIELD_LABEL: Record<ServicePlanErrorKey, string> = {
   supervisorName: 'Supervisor printed name',
   supervisorCredentials: 'Supervisor credentials',
   signature: 'Supervisor signature',
+  caregiverName: 'Caregiver printed name',
+  caregiverSignature: 'Caregiver signature',
 };
 
 const isYesNo = (v: unknown): v is YesNo => v === 'yes' || v === 'no';
@@ -219,6 +324,9 @@ export function validateServicePlan(p: ServicePlanInput): ServicePlanFieldErrors
   if (!filled(p.supervisorName)) e.supervisorName = "Enter the supervisor's printed name.";
   if (!filled(p.supervisorCredentials)) e.supervisorCredentials = "Enter the supervisor's credentials (for example RN).";
   if (!p.signature) e.signature = 'Sign the plan.';
+  // The caregiver block is optional, but half of it is not a signature.
+  if (p.caregiverSignature && !filled(p.caregiverName)) e.caregiverName = "Enter the caregiver's printed name, or clear their signature.";
+  if (filled(p.caregiverName) && !p.caregiverSignature) e.caregiverSignature = 'Have the caregiver sign, or clear their name.';
   return e;
 }
 
@@ -236,6 +344,9 @@ export function sanitizeServicePlanInput(raw: unknown): ServicePlanInput {
     : [];
   const specialDiets = Array.isArray(r.specialDiets)
     ? SPECIAL_DIETS.map((t) => t.key).filter((k) => (r.specialDiets as unknown[]).includes(k))
+    : [];
+  const developedWith = Array.isArray(r.developedWith)
+    ? DEVELOPED_WITH.map((t) => t.key).filter((k) => (r.developedWith as unknown[]).includes(k))
     : [];
   const goals = (Array.isArray(r.goals) ? r.goals : [])
     .slice(0, SERVICE_PLAN_MAX_GOALS)
@@ -269,6 +380,11 @@ export function sanitizeServicePlanInput(raw: unknown): ServicePlanInput {
     supervisorName: text('supervisorName', 200),
     supervisorCredentials: text('supervisorCredentials', 60),
     signature: String(r.signature ?? ''),
+    caregiverName: text('caregiverName', 200),
+    caregiverRelationship: text('caregiverRelationship', 100),
+    caregiverSignature: String(r.caregiverSignature ?? ''),
+    developedWith,
+    developedWithNotes: text('developedWithNotes', 1000),
     revisesPlanId: text('revisesPlanId', 128).trim(),
   };
 }
@@ -288,6 +404,12 @@ export function draftFromPlan(plan: ServicePlanRecord, signer: { name: string; c
     // typed on the earlier plan, so they don't retype it every revision.
     supervisorCredentials: signer.credentials || (sameName(plan.supervisorName, signer.name) ? base.supervisorCredentials : ''),
     signature: '',
+    // A revision is signed, and developed, afresh.
+    caregiverName: '',
+    caregiverRelationship: '',
+    caregiverSignature: '',
+    developedWith: [],
+    developedWithNotes: '',
     revisesPlanId: plan.id,
   };
 }
@@ -341,9 +463,64 @@ export function specialDietLabel(keys: readonly string[], other: string): string
 
 export const yesNoLabel = (v: YesNo | ''): string => (v === 'yes' ? 'Yes' : v === 'no' ? 'No' : '');
 
-/** Plans are revised on the client's own schedule; a plan older than this is
- *  flagged on Survey readiness as a baseline the compliance nurse can tune. */
-export const SERVICE_PLAN_MAX_DAYS = 365;
+/** 111-8-65-.11(2): nursing service plans are reviewed and updated at least
+ *  every 62 days. Every Heart and Soul client receives nursing, so this is the
+ *  clock; a review or a revision restarts it. */
+export const SERVICE_PLAN_MAX_DAYS = 62;
+
+export function developedWithLabel(keys: readonly string[], notes: string): string {
+  const parts: string[] = DEVELOPED_WITH.filter((t) => keys.includes(t.key)).map((t) => t.label);
+  const who = parts.join(', ');
+  const n = notes.trim();
+  return who && n ? `${who} (${n})` : who || n;
+}
+
+/** Latest activity on a plan: its signing or its newest review. */
+export function lastReviewedISO(plan: Pick<ServicePlanRecord, 'signedDate' | 'reviews'>): string {
+  return [plan.signedDate, ...plan.reviews.map((r) => r.reviewedDate)].filter(Boolean).sort().pop() || '';
+}
+
+/** YYYY-MM-DD plus n days, calendar arithmetic in UTC (no DST drift). */
+export function addDaysISO(iso: string, n: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return '';
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+export interface CurrentRecord {
+  diagnosis: string;
+  allergies: string;
+  diet: string;
+  /** Active MAR orders. */
+  activeMeds: string[];
+  /** Orders no longer active (discontinued, or past their end date). */
+  inactiveMeds: string[];
+  /** Approved, active care-plan task names. */
+  tasks: string[];
+}
+
+/**
+ * What in today's record the plan no longer matches, in words a nurse can act
+ * on. Record fields left blank are not compared; wording that only differs in
+ * case or punctuation is not a difference.
+ */
+export function planDifferences(plan: Pick<ServicePlanInput, 'diagnosis' | 'allergies' | 'nutritionalNeeds' | 'medications' | 'descriptionOfServices'>, cur: CurrentRecord): string[] {
+  const out: string[] = [];
+  const differs = (planText: string, recordText: string) => !!norm(recordText) && norm(planText) !== norm(recordText);
+  if (differs(plan.diagnosis, cur.diagnosis)) out.push(`Diagnosis: the client record now says "${cur.diagnosis.trim()}".`);
+  if (differs(plan.allergies, cur.allergies)) out.push(`Allergies: the client record now says "${cur.allergies.trim()}".`);
+  if (differs(plan.nutritionalNeeds, cur.diet)) out.push(`Diet: the client record now says "${cur.diet.trim()}".`);
+  const meds = norm(plan.medications);
+  const active = new Set(cur.activeMeds.map(norm));
+  for (const m of cur.activeMeds) if (norm(m) && !meds.includes(norm(m))) out.push(`Medication on the MAR but not in the plan: ${m}.`);
+  for (const m of cur.inactiveMeds) if (norm(m) && !active.has(norm(m)) && meds.includes(norm(m))) out.push(`Medication in the plan but no longer active on the MAR: ${m}.`);
+  const services = norm(plan.descriptionOfServices);
+  for (const t of cur.tasks) if (norm(t) && !services.includes(norm(t))) out.push(`Care-plan task not in the description of services: ${t}.`);
+  return out;
+}
 
 /** The Documents category the signed PDF is filed under. */
 export const SERVICE_PLAN_DOC_CATEGORY = 'Service Plan';

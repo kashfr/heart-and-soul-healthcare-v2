@@ -1,7 +1,8 @@
 import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/renderer';
 import type { Style } from '@react-pdf/types';
 import { BRAND_LOGO_DATA_URL, BRAND_LOGO_ASPECT } from './brandLogo';
-import { serviceTypesLabel, specialDietLabel, usedGoals, yesNoLabel, type ServicePlanRecord } from '@/lib/servicePlanShared';
+import { developedWithLabel, serviceTypesLabel, specialDietLabel, usedGoals, yesNoLabel, type ServicePlanRecord } from '@/lib/servicePlanShared';
+import { formatDateUS } from '@/lib/dateFormat';
 
 // The signed Service Plan, laid out like the agency's paper form: identity
 // lines, the service lines, the diet and personal-care answers, the goals and
@@ -44,6 +45,8 @@ const s = StyleSheet.create({
   sigCol: { flex: 1 },
   sigLine: { borderTopWidth: 0.75, borderTopColor: INK, paddingTop: 3, fontSize: 8.5, color: MUTED },
   sigImage: { width: 190, height: 60 },
+  reviewRow: { flexDirection: 'row', gap: 12, alignItems: 'center', paddingVertical: 4, borderBottomWidth: 0.5, borderBottomColor: RULE },
+  reviewSig: { width: 110, height: 35 },
   footer: { position: 'absolute', bottom: 20, left: 54, right: 54, flexDirection: 'row', justifyContent: 'space-between', fontSize: 7.5, color: MUTED },
 });
 
@@ -170,6 +173,9 @@ export default function ServicePlanPDF({ plan, dob, signedDate }: ServicePlanPdf
 
         <Block label="Medications" value={plan.medications} />
         <Block label="Discharge Plans" value={plan.dischargePlans} />
+        {developedWithLabel(plan.developedWith, plan.developedWithNotes) ? (
+          <Row label="Plan Developed With" value={developedWithLabel(plan.developedWith, plan.developedWithNotes)} />
+        ) : null}
 
         <View style={s.sigBlock} wrap={false}>
           <View style={s.sigCol}>
@@ -186,6 +192,41 @@ export default function ServicePlanPDF({ plan, dob, signedDate }: ServicePlanPdf
             <Text style={s.sigLine}>Supervisor Signature/Date: {signedDate}</Text>
           </View>
         </View>
+
+        {plan.caregiverSignature ? (
+          <View style={s.sigBlock} wrap={false}>
+            <View style={s.sigCol}>
+              <Text style={{ marginBottom: 3 }}>{plan.caregiverName}{plan.caregiverRelationship ? ` (${plan.caregiverRelationship})` : ''}</Text>
+              <Text style={s.sigLine}>Caregiver Printed Name/Relationship</Text>
+            </View>
+            <View style={s.sigCol}>
+              {/* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf Image has no alt prop */}
+              <Image src={plan.caregiverSignature} style={s.sigImage} />
+              <Text style={s.sigLine}>Caregiver Signature/Date: {signedDate}</Text>
+            </View>
+          </View>
+        ) : null}
+
+        {plan.reviews.length > 0 ? (
+          <View>
+            <Text style={s.section}>Reviews Since Signing</Text>
+            {plan.reviews.map((r) => (
+              <View key={r.id} style={s.reviewRow} wrap={false}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.value}>
+                    <Text style={{ fontFamily: 'Helvetica-Bold' }}>{formatDateUS(r.reviewedDate)}: </Text>
+                    Reviewed by {r.reviewerName}{r.reviewerCredentials ? `, ${r.reviewerCredentials}` : ''}. No changes to the plan.
+                  </Text>
+                  {r.note ? <Lines text={`Note: ${r.note}`} style={s.value} /> : null}
+                </View>
+                {r.signature ? (
+                  // eslint-disable-next-line jsx-a11y/alt-text -- react-pdf Image has no alt prop
+                  <Image src={r.signature} style={s.reviewSig} />
+                ) : null}
+              </View>
+            ))}
+          </View>
+        ) : null}
 
         <View style={s.footer} fixed>
           <Text>Confidential: contains protected health information.</Text>

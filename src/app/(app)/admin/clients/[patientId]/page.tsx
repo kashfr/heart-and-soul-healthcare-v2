@@ -301,8 +301,9 @@ function ClientDashboardInner() {
     () => documentCurrency(documents, 'Plan of Care (485)', POC_MAX_DAYS, today),
     [documents, today],
   );
-  // The agency's own Service Plan, signed in the portal and auto-filed as a
-  // PDF under this category (see the Service plan tab).
+  // The agency's own Service Plan: signing a plan or a "no changes" review
+  // files a PDF under this category, dated that day, so the newest one is the
+  // last review. 111-8-65-.11(2): nursing plans every 62 days.
   const servicePlanCurrency = useMemo(
     () => documentCurrency(documents, SERVICE_PLAN_DOC_CATEGORY, SERVICE_PLAN_MAX_DAYS, today),
     [documents, today],
@@ -484,7 +485,7 @@ function ClientDashboardInner() {
     alerts.push({ text: 'No plan of care on file', go: () => setTab('documents') });
   }
   if (servicePlanCurrency.status === 'bad') {
-    alerts.push({ text: 'Service plan over a year old', go: () => setTab('serviceplan') });
+    alerts.push({ text: 'Service plan review overdue', go: () => setTab('serviceplan') });
   } else if (servicePlanCurrency.status === 'none') {
     alerts.push({ text: 'No service plan on file', go: () => setTab('serviceplan') });
   }
@@ -937,12 +938,12 @@ function ClientDashboardInner() {
                 value={
                   servicePlanCurrency.status === 'none'
                     ? 'No service plan on file'
-                    : `Current plan ${servicePlanCurrency.daysSince}d old`
+                    : `Last signed or reviewed ${servicePlanCurrency.daysSince}d ago`
                 }
                 detail={
                   servicePlanCurrency.status === 'none'
                     ? 'Write and sign the service plan on the Service plan tab'
-                    : `${fmtDate(servicePlanCurrency.newestDateISO)} · revised at least every ${SERVICE_PLAN_MAX_DAYS}d (baseline)`
+                    : `${fmtDate(servicePlanCurrency.newestDateISO)} · reviewed at least every ${SERVICE_PLAN_MAX_DAYS}d (111-8-65-.11)`
                 }
                 icon={<ClipboardList size={14} />}
               />

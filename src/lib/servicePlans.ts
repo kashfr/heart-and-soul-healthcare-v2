@@ -1,5 +1,5 @@
 import { authedFetch } from './authedFetch';
-import type { ServicePlanInput, ServicePlanRecord } from './servicePlanShared';
+import type { ServicePlanInput, ServicePlanRecord, ServicePlanReviewInput } from './servicePlanShared';
 
 export type { ServicePlanRecord } from './servicePlanShared';
 
@@ -21,6 +21,22 @@ export function servicePlanPdfUrl(id: string): string {
 /** Sign and file. On a 400 with field errors the thrown Error carries `fields`. */
 export async function postServicePlan(input: ServicePlanInput): Promise<{ id: string; filed: boolean }> {
   const res = await authedFetch('/api/service-plans', { method: 'POST', body: JSON.stringify(input) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data.error || `Request failed (${res.status}).`) as Error & { fields?: Record<string, string> };
+    if (data.fields) err.fields = data.fields;
+    throw err;
+  }
+  return { id: String(data.id), filed: data.filed === true };
+}
+
+export function servicePlanReviewPdfUrl(planId: string, reviewId: string): string {
+  return `/api/service-plans/${encodeURIComponent(planId)}/reviews/${encodeURIComponent(reviewId)}/pdf`;
+}
+
+/** Record "reviewed, no changes". On a 400 with field errors the thrown Error carries `fields`. */
+export async function postServicePlanReview(planId: string, input: ServicePlanReviewInput): Promise<{ id: string; filed: boolean }> {
+  const res = await authedFetch(`/api/service-plans/${encodeURIComponent(planId)}/reviews`, { method: 'POST', body: JSON.stringify(input) });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const err = new Error(data.error || `Request failed (${res.status}).`) as Error & { fields?: Record<string, string> };

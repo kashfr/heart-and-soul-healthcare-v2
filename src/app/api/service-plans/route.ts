@@ -6,7 +6,7 @@ import { sanitizeServicePlanInput, validateServicePlan } from '@/lib/servicePlan
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const MAX_BODY_BYTES = 1_500_000;
+const MAX_BODY_BYTES = 2_000_000;
 const ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 const SIG_RE = /^data:image\/png;base64,[A-Za-z0-9+/]+=*$/;
 const SIG_MAX = 400_000;
@@ -48,6 +48,7 @@ export async function POST(request: Request) {
   const input = sanitizeServicePlanInput(body);
   const errors = validateServicePlan(input);
   if (input.signature && (input.signature.length > SIG_MAX || !SIG_RE.test(input.signature))) errors.signature = 'The signature could not be read. Clear it and sign again.';
+  if (input.caregiverSignature && (input.caregiverSignature.length > SIG_MAX || !SIG_RE.test(input.caregiverSignature))) errors.caregiverSignature = 'The caregiver signature could not be read. Clear it and sign again.';
   if (Object.keys(errors).length) return NextResponse.json({ error: 'Please correct the highlighted fields.', fields: errors }, { status: 400 });
   if (!ID_RE.test(input.patientId) || (input.revisesPlanId && !ID_RE.test(input.revisesPlanId))) {
     return NextResponse.json({ error: 'Invalid reference.' }, { status: 400 });

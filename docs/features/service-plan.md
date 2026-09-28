@@ -16,6 +16,39 @@ supervisor. Built 09/28/2026 at the owner's request.
   `supervisor` or `admin`, never during view-as.
 - Every submission is a new, signed, immutable plan. The newest plan is the
   current one; earlier plans stay on record and are marked superseded.
+- Review, no changes: `/admin/clients/{patientId}/service-plan/review`.
+  Same authors. See "Reviews" below.
+
+## How often (the rule)
+
+Ga. Comp. R. and Regs. 111-8-65-.11(2): the plan is completed within 7
+working days of starting services; nursing service plans are reviewed and
+updated at least every 62 days; parts are revised whenever an item on the
+plan changes. GAPP manual section 916 adds a minimum of once per renewal
+period and asks for the RN's and the caregiver's signatures. The 62-day rule
+is the stricter one and drives the readiness clock (`SERVICE_PLAN_MAX_DAYS`).
+
+## Reviews ("reviewed, no changes")
+
+Decided with the owner on 09/28/2026: a routine 62-day review with nothing to
+change does not write a new plan and does not re-file the full plan PDF.
+
+- Only the current (newest) plan can be reviewed; the server refuses an
+  older one.
+- The review page compares the plan to today's record (`planDifferences`):
+  diagnosis, allergies and diet on the client record, active MAR orders not
+  named in the plan's medications, plan medications whose orders are no
+  longer active, and approved care-plan tasks not named in the description
+  of services. Case and punctuation are ignored; blank record fields are
+  skipped. Any difference shows a "Revise the plan instead" button; the
+  reviewer may still sign, but must explain in the note why the plan stands,
+  and the listed differences are saved with the review.
+- Stored at `servicePlans/{planId}/reviews/{reviewId}` (server-only).
+- Files a one-page "Service Plan Review" PDF under the "Service Plan"
+  document category, dated the review, which restarts the readiness clock.
+  The plan PDF gains a "Reviews Since Signing" log.
+- The tab shows the reviews, "last reviewed", and "next review due by" (red
+  once overdue).
 
 ## Storage
 
@@ -53,15 +86,20 @@ supervisor. Built 09/28/2026 at the owner's request.
   "Use the approved care-plan tasks" buttons re-pull those two fields.
   Signer name and credentials come from the profile; the signature is
   always fresh.
+- "Plan developed with" (optional): client, responsible party / caregiver,
+  personal physician, plus names. Cleared on a revision.
+- Caregiver signature (optional, for GAPP section 916): printed name,
+  relationship, signature. A name needs a signature and vice versa. Cleared
+  on a revision.
 - Blocked submits outline and escort to the first field, with the list of
   issues at the top (`applyFieldErrors` pattern, ids `sp-field-*`).
 
 ## Elsewhere in the app
 
 - Survey readiness: "Service plan" card and an Overview alert from the
-  "Service Plan" document currency, `SERVICE_PLAN_MAX_DAYS` = 365 as a
-  baseline for the compliance nurse to tune.
-- Documents tab: the filed PDF shows a "From service plan" chip. Like the
+  newest "Service Plan" document (a signed plan or a review), 62 days.
+- Documents tab: the filed PDFs show a "From service plan" or "From plan
+  review" chip. Like the
   other auto-filed PDFs, Replace and Move are hidden (Edit, Archive and
   Delete remain); the admin delete confirmation explains the signed plan
   stays on the tab.

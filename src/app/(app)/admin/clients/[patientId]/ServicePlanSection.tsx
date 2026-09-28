@@ -1,29 +1,35 @@
 'use client';
 
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import Link from 'next/link';
-import { FileText, PenLine } from 'lucide-react';
+import { CheckCircle2, FileText, PenLine } from 'lucide-react';
 import PdfPreviewModal from '@/components/PdfPreviewModal';
 import { formatDateUS } from '@/lib/dateFormat';
-import { getServicePlans, servicePlanPdfUrl, type ServicePlanRecord } from '@/lib/servicePlans';
-import { serviceTypesLabel, specialDietLabel, usedGoals, yesNoLabel } from '@/lib/servicePlanShared';
+import { getServicePlans, servicePlanPdfUrl, servicePlanReviewPdfUrl, type ServicePlanRecord } from '@/lib/servicePlans';
+import { addDaysISO, lastReviewedISO, SERVICE_PLAN_MAX_DAYS } from '@/lib/servicePlanShared';
+import ServicePlanDetails from './ServicePlanDetails';
 
 const NAVY = '#1a3a5c';
 
 interface Props {
   patientId: string;
-  /** Supervisors and admins write plans; nurses on the care team read them. */
+  /** Supervisors and admins write and review plans; nurses on the care team read them. */
   canAuthor: boolean;
 }
 
+function todayAgencyISO(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+
 /**
- * Client-dashboard tab: the current (newest) signed Service Plan in full, the
- * earlier plans as a history, and the door to write or revise one.
+ * Client-dashboard tab: the current (newest) signed Service Plan in full, its
+ * reviews, the 62-day due date, the earlier plans as a history, and the doors
+ * to review (no changes) or revise (a new signed plan).
  */
 export default function ServicePlanSection({ patientId, canAuthor }: Props) {
   const [plans, setPlans] = useState<ServicePlanRecord[] | undefined>(undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [preview, setPreview] = useState<ServicePlanRecord | null>(null);
+  const [preview, setPreview] = useState<{ title: string; url: string } | null>(null);
   const [showing, setShowing] = useState<string>('');
 
   // Keyed by patient on the dashboard, so a mount is always a fresh client.
@@ -37,20 +43,40 @@ export default function ServicePlanSection({ patientId, canAuthor }: Props) {
 
   const current = plans?.[0] || null;
   const shown = plans?.find((p) => p.id === showing) || current;
-  const newHref = `/admin/clients/${patientId}/service-plan/new`;
+  const base = `/admin/clients/${patientId}/service-plan`;
+  const lastISO = current ? lastReviewedISO(current) : '';
+  const dueISO = lastISO ? addDaysISO(lastISO, SERVICE_PLAN_MAX_DAYS) : '';
+  const overdue = !!dueISO && dueISO < todayAgencyISO();
 
   return (
     <div>
       <div style={headRow}>
-        <p style={sub}>
-          {current
-            ? `Current plan signed ${formatDateUS(current.signedDate)}${current.createdByName ? ` by ${current.createdByName}` : ''}. Every signed plan is kept; a revision files a new one.`
-            : 'The service plan describes the services, frequency, goals and discharge plan for this client, signed by the supervisor.'}
-        </p>
+        <div style={{ flex: '1 1 320px' }}>
+          {current ? (
+            <>
+              <p style={sub}>
+                Current plan signed {formatDateUS(current.signedDate)}{current.createdByName ? ` by ${current.createdByName}` : ''}
+                {current.reviews.length > 0 ? `, last reviewed ${formatDateUS(lastISO)}` : ''}.
+              </p>
+              <p style={{ ...sub, marginTop: 2, color: overdue ? '#b3261e' : '#7f8c8d', fontWeight: overdue ? 700 : 400 }}>
+                {overdue ? `Review overdue since ${formatDateUS(dueISO)}.` : `Next review due by ${formatDateUS(dueISO)}.`} Nursing service plans are reviewed at least every {SERVICE_PLAN_MAX_DAYS} days.
+              </p>
+            </>
+          ) : (
+            <p style={sub}>The service plan describes the services, frequency, goals and discharge plan for this client, signed by the supervisor.</p>
+          )}
+        </div>
         {canAuthor && plans !== undefined && !loadError && (
-          <Link href={newHref} style={primaryLink}>
-            <PenLine size={14} /> {current ? 'Revise service plan' : 'Write service plan'}
-          </Link>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {current && (
+              <Link href={`${base}/review`} style={primaryLink}>
+                <CheckCircle2 size={14} /> Review, no changes
+              </Link>
+            )}
+            <Link href={`${base}/new`} style={current ? secondaryLink : primaryLink}>
+              <PenLine size={14} /> {current ? 'Revise service plan' : 'Write service plan'}
+            </Link>
+          </div>
         )}
       </div>
 
@@ -79,75 +105,52 @@ export default function ServicePlanSection({ patientId, canAuthor }: Props) {
                 <div style={planMeta}>Signed {formatDateUS(shown.signedDate)} by {shown.supervisorName}{shown.supervisorCredentials ? `, ${shown.supervisorCredentials}` : ''}</div>
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button type="button" onClick={() => setPreview(shown)} style={ghostBtn}><FileText size={13} /> View PDF</button>
+                <button type="button" onClick={() => setPreview({ title: `Service Plan, signed ${formatDateUS(shown.signedDate)}`, url: servicePlanPdfUrl(shown.id) })} style={ghostBtn}>
+                  <FileText size={13} /> View PDF
+                </button>
                 {canAuthor && shown.id !== current?.id && (
-                  <Link href={`${newHref}?from=${encodeURIComponent(shown.id)}`} style={ghostLink}><PenLine size={13} /> Revise from this plan</Link>
+                  <Link href={`${base}/new?from=${encodeURIComponent(shown.id)}`} style={ghostLink}><PenLine size={13} /> Revise from this plan</Link>
                 )}
               </div>
             </div>
-            <dl style={grid}>
-              <Row label="Client">{shown.clientName}{shown.dob ? `, DOB ${formatDateUS(shown.dob)}` : ''}</Row>
-              <Row label="Address">{shown.address}</Row>
-              <Row label="Diagnosis">{shown.diagnosis}</Row>
-              <Row label="Functional limitations"><Pre>{shown.functionalLimitations}</Pre></Row>
-              <Row label="Services required">{serviceTypesLabel(shown.serviceTypes)}</Row>
-              <Row label="Nutritional needs">{shown.nutritionalNeeds}</Row>
-              <Row label="Allergies">{shown.allergies}</Row>
-              <Row label="Times and frequency">{shown.expectedTimesFrequency}</Row>
-              <Row label="Expected duration">{shown.expectedDuration}</Row>
-              <Row label="Description of services"><Pre>{shown.descriptionOfServices}</Pre></Row>
-              <Row label="Regular diet">{yesNoLabel(shown.regularDiet)}</Row>
-              <Row label="Special diet">{specialDietLabel(shown.specialDiets, shown.specialDietOther) || 'None'}</Row>
-              <Row label="Special treatments">{shown.specialTreatments || 'None'}</Row>
-              <Row label="Special equipment">{shown.specialEquipment || 'None'}</Row>
-              <Row label="Behaviors"><Pre>{shown.behaviors || 'None'}</Pre></Row>
-              <Row label="Personal care">
-                Tub bath: {yesNoLabel(shown.tubBath)} · Bed bath: {yesNoLabel(shown.bedBath)} · Applying lotion to back: {yesNoLabel(shown.lotionToBack)}
-              </Row>
-              <Row label="Goals and objectives">
-                <table style={goalTable}>
-                  <thead>
-                    <tr><th style={th}>Goal</th><th style={th}>Objective</th></tr>
-                  </thead>
-                  <tbody>
-                    {usedGoals(shown.goals).map((g, i) => (
-                      <tr key={i}><td style={td}>{g.goal}</td><td style={td}>{g.objective}</td></tr>
-                    ))}
-                  </tbody>
-                </table>
-              </Row>
-              <Row label="Medications"><Pre>{shown.medications}</Pre></Row>
-              <Row label="Discharge plans"><Pre>{shown.dischargePlans}</Pre></Row>
-            </dl>
+
+            {shown.reviews.length > 0 && (
+              <div style={reviewBox}>
+                <div style={reviewTitle}>Reviews since signing</div>
+                <ul style={reviewList}>
+                  {[...shown.reviews].reverse().map((r) => (
+                    <li key={r.id} style={reviewItem}>
+                      <CheckCircle2 size={14} color="#1e5c1e" style={{ flexShrink: 0, marginTop: 2 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <strong>{formatDateUS(r.reviewedDate)}</strong>: reviewed by {r.reviewerName}{r.reviewerCredentials ? `, ${r.reviewerCredentials}` : ''}, no changes.
+                        {r.note && <div style={{ color: '#5c6b7a', whiteSpace: 'pre-wrap' }}>{r.note}</div>}
+                      </div>
+                      <button type="button" style={linkBtn} onClick={() => setPreview({ title: `Service Plan Review, ${formatDateUS(r.reviewedDate)}`, url: servicePlanReviewPdfUrl(shown.id, r.id) })}>
+                        View
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <ServicePlanDetails plan={shown} />
           </div>
         </>
       )}
 
-      {preview && (
-        <PdfPreviewModal title={`Service Plan, signed ${formatDateUS(preview.signedDate)}`} url={servicePlanPdfUrl(preview.id)} onClose={() => setPreview(null)} />
-      )}
+      {preview && <PdfPreviewModal title={preview.title} url={preview.url} onClose={() => setPreview(null)} />}
     </div>
   );
 }
 
-function Row({ label: l, children }: { label: string; children: ReactNode }) {
-  return (
-    <>
-      <dt style={dt}>{l}</dt>
-      <dd style={dd}>{children}</dd>
-    </>
-  );
-}
-
-function Pre({ children }: { children: ReactNode }) {
-  return <span style={{ whiteSpace: 'pre-wrap' }}>{children}</span>;
-}
-
 const headRow: CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 12 };
-const sub: CSSProperties = { fontSize: 12.5, color: '#7f8c8d', margin: 0, lineHeight: 1.5, flex: '1 1 320px' };
-const primaryLink: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: NAVY, color: 'white', padding: '8px 13px', borderRadius: 8, fontSize: 13, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap' };
+const sub: CSSProperties = { fontSize: 12.5, color: '#7f8c8d', margin: 0, lineHeight: 1.5 };
+const primaryLink: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: NAVY, color: 'white', border: `1px solid ${NAVY}`, padding: '8px 13px', borderRadius: 8, fontSize: 13, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap' };
+const secondaryLink: CSSProperties = { ...primaryLink, background: 'white', color: NAVY };
 const ghostBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', border: '1px solid #d0d7de', borderRadius: 6, padding: '6px 10px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', color: NAVY, fontFamily: 'inherit' };
 const ghostLink: CSSProperties = { ...ghostBtn, textDecoration: 'none' };
+const linkBtn: CSSProperties = { background: 'transparent', border: 'none', color: NAVY, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline', padding: 0, flexShrink: 0 };
 const errBox: CSSProperties = { background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '8px 11px', fontSize: 13 };
 const muted: CSSProperties = { fontSize: 13, color: '#5c6b7a' };
 const historyRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 10 };
@@ -158,9 +161,7 @@ const planCard: CSSProperties = { border: '1px solid #e5e7eb', borderRadius: 10,
 const planHead: CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap', marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid #f1f3f5' };
 const planTitle: CSSProperties = { fontSize: 15, fontWeight: 700, color: NAVY };
 const planMeta: CSSProperties = { fontSize: 12.5, color: '#5c6b7a', marginTop: 2 };
-const grid: CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(120px, max-content) 1fr', columnGap: 14, rowGap: 9, margin: 0, fontSize: 13.5, color: '#2c3e50' };
-const dt: CSSProperties = { fontSize: 11.5, color: '#5c6b7a', textTransform: 'uppercase', letterSpacing: 0.4, paddingTop: 2 };
-const dd: CSSProperties = { margin: 0, minWidth: 0, overflowWrap: 'anywhere', lineHeight: 1.45 };
-const goalTable: CSSProperties = { borderCollapse: 'collapse', width: '100%', fontSize: 13 };
-const th: CSSProperties = { textAlign: 'left', border: '1px solid #d0d7de', background: '#f8fafc', padding: '5px 8px', fontSize: 12, color: '#5c6b7a' };
-const td: CSSProperties = { border: '1px solid #d0d7de', padding: '5px 8px', verticalAlign: 'top', whiteSpace: 'pre-wrap', width: '50%' };
+const reviewBox: CSSProperties = { background: '#f3f9f3', border: '1px solid #d4e8d4', borderRadius: 8, padding: '10px 12px', marginBottom: 14 };
+const reviewTitle: CSSProperties = { fontSize: 11.5, fontWeight: 700, color: '#1e5c1e', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 };
+const reviewList: CSSProperties = { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 6 };
+const reviewItem: CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#2c3e50', lineHeight: 1.45 };

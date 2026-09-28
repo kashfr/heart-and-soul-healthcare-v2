@@ -4,6 +4,7 @@ import React from 'react';
 import { renderToBuffer } from '@react-pdf/renderer';
 import { PDFDocument } from 'pdf-lib';
 import ServicePlanPDF from './ServicePlanPDF';
+import ServicePlanReviewPDF from './ServicePlanReviewPDF';
 import type { ServicePlanRecord } from '../servicePlanShared';
 
 // A 1x1 transparent PNG, as the signature pad would produce.
@@ -41,6 +42,12 @@ const plan: ServicePlanRecord = {
   supervisorCredentials: 'MSN, RN',
   signature: SIG,
   revisesPlanId: '',
+  caregiverName: '',
+  caregiverRelationship: '',
+  caregiverSignature: '',
+  developedWith: [],
+  developedWithNotes: '',
+  reviews: [],
   signedDate: '2026-09-28',
   createdAt: null,
   createdBy: 'u1',
@@ -64,5 +71,46 @@ describe('ServicePlanPDF', () => {
     const el = React.createElement(ServicePlanPDF, { plan: short, dob: '01/01/2010', signedDate: '09/28/2026' }) as any;
     const pdf = await renderToBuffer(el);
     expect((await PDFDocument.load(pdf)).getPageCount()).toBeLessThanOrEqual(2);
+  }, 60_000);
+});
+
+describe('ServicePlanPDF with reviews and a caregiver signature', () => {
+  it('renders the caregiver block and the review log', async () => {
+    const withAll = {
+      ...plan,
+      caregiverName: 'Jane Doe',
+      caregiverRelationship: 'Mother',
+      caregiverSignature: SIG,
+      developedWith: ['client', 'responsible-party', 'physician'] as ServicePlanRecord['developedWith'],
+      developedWithNotes: 'Mother in person; Dr. Patel by phone',
+      reviews: [
+        { id: 'r1', planId: 'plan1', patientId: 'p1', reviewedDate: '2026-11-20', reviewerUid: 'u1', reviewerName: 'S. Lilian Payne', reviewerCredentials: 'RN', signature: SIG, note: 'No change in condition.', differencesAcknowledged: [], documentId: '', createdAt: null },
+      ],
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- react-pdf's renderToBuffer wants its own element type
+    const el = React.createElement(ServicePlanPDF, { plan: withAll, dob: '01/01/2010', signedDate: '09/28/2026' }) as any;
+    const pdf = await renderToBuffer(el);
+    expect((await PDFDocument.load(pdf)).getPageCount()).toBeGreaterThanOrEqual(2);
+  }, 60_000);
+});
+
+describe('ServicePlanReviewPDF', () => {
+  it('fits on one page, even with differences and a long note', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- react-pdf's renderToBuffer wants its own element type
+    const el = React.createElement(ServicePlanReviewPDF, {
+      clientName: 'ZZ Test Client',
+      dob: '01/01/2010',
+      planSignedDate: '09/28/2026',
+      planSignedBy: 'Kaheem Freeman, RN',
+      reviewedDate: '11/20/2026',
+      reviewerName: 'S. Lilian Payne',
+      reviewerCredentials: 'MSN, RN',
+      signature: SIG,
+      note: 'Reviewed with the mother in the home. '.repeat(6),
+      differencesAcknowledged: ['Allergies: the client record now says "Penicillin".', 'Medication on the MAR but not in the plan: Clonazepam.'],
+      nextDueDate: '01/21/2027',
+    }) as any;
+    const pdf = await renderToBuffer(el);
+    expect((await PDFDocument.load(pdf)).getPageCount()).toBe(1);
   }, 60_000);
 });

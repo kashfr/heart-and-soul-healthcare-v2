@@ -6,8 +6,18 @@ import { adminBucket, adminDb } from './firebaseAdmin';
 import type { AuthedCaller } from './adminAuthGuard';
 import { formatDateUS, formatDateUSFile } from './dateFormat';
 import { agencyTodayISO } from './verbalOrderServer';
-import { sanitizeServicePlanInput, SERVICE_PLAN_DOC_CATEGORY, type ServicePlanInput, type ServicePlanRecord } from './servicePlanShared';
+import {
+  addDaysISO,
+  sanitizeServicePlanInput,
+  SERVICE_PLAN_DOC_CATEGORY,
+  SERVICE_PLAN_MAX_DAYS,
+  type ServicePlanInput,
+  type ServicePlanRecord,
+  type ServicePlanReview,
+  type ServicePlanReviewInput,
+} from './servicePlanShared';
 import ServicePlanPDF from './pdf/ServicePlanPDF';
+import ServicePlanReviewPDF from './pdf/ServicePlanReviewPDF';
 
 /**
  * Service plans live in the top-level `servicePlans` collection, one document
@@ -16,13 +26,40 @@ import ServicePlanPDF from './pdf/ServicePlanPDF';
  * clients on her care team, checked against the client record at request time.
  */
 const COL = 'servicePlans';
+/** Reviews live under each plan: servicePlans/{planId}/reviews/{reviewId}.
+ *  Server-only too (the default deny covers subcollections). */
+const REVIEWS = 'reviews';
 
 function toIso(ts: unknown): string | null {
   const t = ts as { toDate?: () => Date } | null | undefined;
   return t && typeof t.toDate === 'function' ? t.toDate().toISOString() : null;
 }
 
-export function serializeServicePlan(id: string, d: FirebaseFirestore.DocumentData): ServicePlanRecord {
+export function serializeReview(id: string, d: FirebaseFirestore.DocumentData): ServicePlanReview {
+  return {
+    id,
+    planId: String(d.planId || ''),
+    patientId: String(d.patientId || ''),
+    reviewedDate: String(d.reviewedDate || ''),
+    reviewerUid: String(d.reviewerUid || ''),
+    reviewerName: String(d.reviewerName || ''),
+    reviewerCredentials: String(d.reviewerCredentials || ''),
+    signature: String(d.signature || ''),
+    note: String(d.note || ''),
+    differencesAcknowledged: Array.isArray(d.differencesAcknowledged) ? d.differencesAcknowledged.map(String) : [],
+    documentId: String(d.documentId || ''),
+    createdAt: toIso(d.createdAt),
+  };
+}
+
+async function reviewsFor(planId: string): Promise<ServicePlanReview[]> {
+  const snap = await adminDb().collection(COL).doc(planId).collection(REVIEWS).get();
+  return snap.docs
+    .map((d) => serializeReview(d.id, d.data()))
+    .sort((a, b) => (a.reviewedDate + (a.createdAt || '')).localeCompare(b.reviewedDate + (b.createdAt || '')));
+}
+
+export function serializeServicePlan(id: string, d: FirebaseFirestore.DocumentData, reviews: ServicePlanReview[] = []): ServicePlanRecord {
   return {
     ...sanitizeServicePlanInput(d),
     id,
@@ -33,20 +70,20 @@ export function serializeServicePlan(id: string, d: FirebaseFirestore.DocumentDa
     createdBy: String(d.createdBy || ''),
     createdByName: String(d.createdByName || ''),
     documentId: String(d.documentId || ''),
+    reviews,
   };
 }
 
 /** Newest first. Sorted here, not in the query, so no composite index is needed. */
 export async function listServicePlans(patientId: string): Promise<ServicePlanRecord[]> {
   const snap = await adminDb().collection(COL).where('patientId', '==', patientId).get();
-  return snap.docs
-    .map((d) => serializeServicePlan(d.id, d.data()))
-    .sort((a, b) => (b.signedDate + (b.createdAt || '')).localeCompare(a.signedDate + (a.createdAt || '')));
+  const plans = await Promise.all(snap.docs.map(async (d) => serializeServicePlan(d.id, d.data(), await reviewsFor(d.id))));
+  return plans.sort((a, b) => (b.signedDate + (b.createdAt || '')).localeCompare(a.signedDate + (a.createdAt || '')));
 }
 
 export async function getServicePlan(id: string): Promise<ServicePlanRecord | null> {
   const snap = await adminDb().collection(COL).doc(id).get();
-  return snap.exists ? serializeServicePlan(snap.id, snap.data() || {}) : null;
+  return snap.exists ? serializeServicePlan(snap.id, snap.data() || {}, await reviewsFor(id)) : null;
 }
 
 /** True when the caller may read plans for this client: staff always, a nurse
@@ -134,4 +171,96 @@ export async function createServicePlan(input: ServicePlanInput, caller: AuthedC
     console.error('Service plan: filing the PDF failed:', err);
   }
   return { ok: true, plan, filed };
+}
+
+export async function renderServicePlanReviewPdf(plan: ServicePlanRecord, review: ServicePlanReview): Promise<Buffer> {
+  const el = React.createElement(ServicePlanReviewPDF, {
+    clientName: plan.clientName,
+    dob: formatDateUS(plan.dob),
+    planSignedDate: formatDateUS(plan.signedDate),
+    planSignedBy: [plan.supervisorName, plan.supervisorCredentials].filter(Boolean).join(', '),
+    reviewedDate: formatDateUS(review.reviewedDate),
+    reviewerName: review.reviewerName,
+    reviewerCredentials: review.reviewerCredentials,
+    signature: review.signature,
+    note: review.note,
+    differencesAcknowledged: review.differencesAcknowledged,
+    nextDueDate: formatDateUS(addDaysISO(review.reviewedDate, SERVICE_PLAN_MAX_DAYS)),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- react-pdf's renderToBuffer wants its own element type
+  }) as any;
+  return Buffer.from(await renderToBuffer(el));
+}
+
+export function servicePlanReviewPdfFileName(plan: ServicePlanRecord, review: ServicePlanReview): string {
+  return `Service_Plan_Review_${fileStem(plan.clientName)}_${formatDateUSFile(review.reviewedDate)}.pdf`;
+}
+
+/**
+ * Record a "reviewed, no changes" attestation on the client's CURRENT plan and
+ * file its one-page PDF under Documents (same category as the plan, dated the
+ * review, so the 62-day readiness clock restarts). Filing is non-fatal.
+ */
+export async function createServicePlanReview(planId: string, input: ServicePlanReviewInput, caller: AuthedCaller): Promise<{ ok: true; review: ServicePlanReview; filed: boolean } | { ok: false; status: number; error: string }> {
+  const db = adminDb();
+  const plan = await getServicePlan(planId);
+  if (!plan) return { ok: false, status: 404, error: 'Service plan not found.' };
+  const newest = (await listServicePlans(plan.patientId))[0];
+  if (!newest || newest.id !== plan.id) return { ok: false, status: 409, error: 'Only the current service plan can be reviewed. A newer plan has been signed since.' };
+
+  const reviewedDate = agencyTodayISO();
+  const ref = db.collection(COL).doc(planId).collection(REVIEWS).doc();
+  await ref.set({
+    planId,
+    patientId: plan.patientId,
+    reviewedDate,
+    reviewerUid: caller.uid,
+    reviewerName: input.reviewerName.trim(),
+    reviewerCredentials: input.reviewerCredentials.trim(),
+    signature: input.signature,
+    note: input.note.trim(),
+    differencesAcknowledged: input.differencesAcknowledged,
+    documentId: '',
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  let review = serializeReview(ref.id, (await ref.get()).data() || {});
+
+  let filed = false;
+  try {
+    const pdf = await renderServicePlanReviewPdf(plan, review);
+    const docRef = db.collection('patientDocuments').doc();
+    const fileName = servicePlanReviewPdfFileName(plan, review);
+    const storagePath = `patients/${plan.patientId}/documents/${docRef.id}/${fileName}`;
+    await adminBucket().file(storagePath).save(pdf, { contentType: 'application/pdf', resumable: false });
+    const byName = caller.profile.displayName || caller.email || '';
+    await docRef.set({
+      patientId: plan.patientId,
+      category: SERVICE_PLAN_DOC_CATEGORY,
+      title: `Service Plan Review, ${formatDateUS(reviewedDate)} (plan signed ${formatDateUS(plan.signedDate)}), no changes`,
+      fileName,
+      storagePath,
+      contentType: 'application/pdf',
+      size: pdf.length,
+      docDate: reviewedDate,
+      uploadedBy: caller.uid,
+      uploadedByName: byName,
+      uploadedByRole: caller.role,
+      uploadedAt: FieldValue.serverTimestamp(),
+      archived: false,
+      autoFiled: true,
+      servicePlanId: plan.id,
+      servicePlanReviewId: ref.id,
+    });
+    await ref.update({ documentId: docRef.id });
+    review = { ...review, documentId: docRef.id };
+    filed = true;
+  } catch (err) {
+    console.error('Service plan review: filing the PDF failed:', err);
+  }
+  return { ok: true, review, filed };
+}
+
+export async function getServicePlanReview(planId: string, reviewId: string): Promise<{ plan: ServicePlanRecord; review: ServicePlanReview } | null> {
+  const plan = await getServicePlan(planId);
+  const review = plan?.reviews.find((r) => r.id === reviewId);
+  return plan && review ? { plan, review } : null;
 }
