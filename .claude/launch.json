@@ -5,7 +5,7 @@
       "name": "Next.js Dev Server",
       "runtimeExecutable": "/usr/local/bin/node",
       "runtimeArgs": [
-        "/Users/kfreeman/Projects/heart-and-soul-healthcare-v2/node_modules/.bin/next",
+        "node_modules/.bin/next",
         "dev",
         "-p",
         "3002"
@@ -24,18 +24,6 @@
         "3003"
       ],
       "port": 3003,
-      "autoPort": false
-    },
-    {
-      "name": "Worktree Dev Server (3012)",
-      "runtimeExecutable": "/usr/local/bin/node",
-      "runtimeArgs": [
-        "node_modules/.bin/next",
-        "dev",
-        "-p",
-        "3012"
-      ],
-      "port": 3012,
       "autoPort": false
     }
   ]
