@@ -5,7 +5,8 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { ViewAsWriteBlock } from '@/components/ImpersonationProvider';
 import { useForm } from 'react-hook-form';
 import { Check, AlertTriangle, Loader2 } from 'lucide-react';
-import { getPatients, type Patient } from '@/lib/patients';
+import { getPatients, getPatientClinical, type Patient } from '@/lib/patients';
+import { baselinesToNoteFields } from '@/lib/vitalsBaselines';
 import {
   getNoteDocRequirements,
   stripInapplicableQeprFields,
@@ -46,7 +47,7 @@ import { classifyDoseAgainstShift, computeRequiredDoseGaps, resolveCurrentAdmini
 import { seizureGaps } from '@/lib/seizureShared';
 import { vitalsRecheckGaps } from '@/lib/vitalsRecheck';
 import { vitalsFollowUpApplies, vitalsFollowUpGaps } from '@/lib/vitalsFollowUp';
-import { getVitalRanges } from '@/lib/vitalRanges';
+import { noteVitalRanges } from '@/lib/vitalRanges';
 import { writeSeizureEvents } from '@/lib/seizures';
 import { postHandoff } from '@/lib/handoffs';
 import { isSubstantiveHandoffText } from '@/lib/handoffShared';
@@ -395,6 +396,40 @@ function ProgressNotePageInner() {
     }
     for (const f of QEPR_NARRATIVE_FIELDS) setValue(f, '');
   }, [rosterClient, isEditMode, setValue, getValues]);
+
+  // Snapshot the selected client's vitals baselines onto the note (q16b_*),
+  // so the form, the submit gate, the admin view, and the PDF all judge this
+  // note by the ranges in effect when it was written. New notes only: an
+  // edit keeps the snapshot it was submitted with. A nurse without clinical
+  // read access (not on the care team) simply gets no baselines, which is
+  // the age-range behaviour she had before.
+  const baselineClientRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (isEditMode) return;
+    const pid = rosterClient?.id || null;
+    if (baselineClientRef.current === pid) return;
+    baselineClientRef.current = pid;
+    let cancelled = false;
+    const apply = (fields: Record<string, string>) => {
+      for (const [k, v] of Object.entries(fields)) {
+        if (String(getValues(k) || '') !== v) setValue(k, v);
+      }
+    };
+    if (!pid) {
+      apply(baselinesToNoteFields());
+      return;
+    }
+    getPatientClinical(pid)
+      .then((c) => {
+        if (!cancelled) apply(baselinesToNoteFields(c?.vitalsBaselines, c?.vitalsBaselinesNote));
+      })
+      .catch(() => {
+        if (!cancelled) apply(baselinesToNoteFields());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [rosterClient?.id, isEditMode, getValues, setValue]);
 
   // One-time scrub of the legacy localStorage draft layer. It used to silently
   // rehydrate a previous session's note (unscoped to the signed-in user — a
@@ -1270,8 +1305,7 @@ function ProgressNotePageInner() {
     {
       const all = getValues() as Record<string, unknown>;
       if (vitalsFollowUpApplies(all)) {
-        const ranges = getVitalRanges(String(all.q5_ageYears || ''), String(all.q4_dateofBirth || ''));
-        const followUpGaps = vitalsFollowUpGaps(all, ranges);
+        const followUpGaps = vitalsFollowUpGaps(all, noteVitalRanges(all));
         if (followUpGaps.length > 0) {
           setCurrentPage(2);
           const firstTarget = followUpGaps[0].targetId;

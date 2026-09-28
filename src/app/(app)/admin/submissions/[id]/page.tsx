@@ -17,9 +17,10 @@ import { pdfFilenameFor, triggerDownload } from '@/lib/batchExport';
 import { formatDateUS } from '@/lib/dateFormat';
 import { formatDuration, readSeizureEntries, seizureDurationSeconds, sortSeizuresByStart } from '@/lib/seizureShared';
 import { readVitalsRechecks, recheckAbnormalVitals, recheckBloodPressure, recheckWhen, vitalsRecheckAllKeys, MAX_VITALS_RECHECKS, collapseAddedRechecks, recheckAddedKey } from '@/lib/vitalsRecheck';
-import { followUpSummary, FOLLOW_UP_ACTION_KEY, FOLLOW_UP_KEYS } from '@/lib/vitalsFollowUp';
+import { assessVitalsFollowUp, followUpSummary, FOLLOW_UP_ACTION_KEY, FOLLOW_UP_BASELINE, FOLLOW_UP_KEYS } from '@/lib/vitalsFollowUp';
 import { authedFetch } from '@/lib/authedFetch';
-import { getVitalRanges, getAgeGroupLabel } from '@/lib/vitalRanges';
+import { getAgeGroupLabel, noteVitalRanges, readNoteBaselines } from '@/lib/vitalRanges';
+import { baselineCoversGroup, describeBaselines } from '@/lib/vitalsBaselines';
 import { parseCareTaskCharting } from '@/lib/careTaskCharting';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import RevisionHistory from '@/components/RevisionHistory';
@@ -247,8 +248,14 @@ export default function SubmissionDetailPage({ params }: PageProps) {
   // clinical team wants e.g. a wider preschool resp range.
   const ageStr = data.q5_ageYears || '';
   const patientDob = data.q4_dateofBirth || '';
-  const vitalRanges = getVitalRanges(ageStr, patientDob, appSettings.vitals.rangesByAgeGroup);
-  const ageGroupLabel = getAgeGroupLabel(ageStr, patientDob);
+  // Plus the client-baseline snapshot the note carries (q16b_*), if any.
+  const vitalRanges = noteVitalRanges(data as unknown as Record<string, unknown>, appSettings.vitals.rangesByAgeGroup);
+  const noteBaselines = readNoteBaselines(data as unknown as Record<string, unknown>);
+  const baselineText = describeBaselines(noteBaselines);
+  const ageGroupLabel = getAgeGroupLabel(ageStr, patientDob) + (baselineText ? `; client baselines: ${baselineText}` : '');
+  const followUp = assessVitalsFollowUp(data as unknown as Record<string, unknown>, vitalRanges);
+  const baselineClaimedUnrecorded =
+    data[FOLLOW_UP_ACTION_KEY] === FOLLOW_UP_BASELINE && !followUp.stillAbnormal.every((g) => baselineCoversGroup(noteBaselines, g));
 
   const abnormalVitals: string[] = [];
   const parseNum = (v: string) => parseFloat((v || '').replace(/[^0-9.]/g, ''));
@@ -929,6 +936,13 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             <div style={{ padding: '8px 0', borderTop: '1px solid #ddd' }}>
               {/* What was done about a vital still out of range after its recheck. */}
               <TextBlock fieldKey={FOLLOW_UP_ACTION_KEY} label="Abnormal vitals follow-up" value={followUpSummary(data as unknown as Record<string, unknown>)} />
+              {baselineClaimedUnrecorded && (
+                <div className="no-print" style={{ marginTop: 6, padding: '8px 12px', background: '#fff7ed', border: '1px solid #f59e0b', borderRadius: 6, fontSize: 13, color: '#7c2d12' }}>
+                  The nurse cited a baseline that is not on this client&apos;s record. If it is correct, add it under the
+                  client&apos;s clinical details on the Clients page so future notes use it
+                  {hasValue(data.patientId) && <> (<Link href={`/admin/clients/${data.patientId}`}>open client</Link>)</>}.
+                </div>
+              )}
             </div>
           )}
           {hasValue(data.q16_vitalsNotObtainedReason) && (

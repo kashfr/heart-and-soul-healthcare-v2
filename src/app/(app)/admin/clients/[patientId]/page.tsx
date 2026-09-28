@@ -23,6 +23,7 @@ import { AuthGuard } from '@/components/AuthGuard';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
 import { getPatient, getPatientClinical, type Patient, type PatientClinical } from '@/lib/patients';
+import { describeBaselines } from '@/lib/vitalsBaselines';
 import { formatUSFaxNumber } from '@/lib/verbalOrderShared';
 import { getMarOrders, getAdministrationsForRange, type MarOrder, type MarAdministration } from '@/lib/mar';
 import { getNotesForPatient } from '@/lib/submissions';
@@ -554,6 +555,14 @@ function ClientDashboardInner() {
                 value={[clinical?.physicianName, clinical?.physicianPhone, clinical?.physicianFax ? `fax ${formatUSFaxNumber(clinical.physicianFax)}` : ''].filter(Boolean).join(' · ')}
               />
               <HeaderField label="Diet / special instructions" value={clinical?.diet} />
+              <HeaderField
+                label="Vitals baselines"
+                value={
+                  clinical?.vitalsBaselines && describeBaselines(clinical.vitalsBaselines)
+                    ? `${describeBaselines(clinical.vitalsBaselines)}${clinical.vitalsBaselinesNote ? ` (${clinical.vitalsBaselinesNote})` : ''}`
+                    : 'None set; age-based ranges apply'
+                }
+              />
             </div>
             {team.length > 0 && (
               <div style={teamRowStyle}>
@@ -729,6 +738,7 @@ function ClientDashboardInner() {
               admins={admins}
               dob={patient.dob}
               vitalsOverride={settings.vitals.rangesByAgeGroup}
+              baselines={clinical?.vitalsBaselines}
             />
           </section>
           )}

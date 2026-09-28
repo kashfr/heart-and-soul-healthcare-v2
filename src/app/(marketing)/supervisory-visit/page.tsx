@@ -17,7 +17,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ViewAsWriteBlock } from '@/components/ImpersonationProvider';
 import { useForm } from 'react-hook-form';
-import { getPatients, type Patient } from '@/lib/patients';
+import { getPatients, getPatientClinical, type Patient } from '@/lib/patients';
+import { baselinesToNoteFields } from '@/lib/vitalsBaselines';
 import { computeAgeString } from '@/lib/age';
 import { formatDateUS } from '@/lib/dateFormat';
 import {
@@ -236,6 +237,17 @@ function SupervisoryVisitPageInner() {
       setValue('q2_program', p?.program || '');
       setValue('q2_serviceLevel', p?.serviceLevel || '');
       setValue('sv_address', addressOf(p), { shouldDirty: true });
+      // Baseline snapshot (q16b_*): the client's own vitals ranges, if any,
+      // so the vitals here are judged the same way as on a shift note.
+      const applyBaselines = (fields: Record<string, string>) => {
+        for (const [k, v] of Object.entries(fields)) setValue(k, v);
+      };
+      applyBaselines(baselinesToNoteFields());
+      if (id) {
+        getPatientClinical(id)
+          .then((c) => applyBaselines(baselinesToNoteFields(c?.vitalsBaselines, c?.vitalsBaselinesNote)))
+          .catch(() => {});
+      }
     },
     [patients, setValue],
   );

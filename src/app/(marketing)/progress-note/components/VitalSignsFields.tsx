@@ -22,12 +22,13 @@
  * messages, or both.
  */
 
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import type { UseFormRegister, UseFormWatch, UseFormSetValue } from 'react-hook-form';
 import type { FormValues } from '../types';
 import styles from '../page.module.css';
 import { rangeValidator, VITAL_RANGE as RANGE } from '../validators';
-import { checkVitalRange, getAgeGroupLabel, type VitalKey } from '@/lib/vitalRanges';
+import { getAgeGroupLabel, isBaselineRange, noteVitalRanges, readNoteBaselines, type VitalKey } from '@/lib/vitalRanges';
+import { describeBaselines } from '@/lib/vitalsBaselines';
 
 export type VitalField = 'temperature' | 'bloodPressure' | 'pulse' | 'respiration' | 'oxygenSaturation';
 
@@ -101,6 +102,11 @@ export default function VitalSignsFields({
   const show = (f: VitalField) => fields.includes(f);
   const star = required ? ' *' : '';
   const ageGroup = getAgeGroupLabel(ageStr, dob);
+  // The client's age range, with the baseline snapshot this note carries
+  // (q16b_*) on top for any vital the client has a baseline for.
+  const allValues = watch();
+  const ranges = useMemo(() => noteVitalRanges(allValues as Record<string, unknown>), [allValues]);
+  const baselineText = useMemo(() => describeBaselines(readNoteBaselines(allValues as Record<string, unknown>)), [allValues]);
 
   const temp = watch('q16_temperature');
   const sys = watch('q17_systolic');
@@ -144,9 +150,13 @@ export default function VitalSignsFields({
   const status = (key: VitalKey, raw: string | undefined): 'low' | 'high' | null => {
     const n = parseFloat(String(raw ?? ''));
     if (Number.isNaN(n)) return null;
-    const s = checkVitalRange(key, n, ageStr, dob);
-    return s === 'normal' ? null : s;
+    if (n < ranges[key].low) return 'low';
+    if (n > ranges[key].high) return 'high';
+    return null;
   };
+  /** "for Adult (18-64 years)" or "for this client's baseline (100 to 110)". */
+  const against = (key: VitalKey): string =>
+    isBaselineRange(ranges[key]) ? `this client's baseline (${ranges[key].low} to ${ranges[key].high})` : ageGroup;
   const tempStatus = status('temperature', temp);
   const sysStatus = status('systolic', sys);
   const diaStatus = status('diastolic', dia);
@@ -163,14 +173,15 @@ export default function VitalSignsFields({
     const m = errorFor?.(k);
     return m ? <span role="alert" style={errorStyle}>{m}</span> : null;
   };
-  const Note = ({ s, what }: { s: 'low' | 'high' | null; what: string }) =>
-    s ? <div style={noteStyle}>{what} is {s} for {ageGroup}.</div> : null;
+  const Note = ({ s, what, k }: { s: 'low' | 'high' | null; what: string; k: VitalKey }) =>
+    s ? <div style={noteStyle}>{what} is {s} for {against(k)}.</div> : null;
 
   return (
     <>
       {ageStr && (
         <p style={{ fontSize: '12px', color: '#666', margin: '4px 0 8px', fontStyle: 'italic' }}>
           Ranges based on age group: <strong>{ageGroup}</strong>
+          {baselineText && <>. This client&apos;s baselines: <strong>{baselineText}</strong></>}
         </p>
       )}
 
@@ -251,7 +262,7 @@ export default function VitalSignsFields({
               <option value="Temporal">Temporal (forehead)</option>
               <option value="Rectal">Rectal</option>
             </select>
-            <Note s={tempStatus} what="Temperature" />
+            <Note s={tempStatus} what="Temperature" k="temperature" />
             <Err k="q16_temperature" />
             <Err k="q16_temperatureRoute" />
           </div>
@@ -358,8 +369,8 @@ export default function VitalSignsFields({
                 Not routinely required under age 3 (AAP) &mdash; record if indicated or ordered.
               </p>
             )}
-            <Note s={sysStatus} what="Systolic" />
-            <Note s={diaStatus} what="Diastolic" />
+            <Note s={sysStatus} what="Systolic" k="systolic" />
+            <Note s={diaStatus} what="Diastolic" k="diastolic" />
             <Err k="q17_bloodPressure" />
             <Err k="q17_systolic" />
             <Err k="q17_diastolic" />
@@ -397,7 +408,7 @@ export default function VitalSignsFields({
                 <option value="Other">Other</option>
               </select>
             )}
-            <Note s={pulseStatus} what="Pulse" />
+            <Note s={pulseStatus} what="Pulse" k="pulse" />
             <Err k="q18_pulse" />
           </div>
         )}
@@ -424,7 +435,7 @@ export default function VitalSignsFields({
                   validate: rangeValidator(RANGE.respiration.min, RANGE.respiration.max, RANGE.respiration.label),
                 })}
               />
-              <Note s={respStatus} what="Respiration" />
+              <Note s={respStatus} what="Respiration" k="respiration" />
               <Err k="q19_respiration" />
             </div>
           )}
@@ -450,7 +461,7 @@ export default function VitalSignsFields({
                     onBlur: (e) => clampO2(e.target.value),
                   })}
                 />
-                <Note s={o2Status} what="O2 saturation" />
+                <Note s={o2Status} what="O2 saturation" k="oxygenSaturation" />
                 <Err k="q20_oxygenSaturation" />
               </div>
               {details && (

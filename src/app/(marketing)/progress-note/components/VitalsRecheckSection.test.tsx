@@ -13,7 +13,7 @@ import { VITALS_RECHECK_COUNT_KEY, vitalsRecheckFieldKey } from '@/lib/vitalsRec
 
 function Harness({ defaults }: { defaults: Record<string, string> }) {
   const { register, watch, setValue } = useForm<FormValues>({ defaultValues: defaults });
-  return <VitalsRecheckSection register={register} watch={watch} setValue={setValue} ageStr="30" />;
+  return <VitalsRecheckSection register={register} watch={watch} setValue={setValue} />;
 }
 
 const adult = { q1_formRev: '4', q5_ageYears: '30', q7_shiftStart: '09:00' };

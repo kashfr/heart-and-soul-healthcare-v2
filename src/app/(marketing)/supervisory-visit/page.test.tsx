@@ -19,6 +19,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/lib/patients', () => ({
+  getPatientClinical: vi.fn().mockResolvedValue(null),
   getPatients: vi.fn().mockResolvedValue([
     {
       id: 'p1',

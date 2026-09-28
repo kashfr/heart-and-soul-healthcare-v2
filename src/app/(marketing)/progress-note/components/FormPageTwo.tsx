@@ -438,7 +438,7 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
             {/* Later readings in the same shift (q16r_reading{n}_*). The first
                 set above stays the note's "vitals of record" for every chart
                 and filter; rechecks print beneath it and share its ranges. */}
-            <VitalsRecheckSection register={register} watch={watch} setValue={setValue} ageStr={ageStr || ''} dob={dob} />
+            <VitalsRecheckSection register={register} watch={watch} setValue={setValue} />
           </div>
         </div>
 

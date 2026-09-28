@@ -76,10 +76,13 @@ or mark the visit on the Schedule tab.
   action (notified RN supervisor / physician, called 911, or within known
   baseline with the baseline noted). Supervisory visits do not have this gate.
 
+## Related notes
+
+- Per-client vitals baselines: docs/features/vitals-baselines.md (the
+  supervisory visit snapshots them like the shift note does).
+
 ## Open ideas, not built
 
-- Per-client vitals baselines on the client record, so "within known
-  baseline" is checked instead of typed.
 - The supervisory visit does not require rechecks of abnormal vitals.
 
 ## Tests

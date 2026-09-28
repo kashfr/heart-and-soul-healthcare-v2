@@ -7,7 +7,8 @@ import {
   Image,
   StyleSheet,
 } from '@react-pdf/renderer';
-import { getVitalRanges, getAgeGroupLabel, type VitalRangesOverride } from '@/lib/vitalRanges';
+import { getVitalRanges, getAgeGroupLabel, noteVitalRanges, readNoteBaselines, type VitalRangesOverride } from '@/lib/vitalRanges';
+import { describeBaselines } from '@/lib/vitalsBaselines';
 import { readVitalsRechecks, recheckAbnormalVitals, recheckBloodPressure, recheckWhen, vitalsRecheckAllKeys, MAX_VITALS_RECHECKS, recheckAddedKey, type VitalsRecheck } from '@/lib/vitalsRecheck';
 import { formatDuration, readSeizureEntries, seizureDurationSeconds, sortSeizuresByStart } from '../seizureShared';
 import { parseCareTaskCharting } from '@/lib/careTaskCharting';
@@ -544,8 +545,10 @@ function readCosignedDate(v: unknown): Date | null {
 function checkVitals(data: ProgressNoteFormData, overrides?: VitalRangesOverride) {
   const ageStr = data.q5_ageYears || '';
   const dob = data.q4_dateofBirth || '';
-  const ranges = getVitalRanges(ageStr, dob, overrides);
-  const ageGroupLabel = getAgeGroupLabel(ageStr, dob);
+  // Age range (admin overrides) plus the client-baseline snapshot on the note.
+  const ranges = noteVitalRanges(data as unknown as Record<string, unknown>, overrides);
+  const baselineText = describeBaselines(readNoteBaselines(data as unknown as Record<string, unknown>));
+  const ageGroupLabel = getAgeGroupLabel(ageStr, dob) + (baselineText ? `; client baselines: ${baselineText}` : '');
   const alerts: string[] = [];
   const temp = parseNumeric(data.q16_temperature);
   const tempAbnormal = !isNaN(temp) && (temp < ranges.temperature.low || temp > ranges.temperature.high);
