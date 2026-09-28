@@ -39,6 +39,8 @@ import SeizureLogSection from './SeizureLogSection';
 import CarePlanSection from './CarePlanSection';
 import HoursSection from './HoursSection';
 import DayProgramSection from './DayProgramSection';
+import ServicePlanSection from './ServicePlanSection';
+import { SERVICE_PLAN_DOC_CATEGORY, SERVICE_PLAN_MAX_DAYS } from '@/lib/servicePlanShared';
 import { physicianAttributionPending, physicianOrderStale } from '@/lib/marShared';
 import {
   adverseEvents,
@@ -71,6 +73,7 @@ const TABS = [
   { key: 'trends', label: 'Trends' },
   { key: 'readiness', label: 'Survey readiness' },
   { key: 'documents', label: 'Documents' },
+  { key: 'serviceplan', label: 'Service plan' },
   // Staff-only: the care-task editor that used to be the Care Plans sidebar
   // tab (nav consolidation, Aug 2026). Hidden from nurses at render time and
   // guarded in the tab resolver below.
@@ -298,6 +301,13 @@ function ClientDashboardInner() {
     () => documentCurrency(documents, 'Plan of Care (485)', POC_MAX_DAYS, today),
     [documents, today],
   );
+  // The agency's own Service Plan: signing a plan or a "no changes" review
+  // files a PDF under this category, dated that day, so the newest one is the
+  // last review. 111-8-65-.11(2): nursing plans every 62 days.
+  const servicePlanCurrency = useMemo(
+    () => documentCurrency(documents, SERVICE_PLAN_DOC_CATEGORY, SERVICE_PLAN_MAX_DAYS, today),
+    [documents, today],
+  );
 
   // Upload rights: staff, or a nurse on THIS client's care team (real user —
   // the create rules verify the same thing server-side).
@@ -474,6 +484,11 @@ function ClientDashboardInner() {
   } else if (pocCurrency.status === 'none') {
     alerts.push({ text: 'No plan of care on file', go: () => setTab('documents') });
   }
+  if (servicePlanCurrency.status === 'bad') {
+    alerts.push({ text: 'Service plan review overdue', go: () => setTab('serviceplan') });
+  } else if (servicePlanCurrency.status === 'none') {
+    alerts.push({ text: 'No service plan on file', go: () => setTab('serviceplan') });
+  }
   const readinessBadge = [
     timelinessSignal,
     gapSignal,
@@ -485,6 +500,7 @@ function ClientDashboardInner() {
     supCurrency.status,
     rnCurrency.status,
     pocCurrency.status,
+    servicePlanCurrency.status,
   ].filter((s) => s === 'bad').length;
 
   return (
@@ -916,6 +932,21 @@ function ClientDashboardInner() {
                 }
                 icon={<FolderOpen size={14} />}
               />
+              <ReadinessCard
+                signal={servicePlanCurrency.status}
+                title="Service plan"
+                value={
+                  servicePlanCurrency.status === 'none'
+                    ? 'No service plan on file'
+                    : `Last signed or reviewed ${servicePlanCurrency.daysSince}d ago`
+                }
+                detail={
+                  servicePlanCurrency.status === 'none'
+                    ? 'Write and sign the service plan on the Service plan tab'
+                    : `${fmtDate(servicePlanCurrency.newestDateISO)} · reviewed at least every ${SERVICE_PLAN_MAX_DAYS}d (111-8-65-.11)`
+                }
+                icon={<ClipboardList size={14} />}
+              />
             </div>
           </section>
           )}
@@ -944,6 +975,17 @@ function ClientDashboardInner() {
               }}
               onToast={showToast}
             />
+          </section>
+          )}
+
+          {/* Service plan: the agency's signed Service Plan form, one per
+              revision, written by supervisors and read by the care team. */}
+          {tab === 'serviceplan' && (
+          <section style={sectionCardStyle}>
+            <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
+              <ClipboardList size={16} /> Service plan
+            </div>
+            <ServicePlanSection key={`sp-${patientId}`} patientId={patientId} canAuthor={realStaff && !isViewingAs} />
           </section>
           )}
 
