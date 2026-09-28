@@ -12,6 +12,7 @@ import { readVitalsRechecks, recheckAbnormalVitals, recheckBloodPressure, rechec
 import { formatDuration, readSeizureEntries, seizureDurationSeconds, sortSeizuresByStart } from '../seizureShared';
 import { parseCareTaskCharting } from '@/lib/careTaskCharting';
 import { SUPERVISORY_NOTE_TYPE } from '@/lib/supervisoryVisit';
+import { followUpSummary, FOLLOW_UP_ACTION_KEY } from '@/lib/vitalsFollowUp';
 
 /**
  * Raw form data stored on a progress-note document. Every field is a string
@@ -1298,6 +1299,12 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
             {vitalRechecks.map((r) => (
               <VitalsRecheckBlock key={r.index} reading={r} ranges={vitalRangeSet} />
             ))}
+            {hasValue(data[FOLLOW_UP_ACTION_KEY]) && (
+              <View style={s.sectionBody}>
+                {/* What was done about a vital still out of range after its recheck. */}
+                <TextBlock fieldKey={FOLLOW_UP_ACTION_KEY} label="Abnormal Vitals Follow-Up" value={followUpSummary(data as unknown as Record<string, unknown>)} />
+              </View>
+            )}
             {(hasValue(data.q16_vitalsNotObtainedReason) || hasValue(data.q22_additionalObservations)) && (
               <View style={s.sectionBody}>
                 {hasValue(data.q16_vitalsNotObtainedReason) && (

@@ -17,6 +17,7 @@ import { pdfFilenameFor, triggerDownload } from '@/lib/batchExport';
 import { formatDateUS } from '@/lib/dateFormat';
 import { formatDuration, readSeizureEntries, seizureDurationSeconds, sortSeizuresByStart } from '@/lib/seizureShared';
 import { readVitalsRechecks, recheckAbnormalVitals, recheckBloodPressure, recheckWhen, vitalsRecheckAllKeys, MAX_VITALS_RECHECKS, collapseAddedRechecks, recheckAddedKey } from '@/lib/vitalsRecheck';
+import { followUpSummary, FOLLOW_UP_ACTION_KEY, FOLLOW_UP_KEYS } from '@/lib/vitalsFollowUp';
 import { authedFetch } from '@/lib/authedFetch';
 import { getVitalRanges, getAgeGroupLabel } from '@/lib/vitalRanges';
 import { parseCareTaskCharting } from '@/lib/careTaskCharting';
@@ -839,6 +840,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             'q17_bpMethod', 'q17_bpSite', 'q18_pulse', 'q18_pulseSite', 'q19_respiration',
             'q20_oxygenSaturation', 'q21_oxygenSource', 'q22_additionalObservations',
             ...vitalsRecheckAllKeys(MAX_VITALS_RECHECKS),
+            ...FOLLOW_UP_KEYS,
           ]}
           data={data}
         >
@@ -923,6 +925,12 @@ export default function SubmissionDetailPage({ params }: PageProps) {
               </div>
             );
           })}
+          {hasValue(data[FOLLOW_UP_ACTION_KEY]) && (
+            <div style={{ padding: '8px 0', borderTop: '1px solid #ddd' }}>
+              {/* What was done about a vital still out of range after its recheck. */}
+              <TextBlock fieldKey={FOLLOW_UP_ACTION_KEY} label="Abnormal vitals follow-up" value={followUpSummary(data as unknown as Record<string, unknown>)} />
+            </div>
+          )}
           {hasValue(data.q16_vitalsNotObtainedReason) && (
             <div style={{ padding: '8px 0' }}>
               {/* Covers whichever vitals are blank in the grid above. */}

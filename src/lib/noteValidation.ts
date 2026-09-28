@@ -32,6 +32,8 @@
 import { isBpRoutinelyRequired } from './vitalRanges';
 import { SHIFT_CHANGE_KEYS, shiftChangeAnyYes } from './shiftChange';
 import { vitalsRecheckGaps } from './vitalsRecheck';
+import { vitalsFollowUpApplies, vitalsFollowUpGaps } from './vitalsFollowUp';
+import { getVitalRanges } from './vitalRanges';
 import { SUPERVISORY_NOTE_TYPE } from './supervisoryVisit';
 
 export interface NoteIssue {
@@ -253,6 +255,14 @@ export function getIncompleteRequired(flat: Record<string, string>): NoteIssue[]
   // than listed. Each gap's targetId is the input's DOM id, same as `key`.
   for (const g of vitalsRecheckGaps(flat)) {
     issues.push({ key: g.targetId, label: g.label, tab: 2, tabName: NOTE_TAB_NAMES[2] });
+  }
+  // Abnormal-vitals follow-up (rev 4+): an out-of-range first reading needs a
+  // recheck, and a recheck still out of range needs a documented action.
+  if (vitalsFollowUpApplies(flat)) {
+    const ranges = getVitalRanges(flat['q5_ageYears'] || '', flat['q4_dateofBirth'] || '');
+    for (const g of vitalsFollowUpGaps(flat, ranges)) {
+      issues.push({ key: g.targetId, label: g.label, tab: 2, tabName: NOTE_TAB_NAMES[2] });
+    }
   }
   return issues;
 }
