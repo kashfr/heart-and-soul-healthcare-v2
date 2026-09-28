@@ -10,6 +10,7 @@ import {
   FileClock,
   UserCog,
   FileSignature,
+  MessagesSquare,
   FileText,
   Wrench,
   Settings,
@@ -77,6 +78,9 @@ const NAV: NavItem[] = [
   // Medication error reports: filed by any clinical credential, reviewed by
   // the RN supervisor; the DBHDD incident-report flag lives here.
   { href: '/admin/med-errors', label: 'Med Errors', icon: <ShieldAlert size={18} />, allow: ['admin', 'supervisor', 'nurse'] },
+  // What the portal told staff (visit notices and reminders, word for word,
+  // with delivery status) plus messages logged by hand.
+  { href: '/admin/communications', label: 'Communications', icon: <MessagesSquare size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/in-progress', label: 'In Progress', icon: <FileClock size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/users', label: 'Staff & Roles', icon: <UserCog size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/maintenance/link-notes', label: 'Maintenance', icon: <Wrench size={18} />, allow: ['admin'] },

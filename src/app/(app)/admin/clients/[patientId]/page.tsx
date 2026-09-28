@@ -7,6 +7,7 @@ import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigat
 import {
   ArrowLeft,
   MapPin,
+  MessagesSquare,
   Pill,
   FileText,
   ClipboardList,
@@ -40,6 +41,7 @@ import CarePlanSection from './CarePlanSection';
 import HoursSection from './HoursSection';
 import DayProgramSection from './DayProgramSection';
 import ServicePlanSection from './ServicePlanSection';
+import CommunicationsLog from '@/components/CommunicationsLog';
 import { SERVICE_PLAN_DOC_CATEGORY, SERVICE_PLAN_MAX_DAYS } from '@/lib/servicePlanShared';
 import { physicianAttributionPending, physicianOrderStale } from '@/lib/marShared';
 import {
@@ -74,6 +76,7 @@ const TABS = [
   { key: 'readiness', label: 'Survey readiness' },
   { key: 'documents', label: 'Documents' },
   { key: 'serviceplan', label: 'Service plan' },
+  { key: 'communications', label: 'Communications' }, // staff-only
   // Staff-only: the care-task editor that used to be the Care Plans sidebar
   // tab (nav consolidation, Aug 2026). Hidden from nurses at render time and
   // guarded in the tab resolver below.
@@ -179,7 +182,7 @@ function ClientDashboardInner() {
   // Care plan is a staff surface; a nurse deep-linking ?tab=careplan lands on
   // Overview instead of an editor she isn't meant to drive.
   const tab: TabKey =
-    isTabKey(tabParam) && !(tabParam === 'careplan' && isNurse) && !(tabParam === 'hours' && !showHoursTab)
+    isTabKey(tabParam) && !((tabParam === 'careplan' || tabParam === 'communications') && isNurse) && !(tabParam === 'hours' && !showHoursTab)
       ? tabParam
       : 'overview';
   const setTab = (next: TabKey) => {
@@ -596,7 +599,7 @@ function ClientDashboardInner() {
 
           {/* Tab bar */}
           <div style={tabBarStyle} role="tablist" aria-label="Dashboard sections">
-            {TABS.filter((t) => (t.key !== 'careplan' || !isNurse) && (t.key !== 'hours' || showHoursTab)).map((t) => (
+            {TABS.filter((t) => ((t.key !== 'careplan' && t.key !== 'communications') || !isNurse) && (t.key !== 'hours' || showHoursTab)).map((t) => (
               <button
                 key={t.key}
                 type="button"
@@ -986,6 +989,17 @@ function ClientDashboardInner() {
               <ClipboardList size={16} /> Service plan
             </div>
             <ServicePlanSection key={`sp-${patientId}`} patientId={patientId} canAuthor={realStaff && !isViewingAs} />
+          </section>
+          )}
+
+          {/* Communications (staff-only): notices sent to staff about this
+              client, word for word, plus messages logged by hand. */}
+          {tab === 'communications' && !isNurse && (
+          <section style={sectionCardStyle}>
+            <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
+              <MessagesSquare size={16} /> Communications
+            </div>
+            <CommunicationsLog key={`comm-${patientId}`} patientId={patientId} readOnly={isViewingAs} onToast={showToast} />
           </section>
           )}
 
