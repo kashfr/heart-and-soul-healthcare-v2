@@ -1355,7 +1355,7 @@ function OversightNotePageInner() {
               </button>
             ) : (
               <>
-                <button type="button" className={styles.navBtn} onClick={() => setShowDiscard(true)} disabled={submitting || leaving}>
+                <button type="button" className={`${styles.navBtn} ${styles.navBtnDanger}`} onClick={() => setShowDiscard(true)} disabled={submitting || leaving}>
                   Discard
                 </button>
                 <button type="button" className={styles.navBtn} onClick={saveAndExit} disabled={submitting || leaving}>

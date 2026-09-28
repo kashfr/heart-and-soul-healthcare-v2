@@ -35,6 +35,8 @@ interface SvRule {
   key: string;
   label: string;
   applies?: (d: Record<string, string>) => boolean;
+  /** Custom completeness check; defaults to "the key is non-empty". */
+  filled?: (d: Record<string, string>) => boolean;
 }
 
 /** Required fields for a complete supervisory visit, in document order. */
@@ -50,9 +52,20 @@ const SUPERVISORY_RULES: SvRule[] = [
   { key: 'sv_complaint', label: 'What would you do if you had a complaint?' },
   { key: 'sv_anythingElse', label: 'Is there anything else you would like to tell me?' },
 
-  { key: 'sv_temp', label: 'Temp' },
-  { key: 'sv_bp', label: 'BP' },
-  { key: 'sv_pulse', label: 'Pulse' },
+  // Vitals use the shift note's keys (see VitalSignsFields) so every note's
+  // readings feed the same abnormal-vitals checks, trends, and PDF.
+  { key: 'q16_temperature', label: 'Temp' },
+  {
+    key: 'q16_temperatureRoute',
+    label: 'Temperature route',
+    applies: (d) => has(d, 'q16_temperature'),
+  },
+  {
+    key: 'q17_bloodPressure',
+    label: 'BP (systolic and diastolic)',
+    filled: (d) => has(d, 'q17_systolic') && has(d, 'q17_diastolic'),
+  },
+  { key: 'q18_pulse', label: 'Pulse' },
   { key: 'sv_generalConditions', label: 'General conditions' },
   { key: 'sv_clientProgress', label: 'Client progress' },
 
@@ -92,7 +105,8 @@ export function getSupervisoryIncomplete(flat: Record<string, string>): Supervis
   const issues: SupervisoryIssue[] = [];
   for (const r of SUPERVISORY_RULES) {
     if (r.applies && !r.applies(flat)) continue;
-    if (!has(flat, r.key)) issues.push({ key: r.key, label: r.label });
+    const ok = r.filled ? r.filled(flat) : has(flat, r.key);
+    if (!ok) issues.push({ key: r.key, label: r.label });
   }
   return issues;
 }

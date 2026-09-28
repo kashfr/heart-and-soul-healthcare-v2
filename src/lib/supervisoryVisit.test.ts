@@ -28,9 +28,12 @@ function completeVisit(): Record<string, string> {
     q12_credential: 'RN',
     sv_complaint: 'Call the office and ask for the supervisor.',
     sv_anythingElse: 'Nothing else.',
-    sv_temp: '98.4',
-    sv_bp: '118/76',
-    sv_pulse: '72',
+    q16_temperature: '98.4',
+    q16_temperatureRoute: 'Oral',
+    q17_systolic: '118',
+    q17_diastolic: '76',
+    q17_bloodPressure: '118/76',
+    q18_pulse: '72',
     sv_generalConditions: 'Alert, oriented, home clean.',
     sv_clientProgress: 'Walking further with the walker.',
     sv_problems: 'No',
@@ -50,11 +53,17 @@ describe('getSupervisoryIncomplete', () => {
 
   it('flags each missing core field, in document order', () => {
     const d = completeVisit();
-    delete d.sv_bp;
+    delete d.q17_diastolic; // half a BP is not a BP
     delete d.sv_staffName;
     delete d.sv_clientProgress;
     delete d.q61_signature;
-    expect(getSupervisoryIncomplete(d).map((i) => i.key)).toEqual(['sv_staffName', 'sv_bp', 'sv_clientProgress', 'q61_signature']);
+    expect(getSupervisoryIncomplete(d).map((i) => i.key)).toEqual(['sv_staffName', 'q17_bloodPressure', 'sv_clientProgress', 'q61_signature']);
+  });
+
+  it('requires the temperature route once a temperature is entered', () => {
+    const d = completeVisit();
+    delete d.q16_temperatureRoute;
+    expect(getSupervisoryIncomplete(d).map((i) => i.key)).toEqual(['q16_temperatureRoute']);
   });
 
   it('requires an explanation only when the answer calls for one', () => {

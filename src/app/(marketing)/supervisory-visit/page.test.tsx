@@ -163,8 +163,10 @@ describe('SupervisoryVisitPage', () => {
     fireEvent.change(screen.getByLabelText(/^Time out/), { target: { value: '10:45' } });
     await waitFor(() => expect(screen.getByRole('option', { name: 'Ann Lee, CNA' })).toBeInTheDocument());
     fireEvent.change(screen.getByLabelText(/Staff performing duties/), { target: { value: 'n2' } });
-    fireEvent.change(screen.getByLabelText(/^Temp/), { target: { value: '98.4' } });
-    fireEvent.change(screen.getByLabelText(/^BP/), { target: { value: '118/76' } });
+    fireEvent.change(screen.getByLabelText(/^Temperature \(°F\)/), { target: { value: '98.4' } });
+    fireEvent.change(screen.getByLabelText('Temperature route'), { target: { value: 'Oral' } });
+    fireEvent.change(screen.getByLabelText('Systolic'), { target: { value: '118' } });
+    fireEvent.change(screen.getByLabelText('Diastolic'), { target: { value: '76' } });
     fireEvent.change(screen.getByLabelText(/^Pulse/), { target: { value: '72' } });
     fireEvent.change(screen.getByLabelText(/What would you do if you had a complaint/), { target: { value: 'Call the office.' } });
     fireEvent.change(screen.getByLabelText(/anything else you would like to tell me/), { target: { value: 'No.' } });
@@ -190,6 +192,10 @@ describe('SupervisoryVisitPage', () => {
       q3_clientName: 'Neal Kelly',
       sv_staffName: 'Ann Lee, CNA',
       sv_staffId: 'n2',
+      q16_temperature: '98.4',
+      q16_temperatureRoute: 'Oral',
+      q17_bloodPressure: '118/76',
+      q18_pulse: '72',
       sv_problems: 'No',
       sv_interviewMethod: 'In person',
       q11_nurseName: 'Souz Payne',
@@ -204,6 +210,14 @@ describe('SupervisoryVisitPage', () => {
     await waitFor(() =>
       expect(mockRouter.push).toHaveBeenCalledWith(expect.stringMatching(/^\/progress-note\/submitted\/note-id\?.*t=supervisory$/)),
     );
+  });
+
+  it("flags a vital outside its normal range for the client's age", async () => {
+    render(<SupervisoryVisitPage />);
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Neal Kelly' })).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText(/Client name/), { target: { value: 'p1' } });
+    fireEvent.change(screen.getByLabelText(/^Pulse/), { target: { value: '140' } });
+    await waitFor(() => expect(screen.getByText(/Pulse is high for/)).toBeInTheDocument());
   });
 
   it('refuses to amend a record of another type', async () => {

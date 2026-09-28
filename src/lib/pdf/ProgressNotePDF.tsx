@@ -1196,9 +1196,9 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
             )}
             <SectionBreakable title="Overall Assessment of Client">
               <FieldRow>
-                <FieldCol><Field fieldKey="sv_temp" label="Temp" value={data.sv_temp} /></FieldCol>
-                <FieldCol><Field fieldKey="sv_bp" label="BP" value={data.sv_bp} /></FieldCol>
-                <FieldCol><Field fieldKey="sv_pulse" label="Pulse" value={data.sv_pulse} /></FieldCol>
+                <FieldCol><Field fieldKey="q16_temperature" label="Temp" value={data.q16_temperature ? `${data.q16_temperature} °F${data.q16_temperatureRoute ? ` (${data.q16_temperatureRoute})` : ''}` : ''} /></FieldCol>
+                <FieldCol><Field fieldKey="q17_bloodPressure" label="BP" value={data.q17_bloodPressure ? `${data.q17_bloodPressure} mmHg` : ''} /></FieldCol>
+                <FieldCol><Field fieldKey="q18_pulse" label="Pulse" value={data.q18_pulse ? `${data.q18_pulse} bpm` : ''} /></FieldCol>
               </FieldRow>
               {hasValue(data.sv_generalConditions) && <TextBlock fieldKey="sv_generalConditions" label="General Conditions" value={data.sv_generalConditions} />}
               {hasValue(data.sv_clientProgress) && <TextBlock fieldKey="sv_clientProgress" label="Client Progress" value={data.sv_clientProgress} />}

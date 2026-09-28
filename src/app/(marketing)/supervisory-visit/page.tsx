@@ -56,6 +56,7 @@ import DeselectableRadio, {
   radioSubscribe,
   radioGetSnapshot,
 } from '../progress-note/components/DeselectableRadio';
+import VitalSignsFields from '../progress-note/components/VitalSignsFields';
 import type { FormValues } from '../progress-note/types';
 import styles from '../progress-note/page.module.css';
 
@@ -137,9 +138,10 @@ const SUPERVISORY_FIELD_MESSAGES: Record<string, string> = {
   q11_nurseName: 'Enter the supervisor name.',
   sv_complaint: "Record the client's answer to the complaint question.",
   sv_anythingElse: "Record the client's answer, or note that they had nothing to add.",
-  sv_temp: 'Enter the temperature.',
-  sv_bp: 'Enter the blood pressure.',
-  sv_pulse: 'Enter the pulse.',
+  q16_temperature: 'Enter the temperature.',
+  q16_temperatureRoute: 'Choose how the temperature was taken.',
+  q17_bloodPressure: 'Enter both blood pressure numbers.',
+  q18_pulse: 'Enter the pulse.',
   sv_generalConditions: "Describe the client's general conditions.",
   sv_clientProgress: "Document the client's progress.",
   sv_problems: 'Choose whether the client encountered any problems.',
@@ -177,7 +179,7 @@ function SupervisoryVisitPageInner() {
   if (!submissionIdRef.current && typeof crypto !== 'undefined') {
     submissionIdRef.current = crypto.randomUUID();
   }
-  const { register, watch, setValue, getValues } = useForm<FormValues>();
+  const { register, watch, setValue, getValues, trigger, formState: { errors: rhfErrors } } = useForm<FormValues>();
 
   const [patients, setPatients] = useState<Patient[]>([]);
   const [fieldStaff, setFieldStaff] = useState<AssigneeOption[]>([]);
@@ -265,6 +267,14 @@ function SupervisoryVisitPageInner() {
       }
       if (typeof flat.q61_signature === 'string' && flat.q61_signature) {
         setInitialSignature(flat.q61_signature);
+      }
+      // A stored "S/D" string without its two parts (older records) still
+      // fills both BP inputs.
+      const bp = typeof flat.q17_bloodPressure === 'string' ? flat.q17_bloodPressure : '';
+      if (bp && !flat.q17_systolic && !flat.q17_diastolic) {
+        const [s, d] = bp.split('/');
+        setValue('q17_systolic', (s || '').trim());
+        setValue('q17_diastolic', (d || '').trim());
       }
       clearRadioStorage();
       const radioSource =
@@ -493,6 +503,14 @@ function SupervisoryVisitPageInner() {
     }
     setMissing([]);
 
+    // Typo guard on the vitals (the same bounds as the shift note).
+    const vitalsOk = await trigger(['q16_temperature', 'q17_systolic', 'q17_diastolic', 'q18_pulse']);
+    if (!vitalsOk) {
+      const firstBad = ['q16_temperature', 'q17_systolic', 'q17_diastolic', 'q18_pulse'].find((k) => rhfErrors[k]);
+      escortToField(firstBad === 'q17_systolic' || firstBad === 'q17_diastolic' ? 'q17_bloodPressure' : firstBad || 'q16_temperature');
+      return;
+    }
+
     if (String(values.sv_timeOut) <= String(values.sv_timeIn)) {
       setFieldErrors({ sv_timeOut: 'Time out must be after time in. Check the visit times.' });
       escortToField('sv_timeOut');
@@ -601,7 +619,7 @@ function SupervisoryVisitPageInner() {
     }
   };
 
-  const fe = (k: string) => fieldErrors[k];
+  const fe = (k: string) => fieldErrors[k] || (rhfErrors[k]?.message ? String(rhfErrors[k]?.message) : undefined);
   const hi = (k: string) => (fieldErrors[k] ? FIELD_ERROR_STYLE : undefined);
 
   if (!allowed) {
@@ -837,11 +855,16 @@ function SupervisoryVisitPageInner() {
           {/* ASSESSMENT */}
           <div className={styles.section}>
             <span className={styles.sectionLabel}>OVERALL ASSESSMENT OF CLIENT</span>
-            <div className={styles.row}>
-              {input('sv_temp', 'Temp', { inputMode: 'decimal', placeholder: 'e.g. 98.6' })}
-              {input('sv_bp', 'BP', { placeholder: 'e.g. 120/80' })}
-              {input('sv_pulse', 'Pulse', { inputMode: 'numeric', placeholder: 'e.g. 72' })}
-            </div>
+            <VitalSignsFields
+              register={register}
+              watch={watch}
+              setValue={setValue}
+              ageStr={String(watch('q5_ageYears') || '')}
+              dob={String(watch('q4_dateofBirth') || '')}
+              fields={['temperature', 'bloodPressure', 'pulse']}
+              required
+              errorFor={fe}
+            />
             <Area id="sv_generalConditions" error={fe('sv_generalConditions')} label="General conditions:" register={register} required />
             <Area id="sv_clientProgress" error={fe('sv_clientProgress')} label="Document client progress:" register={register} required />
             {yesNo('sv_problems', 'Were there any problems encountered by the client?')}
@@ -971,7 +994,7 @@ function SupervisoryVisitPageInner() {
               </button>
             ) : (
               <>
-                <button type="button" className={styles.navBtn} onClick={() => setShowDiscard(true)} disabled={submitting || leaving}>
+                <button type="button" className={`${styles.navBtn} ${styles.navBtnDanger}`} onClick={() => setShowDiscard(true)} disabled={submitting || leaving}>
                   Discard
                 </button>
                 <button type="button" className={styles.navBtn} onClick={saveAndExit} disabled={submitting || leaving}>

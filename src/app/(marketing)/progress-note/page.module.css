@@ -359,47 +359,108 @@
 
 .navigationControls {
   display: flex;
-  gap: 10px;
-  margin-top: 30px;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 32px;
   padding-top: 20px;
-  border-top: 1px solid #e0e0e0;
-  justify-content: space-between;
+  border-top: 1px solid #e5e7eb;
 }
 
+/* Buttons: an outlined secondary (Discard, Save & exit, Cancel) and a filled
+   primary (Submit / Update). Same height, same radius, same motion, so the
+   row reads as one set. Discard sits alone on the left. */
 .navBtn,
 .submitBtn {
-  padding: 12px 24px;
-  border: none;
-  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 11px 22px;
+  border: 1.5px solid transparent;
+  border-radius: 10px;
+  font-family: inherit;
   font-size: 14px;
   font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
   cursor: pointer;
-  transition: background 0.2s;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.12s ease;
+}
+
+.navBtn:focus-visible,
+.submitBtn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(74, 111, 165, 0.35);
+}
+
+.navBtn:active:not(:disabled),
+.submitBtn:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+
+.navBtn:disabled,
+.submitBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
 }
 
 .navBtn {
-  background: #34495e;
-  color: white;
+  background: #ffffff;
+  color: #1f3a5f;
+  border-color: #cbd5e1;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
 .navBtn:hover:not(:disabled) {
-  background: #2c3e50;
+  background: #f8fafc;
+  border-color: #94a3b8;
+  box-shadow: 0 3px 8px rgba(15, 23, 42, 0.1);
+  transform: translateY(-1px);
 }
 
-.navBtn:disabled {
-  background: #bdc3c7;
-  cursor: not-allowed;
+.navBtnDanger {
+  color: #b3261e;
+  border-color: #f1c4c0;
+  margin-right: auto;
+}
+
+.navBtnDanger:hover:not(:disabled) {
+  background: #fdf2f2;
+  border-color: #e39a94;
 }
 
 .submitBtn {
-  background: #27ae60;
-  color: white;
-  flex: 1;
-  max-width: 200px;
+  background: linear-gradient(180deg, #2fb96a 0%, #239c58 100%);
+  color: #ffffff;
+  border-color: #1f8a4d;
+  min-width: 200px;
+  box-shadow:
+    0 2px 6px rgba(35, 156, 88, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
-.submitBtn:hover {
-  background: #229954;
+.submitBtn:hover:not(:disabled) {
+  background: linear-gradient(180deg, #36c473 0%, #27a85f 100%);
+  box-shadow:
+    0 6px 14px rgba(35, 156, 88, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  transform: translateY(-1px);
+}
+
+/* Inside a dialog the primary button fits its label. */
+.modalContent .submitBtn {
+  min-width: 0;
 }
 
 .confirmModal {
@@ -491,16 +552,21 @@
 }
 
 .signaturePadControls button {
-  padding: 6px 12px;
-  border: 1px solid #bdc3c7;
+  padding: 8px 14px;
+  border: 1.5px solid #cbd5e1;
   background: white;
-  border-radius: 4px;
+  color: #1f3a5f;
+  border-radius: 8px;
   cursor: pointer;
-  font-size: 12px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background-color 0.18s ease, border-color 0.18s ease;
 }
 
 .signaturePadControls button:hover {
-  background: #f5f5f5;
+  background: #f8fafc;
+  border-color: #94a3b8;
 }
 
 @media (max-width: 768px) {
@@ -649,20 +715,26 @@
     font-size: 14px;
   }
 
-  /* Navigation buttons — stacked, full width, larger */
+  /* Navigation buttons — stacked, full width, thumb-sized. Submit first. */
   .navigationControls {
     flex-direction: column-reverse;
-    gap: 8px;
-    margin-top: 20px;
+    align-items: stretch;
+    gap: 10px;
+    margin-top: 24px;
     padding-top: 16px;
   }
 
   .navBtn,
   .submitBtn {
     width: 100%;
-    padding: 16px 24px;
+    min-width: 0;
+    padding: 14px 24px;
     font-size: 16px;
-    min-height: 50px;
+    min-height: 52px;
+  }
+
+  .navBtnDanger {
+    margin-right: 0;
   }
 
   /* Signature pad — full width on mobile */

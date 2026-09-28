@@ -745,13 +745,13 @@ export default function SubmissionDetailPage({ params }: PageProps) {
 
             <ConditionalSection
               title="Overall Assessment of Client"
-              keys={['sv_temp', 'sv_bp', 'sv_pulse', 'sv_generalConditions', 'sv_clientProgress', 'sv_problems', 'sv_rightsInformed', 'sv_clientSatisfied']}
+              keys={['q16_temperature', 'q17_bloodPressure', 'q18_pulse', 'sv_generalConditions', 'sv_clientProgress', 'sv_problems', 'sv_rightsInformed', 'sv_clientSatisfied']}
               data={data}
             >
               <FieldRow>
-                <Field fieldKey="sv_temp" label="Temp" value={data.sv_temp} />
-                <Field fieldKey="sv_bp" label="BP" value={data.sv_bp} />
-                <Field fieldKey="sv_pulse" label="Pulse" value={data.sv_pulse} />
+                <Field fieldKey="q16_temperature" label="Temp" value={data.q16_temperature ? `${data.q16_temperature} °F${data.q16_temperatureRoute ? ` (${data.q16_temperatureRoute})` : ''}` : ''} />
+                <Field fieldKey="q17_bloodPressure" label="BP" value={data.q17_bloodPressure ? `${data.q17_bloodPressure} mmHg` : ''} />
+                <Field fieldKey="q18_pulse" label="Pulse" value={data.q18_pulse ? `${data.q18_pulse} bpm` : ''} />
               </FieldRow>
               {hasValue(data.sv_generalConditions) && <TextBlock fieldKey="sv_generalConditions" label="General Conditions" value={data.sv_generalConditions} />}
               {hasValue(data.sv_clientProgress) && <TextBlock fieldKey="sv_clientProgress" label="Client Progress" value={data.sv_clientProgress} />}
