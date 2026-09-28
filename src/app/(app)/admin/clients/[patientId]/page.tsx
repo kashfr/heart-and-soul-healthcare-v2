@@ -327,7 +327,7 @@ function ClientDashboardInner() {
       items.push({
         when: n.submittedAt as Date,
         kind: 'note',
-        text: `${n.noteType === 'rn-oversight-visit' ? 'RN oversight visit' : 'Progress note'} for ${fmtDate(n.dateISO)} by ${n.nurseName || 'a nurse'}${n.credential ? `, ${n.credential}` : ''}`,
+        text: `${n.noteType === 'rn-oversight-visit' ? 'RN oversight visit' : n.noteType === 'home-supervisory-visit' ? 'Home supervisory visit' : 'Progress note'} for ${fmtDate(n.dateISO)} by ${n.nurseName || 'a nurse'}${n.credential ? `, ${n.credential}` : ''}`,
         href: `/admin/submissions/${n.id}`,
         hint: 'Open this note',
       });

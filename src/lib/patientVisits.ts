@@ -176,3 +176,55 @@ export async function getActiveSupervisors(): Promise<AssigneeOption[]> {
     return [];
   }
 }
+
+/**
+ * Active field staff (role 'nurse': HHA, CNA, LPN, RN) — the "Staff
+ * Performing Duties" pool on the Home Supervisory Visit form. Same
+ * staff-only users read as {@link getActiveSupervisors}.
+ */
+export async function getActiveFieldStaff(): Promise<AssigneeOption[]> {
+  try {
+    const q = query(
+      collection(db, 'users'),
+      where('role', '==', 'nurse'),
+      where('active', '==', true),
+    );
+    const snap = await getDocs(q);
+    return snap.docs
+      .map((d) => {
+        const u = d.data() as { displayName?: string; credential?: string };
+        return { uid: d.id, name: u.displayName || '', credential: u.credential || '' };
+      })
+      .filter((s) => s.name)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  } catch (error) {
+    console.error('Error fetching field staff:', error);
+    return [];
+  }
+}
+
+/** The scheduled supervisory visit(s) a filed supervisory form satisfies:
+ *  same client, same date, still 'scheduled'. Pure so it can be tested. */
+export function scheduledSupervisoryVisitsOn(visits: PatientVisit[], date: string): PatientVisit[] {
+  return visits.filter(
+    (v) => v.type === 'supervisory' && v.status === 'scheduled' && v.date === date && !!v.id,
+  );
+}
+
+/**
+ * After a Home Supervisory Visit form is filed, mark the client's scheduled
+ * supervisory visit on that date completed, so the schedule matches the
+ * record without a second manual step. Staff-only write (the form is
+ * staff-only too). Returns how many visits were marked; nothing scheduled
+ * that day is not an error.
+ */
+export async function completeScheduledSupervisoryVisit(
+  patientId: string,
+  date: string,
+  actor: VisitActor,
+): Promise<number> {
+  if (!patientId || !date) return 0;
+  const matches = scheduledSupervisoryVisitsOn(await getVisitsForPatient(patientId), date);
+  await Promise.all(matches.map((v) => setVisitStatus(v.id as string, 'completed', actor)));
+  return matches.length;
+}

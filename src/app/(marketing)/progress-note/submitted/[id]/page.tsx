@@ -23,8 +23,10 @@ export default function SubmittedPage({ params }: { params: Promise<{ id: string
   const clientName = searchParams.get('c') || '';
   const dateOfService = searchParams.get('d') || '';
   // 't=oversight' marks an RN oversight visit note (submitted by
-  // /oversight-note, which reuses this confirmation page).
+  // /oversight-note) and 't=supervisory' a home supervisory visit (from
+  // /supervisory-visit); both reuse this confirmation page.
   const isOversight = searchParams.get('t') === 'oversight';
+  const isSupervisory = searchParams.get('t') === 'supervisory';
 
   return (
     <div
@@ -54,7 +56,11 @@ export default function SubmittedPage({ params }: { params: Promise<{ id: string
       </div>
 
       <h1 style={{ color: '#1a3a5c', fontSize: 24, margin: '0 0 8px' }}>
-        {isOversight ? 'Oversight note submitted' : 'Progress note submitted'}
+        {isOversight
+          ? 'Oversight note submitted'
+          : isSupervisory
+            ? 'Supervisory visit submitted'
+            : 'Progress note submitted'}
       </h1>
       <p style={{ color: '#555', lineHeight: 1.6, margin: '0 0 24px' }}>
         {clientName ? <><strong>{clientName}</strong>&apos;s note</> : 'The note'}
@@ -90,7 +96,9 @@ export default function SubmittedPage({ params }: { params: Promise<{ id: string
       <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
         <button
           type="button"
-          onClick={() => router.push(isOversight ? '/oversight-note' : '/progress-note')}
+          onClick={() =>
+            router.push(isOversight ? '/oversight-note' : isSupervisory ? '/supervisory-visit' : '/progress-note')
+          }
           style={{
             background: '#1a3a5c',
             color: '#fff',

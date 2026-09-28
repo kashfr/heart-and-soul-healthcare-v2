@@ -145,7 +145,7 @@ export default function DocumentsSection({
   const remove = async (d: PatientDocument) => {
     if (!d.id || !isAdmin) return;
     const what = d.autoFiled
-      ? `Delete "${d.title}"?\n\nThis is the PDF filed from an oversight note. The note itself stays; Sync would file it again. The file and its entry are removed (a snapshot is kept in the deletion audit).`
+      ? `Delete "${d.title}"?\n\nThis is the PDF filed from an oversight note or supervisory visit. The note itself stays; Sync would file it again. The file and its entry are removed (a snapshot is kept in the deletion audit).`
       : `Delete "${d.title}"?\n\nThe file and its entry are permanently removed from this client's documents (a snapshot is kept in the deletion audit). This cannot be undone.`;
     if (!window.confirm(what)) return;
     setBusyId(d.id);
@@ -166,12 +166,12 @@ export default function DocumentsSection({
       const r = await syncNoteDocuments(patientId);
       onToast(
         r.filed > 0
-          ? `Filed ${r.filed} oversight ${r.filed === 1 ? 'note' : 'notes'}${r.skipped ? ` (${r.skipped} already on file)` : ''}.`
+          ? `Filed ${r.filed} visit ${r.filed === 1 ? 'note' : 'notes'}${r.skipped ? ` (${r.skipped} already on file)` : ''}.`
           : r.errors.length
             ? `Nothing filed: ${r.errors[0]}`
             : r.skipped
-              ? `All ${r.skipped} oversight ${r.skipped === 1 ? 'note is' : 'notes are'} already on file.`
-              : 'No oversight notes to file for this client.',
+              ? `All ${r.skipped} visit ${r.skipped === 1 ? 'note is' : 'notes are'} already on file.`
+              : 'No oversight or supervisory visit notes to file for this client.',
       );
       if (r.filed > 0) onChanged();
     } catch (err) {
@@ -205,9 +205,9 @@ export default function DocumentsSection({
               onClick={sync}
               disabled={syncing}
               style={actionBtnStyle}
-              title="File any RN oversight visit notes for this client that are not in Documents yet"
+              title="File any RN oversight visit notes and home supervisory visits for this client that are not in Documents yet"
             >
-              <RefreshCw size={14} /> {syncing ? 'Syncing…' : 'Sync RN oversight notes'}
+              <RefreshCw size={14} /> {syncing ? 'Syncing…' : 'Sync visit notes'}
             </button>
           )}
           {canUpload && (

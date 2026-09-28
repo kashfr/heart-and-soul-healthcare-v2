@@ -110,27 +110,31 @@ function hasShiftContent(data: Record<string, unknown>): boolean {
   return Object.keys(fv).length > 0 || String(data.clientName || '').trim() !== '';
 }
 
-export async function saveOversightDraft(
+/** Sibling sub-drafts stored as nested fields on noteDrafts/{uid}. */
+type SubDraftKey = 'oversight' | 'supervisory';
+
+async function saveSubDraft(
   uid: string,
+  key: SubDraftKey,
   payload: Omit<OversightDraft, 'updatedAt'>,
 ): Promise<void> {
   const value = { ...payload, updatedAt: serverTimestamp() };
   try {
-    // updateDoc REPLACES the `oversight` value wholesale. setDoc(merge:true)
+    // updateDoc REPLACES the sub-draft value wholesale. setDoc(merge:true)
     // would deep-merge it, so a key the nurse cleared (a deselected radio, a
     // blanked field) would survive in Firestore and come back on resume.
     // Shift-note fields are untouched either way.
-    await updateDoc(draftRef(uid), { nurseId: uid, oversight: value });
+    await updateDoc(draftRef(uid), { nurseId: uid, [key]: value });
   } catch {
     // No draft document yet: create it. Nothing to preserve, so merge is safe.
-    await setDoc(draftRef(uid), { nurseId: uid, oversight: value }, { merge: true });
+    await setDoc(draftRef(uid), { nurseId: uid, [key]: value }, { merge: true });
   }
 }
 
-export async function loadOversightDraft(uid: string): Promise<OversightDraft | null> {
+async function loadSubDraft(uid: string, key: SubDraftKey): Promise<OversightDraft | null> {
   const snap = await getDoc(draftRef(uid));
   if (!snap.exists()) return null;
-  const raw = snap.data().oversight as Record<string, unknown> | undefined;
+  const raw = snap.data()[key] as Record<string, unknown> | undefined;
   if (!raw) return null;
   const updatedAt = raw.updatedAt as Timestamp | null | undefined;
   return {
@@ -144,12 +148,24 @@ export async function loadOversightDraft(uid: string): Promise<OversightDraft | 
   };
 }
 
-/** Drop the oversight sub-draft, leaving any shift draft on the doc intact. */
-export async function clearOversightDraft(uid: string): Promise<void> {
+/** Drop one sub-draft, leaving the shift draft and other sub-drafts intact. */
+async function clearSubDraft(uid: string, key: SubDraftKey): Promise<void> {
   const snap = await getDoc(draftRef(uid));
   if (!snap.exists()) return;
-  await setDoc(draftRef(uid), { oversight: deleteField() }, { merge: true });
+  await setDoc(draftRef(uid), { [key]: deleteField() }, { merge: true });
 }
+
+export const saveOversightDraft = (uid: string, payload: Omit<OversightDraft, 'updatedAt'>) =>
+  saveSubDraft(uid, 'oversight', payload);
+export const loadOversightDraft = (uid: string) => loadSubDraft(uid, 'oversight');
+export const clearOversightDraft = (uid: string) => clearSubDraft(uid, 'oversight');
+
+/** The Home Supervisory Visit draft: same shape, its own `supervisory` field. */
+export type SupervisoryDraft = OversightDraft;
+export const saveSupervisoryDraft = (uid: string, payload: Omit<SupervisoryDraft, 'updatedAt'>) =>
+  saveSubDraft(uid, 'supervisory', payload);
+export const loadSupervisoryDraft = (uid: string) => loadSubDraft(uid, 'supervisory');
+export const clearSupervisoryDraft = (uid: string) => clearSubDraft(uid, 'supervisory');
 
 export async function saveDraft(payload: NoteDraftPayload): Promise<void> {
   const ref = draftRef(payload.nurseId);

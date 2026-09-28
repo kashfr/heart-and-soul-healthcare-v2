@@ -29,6 +29,7 @@ import { clarificationTurn } from '@/lib/clarificationShared';
 import { readShiftChange } from '@/lib/shiftChange';
 import { buildFieldAmendments, type FieldVersion } from '@/lib/revisionFormat';
 import { programLabel } from '@/lib/programs';
+import { SUPERVISORY_NOTE_TYPE } from '@/lib/supervisoryVisit';
 import styles from './page.module.css';
 
 // Field key -> its prior values (oldest-first) for inline "struck old -> current"
@@ -303,6 +304,10 @@ export default function SubmissionDetailPage({ params }: PageProps) {
   ].filter(Boolean);
   const address = addressParts.join(', ');
 
+  const isSupervisory = data.noteType === SUPERVISORY_NOTE_TYPE;
+  /** Shift progress note: the only type that renders the shift groups. */
+  const isShift = data.noteType !== 'rn-oversight-visit' && !isSupervisory;
+
   // Helper: check if any field in a list has data
   const anyHasValue = (keys: string[]) => keys.some((k) => hasValue(data[k]));
 
@@ -450,14 +455,16 @@ export default function SubmissionDetailPage({ params }: PageProps) {
                 href={
                   data.noteType === 'rn-oversight-visit'
                     ? `/oversight-note?edit=${id}`
-                    : `/progress-note?edit=${id}`
+                    : isSupervisory
+                      ? `/supervisory-visit?edit=${id}`
+                      : `/progress-note?edit=${id}`
                 }
                 className={styles.btn}
               >
                 Amend
               </Link>
             )}
-            {hasValue(data.patientId) && data.noteType !== 'rn-oversight-visit' && (
+            {hasValue(data.patientId) && isShift && (
               <Link
                 href={`/admin/records/${data.patientId}/mar`}
                 className={styles.btn}
@@ -500,7 +507,9 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           <h2 style={formTitleStyle}>
             {data.noteType === 'rn-oversight-visit'
               ? 'RN OVERSIGHT VISIT NOTE'
-              : 'HOME HEALTH PROGRESS NOTE'}
+              : isSupervisory
+                ? 'HOME SUPERVISORY VISIT'
+                : 'HOME HEALTH PROGRESS NOTE'}
           </h2>
           <p style={formDateStyle}>Form Date: {fmtDate(data.q6_dateofService) || data.q6_dateofService}</p>
           {(isNurse ? nurseArchived : staffArchived) && (
@@ -540,7 +549,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         )}
 
         {/* === GROUP 1: Client & Shift === */}
-        <GroupHeader title="Client & Shift" />
+        <GroupHeader title={isSupervisory ? 'Client' : 'Client & Shift'} />
 
         {/* 1. CLIENT INFORMATION */}
         <ConditionalSection
@@ -564,7 +573,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
 
         {/* 2. SHIFT INFORMATION (shift notes only — oversight notes carry
             their date in the header and times in Visit Details) */}
-        {data.noteType !== 'rn-oversight-visit' && (
+        {isShift && (
         <ConditionalSection
           title="Shift Information"
           keys={['q6_dateofService', 'q7_shiftStart', 'q62_shiftEndTime', 'q9_totalHours']}
@@ -579,7 +588,8 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         </ConditionalSection>
         )}
 
-        {/* 3. NURSE / CAREGIVER */}
+        {/* 3. NURSE / CAREGIVER (a supervisory visit names its supervisor in Visit Details) */}
+        {!isSupervisory && (
         <ConditionalSection
           title="Nurse / Caregiver"
           keys={['q11_nurseName', 'q12_credential']}
@@ -590,6 +600,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             <Field fieldKey="q12_credential" label="Credential" value={data.q12_credential} />
           </FieldRow>
         </ConditionalSection>
+        )}
 
         {/* === GROUP 2: Status & Vitals === */}
         {/* === RN OVERSIGHT VISIT (noteType 'rn-oversight-visit' only) === */}
@@ -709,7 +720,68 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           </>
         )}
 
-        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Status & Vitals" />}
+        {/* === HOME SUPERVISORY VISIT (noteType 'home-supervisory-visit' only) === */}
+        {isSupervisory && (
+          <>
+            <GroupHeader title="Home Supervisory Visit" />
+            <ConditionalSection title="Visit Details" keys={['q6_dateofService', 'sv_timeIn', 'sv_timeOut', 'sv_address', 'sv_staffName', 'q11_nurseName']} data={data}>
+              <FieldRow>
+                <Field fieldKey="q6_dateofService" label="Date" value={fmtDate(data.q6_dateofService)} />
+                <Field fieldKey="sv_timeIn" label="Time In" value={data.sv_timeIn} />
+                <Field fieldKey="sv_timeOut" label="Time Out" value={data.sv_timeOut} />
+              </FieldRow>
+              {hasValue(data.sv_address) && <Field fieldKey="sv_address" label="Address" value={data.sv_address} />}
+              <FieldRow>
+                <Field fieldKey="sv_staffName" label="Staff Performing Duties" value={data.sv_staffName} />
+                <Field fieldKey="q11_nurseName" label="Supervisor" value={data.q11_nurseName} />
+                <Field fieldKey="q12_credential" label="Credential" value={data.q12_credential} />
+              </FieldRow>
+            </ConditionalSection>
+
+            <ConditionalSection title="Client Questions" keys={['sv_complaint', 'sv_anythingElse']} data={data}>
+              {hasValue(data.sv_complaint) && <TextBlock fieldKey="sv_complaint" label="What would you do if you had a complaint?" value={data.sv_complaint} />}
+              {hasValue(data.sv_anythingElse) && <TextBlock fieldKey="sv_anythingElse" label="Is there anything else you would like to tell me?" value={data.sv_anythingElse} />}
+            </ConditionalSection>
+
+            <ConditionalSection
+              title="Overall Assessment of Client"
+              keys={['sv_temp', 'sv_bp', 'sv_pulse', 'sv_generalConditions', 'sv_clientProgress', 'sv_problems', 'sv_rightsInformed', 'sv_clientSatisfied']}
+              data={data}
+            >
+              <FieldRow>
+                <Field fieldKey="sv_temp" label="Temp" value={data.sv_temp} />
+                <Field fieldKey="sv_bp" label="BP" value={data.sv_bp} />
+                <Field fieldKey="sv_pulse" label="Pulse" value={data.sv_pulse} />
+              </FieldRow>
+              {hasValue(data.sv_generalConditions) && <TextBlock fieldKey="sv_generalConditions" label="General Conditions" value={data.sv_generalConditions} />}
+              {hasValue(data.sv_clientProgress) && <TextBlock fieldKey="sv_clientProgress" label="Client Progress" value={data.sv_clientProgress} />}
+              <Field fieldKey="sv_problems" label="Problems Encountered by Client" value={data.sv_problems} />
+              {hasValue(data.sv_problemsDetail) && <TextBlock fieldKey="sv_problemsDetail" label="Problems Encountered" value={data.sv_problemsDetail} />}
+              <Field fieldKey="sv_rightsInformed" label="Client Informed of Rights" value={data.sv_rightsInformed} />
+              <Field fieldKey="sv_clientSatisfied" label="Client Satisfied with the Services" value={data.sv_clientSatisfied} />
+              {hasValue(data.sv_dissatisfaction) && <TextBlock fieldKey="sv_dissatisfaction" label="Client's Dissatisfaction" value={data.sv_dissatisfaction} />}
+            </ConditionalSection>
+
+            <ConditionalSection
+              title="Interview with the Client"
+              keys={['sv_interviewMethod', 'sv_interviewNotes', 'sv_levelOfCare', 'sv_satisfiedWithStaff']}
+              data={data}
+            >
+              <Field fieldKey="sv_interviewMethod" label="Interview" value={data.sv_interviewMethod} />
+              {hasValue(data.sv_interviewNotes) && <TextBlock fieldKey="sv_interviewNotes" label="Interview Notes" value={data.sv_interviewNotes} />}
+              <Field fieldKey="sv_levelOfCare" label="Level of Care Appropriate for Client's Needs" value={data.sv_levelOfCare} />
+              {hasValue(data.sv_levelOfCareRecs) && <TextBlock fieldKey="sv_levelOfCareRecs" label="Level of Care Recommendations" value={data.sv_levelOfCareRecs} />}
+              <Field fieldKey="sv_satisfiedWithStaff" label="Client Satisfied with the Staff" value={data.sv_satisfiedWithStaff} />
+              {hasValue(data.sv_staffFeedback) && <TextBlock fieldKey="sv_staffFeedback" label="Client's Feedback on Staff Performance" value={data.sv_staffFeedback} />}
+            </ConditionalSection>
+
+            <ConditionalSection title="Recommendations" keys={['sv_recommendations']} data={data}>
+              <TextBlock fieldKey="sv_recommendations" label="Recommendations" value={data.sv_recommendations} />
+            </ConditionalSection>
+          </>
+        )}
+
+        {isShift && <GroupHeader title="Status & Vitals" />}
 
         {/* 3b. SINCE YOUR LAST SHIFT (rev 3+) */}
         <ConditionalSection
@@ -870,7 +942,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         </ConditionalSection>
 
         {/* === GROUP 3: Observations & Systems === */}
-        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Observations & Systems" />}
+        {isShift && <GroupHeader title="Observations & Systems" />}
 
         {/* 6. OBSERVATIONS */}
         <ConditionalSection
@@ -983,7 +1055,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         )}
 
         {/* === GROUP 4: Personal Care & Nutrition === */}
-        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Personal Care & Nutrition" />}
+        {isShift && <GroupHeader title="Personal Care & Nutrition" />}
 
         {/* 8b. CARE PLAN TASKS — rendered from the note's stored snapshot */}
         {(() => {
@@ -1052,7 +1124,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         </ConditionalSection>
 
         {/* === GROUP 5: Meds & Interventions === */}
-        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Meds & Interventions" />}
+        {isShift && <GroupHeader title="Meds & Interventions" />}
 
         {/* 13. SKILLED NURSING INTERVENTIONS (LPN/RN only) */}
         {isLpnRn && anyHasValue(['q38_interventions', 'q39_interventionDetails', 'q39_individualResponse', 'q40_skillJustification']) && (
@@ -1106,7 +1178,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         )}
 
         {/* === GROUP 6: Education & Notifications === */}
-        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Education & Notifications" />}
+        {isShift && <GroupHeader title="Education & Notifications" />}
 
         {/* 15. EDUCATION */}
         <ConditionalSection

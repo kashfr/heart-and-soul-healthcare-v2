@@ -32,6 +32,7 @@
 import { isBpRoutinelyRequired } from './vitalRanges';
 import { SHIFT_CHANGE_KEYS, shiftChangeAnyYes } from './shiftChange';
 import { vitalsRecheckGaps } from './vitalsRecheck';
+import { SUPERVISORY_NOTE_TYPE } from './supervisoryVisit';
 
 export interface NoteIssue {
   /** Field key (also the DOM id the nurse form scrolls to). */
@@ -236,9 +237,11 @@ const RULES: Rule[] = [
  */
 export function getIncompleteRequired(flat: Record<string, string>): NoteIssue[] {
   // These rules describe the SHIFT progress note. Other document types in the
-  // same collection (RN oversight visit notes) have their own rules — see
-  // src/lib/oversightNote.ts — and must never be scored against these.
+  // same collection (RN oversight visit notes, home supervisory visits) have
+  // their own rules — see src/lib/oversightNote.ts and supervisoryVisit.ts —
+  // and must never be scored against these.
   if ((flat['noteType'] || '') === 'rn-oversight-visit') return [];
+  if ((flat['noteType'] || '') === SUPERVISORY_NOTE_TYPE) return [];
   const cred = (flat['q12_credential'] || '').trim();
   const issues: NoteIssue[] = [];
   for (const r of RULES) {

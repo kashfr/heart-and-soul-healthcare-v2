@@ -60,7 +60,8 @@ export interface ProgressNoteFormData {
   q2_serviceLevel?: string;
   /**
    * Discriminates document types sharing this collection. Absent or empty =
-   * a shift progress note; 'rn-oversight-visit' = an RN oversight visit note
+   * a shift progress note; 'rn-oversight-visit' = an RN oversight visit note;
+   * 'home-supervisory-visit' = a home supervisory visit
    * (see src/lib/oversightNote.ts). Oversight notes reuse the identity keys
    * above plus ov_-prefixed content fields.
    */
@@ -244,13 +245,15 @@ export {
   clarificationTurn,
   clarificationTurnLabel,
 } from './clarificationShared';
+import { SUPERVISORY_NOTE_TYPE } from './supervisoryVisit';
 export type { ClarificationKind, ClarificationMessage, ClarificationTurn, NoteClarification } from './clarificationShared';
 
 export interface SubmissionSummary {
   id: string;
   clientName: string;
   nurseName: string;
-  /** Document type discriminator: '' = shift note, 'rn-oversight-visit' = RN oversight visit note. */
+  /** Document type discriminator: '' = shift note, 'rn-oversight-visit' = RN oversight visit note,
+   *  'home-supervisory-visit' = home supervisory visit. */
   noteType: string;
   /** Author's clinical credential at submit time: HHA | CNA | LPN | RN. */
   credential: string;
@@ -442,6 +445,11 @@ export function readShiftWindow(data: Record<string, unknown>): {
   shiftEndDate: string;
   totalHours: string;
 } {
+  // A home supervisory visit is not a billed service: no window, so it never
+  // counts toward shift or oversight hours anywhere.
+  if ((data.noteType as string) === SUPERVISORY_NOTE_TYPE) {
+    return { shiftStart: '', shiftEnd: '', shiftEndDate: '', totalHours: '' };
+  }
   if ((data.noteType as string) === 'rn-oversight-visit') {
     return {
       shiftStart: (data.ov_timeIn as string) || '',

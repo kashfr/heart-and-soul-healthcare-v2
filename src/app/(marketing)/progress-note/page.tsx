@@ -855,6 +855,11 @@ function ProgressNotePageInner() {
           router.push(`/admin/submissions/${editId}`);
           return;
         }
+        if (data && data.noteType === 'home-supervisory-visit') {
+          alert('This is a home supervisory visit; it cannot be edited in the progress note form.');
+          router.push(`/admin/submissions/${editId}`);
+          return;
+        }
         if (!data) {
           alert('Submission not found.');
           router.push('/admin/submissions');

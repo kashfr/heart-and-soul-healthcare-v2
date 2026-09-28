@@ -121,7 +121,11 @@ export default function HoursSection({ patientId, patientName, program, notes, u
     return () => { cancelled = true; };
   }, [patientId]);
 
-  const shiftNotes = useMemo(() => notes.filter((n) => n.noteType !== 'rn-oversight-visit'), [notes]);
+  // Home supervisory visits are not a billed service and never count as hours.
+  const shiftNotes = useMemo(
+    () => notes.filter((n) => n.noteType !== 'rn-oversight-visit' && n.noteType !== 'home-supervisory-visit'),
+    [notes],
+  );
   const oversightNotes = useMemo(() => notes.filter((n) => n.noteType === 'rn-oversight-visit'), [notes]);
 
   // Two shifts charting the same hour on this client: a double-staffed hour
@@ -145,6 +149,7 @@ export default function HoursSection({ patientId, patientName, program, notes, u
   const dayRows = useMemo<DayRow[]>(() => {
     const rows: DayRow[] = [];
     for (const n of notes) {
+      if (n.noteType === 'home-supervisory-visit') continue;
       const bucket: HoursBucket = n.noteType === 'rn-oversight-visit' ? 'oversight' : 'shift';
       const segs = splitShiftByDay(n);
       const endDate = n.shiftEndDate || (segs.length > 1 ? segs[segs.length - 1].dateISO : n.dateISO);

@@ -54,7 +54,7 @@ export function ageYears(dobISO: string, todayISO: string): number | null {
 
 export interface DashboardNote {
   id: string;
-  /** '' = shift note, 'rn-oversight-visit' = RN oversight visit note. */
+  /** '' = shift note, 'rn-oversight-visit' = RN oversight visit note, 'home-supervisory-visit' = home supervisory visit. */
   noteType: string;
   dateISO: string; // normalized q6_dateofService; '' when unparseable
   submittedAt: Date | null;
