@@ -168,7 +168,10 @@ describe('SupervisoryVisitPage', () => {
     fireEvent.change(screen.getByLabelText('Temperature route'), { target: { value: 'Oral' } });
     fireEvent.change(screen.getByLabelText('Systolic'), { target: { value: '118' } });
     fireEvent.change(screen.getByLabelText('Diastolic'), { target: { value: '76' } });
-    fireEvent.change(screen.getByLabelText(/^Pulse/), { target: { value: '72' } });
+    fireEvent.change(document.getElementById('q18_pulse')!, { target: { value: '72' } });
+    fireEvent.change(document.getElementById('q19_respiration')!, { target: { value: '16' } });
+    fireEvent.change(document.getElementById('q20_oxygenSaturation')!, { target: { value: '98' } });
+    fireEvent.change(document.getElementById('q21_oxygenSource')!, { target: { value: 'Room Air' } });
     fireEvent.change(screen.getByLabelText(/What would you do if you had a complaint/), { target: { value: 'Call the office.' } });
     fireEvent.change(screen.getByLabelText(/anything else you would like to tell me/), { target: { value: 'No.' } });
     fireEvent.change(screen.getByLabelText(/General conditions/), { target: { value: 'Alert, home clean.' } });
@@ -197,6 +200,10 @@ describe('SupervisoryVisitPage', () => {
       q16_temperatureRoute: 'Oral',
       q17_bloodPressure: '118/76',
       q18_pulse: '72',
+      q19_respiration: '16',
+      q20_oxygenSaturation: '98',
+      q21_oxygenSource: 'Room Air',
+      q1_formRev: '2',
       sv_problems: 'No',
       sv_interviewMethod: 'In person',
       q11_nurseName: 'Souz Payne',
@@ -217,7 +224,7 @@ describe('SupervisoryVisitPage', () => {
     render(<SupervisoryVisitPage />);
     await waitFor(() => expect(screen.getByRole('option', { name: 'Neal Kelly' })).toBeInTheDocument());
     fireEvent.change(screen.getByLabelText(/Client name/), { target: { value: 'p1' } });
-    fireEvent.change(screen.getByLabelText(/^Pulse/), { target: { value: '140' } });
+    fireEvent.change(document.getElementById('q18_pulse')!, { target: { value: '140' } });
     await waitFor(() => expect(screen.getByText(/Pulse is high for/)).toBeInTheDocument());
   });
 

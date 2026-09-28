@@ -19,9 +19,19 @@ request of the nurse supervisors.
 - Shares the note identity keys: `q3_clientName`, `q4_dateofBirth`,
   `q6_dateofService`, `q11_nurseName` (the supervisor), `q12_credential`,
   `q61_signature`, `patientId`.
-- Vitals use the shift note's keys (`q16_temperature` + route,
-  `q17_systolic` / `q17_diastolic` mirrored into `q17_bloodPressure`,
-  `q18_pulse`) so they feed the abnormal-vitals banner, flags, trends, and PDF.
+- Vitals are the shift note's block, unchanged (rev 2, 09/28/2026, after the
+  supervisor asked for SpO2): all five vitals with the shift note's keys
+  (`q16_temperature` + route, `q17_systolic` / `q17_diastolic` mirrored into
+  `q17_bloodPressure`, `q18_pulse` + site, `q19_respiration`,
+  `q20_oxygenSaturation` + `q21_oxygenSource`), the "unable to obtain" reasons
+  (`q16_vitalsNotObtained*`, `q17_bpNotObtained*`), BP method and site, and
+  later rechecks (`q16r_reading{n}_*`). They feed the abnormal-vitals banner,
+  flags, trends, and PDF like the shift note's. Rev 1 visits (before
+  09/28/2026) hold temperature, BP and pulse only.
+- Owner's rule: vitals are captured the same way everywhere. Any new form
+  that takes vitals renders `VitalSignsFields` with the shift note's props
+  (`required`, `notObtainedReason`, `bpNotObtainedReason`, `bpOptional`,
+  `details`) plus `VitalsRecheckSection`; never a subset.
 - Draft: nested `supervisory` field on `noteDrafts/{uid}`, beside the shift
   draft and the `oversight` sub-draft (see `drafts.ts`, `saveSubDraft`).
 - No Firestore rules or index changes were needed.
@@ -31,9 +41,13 @@ request of the nurse supervisors.
 - Same questions and order as the paper form. Yes/No questions are radios.
 - Required: client, date, time in/out, address, staff performing duties,
   supervisor, both client questions ("What would you do if you had a
-  complaint?", "Is there anything else you would like to tell me?"), temp +
-  route, BP (both numbers), pulse, general conditions, client progress, every
-  Yes/No answer, interview method (phone / in person), signature.
+  complaint?", "Is there anything else you would like to tell me?"), the
+  vitals under the shift note's rules (each vital is a reading or the
+  "unable to obtain vitals" reason; BP is routinely required from age 3 and
+  also satisfied by its own reason; temperature route and oxygen source are
+  required once their reading is present), general conditions, client
+  progress, every Yes/No answer, interview method (phone / in person),
+  signature.
 - Explanation boxes required only when the answer calls for one: problems =
   Yes, not satisfied with services, level of care not appropriate, not
   satisfied with staff.
@@ -83,7 +97,8 @@ or mark the visit on the Schedule tab.
 
 ## Open ideas, not built
 
-- The supervisory visit does not require rechecks of abnormal vitals.
+- The supervisory visit offers vitals rechecks but does not require one for
+  an abnormal first reading (the shift note's rev-4 follow-up gate).
 
 ## Tests
 

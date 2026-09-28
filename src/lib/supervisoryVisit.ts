@@ -29,7 +29,11 @@ export interface SupervisoryIssue {
   label: string;
 }
 
+import { isBpRoutinelyRequired } from './vitalRanges';
+
 const has = (d: Record<string, string>, k: string): boolean => (d[k] ?? '').trim() !== '';
+/** A vital is filled by its own value OR the section-level "unable to obtain vitals" reason. */
+const vitalOr = (key: string) => (d: Record<string, string>) => has(d, key) || has(d, 'q16_vitalsNotObtainedReason');
 
 interface SvRule {
   key: string;
@@ -52,9 +56,12 @@ const SUPERVISORY_RULES: SvRule[] = [
   { key: 'sv_complaint', label: 'What would you do if you had a complaint?' },
   { key: 'sv_anythingElse', label: 'Is there anything else you would like to tell me?' },
 
-  // Vitals use the shift note's keys (see VitalSignsFields) so every note's
-  // readings feed the same abnormal-vitals checks, trends, and PDF.
-  { key: 'q16_temperature', label: 'Temp' },
+  // Vitals are the shift note's block (see VitalSignsFields) with the shift
+  // note's rules (noteValidation.ts): every vital is satisfied by a reading
+  // or the "unable to obtain vitals" reason; BP is routinely required from
+  // age 3 and also satisfied by its own "unable to obtain" reason; a route
+  // or oxygen source is required once its reading is present.
+  { key: 'q16_temperature', label: 'Temp (a reading or an "unable to obtain vitals" reason)', filled: vitalOr('q16_temperature') },
   {
     key: 'q16_temperatureRoute',
     label: 'Temperature route',
@@ -62,10 +69,21 @@ const SUPERVISORY_RULES: SvRule[] = [
   },
   {
     key: 'q17_bloodPressure',
-    label: 'BP (systolic and diastolic)',
-    filled: (d) => has(d, 'q17_systolic') && has(d, 'q17_diastolic'),
+    label: 'BP (a reading or an "unable to obtain" reason)',
+    applies: (d) => isBpRoutinelyRequired(d['q5_ageYears'] || '', d['q4_dateofBirth']),
+    filled: (d) =>
+      (has(d, 'q17_systolic') && has(d, 'q17_diastolic')) ||
+      has(d, 'q17_bpNotObtainedReason') ||
+      has(d, 'q16_vitalsNotObtainedReason'),
   },
-  { key: 'q18_pulse', label: 'Pulse' },
+  { key: 'q18_pulse', label: 'Pulse (a reading or an "unable to obtain vitals" reason)', filled: vitalOr('q18_pulse') },
+  { key: 'q19_respiration', label: 'Respiration (a reading or an "unable to obtain vitals" reason)', filled: vitalOr('q19_respiration') },
+  { key: 'q20_oxygenSaturation', label: 'O2 saturation (a reading or an "unable to obtain vitals" reason)', filled: vitalOr('q20_oxygenSaturation') },
+  {
+    key: 'q21_oxygenSource',
+    label: 'Oxygen source (delivery for the recorded SpO2)',
+    applies: (d) => has(d, 'q20_oxygenSaturation'),
+  },
   { key: 'sv_generalConditions', label: 'General conditions' },
   { key: 'sv_clientProgress', label: 'Client progress' },
 

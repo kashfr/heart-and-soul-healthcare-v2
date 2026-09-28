@@ -34,6 +34,9 @@ function completeVisit(): Record<string, string> {
     q17_diastolic: '76',
     q17_bloodPressure: '118/76',
     q18_pulse: '72',
+    q19_respiration: '16',
+    q20_oxygenSaturation: '98',
+    q21_oxygenSource: 'Room air',
     sv_generalConditions: 'Alert, oriented, home clean.',
     sv_clientProgress: 'Walking further with the walker.',
     sv_problems: 'No',
@@ -131,5 +134,36 @@ describe('scheduledSupervisoryVisitsOn', () => {
       v({ id: 'cancelled', status: 'cancelled' }),
     ];
     expect(scheduledSupervisoryVisitsOn(visits, '2026-09-28').map((x) => x.id)).toEqual(['hit']);
+  });
+
+  it('requires all five vitals, and the oxygen source once SpO2 is entered', () => {
+    const d = completeVisit();
+    delete d.q19_respiration;
+    delete d.q21_oxygenSource;
+    expect(getSupervisoryIncomplete(d).map((i) => i.key)).toEqual(['q19_respiration', 'q21_oxygenSource']);
+    delete d.q20_oxygenSaturation;
+    expect(getSupervisoryIncomplete(d).map((i) => i.key)).toEqual(['q19_respiration', 'q20_oxygenSaturation']);
+  });
+
+  it('accepts an "unable to obtain vitals" reason in place of the readings, like the shift note', () => {
+    const d = completeVisit();
+    for (const k of ['q16_temperature', 'q16_temperatureRoute', 'q17_systolic', 'q17_diastolic', 'q17_bloodPressure', 'q18_pulse', 'q19_respiration', 'q20_oxygenSaturation', 'q21_oxygenSource']) delete d[k];
+    expect(getSupervisoryIncomplete(d).map((i) => i.key)).toEqual(['q16_temperature', 'q17_bloodPressure', 'q18_pulse', 'q19_respiration', 'q20_oxygenSaturation']);
+    d.q16_vitalsNotObtainedReason = 'Client asleep';
+    expect(getSupervisoryIncomplete(d)).toEqual([]);
+  });
+
+  it('makes BP optional under age 3, and accepts its own "unable to obtain" reason', () => {
+    const d = completeVisit();
+    delete d.q17_systolic;
+    delete d.q17_diastolic;
+    delete d.q17_bloodPressure;
+    expect(getSupervisoryIncomplete(d).map((i) => i.key)).toEqual(['q17_bloodPressure']);
+    d.q17_bpNotObtainedReason = 'Client refused';
+    expect(getSupervisoryIncomplete(d)).toEqual([]);
+    delete d.q17_bpNotObtainedReason;
+    d.q4_dateofBirth = '2025-02-08';
+    d.q5_ageYears = '1';
+    expect(getSupervisoryIncomplete(d)).toEqual([]);
   });
 });
