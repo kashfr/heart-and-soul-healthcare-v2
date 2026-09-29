@@ -979,7 +979,7 @@ export default function AdminSettingsPage() {
               }));
             }}
           >
-            <Plus size={14} /> Add agency
+            <Plus size={14} /> Add Agency
           </button>
         </section>
 
