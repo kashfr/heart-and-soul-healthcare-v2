@@ -13,7 +13,7 @@ import {
 } from '@/lib/dayProgramShared';
 import { FieldError, FIELD_ERROR_STYLE, applyFieldErrors } from '@/lib/formEscort';
 import { withSelectChevron } from '@/lib/selectChevron';
-import { formatUSPhone } from '@/lib/phone';
+import { formatUSPhone, formatUSPhoneExt } from '@/lib/phone';
 
 const NAVY = '#1a3a5c';
 
@@ -196,7 +196,7 @@ export default function DayProgramSection({ patientId, canEdit, actorName, onToa
                 <input style={input} value={draft.contactTitle || ''} onChange={(e) => set('contactTitle', e.target.value)} />
               </Field>
               <Field id={fieldId('contact')} label="Office phone" error={errors.contact}>
-                <input type="tel" style={inputFor(errors.contact)} value={draft.phone || ''} onChange={(e) => set('phone', formatUSPhone(e.target.value))} />
+                <input type="tel" style={inputFor(errors.contact)} value={draft.phone || ''} onChange={(e) => set('phone', formatUSPhoneExt(e.target.value))} />
               </Field>
               <Field label="Cell">
                 <input type="tel" style={inputFor(errors.contact)} value={draft.cell || ''} onChange={(e) => set('cell', formatUSPhone(e.target.value))} />

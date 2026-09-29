@@ -18,6 +18,7 @@ import {
 } from '@/lib/guardianShared';
 import { FieldError, FIELD_ERROR_STYLE, escortToField } from '@/lib/formEscort';
 import { withSelectChevron } from '@/lib/selectChevron';
+import { formatUSPhoneExt } from '@/lib/phone';
 
 const NAVY = '#1a3a5c';
 
@@ -217,7 +218,7 @@ export default function GuardianSection({ patientId, canEdit, actorName, onToast
                       <input style={input} value={c.relationship || ''} onChange={(ev) => setField(c.id, 'relationship', ev.target.value)} placeholder="e.g. Mother, or State (DHS representative)" />
                     </Field>
                     <Field id={rowFieldId(c.id, 'reach')} label="Phone" error={e.reach}>
-                      <input type="tel" style={inputFor(e.reach)} value={c.phone || ''} onChange={(ev) => setField(c.id, 'phone', ev.target.value)} />
+                      <input type="tel" style={inputFor(e.reach)} value={c.phone || ''} onChange={(ev) => setField(c.id, 'phone', formatUSPhoneExt(ev.target.value))} />
                     </Field>
                     <Field label="Email">
                       <input type="email" style={inputFor(e.reach)} value={c.email || ''} onChange={(ev) => setField(c.id, 'email', ev.target.value)} />

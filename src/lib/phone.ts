@@ -36,3 +36,17 @@ export function formatUSPhone(value: string): string {
 export function isValidUSPhone(value: string): boolean {
   return phoneDigits(value).length === 10;
 }
+
+/**
+ * `formatUSPhone` for office lines that may have an extension. Digits past
+ * the first ten become ` ext. N`, so "7702795115145" or "770-279-5115 ext 145"
+ * both read "(770) 279-5115 ext. 145" instead of losing the extension. A
+ * leading US country code is dropped first, as in `phoneDigits`.
+ */
+export function formatUSPhoneExt(value: string): string {
+  let digits = value.replace(/\D/g, '');
+  if (digits.startsWith('1') && digits.length >= 11) digits = digits.slice(1);
+  const base = formatUSPhone(digits.slice(0, 10));
+  const ext = digits.slice(10, 16);
+  return ext ? `${base} ext. ${ext}` : base;
+}
