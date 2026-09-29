@@ -1,7 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Ban, CheckCircle2, EyeOff, Eye, FileCheck2, Hourglass, Inbox, X } from 'lucide-react';
+import { Ban, CheckCircle2, EyeOff, Eye, FileCheck2, FolderInput, Hourglass, Inbox, X } from 'lucide-react';
+import FileToClientModal from './FileToClientModal';
+import { withSelectChevron } from '@/lib/selectChevron';
 import { authedFetch } from '@/lib/authedFetch';
 import PdfPreviewModal from '@/components/PdfPreviewModal';
 import { formatDateUS } from '@/lib/dateFormat';
@@ -44,6 +46,7 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [filing, setFiling] = useState<IncomingFax | null>(null);
+  const [filingToClient, setFilingToClient] = useState<IncomingFax | null>(null);
   const [canDismiss, setCanDismiss] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -106,8 +109,9 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
             Incoming Faxes ({incoming.length})
           </h2>
           <p style={noteStyle}>
-            Faxes on the portal line that haven&apos;t been filed. Open one to see what it is; if it is a signed Appendix T,
-            file it against its request. Signed verbal orders are matched under Verbal Orders instead.
+            Faxes on the portal line that haven&apos;t been filed. Open one to see what it is. Records, labs, and other papers
+            about a client go to their Documents with File to Client; a signed Appendix T is filed against its request.
+            Signed verbal orders are matched under Verbal Orders instead.
           </p>
           <div style={tableWrapStyle}>
             <table style={tableStyle}>
@@ -140,6 +144,9 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
                       <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
                         <button onClick={() => view(`Fax from ${sender.from || 'unknown sender'}, ${f.receivedAt}`, `/api/fax/inbound/${f.id}/pdf`)} style={ghostBtnStyle}>
                           <Eye size={14} /> View
+                        </button>
+                        <button onClick={() => setFilingToClient(f)} style={{ ...ghostBtnStyle, marginLeft: 6 }}>
+                          <FolderInput size={14} /> File to Client
                         </button>
                         <button onClick={() => setFiling(f)} style={{ ...ghostBtnStyle, marginLeft: 6 }} disabled={openRequests.length === 0} title={openRequests.length === 0 ? 'No PPOT request is waiting on a signed copy' : undefined}>
                           <FileCheck2 size={14} /> File as Signed PPOT
@@ -270,6 +277,19 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
           }}
         />
       )}
+      {filingToClient && (
+        <FileToClientModal
+          fax={filingToClient}
+          today={today}
+          onView={() => view(`Fax from ${inboundFaxSender(filingToClient.callerId, filingToClient.remoteId).from || 'unknown sender'}, ${filingToClient.receivedAt}`, `/api/fax/inbound/${filingToClient.id}/pdf`)}
+          onClose={() => setFilingToClient(null)}
+          onFiled={(msg) => {
+            setFilingToClient(null);
+            setNotice(msg);
+            void load();
+          }}
+        />
+      )}
       {preview && <PdfPreviewModal title={preview.title} url={preview.url} onClose={() => setPreview(null)} />}
     </>
   );
@@ -380,7 +400,7 @@ function FileModal({
             </p>
             <label style={fieldStyle}>
               <span style={fieldLabelStyle}>Which request does it answer?</span>
-              <select value={requestKey} onChange={(e) => { setRequestKey(e.target.value); setErr(null); }} style={inp}>
+              <select value={requestKey} onChange={(e) => { setRequestKey(e.target.value); setErr(null); }} style={withSelectChevron(inp)}>
                 <option value="">Choose a Request…</option>
                 {openRequests.map((r) => (
                   <option key={r.key} value={r.key}>
