@@ -656,7 +656,7 @@ function FaxModal({ roi, onClose, onSent }: { roi: RoiRecord; onClose: () => voi
           </div>
           <label style={fieldStyle} id={faxId('note')}>
             <span style={labelStyle}>Cover sheet message <span style={{ fontWeight: 400 }}>(optional: a standard message is used when blank)</span></span>
-            <textarea value={note} maxLength={1200} onChange={(e) => { setNote(e.target.value); clear('note'); }} style={{ ...inp, minHeight: 64, resize: 'vertical', ...(fieldErrors.note ? FIELD_ERROR_STYLE : null) }} placeholder={defaultRoiFaxNote(roi.memberName)} />
+            <textarea value={note} maxLength={1200} onChange={(e) => { setNote(e.target.value); clear('note'); }} style={{ ...inp, minHeight: 64, resize: 'vertical', ...(fieldErrors.note ? FIELD_ERROR_STYLE : null) }} placeholder={defaultRoiFaxNote({ memberName: roi.memberName, direction: roi.direction, information: roi.information })} />
             <FieldError message={fieldErrors.note} />
           </label>
           {err && <div role="alert" style={errStyle}>{err}</div>}

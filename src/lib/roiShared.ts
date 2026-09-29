@@ -183,7 +183,25 @@ export interface RoiRecord {
 
 export const ROI_MAX_PDF_BYTES = 10 * 1024 * 1024;
 
-/** Cover-sheet message when the signed release is faxed with its letter. */
-export function defaultRoiFaxNote(memberName: string): string {
-  return `Please see the attached introduction letter and the signed Authorization for Release of Information for ${memberName}. Please keep them on file with ${memberName}'s record and add Heart and Soul Healthcare as a care team contact.`;
+/**
+ * Cover-sheet message when the signed release is faxed with its letter.
+ *
+ * A release that lets the facility share with us is sent to GET records, so
+ * the message asks for exactly what the release lists and where to fax it.
+ * (The first version only asked them to keep the release on file, so an
+ * office could file it and send nothing.) A release going the other way just
+ * asks them to keep it on file.
+ */
+export function defaultRoiFaxNote(p: { memberName: string; direction: RoiDirection; information: string; returnFax?: string }): string {
+  const intro = `Please see the attached introduction letter and the signed Authorization for Release of Information for ${p.memberName}.`;
+  const keepOnFile = `Please keep them on file with ${p.memberName}'s record and add Heart and Soul Healthcare as a care team contact.`;
+  if (p.direction === 'from-us') return `${intro} ${keepOnFile}`;
+  const d = (p.returnFax || '').replace(/\D/g, '');
+  const where = d.length === 10 ? `at (${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : 'at the fax number on the release';
+  const info = p.information.trim().replace(/[.\s]+$/, '');
+  const ask = info
+    ? `Please fax the following records to Heart and Soul Healthcare ${where}: ${info}.`
+    : `Please fax the records listed on the release to Heart and Soul Healthcare ${where}.`;
+  const also = p.direction === 'both' ? ` ${keepOnFile}` : '';
+  return `${intro} ${ask}${also} Questions: please call us at (678) 644-0337.`;
 }

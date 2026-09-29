@@ -275,7 +275,7 @@ export async function faxRoi(p: {
       toNumber: p.toNumber,
       confirmNumber: p.confirmNumber,
       regarding: `Release of Information: ${r.memberName}`,
-      note: p.note.trim() || defaultRoiFaxNote(r.memberName),
+      note: p.note.trim() || defaultRoiFaxNote({ memberName: r.memberName, direction: r.direction, information: r.information, returnFax: await returnFaxNumber() }),
       includeCover: true,
     },
     pdf,
