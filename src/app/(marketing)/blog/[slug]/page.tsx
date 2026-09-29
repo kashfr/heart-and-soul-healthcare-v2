@@ -80,7 +80,7 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
     publisher: {
       '@type': 'Organization',
       name: 'Heart and Soul Healthcare',
-      logo: { '@type': 'ImageObject', url: 'https://www.heartandsoulhc.org/images/logo.webp' },
+      logo: { '@type': 'ImageObject', url: 'https://www.heartandsoulhc.org/images/logo-2026.webp' },
     },
     image: post.featuredImage
       ? `https://www.heartandsoulhc.org${post.featuredImage}`

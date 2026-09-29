@@ -17,7 +17,7 @@ export function PortalLoading({ label = 'Loading…' }: { label?: string }) {
     <div role="status" aria-live="polite" style={wrap}>
       <div style={inner}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/images/logo.webp" alt="" width={120} height={62} style={{ width: 120, height: 'auto' }} />
+        <img src="/images/logo-2026.webp" alt="" width={180} height={48} style={{ width: 180, height: 'auto' }} />
         <span aria-hidden style={ring} className="hs-portal-loading-ring" />
         <span style={text}>{label}</span>
       </div>
