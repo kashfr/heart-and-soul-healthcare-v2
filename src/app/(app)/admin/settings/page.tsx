@@ -6,7 +6,7 @@ import { ArrowLeft, Save, RotateCcw, Plus, X, Eye, Send } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
 import { authedFetch } from '@/lib/authedFetch';
-import { formatUSPhone } from '@/lib/phone';
+import { formatUSPhone, formatUSPhoneExt } from '@/lib/phone';
 import { escortToField, FieldError, firstErrorKey, FIELD_ERROR_STYLE } from '@/lib/formEscort';
 import {
   DEFAULT_SETTINGS,
@@ -901,6 +901,86 @@ export default function AdminSettingsPage() {
               {draft.corrections.reviewerName ? ` (${draft.corrections.reviewerName})` : ''}.
             </p>
           )}
+        </section>
+
+        {/* --- Support coordination agencies --- */}
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Support Coordination Agencies</h2>
+          <p style={sectionSubStyle}>
+            The agencies that provide support coordination (SC / ISC) or case management for our clients. The Agency
+            field on each client&apos;s Support Coordinator card picks from this list and fills in the office address,
+            so every client shows the agency spelled the same way.
+          </p>
+          {draft.supportCoordination.agencies.length === 0 && (
+            <div style={{ fontSize: 13.5, color: '#5c6b7a', padding: '4px 0 10px' }}>No agencies yet.</div>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {draft.supportCoordination.agencies.map((a, i) => {
+              const key = (f: string) => `supportCoordination.agencies.${i}.${f}`;
+              const update = (f: keyof typeof a, v: string) => {
+                clearFieldError(key(f));
+                setDirty(true);
+                setDraft((prev) => ({
+                  ...prev,
+                  supportCoordination: {
+                    agencies: prev.supportCoordination.agencies.map((x, j) => (j === i ? { ...x, [f]: v } : x)),
+                  },
+                }));
+              };
+              return (
+                <div key={a.id || i} style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 12, background: '#fbfcfd' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
+                    <Field label="Agency name" id={settingsFieldId(key('name'))} error={fieldErrors[key('name')]}>
+                      <input type="text" value={a.name} style={{ ...inputStyle, ...hi(key('name')) }} placeholder="e.g. Creative Consulting Services" onChange={(e) => update('name', e.target.value)} />
+                    </Field>
+                    <Field label="Office address" id={settingsFieldId(key('address'))}>
+                      <input type="text" value={a.address} style={inputStyle} onChange={(e) => update('address', e.target.value)} />
+                    </Field>
+                    <Field label="Main phone" id={settingsFieldId(key('phone'))}>
+                      <input type="tel" value={a.phone} style={inputStyle} onChange={(e) => update('phone', formatUSPhoneExt(e.target.value))} />
+                    </Field>
+                    <Field label="Fax" id={settingsFieldId(key('fax'))}>
+                      <input type="tel" value={a.fax} style={inputStyle} onChange={(e) => update('fax', formatUSPhone(e.target.value))} />
+                    </Field>
+                    <Field label="After-hours line" id={settingsFieldId(key('afterHours'))}>
+                      <input type="tel" value={a.afterHours} style={inputStyle} placeholder="Emergency pager" onChange={(e) => update('afterHours', formatUSPhone(e.target.value))} />
+                    </Field>
+                    <Field label="Notes" id={settingsFieldId(key('notes'))}>
+                      <input type="text" value={a.notes} style={inputStyle} onChange={(e) => update('notes', e.target.value)} />
+                    </Field>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                    <button
+                      type="button"
+                      style={secondaryBtnStyle}
+                      onClick={() => {
+                        clearFieldErrorsUnder('supportCoordination.agencies');
+                        setDirty(true);
+                        setDraft((prev) => ({ ...prev, supportCoordination: { agencies: prev.supportCoordination.agencies.filter((_, j) => j !== i) } }));
+                      }}
+                    >
+                      <X size={12} /> Remove
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            style={{ ...secondaryBtnStyle, marginTop: 10 }}
+            onClick={() => {
+              setDirty(true);
+              setDraft((prev) => ({
+                ...prev,
+                supportCoordination: {
+                  agencies: [...prev.supportCoordination.agencies, { id: `new-${Date.now().toString(36)}`, name: '', address: '', phone: '', fax: '', afterHours: '', notes: '' }],
+                },
+              }));
+            }}
+          >
+            <Plus size={14} /> Add agency
+          </button>
         </section>
 
         {/* --- Verbal orders --- */}

@@ -13,6 +13,7 @@ import {
 } from '@/lib/supportCoordinatorShared';
 import { FieldError, FIELD_ERROR_STYLE, applyFieldErrors } from '@/lib/formEscort';
 import { withSelectChevron } from '@/lib/selectChevron';
+import { useSettings } from '@/components/SettingsProvider';
 import { formatUSPhone, formatUSPhoneExt } from '@/lib/phone';
 
 const NAVY = '#1a3a5c';
@@ -39,6 +40,11 @@ export default function SupportCoordinatorSection({ patientId, canEdit, actorNam
   const [errors, setErrors] = useState<Partial<Record<CoordinatorErrorKey, string>>>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Agencies come from Settings → Support Coordination Agencies. 'other' is a
+  // free-typed agency not on that list yet.
+  const { settings } = useSettings();
+  const agencies = settings.supportCoordination?.agencies || [];
+  const [agencyChoice, setAgencyChoice] = useState<string>('');
 
   useEffect(() => {
     let cancelled = false;
@@ -54,6 +60,9 @@ export default function SupportCoordinatorSection({ patientId, canEdit, actorNam
 
   const startEdit = () => {
     setDraft({ ...(record || {}) });
+    const current = (record?.agency || '').trim().toLowerCase();
+    const onList = agencies.find((a) => a.name.toLowerCase() === current);
+    setAgencyChoice(onList ? onList.id : current ? 'other' : '');
     setErrors({});
     setSaveError(null);
     setEditing(true);
@@ -70,6 +79,30 @@ export default function SupportCoordinatorSection({ patientId, canEdit, actorNam
         return next;
       });
     }
+  };
+
+  const chooseAgency = (id: string) => {
+    setAgencyChoice(id);
+    if (id === 'other' || id === '') {
+      setDraft((d) => ({ ...d, agency: '' }));
+      return;
+    }
+    const a = agencies.find((x) => x.id === id);
+    if (!a) return;
+    // The agency's office address replaces whatever was there; fax and the
+    // after-hours line only fill blanks so a coordinator's own numbers stay.
+    setDraft((d) => ({
+      ...d,
+      agency: a.name,
+      address: a.address || d.address,
+      fax: d.fax || a.fax,
+      notes: d.notes || (a.afterHours ? `After-hours line: ${a.afterHours}.` : ''),
+    }));
+    setErrors((e) => {
+      const next = { ...e };
+      delete next.agency;
+      return next;
+    });
   };
 
   const save = async () => {
@@ -149,7 +182,25 @@ export default function SupportCoordinatorSection({ patientId, canEdit, actorNam
               </select>
             </Field>
             <Field id={fieldId('agency')} label="Agency *" error={errors.agency} wide>
-              <input style={inputFor(errors.agency)} value={draft.agency || ''} onChange={(e) => set('agency', e.target.value)} placeholder="e.g. Benchmark Human Services" />
+              {agencies.length > 0 && (
+                <select
+                  style={errors.agency && agencyChoice !== 'other' ? { ...select, ...FIELD_ERROR_STYLE } : select}
+                  value={agencyChoice}
+                  onChange={(e) => chooseAgency(e.target.value)}
+                >
+                  <option value="">Select...</option>
+                  {agencies.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  <option value="other">Other (type it in)</option>
+                </select>
+              )}
+              {(agencies.length === 0 || agencyChoice === 'other') && (
+                <input
+                  style={{ ...inputFor(errors.agency), ...(agencies.length > 0 ? { marginTop: 6 } : null) }}
+                  value={draft.agency || ''}
+                  onChange={(e) => set('agency', e.target.value)}
+                  placeholder="e.g. Benchmark Human Services"
+                />
+              )}
             </Field>
             <Field id={fieldId('contact')} label="Office phone" error={errors.contact}>
               <input type="tel" style={inputFor(errors.contact)} value={draft.phone || ''} onChange={(e) => set('phone', formatUSPhoneExt(e.target.value))} />
