@@ -162,8 +162,8 @@ function VerbalOrdersInner() {
       <div style={wrapStyle}>
         <header style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
           <div>
-            <p style={kickerStyle}>Physician orders</p>
-            <h1 style={titleStyle}>Verbal orders</h1>
+            <p style={kickerStyle}>Physician Orders</p>
+            <h1 style={titleStyle}>Verbal Orders</h1>
             <p style={subtitleStyle}>
               {isStaff
                 ? `Every telephone order and where its physician signature stands. Overdue after ${thresholds.overdueDays} days, escalated after ${thresholds.escalateDays}.`
@@ -171,7 +171,7 @@ function VerbalOrdersInner() {
             </p>
           </div>
           {!isViewingAs && (
-            <Link href="/admin/verbal-orders/new" style={primaryLinkStyle}><Plus size={15} /> Take a verbal order</Link>
+            <Link href="/admin/verbal-orders/new" style={primaryLinkStyle}><Plus size={15} /> Take a Verbal Order</Link>
           )}
         </header>
 
@@ -179,7 +179,7 @@ function VerbalOrdersInner() {
 
         {isStaff && inbound.length > 0 && (
           <section style={{ ...cardStyle, borderColor: '#f0c8c4', background: '#fffafa' }}>
-            <div style={sectionTitleStyle}><Inbox size={16} /> Faxes that need matching <span style={countChipWarnStyle}>{inbound.length}</span></div>
+            <div style={sectionTitleStyle}><Inbox size={16} /> Faxes That Need Matching <span style={countChipWarnStyle}>{inbound.length}</span></div>
             <p style={{ ...mutedStyle, marginBottom: 10 }}>
               These came in on the portal fax line. Preview each one, then match it to its order. Dismiss anything that is
               not a signed verbal order; it stays in the SRFax inbox for the office.
@@ -192,8 +192,8 @@ function VerbalOrdersInner() {
                     <span style={metaStyle}>{f.receivedAt} · {f.pages} page{f.pages === 1 ? '' : 's'}{f.candidateOrderIds.length ? ' · sender matches an open order' : ''}</span>
                     <span style={{ display: 'inline-flex', gap: 6, marginLeft: 'auto', flexWrap: 'wrap' }}>
                       <button type="button" style={smallBtnStyle} onClick={() => void previewFax(f)}><Eye size={13} /> Preview</button>
-                      <button type="button" style={{ ...smallBtnStyle, background: '#e6f6ec', color: '#1e7a44', borderColor: '#bfe3cc' }} onClick={() => setMatchFax(f)}><FileSignature size={13} /> Match to an order</button>
-                      <button type="button" style={{ ...smallBtnStyle, color: '#5c6b7a' }} onClick={() => void dismissFax(f)}><X size={13} /> Not a signed order</button>
+                      <button type="button" style={{ ...smallBtnStyle, background: '#e6f6ec', color: '#1e7a44', borderColor: '#bfe3cc' }} onClick={() => setMatchFax(f)}><FileSignature size={13} /> Match to an Order</button>
+                      <button type="button" style={{ ...smallBtnStyle, color: '#5c6b7a' }} onClick={() => void dismissFax(f)}><X size={13} /> Not a Signed Order</button>
                     </span>
                   </div>
                 </li>
@@ -205,12 +205,12 @@ function VerbalOrdersInner() {
         <section style={cardStyle}>
           <div style={{ ...sectionTitleStyle, justifyContent: 'space-between', flexWrap: 'wrap' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              <PhoneCall size={16} /> {isStaff ? 'Queue' : 'My verbal orders'}
+              <PhoneCall size={16} /> {isStaff ? 'Queue' : 'My Verbal Orders'}
               {openCount > 0 && <span style={countChipStyle}>{openCount} open</span>}
               {overdueCount > 0 && <span style={countChipWarnStyle}>{overdueCount} overdue</span>}
             </span>
             <span style={{ display: 'inline-flex', gap: 6 }}>
-              <button type="button" style={filter === 'open' ? filterActiveStyle : filterBtnStyle} onClick={() => setFilter('open')}>Awaiting signature</button>
+              <button type="button" style={filter === 'open' ? filterActiveStyle : filterBtnStyle} onClick={() => setFilter('open')}>Awaiting Signature</button>
               <button type="button" style={filter === 'all' ? filterActiveStyle : filterBtnStyle} onClick={() => setFilter('all')}>All</button>
               <button type="button" style={filterBtnStyle} onClick={reload} title="Refresh"><RefreshCw size={13} /></button>
             </span>
@@ -272,17 +272,17 @@ function VerbalOrdersInner() {
                       <button type="button" style={smallBtnStyle} onClick={() => void download(o)}><Download size={13} /> PDF</button>
                       {canAct && (
                         <button type="button" style={{ ...smallBtnStyle, opacity: busyId === o.id ? 0.6 : 1 }} disabled={busyId === o.id} onClick={() => void resend(o)}>
-                          <Send size={13} /> {busyId === o.id ? 'Sending…' : o.status === 'taken' ? 'Fax now' : 'Resend fax'}
+                          <Send size={13} /> {busyId === o.id ? 'Sending…' : o.status === 'taken' ? 'Fax Now' : 'Resend Fax'}
                         </button>
                       )}
                       {isOpen && isStaff && !isViewingAs && (
                         <button type="button" style={{ ...smallBtnStyle, background: '#e6f6ec', color: '#1e7a44', borderColor: '#bfe3cc' }} onClick={() => setSignModal({ order: o })}>
-                          <FileSignature size={13} /> Record signature
+                          <FileSignature size={13} /> Record Signature
                         </button>
                       )}
                       {canAct && (
                         <button type="button" style={{ ...smallBtnStyle, background: '#fdeaea', color: '#b3261e', borderColor: '#f0c8c4' }} onClick={() => setCancelModal(o)}>
-                          <Ban size={13} /> Cancel order
+                          <Ban size={13} /> Cancel Order
                         </button>
                       )}
                     </div>
@@ -383,7 +383,7 @@ function RecordSignatureModal({ order, fax, onClose, onDone }: { order: VerbalOr
     <div style={backdropStyle} onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
       <div style={sheetStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-          <div style={sheetTitleStyle}>Record the physician&apos;s signature</div>
+          <div style={sheetTitleStyle}>Record the Physician&apos;s Signature</div>
           <button type="button" onClick={onClose} style={closeBtnStyle} aria-label="Close" disabled={busy}><X size={16} /></button>
         </div>
         <div style={sheetHintStyle}>
@@ -426,7 +426,7 @@ function RecordSignatureModal({ order, fax, onClose, onDone }: { order: VerbalOr
         {err && <div style={errBoxStyle} role="alert">{err}</div>}
         <div style={actionsStyle}>
           <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={busy}>Cancel</button>
-          <button type="button" style={{ ...saveBtnStyle, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Record signature'}</button>
+          <button type="button" style={{ ...saveBtnStyle, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Record Signature'}</button>
         </div>
       </div>
     </div>
@@ -462,7 +462,7 @@ function CancelOrderModal({ order, onClose, onDone }: { order: VerbalOrder; onCl
     <div style={backdropStyle} onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
       <div style={sheetStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-          <div style={sheetTitleStyle}>Cancel this verbal order?</div>
+          <div style={sheetTitleStyle}>Cancel This Verbal Order?</div>
           <button type="button" onClick={onClose} style={closeBtnStyle} aria-label="Close" disabled={busy}><X size={16} /></button>
         </div>
         <div style={sheetHintStyle}>
@@ -500,8 +500,8 @@ function CancelOrderModal({ order, onClose, onDone }: { order: VerbalOrder; onCl
         </label>
         {err && <div style={errBoxStyle} role="alert">{err}</div>}
         <div style={actionsStyle}>
-          <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={busy}>Keep order</button>
-          <button type="button" style={{ ...saveBtnStyle, background: '#b3261e', opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => void save()}>{busy ? 'Cancelling…' : 'Cancel order'}</button>
+          <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={busy}>Keep Order</button>
+          <button type="button" style={{ ...saveBtnStyle, background: '#b3261e', opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => void save()}>{busy ? 'Cancelling…' : 'Cancel Order'}</button>
         </div>
       </div>
     </div>
@@ -524,7 +524,7 @@ function MatchFaxModal({ fax, openOrders, onClose, onPick, onPreview }: { fax: U
     <div style={backdropStyle} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div style={sheetStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-          <div style={sheetTitleStyle}>Which order is this fax for?</div>
+          <div style={sheetTitleStyle}>Which Order Is This Fax For?</div>
           <button type="button" onClick={onClose} style={closeBtnStyle} aria-label="Close"><X size={16} /></button>
         </div>
         {pending ? (
@@ -543,7 +543,7 @@ function MatchFaxModal({ fax, openOrders, onClose, onPick, onPreview }: { fax: U
         <>
         <div style={{ ...sheetHintStyle, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span>From {inboundFaxSender(fax.callerId, fax.remoteId).from || 'unknown'} · {fax.receivedAt} · {fax.pages} page{fax.pages === 1 ? '' : 's'}</span>
-          <button type="button" style={smallBtnStyle} onClick={onPreview}><Eye size={13} /> Preview the fax</button>
+          <button type="button" style={smallBtnStyle} onClick={onPreview}><Eye size={13} /> Preview the Fax</button>
         </div>
         <div style={{ ...mutedStyle, marginBottom: 10 }}>Open the preview and check the client name and order on the page before choosing.</div>
         {suggested.length > 0 && (

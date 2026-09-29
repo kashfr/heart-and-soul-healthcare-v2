@@ -98,7 +98,7 @@ export default function SupportCoordinatorSection({ patientId, canEdit, actorNam
   return (
     <section style={card}>
       <div style={head}>
-        <div style={title}><Briefcase size={16} /> Support coordinator</div>
+        <div style={title}><Briefcase size={16} /> Support Coordinator</div>
         {canEdit && !editing && record !== undefined && !loadError && (
           <button type="button" onClick={startEdit} style={ghostBtn}>
             <Pencil size={13} /> {hasRecord ? 'Edit' : 'Add'}

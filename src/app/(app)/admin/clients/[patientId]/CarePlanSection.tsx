@@ -262,11 +262,11 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {pending.length > 0 && (
               <button type="button" style={approveBtnStyle} onClick={handleApprove} disabled={busy} title="Stamps your name, role, and the time on each pending task. Intended for the RN supervisor.">
-                <ShieldCheck size={15} /> Approve all pending ({pending.length})
+                <ShieldCheck size={15} /> Approve All Pending ({pending.length})
               </button>
             )}
             <button type="button" style={addBtnStyle} onClick={() => setAddOpen(true)} disabled={busy}>
-              <Plus size={15} /> Add tasks
+              <Plus size={15} /> Add Tasks
             </button>
           </div>
         )}
@@ -278,7 +278,7 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
         <div style={emptyStyle}>Loading care tasks…</div>
       ) : active.length === 0 ? (
         <div style={emptyStyle}>
-          No care tasks assigned yet. Use &ldquo;Add tasks&rdquo; to build this client&apos;s list from the catalog.
+          No care tasks assigned yet. Use &ldquo;Add Tasks&rdquo; to build this client&apos;s list from the catalog.
         </div>
       ) : (
         grouped.map((group) => (
@@ -353,7 +353,7 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
       {addOpen && (
         <div style={backdropStyle} onClick={() => !busy && setAddOpen(false)}>
           <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
-            <h2 style={modalTitleStyle}>Add care tasks</h2>
+            <h2 style={modalTitleStyle}>Add Care Tasks</h2>
             <p style={modalSubStyle}>
               Check the tasks that belong on this client&apos;s plan. Frequencies start at the
               catalog default; edit any task after adding. New tasks are marked pending until
@@ -387,7 +387,7 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
               })}
 
               <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: 12, marginTop: 4 }}>
-                <div style={catalogCatStyle}>Custom task (not in catalog)</div>
+                <div style={catalogCatStyle}>Custom Task (Not in Catalog)</div>
                 <input
                   type="text"
                   value={customName}
@@ -429,7 +429,7 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
                 Cancel
               </button>
               <button type="button" style={addBtnStyle} onClick={handleAdd} disabled={busy}>
-                {busy ? 'Saving…' : `Add ${pickedCount || ''} task${pickedCount === 1 ? '' : 's'}`}
+                {busy ? 'Saving…' : `Add ${pickedCount || ''} Task${pickedCount === 1 ? '' : 's'}`}
               </button>
             </div>
           </div>
@@ -440,7 +440,7 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
       {editTarget && (
         <div style={backdropStyle} onClick={() => !busy && setEditTarget(null)}>
           <div style={{ ...modalStyle, maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
-            <h2 style={modalTitleStyle}>Edit task</h2>
+            <h2 style={modalTitleStyle}>Edit Task</h2>
             {editTarget.catalogKey ? (
               <p style={modalSubStyle}>{editTarget.name}</p>
             ) : (
@@ -523,7 +523,7 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
       {dcTarget && (
         <div style={backdropStyle} onClick={() => !busy && setDcTarget(null)}>
           <div style={{ ...modalStyle, maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
-            <h2 style={modalTitleStyle}>Discontinue task</h2>
+            <h2 style={modalTitleStyle}>Discontinue Task</h2>
             <p style={modalSubStyle}>{dcTarget.name}</p>
             <label style={fieldLabelStyle}>Reason *</label>
             <div id="care-task-dc-reason">

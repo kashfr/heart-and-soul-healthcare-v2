@@ -192,7 +192,7 @@ export default function PhysiciansSection({ patientId, canEdit, actorName, onToa
             );
           })}
           <button type="button" onClick={() => setDraft((d) => [...d, { id: newId(), name: '', specialty: '' }])} style={ghostBtn}>
-            <Plus size={13} /> Add physician
+            <Plus size={13} /> Add Physician
           </button>
           {saveError && <div style={{ ...errBox, marginTop: 10 }}>{saveError}</div>}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>

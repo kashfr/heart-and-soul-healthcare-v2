@@ -20,7 +20,7 @@ export default function PrintOverlay({
     <div style={printOverlayStyle}>
       <div className="referral-print-toolbar" style={printToolbarStyle}>
         <span style={{ fontWeight: 700 }}>
-          Print preview — {printList.length} referral{printList.length === 1 ? '' : 's'}
+          Print Preview — {printList.length} Referral{printList.length === 1 ? '' : 's'}
         </span>
         <span style={{ fontSize: 12, opacity: 0.8 }}>
           Each referral prints on its own page with a call log.

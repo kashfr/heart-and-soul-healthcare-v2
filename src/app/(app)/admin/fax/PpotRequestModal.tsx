@@ -135,7 +135,7 @@ export default function PpotRequestModal({
               The physician gets a cover sheet naming the member and the <strong>blank</strong> Appendix T to complete,
               sign, and fax back. Nothing is filled in on the form itself (GAPP manual 913.3).{' '}
               <a href="/forms/gapp-appendix-t.pdf" target="_blank" rel="noopener" style={{ color: '#1a3a5c', fontWeight: 600 }}>
-                See the form <ExternalLink size={12} style={{ verticalAlign: -1 }} />
+                See the Form <ExternalLink size={12} style={{ verticalAlign: -1 }} />
               </a>
             </p>
 
@@ -242,7 +242,7 @@ export default function PpotRequestModal({
           <div style={modalFooterStyle}>
             <button type="button" onClick={onClose} style={ghostBtnStyle} disabled={busy}>Cancel</button>
             <button type="submit" style={primaryBtnStyle} disabled={busy}>
-              <Send size={14} /> {busy ? 'Sending…' : 'Fax the request'}
+              <Send size={14} /> {busy ? 'Sending…' : 'Fax the Request'}
             </button>
           </div>
         </form>

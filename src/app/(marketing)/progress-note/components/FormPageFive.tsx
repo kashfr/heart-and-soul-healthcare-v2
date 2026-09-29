@@ -369,7 +369,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
 
         {parameters && (
           <div style={marParamCalloutStyle} role="note">
-            <div style={marParamTitleStyle}>Parameters: check before giving</div>
+            <div style={marParamTitleStyle}>Parameters: Check Before Giving</div>
             <div style={marParamTextStyle}>{parameters}</div>
           </div>
         )}
@@ -872,7 +872,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
                     onClick={() => { setChangeReqMsg(null); setChangeReqOpen(true); }}
                     style={marRequiredWarnBtnStyle}
                   >
-                    Add this client&apos;s medications
+                    Add This Client&apos;s Medications
                   </button>
                 </div>
               ) : (
@@ -955,7 +955,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
 
         {stagedChanges.length > 0 && (
           <div style={stagedBoxStyle}>
-            <div style={stagedHeaderStyle}>Medication changes on this note (apply when you submit)</div>
+            <div style={stagedHeaderStyle}>Medication Changes on This Note (apply when you submit)</div>
             {stagedChanges.map((c) => (
               <div key={c.id} style={stagedRowStyle}>
                 <span style={c.type === 'discontinue' ? stagedTagDcStyle : stagedTagAddStyle}>
@@ -988,12 +988,12 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
                 onClick={() => { setChangeReqMsg(null); setChangeReqOpen(true); }}
                 style={requestChangeBtnStyle}
               >
-                Add, change, or discontinue a medication
+                Add, Change, or Discontinue a Medication
               </button>
             )}
             {isLpnRn && (
               <button type="button" onClick={() => setChartOpen(true)} style={viewChartBtnStyle}>
-                View medication chart
+                View Medication Chart
               </button>
             )}
           </div>
@@ -1095,7 +1095,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
               </div>
             ) : (
               <button type="button" onClick={() => setMedNoteOpen(true)} style={medNoteLinkStyle}>
-                + Add a medication note (optional — doses are recorded above)
+                + Add a Medication Note (optional — doses are recorded above)
               </button>
             )}
             {/* Legacy PRN narrative from a resumed draft: never hide text that

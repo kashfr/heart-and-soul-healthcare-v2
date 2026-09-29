@@ -131,10 +131,10 @@ export default function EdwpConsentsPage() {
               <RefreshCw size={15} /> Refresh
             </button>
             <button onClick={copyLink} style={ghostBtnStyle} title={buildEdwpConsentUrl()}>
-              {copied ? <Check size={15} /> : <Copy size={15} />} {copied ? 'Copied' : 'Copy form link'}
+              {copied ? <Check size={15} /> : <Copy size={15} />} {copied ? 'Copied' : 'Copy Form Link'}
             </button>
             <button onClick={() => setSending(true)} style={primaryBtnStyle}>
-              <Send size={15} /> Send form to a client
+              <Send size={15} /> Send Form to a Client
             </button>
           </div>
         </header>
@@ -157,21 +157,21 @@ export default function EdwpConsentsPage() {
           <div style={{ ...emptyStyle, color: '#b3261e' }}>
             {error}
             <div style={{ marginTop: 12 }}>
-              <button onClick={load} style={ghostBtnStyle}>Try again</button>
+              <button onClick={load} style={ghostBtnStyle}>Try Again</button>
             </div>
           </div>
         ) : (
           <>
             {pendingInvites.length > 0 && (
               <section style={{ marginBottom: 24 }}>
-                <h2 style={sectionTitleStyle}>Awaiting signature ({pendingInvites.length})</h2>
+                <h2 style={sectionTitleStyle}>Awaiting Signature ({pendingInvites.length})</h2>
                 <div style={tableWrapStyle}>
                   <table style={tableStyle}>
                     <thead>
                       <tr>
                         <th style={thStyle}>Client</th>
-                        <th style={thStyle}>Sent to</th>
-                        <th style={thStyle}>Sent by</th>
+                        <th style={thStyle}>Sent To</th>
+                        <th style={thStyle}>Sent By</th>
                         <th style={thStyle}>Sent</th>
                       </tr>
                     </thead>
@@ -204,7 +204,7 @@ export default function EdwpConsentsPage() {
                         <th style={thStyle}>Client</th>
                         <th style={thStyle}>Program</th>
                         <th style={thStyle}>Services</th>
-                        <th style={thStyle}>Signed by</th>
+                        <th style={thStyle}>Signed By</th>
                         <th style={thStyle}>Signed</th>
                         <th style={{ ...thStyle, textAlign: 'right' }}>PDF</th>
                       </tr>
@@ -322,7 +322,7 @@ function SendModal({ onClose, onSent }: { onClose: () => void; onSent: (invite: 
     <div style={backdropStyle} onClick={onClose}>
       <div style={modalStyle} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div style={modalHeaderStyle}>
-          <strong style={{ fontSize: 16, color: '#1a3a5c' }}>Send consent form</strong>
+          <strong style={{ fontSize: 16, color: '#1a3a5c' }}>Send Consent Form</strong>
           <button onClick={onClose} style={closeBtnStyle} aria-label="Close">
             <X size={18} />
           </button>
@@ -352,7 +352,7 @@ function SendModal({ onClose, onSent }: { onClose: () => void; onSent: (invite: 
           <div style={modalFooterStyle}>
             <button type="button" onClick={onClose} style={ghostBtnStyle} disabled={busy}>Cancel</button>
             <button type="submit" style={primaryBtnStyle} disabled={busy}>
-              <Send size={14} /> {busy ? 'Sending…' : 'Send email'}
+              <Send size={14} /> {busy ? 'Sending…' : 'Send Email'}
             </button>
           </div>
         </form>

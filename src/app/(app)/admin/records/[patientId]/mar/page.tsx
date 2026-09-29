@@ -383,7 +383,7 @@ export default function MonthlyMarPage() {
             style={backLinkStyle}
           >
             <ArrowLeft size={14} />{' '}
-            {cameFromPicker ? 'Back to Clients' : 'Back to medication orders'}
+            {cameFromPicker ? 'Back to Clients' : 'Back to Medication Orders'}
           </Link>
         </div>
 
@@ -414,7 +414,7 @@ export default function MonthlyMarPage() {
                 )}
                 {canManageMeds && (
                   <button type="button" onClick={() => setManageMeds(true)} style={manageBtnStyle}>
-                    <PlusCircle size={15} /> Manage medications
+                    <PlusCircle size={15} /> Manage Medications
                   </button>
                 )}
               </div>
@@ -437,7 +437,7 @@ export default function MonthlyMarPage() {
                 <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 17 }}>{monthLabel(month)}</div>
                 {!isCurrentMonth && (
                   <button type="button" onClick={() => setMonth(currentMonth())} style={jumpBtnStyle}>
-                    Jump to current month
+                    Jump to Current Month
                   </button>
                 )}
               </div>
@@ -622,7 +622,7 @@ export default function MonthlyMarPage() {
 
             {legend.length > 0 && (
               <section style={sectionCardStyle}>
-                <div style={sectionTitleStyle}>Initial / signature legend</div>
+                <div style={sectionTitleStyle}>Initial / Signature Legend</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
                   {legend.map(([uid, init, name]) => (
                     <span key={uid} style={legendEntryStyle}>
@@ -635,7 +635,7 @@ export default function MonthlyMarPage() {
 
             {logRows.length > 0 && (
               <section style={sectionCardStyle}>
-                <div style={sectionTitleStyle}>PRN, refused &amp; exception log</div>
+                <div style={sectionTitleStyle}>PRN, Refused &amp; Exception Log</div>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={logTableStyle}>
                     <thead>
@@ -644,8 +644,8 @@ export default function MonthlyMarPage() {
                         <th style={logThStyle}>Time</th>
                         <th style={logThStyle}>Medication</th>
                         <th style={logThStyle}>Status</th>
-                        <th style={logThStyle}>Administered by</th>
-                        <th style={logThStyle}>Reason / note</th>
+                        <th style={logThStyle}>Administered By</th>
+                        <th style={logThStyle}>Reason / Note</th>
                         <th style={logThStyle}>Result</th>
                         <th style={logThStyle}>Initials</th>
                       </tr>
@@ -717,7 +717,7 @@ export default function MonthlyMarPage() {
                                   style={resultPendingBtnStyle}
                                   title="Record what happened after this PRN dose"
                                 >
-                                  Result pending — record
+                                  Result Pending — Record
                                 </button>
                               ) : (
                                 <span style={resultPendingChipStyle}>Result pending</span>

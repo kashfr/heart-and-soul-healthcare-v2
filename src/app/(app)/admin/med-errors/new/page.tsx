@@ -208,7 +208,7 @@ function Inner() {
         <div style={wrapStyle}>
           <div style={{ ...cardStyle, textAlign: 'center', padding: '32px 24px' }}>
             <CheckCircle2 size={40} color="#27ae60" />
-            <h1 style={{ ...titleStyle, fontSize: 24, marginTop: 10 }}>Report filed</h1>
+            <h1 style={{ ...titleStyle, fontSize: 24, marginTop: 10 }}>Report Filed</h1>
             <p style={{ color: '#5c6b7a', lineHeight: 1.55, maxWidth: 560, margin: '8px auto 0' }}>
               The nursing supervisor and the office have been notified and will review it. Thank you for reporting it; the report is part of the client&apos;s record and cannot be changed.
             </p>
@@ -218,7 +218,7 @@ function Inner() {
               </div>
             )}
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 18, flexWrap: 'wrap' }}>
-              <Link href={`/admin/med-errors?r=${done.id}`} style={primaryLinkStyle}>View report</Link>
+              <Link href={`/admin/med-errors?r=${done.id}`} style={primaryLinkStyle}>View Report</Link>
               {form.patientId && <Link href={`/admin/clients/${form.patientId}`} style={secondaryLinkStyle}>Back to {patient?.name || 'client'}</Link>}
             </div>
           </div>
@@ -235,8 +235,8 @@ function Inner() {
     <div style={containerStyle}>
       <div style={wrapStyle}>
         <header style={{ marginBottom: 18 }}>
-          <p style={kickerStyle}>Quality and safety</p>
-          <h1 style={titleStyle}><ShieldAlert size={22} style={{ verticalAlign: -3, marginRight: 8 }} />Report a medication error</h1>
+          <p style={kickerStyle}>Quality and Safety</p>
+          <h1 style={titleStyle}><ShieldAlert size={22} style={{ verticalAlign: -3, marginRight: 8 }} />Report a Medication Error</h1>
           <p style={subtitleStyle}>
             Report any error you discover, whether or not you were involved. Say what happened in your own words; the reviewing nurse adds the findings. Reports go to the nursing supervisor and the office right away.
           </p>
@@ -255,7 +255,7 @@ function Inner() {
         {submitError && <div style={noticeStyle}><AlertTriangle size={16} /> {submitError}</div>}
 
         <section style={cardStyle}>
-          <h2 style={sectionTitleStyle}>Client and timing</h2>
+          <h2 style={sectionTitleStyle}>Client and Timing</h2>
           <div style={rowStyle}>
             <label id={fieldId('patientId')} style={fieldStyle}>
               <span style={labelStyle}>Client *</span>
@@ -285,9 +285,9 @@ function Inner() {
         </section>
 
         <section style={cardStyle}>
-          <h2 style={sectionTitleStyle}>Medication involved</h2>
+          <h2 style={sectionTitleStyle}>Medication Involved</h2>
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-            <button type="button" style={medMode === 'order' ? chipActiveStyle : chipStyle} onClick={() => setMedMode('order')} disabled={submitting}>On the client&apos;s MAR</button>
+            <button type="button" style={medMode === 'order' ? chipActiveStyle : chipStyle} onClick={() => setMedMode('order')} disabled={submitting}>On the Client&apos;s MAR</button>
             <button type="button" style={medMode === 'other' ? chipActiveStyle : chipStyle} onClick={() => { setMedMode('other'); setForm((f) => ({ ...f, marOrderId: '', marAdministrationId: '' })); }} disabled={submitting}>Not on the MAR</button>
           </div>
           {medMode === 'order' && (
@@ -353,7 +353,7 @@ function Inner() {
         </section>
 
         <section style={cardStyle}>
-          <h2 style={sectionTitleStyle}>What happened</h2>
+          <h2 style={sectionTitleStyle}>What Happened</h2>
           <div id={fieldId('errorType')} style={{ ...fieldStyle, ...(showErrors && errors.errorType ? { padding: 8, borderRadius: 8, ...FIELD_ERROR_STYLE, borderWidth: 1, borderStyle: 'solid' } : {}) }}>
             <span style={labelStyle}>Type of error *</span>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 6 }}>
@@ -413,7 +413,7 @@ function Inner() {
         </section>
 
         <section style={cardStyle}>
-          <h2 style={sectionTitleStyle}>Client condition</h2>
+          <h2 style={sectionTitleStyle}>Client Condition</h2>
           <label id={fieldId('harm')} style={fieldStyle}>
             <span style={labelStyle}>Effect on the client *</span>
             <select value={form.harm} onChange={(e) => set('harm', e.target.value as MedErrorInput['harm'])} style={{ ...selectStyle, ...hi('harm') }} disabled={submitting}>
@@ -435,7 +435,7 @@ function Inner() {
         </section>
 
         <section style={cardStyle}>
-          <h2 style={sectionTitleStyle}>Who was notified</h2>
+          <h2 style={sectionTitleStyle}>Who Was Notified</h2>
           <div id={fieldId('physician')} style={showErrors && errors.physician ? { padding: 8, borderRadius: 8, marginBottom: 6, borderWidth: 1, borderStyle: 'solid', ...FIELD_ERROR_STYLE } : undefined}>
           {err('physician')}
           {(['physician', 'guardian', 'supervisor'] as const).map((k) => {
@@ -461,7 +461,7 @@ function Inner() {
         </section>
 
         <section style={cardStyle}>
-          <h2 style={sectionTitleStyle}>Actions taken</h2>
+          <h2 style={sectionTitleStyle}>Actions Taken</h2>
           <label id={fieldId('actionsTaken')} style={fieldStyle}>
             <span style={labelStyle}>What was done in response *</span>
             <textarea value={form.actionsTaken} onChange={(e) => set('actionsTaken', e.target.value)} rows={3} maxLength={MED_ERROR_TEXT_MAX} style={{ ...textareaStyle, ...hi('actionsTaken') }} placeholder="Dose given late per physician, client monitored, MAR corrected, family instructed, and so on." disabled={submitting} />
@@ -470,7 +470,7 @@ function Inner() {
         </section>
 
         <section style={cardStyle}>
-          <h2 style={sectionTitleStyle}>Your signature</h2>
+          <h2 style={sectionTitleStyle}>Your Signature</h2>
           <div style={{ fontSize: 13, color: '#5c6b7a', marginBottom: 8 }}>
             Signing as <strong>{profile?.displayName || user.email}</strong>{credential ? `, ${credential}` : ''}. Date and time are recorded automatically.
           </div>
@@ -484,7 +484,7 @@ function Inner() {
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <Link href={form.patientId ? `/admin/clients/${form.patientId}` : '/admin'} style={secondaryLinkStyle}>Cancel</Link>
-          <button type="button" style={{ ...primaryBtnStyle, opacity: submitting ? 0.6 : 1 }} disabled={submitting} onClick={() => void submit()}>{submitting ? 'Filing…' : 'File report'}</button>
+          <button type="button" style={{ ...primaryBtnStyle, opacity: submitting ? 0.6 : 1 }} disabled={submitting} onClick={() => void submit()}>{submitting ? 'Filing…' : 'File Report'}</button>
         </div>
       </div>
       <style jsx global>{`.med-error-sig { width: 100%; height: auto; display: block; touch-action: none; }`}</style>

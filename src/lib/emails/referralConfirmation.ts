@@ -85,7 +85,7 @@ export async function sendReferralConfirmation(
       from: FROM_ADDRESS,
       to: input.to,
       replyTo: REPLY_TO,
-      subject: 'We received your referral, and what to expect next',
+      subject: 'We Received Your Referral, and What to Expect Next',
       html,
     });
     if (error) {

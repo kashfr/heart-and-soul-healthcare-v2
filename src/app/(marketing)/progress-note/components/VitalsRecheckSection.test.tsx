@@ -21,7 +21,7 @@ const adult = { q1_formRev: '4', q5_ageYears: '30', q7_shiftStart: '09:00' };
 describe('VitalsRecheckSection', () => {
   it('a new recheck shows no vital inputs until one is chosen', () => {
     render(<Harness defaults={{ ...adult, q18_pulse: '72' }} />);
-    fireEvent.click(screen.getByRole('button', { name: /Add a later vitals reading/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Add a Later Vitals Reading/ }));
     expect(screen.getByText('Choose which vitals you retook.')).toBeInTheDocument();
     expect(screen.queryByLabelText(/Pulse \(bpm\)/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Pulse' }));

@@ -25,7 +25,7 @@ const CARDS: Card[] = [
   {
     href: '/admin/submissions',
     icon: <ClipboardList size={22} />,
-    title: 'My notes',
+    title: 'My Notes',
     description: 'View and amend your submitted progress notes.',
     allow: ['nurse'],
   },
@@ -127,7 +127,7 @@ export default function AdminDashboardPage() {
     ? {
         href: '/progress-note?resume=1',
         icon: <FileEdit size={22} />,
-        title: 'Resume your draft',
+        title: 'Resume Your Draft',
         description: myDraft.clientName
           ? `Pick up where you left off on ${myDraft.clientName}'s note.`
           : 'Pick up where you left off on your unfinished note.',
@@ -136,7 +136,7 @@ export default function AdminDashboardPage() {
     : {
         href: '/progress-note',
         icon: <FilePlus size={22} />,
-        title: 'Submit a progress note',
+        title: 'Submit a Progress Note',
         description: 'Fill out a new shift note. The form auto-fills your name and credential.',
         allow: ['nurse', 'admin', 'supervisor'],
       };
@@ -148,7 +148,7 @@ export default function AdminDashboardPage() {
   const oversightCard: Card = {
     href: '/oversight-note',
     icon: <Stethoscope size={22} />,
-    title: 'RN oversight visit note',
+    title: 'RN Oversight Visit Note',
     description: 'Document a monthly RN oversight visit for a NOW/COMP client.',
     allow: ['nurse', 'admin', 'supervisor'],
   };
@@ -158,7 +158,7 @@ export default function AdminDashboardPage() {
   const supervisoryCard: Card = {
     href: '/supervisory-visit',
     icon: <HomeIcon size={22} />,
-    title: 'Home supervisory visit',
+    title: 'Home Supervisory Visit',
     description: "Document a supervisory visit at a client's home: vitals, client interview, satisfaction, and recommendations.",
     allow: ['admin', 'supervisor'],
   };
@@ -170,7 +170,7 @@ export default function AdminDashboardPage() {
   const verbalOrderCard: Card = {
     href: canTakeVerbalOrder ? '/admin/verbal-orders/new' : '/admin/verbal-orders',
     icon: <PhoneCall size={22} />,
-    title: canTakeVerbalOrder ? 'Take a verbal order' : 'Verbal orders',
+    title: canTakeVerbalOrder ? 'Take a Verbal Order' : 'Verbal Orders',
     description: canTakeVerbalOrder
       ? 'Record a physician\'s telephone order, sign it, and fax the physician for signature in one step.'
       : 'See the verbal orders you have taken and whether the physician has signed them.',
@@ -181,7 +181,7 @@ export default function AdminDashboardPage() {
   const medErrorCard: Card = {
     href: canFileMedError ? '/admin/med-errors/new' : '/admin/med-errors',
     icon: <ShieldAlert size={22} />,
-    title: canFileMedError ? 'Report a medication error' : 'Medication errors',
+    title: canFileMedError ? 'Report a Medication Error' : 'Medication Errors',
     description: canFileMedError
       ? 'Report any medication error you discover, whether or not you were involved. The nursing supervisor reviews it.'
       : 'Medication error reports and their reviews.',
@@ -250,7 +250,7 @@ export default function AdminDashboardPage() {
           <section style={{ ...handoffPanelStyle, display: pendingHandoffs > 0 ? 'block' : 'none' }}>
             <div style={handoffPanelTitleStyle}>
               <HandoffInboxTitle count={pendingHandoffs} />
-              <Link href="/admin/handoffs" style={handoffAllLinkStyle}>All handoffs</Link>
+              <Link href="/admin/handoffs" style={handoffAllLinkStyle}>All Handoffs</Link>
             </div>
             <HandoffInbox uid={effectiveUid} readOnly={isViewingAs} compact onCountChange={setPendingHandoffs} />
           </section>

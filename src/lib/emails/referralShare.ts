@@ -79,7 +79,7 @@ export async function sendReferralShareEmail(
       from: FROM_ADDRESS,
       to: input.to,
       replyTo: REPLY_TO,
-      subject: `A client referral has been shared with ${input.partnerAgency || 'your agency'}`,
+      subject: `A Client Referral Has Been Shared with ${input.partnerAgency || 'Your Agency'}`,
       html,
     });
     if (error) {
@@ -157,7 +157,7 @@ export async function sendReferralShareBatchEmail(
       from: FROM_ADDRESS,
       to: input.to,
       replyTo: REPLY_TO,
-      subject: `${count} client referral${count === 1 ? '' : 's'} shared with ${input.partnerAgency || 'your agency'}`,
+      subject: `${count} Client Referral${count === 1 ? '' : 's'} Shared with ${input.partnerAgency || 'Your Agency'}`,
       html,
     });
     if (error) {

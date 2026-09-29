@@ -175,7 +175,7 @@ function Inner() {
   if (!user || !profile) return null;
   if (isViewingAs) {
     return (
-      <div style={containerStyle}><div style={wrapStyle}><div style={noticeStyle}><AlertTriangle size={16} /> View-as sessions are read-only. Exit view-as to write a service plan.</div></div></div>
+      <div style={containerStyle}><div style={wrapStyle}><div style={noticeStyle}><AlertTriangle size={16} /> View-as sessions are read-only. Exit View-As to write a service plan.</div></div></div>
     );
   }
   if (patient === null) {
@@ -189,15 +189,15 @@ function Inner() {
         <div style={wrapStyle}>
           <div style={{ ...cardStyle, textAlign: 'center', padding: '32px 24px' }}>
             <CheckCircle2 size={40} color="#27ae60" />
-            <h1 style={{ ...titleStyle, fontSize: 24, marginTop: 10 }}>Service plan signed</h1>
+            <h1 style={{ ...titleStyle, fontSize: 24, marginTop: 10 }}>Service Plan Signed</h1>
             <p style={{ color: '#5c6b7a', lineHeight: 1.55, maxWidth: 560, margin: '8px auto 0' }}>
               {done.filed
                 ? `The signed plan is now the current service plan for ${patient?.name || 'this client'} and the PDF is filed under Documents as "Service Plan".`
                 : `The signed plan is saved as the current service plan for ${patient?.name || 'this client'}, but the PDF could not be filed under Documents. Open the plan and download the PDF to file it by hand.`}
             </p>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 18, flexWrap: 'wrap' }}>
-              <Link href={`/admin/clients/${patientId}?tab=serviceplan`} style={primaryLinkStyle}>View service plan</Link>
-              <Link href={`/admin/clients/${patientId}`} style={secondaryLinkStyle}>Back to {patient?.name || 'client'}</Link>
+              <Link href={`/admin/clients/${patientId}?tab=serviceplan`} style={primaryLinkStyle}>View Service Plan</Link>
+              <Link href={`/admin/clients/${patientId}`} style={secondaryLinkStyle}>Back to {patient?.name || 'Client'}</Link>
             </div>
           </div>
         </div>
@@ -217,8 +217,8 @@ function Inner() {
     <div style={containerStyle}>
       <div style={wrapStyle}>
         <header style={{ marginBottom: 18 }}>
-          <p style={kickerStyle}>Care planning</p>
-          <h1 style={titleStyle}><ClipboardList size={22} style={{ verticalAlign: -3, marginRight: 8 }} />{startedFrom ? 'Revise the service plan' : 'Write the service plan'}</h1>
+          <p style={kickerStyle}>Care Planning</p>
+          <h1 style={titleStyle}><ClipboardList size={22} style={{ verticalAlign: -3, marginRight: 8 }} />{startedFrom ? 'Revise the Service Plan' : 'Write the Service Plan'}</h1>
           <p style={subtitleStyle}>
             {startedFrom
               ? `Started from the plan signed ${formatDateUS(startedFrom.signedDate)}${startedFrom.by ? ` by ${startedFrom.by}` : ''}. Change what has changed; signing files a new plan and keeps the earlier one on record.`
@@ -291,14 +291,14 @@ function Inner() {
             id={fieldId('descriptionOfServices')}
             label="Description of services to be provided *"
             error={fe('descriptionOfServices')}
-            action={tasksText ? <button type="button" style={linkBtnStyle} onClick={() => set('descriptionOfServices', tasksText)}><RefreshCw size={12} /> Use the approved care-plan tasks</button> : null}
+            action={tasksText ? <button type="button" style={linkBtnStyle} onClick={() => set('descriptionOfServices', tasksText)}><RefreshCw size={12} /> Use the Approved Care-Plan Tasks</button> : null}
           >
             <textarea style={{ ...textareaStyle, minHeight: 150, ...hi('descriptionOfServices') }} value={form.descriptionOfServices} onChange={(e) => set('descriptionOfServices', e.target.value)} />
           </Field>
         </section>
 
         <section style={cardStyle}>
-          <h2 style={sectionTitleStyle}>Diet and personal care</h2>
+          <h2 style={sectionTitleStyle}>Diet and Personal Care</h2>
           <YesNoField id={fieldId('regularDiet')} label="Regular diet *" value={form.regularDiet} error={fe('regularDiet')} onChange={(v) => set('regularDiet', v)} />
           <div style={fieldStyle}>
             <span style={labelStyle}>Special diet</span>
@@ -330,7 +330,7 @@ function Inner() {
         </section>
 
         <section style={cardStyle}>
-          <h2 style={sectionTitleStyle}>Goals and objectives *</h2>
+          <h2 style={sectionTitleStyle}>Goals and Objectives *</h2>
           <div id={fieldId('goals')} style={fe('goals') ? FIELD_ERROR_WRAP_STYLE : undefined}>
             <div style={goalHeadStyle}>
               <span>Goal</span>
@@ -352,14 +352,14 @@ function Inner() {
               </div>
             ))}
             {form.goals.length < SERVICE_PLAN_MAX_GOALS && (
-              <button type="button" style={linkBtnStyle} onClick={() => set('goals', [...form.goals, { goal: '', objective: '' }])}><Plus size={14} /> Add a goal</button>
+              <button type="button" style={linkBtnStyle} onClick={() => set('goals', [...form.goals, { goal: '', objective: '' }])}><Plus size={14} /> Add a Goal</button>
             )}
           </div>
           <FieldError message={fe('goals')} />
         </section>
 
         <section style={cardStyle}>
-          <h2 style={sectionTitleStyle}>Medications and discharge</h2>
+          <h2 style={sectionTitleStyle}>Medications and Discharge</h2>
           <Field
             id={fieldId('medications')}
             label="Medications *"
@@ -375,7 +375,7 @@ function Inner() {
         </section>
 
         <section style={cardStyle}>
-          <h2 style={sectionTitleStyle}>Plan developed with</h2>
+          <h2 style={sectionTitleStyle}>Plan Developed With</h2>
           <p style={{ ...hintStyle, margin: '-6px 0 10px' }}>
             State rules call for the plan to be written with the client, the responsible party, and for nursing services the client&apos;s personal physician. Check who took part.
           </p>
@@ -394,7 +394,7 @@ function Inner() {
         </section>
 
         <section style={cardStyle}>
-          <h2 style={sectionTitleStyle}>Supervisor signature</h2>
+          <h2 style={sectionTitleStyle}>Supervisor Signature</h2>
           <div style={rowStyle}>
             <Field id={fieldId('supervisorName')} label="Supervisor printed name *" error={fe('supervisorName')}>
               <input style={{ ...inputStyle, ...hi('supervisorName') }} value={form.supervisorName} onChange={(e) => set('supervisorName', e.target.value)} />
@@ -414,14 +414,14 @@ function Inner() {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
               <span style={hintStyle}>Signed and dated {formatDateUS(todayAgencyISO())}. Sign with your finger or mouse.</span>
-              <button type="button" style={linkBtnStyle} onClick={() => { sigRef.current?.clear(); set('signature', ''); }}>Clear signature</button>
+              <button type="button" style={linkBtnStyle} onClick={() => { sigRef.current?.clear(); set('signature', ''); }}>Clear Signature</button>
             </div>
             <FieldError message={fe('signature')} />
           </div>
         </section>
 
         <section style={cardStyle}>
-          <h2 style={sectionTitleStyle}>Caregiver signature (optional)</h2>
+          <h2 style={sectionTitleStyle}>Caregiver Signature (Optional)</h2>
           <p style={{ ...hintStyle, margin: '-6px 0 10px' }}>
             GAPP requires the caregiver to sign the nursing care plan (GAPP manual section 916). For other programs, leave this blank.
           </p>
@@ -439,7 +439,7 @@ function Inner() {
               <SignatureCanvas ref={cgSigRef} className="service-plan-sig" onChange={(dataUrl) => set('caregiverSignature', dataUrl)} />
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button type="button" style={linkBtnStyle} onClick={() => { cgSigRef.current?.clear(); set('caregiverSignature', ''); }}>Clear caregiver signature</button>
+              <button type="button" style={linkBtnStyle} onClick={() => { cgSigRef.current?.clear(); set('caregiverSignature', ''); }}>Clear Caregiver Signature</button>
             </div>
             <FieldError message={fe('caregiverSignature')} />
           </div>
@@ -447,7 +447,7 @@ function Inner() {
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <Link href={`/admin/clients/${patientId}?tab=serviceplan`} style={secondaryLinkStyle}>Cancel</Link>
-          <button type="button" style={{ ...primaryBtnStyle, opacity: submitting ? 0.6 : 1 }} disabled={submitting} onClick={() => void submit()}>{submitting ? 'Signing...' : 'Sign and file the plan'}</button>
+          <button type="button" style={{ ...primaryBtnStyle, opacity: submitting ? 0.6 : 1 }} disabled={submitting} onClick={() => void submit()}>{submitting ? 'Signing...' : 'Sign and File the Plan'}</button>
         </div>
       </div>
       <style jsx global>{`.service-plan-sig { width: 100%; height: auto; display: block; touch-action: none; }`}</style>

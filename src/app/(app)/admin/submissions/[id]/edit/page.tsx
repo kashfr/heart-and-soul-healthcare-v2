@@ -101,7 +101,7 @@ export default function EditSubmissionPage({ params }: PageProps) {
         <div style={wrapStyle}>
           <div style={{ textAlign: 'center', padding: '40px 20px' }}>
             <p style={{ fontSize: 18, fontWeight: 600, color: '#c62828' }}>
-              Submission not found
+              Submission Not Found
             </p>
             <Link href="/admin/submissions" style={linkStyle}>
               &larr; Back to Submissions

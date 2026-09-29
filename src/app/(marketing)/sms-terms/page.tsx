@@ -52,7 +52,7 @@ export default function SmsTermsPage() {
         we never send marketing texts under this program.
       </div>
 
-      <h2 style={h2Style}>About this program</h2>
+      <h2 style={h2Style}>About This Program</h2>
       <p style={pStyle}>
         Heart and Soul Healthcare (&ldquo;we,&rdquo; &ldquo;us,&rdquo; or the &ldquo;Company&rdquo;) operates an
         internal SMS notification program for the nurses who use our staff portal. When a clinical supervisor flags a
@@ -60,14 +60,14 @@ export default function SmsTermsPage() {
         sign in to the staff portal and respond. These are work-related, operational (transactional) messages only.
       </p>
 
-      <h2 style={h2Style}>Who receives messages</h2>
+      <h2 style={h2Style}>Who Receives Messages</h2>
       <p style={pStyle}>
         Only Heart and Soul Healthcare&rsquo;s employed and contracted nurses who use our staff portal receive these
         messages. This program is not directed at the general public, patients, or consumers, and we never obtain
         phone numbers from third parties.
       </p>
 
-      <h2 style={h2Style}>How you are enrolled (consent)</h2>
+      <h2 style={h2Style}>How You Are Enrolled (Consent)</h2>
       <p style={pStyle}>
         Consent is collected during staff onboarding. Each nurse provides her mobile phone number and agrees, in
         writing, to receive work-related operational SMS notifications from Heart and Soul Healthcare as a condition
@@ -75,7 +75,7 @@ export default function SmsTermsPage() {
         public sign-up form and no keyword to text in. Consent records are retained in our onboarding documentation.
       </p>
 
-      <h2 style={h2Style}>Types of messages and frequency</h2>
+      <h2 style={h2Style}>Types of Messages and Frequency</h2>
       <ul>
         <li style={liStyle}>Alerts that a progress note you documented needs review or correction.</li>
         <li style={liStyle}>Follow-up questions a reviewer adds to a note that is awaiting your reply.</li>
@@ -91,14 +91,14 @@ export default function SmsTermsPage() {
         messages, but your mobile carrier&rsquo;s standard message and data rates may apply.
       </p>
 
-      <h2 style={h2Style}>How to opt out</h2>
+      <h2 style={h2Style}>How to Opt Out</h2>
       <p style={pStyle}>
         You may opt out at any time by replying <strong>STOP</strong> to any message. You will receive one
         confirmation message and then no further texts under this program. To start receiving messages again, reply{' '}
         <strong>START</strong>.
       </p>
 
-      <h2 style={h2Style}>How to get help</h2>
+      <h2 style={h2Style}>How to Get Help</h2>
       <p style={pStyle}>
         Reply <strong>HELP</strong> to any message, or contact us at{' '}
         <a href="mailto:info@heartandsoulhc.org" style={{ color: NAVY }}>info@heartandsoulhc.org</a> or

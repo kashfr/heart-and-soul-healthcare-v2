@@ -421,13 +421,13 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
                 setVoidWhyError(null);
               }}
             >
-              Remove — entered in error
+              Remove — Entered in Error
             </button>
           </>
         )}
         {voidFor === a.id && (
           <div style={amendBox}>
-            <div style={amendTitle}>Remove this entry (entered in error)</div>
+            <div style={amendTitle}>Remove This Entry (Entered in Error)</div>
             <div style={{ fontSize: 12.5, color: '#5c6b7a', lineHeight: 1.45, marginBottom: 10 }}>
               Use this when the entry never should have been charted at all — wrong time row, wrong
               day, or wrong client. It is struck from the MAR (the audit trail keeps it) and the
@@ -456,14 +456,14 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
                 onClick={() => saveVoid(a)}
                 disabled={voidBusy}
               >
-                {voidBusy ? 'Removing…' : 'Remove entry'}
+                {voidBusy ? 'Removing…' : 'Remove Entry'}
               </button>
             </div>
           </div>
         )}
         {amendFor === a.id && (
           <div style={amendBox}>
-            <div style={amendTitle}>Correct this entry</div>
+            <div style={amendTitle}>Correct This Entry</div>
             <div style={amendStatusRow}>
               {(['given', 'held', 'refused'] as const).map((s) => (
                 <button
@@ -569,7 +569,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
                 Cancel
               </button>
               <button type="button" style={amendSave} onClick={() => saveAmend(a)} disabled={amendBusy}>
-                {amendBusy ? 'Saving…' : 'Save correction'}
+                {amendBusy ? 'Saving…' : 'Save Correction'}
               </button>
             </div>
           </div>
@@ -591,7 +591,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
               <Pill size={18} color="#1a3a5c" />
               <div style={{ minWidth: 0 }}>
-                <div style={titleStyle}>Medication chart</div>
+                <div style={titleStyle}>Medication Chart</div>
                 <div style={subtitleStyle}>{patientName}{documenter ? '' : ' · read-only'}</div>
               </div>
             </div>
@@ -609,7 +609,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
                 <span style={todayTag}>Today</span>
               ) : (
                 <button type="button" onClick={() => setDay(today)} style={todayJump}>
-                  Jump to today
+                  Jump to Today
                 </button>
               )}
             </div>

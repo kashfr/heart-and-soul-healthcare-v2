@@ -125,7 +125,7 @@ export default function RecordTreatmentModal({
       <div style={panel} onClick={(e) => e.stopPropagation()}>
         <div style={headRow}>
           <div>
-            <h2 style={h2}>Record treatment</h2>
+            <h2 style={h2}>Record Treatment</h2>
             <div style={sub}>
               {prettyDate(date)}
               {timesPerDay > 1 ? ` · box ${slotIndex + 1} of ${timesPerDay}` : ''}
@@ -155,8 +155,8 @@ export default function RecordTreatmentModal({
             {(
               [
                 ['done', 'Completed'],
-                ['not-done', 'Not completed'],
-                ['na', 'Not applicable'],
+                ['not-done', 'Not Completed'],
+                ['na', 'Not Applicable'],
               ] as Array<[TarStatus, string]>
             ).map(([value, text]) => (
               <button
@@ -249,7 +249,7 @@ export default function RecordTreatmentModal({
         <div style={actions}>
           <button type="button" onClick={onClose} style={cancelBtn} disabled={saving}>Cancel</button>
           <button type="button" onClick={save} style={saveBtn} disabled={saving}>
-            {saving ? 'Saving…' : 'Save entry'}
+            {saving ? 'Saving…' : 'Save Entry'}
           </button>
         </div>
       </div>

@@ -530,7 +530,7 @@ export default function AdminSettingsPage() {
       <div style={wrapStyle}>
         <div style={{ marginBottom: 16 }}>
           <Link href="/admin" style={backLinkStyle}>
-            <ArrowLeft size={14} /> Back to dashboard
+            <ArrowLeft size={14} /> Back to Dashboard
           </Link>
         </div>
 
@@ -550,7 +550,7 @@ export default function AdminSettingsPage() {
               disabled={saving}
               title="Replace the form below with the hard-coded defaults. You still need to click Save to apply."
             >
-              <RotateCcw size={14} /> Reset form
+              <RotateCcw size={14} /> Reset Form
             </button>
             <button
               type="button"
@@ -558,7 +558,7 @@ export default function AdminSettingsPage() {
               style={primaryBtnStyle}
               disabled={saving}
             >
-              <Save size={14} /> {saving ? 'Saving…' : dirty ? 'Save changes' : 'Saved'}
+              <Save size={14} /> {saving ? 'Saving…' : dirty ? 'Save Changes' : 'Saved'}
             </button>
           </div>
         </header>
@@ -578,20 +578,20 @@ export default function AdminSettingsPage() {
 
         {/* --- Billing rates (own page: a table, not a form draft) --- */}
         <section style={sectionStyle}>
-          <h2 style={sectionTitleStyle}>Billing rates</h2>
+          <h2 style={sectionTitleStyle}>Billing Rates</h2>
           <p style={sectionSubStyle}>
             Dollars per 15-minute unit by program (NOW/COMP, GAPP, EDWP, ICWP) for shift nursing
             and RN oversight, with the claim code and modifier and effective dates. Feeds the $
             views on the Shift Notes list and each client&apos;s Hours tab. Admin only.
           </p>
           <Link href="/admin/settings/billing-rates" style={collapseToggleStyle}>
-            Open billing rates →
+            Open Billing Rates →
           </Link>
         </section>
 
         {/* --- Submissions list defaults --- */}
         <section style={sectionStyle}>
-          <h2 style={sectionTitleStyle}>Submissions list</h2>
+          <h2 style={sectionTitleStyle}>Submissions List</h2>
           <p style={sectionSubStyle}>
             What everyone sees when they open <code>/admin/submissions</code> with no
             filters. Individual nurses can still sort / filter however they want — these
@@ -676,7 +676,7 @@ export default function AdminSettingsPage() {
 
         {/* --- Co-signature requirements --- */}
         <section style={sectionStyle}>
-          <h2 style={sectionTitleStyle}>Co-signature requirements</h2>
+          <h2 style={sectionTitleStyle}>Co-Signature Requirements</h2>
           <p style={sectionSubStyle}>
             Which clinical credentials require an RN to co-sign every submitted note. RN
             isn&apos;t in this list — RNs can&apos;t co-sign their own work, and an RN co-
@@ -706,7 +706,7 @@ export default function AdminSettingsPage() {
 
         {/* --- Patient roster enforcement --- */}
         <section style={sectionStyle}>
-          <h2 style={sectionTitleStyle}>Patient roster</h2>
+          <h2 style={sectionTitleStyle}>Patient Roster</h2>
           <p style={sectionSubStyle}>
             Control whether nurses can type a patient name freely, or must select from
             the existing roster. Tightening this stops typo notes from accumulating in
@@ -724,7 +724,7 @@ export default function AdminSettingsPage() {
 
         {/* --- Critical-vitals escalation gate --- */}
         <section style={sectionStyle}>
-          <h2 style={sectionTitleStyle}>Critical-vitals escalation prompt</h2>
+          <h2 style={sectionTitleStyle}>Critical-Vitals Escalation Prompt</h2>
           <p style={sectionSubStyle}>
             When a nurse submits a note with a vital that crosses a provider-notification
             (critical) threshold, the form prompts them to record the escalation they made —
@@ -743,7 +743,7 @@ export default function AdminSettingsPage() {
 
         {/* --- Note corrections & the new-notes block --- */}
         <section style={sectionStyle}>
-          <h2 style={sectionTitleStyle}>Note corrections</h2>
+          <h2 style={sectionTitleStyle}>Note Corrections</h2>
           <p style={sectionSubStyle}>
             When a reviewer flags a note for CORRECTION, the flag can block its author from
             starting or submitting any new progress notes. The block is lifted only by a
@@ -854,7 +854,7 @@ export default function AdminSettingsPage() {
 
         {/* --- Shift-change alerts ("Since your last shift" on Page 2) --- */}
         <section style={sectionStyle}>
-          <h2 style={sectionTitleStyle}>Shift-change alerts</h2>
+          <h2 style={sectionTitleStyle}>Shift-Change Alerts</h2>
           <p style={sectionSubStyle}>
             Every progress note starts with three required questions about the time since the
             nurse&apos;s last shift: any hospital admission, any urgent care or ER visit, and any
@@ -905,7 +905,7 @@ export default function AdminSettingsPage() {
 
         {/* --- Verbal orders --- */}
         <section style={sectionStyle}>
-          <h2 style={sectionTitleStyle}>Verbal orders</h2>
+          <h2 style={sectionTitleStyle}>Verbal Orders</h2>
           <p style={sectionSubStyle}>
             When a nurse takes a telephone order, the physician is faxed an authentication form to sign and
             return. An order still unsigned after the first number of days is marked overdue on the queue and
@@ -1046,7 +1046,7 @@ export default function AdminSettingsPage() {
 
         {/* --- EDWP Consents access --- */}
         <section style={sectionStyle}>
-          <h2 style={sectionTitleStyle}>EDWP Consents access</h2>
+          <h2 style={sectionTitleStyle}>EDWP Consents Access</h2>
           <p style={sectionSubStyle}>
             EDWP Consents shows every signed EDWP consent form (client names, contact details, and signatures) and
             emails the form to clients. Admins always have access. Check the supervisors and virtual assistants who
@@ -1086,10 +1086,10 @@ export default function AdminSettingsPage() {
 
         {/* --- E-signature tracking (PandaDoc webhook) --- */}
         <section style={sectionStyle}>
-          <h2 style={sectionTitleStyle}>E-signature tracking (PandaDoc)</h2>
+          <h2 style={sectionTitleStyle}>E-Signature Tracking (PandaDoc)</h2>
           <p style={sectionSubStyle}>
             Packets are still sent from PandaDoc. A PandaDoc webhook tells the portal each time one is viewed, signed,
-            or completed, and the E-signatures page shows where each stands (same people as the Fax Center). A PandaDoc
+            or completed, and the E-Signatures page shows where each stands (same people as the Fax Center). A PandaDoc
             document is tracked when its document or template name contains one of these words. Start of care packets
             carry client information, so leave them out until PandaDoc has signed a BAA with the agency.
           </p>
@@ -1108,7 +1108,7 @@ export default function AdminSettingsPage() {
             />
           </Field>
           <details style={{ marginTop: 10, fontSize: 13, color: '#5c6b7a' }}>
-            <summary style={{ cursor: 'pointer', fontWeight: 600, color: '#2c3e50' }}>How to connect the webhook</summary>
+            <summary style={{ cursor: 'pointer', fontWeight: 600, color: '#2c3e50' }}>How to Connect the Webhook</summary>
             <ol style={{ margin: '8px 0 0', paddingLeft: 20, lineHeight: 1.6 }}>
               <li>In PandaDoc, open Dev Center, Configuration, then Create webhook.</li>
               <li>URL: <code>https://www.heartandsoulhc.org/api/pandadoc/webhook</code></li>
@@ -1123,7 +1123,7 @@ export default function AdminSettingsPage() {
         <section style={sectionStyle}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
             <h2 style={{ ...sectionTitleStyle, marginBottom: vitalsOpen ? undefined : 0 }}>
-              Vital sign ranges
+              Vital Sign Ranges
             </h2>
             <button
               type="button"
@@ -1194,7 +1194,7 @@ export default function AdminSettingsPage() {
                           fontFamily: 'inherit',
                         }}
                       >
-                        Reset {AGE_GROUP_LABELS[group]} to defaults
+                        Reset {AGE_GROUP_LABELS[group]} to Defaults
                       </button>
                     )}
                   </div>
@@ -1273,7 +1273,7 @@ export default function AdminSettingsPage() {
 
         {/* --- Branding & emails --- */}
         <section style={sectionStyle}>
-          <h2 style={sectionTitleStyle}>Branding &amp; emails</h2>
+          <h2 style={sectionTitleStyle}>Branding &amp; Emails</h2>
           <p style={sectionSubStyle}>
             Org-identity strings shown in the staff portal sidebar, on PDFs, and as the
             human-readable part of outbound email From lines. Changes apply on the next
@@ -1333,7 +1333,7 @@ export default function AdminSettingsPage() {
           </div>
 
           <h3 style={{ fontSize: 14, color: '#2c3e50', margin: '20px 0 6px' }}>
-            Email subject lines
+            Email Subject Lines
           </h3>
           <p style={{ ...sectionSubStyle, marginTop: 0, marginBottom: 12 }}>
             Password-reset emails are sent by Firebase Auth, not this app — those are
@@ -1379,7 +1379,7 @@ export default function AdminSettingsPage() {
         </section>
 
         <section style={sectionStyle}>
-          <h2 style={sectionTitleStyle}>Referral intake</h2>
+          <h2 style={sectionTitleStyle}>Referral Intake</h2>
           <p style={sectionSubStyle}>
             What Heart &amp; Soul itself accepts: the GAPP services you offer and the
             Georgia counties you serve. Every card on the Referrals board is judged
@@ -1388,7 +1388,7 @@ export default function AdminSettingsPage() {
             you add a service line or expand coverage.
           </p>
 
-          <h3 style={{ fontSize: 14, color: '#2c3e50', margin: '14px 0 6px' }}>Services you offer</h3>
+          <h3 style={{ fontSize: 14, color: '#2c3e50', margin: '14px 0 6px' }}>Services You Offer</h3>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
             {GAPP_SERVICES.map((s) => (
               <label
@@ -1406,7 +1406,7 @@ export default function AdminSettingsPage() {
           </div>
 
           <h3 style={{ fontSize: 14, color: '#2c3e50', margin: '18px 0 6px' }}>
-            Counties you serve ({draft.intake.counties.length})
+            Counties You Serve ({draft.intake.counties.length})
           </h3>
           {draft.intake.counties.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
@@ -1462,7 +1462,7 @@ export default function AdminSettingsPage() {
         </section>
 
         <section style={sectionStyle}>
-          <h2 style={sectionTitleStyle}>Provider list email (to families)</h2>
+          <h2 style={sectionTitleStyle}>Provider List Email (to Families)</h2>
           <p style={sectionSubStyle}>
             Sent to a family when no partner agency can take their referral, with a link
             to Georgia Medicaid&apos;s official list of approved GAPP providers. This is the
@@ -1573,7 +1573,7 @@ export default function AdminSettingsPage() {
               onClick={() => setShowEmailPreview((v) => !v)}
               style={secondaryBtnStyle}
             >
-              <Eye size={14} /> {showEmailPreview ? 'Hide preview' : 'Preview email'}
+              <Eye size={14} /> {showEmailPreview ? 'Hide Preview' : 'Preview Email'}
             </button>
             <button
               type="button"
@@ -1582,10 +1582,10 @@ export default function AdminSettingsPage() {
               style={{ ...secondaryBtnStyle, opacity: sendingTest ? 0.6 : 1 }}
               title="Sends to your own account email, never to a family"
             >
-              <Send size={14} /> {sendingTest ? 'Sending…' : 'Send test to myself'}
+              <Send size={14} /> {sendingTest ? 'Sending…' : 'Send Test to Myself'}
             </button>
             <button type="button" onClick={resetProviderListCopy} style={secondaryBtnStyle}>
-              <RotateCcw size={14} /> Restore default wording
+              <RotateCcw size={14} /> Restore Default Wording
             </button>
           </div>
           {testResult && (

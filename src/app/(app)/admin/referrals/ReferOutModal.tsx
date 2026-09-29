@@ -139,7 +139,7 @@ export default function ReferOutModal({
     <div style={backdrop} onClick={onClose}>
       <div style={card} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div style={header}>
-          <div style={{ fontSize: 17, fontWeight: 700, color: '#2c3e50' }}>Refer out</div>
+          <div style={{ fontSize: 17, fontWeight: 700, color: '#2c3e50' }}>Refer Out</div>
           <button onClick={onClose} style={closeBtn} aria-label="Cancel"><X size={18} /></button>
         </div>
 
@@ -153,12 +153,12 @@ export default function ReferOutModal({
             {agencies.length > 0 && suggestions.length === 0 && (
               <div style={noMatchBox}>
                 <div style={{ fontWeight: 700, marginBottom: 4 }}>
-                  <FileText size={13} style={{ verticalAlign: -2 }} /> No partner agency matches
+                  <FileText size={13} style={{ verticalAlign: -2 }} /> No Partner Agency Matches
                 </div>
                 None of your saved agencies {county ? `covers ${county}` : 'match this referral'}.
                 You can email the family the official GAPP provider list instead.
                 <button type="button" onClick={() => { setMode('providerList'); setError(null); setFieldErrors({}); }} style={noMatchBtn}>
-                  Email the provider list
+                  Email the Provider List
                 </button>
               </div>
             )}
@@ -254,16 +254,16 @@ export default function ReferOutModal({
                 disabled={saving}
                 style={{ ...primaryBtn, opacity: saving ? 0.55 : 1 }}
               >
-                {saving ? 'Sending…' : 'Email list & move to Referred Out'}
+                {saving ? 'Sending…' : 'Email List & Move to Referred Out'}
               </button>
             </div>
 
             <div style={noEmailBox}>
-              <div style={{ fontWeight: 600, marginBottom: 6 }}>No email on file?</div>
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>No Email on File?</div>
               Copy the link to text or read off by phone, then record it:
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                 <button type="button" onClick={copyListLink} style={ghostBtn}>
-                  {copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'Copied' : 'Copy list link'}
+                  {copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'Copied' : 'Copy List Link'}
                 </button>
                 <button
                   type="button"
@@ -271,7 +271,7 @@ export default function ReferOutModal({
                   disabled={saving}
                   style={{ ...ghostBtn, color: '#1a3a5c' }}
                 >
-                  Mark as given &amp; move
+                  Mark as Given &amp; Move
                 </button>
               </div>
             </div>
@@ -281,7 +281,7 @@ export default function ReferOutModal({
               onClick={() => { setMode('agency'); setError(null); setFieldErrors({}); }}
               style={modeSwitchLink}
             >
-              Back to recording an agency instead
+              Back to Recording an Agency Instead
             </button>
           </div>
         )}

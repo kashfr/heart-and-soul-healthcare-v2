@@ -323,7 +323,7 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
                       fontFamily: 'inherit',
                     }}
                   >
-                    No, keep what I typed
+                    No, Keep What I Typed
                   </button>
                 </div>
               </div>

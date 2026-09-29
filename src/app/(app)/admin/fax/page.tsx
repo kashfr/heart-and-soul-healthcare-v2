@@ -222,7 +222,7 @@ export default function FaxCenterPage() {
               <RefreshCw size={15} /> Refresh
             </button>
             <button onClick={() => setComposing(true)} style={ghostBtnStyle} disabled={!configured}>
-              <Send size={15} /> Send a fax
+              <Send size={15} /> Send a Fax
             </button>
             <button onClick={() => setRoiOpen((n) => n + 1)} style={ghostBtnStyle}>
               <ShieldCheck size={15} /> Release of Information
@@ -245,7 +245,7 @@ export default function FaxCenterPage() {
           <section style={{ marginBottom: 22 }}>
             <h2 style={sectionTitleStyle}>
               <CalendarClock size={16} style={{ verticalAlign: -2, marginRight: 6 }} />
-              Recertifications due ({recertDue.length})
+              Recertifications Due ({recertDue.length})
             </h2>
             <p style={{ ...metaStyle, margin: '0 0 10px' }}>
               GAPP clients whose authorization ends within {recertLeadDays} days and who have no Appendix T request yet this cycle.
@@ -291,7 +291,7 @@ export default function FaxCenterPage() {
         />
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          <h2 style={sectionTitleStyle}>Sent faxes</h2>
+          <h2 style={sectionTitleStyle}>Sent Faxes</h2>
           {archivedCount > 0 && (
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#5c6b7a', cursor: 'pointer' }}>
               <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
@@ -317,11 +317,11 @@ export default function FaxCenterPage() {
           <div style={{ ...emptyStyle, color: '#b3261e' }}>
             {error}
             <div style={{ marginTop: 12 }}>
-              <button onClick={load} style={ghostBtnStyle}>Try again</button>
+              <button onClick={load} style={ghostBtnStyle}>Try Again</button>
             </div>
           </div>
         ) : shown.length === 0 ? (
-          <div style={emptyStyle}>{q ? 'No faxes match your search.' : archivedCount > 0 ? 'Nothing on the list. Archived faxes are hidden.' : 'Nothing sent yet. Use Send a fax to get started.'}</div>
+          <div style={emptyStyle}>{q ? 'No faxes match your search.' : archivedCount > 0 ? 'Nothing on the list. Archived faxes are hidden.' : 'Nothing sent yet. Use Send a Fax to get started.'}</div>
         ) : (
           <div style={tableWrapStyle}>
             <table style={tableStyle}>
@@ -330,7 +330,7 @@ export default function FaxCenterPage() {
                   <th style={thStyle}>To</th>
                   <th style={thStyle}>Regarding</th>
                   <th style={thStyle}>Status</th>
-                  <th style={thStyle}>Sent by</th>
+                  <th style={thStyle}>Sent By</th>
                   <th style={{ ...thStyle, textAlign: 'right' }}> </th>
                 </tr>
               </thead>
@@ -520,7 +520,7 @@ function SendModal({ onClose, onSent, onDone }: { onClose: () => void; onSent: (
     <div style={backdropStyle} onClick={busy ? undefined : onClose}>
       <div style={modalStyle} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="fax-send-title">
         <div style={modalHeaderStyle}>
-          <strong id="fax-send-title" style={{ fontSize: 16, color: '#1a3a5c' }}>Send a fax</strong>
+          <strong id="fax-send-title" style={{ fontSize: 16, color: '#1a3a5c' }}>Send a Fax</strong>
           <button onClick={onClose} style={closeBtnStyle} aria-label="Close" disabled={busy}>
             <X size={18} />
           </button>
@@ -581,7 +581,7 @@ function SendModal({ onClose, onSent, onDone }: { onClose: () => void; onSent: (
           <div style={modalFooterStyle}>
             <button type="button" onClick={onClose} style={ghostBtnStyle} disabled={busy}>Cancel</button>
             <button type="submit" style={primaryBtnStyle} disabled={busy}>
-              <Send size={14} /> {busy ? 'Sending…' : 'Send fax'}
+              <Send size={14} /> {busy ? 'Sending…' : 'Send Fax'}
             </button>
           </div>
         </form>

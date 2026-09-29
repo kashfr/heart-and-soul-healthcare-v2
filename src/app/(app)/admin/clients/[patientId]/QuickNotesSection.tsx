@@ -130,7 +130,7 @@ export default function QuickNotesSection({ patientId, actor, onToast }: QuickNo
     <section style={cardStyle}>
       <div style={headerRowStyle}>
         <div style={titleStyle}>
-          <StickyNote size={16} /> Quick notes
+          <StickyNote size={16} /> Quick Notes
         </div>
         <button
           type="button"
@@ -138,7 +138,7 @@ export default function QuickNotesSection({ patientId, actor, onToast }: QuickNo
           onClick={() => setModalOpen(true)}
           disabled={!actor.uid}
         >
-          <Plus size={14} /> Add quick note
+          <Plus size={14} /> Add Quick Note
         </button>
       </div>
 
@@ -186,11 +186,11 @@ export default function QuickNotesSection({ patientId, actor, onToast }: QuickNo
             <button type="button" style={toggleStyle} onClick={() => setShowAll((s) => !s)}>
               {showAll ? (
                 <>
-                  <ChevronUp size={14} /> Show fewer
+                  <ChevronUp size={14} /> Show Fewer
                 </>
               ) : (
                 <>
-                  <ChevronDown size={14} /> Show all ({notes.length})
+                  <ChevronDown size={14} /> Show All ({notes.length})
                 </>
               )}
             </button>
@@ -255,7 +255,7 @@ function QuickNoteDetail({
               {concern && <AlertTriangle size={10} style={{ marginRight: 3 }} />}
               {quickNoteCategoryLabel(note.category)}
             </span>
-            <span style={sheetTitleStyle}>Quick note</span>
+            <span style={sheetTitleStyle}>Quick Note</span>
           </div>
           <button type="button" onClick={onClose} style={detailCloseBtnStyle} aria-label="Close note">
             <X size={16} />
@@ -360,7 +360,7 @@ function AddQuickNoteModal({
       }}
     >
       <div style={sheetStyle}>
-        <div style={sheetTitleStyle}>Quick note</div>
+        <div style={sheetTitleStyle}>Quick Note</div>
         <div style={sheetHintStyle}>
           Jot it down — author and time are captured automatically. Notes can&apos;t be edited after
           saving; add a follow-up note to correct or expand.
@@ -437,7 +437,7 @@ function AddQuickNoteModal({
             onClick={() => void save()}
             disabled={busy}
           >
-            {busy ? 'Saving…' : 'Save note'}
+            {busy ? 'Saving…' : 'Save Note'}
           </button>
         </div>
       </div>

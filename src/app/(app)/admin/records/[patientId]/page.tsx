@@ -322,7 +322,7 @@ export default function RecordDetailPage() {
               is reached from the client dashboard's "Manage record" button,
               so back goes to the dashboard. */}
           <Link href={`/admin/clients/${patientId}`} style={backLinkStyle}>
-            <ArrowLeft size={14} /> Back to client dashboard
+            <ArrowLeft size={14} /> Back to Client Dashboard
           </Link>
         </div>
 
@@ -356,7 +356,7 @@ export default function RecordDetailPage() {
                     <CalendarDays size={14} /> Monthly TAR
                   </Link>
                   <Link href={`/admin/clients?edit=${patientId}`} style={editHeaderLinkStyle}>
-                    <Pencil size={13} /> Edit client details
+                    <Pencil size={13} /> Edit Client Details
                   </Link>
                 </div>
               </div>
@@ -365,7 +365,7 @@ export default function RecordDetailPage() {
                 <div style={notFlaggedStyle}>
                   This client isn&apos;t marked <strong>Requires MAR</strong> yet. You can still build orders, but
                   flag them via{' '}
-                  <Link href={`/admin/clients?edit=${patientId}`} style={inlineLinkStyle}>Edit client details</Link>{' '}
+                  <Link href={`/admin/clients?edit=${patientId}`} style={inlineLinkStyle}>Edit Client Details</Link>{' '}
                   so the MAR badge shows on the roster.
                 </div>
               )}
@@ -382,17 +382,17 @@ export default function RecordDetailPage() {
             </header>
 
             <div style={sectionHeaderRowStyle}>
-              <h2 style={sectionTitleStyle}>Medication orders</h2>
+              <h2 style={sectionTitleStyle}>Medication Orders</h2>
               {!isViewingAs && (
                 <button onClick={openAdd} style={primaryBtnStyle}>
-                  <Plus size={16} /> Add medication
+                  <Plus size={16} /> Add Medication
                 </button>
               )}
             </div>
 
             {activeOrders.length === 0 && discontinuedOrders.length === 0 ? (
               <div style={emptyStyle}>
-                No medications yet. Click &ldquo;Add medication&rdquo; to build this client&apos;s regimen.
+                No medications yet. Click &ldquo;Add Medication&rdquo; to build this client&apos;s regimen.
               </div>
             ) : (
               <>
@@ -423,7 +423,7 @@ export default function RecordDetailPage() {
           <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
             <div style={modalHeaderStyle}>
               <h2 style={{ margin: 0, fontSize: 18, color: '#2c3e50' }}>
-                {editingId ? 'Edit medication order' : 'Add medication order'}
+                {editingId ? 'Edit Medication Order' : 'Add Medication Order'}
               </h2>
               <button onClick={() => setFormOpen(false)} style={closeBtnStyle} aria-label="Close">
                 ✕
@@ -566,7 +566,7 @@ export default function RecordDetailPage() {
                     ))}
                   </div>
                   <button type="button" onClick={addTime} style={addTimeBtnStyle}>
-                    <Plus size={13} /> Add time
+                    <Plus size={13} /> Add Time
                   </button>
                 </div>
               )}
@@ -639,7 +639,7 @@ export default function RecordDetailPage() {
                           }
                           style={{ background: 'none', border: 'none', padding: 0, color: '#1a73c4', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit' }}
                         >
-                          Use the standard mL scale
+                          Use the Standard mL Scale
                         </button>
                       )}
                     </span>
@@ -733,7 +733,7 @@ export default function RecordDetailPage() {
                   Cancel
                 </button>
                 <button type="submit" disabled={submitting} style={primaryBtnStyle}>
-                  {submitting ? 'Saving…' : editingId ? 'Update order' : 'Save order'}
+                  {submitting ? 'Saving…' : editingId ? 'Update Order' : 'Save Order'}
                 </button>
               </div>
             </form>
@@ -746,7 +746,7 @@ export default function RecordDetailPage() {
         <div style={modalBackdropStyle} onClick={() => !submitting && setDcTarget(null)}>
           <div style={{ ...modalStyle, maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
             <div style={modalHeaderStyle}>
-              <h2 style={{ margin: 0, fontSize: 18, color: '#2c3e50' }}>Discontinue medication</h2>
+              <h2 style={{ margin: 0, fontSize: 18, color: '#2c3e50' }}>Discontinue Medication</h2>
               <button onClick={() => setDcTarget(null)} style={closeBtnStyle} aria-label="Close">
                 ✕
               </button>
@@ -792,7 +792,7 @@ export default function RecordDetailPage() {
         <div style={modalBackdropStyle} onClick={() => setViewOrder(null)}>
           <div style={{ ...modalStyle, maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
             <div style={modalHeaderStyle}>
-              <h2 style={{ margin: 0, fontSize: 18, color: '#2c3e50' }}>Medication order</h2>
+              <h2 style={{ margin: 0, fontSize: 18, color: '#2c3e50' }}>Medication Order</h2>
               <button onClick={() => setViewOrder(null)} style={closeBtnStyle} aria-label="Close">
                 ✕
               </button>
@@ -860,7 +860,7 @@ export default function RecordDetailPage() {
                     onClick={() => { const o = viewOrder; setViewOrder(null); openEdit(o); }}
                     style={primaryBtnStyle}
                   >
-                    <Pencil size={14} /> Edit order
+                    <Pencil size={14} /> Edit Order
                   </button>
                 )}
               </div>

@@ -95,15 +95,15 @@ export function visitEmailSubject(event: VisitNotifyEvent, facts: VisitNotifyFac
   const when = friendlyDate(facts.date);
   switch (event) {
     case 'assigned':
-      return `New ${visitTypeLabel(facts.type)} assigned: ${when}`;
+      return `New ${facts.type === 'supervisory' ? 'Supervisory Visit' : 'Shift Visit'} Assigned: ${when}`;
     case 'cancelled':
-      return `Visit cancelled: ${when}`;
+      return `Visit Cancelled: ${when}`;
     case 'restored':
-      return `Visit back on the schedule: ${when}`;
+      return `Visit Back on the Schedule: ${when}`;
     case 'reminder':
-      return `Visit reminder for today: ${when}`;
+      return `Visit Reminder for Today: ${when}`;
     case 'reminder_tomorrow':
-      return `Visit reminder for tomorrow: ${when}`;
+      return `Visit Reminder for Tomorrow: ${when}`;
   }
 }
 

@@ -134,7 +134,7 @@ export default function ContactPage() {
       <section className={styles.hero}>
         <div className="container">
           <div className={styles.heroContent}>
-            <span className={styles.heroLabel}>Get In Touch</span>
+            <span className={styles.heroLabel}>Get in Touch</span>
             <h1>Contact Us</h1>
             <p className={styles.heroSubtitle}>
               We&apos;re here to answer your questions and help you explore the 
@@ -176,7 +176,7 @@ export default function ContactPage() {
           <div className={styles.formGrid}>
             <div className={styles.formInfo}>
               <span className={styles.sectionLabel}>Send Us a Message</span>
-              <h2>We&apos;d Love to Hear From You</h2>
+              <h2>We&apos;d Love to Hear from You</h2>
               <p>
                 Whether you have questions about our services, need guidance on 
                 available programs, or want to discuss care options, our team is 

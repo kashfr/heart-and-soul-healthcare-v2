@@ -732,10 +732,10 @@ function SupervisoryVisitPageInner() {
             {pendingDraft.updatedAt ? `, last saved ${pendingDraft.updatedAt.toLocaleString()}` : ''}.
           </span>
           <button type="button" className={styles.navBtn} onClick={resumeDraft}>
-            Resume draft
+            Resume Draft
           </button>
           <button type="button" className={styles.navBtn} onClick={discardDraft}>
-            Start fresh
+            Start Fresh
           </button>
         </div>
       )}
@@ -1000,7 +1000,7 @@ function SupervisoryVisitPageInner() {
                       setValue('q61_signature', '');
                     }}
                   >
-                    Clear signature
+                    Clear Signature
                   </button>
                 </div>
               </div>
@@ -1027,7 +1027,7 @@ function SupervisoryVisitPageInner() {
                   Discard
                 </button>
                 <button type="button" className={styles.navBtn} onClick={saveAndExit} disabled={submitting || leaving}>
-                  {leaving ? 'Saving…' : 'Save & exit'}
+                  {leaving ? 'Saving…' : 'Save & Exit'}
                 </button>
               </>
             )}
@@ -1047,18 +1047,18 @@ function SupervisoryVisitPageInner() {
       {showDiscard && (
         <div className={`${styles.confirmModal} ${styles.active}`} role="dialog" aria-modal="true" aria-label="Leave this supervisory visit">
           <div className={styles.modalContent}>
-            <h2 style={{ color: '#1f2937', marginTop: 0 }}>Leave this supervisory visit?</h2>
+            <h2 style={{ color: '#1f2937', marginTop: 0 }}>Leave This Supervisory Visit?</h2>
             <p style={{ color: '#555', lineHeight: 1.6 }}>
-              <strong>Save &amp; exit</strong> keeps a draft you can resume from New supervisory visit.{' '}
-              <strong>Discard form</strong> deletes everything entered so far, including the draft. Nothing is
+              <strong>Save &amp; Exit</strong> keeps a draft you can resume from New Supervisory Visit.{' '}
+              <strong>Discard Form</strong> deletes everything entered so far, including the draft. Nothing is
               submitted either way.
             </p>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
               <button type="button" className={styles.navBtn} onClick={() => setShowDiscard(false)} disabled={leaving}>
-                Keep editing
+                Keep Editing
               </button>
               <button type="button" className={styles.navBtn} onClick={saveAndExit} disabled={leaving}>
-                Save &amp; exit
+                Save &amp; Exit
               </button>
               <button
                 type="button"
@@ -1067,7 +1067,7 @@ function SupervisoryVisitPageInner() {
                 onClick={discardAndExit}
                 disabled={leaving}
               >
-                {leaving ? 'Discarding…' : 'Discard form'}
+                {leaving ? 'Discarding…' : 'Discard Form'}
               </button>
             </div>
           </div>
@@ -1077,7 +1077,7 @@ function SupervisoryVisitPageInner() {
       {showEditReason && (
         <div className={`${styles.confirmModal} ${styles.active}`}>
           <div className={styles.modalContent}>
-            <h2 style={{ color: '#7c3a00', marginTop: 0 }}>Why is this form being amended?</h2>
+            <h2 style={{ color: '#7c3a00', marginTop: 0 }}>Why Is This Form Being Amended?</h2>
             <p style={{ color: '#555', lineHeight: 1.6 }}>
               The reason is recorded in the audit history alongside what changed.
             </p>
@@ -1111,7 +1111,7 @@ function SupervisoryVisitPageInner() {
                   formRef.current?.requestSubmit();
                 }}
               >
-                Save amendment
+                Save Amendment
               </button>
               <button
                 type="button"

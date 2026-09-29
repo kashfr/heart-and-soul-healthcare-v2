@@ -74,7 +74,7 @@ describe('shift-change alert copy', () => {
 
   it('email subject leads with the medication change when one is reported and lists all three answers', () => {
     const copy = shiftChangeEmailCopy(ctx());
-    expect(copy.subject).toBe('Med change reported: Ann Torres (09/03/2026)');
+    expect(copy.subject).toBe('Med Change Reported: Ann Torres (09/03/2026)');
     expect(copy.answers).toEqual([
       'Hospital admission: No',
       'Urgent care / ER visit: Yes',
@@ -83,7 +83,7 @@ describe('shift-change alert copy', () => {
     expect(copy.intro).toMatch(/^Bianca Bryant, RN answered Yes to 2 /);
     expect(copy.body).toMatch(/verify the client's MAR/);
     const hosp = shiftChangeEmailCopy(ctx({ report: readShiftChange({ [K.hospitalAdmission]: 'Yes' }) }));
-    expect(hosp.subject).toBe('Hospital / ER visit reported: Ann Torres (09/03/2026)');
+    expect(hosp.subject).toBe('Hospital / ER Visit Reported: Ann Torres (09/03/2026)');
     expect(hosp.intro).toMatch(/answered Yes to a "since your last shift" question on/);
   });
 

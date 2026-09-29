@@ -151,14 +151,14 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
         </div>
         {isStaff && (
           <button type="button" onClick={() => { setAddDate(null); setAddOpen(true); }} style={addBtnStyle}>
-            <CalendarPlus size={15} /> Add visit
+            <CalendarPlus size={15} /> Add Visit
           </button>
         )}
       </div>
 
       {overdue.length > 0 && (
         <>
-          <div style={groupLabelStyle}>Needs attention</div>
+          <div style={groupLabelStyle}>Needs Attention</div>
           <ul style={{ ...listStyle, marginBottom: 18 }}>{overdue.map((v) => renderVisit(v, true))}</ul>
         </>
       )}
@@ -198,7 +198,7 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
       {view === 'list' && resolved.length > 0 && (
         <div style={{ marginTop: 12 }}>
           <button type="button" onClick={() => setShowHistory((s) => !s)} style={historyToggleStyle}>
-            <History size={13} /> {showHistory ? 'Hide' : 'Show'} recent history ({resolved.length})
+            <History size={13} /> {showHistory ? 'Hide' : 'Show'} Recent History ({resolved.length})
           </button>
           {showHistory && (
             <ul style={{ ...listStyle, marginTop: 8 }}>
@@ -342,7 +342,7 @@ function AddVisitModal({
   return (
     <div style={backdropStyle} role="dialog" aria-modal="true" aria-label="Schedule a visit">
       <div style={sheetStyle}>
-        <div style={sheetTitleStyle}>Schedule a visit</div>
+        <div style={sheetTitleStyle}>Schedule a Visit</div>
 
         <div style={grid2Style}>
           <label style={fieldStyle} id="visit-date">
@@ -428,7 +428,7 @@ function AddVisitModal({
             Cancel
           </button>
           <button type="button" style={saveBtnStyle} onClick={save} disabled={busy}>
-            {busy ? 'Saving…' : 'Schedule visit'}
+            {busy ? 'Saving…' : 'Schedule Visit'}
           </button>
         </div>
       </div>

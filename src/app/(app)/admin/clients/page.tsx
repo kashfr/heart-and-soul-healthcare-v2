@@ -563,7 +563,7 @@ function ClientsRosterInner() {
       <div style={wrapStyle}>
         <div style={{ marginBottom: 16 }}>
           <Link href="/admin" style={backLinkStyle}>
-            <ArrowLeft size={14} /> Back to dashboard
+            <ArrowLeft size={14} /> Back to Dashboard
           </Link>
         </div>
 
@@ -578,7 +578,7 @@ function ClientsRosterInner() {
           </div>
           {canManageRoster && (
             <button onClick={handleOpenAdd} style={primaryBtnStyle}>
-              <Plus size={16} /> Add patient
+              <Plus size={16} /> Add Patient
             </button>
           )}
         </header>
@@ -643,7 +643,7 @@ function ClientsRosterInner() {
               onClick={() => setAttentionOnly((v) => !v)}
               style={attentionBtnStyle(attentionOnly)}
             >
-              {attentionOnly ? 'Show all' : 'Show only these'}
+              {attentionOnly ? 'Show All' : 'Show Only These'}
             </button>
           </div>
         )}
@@ -655,7 +655,7 @@ function ClientsRosterInner() {
             {patients.length === 0
               ? isNurse
                 ? 'You have no assigned clients yet. Ask your supervisor to add you to a care team.'
-                : 'No clients yet. Click "Add patient" to create your first record.'
+                : 'No clients yet. Click "Add Patient" to create your first record.'
               : 'No clients match that search.'}
           </div>
         ) : (
@@ -782,7 +782,7 @@ function ClientsRosterInner() {
           <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
             <div style={modalHeaderStyle}>
               <h2 style={{ margin: 0, fontSize: 18, color: '#2c3e50' }}>
-                {editingId ? 'Edit patient' : 'Add patient'}
+                {editingId ? 'Edit Patient' : 'Add Patient'}
               </h2>
               <button onClick={() => setFormOpen(false)} style={closeBtnStyle} aria-label="Close">
                 ✕
@@ -884,7 +884,7 @@ function ClientsRosterInner() {
                   are directory fields (formData); the rest are sensitive
                   clinical PHI written to the care-team-gated sub-record. */}
               <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #f1f3f5' }}>
-                <div style={careTeamHeaderStyle}>MAR &amp; clinical details</div>
+                <div style={careTeamHeaderStyle}>MAR &amp; Clinical Details</div>
                 <div style={careTeamHelpStyle}>
                   The clinical fields below feed this client&apos;s Medication Administration Record and are visible only to staff and the client&apos;s assigned care team.
                 </div>
@@ -1050,7 +1050,7 @@ function ClientsRosterInner() {
                     that range for this client only, so a reading inside it is
                     not flagged and needs no recheck on the progress note. */}
                 <div id="vitalsBaselines" style={{ marginTop: 6, paddingTop: 12, borderTop: '1px solid #f1f3f5' }}>
-                  <div style={careTeamHeaderStyle}>Vitals baselines</div>
+                  <div style={careTeamHeaderStyle}>Vitals Baselines</div>
                   <div style={careTeamHelpStyle}>
                     Optional. Set a vital&apos;s normal range for this client when the care plan or a physician documents one
                     (for example a resting pulse of 100 to 110). That range replaces the age-based screening range for that
@@ -1114,7 +1114,7 @@ function ClientsRosterInner() {
                   Phase 3 of the care-team feature. */}
               {editingId && (
                 <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #f1f3f5' }}>
-                  <div style={careTeamHeaderStyle}>Care team</div>
+                  <div style={careTeamHeaderStyle}>Care Team</div>
                   <div style={careTeamHelpStyle}>
                     Nurses on this list can read every progress note for this patient (regardless of who wrote it). They can&apos;t edit each other&apos;s notes.
                   </div>
@@ -1201,7 +1201,7 @@ function ClientsRosterInner() {
                       style={addNurseBtnStyle}
                       disabled={savingCareTeam}
                     >
-                      <UserPlus size={14} /> Add nurse
+                      <UserPlus size={14} /> Add Nurse
                     </button>
                   )}
                 </div>
@@ -1221,7 +1221,7 @@ function ClientsRosterInner() {
                   Cancel
                 </button>
                 <button type="submit" disabled={submitting} style={primaryBtnStyle}>
-                  {submitting ? 'Saving…' : editingId ? 'Update patient' : 'Save patient'}
+                  {submitting ? 'Saving…' : editingId ? 'Update Patient' : 'Save Patient'}
                 </button>
               </div>
             </form>

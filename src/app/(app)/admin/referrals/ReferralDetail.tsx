@@ -259,7 +259,7 @@ export default function ReferralDetail({
           </table>
 
           {/* Share with a partner agency */}
-          <div style={sectionTitleStyle}>Share with agency</div>
+          <div style={sectionTitleStyle}>Share with Agency</div>
           {referral.providerListSentAt && (
             <div style={providerListNoteStyle}>
               GAPP provider list{' '}
@@ -295,7 +295,7 @@ export default function ReferralDetail({
                 onClick={() => setNoteType('contact')}
                 style={noteType === 'contact' ? { ...composerTab, ...composerTabActive } : composerTab}
               >
-                <PhoneCall size={13} /> Log contact
+                <PhoneCall size={13} /> Log Contact
               </button>
             </div>
             <div id={NOTE_FIELD_ID}>
@@ -349,7 +349,7 @@ export default function ReferralDetail({
         {/* Footer */}
         <div style={footerStyle}>
           <button onClick={() => onPrint(referral)} style={ghostBtnStyle}>
-            <Printer size={15} /> Print call sheet
+            <Printer size={15} /> Print Call Sheet
           </button>
           {canFax && /gapp/i.test(referral.program || '') && referral.stage !== 'closed' && referral.stage !== 'referred_out' && (
             // New GAPP case: ask the child's physician for the Appendix T.
@@ -649,7 +649,7 @@ function SharePanel({
 
       {!showForm ? (
         <button onClick={() => { setShowForm(true); setCreated(null); }} style={shareCtaBtn}>
-          <Plus size={15} /> Share with an agency
+          <Plus size={15} /> Share with an Agency
         </button>
       ) : (
         <div style={shareFormBox}>
@@ -735,7 +735,7 @@ function SharePanel({
               Cancel
             </button>
             <button onClick={submit} disabled={creating} style={shareSubmitBtn}>
-              {creating ? 'Sending…' : sendCount <= 1 ? 'Create & email link' : `Create & email ${sendCount} links`}
+              {creating ? 'Sending…' : sendCount <= 1 ? 'Create & Email Link' : `Create & Email ${sendCount} Links`}
             </button>
           </div>
           {!isTerminal && (

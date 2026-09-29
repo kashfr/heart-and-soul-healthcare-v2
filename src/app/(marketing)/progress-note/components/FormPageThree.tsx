@@ -868,7 +868,7 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
           <span className={styles.toggleArrow}>
             {expandedSections.gi ? '▼' : '▶'}
           </span>
-          <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Gastrointestinal (incl. feeding tube)</div>
+          <div className={styles.subsec} style={{ borderBottom: 'none', marginBottom: 0 }}>Gastrointestinal (Incl. Feeding Tube)</div>
         </div>
         <div style={{ display: expandedSections.gi ? 'block' : 'none' }}>
             {clientHasFeedingTube && (
@@ -1843,7 +1843,7 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
               <label><input type="checkbox" name="q38_diabetesSymptoms" value="None" /> None</label>
             </div>
 
-            <div className={styles.subsec}>Foot / Skin Assessment (Diabetes-specific)</div>
+            <div className={styles.subsec}>Foot / Skin Assessment (Diabetes-Specific)</div>
             <div className={styles.row}>
               <div className={styles.f}>
                 <label className={styles.label}>Foot Inspection Performed?</label>

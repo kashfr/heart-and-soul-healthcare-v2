@@ -1781,7 +1781,7 @@ function ProgressNotePageInner() {
               setCurrentPage(5);
               window.scrollTo(0, 0);
               alert(
-                `${marGateClient} is flagged as requiring a Medication Administration Record (MAR), but no medications are on file.\n\nOn the Medications tab, use "Add, change, or discontinue a medication" to enter their medications from the physician's orders. The note can be submitted once they're added.`
+                `${marGateClient} is flagged as requiring a Medication Administration Record (MAR), but no medications are on file.\n\nOn the Medications tab, use "Add, Change, or Discontinue a Medication" to enter their medications from the physician's orders. The note can be submitted once they're added.`
               );
               return;
             }
@@ -2439,7 +2439,7 @@ function ProgressNotePageInner() {
                 fontWeight: 600,
               }}
             >
-              Resume draft
+              Resume Draft
             </button>
             <button
               type="button"
@@ -2455,7 +2455,7 @@ function ProgressNotePageInner() {
                 fontWeight: 600,
               }}
             >
-              Start fresh
+              Start Fresh
             </button>
           </div>
         </div>
@@ -2551,7 +2551,7 @@ function ProgressNotePageInner() {
             }}
             title="Save this draft and return to the submissions dashboard"
           >
-            Save &amp; exit
+            Save &amp; Exit
           </button>
           <button
             type="button"
@@ -2593,7 +2593,7 @@ function ProgressNotePageInner() {
             fontStyle: 'italic',
           }}
         >
-          Your work saves automatically as you type. Use <strong>Save &amp; exit</strong> to leave and come back later.
+          Your work saves automatically as you type. Use <strong>Save &amp; Exit</strong> to leave and come back later.
         </p>
       )}
 
@@ -2735,7 +2735,7 @@ function ProgressNotePageInner() {
         <div className={`${styles.confirmModal} ${styles.active}`}>
           <div className={styles.modalContent}>
             <h2 style={{ color: '#7c3a00', marginTop: 0 }}>
-              Did you mean a patient already in the roster?
+              Did You Mean a Patient Already in the Roster?
             </h2>
             <p style={{ color: '#555', lineHeight: 1.6, marginBottom: 8 }}>
               You&apos;re about to submit this note for:
@@ -2794,7 +2794,7 @@ function ProgressNotePageInner() {
                 }}
                 className={styles.cancelBtn}
               >
-                Submit as typed
+                Submit as Typed
               </button>
               <button
                 type="button"
@@ -2836,7 +2836,7 @@ function ProgressNotePageInner() {
         <div className={`${styles.confirmModal} ${styles.active}`}>
           <div className={styles.modalContent}>
             <h2 style={{ color: '#1a3a5c', marginTop: 0 }}>
-              What changed, and why?
+              What Changed, and Why?
             </h2>
             <p style={{ color: '#555', lineHeight: 1.6, marginBottom: 12 }}>
               You&apos;re amending a submitted note. Please note the reason for this
@@ -2911,7 +2911,7 @@ function ProgressNotePageInner() {
                 className={styles.confirmBtn}
                 style={!editReasonText.trim() ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
               >
-                Save change
+                Save Change
               </button>
             </div>
           </div>
@@ -2926,7 +2926,7 @@ function ProgressNotePageInner() {
         <div className={`${styles.confirmModal} ${styles.active}`}>
           <div className={styles.modalContent}>
             <h2 style={{ color: '#b3261e', marginTop: 0 }}>
-              Provider notification may be needed
+              Provider Notification May Be Needed
             </h2>
             <p style={{ color: '#555', lineHeight: 1.6, marginBottom: 10 }}>
               One or more vitals you documented are at a level that typically warrants
@@ -2980,7 +2980,7 @@ function ProgressNotePageInner() {
                 className={styles.cancelBtn}
                 onClick={() => { setShowCriticalModal(false); }}
               >
-                Go back
+                Go Back
               </button>
               <button
                 type="button"
@@ -3017,7 +3017,7 @@ function ProgressNotePageInner() {
                   setTimeout(() => formRef.current?.requestSubmit(), 0);
                 }}
               >
-                Confirm & submit
+                Confirm & Submit
               </button>
             </div>
           </div>
@@ -3030,7 +3030,7 @@ function ProgressNotePageInner() {
       {pendingDateConfirm && (
         <div className={`${styles.confirmModal} ${styles.active}`}>
           <div className={styles.modalContent}>
-            <h2 style={{ color: '#7c3a00', marginTop: 0 }}>Double-check the date of service</h2>
+            <h2 style={{ color: '#7c3a00', marginTop: 0 }}>Double-Check the Date of Service</h2>
             <p style={{ color: '#555', lineHeight: 1.6, marginBottom: 8 }}>
               You&apos;ve set the date of service to:
             </p>
@@ -3059,7 +3059,7 @@ function ProgressNotePageInner() {
                   }, 100);
                 }}
               >
-                Let me fix the date
+                Let Me Fix the Date
               </button>
               <button
                 type="button"
@@ -3070,7 +3070,7 @@ function ProgressNotePageInner() {
                   setTimeout(() => formRef.current?.requestSubmit(), 0);
                 }}
               >
-                Yes, the date is correct
+                Yes, the Date Is Correct
               </button>
             </div>
           </div>
@@ -3091,10 +3091,10 @@ function ProgressNotePageInner() {
             <div className={styles.modalContent}>
               <h2 style={{ color: isPending ? '#1a3a5c' : '#7c3a00', marginTop: 0 }}>
                 {isPending
-                  ? 'Waiting for approval'
+                  ? 'Waiting for Approval'
                   : isDenied
-                  ? 'Second note not approved'
-                  : 'You already have a note for this client on this date'}
+                  ? 'Second Note Not Approved'
+                  : 'You Already Have a Note for This Client on This Date'}
               </h2>
 
               <div
@@ -3197,7 +3197,7 @@ function ProgressNotePageInner() {
 
               <div className={styles.modalButtons}>
                 <button type="button" onClick={() => setDupBlock(null)} className={styles.cancelBtn}>
-                  {isPending ? 'Keep working' : 'Go back'}
+                  {isPending ? 'Keep Working' : 'Go Back'}
                 </button>
                 {!isPending && (
                   <button
@@ -3206,7 +3206,7 @@ function ProgressNotePageInner() {
                     disabled={dupFiling}
                     className={styles.confirmBtn}
                   >
-                    {dupFiling ? 'Sending…' : isDenied ? 'Request again' : 'Request approval'}
+                    {dupFiling ? 'Sending…' : isDenied ? 'Request Again' : 'Request Approval'}
                   </button>
                 )}
               </div>
@@ -3236,7 +3236,7 @@ function ProgressNotePageInner() {
               <Check size={36} color="#2e7d32" strokeWidth={3} />
             </div>
             <h2 style={{ color: '#2e7d32', marginTop: 0, marginBottom: 8 }}>
-              Note submitted
+              Note Submitted
             </h2>
             <p style={{ color: '#555', lineHeight: 1.6, margin: 0 }}>
               {submittedInfo.clientName ? `${submittedInfo.clientName}'s ` : ''}progress note was
@@ -3297,7 +3297,7 @@ function ProgressNotePageInner() {
       {showDiscardModal && (
         <div className={`${styles.confirmModal} ${styles.active}`}>
           <div className={styles.modalContent}>
-            <h2 style={{ color: '#c62828', marginTop: 0 }}>Discard this note?</h2>
+            <h2 style={{ color: '#c62828', marginTop: 0 }}>Discard This Note?</h2>
             <p style={{ color: '#555', lineHeight: 1.6, marginBottom: '20px' }}>
               All entered data will be permanently deleted and you&apos;ll return to your submissions list. This cannot be undone.
             </p>

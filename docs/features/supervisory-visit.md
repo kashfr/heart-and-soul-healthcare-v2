@@ -10,7 +10,7 @@ request of the nurse supervisors.
 - Authors: role `supervisor` or `admin` only (`canAuthorSupervisoryVisit`).
   Field staff (role `nurse`) are blocked even with an RN credential.
 - Entry points: dashboard card "Home supervisory visit", and the
-  "New supervisory visit" button on Submissions.
+  "New Supervisory Visit" button on Submissions.
 
 ## Storage
 
@@ -65,7 +65,7 @@ request of the nurse supervisors.
    status `scheduled`, same client, same date
    (`completeScheduledSupervisoryVisit`). Nothing scheduled is not an error.
 
-Steps 2 and 3 are non-fatal: staff can "Sync visit notes" on the Documents tab
+Steps 2 and 3 are non-fatal: staff can "Sync Visit Notes" on the Documents tab
 or mark the visit on the Schedule tab.
 
 ## Elsewhere in the app

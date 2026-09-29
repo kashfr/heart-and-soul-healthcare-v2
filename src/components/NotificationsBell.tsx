@@ -110,12 +110,12 @@ export default function NotificationsBell() {
             <span style={headActionsStyle}>
               {unread > 0 && (
                 <button type="button" style={headBtnStyle} onClick={() => void markAllNotificationsRead(shown)}>
-                  <CheckCheck size={13} /> Mark all read
+                  <CheckCheck size={13} /> Mark All Read
                 </button>
               )}
               {readCount > 0 && (
                 <button type="button" style={headBtnStyle} onClick={dismissRead} title="Remove every read notification from this list">
-                  <X size={13} /> Clear read
+                  <X size={13} /> Clear Read
                 </button>
               )}
             </span>

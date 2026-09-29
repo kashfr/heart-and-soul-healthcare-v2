@@ -120,7 +120,7 @@ export default function CorrectionsBlockGate() {
           <Ban size={22} color="#b3261e" />
           <div>
             <div style={{ fontWeight: 800, fontSize: 18, color: '#1a3a5c' }}>
-              Documentation is paused — corrections required
+              Documentation Is Paused — Corrections Required
             </div>
             <div style={{ fontSize: 13, color: '#5c6b7a', marginTop: 2 }}>
               {blocking.length > 0
@@ -154,7 +154,7 @@ export default function CorrectionsBlockGate() {
                   {/* Full reload (plain <a>) so the gate re-evaluates and steps
                       aside once the edit param matches this note. */}
                   <a href={`/progress-note?edit=${it.noteId}`} style={fixBtn}>
-                    Fix this note <ArrowRight size={15} />
+                    Fix This Note <ArrowRight size={15} />
                   </a>
                 </div>
               </li>

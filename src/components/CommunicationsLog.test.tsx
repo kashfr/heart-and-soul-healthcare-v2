@@ -60,7 +60,7 @@ describe('CommunicationsLog', () => {
     const toast = vi.fn();
     render(<CommunicationsLog patientId="p1" onToast={toast} />);
     fireEvent.click(await screen.findByRole('button', { name: /log a message/i }));
-    fireEvent.click(screen.getByRole('button', { name: 'Log message' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Log Message' }));
     expect(await screen.findByText('Choose how it was sent.')).toBeInTheDocument();
     expect(screen.getByText('Choose a staff member or type who it was with.')).toBeInTheDocument();
     expect(logMock).not.toHaveBeenCalled();
@@ -69,7 +69,7 @@ describe('CommunicationsLog', () => {
     fireEvent.change(sel('channel'), { target: { value: 'email' } });
     fireEvent.change(screen.getByDisplayValue('Not a staff member'), { target: { value: 'ashley' } });
     fireEvent.change(screen.getByPlaceholderText(/paste the email/i), { target: { value: 'Hi Ashley, please complete the visit.' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Log message' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Log Message' }));
     await waitFor(() => expect(logMock).toHaveBeenCalledTimes(1));
     expect(logMock.mock.calls[0]).toEqual([expect.objectContaining({ channel: 'email', staffUid: 'ashley', patientId: 'p1' })]);
     expect(toast).toHaveBeenCalledWith('Message logged.');

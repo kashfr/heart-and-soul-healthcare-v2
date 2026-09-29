@@ -90,7 +90,7 @@ export async function sendStaffInvite({
             ${emailLogoRow()}
             <tr>
               <td style="padding:28px 32px 8px;">
-                <h1 style="margin:0;font-size:20px;color:#1a3a5c;">${isResend ? 'Password reset link' : `Welcome to ${escapeHtml(orgName)}`}</h1>
+                <h1 style="margin:0;font-size:20px;color:#1a3a5c;">${isResend ? 'Password Reset Link' : `Welcome to ${escapeHtml(orgName)}`}</h1>
               </td>
             </tr>
             <tr>

@@ -69,10 +69,10 @@ export async function sendClarificationFlagNotice({
   const firstName = (nurseName || '').trim().split(/\s+/)[0] || 'there';
 
   const subject = isFollowUp
-    ? `Follow-up on your note: ${clientName} (${formatDateUS(dateOfService)})`
+    ? `Follow-Up on Your Note: ${clientName} (${formatDateUS(dateOfService)})`
     : isCorrection
-      ? `Action needed: a note needs correction for ${clientName} (${formatDateUS(dateOfService)})`
-      : `A note needs clarification: ${clientName} (${formatDateUS(dateOfService)})`;
+      ? `Action Needed: A Note Needs Correction for ${clientName} (${formatDateUS(dateOfService)})`
+      : `A Note Needs Clarification: ${clientName} (${formatDateUS(dateOfService)})`;
 
   const lead = isFollowUp
     ? `${escapeHtml(reviewerName)} added a follow-up question on a note that is awaiting your reply:`

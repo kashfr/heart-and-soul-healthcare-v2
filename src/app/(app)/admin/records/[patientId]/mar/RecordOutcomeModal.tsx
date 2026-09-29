@@ -76,7 +76,7 @@ export default function RecordOutcomeModal({ admin, onClose, onSaved }: Props) {
       <div style={sheet}>
         <div style={head}>
           <div style={{ minWidth: 0 }}>
-            <div style={title}>Record result</div>
+            <div style={title}>Record Result</div>
             <div style={meta}>
               {admin.medNameSnapshot}
               {admin.doseSnapshot ? ` ${admin.doseSnapshot}` : ''}
@@ -114,7 +114,7 @@ export default function RecordOutcomeModal({ admin, onClose, onSaved }: Props) {
             Cancel
           </button>
           <button type="button" style={saveBtn} onClick={save} disabled={busy}>
-            {busy ? 'Saving…' : 'Save result'}
+            {busy ? 'Saving…' : 'Save Result'}
           </button>
         </div>
       </div>

@@ -57,10 +57,10 @@ export default function SubmittedPage({ params }: { params: Promise<{ id: string
 
       <h1 style={{ color: '#1a3a5c', fontSize: 24, margin: '0 0 8px' }}>
         {isOversight
-          ? 'Oversight note submitted'
+          ? 'Oversight Note Submitted'
           : isSupervisory
-            ? 'Supervisory visit submitted'
-            : 'Progress note submitted'}
+            ? 'Supervisory Visit Submitted'
+            : 'Progress Note Submitted'}
       </h1>
       <p style={{ color: '#555', lineHeight: 1.6, margin: '0 0 24px' }}>
         {clientName ? <><strong>{clientName}</strong>&apos;s note</> : 'The note'}
@@ -110,7 +110,7 @@ export default function SubmittedPage({ params }: { params: Promise<{ id: string
             fontWeight: 600,
           }}
         >
-          Start another note
+          Start Another Note
         </button>
         <button
           type="button"
@@ -126,7 +126,7 @@ export default function SubmittedPage({ params }: { params: Promise<{ id: string
             fontWeight: 600,
           }}
         >
-          View submissions
+          View Submissions
         </button>
       </div>
     </div>

@@ -113,7 +113,7 @@ function Inner() {
     <main style={pageStyle}>
       <div style={wrapStyle}>
         <div style={brandStyle}>Heart and Soul Healthcare, LLC</div>
-        <h1 style={titleStyle}><FileSignature size={22} style={{ verticalAlign: -4, marginRight: 8 }} />Verbal order authentication</h1>
+        <h1 style={titleStyle}><FileSignature size={22} style={{ verticalAlign: -4, marginRight: 8 }} />Verbal Order Authentication</h1>
 
         {state === 'loading' && <p style={mutedStyle}>Loading the order…</p>}
         {state === 'invalid' && (
@@ -199,7 +199,7 @@ function Inner() {
               <FieldError message={fieldErrors.attest} />
             </div>
             <button type="button" style={{ ...primaryBtnStyle, opacity: submitting ? 0.6 : 1 }} disabled={submitting} onClick={() => void submit()}>
-              {submitting ? 'Recording…' : 'Sign and return'}
+              {submitting ? 'Recording…' : 'Sign and Return'}
             </button>
             <p style={{ ...mutedStyle, marginTop: 12 }}><ShieldCheck size={13} style={{ verticalAlign: -2 }} /> This page is private to this order. Questions: (678) 644-0337.</p>
           </section>

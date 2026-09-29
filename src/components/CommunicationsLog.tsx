@@ -80,7 +80,7 @@ export default function CommunicationsLog({ patientId, readOnly, onToast }: Prop
         </p>
         {!readOnly && data && (
           <button type="button" style={primaryBtn} onClick={() => setLogging(true)}>
-            <MessageSquarePlus size={14} /> Log a message
+            <MessageSquarePlus size={14} /> Log a Message
           </button>
         )}
       </div>
@@ -221,7 +221,7 @@ function LogMessageModal({ data, patientId, onClose, onLogged }: { data: CommsPa
     <div style={overlay} role="dialog" aria-modal="true" aria-label="Log a message">
       <div style={modal}>
         <div style={modalHead}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: NAVY }}>Log a message</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: NAVY }}>Log a Message</div>
           <button type="button" onClick={onClose} style={iconBtn} aria-label="Close"><X size={18} /></button>
         </div>
         <p style={{ ...sub, margin: '0 0 12px' }}>Record an email, text, call or conversation that happened outside the portal. Paste the message itself so the wording is on file.</p>
@@ -231,7 +231,7 @@ function LogMessageModal({ data, patientId, onClose, onLogged }: { data: CommsPa
             <div style={{ display: 'flex', gap: 6 }}>
               {(['outbound', 'inbound'] as const).map((d) => (
                 <button key={d} type="button" aria-pressed={form.direction === d} style={form.direction === d ? chipOn : chipOff} onClick={() => set('direction', d)}>
-                  {d === 'outbound' ? 'We sent it' : 'We received it'}
+                  {d === 'outbound' ? 'We Sent It' : 'We Received It'}
                 </button>
               ))}
             </div>
@@ -282,7 +282,7 @@ function LogMessageModal({ data, patientId, onClose, onLogged }: { data: CommsPa
         {saveError && <div style={{ ...errBox, marginBottom: 10 }}><AlertTriangle size={14} style={{ verticalAlign: -2 }} /> {saveError}</div>}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button type="button" style={ghostBtn} onClick={onClose} disabled={saving}>Cancel</button>
-          <button type="button" style={primaryBtn} onClick={() => void save()} disabled={saving}>{saving ? 'Saving...' : 'Log message'}</button>
+          <button type="button" style={primaryBtn} onClick={() => void save()} disabled={saving}>{saving ? 'Saving...' : 'Log Message'}</button>
         </div>
       </div>
     </div>

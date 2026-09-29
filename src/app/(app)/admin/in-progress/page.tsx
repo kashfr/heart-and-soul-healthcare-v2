@@ -275,7 +275,7 @@ export default function InProgressPage() {
                   {pendingApproval && dupReq && (
                     <div style={approvalPanel}>
                       <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                        <ShieldAlert size={16} /> Duplicate-note approval requested
+                        <ShieldAlert size={16} /> Duplicate-Note Approval Requested
                       </div>
                       <p style={{ margin: '0 0 8px', fontSize: 13, lineHeight: 1.5 }}>
                         {draft.nurseName || 'This nurse'} is asking to submit a <strong>second</strong> note for{' '}
@@ -293,7 +293,7 @@ export default function InProgressPage() {
                           rel="noopener noreferrer"
                           style={{ fontSize: 13, color: '#0e7c4a', fontWeight: 600 }}
                         >
-                          View the existing note ↗
+                          View the Existing Note ↗
                         </a>
                       )}
 
@@ -318,7 +318,7 @@ export default function InProgressPage() {
                               disabled={busyId === id}
                               style={denyConfirmBtn}
                             >
-                              {busyId === id ? 'Denying…' : 'Confirm deny'}
+                              {busyId === id ? 'Denying…' : 'Confirm Deny'}
                             </button>
                             <button
                               type="button"
@@ -338,7 +338,7 @@ export default function InProgressPage() {
                             disabled={busyId === id}
                             style={approveBtn}
                           >
-                            {busyId === id ? 'Approving…' : 'Approve second note'}
+                            {busyId === id ? 'Approving…' : 'Approve Second Note'}
                           </button>
                           <button
                             type="button"
@@ -390,7 +390,7 @@ export default function InProgressPage() {
                   )}
 
                   <div style={{ marginTop: 14 }}>
-                    <div style={snapshotHeader}>Vitals &amp; key details entered</div>
+                    <div style={snapshotHeader}>Vitals &amp; Key Details Entered</div>
                     <div style={snapshotGrid}>
                       <Detail label="Client" value={flat.q3_clientName} />
                       <Detail label="Date of birth" value={formatDateUS(flat.q4_dateofBirth)} />
@@ -440,7 +440,7 @@ export default function InProgressPage() {
                       style={fullToggleBtn}
                     >
                       {showFull === id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                      {showFull === id ? 'Hide full note' : 'Show full note (everything entered)'}
+                      {showFull === id ? 'Hide Full Note' : 'Show Full Note (Everything Entered)'}
                     </button>
                     {showFull === id && (() => {
                       const entries = Object.entries(flat)

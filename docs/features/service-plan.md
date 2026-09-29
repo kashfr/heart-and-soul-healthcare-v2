@@ -7,7 +7,7 @@ supervisor. Built 09/28/2026 at the owner's request.
 
 ## Who and where
 
-- Tab "Service plan" on the client dashboard (`?tab=serviceplan`), visible
+- Tab "Service Plan" on the client dashboard (`?tab=serviceplan`), visible
   to everyone who can open the client page. It shows the current (newest)
   plan in full, chips for every earlier plan, "View PDF", and the author
   button.
@@ -96,7 +96,7 @@ change does not write a new plan and does not re-file the full plan PDF.
 
 ## Elsewhere in the app
 
-- Survey readiness: "Service plan" card and an Overview alert from the
+- Survey Readiness: "Service Plan" card and an Overview alert from the
   newest "Service Plan" document (a signed plan or a review), 62 days.
 - Documents tab: the filed PDFs show a "From service plan" or "From plan
   review" chip. Like the

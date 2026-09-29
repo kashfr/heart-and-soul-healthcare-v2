@@ -287,7 +287,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
     <div style={backdrop} onClick={() => !submitting && onClose()}>
       <div style={modal} onClick={(e) => e.stopPropagation()}>
         <div style={head}>
-          <h2 style={{ margin: 0, fontSize: 17, color: '#2c3e50' }}>Manage medications</h2>
+          <h2 style={{ margin: 0, fontSize: 17, color: '#2c3e50' }}>Manage Medications</h2>
           <button type="button" onClick={onClose} style={closeBtn} aria-label="Close">✕</button>
         </div>
 
@@ -414,7 +414,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
                         </div>
                       ))}
                     </div>
-                    <button type="button" onClick={addTime} style={addTimeBtn}><Plus size={13} /> Add time</button>
+                    <button type="button" onClick={addTime} style={addTimeBtn}><Plus size={13} /> Add Time</button>
                     <FieldError message={errors.times} />
                   </div>
                 )}
@@ -476,7 +476,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
                           onClick={() => { setValueOptions(DEFAULT_ML_VALUE_OPTIONS.join(', ')); clearErr('valueOptions'); }}
                           style={{ background: 'none', border: 'none', padding: 0, color: '#1a73c4', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit' }}
                         >
-                          Use the standard mL scale
+                          Use the Standard mL Scale
                         </button>
                       )}
                     </p>
@@ -562,7 +562,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
             <div style={{ display: 'flex', gap: 10, marginTop: 8, justifyContent: 'flex-end' }}>
               <button type="button" onClick={onClose} disabled={submitting} style={secondaryBtn}>Cancel</button>
               <button type="button" onClick={handleSubmit} disabled={submitting} style={primaryBtn}>
-                {submitting ? 'Saving…' : mode === 'discontinue' ? 'Discontinue' : mode === 'change' ? 'Save change' : 'Add medication'}
+                {submitting ? 'Saving…' : mode === 'discontinue' ? 'Discontinue' : mode === 'change' ? 'Save Change' : 'Add Medication'}
               </button>
             </div>
           </div>

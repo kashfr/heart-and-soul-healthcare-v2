@@ -223,7 +223,7 @@ export default function MonthlyTarPage() {
           href={cameFromPicker ? '/admin/clients' : `/admin/records/${patientId}`}
           style={backLinkStyle}
         >
-          <ArrowLeft size={14} /> {cameFromPicker ? 'Back to Clients' : 'Back to client record'}
+          <ArrowLeft size={14} /> {cameFromPicker ? 'Back to Clients' : 'Back to Client Record'}
         </Link>
 
         <div style={headerCardStyle}>
@@ -268,7 +268,7 @@ export default function MonthlyTarPage() {
           <div style={{ textAlign: 'center', minWidth: 180 }}>
             <div style={{ fontSize: 17, fontWeight: 700, color: '#2c3e50' }}>{monthLabel(month)}</div>
             {!isCurrentMonth && (
-              <button type="button" style={jumpBtnStyle} onClick={() => setMonth(currentMonth())}>Jump to this month</button>
+              <button type="button" style={jumpBtnStyle} onClick={() => setMonth(currentMonth())}>Jump to This Month</button>
             )}
           </div>
           <button type="button" style={navBtnStyle} onClick={() => setMonth(shiftMonth(month, 1))} aria-label="Next month">

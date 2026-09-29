@@ -377,7 +377,7 @@ function ConsentForm() {
                 <div className={styles.signatureBar}>
                   <span>Use your finger, stylus, or mouse.</span>
                   <button type="button" className={styles.linkButton} onClick={() => sigRef.current?.clear()}>
-                    Clear signature
+                    Clear Signature
                   </button>
                 </div>
                 {err('signature') && <span className={styles.errorText}>{err('signature')}</span>}

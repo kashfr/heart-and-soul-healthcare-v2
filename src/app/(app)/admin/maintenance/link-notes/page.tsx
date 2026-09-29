@@ -334,7 +334,7 @@ export default function LinkNotesPage() {
         <p style={subStyle}>
           This page is admin-only.{' '}
           <Link href="/admin" style={{ color: '#0e7c4a' }}>
-            Back to dashboard
+            Back to Dashboard
           </Link>
         </p>
       </div>
@@ -345,7 +345,7 @@ export default function LinkNotesPage() {
     <div style={wrapStyle}>
       <div style={headerStyle}>
         <div>
-          <h1 style={titleStyle}>Link unmatched progress notes</h1>
+          <h1 style={titleStyle}>Link Unmatched Progress Notes</h1>
           <p style={subStyle}>
             Notes whose typed patient name or DOB doesn&apos;t exactly match the roster.
             <strong> Linking a note overwrites its client name and DOB with the roster&apos;s canonical
@@ -360,7 +360,7 @@ export default function LinkNotesPage() {
           disabled={runningBackfill}
           style={{ ...primaryBtn, opacity: runningBackfill ? 0.6 : 1, cursor: runningBackfill ? 'wait' : 'pointer' }}
         >
-          {runningBackfill ? 'Running…' : 'Run backfill'}
+          {runningBackfill ? 'Running…' : 'Run Backfill'}
         </button>
       </div>
 
@@ -380,7 +380,7 @@ export default function LinkNotesPage() {
       <div style={{ ...cardStyle, marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 240 }}>
-            <strong style={{ color: '#1a3a5c', fontSize: 15 }}>Fix client ages</strong>
+            <strong style={{ color: '#1a3a5c', fontSize: 15 }}>Fix Client Ages</strong>
             <p style={{ ...subStyle, marginTop: 4 }}>
               Recomputes each note&apos;s stored age from its date of birth as-of the date of service.
               Fixes notes whose age went stale after a DOB correction. <strong>Preview</strong> shows
@@ -403,7 +403,7 @@ export default function LinkNotesPage() {
               title={!ageResult ? 'Run Preview first' : ageResult.changeCount === 0 ? 'Nothing to fix' : undefined}
               style={{ ...primaryBtn, opacity: ageBusy !== null || !ageResult || ageResult.changeCount === 0 ? 0.5 : 1 }}
             >
-              {ageBusy === 'apply' ? 'Applying…' : 'Apply fixes'}
+              {ageBusy === 'apply' ? 'Applying…' : 'Apply Fixes'}
             </button>
           </div>
         </div>
@@ -425,7 +425,7 @@ export default function LinkNotesPage() {
                 <> · skipped {ageResult.skippedNoDob} without DOB, {ageResult.skippedNoService} without date of service, {ageResult.skippedBadDate} with an unparseable date</>
               )}
               .
-              {!ageResult.applied && ageResult.changeCount > 0 && <> Click <strong>Apply fixes</strong> to write them.</>}
+              {!ageResult.applied && ageResult.changeCount > 0 && <> Click <strong>Apply Fixes</strong> to write them.</>}
             </div>
             {ageResult.changeCount > 0 && (
               <div style={{ border: '1px solid #eef2f7', borderRadius: 6, overflow: 'hidden' }}>
@@ -459,7 +459,7 @@ export default function LinkNotesPage() {
       <div style={{ ...cardStyle, marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 240 }}>
-            <strong style={{ color: '#1a3a5c', fontSize: 15 }}>Find duplicate notes</strong>
+            <strong style={{ color: '#1a3a5c', fontSize: 15 }}>Find Duplicate Notes</strong>
             <p style={{ ...subStyle, marginTop: 4 }}>
               Scans existing notes for more than one active note by the same nurse for the same client
               on the same date of service. <strong>Read-only</strong> — open a note to archive the extra
@@ -472,7 +472,7 @@ export default function LinkNotesPage() {
             disabled={dupBusy}
             style={{ ...primaryBtn, opacity: dupBusy ? 0.6 : 1, cursor: dupBusy ? 'wait' : 'pointer' }}
           >
-            {dupBusy ? 'Scanning…' : 'Scan for duplicates'}
+            {dupBusy ? 'Scanning…' : 'Scan for Duplicates'}
           </button>
         </div>
 
@@ -503,7 +503,7 @@ export default function LinkNotesPage() {
                     style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'baseline', padding: '8px 12px', background: ni % 2 ? '#fafbfc' : 'white', fontSize: 13 }}
                   >
                     <a href={`/admin/submissions/${n.id}`} target="_blank" rel="noopener noreferrer" style={{ color: '#0e7c4a', fontWeight: 600 }}>
-                      Open note ↗
+                      Open Note ↗
                     </a>
                     <span style={{ color: '#5c6b7a' }}>
                       {n.submittedAt ? `Submitted ${new Date(n.submittedAt).toLocaleString()}` : 'Submit time unknown'}
@@ -538,7 +538,7 @@ export default function LinkNotesPage() {
       ) : (queue?.length ?? 0) === 0 ? (
         <div style={{ ...cardStyle, textAlign: 'center', color: '#5c6b7a' }}>
           <p style={{ margin: 0, fontSize: 14 }}>
-            Nothing to review. Click <strong>Run backfill</strong> to scan for new
+            Nothing to review. Click <strong>Run Backfill</strong> to scan for new
             unlinked notes, or all notes are either linked or already reviewed.
           </p>
         </div>
@@ -558,7 +558,7 @@ export default function LinkNotesPage() {
                 rel="noopener noreferrer"
                 style={{ color: '#0e7c4a', fontSize: 13, marginLeft: 'auto' }}
               >
-                Open note ↗
+                Open Note ↗
               </a>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
@@ -599,7 +599,7 @@ export default function LinkNotesPage() {
                   disabled={processingIds.has(item.noteId)}
                   style={{ ...skipBtnStyle, opacity: processingIds.has(item.noteId) ? 0.6 : 1 }}
                 >
-                  Skip — none of the above
+                  Skip — None of the Above
                 </button>
               </div>
             </div>

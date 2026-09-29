@@ -402,16 +402,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   emails: {
     subjects: {
-      staffInviteWelcome: 'Welcome to Heart and Soul Healthcare — set up your account',
-      staffInviteResend: 'Your Heart and Soul Healthcare password reset link',
-      emailChanged: 'Your Heart and Soul Healthcare account email was changed',
+      staffInviteWelcome: 'Welcome to Heart and Soul Healthcare: Set Up Your Account',
+      staffInviteResend: 'Your Heart and Soul Healthcare Password Reset Link',
+      emailChanged: 'Your Heart and Soul Healthcare Account Email Was Changed',
     },
     // The copy that shipped in PR #108, moved here verbatim so switching to
     // settings-driven copy changes nothing about what families receive. NOTE:
     // no em or en dashes in any of this — it goes out under the org's name, and
     // providerListContent.test.ts fails the build if one appears.
     providerList: {
-      subject: 'A list of GAPP providers for your family',
+      subject: 'A List of GAPP Providers for Your Family',
       phone: '(470) 635-5774',
       intro:
         'Thank you for reaching out to Heart & Soul Healthcare about {{childName}}. After reviewing your referral, we are not able to take it on at this time.',

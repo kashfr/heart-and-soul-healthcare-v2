@@ -70,11 +70,11 @@ export default function ServicePlanSection({ patientId, canAuthor }: Props) {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {current && (
               <Link href={`${base}/review`} style={primaryLink}>
-                <CheckCircle2 size={14} /> Review, no changes
+                <CheckCircle2 size={14} /> Review, No Changes
               </Link>
             )}
             <Link href={`${base}/new`} style={current ? secondaryLink : primaryLink}>
-              <PenLine size={14} /> {current ? 'Revise service plan' : 'Write service plan'}
+              <PenLine size={14} /> {current ? 'Revise Service Plan' : 'Write Service Plan'}
             </Link>
           </div>
         )}
@@ -109,14 +109,14 @@ export default function ServicePlanSection({ patientId, canAuthor }: Props) {
                   <FileText size={13} /> View PDF
                 </button>
                 {canAuthor && shown.id !== current?.id && (
-                  <Link href={`${base}/new?from=${encodeURIComponent(shown.id)}`} style={ghostLink}><PenLine size={13} /> Revise from this plan</Link>
+                  <Link href={`${base}/new?from=${encodeURIComponent(shown.id)}`} style={ghostLink}><PenLine size={13} /> Revise from This Plan</Link>
                 )}
               </div>
             </div>
 
             {shown.reviews.length > 0 && (
               <div style={reviewBox}>
-                <div style={reviewTitle}>Reviews since signing</div>
+                <div style={reviewTitle}>Reviews Since Signing</div>
                 <ul style={reviewList}>
                   {[...shown.reviews].reverse().map((r) => (
                     <li key={r.id} style={reviewItem}>

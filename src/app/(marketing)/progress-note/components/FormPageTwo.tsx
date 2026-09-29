@@ -131,15 +131,15 @@ export default function FormPageTwo({ formRef, register, watch, setValue, contro
             <strong>Please update the MAR.</strong>{' '}
             {isLpnRn ? (
               <>
-                If you have the written order or discharge papers, record the change under &ldquo;Add, change,
-                or discontinue a medication&rdquo; on the Medications page so it is on the MAR when you submit.
+                If you have the written order or discharge papers, record the change under &ldquo;Add, Change,
+                or Discontinue a Medication&rdquo; on the Medications page so it is on the MAR when you submit.
                 If a medication was stopped or held and you do not have the order, do not give it, mark its
                 doses Held with the reason, and do not discontinue it on the MAR until the order is confirmed.
                 {onGoToMedChanges && (
                   <>
                     <br />
                     <button type="button" onClick={onGoToMedChanges} style={marCalloutBtnStyle}>
-                      Go to medication changes
+                      Go to Medication Changes
                     </button>
                   </>
                 )}

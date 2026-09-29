@@ -111,7 +111,7 @@ export default function HandoffInbox({
                 </div>
                 {h.source === 'note' && h.sourceNoteId && (
                   <Link href={`/admin/submissions/${h.sourceNoteId}`} style={noteLinkStyle} title="Open the progress note this came from">
-                    <ClipboardList size={12} /> From note
+                    <ClipboardList size={12} /> From Note
                   </Link>
                 )}
               </div>
@@ -142,7 +142,7 @@ export default function HandoffInbox({
 export function HandoffInboxTitle({ count }: { count: number }) {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-      <ArrowLeftRight size={16} /> Handoffs waiting for you
+      <ArrowLeftRight size={16} /> Handoffs Waiting for You
       {count > 0 && <span style={countChipStyle}>{count}</span>}
     </span>
   );

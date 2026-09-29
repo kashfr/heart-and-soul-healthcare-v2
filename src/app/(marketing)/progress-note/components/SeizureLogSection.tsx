@@ -272,7 +272,7 @@ export default function SeizureLogSection({ register, watch, setValue, required,
 
           {count < MAX_SEIZURES_PER_NOTE && (
             <button type="button" onClick={addSeizure} style={addBtn}>
-              + Add {entries.length === 0 ? 'a seizure' : 'another seizure'}
+              + Add {entries.length === 0 ? 'a Seizure' : 'Another Seizure'}
             </button>
           )}
         </>
