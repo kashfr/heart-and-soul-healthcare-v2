@@ -29,10 +29,10 @@ export default function Footer() {
             <div className={styles.footerSection}>
               <div className={styles.footerLogo}>
                 <Image 
-                  src="/images/logo.webp" 
+                  src="/images/logo-2026.webp" 
                   alt="Heart & Soul Healthcare Logo" 
-                  width={130} 
-                  height={67} 
+                  width={900} 
+                  height={238} 
                   style={{ width: '100%', height: 'auto', objectFit: 'contain' }} 
                   unoptimized 
                 />

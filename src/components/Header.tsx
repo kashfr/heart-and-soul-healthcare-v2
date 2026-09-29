@@ -53,10 +53,10 @@ export default function Header() {
           <div className={styles.navContent}>
             <Link href="/" className={styles.logo}>
               <Image 
-                src="/images/logo.webp" 
+                src="/images/logo-2026.webp" 
                 alt="Heart & Soul Healthcare Logo" 
-                width={130} 
-                height={67} 
+                width={900} 
+                height={238} 
                 style={{ width: '100%', height: 'auto', objectFit: 'contain' }} 
                 priority 
                 unoptimized 

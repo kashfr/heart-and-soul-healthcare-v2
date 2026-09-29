@@ -23,7 +23,7 @@
   align-items: center;
   gap: var(--space-3);
   margin-bottom: var(--space-4);
-  max-width: 130px;
+  max-width: 200px;
   transition: max-width var(--transition-fast);
 }
 
@@ -180,6 +180,6 @@
   }
 
   .footerLogo {
-    max-width: 100px;
+    max-width: 160px;
   }
 }
