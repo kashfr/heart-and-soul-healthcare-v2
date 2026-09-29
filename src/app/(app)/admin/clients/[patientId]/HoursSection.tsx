@@ -317,7 +317,7 @@ export default function HoursSection({ patientId, patientName, program, notes, u
             <input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} style={input} aria-label="Month" />
             <button type="button" onClick={() => shiftMonth(1)} style={iconBtn} aria-label="Next month"><ChevronRight size={15} /></button>
             {!isCurrent && (
-              <button type="button" onClick={() => setMonth(todayISO.slice(0, 7))} style={smallBtn}>This month</button>
+              <button type="button" onClick={() => setMonth(todayISO.slice(0, 7))} style={smallBtn}>This Month</button>
             )}
           </div>
         </div>
@@ -353,7 +353,7 @@ export default function HoursSection({ patientId, patientName, program, notes, u
             <strong>Shift:</strong> {fmtH(shiftUsage.used)} h = {fmtUnits(monthUnits('shift'))} units
             {shiftDollars != null && monthRateLabel('shift')
               ? <> = <strong>{fmtDollars(shiftDollars)}</strong> at {monthRateLabel('shift')}</>
-              : <span style={{ color: '#b45309' }}> · no billing rate for this program / nurse type (Settings → Billing rates)</span>}
+              : <span style={{ color: '#b45309' }}> · no billing rate for this program / nurse type (Settings → Billing Rates)</span>}
           </span>
           {hasOversight && (
             <span style={{ color: '#1d4ed8' }}>
@@ -368,7 +368,7 @@ export default function HoursSection({ patientId, patientName, program, notes, u
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
           <div style={{ ...muted, flex: 1, minWidth: 240 }}>{answerText}</div>
           <button type="button" onClick={copyAnswer} style={smallBtn} title="Copy a one-line answer for the parent">
-            <Copy size={13} /> {copied ? 'Copied' : 'Copy answer'}
+            <Copy size={13} /> {copied ? 'Copied' : 'Copy Answer'}
           </button>
           <Link
             href={`/admin/submissions?view=all&range=m&m=${month}&client=${encodeURIComponent(patientName)}`}
@@ -383,7 +383,7 @@ export default function HoursSection({ patientId, patientName, program, notes, u
       {/* Day by day (billing worksheet) */}
       <section style={card}>
         <div style={head}>
-          <div style={title}>Day by day, {monthLabel(month)}</div>
+          <div style={title}>Day by Day, {monthLabel(month)}</div>
           <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
             <span style={segmented} role="group" aria-label="Show as">
               {(['hours', 'units'] as QtyView[]).map((v) => (
@@ -405,7 +405,7 @@ export default function HoursSection({ patientId, patientName, program, notes, u
               title="Show dollars alongside: units × the rate on this client's line"
               aria-pressed={showDollars}
             >
-              $ {showDollars ? 'on' : 'off'}
+              $ {showDollars ? 'On' : 'Off'}
             </button>
           </span>
         </div>
@@ -418,7 +418,7 @@ export default function HoursSection({ patientId, patientName, program, notes, u
               <tr>
                 <th style={th}>Date</th>
                 <th style={th}>Nurse</th>
-                <th style={th}>Shift / visit</th>
+                <th style={th}>Shift / Visit</th>
                 <th style={{ ...th, textAlign: 'right' }}>{view === 'hours' ? 'Hours' : 'Units'}</th>
                 {showDollars && <th style={{ ...th, textAlign: 'right', color: '#166534' }}>Amount</th>}
                 <th style={{ ...th, textAlign: 'right' }} title="Running total of shift hours">Running</th>
@@ -522,18 +522,18 @@ export default function HoursSection({ patientId, patientName, program, notes, u
 
       {/* Month by month across the authorization window(s), per bucket */}
       {shiftMonths.length > 0 && (
-        <MonthTable title="Month by month: shift hours" bucket="shift" months={shiftMonths} list={list} dayHours={dayHours.shift} month={month} todayISO={todayISO} onPick={setMonth} />
+        <MonthTable title="Month by Month: Shift Hours" bucket="shift" months={shiftMonths} list={list} dayHours={dayHours.shift} month={month} todayISO={todayISO} onPick={setMonth} />
       )}
       {rnMonths.length > 0 && (
-        <MonthTable title="Month by month: RN oversight" bucket="oversight" months={rnMonths} list={list} dayHours={dayHours.oversight} month={month} todayISO={todayISO} onPick={setMonth} />
+        <MonthTable title="Month by Month: RN Oversight" bucket="oversight" months={rnMonths} list={list} dayHours={dayHours.oversight} month={month} todayISO={todayISO} onPick={setMonth} />
       )}
 
       {/* Authorizations on file */}
       <section style={card}>
         <div style={head}>
-          <div style={title}><FileText size={16} /> Hours authorizations</div>
+          <div style={title}><FileText size={16} /> Hours Authorizations</div>
           {editing === null && (
-            <button type="button" onClick={() => setEditing('new')} style={primaryBtn}><Plus size={14} /> Add authorization</button>
+            <button type="button" onClick={() => setEditing('new')} style={primaryBtn}><Plus size={14} /> Add Authorization</button>
           )}
         </div>
         <div style={{ ...muted, marginBottom: 12 }}>
@@ -854,7 +854,7 @@ function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: Form
 
   return (
     <div style={formCard}>
-      <div style={{ fontWeight: 700, color: NAVY, marginBottom: 10 }}>{existing ? 'Edit authorization' : 'New authorization'}</div>
+      <div style={{ fontWeight: 700, color: NAVY, marginBottom: 10 }}>{existing ? 'Edit Authorization' : 'New Authorization'}</div>
       <div style={formGrid}>
         <label style={field}>
           <span style={label}>Covers</span>
@@ -944,7 +944,7 @@ function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: Form
 
       {err && <div style={{ ...errBox, marginTop: 10 }}>{err}</div>}
       <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-        <button type="button" onClick={submit} disabled={saving} style={primaryBtn}>{saving ? 'Saving…' : existing ? 'Save changes' : 'Add authorization'}</button>
+        <button type="button" onClick={submit} disabled={saving} style={primaryBtn}>{saving ? 'Saving…' : existing ? 'Save Changes' : 'Add Authorization'}</button>
         <button type="button" onClick={onCancel} disabled={saving} style={smallBtn}>Cancel</button>
       </div>
     </div>

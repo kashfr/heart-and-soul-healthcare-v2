@@ -102,14 +102,14 @@ function Inner() {
       <div style={wrapStyle}>
         <header style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
           <div>
-            <p style={kickerStyle}>Quality and safety</p>
-            <h1 style={titleStyle}>Medication errors</h1>
+            <p style={kickerStyle}>Quality and Safety</p>
+            <h1 style={titleStyle}>Medication Errors</h1>
             <p style={subtitleStyle}>
               {isReviewer ? 'Every reported medication error, its nursing review, and whether a DBHDD incident report is owed.' : 'The medication error reports you have filed and where their review stands.'}
             </p>
           </div>
           {!isViewingAs && (isStaff || !!credential) && (
-            <Link href="/admin/med-errors/new" style={primaryLinkStyle}><Plus size={15} /> Report an error</Link>
+            <Link href="/admin/med-errors/new" style={primaryLinkStyle}><Plus size={15} /> Report an Error</Link>
           )}
         </header>
 
@@ -118,12 +118,12 @@ function Inner() {
         <section style={cardStyle}>
           <div style={{ ...sectionTitleStyle, justifyContent: 'space-between', flexWrap: 'wrap' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              <ShieldAlert size={16} /> {isStaff ? 'Reports' : 'My reports'}
+              <ShieldAlert size={16} /> {isStaff ? 'Reports' : 'My Reports'}
               {openCount > 0 && <span style={countChipStyle}>{openCount} awaiting review</span>}
               {isStaff && incidentOpen > 0 && <span style={countChipDangerStyle}>{incidentOpen} incident report{incidentOpen === 1 ? '' : 's'} owed</span>}
             </span>
             <span style={{ display: 'inline-flex', gap: 6 }}>
-              <button type="button" style={filter === 'open' ? filterActiveStyle : filterBtnStyle} onClick={() => setFilter('open')}>Awaiting review</button>
+              <button type="button" style={filter === 'open' ? filterActiveStyle : filterBtnStyle} onClick={() => setFilter('open')}>Awaiting Review</button>
               <button type="button" style={filter === 'all' ? filterActiveStyle : filterBtnStyle} onClick={() => setFilter('all')}>All</button>
               <button type="button" style={filterBtnStyle} onClick={reload} title="Refresh"><RefreshCw size={13} /></button>
             </span>
@@ -241,7 +241,7 @@ function ReportDetail({ report: r, canReview, canMarkFiled, onClose, onReviewed,
     <div style={backdropStyle} onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
       <div style={sheetStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
-          <div style={sheetTitleStyle}>Medication error report</div>
+          <div style={sheetTitleStyle}>Medication Error Report</div>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
             <button type="button" style={smallBtnStyle} onClick={onDownload} title="Opens the report as a PDF for the binder or an incident packet"><Download size={13} /> Download PDF</button>
             <button type="button" onClick={onClose} style={closeBtnStyle} aria-label="Close" disabled={busy}><X size={16} /></button>
@@ -285,13 +285,13 @@ function ReportDetail({ report: r, canReview, canMarkFiled, onClose, onReviewed,
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap', marginTop: 8 }}>
                 {err && <div style={{ ...errBoxStyle, width: '100%' }}>{err}</div>}
                 <label style={{ ...fieldStyle, marginBottom: 0 }}><span style={labelStyle}>Incident report filed on</span><input type="date" value={filedLater} onChange={(e) => setFiledLater(e.target.value)} style={{ ...inputStyle, maxWidth: 200 }} disabled={filingBusy} /></label>
-                <button type="button" style={{ ...saveBtnStyle, opacity: !filedLater || filingBusy ? 0.55 : 1 }} disabled={!filedLater || filingBusy} onClick={() => void markFiled()}>{filingBusy ? 'Saving…' : 'Record filing date'}</button>
+                <button type="button" style={{ ...saveBtnStyle, opacity: !filedLater || filingBusy ? 0.55 : 1 }} disabled={!filedLater || filingBusy} onClick={() => void markFiled()}>{filingBusy ? 'Saving…' : 'Record Filing Date'}</button>
               </div>
             )}
           </div>
         ) : canReview ? (
           <div style={reviewBoxStyle}>
-            <div style={{ fontWeight: 700, color: NAVY, marginBottom: 8 }}>Nursing review</div>
+            <div style={{ fontWeight: 700, color: NAVY, marginBottom: 8 }}>Nursing Review</div>
             {err && <div style={errBoxStyle}>{err}</div>}
             <label id="me-review-findings" style={fieldStyle}><span style={labelStyle}>Findings *</span><textarea value={findings} onChange={(e) => { setFindings(e.target.value); if (fieldErrs.findings) setFieldErrs((f) => ({ ...f, findings: undefined })); }} rows={3} style={{ ...textareaStyle, ...(fieldErrs.findings ? FIELD_ERROR_STYLE : null) }} placeholder="What the review established: what was ordered, what happened, and why. Example: 'Mother gave a second 500 mg dose from the bottle at 8:15 AM, not realizing the organizer dose had been given at 8:00.'" disabled={busy} />{fieldErrs.findings && <span style={fieldErrTextStyle}>{fieldErrs.findings}</span>}</label>
             <label style={fieldStyle}><span style={labelStyle}>Root cause</span><textarea value={rootCause} onChange={(e) => setRootCause(e.target.value)} rows={2} style={textareaStyle} disabled={busy} /></label>
@@ -302,7 +302,7 @@ function ReportDetail({ report: r, canReview, canMarkFiled, onClose, onReviewed,
             )}
             <div style={actionsStyle}>
               <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={busy}>Close</button>
-              <button type="button" style={{ ...saveBtnStyle, opacity: busy ? 0.6 : 1 }} onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : 'Record review'}</button>
+              <button type="button" style={{ ...saveBtnStyle, opacity: busy ? 0.6 : 1 }} onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : 'Record Review'}</button>
             </div>
           </div>
         ) : (

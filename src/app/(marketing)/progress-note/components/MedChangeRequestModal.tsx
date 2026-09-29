@@ -269,7 +269,7 @@ export default function MedChangeRequestModal({
         }}
       >
         <div style={head}>
-          <h2 style={{ margin: 0, fontSize: 17, color: '#2c3e50' }}>Medication change</h2>
+          <h2 style={{ margin: 0, fontSize: 17, color: '#2c3e50' }}>Medication Change</h2>
           <button type="button" onClick={onClose} style={closeBtn} aria-label="Close">✕</button>
         </div>
 
@@ -374,7 +374,7 @@ export default function MedChangeRequestModal({
                         </div>
                       ))}
                     </div>
-                    <button type="button" onClick={addTime} style={addTimeBtn}><Plus size={13} /> Add time</button>
+                    <button type="button" onClick={addTime} style={addTimeBtn}><Plus size={13} /> Add Time</button>
                     <FieldError message={errors.times} />
                   </div>
                 )}
@@ -485,7 +485,7 @@ export default function MedChangeRequestModal({
             <div style={{ display: 'flex', gap: 10, marginTop: 8, justifyContent: 'flex-end' }}>
               <button type="button" onClick={onClose} disabled={submitting} style={secondaryBtn}>Cancel</button>
               <button type="button" onClick={handleSubmit} disabled={submitting} style={primaryBtn}>
-                {submitting ? 'Saving…' : 'Add to note'}
+                {submitting ? 'Saving…' : 'Add to Note'}
               </button>
             </div>
           </div>

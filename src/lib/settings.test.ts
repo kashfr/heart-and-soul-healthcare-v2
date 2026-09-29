@@ -230,7 +230,7 @@ describe('mergeWithDefaults — new settings fields', () => {
   it('fills in default email subjects when absent', () => {
     const merged = mergeWithDefaults({});
     expect(merged.emails.subjects.staffInviteWelcome).toMatch(/Welcome/);
-    expect(merged.emails.subjects.emailChanged).toMatch(/email was changed/);
+    expect(merged.emails.subjects.emailChanged).toMatch(/Email Was Changed/);
   });
 });
 

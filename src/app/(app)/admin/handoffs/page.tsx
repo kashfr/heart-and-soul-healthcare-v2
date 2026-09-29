@@ -42,7 +42,7 @@ function HandoffsPageInner() {
       <div style={wrapStyle}>
         <header style={headerStyle}>
           <div>
-            <p style={kickerStyle}>Cross communication</p>
+            <p style={kickerStyle}>Cross Communication</p>
             <h1 style={titleStyle}>Handoffs</h1>
             <p style={subtitleStyle}>
               {isNurse
@@ -180,11 +180,11 @@ function StaffView({ highlightId }: { highlightId: string | null }) {
     <section style={cardStyle}>
       <div style={{ ...sectionTitleStyle, justifyContent: 'space-between', flexWrap: 'wrap' }}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-          <ArrowLeftRight size={16} /> Recent handoffs
+          <ArrowLeftRight size={16} /> Recent Handoffs
           {openCount > 0 && <span style={countChipStyle} title="Posts still waiting on at least one nurse">{openCount} open</span>}
         </span>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <button type="button" style={filter === 'open' ? filterActiveStyle : filterBtnStyle} onClick={() => setFilter('open')}>Awaiting acknowledgment</button>
+          <button type="button" style={filter === 'open' ? filterActiveStyle : filterBtnStyle} onClick={() => setFilter('open')}>Awaiting Acknowledgment</button>
           <button type="button" style={filter === 'all' ? filterActiveStyle : filterBtnStyle} onClick={() => setFilter('all')}>All</button>
           <button type="button" style={filterBtnStyle} onClick={load} title="Refresh"><RefreshCw size={13} /></button>
         </span>

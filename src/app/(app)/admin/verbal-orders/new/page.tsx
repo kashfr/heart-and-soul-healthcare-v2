@@ -163,13 +163,13 @@ function NewVerbalOrderInner() {
         <div style={wrapStyle}>
           <div style={{ ...cardStyle, textAlign: 'center', padding: '32px 24px' }}>
             <CheckCircle2 size={40} color="#27ae60" />
-            <h1 style={{ ...titleStyle, fontSize: 24, marginTop: 10 }}>Verbal order saved</h1>
+            <h1 style={{ ...titleStyle, fontSize: 24, marginTop: 10 }}>Verbal Order Saved</h1>
             <p style={{ color: '#5c6b7a', lineHeight: 1.55, maxWidth: 520, margin: '8px auto 0' }}>
               {done.faxQueued
                 ? `The authentication form is on its way to ${physicianName} by fax. The office will be told when the signed copy comes back.`
                 : done.faxConfigured
-                  ? `The order is on file, but the fax to ${physicianName} did not go through${done.faxError ? ` (${done.faxError})` : ''}. The office can resend it from the Verbal orders queue.`
-                  : 'The order is on file. Faxing is not set up yet, so the office will download the form from the Verbal orders queue and fax it by hand.'}
+                  ? `The order is on file, but the fax to ${physicianName} did not go through${done.faxError ? ` (${done.faxError})` : ''}. The office can resend it from the Verbal Orders queue.`
+                  : 'The order is on file. Faxing is not set up yet, so the office will download the form from the Verbal Orders queue and fax it by hand.'}
             </p>
             {marApplied && (
               <p style={{ color: '#5c6b7a', fontSize: 13.5, marginTop: 8 }}>
@@ -177,7 +177,7 @@ function NewVerbalOrderInner() {
               </p>
             )}
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 18, flexWrap: 'wrap' }}>
-              <Link href={`/admin/verbal-orders?vo=${done.id}`} style={primaryLinkStyle}>View in Verbal orders</Link>
+              <Link href={`/admin/verbal-orders?vo=${done.id}`} style={primaryLinkStyle}>View in Verbal Orders</Link>
               {patientId && <Link href={`/admin/clients/${patientId}`} style={secondaryLinkStyle}>Back to {patient?.name || 'client'}</Link>}
             </div>
           </div>
@@ -194,8 +194,8 @@ function NewVerbalOrderInner() {
     <div style={containerStyle}>
       <div style={wrapStyle}>
         <header style={{ marginBottom: 18 }}>
-          <p style={kickerStyle}>Physician orders</p>
-          <h1 style={titleStyle}><PhoneCall size={22} style={{ verticalAlign: -3, marginRight: 8 }} />Take a verbal order</h1>
+          <p style={kickerStyle}>Physician Orders</p>
+          <h1 style={titleStyle}><PhoneCall size={22} style={{ verticalAlign: -3, marginRight: 8 }} />Take a Verbal Order</h1>
           <p style={subtitleStyle}>
             Write the order exactly as the physician gave it, read it back to confirm, and sign. When you save, the
             physician is faxed a copy to sign and return; the office tracks it until the signed copy is on file.
@@ -215,7 +215,7 @@ function NewVerbalOrderInner() {
         {submitError && <div style={noticeStyle}><AlertTriangle size={16} /> {submitError}</div>}
 
         <section style={cardStyle}>
-          <h2 style={sectionTitleStyle}>Client and order type</h2>
+          <h2 style={sectionTitleStyle}>Client and Order Type</h2>
           <div style={rowStyle}>
             <label id={fieldId('patientId')} style={fieldStyle}>
               <span style={labelStyle}>Client *</span>
@@ -252,7 +252,7 @@ function NewVerbalOrderInner() {
         </section>
 
         <section style={cardStyle}>
-          <h2 style={sectionTitleStyle}>Physician giving the order</h2>
+          <h2 style={sectionTitleStyle}>Physician Giving the Order</h2>
           <div style={rowStyle}>
             <label id={fieldId('physicianName')} style={fieldStyle}>
               <span style={labelStyle}>Physician&apos;s name *</span>
@@ -285,7 +285,7 @@ function NewVerbalOrderInner() {
         </section>
 
         <section style={cardStyle}>
-          <h2 style={sectionTitleStyle}>The order</h2>
+          <h2 style={sectionTitleStyle}>The Order</h2>
           <label id={fieldId('orderText')} style={fieldStyle}>
             <span style={labelStyle}>Describe the order exactly as given *</span>
             <textarea value={orderText} onChange={(e) => setOrderText(e.target.value)} rows={5} maxLength={VERBAL_ORDER_TEXT_MAX} style={{ ...textareaStyle, ...hi('orderText') }} placeholder="Medication, dose, route, frequency, start, and any instructions, in the physician's words." disabled={submitting} />
@@ -323,7 +323,7 @@ function NewVerbalOrderInner() {
         </section>
 
         <section style={cardStyle}>
-          <h2 style={sectionTitleStyle}>Nurse&apos;s signature</h2>
+          <h2 style={sectionTitleStyle}>Nurse&apos;s Signature</h2>
           <div style={{ fontSize: 13, color: '#5c6b7a', marginBottom: 8 }}>
             Signing as <strong>{profile?.displayName || user.email}</strong>{credential ? `, ${credential}` : ''}. Name, credential, date, and time are recorded automatically.
           </div>
@@ -340,7 +340,7 @@ function NewVerbalOrderInner() {
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
           <Link href={patientId ? `/admin/clients/${patientId}` : '/admin'} style={secondaryLinkStyle}>Cancel</Link>
           <button type="button" style={{ ...primaryBtnStyle, opacity: submitting ? 0.6 : 1 }} disabled={submitting} onClick={() => void submit()}>
-            {submitting ? 'Saving and faxing…' : 'Save and fax to physician'}
+            {submitting ? 'Saving and faxing…' : 'Save and Fax to Physician'}
           </button>
         </div>
       </div>

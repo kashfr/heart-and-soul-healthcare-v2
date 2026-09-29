@@ -38,11 +38,11 @@ export default function MedErrorsSection({ patientId, canFile }: { patientId: st
     <section style={cardStyle}>
       <div style={headerRowStyle}>
         <div style={titleStyle}>
-          <ShieldAlert size={16} /> Medication errors
+          <ShieldAlert size={16} /> Medication Errors
           {open.length > 0 && <span style={countChipStyle}>{open.length} awaiting review</span>}
         </div>
         {canFile && (
-          <Link href={`/admin/med-errors/new?patient=${encodeURIComponent(patientId)}`} style={addBtnStyle}><Plus size={14} /> Report an error</Link>
+          <Link href={`/admin/med-errors/new?patient=${encodeURIComponent(patientId)}`} style={addBtnStyle}><Plus size={14} /> Report an Error</Link>
         )}
       </div>
       {items === null ? (

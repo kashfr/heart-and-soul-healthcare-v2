@@ -138,7 +138,7 @@ export default function RoiSection({
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <h2 style={sectionTitleStyle}>
           <ShieldCheck size={16} style={{ verticalAlign: -2, marginRight: 6 }} />
-          Releases of information{shown.length > 0 ? ` (${shown.length})` : ''}
+          Releases of Information{shown.length > 0 ? ` (${shown.length})` : ''}
         </h2>
         {hiddenCount > 0 && (
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#5c6b7a', cursor: 'pointer' }}>
@@ -207,11 +207,11 @@ export default function RoiSection({
                     <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
                       {r.status === 'awaiting-signature' && (
                         <>
-                          <button onClick={() => setPreview({ title: `Release to sign: ${r.memberName}, ${r.facility.name}`, url: `/api/fax/roi/${r.id}/form` })} style={ghostBtnStyle} title="See the prepared form, and download it to send for signature">
+                          <button onClick={() => setPreview({ title: `Release to Sign: ${r.memberName}, ${r.facility.name}`, url: `/api/fax/roi/${r.id}/form` })} style={ghostBtnStyle} title="See the prepared form, and download it to send for signature">
                             <Eye size={14} /> Form
                           </button>
                           <button onClick={() => setUploading(r)} style={{ ...ghostBtnStyle, marginLeft: 6 }}>
-                            <FileUp size={14} /> Upload signed
+                            <FileUp size={14} /> Upload Signed
                           </button>
                           <button onClick={() => act(r, 'cancel', `Cancel the release for ${r.memberName} with ${r.facility.name}? Use this if it won't be signed.`)} style={{ ...ghostBtnStyle, marginLeft: 6 }} disabled={busy === r.id}>
                             <Ban size={14} /> Cancel
@@ -220,11 +220,11 @@ export default function RoiSection({
                       )}
                       {r.status === 'signed' && (
                         <>
-                          <button onClick={() => setPreview({ title: `Signed release: ${r.memberName}, ${r.facility.name}`, url: `/api/fax/roi/${r.id}/signed` })} style={ghostBtnStyle}>
+                          <button onClick={() => setPreview({ title: `Signed Release: ${r.memberName}, ${r.facility.name}`, url: `/api/fax/roi/${r.id}/signed` })} style={ghostBtnStyle}>
                             <Eye size={14} /> View
                           </button>
                           <button onClick={() => setFaxing(r)} style={{ ...primaryBtnStyle, marginLeft: 6 }} disabled={!faxConfigured}>
-                            <Send size={14} /> Fax to facility
+                            <Send size={14} /> Fax to Facility
                           </button>
                           <button onClick={() => setUploading(r)} style={{ ...ghostBtnStyle, marginLeft: 6 }} title="Upload a corrected signed copy">
                             <FileUp size={14} /> Replace
@@ -259,7 +259,7 @@ export default function RoiSection({
             await load();
             // Show it right away so it can be checked before it goes out;
             // Download in the preview saves the copy for PandaDoc.
-            setPreview({ title: `Release to sign: ${roi.memberName}, ${roi.facility.name}`, url: `/api/fax/roi/${roi.id}/form` });
+            setPreview({ title: `Release to Sign: ${roi.memberName}, ${roi.facility.name}`, url: `/api/fax/roi/${roi.id}/form` });
             setNotice(`The release for ${roi.memberName} is ready. Check it, then use Download to save it for PandaDoc. In PandaDoc, add the guardian's initials, signature, printed name, date, and Guardian checkbox fields, and send it. When it comes back signed, use Upload signed. Form opens it again any time.`);
           }}
         />
@@ -286,7 +286,7 @@ export default function RoiSection({
             await load();
             if (ok) {
               setFaxing(null);
-              setNotice(`Faxing the release for ${faxing.memberName} to ${faxing.facility.name}. Watch Sent faxes below for delivery.`);
+              setNotice(`Faxing the release for ${faxing.memberName} to ${faxing.facility.name}. Watch Sent Faxes below for delivery.`);
             }
           }}
         />
@@ -394,7 +394,7 @@ function PrepareModal({ clients, onClose, onCreated }: { clients: RoiClient[]; o
             Fills in the DBHDD Authorization for Release of Information (Attachment A, IDD version). The portal prints the
             client, who shares with whom, what, why, and for how long. The guardian initials, signs, prints their name,
             dates it, and checks Guardian.{' '}
-            <a href="/forms/dbhdd-roi-attachment-a.pdf" target="_blank" rel="noopener" style={{ color: '#1a3a5c', fontWeight: 600 }}>See the blank form</a>
+            <a href="/forms/dbhdd-roi-attachment-a.pdf" target="_blank" rel="noopener" style={{ color: '#1a3a5c', fontWeight: 600 }}>See the Blank Form</a>
           </p>
 
           <div style={fieldStyle} id={prepId('patientId')}>
@@ -526,7 +526,7 @@ function PrepareModal({ clients, onClose, onCreated }: { clients: RoiClient[]; o
         <div style={footerStyle}>
           <button type="button" onClick={onClose} style={ghostBtnStyle} disabled={busy}>Cancel</button>
           <button type="submit" style={primaryBtnStyle} disabled={busy}>
-            <FileSignature size={14} /> {busy ? 'Preparing…' : 'Prepare and preview'}
+            <FileSignature size={14} /> {busy ? 'Preparing…' : 'Prepare and Preview'}
           </button>
         </div>
       </form>
@@ -563,7 +563,7 @@ function UploadModal({ roi, today, onClose, onDone }: { roi: RoiRecord; today: s
   };
 
   return (
-    <Modal title="Upload the signed release" onClose={onClose} busy={busy}>
+    <Modal title="Upload the Signed Release" onClose={onClose} busy={busy}>
       <form onSubmit={submit} noValidate style={formStyle}>
         <div style={bodyStyle}>
           <p style={leadStyle}>
@@ -585,7 +585,7 @@ function UploadModal({ roi, today, onClose, onDone }: { roi: RoiRecord; today: s
         <div style={footerStyle}>
           <button type="button" onClick={onClose} style={ghostBtnStyle} disabled={busy}>Cancel</button>
           <button type="submit" style={primaryBtnStyle} disabled={busy}>
-            <FileUp size={14} /> {busy ? 'Uploading…' : 'File signed copy'}
+            <FileUp size={14} /> {busy ? 'Uploading…' : 'File Signed Copy'}
           </button>
         </div>
       </form>
@@ -630,7 +630,7 @@ function FaxModal({ roi, onClose, onSent }: { roi: RoiRecord; onClose: () => voi
   };
 
   return (
-    <Modal title="Fax the release to the facility" onClose={onClose} busy={busy}>
+    <Modal title="Fax the Release to the Facility" onClose={onClose} busy={busy}>
       <form onSubmit={submit} noValidate style={formStyle}>
         <div style={bodyStyle}>
           <p style={leadStyle}>
@@ -664,7 +664,7 @@ function FaxModal({ roi, onClose, onSent }: { roi: RoiRecord; onClose: () => voi
         <div style={footerStyle}>
           <button type="button" onClick={onClose} style={ghostBtnStyle} disabled={busy}>Cancel</button>
           <button type="submit" style={primaryBtnStyle} disabled={busy}>
-            <Send size={14} /> {busy ? 'Sending…' : 'Fax it'}
+            <Send size={14} /> {busy ? 'Sending…' : 'Fax It'}
           </button>
         </div>
       </form>

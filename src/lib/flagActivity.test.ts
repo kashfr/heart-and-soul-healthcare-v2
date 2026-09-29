@@ -67,7 +67,7 @@ describe('flag activity copy', () => {
     const advisory = flagActivityEmailCopy(ctx({ blocking: false }));
     expect(blocking.body).toMatch(/STILL IN PLACE/);
     expect(advisory.body).not.toMatch(/block/i);
-    expect(advisory.subject).toBe('Flagged note amended: Ann Torres (09/03/2026)');
+    expect(advisory.subject).toBe('Flagged Note Amended: Ann Torres (09/03/2026)');
     expect(flagActivityBellText(ctx({ blocking: true }))).toMatch(/block on new notes stays on/);
     expect(flagActivityBellText(ctx({ blocking: false, kind: 'clarification' }))).toMatch(/flagged for clarification/);
   });
@@ -87,7 +87,7 @@ describe('flag activity copy', () => {
       'Bianca Bryant replied to the clarification on Ann Torres\'s note (09/03/2026): "I re-checked: the visit was 09/02, corrected."',
     );
     const copy = flagActivityEmailCopy(c);
-    expect(copy.subject).toBe('Reply on a flagged note: Ann Torres (09/03/2026)');
+    expect(copy.subject).toBe('Reply on a Flagged Note: Ann Torres (09/03/2026)');
     expect(copy.body).toMatch(/mark the clarification resolved/);
     expect(copy.cta).toBe('Open the note');
   });

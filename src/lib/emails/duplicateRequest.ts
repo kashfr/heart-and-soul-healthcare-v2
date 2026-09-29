@@ -53,7 +53,7 @@ export async function sendDuplicateRequestNotice({
   const orgName = settings.branding.orgName;
   const fromDisplay = settings.branding.fromEmailDisplay || orgName;
   const fromEmail = `${fromDisplay} <${FROM_ADDRESS}>`;
-  const subject = `Duplicate-note approval needed: ${clientName} (${formatDateUS(dateOfService)})`;
+  const subject = `Duplicate-Note Approval Needed: ${clientName} (${formatDateUS(dateOfService)})`;
 
   const html = `<!doctype html>
 <html>
@@ -63,7 +63,7 @@ export async function sendDuplicateRequestNotice({
         <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
             ${emailLogoRow()}
           <tr><td style="padding:28px 32px 8px;">
-            <h1 style="margin:0;font-size:20px;color:#1a3a5c;">Duplicate-note approval needed</h1>
+            <h1 style="margin:0;font-size:20px;color:#1a3a5c;">Duplicate-Note Approval Needed</h1>
           </td></tr>
           <tr><td style="padding:8px 32px 0;font-size:15px;line-height:1.6;color:#2c3e50;">
             <p style="margin:0 0 12px;"><strong>${escapeHtml(nurseName)}</strong> is asking to submit a <strong>second</strong> progress note for a client already documented on this date:</p>

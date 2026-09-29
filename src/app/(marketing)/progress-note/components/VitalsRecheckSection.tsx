@@ -137,7 +137,7 @@ export default function VitalsRecheckSection({ register, watch, setValue }: Prop
       {/* Hidden count field keeps the number of blocks in the form values. */}
       <input type="hidden" {...register(VITALS_RECHECK_COUNT_KEY)} />
 
-      <div className={styles.subsec} style={{ marginBottom: 2 }}>Vitals rechecks</div>
+      <div className={styles.subsec} style={{ marginBottom: 2 }}>Vitals Rechecks</div>
       <p style={helper}>
         Took any vitals again later in the shift? Add each later reading with the time and what the client was doing,
         and enter only the vitals you retook.
@@ -426,7 +426,7 @@ export default function VitalsRecheckSection({ register, watch, setValue }: Prop
 
       {count < MAX_VITALS_RECHECKS && (
         <button type="button" onClick={() => addReading()} style={addBtn}>
-          + Add {entries.length === 0 ? 'a later vitals reading' : 'another vitals reading'}
+          + Add {entries.length === 0 ? 'a Later Vitals Reading' : 'Another Vitals Reading'}
         </button>
       )}
 

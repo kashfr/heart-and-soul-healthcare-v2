@@ -113,7 +113,7 @@ export default function AgenciesPage() {
               <RefreshCw size={15} /> Refresh
             </button>
             <button onClick={() => setEditing('new')} style={primaryBtnStyle}>
-              <Plus size={15} /> Add agency
+              <Plus size={15} /> Add Agency
             </button>
           </div>
         </header>
@@ -141,7 +141,7 @@ export default function AgenciesPage() {
           <div style={{ ...emptyStyle, color: '#b3261e' }}>
             {error}
             <div style={{ marginTop: 12 }}>
-              <button onClick={load} style={ghostBtnStyle}>Try again</button>
+              <button onClick={load} style={ghostBtnStyle}>Try Again</button>
             </div>
           </div>
         ) : filtered.length === 0 ? (
@@ -158,7 +158,7 @@ export default function AgenciesPage() {
                   <th style={thStyle}>Phone</th>
                   <th style={thStyle}>Contact</th>
                   <th style={{ ...thStyle, textAlign: 'right' }}>Shares</th>
-                  <th style={thStyle}>Last shared</th>
+                  <th style={thStyle}>Last Shared</th>
                   <th style={{ ...thStyle, width: 90 }} />
                 </tr>
               </thead>
@@ -315,7 +315,7 @@ function AgencyForm({
       <div style={modalStyle} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div style={modalHeaderStyle}>
           <div style={{ fontSize: 18, fontWeight: 700, color: '#2c3e50' }}>
-            {agency ? 'Edit agency' : 'Add agency'}
+            {agency ? 'Edit Agency' : 'Add Agency'}
           </div>
           <button onClick={onClose} style={closeBtnStyle} aria-label="Close"><X size={18} /></button>
         </div>
@@ -400,7 +400,7 @@ function AgencyForm({
             disabled={saving}
             style={{ ...primaryBtnStyle, opacity: saving ? 0.55 : 1 }}
           >
-            {saving ? 'Saving…' : agency ? 'Save changes' : 'Add agency'}
+            {saving ? 'Saving…' : agency ? 'Save Changes' : 'Add Agency'}
           </button>
         </div>
       </div>

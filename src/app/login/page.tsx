@@ -121,7 +121,7 @@ function LoginForm() {
         <img src="/images/logo-2026.webp" alt="Heart and Soul Healthcare" width={200} height={53} style={logoStyle} />
         {mode === 'signIn' && (
           <>
-            <h1 style={titleStyle}>Sign in</h1>
+            <h1 style={titleStyle}>Sign In</h1>
             <p style={subtitleStyle}>Heart and Soul Healthcare staff portal</p>
 
             {justReset && (
@@ -158,7 +158,7 @@ function LoginForm() {
               {error && <div style={errorStyle}>{error}</div>}
 
               <button type="submit" disabled={submitting} style={primaryBtnStyle}>
-                {submitting ? 'Signing in…' : 'Sign in'}
+                {submitting ? 'Signing in…' : 'Sign In'}
               </button>
             </form>
 
@@ -168,7 +168,7 @@ function LoginForm() {
                 onClick={() => switchMode('reset')}
                 style={linkBtnStyle}
               >
-                Forgot password?
+                Forgot Password?
               </button>
             </div>
 
@@ -181,7 +181,7 @@ function LoginForm() {
 
         {mode === 'reset' && !resetSentTo && (
           <>
-            <h1 style={titleStyle}>Reset password</h1>
+            <h1 style={titleStyle}>Reset Password</h1>
             <p style={subtitleStyle}>
               Enter the email for your staff account and we&apos;ll send you a
               link to set a new password.
@@ -209,7 +209,7 @@ function LoginForm() {
               {error && <div style={errorStyle}>{error}</div>}
 
               <button type="submit" disabled={submitting} style={primaryBtnStyle}>
-                {submitting ? 'Sending…' : 'Send reset link'}
+                {submitting ? 'Sending…' : 'Send Reset Link'}
               </button>
             </form>
 
@@ -219,7 +219,7 @@ function LoginForm() {
                 onClick={() => switchMode('signIn')}
                 style={linkBtnStyle}
               >
-                ← Back to sign in
+                ← Back to Sign In
               </button>
             </div>
           </>
@@ -227,7 +227,7 @@ function LoginForm() {
 
         {mode === 'reset' && resetSentTo && (
           <>
-            <h1 style={titleStyle}>Check your email</h1>
+            <h1 style={titleStyle}>Check Your Email</h1>
             <p style={subtitleStyle}>
               If an account exists for <strong>{resetSentTo}</strong>, a password-reset
               link is on the way. Links expire after about an hour — use it soon.
@@ -239,7 +239,7 @@ function LoginForm() {
               onClick={() => switchMode('signIn')}
               style={primaryBtnStyle}
             >
-              Back to sign in
+              Back to Sign In
             </button>
 
             <div style={forgotRowStyle}>
@@ -251,7 +251,7 @@ function LoginForm() {
                 }}
                 style={linkBtnStyle}
               >
-                Send to a different email
+                Send to a Different Email
               </button>
             </div>
           </>

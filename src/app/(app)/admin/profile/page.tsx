@@ -154,7 +154,7 @@ export default function MyProfilePage() {
         <section style={sectionStyle}>
           <div style={sectionHeaderStyle}>
             <Phone size={16} color="#1a3a5c" />
-            <h2 style={sectionTitleStyle}>Phone number</h2>
+            <h2 style={sectionTitleStyle}>Phone Number</h2>
           </div>
           <div id={PHONE_FIELD_ID}>
             <input
@@ -176,7 +176,7 @@ export default function MyProfilePage() {
               disabled={phoneBusy}
               style={{ ...primaryBtn, ...(phoneBusy ? disabledBtn : {}) }}
             >
-              {phoneBusy ? 'Saving…' : 'Save phone'}
+              {phoneBusy ? 'Saving…' : 'Save Phone'}
             </button>
           </div>
         </section>
@@ -185,7 +185,7 @@ export default function MyProfilePage() {
         <section style={sectionStyle}>
           <div style={sectionHeaderStyle}>
             <Mail size={16} color="#1a3a5c" />
-            <h2 style={sectionTitleStyle}>Login email</h2>
+            <h2 style={sectionTitleStyle}>Login Email</h2>
           </div>
           <div style={labelStyle}>Current email</div>
           <div style={{ ...valueStyle, marginBottom: 14 }}>{profile.email || user.email || '—'}</div>
@@ -193,7 +193,7 @@ export default function MyProfilePage() {
           {pendingRequest ? (
             <div style={pendingBoxStyle}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontWeight: 700, color: '#a35400' }}>
-                <Clock size={15} /> Request pending admin approval
+                <Clock size={15} /> Request Pending Admin Approval
               </div>
               <div style={{ marginTop: 8, fontSize: 14, color: '#2c3e50' }}>
                 Requested new email: <strong>{pendingRequest.newEmail}</strong>
@@ -209,7 +209,7 @@ export default function MyProfilePage() {
               {emailErr && <div style={errStyle}>{emailErr}</div>}
               <div style={{ marginTop: 10 }}>
                 <button type="button" onClick={withdrawEmailRequest} disabled={emailBusy} style={secondaryBtn}>
-                  {emailBusy ? 'Working…' : 'Withdraw request'}
+                  {emailBusy ? 'Working…' : 'Withdraw Request'}
                 </button>
               </div>
             </div>
@@ -244,7 +244,7 @@ export default function MyProfilePage() {
                   disabled={emailBusy}
                   style={{ ...primaryBtn, ...(emailBusy ? disabledBtn : {}) }}
                 >
-                  {emailBusy ? 'Submitting…' : 'Request email change'}
+                  {emailBusy ? 'Submitting…' : 'Request Email Change'}
                 </button>
               </div>
             </>

@@ -113,7 +113,7 @@ function BillingRatesInner() {
       </Link>
       <div style={headerStyle}>
         <div>
-          <h1 style={titleStyle}><DollarSign size={20} /> Billing rates</h1>
+          <h1 style={titleStyle}><DollarSign size={20} /> Billing Rates</h1>
           <p style={subStyle}>
             Dollars per 15-minute unit by program, for shift nursing (LPN / HHA / CNA shift notes) and RN oversight visits,
             with the claim code and modifier. Limit a row to a nurse type when the payer pays LPN and RN shifts differently
@@ -124,7 +124,7 @@ function BillingRatesInner() {
           </p>
         </div>
         {editing === null && (
-          <button type="button" onClick={() => setEditing('new')} style={primaryBtn}><Plus size={14} /> Add rate</button>
+          <button type="button" onClick={() => setEditing('new')} style={primaryBtn}><Plus size={14} /> Add Rate</button>
         )}
       </div>
 
@@ -158,7 +158,7 @@ function BillingRatesInner() {
             <thead>
               <tr>
                 <th style={th}>Service</th>
-                <th style={{ ...th, width: 110 }}>Nurse type</th>
+                <th style={{ ...th, width: 110 }}>Nurse Type</th>
                 <th style={{ ...th, width: 120 }}>Code</th>
                 <th style={{ ...th, textAlign: 'right', width: 130 }}>Rate</th>
                 <th style={{ ...th, width: 190 }}>Effective</th>
@@ -263,7 +263,7 @@ function RateForm({ existing, uid, onCancel, onSaved }: {
 
   return (
     <div style={formCard}>
-      <div style={{ fontWeight: 700, color: NAVY, marginBottom: 10 }}>{existing ? 'Edit rate' : 'New rate'}</div>
+      <div style={{ fontWeight: 700, color: NAVY, marginBottom: 10 }}>{existing ? 'Edit Rate' : 'New Rate'}</div>
       <div style={grid}>
         <label style={field}>
           <span style={label}>Program *</span>
@@ -321,7 +321,7 @@ function RateForm({ existing, uid, onCancel, onSaved }: {
       {rate && Number.isFinite(rateNum) && <div style={{ ...muted, marginTop: 6 }}>{fmtDollars(rateNum)} per unit = {fmtDollars(rateNum * 4)} per hour.</div>}
       {err && <div style={{ ...errBox, marginTop: 10 }}>{err}</div>}
       <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-        <button type="button" onClick={submit} disabled={saving} style={primaryBtn}>{saving ? 'Saving…' : existing ? 'Save changes' : 'Add rate'}</button>
+        <button type="button" onClick={submit} disabled={saving} style={primaryBtn}>{saving ? 'Saving…' : existing ? 'Save Changes' : 'Add Rate'}</button>
         <button type="button" onClick={onCancel} disabled={saving} style={smallBtn}>Cancel</button>
       </div>
     </div>

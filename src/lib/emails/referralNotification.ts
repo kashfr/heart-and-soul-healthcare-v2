@@ -73,7 +73,7 @@ export async function sendReferralNotification(
   const html = `
     <div style="font-family:Arial,Helvetica,sans-serif;color:#111827;max-width:640px;">
       ${emailLogoBlock()}
-      <h2 style="margin:0 0 4px;">New referral</h2>
+      <h2 style="margin:0 0 4px;">New Referral</h2>
       <p style="margin:0 0 16px;color:#6b7280;font-size:13px;">via ${escapeHtml(
         sourceLabel
       )}</p>
@@ -92,7 +92,7 @@ export async function sendReferralNotification(
       from: FROM_ADDRESS,
       to: NOTIFICATION_EMAIL,
       replyTo: isValidEmail(referral.clientEmail) ? referral.clientEmail : undefined,
-      subject: `New referral: ${referral.clientName || 'Unknown'}`,
+      subject: `New Referral: ${referral.clientName || 'Unknown'}`,
       html,
     });
     if (error) {

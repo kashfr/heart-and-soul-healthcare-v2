@@ -126,7 +126,7 @@ export default function ClarificationPanel({
       <div style={headerStyle}>
         <MessageCircleQuestion size={16} color={isOpen ? (isCorrection ? '#b3261e' : '#b45309') : '#5c6b7a'} />
         <strong style={{ fontSize: 14, color: '#2c3e50' }}>
-          {clarification ? (isCorrection ? 'Correction needed' : 'Clarification') : 'Clarification / Correction'}
+          {clarification ? (isCorrection ? 'Correction Needed' : 'Clarification') : 'Clarification / Correction'}
         </strong>
         {isOpen && <span style={isCorrection ? correctionBadge : openBadge}>Open</span>}
         {isResolved && <span style={resolvedBadge}>Resolved</span>}
@@ -146,14 +146,14 @@ export default function ClarificationPanel({
               style={secondaryBtn}
               onClick={() => { setFlagKind('clarification'); setMode('flag'); setTextError(null); }}
             >
-              Flag for clarification
+              Flag for Clarification
             </button>
             <button
               type="button"
               style={correctionBtn}
               onClick={() => { setFlagKind('correction'); setMode('flag'); setTextError(null); }}
             >
-              Flag a correction
+              Flag a Correction
             </button>
           </div>
         )}
@@ -193,12 +193,12 @@ export default function ClarificationPanel({
           <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
             {(isAuthor || canReview) && (
               <button type="button" style={secondaryBtn} onClick={() => { setMode('respond'); setTextError(null); }}>
-                {clarificationMessages(clarification).length > 1 ? 'Add a reply' : 'Respond'}
+                {clarificationMessages(clarification).length > 1 ? 'Add a Reply' : 'Respond'}
               </button>
             )}
             {canReview && (
               <button type="button" style={primaryBtn} onClick={() => { setMode('resolve'); setTextError(null); }}>
-                Mark resolved
+                Mark Resolved
               </button>
             )}
             {canReview && isCorrection && (
@@ -213,7 +213,7 @@ export default function ClarificationPanel({
                     : 'Stop the author from documenting new notes until she amends this note.'
                 }
               >
-                {blockBusy ? 'Saving…' : blocksNow ? 'Remove block' : 'Block new notes'}
+                {blockBusy ? 'Saving…' : blocksNow ? 'Remove Block' : 'Block New Notes'}
               </button>
             )}
           </div>
@@ -254,7 +254,7 @@ export default function ClarificationPanel({
                 <span style={{ fontSize: 12.5, color: '#5c6b7a', lineHeight: 1.4 }}>
                   Block new notes until YOU clear it. The author can&apos;t start or submit new
                   progress notes; when she amends this note you&apos;ll be notified to verify the
-                  fix, and the block stays on until you remove it (Remove block) or resolve this
+                  fix, and the block stays on until you remove it (Remove Block) or resolve this
                   correction.
                 </span>
               </label>
@@ -286,9 +286,9 @@ export default function ClarificationPanel({
                 {busy
                   ? 'Saving…'
                   : mode === 'flag'
-                    ? (flagKind === 'correction' ? 'Send correction' : 'Send flag')
+                    ? (flagKind === 'correction' ? 'Send Correction' : 'Send Flag')
                     : mode === 'respond'
-                      ? 'Send response'
+                      ? 'Send Response'
                       : 'Resolve'}
               </button>
             </div>

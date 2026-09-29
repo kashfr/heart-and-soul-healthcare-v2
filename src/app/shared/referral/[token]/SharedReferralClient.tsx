@@ -64,7 +64,7 @@ export default function SharedReferralClient({ token }: { token: string }) {
       <div style={wrap}>
         <div style={brandRow}>
           <div style={{ fontWeight: 800, fontSize: 18, color: '#1a3a5c' }}>Heart &amp; Soul Healthcare</div>
-          <div style={{ fontSize: 12, color: '#7f8c8d' }}>Secure referral</div>
+          <div style={{ fontSize: 12, color: '#7f8c8d' }}>Secure Referral</div>
         </div>
 
         {state.kind === 'loading' && <div style={card}><div style={muted}>Loading referral…</div></div>}
@@ -82,10 +82,10 @@ export default function SharedReferralClient({ token }: { token: string }) {
             </div>
             <h1 style={{ fontSize: 20, color: '#2c3e50', margin: '6px 0' }}>
               {state.reason === 'expired'
-                ? 'This link has expired'
+                ? 'This Link Has Expired'
                 : state.reason === 'revoked'
-                  ? 'This link is no longer active'
-                  : 'This link is not valid'}
+                  ? 'This Link Is No Longer Active'
+                  : 'This Link Is Not Valid'}
             </h1>
             <p style={muted}>
               Please contact Heart &amp; Soul Healthcare to request an updated link.

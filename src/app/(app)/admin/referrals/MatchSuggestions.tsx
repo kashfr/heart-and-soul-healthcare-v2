@@ -17,7 +17,7 @@ export default function MatchSuggestions({
   return (
     <div style={rowStyle}>
       <span style={labelStyle}>
-        <Sparkles size={12} aria-hidden /> Best matches
+        <Sparkles size={12} aria-hidden /> Best Matches
       </span>
       {matches.map((m) => (
         <button

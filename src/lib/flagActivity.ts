@@ -142,7 +142,7 @@ export function flagActivityEmailCopy(ctx: FlagActivityContext): FlagActivityEma
   const where = `${ctx.clientName} (${ctx.dateOfService})`;
   if (ctx.event === 'replied') {
     return {
-      subject: `Reply on a flagged note: ${where}`,
+      subject: `Reply on a Flagged Note: ${where}`,
       headline: `The nurse replied to a ${ctx.kind}`,
       intro: `${who} replied on a progress note flagged for ${ctx.kind}:`,
       body: `Reply in the note's clarification panel if you need more, or mark the ${ctx.kind} resolved if this settles it.`,
@@ -151,7 +151,7 @@ export function flagActivityEmailCopy(ctx: FlagActivityContext): FlagActivityEma
   }
   if (ctx.blocking) {
     return {
-      subject: `Flagged note corrected: ${where}`,
+      subject: `Flagged Note Corrected: ${where}`,
       headline: 'A flagged note was corrected',
       intro: `${who} amended a progress note flagged for correction:`,
       body:
@@ -160,7 +160,7 @@ export function flagActivityEmailCopy(ctx: FlagActivityContext): FlagActivityEma
     };
   }
   return {
-    subject: `Flagged note amended: ${where}`,
+    subject: `Flagged Note Amended: ${where}`,
     headline: 'A flagged note was amended',
     intro: `${who} amended a progress note flagged for ${ctx.kind}:`,
     body:

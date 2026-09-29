@@ -100,7 +100,7 @@ export default function AnnouncementGate() {
 
         <div style={actionsStyle}>
           <button type="button" onClick={() => void gotIt()} disabled={busy} style={{ ...btnStyle, opacity: busy ? 0.7 : 1 }}>
-            <Check size={16} /> {busy ? 'Saving…' : 'Got it'}
+            <Check size={16} /> {busy ? 'Saving…' : 'Got It'}
           </button>
         </div>
       </div>

@@ -762,7 +762,7 @@ export default function ReferralPage() {
                         >
                           <div className={styles.programDescriptionHeader}>
                             <Info size={14} />
-                            <span>About this program</span>
+                            <span>About This Program</span>
                           </div>
                           <p>{programs.find(p => p.value === formData.programInterest)?.description}</p>
                           {formData.programInterest !== 'private-pay' && formData.programInterest !== 'other' && (
@@ -772,7 +772,7 @@ export default function ReferralPage() {
                               target="_blank"
                               rel="noopener noreferrer"
                             >
-                              Learn more about this program <ArrowRight size={14} />
+                              Learn More About This Program <ArrowRight size={14} />
                             </a>
                           )}
                         </motion.div>
@@ -1279,7 +1279,7 @@ export default function ReferralPage() {
                 {showGappClinical && (
                   <>
                     <div className={styles.sectionDivider} />
-                    <h3 className={styles.subSectionTitle}>About your child&apos;s needs</h3>
+                    <h3 className={styles.subSectionTitle}>About Your Child&apos;s Needs</h3>
                     <p className={styles.subSectionDescription}>
                       This helps us match your child with the right kind of care.
                     </p>
@@ -1410,7 +1410,7 @@ export default function ReferralPage() {
                     loved-one/client copy elsewhere, and nobody is ever asked
                     to be their own paid caregiver. */}
                 <div className={styles.sectionDivider} />
-                <h3 className={styles.subSectionTitle}>One more question</h3>
+                <h3 className={styles.subSectionTitle}>One More Question</h3>
 
                 <div className={styles.formGridSingle}>
                   <div className="form-group" id={fieldId('seekingPaidCaregiver')}>

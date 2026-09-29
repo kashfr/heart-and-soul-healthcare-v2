@@ -478,7 +478,7 @@ export default function ReferralsPage() {
             {error}
             <div style={{ marginTop: 12 }}>
               <button onClick={load} style={refreshBtnStyle}>
-                Try again
+                Try Again
               </button>
             </div>
           </div>

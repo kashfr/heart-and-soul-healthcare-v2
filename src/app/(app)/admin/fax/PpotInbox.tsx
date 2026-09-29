@@ -103,7 +103,7 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
         <section style={{ marginBottom: 22 }}>
           <h2 style={sectionTitleStyle}>
             <Inbox size={16} style={{ verticalAlign: -2, marginRight: 6 }} />
-            Incoming faxes ({incoming.length})
+            Incoming Faxes ({incoming.length})
           </h2>
           <p style={noteStyle}>
             Faxes on the portal line that haven&apos;t been filed. Open one to see what it is; if it is a signed Appendix T,
@@ -142,7 +142,7 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
                           <Eye size={14} /> View
                         </button>
                         <button onClick={() => setFiling(f)} style={{ ...ghostBtnStyle, marginLeft: 6 }} disabled={openRequests.length === 0} title={openRequests.length === 0 ? 'No PPOT request is waiting on a signed copy' : undefined}>
-                          <FileCheck2 size={14} /> File as signed PPOT
+                          <FileCheck2 size={14} /> File as Signed PPOT
                         </button>
                         {canDismiss && (
                           <button
@@ -168,11 +168,11 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
         <section style={{ marginBottom: 22 }}>
           <h2 style={sectionTitleStyle}>
             <Hourglass size={16} style={{ verticalAlign: -2, marginRight: 6 }} />
-            Waiting on physicians ({openRequests.length})
+            Waiting on Physicians ({openRequests.length})
           </h2>
           <p style={noteStyle}>
-            Requests sent and not yet answered. A request stays here until someone files the returned fax from Incoming faxes
-            with File as signed PPOT; nothing is filed automatically. If one isn&apos;t back by the Verbal Orders overdue days in
+            Requests sent and not yet answered. A request stays here until someone files the returned fax from Incoming Faxes
+            with File as Signed PPOT; nothing is filed automatically. If one isn&apos;t back by the Verbal Orders overdue days in
             Settings, the portal faxes it once more as a second request, and rings you again at the escalation days.
           </p>
           <div style={tableWrapStyle}>
@@ -199,12 +199,12 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
                       </td>
                       <td style={{ ...tdStyle, textAlign: 'right' }}>
                         <button
-                          onClick={() => act(r.key, `/api/fax/ppot/requests/${r.key}`, { action: 'cancel' }, `Cancel the Appendix T request for ${r.memberName}? It leaves this list and no longer counts as this cycle's request. The fax itself stays in Sent faxes.`)}
+                          onClick={() => act(r.key, `/api/fax/ppot/requests/${r.key}`, { action: 'cancel' }, `Cancel the Appendix T request for ${r.memberName}? It leaves this list and no longer counts as this cycle's request. The fax itself stays in Sent Faxes.`)}
                           style={ghostBtnStyle}
                           disabled={busy === r.key}
                           title="Withdraw it (wrong office, no longer needed, or a test)"
                         >
-                          <Ban size={14} /> Cancel request
+                          <Ban size={14} /> Cancel Request
                         </button>
                       </td>
                     </tr>
@@ -245,7 +245,7 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
                         style={{ ...ghostBtnStyle, marginLeft: 6 }}
                         disabled={busy === r.key}
                       >
-                        <EyeOff size={14} /> Remove from list
+                        <EyeOff size={14} /> Remove from List
                       </button>
                     </td>
                   </tr>
@@ -365,7 +365,7 @@ function FileModal({
     <div style={backdropStyle} onClick={busy ? undefined : onClose}>
       <div style={modalStyle} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="ppot-file-title">
         <div style={modalHeaderStyle}>
-          <strong id="ppot-file-title" style={{ fontSize: 16, color: '#1a3a5c' }}>File as signed Appendix T</strong>
+          <strong id="ppot-file-title" style={{ fontSize: 16, color: '#1a3a5c' }}>File as Signed Appendix T</strong>
           <button onClick={onClose} style={closeBtnStyle} aria-label="Close" disabled={busy}>
             <X size={18} />
           </button>
@@ -436,7 +436,7 @@ function FileModal({
           <div style={modalFooterStyle}>
             <button type="button" onClick={onClose} style={ghostBtnStyle} disabled={busy}>Cancel</button>
             <button type="submit" style={primaryBtnStyle} disabled={busy}>
-              <FileCheck2 size={14} /> {busy ? 'Filing…' : 'File signed PPOT'}
+              <FileCheck2 size={14} /> {busy ? 'Filing…' : 'File Signed PPOT'}
             </button>
           </div>
         </form>

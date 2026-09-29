@@ -134,13 +134,13 @@ export default function AnnouncementsPage() {
         <h1 style={titleStyle}>Announcements</h1>
         <p style={subtitleStyle}>
           A short &ldquo;What&rsquo;s new&rdquo; message that opens as a popup the next time each person in the audience signs in or opens a
-          progress note. They must click <strong>Got it</strong> to continue, and that click is recorded here so you can see who has read it.
+          progress note. They must click <strong>Got It</strong> to continue, and that click is recorded here so you can see who has read it.
         </p>
 
         {toast && <div style={okStyle}><Check size={16} /> {toast}</div>}
 
         <section style={cardStyle}>
-          <h2 style={sectionTitleStyle}><Megaphone size={16} style={{ verticalAlign: -3, marginRight: 6 }} />New announcement</h2>
+          <h2 style={sectionTitleStyle}><Megaphone size={16} style={{ verticalAlign: -3, marginRight: 6 }} />New Announcement</h2>
           <p style={hintStyle}>Keep it to one screen on a phone: a title, up to {MAX_ANNOUNCEMENT_ITEMS} items with a bold lead-in and one or two sentences each, and an optional closing line.</p>
 
           <div style={fieldStyle} id={fieldId('title')}>
@@ -174,7 +174,7 @@ export default function AnnouncementsPage() {
           ))}
           {items.length < MAX_ANNOUNCEMENT_ITEMS && (
             <button type="button" style={linkBtnStyle} onClick={() => setItems((prev) => [...prev, { label: '', text: '' }])}>
-              <Plus size={14} /> Add an item
+              <Plus size={14} /> Add an Item
             </button>
           )}
 
@@ -254,7 +254,7 @@ function AnnouncementCard({ a, staff, testUids, retiring, onRetire }: { a: Annou
       {a.footer && <div style={{ ...hintStyle, marginTop: 6, fontStyle: 'italic' }}>{a.footer}</div>}
 
       <button type="button" style={{ ...linkBtnStyle, marginTop: 10 }} onClick={() => setOpen((o) => !o)}>
-        {open ? 'Hide' : 'Show'} who has read it
+        {open ? 'Hide' : 'Show'} Who Has Read It
       </button>
       {open && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12, marginTop: 8 }}>

@@ -151,7 +151,7 @@ export default function EsignPage() {
       <div style={containerStyle}>
         <div style={wrapStyle}>
           <div style={emptyStyle}>
-            <strong>You do not have access to E-signatures.</strong>
+            <strong>You do not have access to E-Signatures.</strong>
             <div style={{ marginTop: 6 }}>It uses the same access as the Fax Center. Ask an admin to add you under Settings, Fax Center.</div>
           </div>
         </div>
@@ -182,7 +182,7 @@ export default function EsignPage() {
         <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
           {canFiles && p.signedCopy && (
             <button onClick={() => setPreview(p)} style={ghostBtnStyle} disabled={busy === p.id} title={`View the signed copy (uploaded by ${p.signedCopy.uploadedByName})`}>
-              <Eye size={14} /> View signed copy
+              <Eye size={14} /> View Signed Copy
             </button>
           )}
           {!p.signedCopy && (
@@ -192,7 +192,7 @@ export default function EsignPage() {
           )}
           {canFiles && p.stage === 'completed' && !p.signedCopy && (
             <button onClick={() => pickUpload(p.id)} style={{ ...ghostBtnStyle, marginLeft: 6 }} disabled={busy === p.id}>
-              <Upload size={14} /> {busy === p.id ? 'Saving…' : 'Attach signed PDF'}
+              <Upload size={14} /> {busy === p.id ? 'Saving…' : 'Attach Signed PDF'}
             </button>
           )}
           {!canFiles && p.stage === 'completed' && (
@@ -222,7 +222,7 @@ export default function EsignPage() {
         <header style={headerStyle}>
           <div>
             <p style={kickerStyle}>Office</p>
-            <h1 style={titleStyle}>E-signatures</h1>
+            <h1 style={titleStyle}>E-Signatures</h1>
             <p style={subtitleStyle}>
               PandaDoc packets and where each one stands. Keep sending them from PandaDoc; this page updates on its own.
               {canFiles ? ' When a packet is complete, attach the signed PDF from PandaDoc here.' : ''}
@@ -237,7 +237,7 @@ export default function EsignPage() {
           <div role="alert" style={warnBannerStyle}>
             <AlertTriangle size={16} style={{ flexShrink: 0 }} />
             The PandaDoc webhook isn&apos;t connected yet, so nothing will show here. The setup steps are under Settings,
-            E-signature tracking.
+            E-Signature Tracking.
           </div>
         )}
 
@@ -268,7 +268,7 @@ export default function EsignPage() {
         ) : (
           <>
             <section style={{ marginBottom: 22 }}>
-              <h2 style={sectionTitleStyle}>In progress ({open.length})</h2>
+              <h2 style={sectionTitleStyle}>In Progress ({open.length})</h2>
               {open.length === 0 ? (
                 <div style={{ ...emptyStyle, padding: '24px' }}>Nothing in progress.</div>
               ) : (

@@ -346,7 +346,7 @@ export default function AdministerDoseModal({
             status choice so they are read BEFORE the nurse decides given vs held. */}
         {parameters && (
           <div style={paramCallout} role="note">
-            <div style={paramCalloutTitle}>Parameters: check before giving</div>
+            <div style={paramCalloutTitle}>Parameters: Check Before Giving</div>
             <div style={paramCalloutText}>{parameters}</div>
           </div>
         )}
@@ -579,7 +579,7 @@ export default function AdministerDoseModal({
             Cancel
           </button>
           <button type="button" style={saveBtn} onClick={save} disabled={busy}>
-            {busy ? 'Saving…' : isCheck ? 'Save entry' : 'Save dose'}
+            {busy ? 'Saving…' : isCheck ? 'Save Entry' : 'Save Dose'}
           </button>
         </div>
       </div>

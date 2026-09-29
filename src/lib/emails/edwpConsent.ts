@@ -100,7 +100,7 @@ export async function sendEdwpConsentNotification(
   const html = `
     <div style="font-family:Arial,Helvetica,sans-serif;color:#111827;max-width:640px;">
       ${emailLogoBlock()}
-      <h2 style="margin:0 0 4px;">EDWP consent form signed</h2>
+      <h2 style="margin:0 0 4px;">EDWP Consent Form Signed</h2>
       <p style="margin:0 0 16px;color:#6b7280;font-size:13px;">Submitted online via heartandsoulhc.org. The signed PDF is attached.</p>
       <table style="border-collapse:collapse;width:100%;font-size:14px;">${rowsHtml(rows)}</table>
       <p style="margin:16px 0 0;font-size:12px;color:#6b7280;">
@@ -112,7 +112,7 @@ export async function sendEdwpConsentNotification(
     from: FROM_ADDRESS,
     to: NOTIFICATION_EMAIL,
     replyTo: isValidEmail(consent.email) ? consent.email : undefined,
-    subject: `EDWP consent signed: ${consent.clientName || 'Unknown'}`,
+    subject: `EDWP Consent Signed: ${consent.clientName || 'Unknown'}`,
     html,
     attachments: [{ filename: pdfFilename(consent), content: pdf }],
   });

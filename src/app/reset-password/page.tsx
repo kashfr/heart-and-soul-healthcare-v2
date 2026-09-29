@@ -92,23 +92,23 @@ function ResetPasswordForm() {
       <div style={cardStyle}>
         {status === 'verifying' && (
           <>
-            <h1 style={titleStyle}>Set your password</h1>
+            <h1 style={titleStyle}>Set Your Password</h1>
             <p style={subtitleStyle}>Checking your link…</p>
           </>
         )}
 
         {status === 'invalid' && (
           <>
-            <h1 style={titleStyle}>Link expired</h1>
+            <h1 style={titleStyle}>Link Expired</h1>
             <p style={subtitleStyle}>
               This password link is invalid or has already been used. Reset links expire about an
               hour after they&apos;re sent.
             </p>
             <Link href="/login" style={{ ...primaryBtnStyle, display: 'block', textAlign: 'center', textDecoration: 'none' }}>
-              Go to sign in
+              Go to Sign In
             </Link>
             <p style={footerStyle}>
-              On the sign-in page, click <strong>Forgot password?</strong> to send yourself a fresh
+              On the sign-in page, click <strong>Forgot Password?</strong> to send yourself a fresh
               link, or ask your administrator to resend one.
             </p>
           </>
@@ -116,7 +116,7 @@ function ResetPasswordForm() {
 
         {(status === 'ready' || status === 'saving' || status === 'done') && (
           <>
-            <h1 style={titleStyle}>Set your password</h1>
+            <h1 style={titleStyle}>Set Your Password</h1>
             <p style={subtitleStyle}>
               Choose a new password for <strong>{email}</strong>. We&apos;ll sign you in right after.
             </p>
@@ -165,7 +165,7 @@ function ResetPasswordForm() {
                 disabled={status === 'saving' || status === 'done'}
                 style={primaryBtnStyle}
               >
-                {status === 'saving' || status === 'done' ? 'Saving…' : 'Save password & sign in'}
+                {status === 'saving' || status === 'done' ? 'Saving…' : 'Save Password & Sign In'}
               </button>
             </form>
           </>

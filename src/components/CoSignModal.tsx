@@ -131,7 +131,7 @@ export default function CoSignModal({ notes, onClose, onSuccess }: CoSignModalPr
     <div style={backdropStyle} onClick={submitting ? undefined : onClose}>
       <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
         <div style={headerStyle}>
-          <h2 style={titleStyle}>{isBatch ? `Co-sign ${notes.length} notes` : 'Co-sign this note'}</h2>
+          <h2 style={titleStyle}>{isBatch ? `Co-Sign ${notes.length} Notes` : 'Co-Sign This Note'}</h2>
           <button
             onClick={onClose}
             disabled={submitting}
@@ -220,7 +220,7 @@ export default function CoSignModal({ notes, onClose, onSuccess }: CoSignModalPr
               disabled={submitting || !signature}
               style={clearBtnStyle}
             >
-              Clear signature
+              Clear Signature
             </button>
             <FieldError message={errors.signature} />
           </div>
@@ -258,7 +258,7 @@ export default function CoSignModal({ notes, onClose, onSuccess }: CoSignModalPr
             ) : (
               <>
                 <CheckCircle2 size={16} />
-                {isBatch ? `Sign ${notes.length} notes` : 'Sign and submit'}
+                {isBatch ? `Sign ${notes.length} Notes` : 'Sign and Submit'}
               </>
             )}
           </button>

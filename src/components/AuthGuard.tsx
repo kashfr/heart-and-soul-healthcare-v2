@@ -49,7 +49,7 @@ export function AuthGuard({ children, allow }: AuthGuardProps) {
         {viewingAs ? (
           <>
             {viewingAs.displayName} doesn&apos;t have access to this page, so the
-            view-as preview can&apos;t show it. Exit view-as to open it as yourself.
+            view-as preview can&apos;t show it. Exit View-As to open it as yourself.
           </>
         ) : (
           <>

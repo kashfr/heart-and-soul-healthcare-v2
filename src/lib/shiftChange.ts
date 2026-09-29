@@ -127,8 +127,8 @@ export function shiftChangeEmailCopy(ctx: ShiftChangeAlertContext): ShiftChangeE
   const items = shiftChangeLabels(ctx.report);
   const yn = (b: boolean) => (b ? 'Yes' : 'No');
   return {
-    subject: `${ctx.report.medChange ? 'Med change reported' : 'Hospital / ER visit reported'}: ${ctx.clientName} (${ctx.dateOfService})`,
-    headline: 'Change reported since the last shift',
+    subject: `${ctx.report.medChange ? 'Med Change Reported' : 'Hospital / ER Visit Reported'}: ${ctx.clientName} (${ctx.dateOfService})`,
+    headline: 'Change Reported Since the Last Shift',
     intro: `${who} answered Yes to ${items.length === 1 ? 'a' : `${items.length}`} "since your last shift" question${items.length === 1 ? '' : 's'} on a progress note:`,
     answers: [
       `Hospital admission: ${yn(ctx.report.hospitalAdmission)}`,

@@ -76,14 +76,14 @@ const TABS = [
   { key: 'overview', label: 'Overview' },
   { key: 'schedule', label: 'Schedule' },
   { key: 'trends', label: 'Trends' },
-  { key: 'readiness', label: 'Survey readiness' },
+  { key: 'readiness', label: 'Survey Readiness' },
   { key: 'documents', label: 'Documents' },
-  { key: 'serviceplan', label: 'Service plan' },
+  { key: 'serviceplan', label: 'Service Plan' },
   { key: 'communications', label: 'Communications' }, // staff-only
   // Staff-only: the care-task editor that used to be the Care Plans sidebar
   // tab (nav consolidation, Aug 2026). Hidden from nurses at render time and
   // guarded in the tab resolver below.
-  { key: 'careplan', label: 'Care plan' },
+  { key: 'careplan', label: 'Care Plan' },
   // Owner-only: authorized hours vs documented shift hours (billing + the
   // parent's "how many hours are left"). Hidden from every other role and
   // while an admin previews a nurse's view; guarded in the resolver below.
@@ -556,7 +556,7 @@ function ClientDashboardInner() {
                     anyway (ViewAsWriteBlock), so don't offer a dead door. */}
                 {!isViewingAs && (
                   <Link href={`/progress-note?patient=${patientId}`} style={secondaryActionStyle}>
-                    <FileText size={15} /> New progress note
+                    <FileText size={15} /> New Progress Note
                   </Link>
                 )}
                 <Link href={marHref} style={primaryActionStyle}>
@@ -564,7 +564,7 @@ function ClientDashboardInner() {
                 </Link>
                 {!isNurse && (
                   <Link href={`/admin/records/${patientId}`} style={secondaryActionStyle}>
-                    <ClipboardList size={15} /> Manage record
+                    <ClipboardList size={15} /> Manage Record
                   </Link>
                 )}
               </div>
@@ -656,7 +656,7 @@ function ClientDashboardInner() {
               {/* Next visits, compact — the full calendar lives on Schedule */}
               <section style={sectionCardStyle}>
                 <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
-                  <CalendarClock size={16} /> Next visits
+                  <CalendarClock size={16} /> Next Visits
                 </div>
                 {nextVisits.length === 0 ? (
                   <div style={emptyInlineStyle}>No upcoming visits scheduled.</div>
@@ -675,7 +675,7 @@ function ClientDashboardInner() {
                   </ul>
                 )}
                 <button type="button" onClick={() => setTab('schedule')} style={jumpLinkStyle}>
-                  Full schedule
+                  Full Schedule
                 </button>
               </section>
 
@@ -803,7 +803,7 @@ function ClientDashboardInner() {
           {tab === 'readiness' && (
           <section style={sectionCardStyle}>
             <div style={sectionTitleStyle}>
-              <Activity size={16} /> Survey readiness · baseline
+              <Activity size={16} /> Survey Readiness · Baseline
             </div>
             <p style={sectionSubStyle}>
               Signals a surveyor checks first, computed from the last 90 days (medication window: 30 days).
@@ -812,32 +812,32 @@ function ClientDashboardInner() {
             <div style={readinessGridStyle}>
               <ReadinessCard
                 signal={timelinessSignal}
-                title="Documentation timeliness"
+                title="Documentation Timeliness"
                 value={timeliness.pctSameDay === null ? 'No notes in window' : `${timeliness.pctSameDay}% same-day`}
                 detail={timeliness.late > 0 ? `${timeliness.late} late ${timeliness.late === 1 ? 'entry' : 'entries'}` : 'No late entries'}
               />
               <ReadinessCard
                 signal={gapSignal}
-                title="Continuity of care"
+                title="Continuity of Care"
                 value={gap === null ? 'No visits in window' : `Largest gap: ${gap}d`}
                 detail={daysSinceVisit !== null ? `${daysSinceVisit}d since last visit` : 'No visits yet'}
               />
               <ReadinessCard
                 signal={doseSignal}
-                title="Scheduled doses (30d)"
+                title="Scheduled Doses (30d)"
                 value={mar30.expected === 0 ? 'None due' : mar30.undocumented === 0 ? 'All documented' : `${mar30.undocumented} undocumented`}
                 detail={`${mar30.given} given · ${mar30.held} held · ${mar30.refused} refused`}
               />
               <ReadinessCard
                 signal={prnSignal}
-                title="PRN follow-up (30d)"
+                title="PRN Follow-Up (30d)"
                 value={mar30.prnGiven === 0 ? 'No PRN doses' : mar30.prnPendingResult === 0 ? 'All results recorded' : `${mar30.prnPendingResult} result${mar30.prnPendingResult === 1 ? '' : 's'} pending`}
                 detail={mar30.prnGiven > 0 ? `${mar30.prnGiven} PRN dose${mar30.prnGiven === 1 ? '' : 's'} given` : 'Nothing to follow up'}
                 href={mar30.prnPendingResult > 0 ? marHref : undefined}
               />
               <ReadinessCard
                 signal={physicianSignal}
-                title="Physician attribution"
+                title="Physician Attribution"
                 value={
                   activeOrders.length === 0
                     ? 'No active medications'
@@ -856,7 +856,7 @@ function ClientDashboardInner() {
               />
               <ReadinessCard
                 signal={orderCurrencySignal}
-                title="Physician order currency"
+                title="Physician Order Currency"
                 value={
                   activeOrders.length === 0
                     ? 'No active medications'
@@ -879,7 +879,7 @@ function ClientDashboardInner() {
               />
               <ReadinessCard
                 signal={notifySignal}
-                title="Prescriber notification (30d)"
+                title="Prescriber Notification (30d)"
                 value={
                   mar30.refusedTotal === 0
                     ? 'No refused doses'
@@ -898,7 +898,7 @@ function ClientDashboardInner() {
               />
               <ReadinessCard
                 signal={shiftIntegritySignal}
-                title="Shift-window integrity (30d)"
+                title="Shift-Window Integrity (30d)"
                 value={
                   outOfWindow30 > 0
                     ? `${outOfWindow30} dose${outOfWindow30 === 1 ? '' : 's'} outside the nurse's shift`
@@ -917,7 +917,7 @@ function ClientDashboardInner() {
               />
               <ReadinessCard
                 signal={adverseSignal}
-                title="Adverse reactions (90d)"
+                title="Adverse Reactions (90d)"
                 value={adverse.length === 0 ? 'None reported' : `${adverse.length} reported`}
                 detail={
                   adverse.length === 0
@@ -929,7 +929,7 @@ function ClientDashboardInner() {
               />
               <ReadinessCard
                 signal={supCurrency.status}
-                title="Supervisory visits"
+                title="Supervisory Visits"
                 value={
                   supCurrency.status === 'none'
                     ? 'No visit form on file'
@@ -944,7 +944,7 @@ function ClientDashboardInner() {
               />
               <ReadinessCard
                 signal={rnCurrency.status}
-                title="RN oversight"
+                title="RN Oversight"
                 value={
                   rnCurrency.status === 'none'
                     ? 'No oversight form on file'
@@ -959,7 +959,7 @@ function ClientDashboardInner() {
               />
               <ReadinessCard
                 signal={pocCurrency.status}
-                title="Plan of care currency"
+                title="Plan of Care Currency"
                 value={
                   pocCurrency.status === 'none'
                     ? 'No plan of care on file'
@@ -974,7 +974,7 @@ function ClientDashboardInner() {
               />
               <ReadinessCard
                 signal={servicePlanCurrency.status}
-                title="Service plan"
+                title="Service Plan"
                 value={
                   servicePlanCurrency.status === 'none'
                     ? 'No service plan on file'
@@ -1023,7 +1023,7 @@ function ClientDashboardInner() {
           {tab === 'serviceplan' && (
           <section style={sectionCardStyle}>
             <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
-              <ClipboardList size={16} /> Service plan
+              <ClipboardList size={16} /> Service Plan
             </div>
             <ServicePlanSection key={`sp-${patientId}`} patientId={patientId} canAuthor={realStaff && !isViewingAs} />
           </section>
@@ -1044,7 +1044,7 @@ function ClientDashboardInner() {
           {tab === 'careplan' && !isNurse && (
           <section style={sectionCardStyle}>
             <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
-              <ListChecks size={16} /> Care plan
+              <ListChecks size={16} /> Care Plan
             </div>
             <CarePlanSection patientId={patientId} />
           </section>
@@ -1064,7 +1064,7 @@ function ClientDashboardInner() {
           {tab === 'overview' && (
           <section style={sectionCardStyle}>
             <div style={sectionTitleStyle}>
-              <ClipboardList size={16} /> Recent activity
+              <ClipboardList size={16} /> Recent Activity
             </div>
             {activity.length === 0 ? (
               <div style={emptyInlineStyle}>Nothing documented yet for this client.</div>

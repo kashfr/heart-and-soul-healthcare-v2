@@ -47,7 +47,7 @@ describe('visitSmsBody', () => {
     const body = visitSmsBody('reminder', SHIFT);
     expect(body).toContain('reminder');
     expect(body).toContain('today, Fri, Jul 10 at 10:00 AM');
-    expect(visitEmailSubject('reminder', SHIFT)).toBe('Visit reminder for today: Fri, Jul 10');
+    expect(visitEmailSubject('reminder', SHIFT)).toBe('Visit Reminder for Today: Fri, Jul 10');
     expect(visitEmailBody('reminder', SHIFT, 'Steve')).toContain('A reminder: you have a shift visit today');
   });
 
@@ -56,7 +56,7 @@ describe('visitSmsBody', () => {
     expect(body).toContain('tomorrow, Fri, Jul 10 at 10:00 AM');
     expect(body).not.toContain('today');
     expect(body).toContain(PORTAL_LOGIN_URL);
-    expect(visitEmailSubject('reminder_tomorrow', SHIFT)).toBe('Visit reminder for tomorrow: Fri, Jul 10');
+    expect(visitEmailSubject('reminder_tomorrow', SHIFT)).toBe('Visit Reminder for Tomorrow: Fri, Jul 10');
     expect(visitEmailBody('reminder_tomorrow', SHIFT, 'Steve')).toContain(
       'A reminder: you have a shift visit tomorrow',
     );
@@ -107,9 +107,9 @@ describe('morning-nudge cutoff', () => {
 
 describe('visitEmailSubject / visitEmailBody', () => {
   it('subject names the event and date', () => {
-    expect(visitEmailSubject('assigned', SHIFT)).toBe('New shift visit assigned: Fri, Jul 10');
-    expect(visitEmailSubject('cancelled', SHIFT)).toBe('Visit cancelled: Fri, Jul 10');
-    expect(visitEmailSubject('restored', SUP_NO_TIME)).toBe('Visit back on the schedule: Sun, Jul 12');
+    expect(visitEmailSubject('assigned', SHIFT)).toBe('New Shift Visit Assigned: Fri, Jul 10');
+    expect(visitEmailSubject('cancelled', SHIFT)).toBe('Visit Cancelled: Fri, Jul 10');
+    expect(visitEmailSubject('restored', SUP_NO_TIME)).toBe('Visit Back on the Schedule: Sun, Jul 12');
   });
 
   it('body greets by first name and explains where client details live', () => {

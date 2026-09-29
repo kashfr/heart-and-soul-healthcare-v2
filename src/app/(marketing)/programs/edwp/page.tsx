@@ -110,7 +110,7 @@ const services = [
     description: 'Support and training for family members serving as primary caregivers for their loved ones.',
   },
   {
-    title: 'Home-delivered Meals',
+    title: 'Home-Delivered Meals',
     description: 'Nutritionally balanced meals delivered to the home for individuals unable to prepare their own meals.',
   },
   {

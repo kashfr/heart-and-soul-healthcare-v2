@@ -144,7 +144,7 @@ export default function VisitsCalendar({ visits, today, isStaff, busyId, onMark,
             <span style={{ fontWeight: 700, color: '#1f2937', fontSize: 14 }}>{fmtDayTitle(selected)}</span>
             {isStaff && (
               <button type="button" onClick={() => onAddOn(selected)} style={panelAddBtnStyle}>
-                <CalendarPlus size={13} /> Add visit this day
+                <CalendarPlus size={13} /> Add Visit This Day
               </button>
             )}
           </div>

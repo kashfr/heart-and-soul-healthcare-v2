@@ -73,8 +73,8 @@ function GateQueue({ items }: { items: OpenClarification[] }) {
           <div>
             <div style={{ fontWeight: 800, fontSize: 18, color: '#1a3a5c' }}>
               {items.length === 1
-                ? 'A note needs your clarification'
-                : `${items.length} notes need your clarification`}
+                ? 'A Note Needs Your Clarification'
+                : `${items.length} Notes Need Your Clarification`}
             </div>
             <div style={{ fontSize: 13, color: '#5c6b7a', marginTop: 2 }}>
               Open each note to review it and reply to the reviewer. You can&apos;t use the rest
@@ -116,7 +116,7 @@ function GateQueue({ items }: { items: OpenClarification[] }) {
                 {/* Full reload (plain <a>) so the gate re-evaluates against the new
                     path and steps aside on the destination note page. */}
                 <a href={`/admin/submissions/${it.noteId}?clarify=1`} style={reviewBtn}>
-                  Review note &amp; reply <ArrowRight size={15} />
+                  Review Note &amp; Reply <ArrowRight size={15} />
                 </a>
               </div>
             </li>

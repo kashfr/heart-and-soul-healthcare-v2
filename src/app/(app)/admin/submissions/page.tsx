@@ -500,7 +500,7 @@ export default function SubmissionsPage() {
       if (!program || !first) return 'Not linked to a client on the roster, so no program to price by.';
       const row = resolveRateRow(rates, program, bucketOf(s), first.dateISO, s.credential);
       const programLabel = getProgram(program)?.label || program;
-      if (!row) return `No billing rate for ${programLabel} ${bucketOf(s) === 'oversight' ? 'RN oversight' : 'shift hours'}${s.credential ? ` (${s.credential})` : ''}. Add one under Settings → Billing rates.`;
+      if (!row) return `No billing rate for ${programLabel} ${bucketOf(s) === 'oversight' ? 'RN oversight' : 'shift hours'}${s.credential ? ` (${s.credential})` : ''}. Add one under Settings → Billing Rates.`;
       return `${fmtUnits(segmentsToUnits(segs))} units × ${fmtDollars(row.ratePerUnit)} (${programLabel}, ${row.credential || 'any nurse'}${row.serviceCode ? `, ${row.serviceCode}${row.modifier ? ` ${row.modifier}` : ''}` : ''})`;
     },
     [rates, programByPatient, rowSegments],
@@ -1198,9 +1198,9 @@ export default function SubmissionsPage() {
             }}
           >
             {draftToastKind === 'oversight'
-              ? '✓ Oversight note draft saved. Open New oversight note to resume it.'
+              ? '✓ Oversight note draft saved. Open New Oversight Note to resume it.'
               : draftToastKind === 'supervisory'
-                ? '✓ Supervisory visit draft saved. Open New supervisory visit to resume it.'
+                ? '✓ Supervisory visit draft saved. Open New Supervisory Visit to resume it.'
                 : '✓ Draft saved. You can resume it anytime from the progress note page.'}
           </div>
         )}
@@ -1260,7 +1260,7 @@ export default function SubmissionsPage() {
               className={styles.newNoteBtn}
             >
               <Plus size={16} />
-              {myDraft ? 'Resume draft' : 'New progress note'}
+              {myDraft ? 'Resume Draft' : 'New Progress Note'}
             </Link>
           )}
           {/* RN oversight visit note — same gate the form enforces: an RN
@@ -1268,14 +1268,14 @@ export default function SubmissionsPage() {
           {canAuthorOversightNote && (
             <Link href="/oversight-note" className={styles.newNoteBtnSecondary}>
               <Plus size={16} />
-              New oversight note
+              New Oversight Note
             </Link>
           )}
           {/* Home supervisory visit — supervisors and admins only, like the form. */}
           {canAuthorSupervisory && (
             <Link href="/supervisory-visit" className={styles.newNoteBtnSecondary}>
               <Plus size={16} />
-              New supervisory visit
+              New Supervisory Visit
             </Link>
           )}
           </div>
@@ -1327,7 +1327,7 @@ export default function SubmissionsPage() {
             className={styles.tab}
               title="Notes from other nurses on patients you also work with"
             >
-              Care team <span style={tabCountStyle}>{teamCount}</span>
+              Care Team <span style={tabCountStyle}>{teamCount}</span>
             </button>
           )}
         </div>
@@ -1481,7 +1481,7 @@ export default function SubmissionsPage() {
               checked={flagAbnormal}
               onChange={(e) => updateParams({ abn: e.target.checked ? '1' : null, p: null })}
             />
-            Abnormal vitals
+            Abnormal Vitals
           </label>
           <label style={flagLabelStyle} className={styles.flagChip}>
             <input
@@ -1489,7 +1489,7 @@ export default function SubmissionsPage() {
               checked={flagIncident}
               onChange={(e) => updateParams({ inc: e.target.checked ? '1' : null, p: null })}
             />
-            Incident reported
+            Incident Reported
           </label>
           <label style={flagLabelStyle} className={styles.flagChip}>
             <input
@@ -1497,7 +1497,7 @@ export default function SubmissionsPage() {
               checked={flagPhysNotified}
               onChange={(e) => updateParams({ phy: e.target.checked ? '1' : null, p: null })}
             />
-            Physician notified
+            Physician Notified
           </label>
           <label style={flagLabelStyle} className={styles.flagChip}>
             <input
@@ -1505,7 +1505,7 @@ export default function SubmissionsPage() {
               checked={flagNeedsCosign}
               onChange={(e) => updateParams({ cosign: e.target.checked ? '1' : null, p: null })}
             />
-            Needs co-signature
+            Needs Co-Signature
           </label>
           <label style={flagLabelStyle} className={styles.flagChip}>
             <input
@@ -1513,7 +1513,7 @@ export default function SubmissionsPage() {
               checked={flagHospitalEr}
               onChange={(e) => updateParams({ hosp: e.target.checked ? '1' : null, p: null })}
             />
-            Hospital / ER visit
+            Hospital / ER Visit
           </label>
           <label style={flagLabelStyle} className={styles.flagChip}>
             <input
@@ -1521,7 +1521,7 @@ export default function SubmissionsPage() {
               checked={flagMedChange}
               onChange={(e) => updateParams({ med: e.target.checked ? '1' : null, p: null })}
             />
-            Med change reported
+            Med Change Reported
           </label>
           <label style={flagLabelStyle} className={styles.flagChip} title="Notes with an open correction or clarification flag">
             <input
@@ -1548,7 +1548,7 @@ export default function SubmissionsPage() {
             aria-hidden={!hasAnyFilter}
             tabIndex={hasAnyFilter ? 0 : -1}
           >
-            <X size={12} /> Clear all
+            <X size={12} /> Clear All
           </button>
         </div>
 
@@ -1646,7 +1646,7 @@ export default function SubmissionsPage() {
                 }
               >
                 <CheckCircle2 size={14} />
-                Co-sign selected
+                Co-Sign Selected
               </button>
             )}
             <button onClick={openExportModal} style={exportBtnStyle} disabled={busy}>
@@ -1703,7 +1703,7 @@ export default function SubmissionsPage() {
                 </span>
               )}
               {showDollars && hoursStats.unpriced > 0 && (
-                <Link href="/admin/settings/billing-rates" style={{ ...hoursStatStyle, color: '#b45309', textDecoration: 'underline' }} title="Dollars need a billing rate for the client's program (Settings → Billing rates)">
+                <Link href="/admin/settings/billing-rates" style={{ ...hoursStatStyle, color: '#b45309', textDecoration: 'underline' }} title="Dollars need a billing rate for the client's program (Settings → Billing Rates)">
                   {hoursStats.unpriced} {hoursStats.unpriced === 1 ? 'row has' : 'rows have'} no rate
                 </Link>
               )}
@@ -1740,7 +1740,7 @@ export default function SubmissionsPage() {
                 title="Show dollars alongside: units × the rate on the client's authorization line"
                 aria-pressed={showDollars}
               >
-                $ {showDollars ? 'on' : 'off'}
+                $ {showDollars ? 'On' : 'Off'}
               </button>
               <div style={{ flex: 1 }} className={styles.hoursSpacer} />
               <button
@@ -1749,21 +1749,21 @@ export default function SubmissionsPage() {
                 style={pivot === 'day' ? pivotBtnActiveStyle : pivotBtnStyle}
                 title="Each calendar day's hours (overnight shifts split at midnight)"
               >
-                By day
+                By Day
               </button>
               <button
                 type="button"
                 onClick={() => openPivot(pivot === 'client' ? '' : 'client')}
                 style={pivot === 'client' ? pivotBtnActiveStyle : pivotBtnStyle}
               >
-                By client
+                By Client
               </button>
               <button
                 type="button"
                 onClick={() => openPivot(pivot === 'nurse' ? '' : 'nurse')}
                 style={pivot === 'nurse' ? pivotBtnActiveStyle : pivotBtnStyle}
               >
-                By nurse
+                By Nurse
               </button>
               <button type="button" onClick={exportHoursCsv} style={pivotBtnStyle} title="Download these rows with hours as a spreadsheet">
                 <FileSpreadsheet size={13} /> CSV
@@ -1778,11 +1778,11 @@ export default function SubmissionsPage() {
                     {pivot === 'day' && <th style={pivotThSortStyle} onClick={() => clickPivotSort('who')}>Who{pivotIndicator('who')}</th>}
                     {pivot === 'nurse' && <th style={pivotThSortStyle} onClick={() => clickPivotSort('who')}>Type{pivotIndicator('who')}</th>}
                     <th style={{ ...pivotThSortStyle, textAlign: 'right' }} onClick={() => clickPivotSort('shifts')}>Shifts{pivotIndicator('shifts')}</th>
-                    <th style={{ ...pivotThSortStyle, textAlign: 'right' }} onClick={() => clickPivotSort('hours')}>{qtyView === 'hours' ? 'Shift hours' : 'Shift units'}{pivotIndicator('hours')}</th>
+                    <th style={{ ...pivotThSortStyle, textAlign: 'right' }} onClick={() => clickPivotSort('hours')}>{qtyView === 'hours' ? 'Shift Hours' : 'Shift Units'}{pivotIndicator('hours')}</th>
                     {showDollars && <th style={{ ...pivotThSortStyle, textAlign: 'right', color: '#166534' }} onClick={() => clickPivotSort('dollars')}>Shift ${pivotIndicator('dollars')}</th>}
                     {pivot !== 'day' && <th style={{ ...pivotThSortStyle, textAlign: 'right' }} onClick={() => clickPivotSort('hours')}>Share{pivotIndicator('hours')}</th>}
-                    {hoursStats.visits > 0 && <th style={{ ...pivotThSortStyle, textAlign: 'right', color: '#1d4ed8' }} onClick={() => clickPivotSort('visits')}>RN visits{pivotIndicator('visits')}</th>}
-                    {hoursStats.visits > 0 && <th style={{ ...pivotThSortStyle, textAlign: 'right', color: '#1d4ed8' }} onClick={() => clickPivotSort('rnHours')}>{qtyView === 'hours' ? 'RN hours' : 'RN units'}{pivotIndicator('rnHours')}</th>}
+                    {hoursStats.visits > 0 && <th style={{ ...pivotThSortStyle, textAlign: 'right', color: '#1d4ed8' }} onClick={() => clickPivotSort('visits')}>RN Visits{pivotIndicator('visits')}</th>}
+                    {hoursStats.visits > 0 && <th style={{ ...pivotThSortStyle, textAlign: 'right', color: '#1d4ed8' }} onClick={() => clickPivotSort('rnHours')}>{qtyView === 'hours' ? 'RN Hours' : 'RN Units'}{pivotIndicator('rnHours')}</th>}
                     {hoursStats.visits > 0 && showDollars && <th style={{ ...pivotThSortStyle, textAlign: 'right', color: '#166534' }} onClick={() => clickPivotSort('rnDollars')}>RN ${pivotIndicator('rnDollars')}</th>}
                   </tr>
                 </thead>
@@ -1853,7 +1853,7 @@ export default function SubmissionsPage() {
         ) : sorted.length === 0 && !showDraftRow ? (
           <div style={emptyStyle}>
             <p style={emptyTitleStyle}>
-              {allSubmissions.length === 0 ? 'No submissions yet' : 'No matches'}
+              {allSubmissions.length === 0 ? 'No Submissions Yet' : 'No Matches'}
             </p>
             <p style={emptySubStyle}>
               {allSubmissions.length === 0
@@ -2208,7 +2208,7 @@ export default function SubmissionsPage() {
                                 style={rowCosignBtnStyle}
                                 title="Review and co-sign this note"
                               >
-                                Co-sign
+                                Co-Sign
                               </Link>
                             )}
                             {/* Archive button gated for nurses to own notes only.
@@ -2289,7 +2289,7 @@ export default function SubmissionsPage() {
         <div style={modalBackdropStyle} onClick={closeExportModal}>
           <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
             <div style={modalHeaderStyle}>
-              <h2 style={{ margin: 0, fontSize: 18, color: '#2c3e50' }}>Export progress notes</h2>
+              <h2 style={{ margin: 0, fontSize: 18, color: '#2c3e50' }}>Export Progress Notes</h2>
               <button
                 onClick={closeExportModal}
                 disabled={exporting}
@@ -2327,7 +2327,7 @@ export default function SubmissionsPage() {
                   />
                   <div>
                     <div style={{ fontWeight: 600, color: '#2c3e50' }}>
-                      ZIP of individual PDFs
+                      ZIP of Individual PDFs
                     </div>
                     <div style={radioDescStyle}>
                       One PDF per note, named by date + client + nurse. Best for searching or attaching a single note to a record.
@@ -2344,7 +2344,7 @@ export default function SubmissionsPage() {
                   />
                   <div>
                     <div style={{ fontWeight: 600, color: '#2c3e50' }}>
-                      Single merged PDF
+                      Single Merged PDF
                     </div>
                     <div style={radioDescStyle}>
                       All notes combined into one file with page breaks. Best for audit review or handing off a batch in one document.

@@ -211,7 +211,7 @@ export default function DocumentsSection({
               style={actionBtnStyle}
               title="File any RN oversight visit notes and home supervisory visits for this client that are not in Documents yet"
             >
-              <RefreshCw size={14} /> {syncing ? 'Syncing…' : 'Sync visit notes'}
+              <RefreshCw size={14} /> {syncing ? 'Syncing…' : 'Sync Visit Notes'}
             </button>
           )}
           {canUpload && (
@@ -257,7 +257,7 @@ export default function DocumentsSection({
                     <>
                       {' · '}
                       <Link href={`/admin/submissions/${d.sourceNoteId}`} style={{ color: NAVY, fontWeight: 600 }}>
-                        Open note
+                        Open Note
                       </Link>
                     </>
                   )}
@@ -411,7 +411,7 @@ function EditDocumentModal({
   return (
     <div style={backdropStyle} role="dialog" aria-modal="true" aria-label="Edit document details">
       <div style={sheetStyle}>
-        <div style={sheetTitleStyle}>Edit document details</div>
+        <div style={sheetTitleStyle}>Edit Document Details</div>
         <div style={{ ...hintStyle, marginBottom: 12 }}>File: {d.fileName}</div>
         <label style={fieldStyle} id={editFieldId('title')}>
           <span style={fieldLabelStyle}>Title *</span>
@@ -451,7 +451,7 @@ function EditDocumentModal({
         {error && <div style={errBoxStyle}>{error}</div>}
         <div style={actionsStyle}>
           <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={saving}>Cancel</button>
-          <button type="button" style={saveBtnStyle} onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button>
+          <button type="button" style={saveBtnStyle} onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</button>
         </div>
       </div>
     </div>
@@ -507,7 +507,7 @@ function MoveDocumentModal({
   return (
     <div style={backdropStyle} role="dialog" aria-modal="true" aria-label="Move document to another client">
       <div style={sheetStyle}>
-        <div style={sheetTitleStyle}>Move to another client</div>
+        <div style={sheetTitleStyle}>Move to Another Client</div>
         <div style={{ ...hintStyle, marginBottom: 12 }}>File: {d.fileName}. Fix the title, category, or date at the same time if they were wrong too.</div>
         <label style={fieldStyle}>
           <span style={fieldLabelStyle}>Move to *</span>
@@ -538,7 +538,7 @@ function MoveDocumentModal({
         {error && <div style={errBoxStyle}>{error}</div>}
         <div style={actionsStyle}>
           <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={saving}>Cancel</button>
-          <button type="button" style={saveBtnStyle} onClick={save} disabled={saving || !patients}>{saving ? 'Moving…' : 'Move document'}</button>
+          <button type="button" style={saveBtnStyle} onClick={save} disabled={saving || !patients}>{saving ? 'Moving…' : 'Move Document'}</button>
         </div>
       </div>
     </div>
@@ -581,7 +581,7 @@ function ReplaceDocumentModal({
   return (
     <div style={backdropStyle} role="dialog" aria-modal="true" aria-label="Replace the document file">
       <div style={sheetStyle}>
-        <div style={sheetTitleStyle}>Replace the file</div>
+        <div style={sheetTitleStyle}>Replace the File</div>
         <div style={{ ...hintStyle, marginBottom: 12 }}>
           “{d.title}” keeps its title, category, and date. The current file ({d.fileName}) is removed once the new one is uploaded.
         </div>
@@ -612,7 +612,7 @@ function ReplaceDocumentModal({
         {error && <div style={errBoxStyle}>{error}</div>}
         <div style={actionsStyle}>
           <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={uploading}>Cancel</button>
-          <button type="button" style={saveBtnStyle} onClick={save} disabled={uploading}>{uploading ? 'Uploading…' : 'Replace file'}</button>
+          <button type="button" style={saveBtnStyle} onClick={save} disabled={uploading}>{uploading ? 'Uploading…' : 'Replace File'}</button>
         </div>
       </div>
     </div>
@@ -682,7 +682,7 @@ function UploadDocumentModal({
   return (
     <div style={backdropStyle} role="dialog" aria-modal="true" aria-label="Upload a document">
       <div style={sheetStyle}>
-        <div style={sheetTitleStyle}>Upload a document</div>
+        <div style={sheetTitleStyle}>Upload a Document</div>
 
         <button
           type="button"

@@ -131,7 +131,7 @@ export default function GuardianSection({ patientId, canEdit, actorName, onToast
   return (
     <section style={card}>
       <div style={head}>
-        <div style={title}><Scale size={16} /> Guardian and responsible parties</div>
+        <div style={title}><Scale size={16} /> Guardian and Responsible Parties</div>
         {canEdit && !editing && record !== undefined && !loadError && (
           <button type="button" onClick={startEdit} style={ghostBtn}>
             <Pencil size={13} /> {hasRecord ? 'Edit' : 'Add'}
@@ -235,7 +235,7 @@ export default function GuardianSection({ patientId, canEdit, actorName, onToast
             <FieldError message={errors.contacts} />
           </div>
           <button type="button" onClick={() => setDraft((d) => [...d, { id: newId(), role: '', name: '' }])} style={{ ...ghostBtn, marginTop: 6 }}>
-            <Plus size={13} /> Add contact
+            <Plus size={13} /> Add Contact
           </button>
           {saveError && <div style={{ ...errBox, marginTop: 10 }}>{saveError}</div>}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>

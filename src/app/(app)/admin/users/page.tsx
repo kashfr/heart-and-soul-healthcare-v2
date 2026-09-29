@@ -232,7 +232,7 @@ export default function AdminUsersPage() {
             </p>
           </div>
           <button onClick={() => setAddOpen(true)} style={primaryBtnStyle}>
-            <Plus size={16} /> Add staff
+            <Plus size={16} /> Add Staff
           </button>
         </header>
 
@@ -267,7 +267,7 @@ export default function AdminUsersPage() {
           <div style={emptyStyle}>
             {query.trim() !== ''
               ? `No active staff match "${query.trim()}".${deactivated.length > 0 ? ' See the Deactivated section below.' : ''}`
-              : 'No active staff. Click "Add staff" to create the first account.'}
+              : 'No active staff. Click "Add Staff" to create the first account.'}
           </div>
         ) : (
           <StaffTable
@@ -415,7 +415,7 @@ function StaffTable({
                     {s.correctionsBlocked && (
                       <span
                         style={blockedBadgeStyle}
-                        title="Blocked from new notes until they amend a flagged note. Clear it from the note's correction panel (Remove block or Mark resolved)."
+                        title="Blocked from new notes until they amend a flagged note. Clear it from the note's correction panel (Remove Block or Mark Resolved)."
                       >
                         Blocked — corrections
                       </span>
@@ -502,7 +502,7 @@ function StaffTable({
                         onMouseLeave={(e) => { e.currentTarget.style.background = '#3f6f8f'; }}
                       >
                         <Eye size={13} />
-                        View as
+                        View As
                       </button>
                     )}
                   </div>
@@ -577,7 +577,7 @@ function AddStaffModal({
     <div style={modalBackdropStyle} onClick={() => !submitting && onClose()}>
       <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
         <div style={modalHeaderStyle}>
-          <h2 style={modalTitleStyle}>Add staff</h2>
+          <h2 style={modalTitleStyle}>Add Staff</h2>
           <button onClick={onClose} disabled={submitting} style={modalCloseStyle} aria-label="Close">
             ✕
           </button>
@@ -684,7 +684,7 @@ function AddStaffModal({
               Cancel
             </button>
             <button type="submit" disabled={submitting} style={primaryBtnStyle}>
-              {submitting ? 'Creating…' : 'Create account'}
+              {submitting ? 'Creating…' : 'Create Account'}
             </button>
           </div>
         </form>
@@ -889,7 +889,7 @@ function EditStaffModal({
     <div style={modalBackdropStyle} onClick={close}>
       <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
         <div style={modalHeaderStyle}>
-          <h2 style={modalTitleStyle}>Edit staff</h2>
+          <h2 style={modalTitleStyle}>Edit Staff</h2>
           <button onClick={close} disabled={!!busy} style={modalCloseStyle} aria-label="Close">
             ✕
           </button>
@@ -899,7 +899,7 @@ function EditStaffModal({
           {emailRequest && (
             <div style={emailReqBoxStyle}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontWeight: 700, color: '#a35400' }}>
-                <Mail size={15} /> Email change requested
+                <Mail size={15} /> Email Change Requested
               </div>
               <div style={{ marginTop: 8, fontSize: 14, color: '#2c3e50' }}>
                 {staff.displayName || 'This user'} asked to change their login email to{' '}
@@ -917,7 +917,7 @@ function EditStaffModal({
                   disabled={!!busy}
                   style={{ ...approveBtnStyle, ...(busy ? { opacity: 0.6, cursor: 'not-allowed' } : {}) }}
                 >
-                  {busy === 'approveEmail' ? 'Approving…' : 'Approve & change email'}
+                  {busy === 'approveEmail' ? 'Approving…' : 'Approve & Change Email'}
                 </button>
                 <button
                   type="button"
@@ -1047,7 +1047,7 @@ function EditStaffModal({
                 </>
               ) : (
                 <>
-                  <RefreshCw size={14} /> Resend reset link
+                  <RefreshCw size={14} /> Resend Reset Link
                 </>
               )}
             </button>
@@ -1093,8 +1093,8 @@ function EditStaffModal({
                 {busy === 'block'
                   ? 'Saving…'
                   : staff.manualNotesBlock
-                    ? 'Unblock new notes'
-                    : 'Block new notes'}
+                    ? 'Unblock New Notes'
+                    : 'Block New Notes'}
               </button>
             )}
 
@@ -1104,7 +1104,7 @@ function EditStaffModal({
               Cancel
             </button>
             <button type="submit" disabled={!!busy} style={primaryBtnStyle}>
-              {busy === 'save' ? 'Saving…' : 'Save changes'}
+              {busy === 'save' ? 'Saving…' : 'Save Changes'}
             </button>
           </div>
         </form>
@@ -1130,7 +1130,7 @@ function SuccessModal({ result, onClose }: { result: CreateResult; onClose: () =
     }
   };
 
-  const title = typeof result.orphansClaimed === 'number' ? 'Account created' : 'Password-reset link generated';
+  const title = typeof result.orphansClaimed === 'number' ? 'Account Created' : 'Password-Reset Link Generated';
 
   return (
     <div style={modalBackdropStyle} onClick={onClose}>
@@ -1192,13 +1192,13 @@ function SuccessModal({ result, onClose }: { result: CreateResult; onClose: () =
             <div style={{ fontSize: 11, color: '#7f8c8d', marginTop: 8 }}>
               {result.emailSent
                 ? 'Only share this link directly if the user says they didn\'t receive the email.'
-                : 'Send this to the person so they can set their password. If it expires before they use it, click "Resend reset link" on the edit modal for a fresh one.'}
+                : 'Send this to the person so they can set their password. If it expires before they use it, click "Resend Reset Link" on the edit modal for a fresh one.'}
             </div>
           </div>
 
           <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
             <button onClick={handleCopy} style={secondaryBtnStyle}>
-              {copied ? <><CheckCircle2 size={14} /> Copied</> : <><Copy size={14} /> Copy link</>}
+              {copied ? <><CheckCircle2 size={14} /> Copied</> : <><Copy size={14} /> Copy Link</>}
             </button>
             <div style={{ flex: 1 }} />
             <button onClick={onClose} style={primaryBtnStyle}>Done</button>

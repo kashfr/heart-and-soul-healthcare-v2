@@ -433,7 +433,7 @@ function BulkShareModal({
       <div style={modalCardStyle} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div style={modalHeaderStyle}>
           <div style={{ fontSize: 17, fontWeight: 700, color: '#2c3e50' }}>
-            Share {n} referral{n === 1 ? '' : 's'} with an agency
+            Share {n} Referral{n === 1 ? '' : 's'} with an Agency
           </div>
           <button onClick={onClose} style={modalCloseStyle} aria-label="Close"><X size={18} /></button>
         </div>
@@ -509,7 +509,7 @@ function BulkShareModal({
                 disabled={sending}
                 style={{ ...modalPrimaryStyle, opacity: sending ? 0.55 : 1 }}
               >
-                {sending ? 'Sending…' : `Create & email ${n} link${n === 1 ? '' : 's'}`}
+                {sending ? 'Sending…' : `Create & Email ${n} Link${n === 1 ? '' : 's'}`}
               </button>
             </div>
           </div>

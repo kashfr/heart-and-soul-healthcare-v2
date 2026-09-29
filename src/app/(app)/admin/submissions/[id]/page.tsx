@@ -207,7 +207,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         <div className={styles.wrap}>
           <div style={{ textAlign: 'center', padding: '40px 20px' }}>
             <p style={{ fontSize: 18, fontWeight: 600, color: '#c62828' }}>
-              Submission not found
+              Submission Not Found
             </p>
             <Link href={backHref} className={styles.backLink}>
               &larr; Back to Submissions
@@ -1474,7 +1474,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         {hasValue(data.q67_criticalFlags) && (
           <div style={{ border: '1px solid #fecaca', background: '#fef2f2', borderRadius: 8, padding: '12px 14px', marginTop: 20 }}>
             <div style={{ fontWeight: 700, color: '#b3261e', fontSize: 14, marginBottom: 6 }}>
-              ⚠ Critical vitals — escalation recorded
+              ⚠ Critical Vitals — Escalation Recorded
             </div>
             <div style={{ fontSize: 13, color: '#7a1f17', marginBottom: 4 }}>
               <strong>Threshold(s) crossed:</strong> {data.q67_criticalFlags}
@@ -1550,7 +1550,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             <div style={stickyCosignInnerStyle}>
               <div>
                 <div style={{ fontWeight: 700, color: '#0f172a', fontSize: 15 }}>
-                  Reviewed this note?
+                  Reviewed This Note?
                 </div>
                 <div style={{ fontSize: 13, color: '#475569' }}>
                   Click below to add your RN co-signature.
@@ -1568,7 +1568,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
                 style={stickyCosignBtnStyle}
               >
                 <CheckCircle2 size={16} />
-                Co-sign this note
+                Co-Sign This Note
               </button>
             </div>
           </div>

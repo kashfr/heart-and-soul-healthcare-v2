@@ -91,7 +91,7 @@ export default function HandoffBoardSection({
         </div>
         {canPost && (
           <button type="button" style={addBtnStyle} onClick={() => setModalOpen(true)} disabled={!actor.uid}>
-            <Plus size={14} /> Post handoff
+            <Plus size={14} /> Post Handoff
           </button>
         )}
       </div>
@@ -151,7 +151,7 @@ export default function HandoffBoardSection({
           </ul>
           {items.length > PREVIEW_COUNT && (
             <button type="button" style={toggleStyle} onClick={() => setShowAll((s) => !s)}>
-              {showAll ? <><ChevronUp size={14} /> Show fewer</> : <><ChevronDown size={14} /> Show all ({items.length})</>}
+              {showAll ? <><ChevronUp size={14} /> Show Fewer</> : <><ChevronDown size={14} /> Show All ({items.length})</>}
             </button>
           )}
         </>
@@ -225,7 +225,7 @@ function PostHandoffModal({
       }}
     >
       <div style={sheetStyle}>
-        <div style={sheetTitleStyle}>Post a handoff</div>
+        <div style={sheetTitleStyle}>Post a Handoff</div>
         <div style={sheetHintStyle}>
           Goes to every other nurse on this client&apos;s care team. Each of them acknowledges it when
           they read it. Handoffs can&apos;t be edited after posting; post a follow-up to correct one.
@@ -267,7 +267,7 @@ function PostHandoffModal({
             onClick={() => void save()}
             disabled={busy}
           >
-            {busy ? 'Posting…' : 'Post handoff'}
+            {busy ? 'Posting…' : 'Post Handoff'}
           </button>
         </div>
       </div>

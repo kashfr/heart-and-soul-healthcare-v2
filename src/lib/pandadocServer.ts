@@ -141,7 +141,7 @@ async function notifyStageChange(e: PandadocDocEvent, stage: PacketStage, subjec
   if (stage === 'completed' || stage === 'declined' || stage === 'expired') {
     const text =
       stage === 'completed'
-        ? `${who}'s ${doc} is complete. Save the signed PDF from PandaDoc to their packet in E-signatures.`
+        ? `${who}'s ${doc} is complete. Save the signed PDF from PandaDoc to their packet in E-Signatures.`
         : `${who}'s ${doc} was ${PACKET_STAGE_LABEL[stage].toLowerCase()}.`;
     for (const uid of await activeAdminUids()) {
       await createPortalNotification(db, { userId: uid, kind: `pandadoc-${stage}`, text, href: '/admin/esign' });

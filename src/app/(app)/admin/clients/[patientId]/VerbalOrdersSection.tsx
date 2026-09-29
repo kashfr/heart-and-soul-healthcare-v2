@@ -46,12 +46,12 @@ export default function VerbalOrdersSection({ patientId, canTake }: { patientId:
     <section style={cardStyle}>
       <div style={headerRowStyle}>
         <div style={titleStyle}>
-          <PhoneCall size={16} /> Verbal orders
+          <PhoneCall size={16} /> Verbal Orders
           {open.length > 0 && <span style={countChipStyle}>{open.length} awaiting signature</span>}
         </div>
         {canTake && (
           <Link href={`/admin/verbal-orders/new?patient=${encodeURIComponent(patientId)}`} style={addBtnStyle}>
-            <Plus size={14} /> Take verbal order
+            <Plus size={14} /> Take Verbal Order
           </Link>
         )}
       </div>

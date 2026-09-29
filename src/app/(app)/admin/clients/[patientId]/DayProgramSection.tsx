@@ -93,7 +93,7 @@ export default function DayProgramSection({ patientId, canEdit, actorName, onToa
   return (
     <section style={card}>
       <div style={head}>
-        <div style={title}><Building2 size={16} /> Day program</div>
+        <div style={title}><Building2 size={16} /> Day Program</div>
         {canEdit && !editing && record !== undefined && !loadError && (
           <button type="button" onClick={startEdit} style={ghostBtn}>
             <Pencil size={13} /> {record ? 'Edit' : 'Add'}

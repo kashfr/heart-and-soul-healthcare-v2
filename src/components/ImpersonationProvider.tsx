@@ -104,7 +104,7 @@ export function ViewAsWriteBlock({ children }: { children: ReactNode }) {
         <strong>Not available while viewing as {viewingAs.displayName}.</strong>
         <br />
         View-as is a read-only preview, and this form submits real
-        documentation. Exit view-as to author it as yourself.
+        documentation. Exit View-As to author it as yourself.
         <div style={{ marginTop: 14 }}>
           <button
             type="button"
@@ -114,7 +114,7 @@ export function ViewAsWriteBlock({ children }: { children: ReactNode }) {
             }}
             style={{ background: '#1a3a5c', color: 'white', border: 'none', borderRadius: 8, padding: '9px 16px', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
           >
-            Exit view-as
+            Exit View-As
           </button>
         </div>
       </div>

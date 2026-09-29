@@ -36,7 +36,7 @@ const BAND_FILL = '#0e7c4a';
 type Metric = 'bp' | 'pulse' | 'spo2' | 'temp' | 'resp' | 'pain';
 
 const METRICS: Array<{ key: Metric; label: string }> = [
-  { key: 'bp', label: 'Blood pressure' },
+  { key: 'bp', label: 'Blood Pressure' },
   { key: 'pulse', label: 'Pulse' },
   { key: 'spo2', label: 'SpO2' },
   { key: 'temp', label: 'Temperature' },
@@ -144,7 +144,7 @@ export default function ClientCharts({ notes, admins, dob, vitalsOverride, basel
       {/* Vitals trend */}
       <div style={chartBlockStyle}>
         <div style={chartHeadStyle}>
-          <div style={chartTitleStyle}>Vitals trend</div>
+          <div style={chartTitleStyle}>Vitals Trend</div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {METRICS.map((m) => (
               <button key={m.key} type="button" onClick={() => setMetric(m.key)} style={metric === m.key ? chipActiveStyle : chipStyle}>
@@ -221,7 +221,7 @@ export default function ClientCharts({ notes, admins, dob, vitalsOverride, basel
       {/* Medication administration */}
       <div style={chartBlockStyle}>
         <div style={chartHeadStyle}>
-          <div style={chartTitleStyle}>Medication administration · weekly (12 weeks)</div>
+          <div style={chartTitleStyle}>Medication Administration · Weekly (12 Weeks)</div>
         </div>
         {!anyMeds ? (
           <div style={chartEmptyStyle}>No doses documented in the last 12 weeks.</div>
@@ -244,7 +244,7 @@ export default function ClientCharts({ notes, admins, dob, vitalsOverride, basel
       {/* Visits + hours */}
       <div style={{ ...chartBlockStyle, marginBottom: 0 }}>
         <div style={chartHeadStyle}>
-          <div style={chartTitleStyle}>Visits &amp; care hours · weekly (12 weeks)</div>
+          <div style={chartTitleStyle}>Visits &amp; Care Hours · Weekly (12 Weeks)</div>
         </div>
         {!anyVisits ? (
           <div style={chartEmptyStyle}>No visits documented in the last 12 weeks.</div>

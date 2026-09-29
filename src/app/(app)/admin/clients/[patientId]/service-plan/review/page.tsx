@@ -151,7 +151,7 @@ function Inner() {
 
   if (!user || !profile) return null;
   if (isViewingAs) {
-    return <Shell><div style={noticeStyle}><AlertTriangle size={16} /> View-as sessions are read-only. Exit view-as to review a service plan.</div></Shell>;
+    return <Shell><div style={noticeStyle}><AlertTriangle size={16} /> View-as sessions are read-only. Exit View-As to review a service plan.</div></Shell>;
   }
   if (loadError) return <Shell><div style={noticeStyle}><AlertTriangle size={16} /> {loadError}</div></Shell>;
   if (plan === undefined) return <Shell><div style={{ color: '#7f8c8d', fontSize: 13.5 }}>Loading...</div></Shell>;
@@ -159,7 +159,7 @@ function Inner() {
     return (
       <Shell>
         <div style={noticeStyle}><AlertTriangle size={16} /> This client has no service plan to review yet.</div>
-        <Link href={reviseHref} style={primaryLinkStyle}>Write the service plan</Link>
+        <Link href={reviseHref} style={primaryLinkStyle}>Write the Service Plan</Link>
       </Shell>
     );
   }
@@ -169,7 +169,7 @@ function Inner() {
       <Shell>
         <div style={{ ...cardStyle, textAlign: 'center', padding: '32px 24px' }}>
           <CheckCircle2 size={40} color="#27ae60" />
-          <h1 style={{ ...titleStyle, fontSize: 24, marginTop: 10 }}>Review recorded</h1>
+          <h1 style={{ ...titleStyle, fontSize: 24, marginTop: 10 }}>Review Recorded</h1>
           <p style={{ color: '#5c6b7a', lineHeight: 1.55, maxWidth: 560, margin: '8px auto 0' }}>
             The service plan for {plan.clientName} was reviewed with no changes. The next review is due by {formatDateUS(nextDue)}.{' '}
             {done.filed
@@ -177,7 +177,7 @@ function Inner() {
               : 'The review is saved, but its PDF could not be filed under Documents. Open it from the Service plan tab and file it by hand.'}
           </p>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 18, flexWrap: 'wrap' }}>
-            <Link href={tabHref} style={primaryLinkStyle}>View service plan</Link>
+            <Link href={tabHref} style={primaryLinkStyle}>View Service Plan</Link>
           </div>
         </div>
       </Shell>
@@ -190,8 +190,8 @@ function Inner() {
   return (
     <Shell>
       <header style={{ marginBottom: 18 }}>
-        <p style={kickerStyle}>Care planning</p>
-        <h1 style={titleStyle}><ClipboardCheck size={22} style={{ verticalAlign: -3, marginRight: 8 }} />Review the service plan</h1>
+        <p style={kickerStyle}>Care Planning</p>
+        <h1 style={titleStyle}><ClipboardCheck size={22} style={{ verticalAlign: -3, marginRight: 8 }} />Review the Service Plan</h1>
         <p style={subtitleStyle}>
           Plan signed {formatDateUS(plan.signedDate)} by {plan.supervisorName}
           {plan.reviews.length ? `, last reviewed ${formatDateUS(lastISO)}` : ''}. Read it through. If nothing has changed, sign below; the plan stays as it is and the next review is due in {SERVICE_PLAN_MAX_DAYS} days. If anything has changed, revise the plan instead.
@@ -219,14 +219,14 @@ function Inner() {
           <p style={{ margin: '0 0 10px', lineHeight: 1.5 }}>
             The rules require the plan to be revised when any of these items change. Revise the plan, or, if these differences do not change the plan, explain why in the note below.
           </p>
-          <Link href={reviseHref} style={primaryLinkStyle}><PenLine size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Revise the plan instead</Link>
+          <Link href={reviseHref} style={primaryLinkStyle}><PenLine size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Revise the Plan Instead</Link>
         </section>
       ) : (
         <div style={okBoxStyle}><CheckCircle2 size={16} style={{ flexShrink: 0 }} /> The diagnosis, allergies, diet, active medications and approved care-plan tasks in the client record all match this plan.</div>
       )}
 
       <section style={cardStyle}>
-        <h2 style={sectionTitleStyle}>Current plan</h2>
+        <h2 style={sectionTitleStyle}>Current Plan</h2>
         <ServicePlanDetails plan={plan} />
       </section>
 
@@ -257,7 +257,7 @@ function Inner() {
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
             <span style={hintStyle}>Signed and dated {formatDateUS(todayAgencyISO())}.</span>
-            <button type="button" style={linkBtnStyle} onClick={() => { sigRef.current?.clear(); set('signature', ''); }}>Clear signature</button>
+            <button type="button" style={linkBtnStyle} onClick={() => { sigRef.current?.clear(); set('signature', ''); }}>Clear Signature</button>
           </div>
           <FieldError message={fe('signature')} />
         </div>
@@ -265,7 +265,7 @@ function Inner() {
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
         <Link href={tabHref} style={secondaryLinkStyle}>Cancel</Link>
-        <button type="button" style={{ ...primaryBtnStyle, opacity: submitting ? 0.6 : 1 }} disabled={submitting} onClick={() => void submit()}>{submitting ? 'Saving...' : 'Sign the review'}</button>
+        <button type="button" style={{ ...primaryBtnStyle, opacity: submitting ? 0.6 : 1 }} disabled={submitting} onClick={() => void submit()}>{submitting ? 'Saving...' : 'Sign the Review'}</button>
       </div>
       <style jsx global>{`.service-plan-sig { width: 100%; height: auto; display: block; touch-action: none; }`}</style>
     </Shell>

@@ -90,9 +90,9 @@ export default function SeizureLogSection({ patientId, patientName, patientDob }
   return (
     <section style={card}>
       <div style={head}>
-        <div style={title}><Activity size={16} /> Seizure log</div>
+        <div style={title}><Activity size={16} /> Seizure Log</div>
         <button type="button" onClick={print} style={printBtn} disabled={!events}>
-          <Printer size={14} /> Print log
+          <Printer size={14} /> Print Log
         </button>
       </div>
 
@@ -127,7 +127,7 @@ export default function SeizureLogSection({ patientId, patientName, patientDob }
               <table style={table}>
                 <thead>
                   <tr>
-                    {['Date', 'Time', 'Duration', 'Type', 'Interventions', 'Response', 'Documented by'].map((h) => (
+                    {['Date', 'Time', 'Duration', 'Type', 'Interventions', 'Response', 'Documented By'].map((h) => (
                       <th key={h} style={th}>{h}</th>
                     ))}
                   </tr>

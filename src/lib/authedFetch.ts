@@ -67,7 +67,7 @@ export async function authedFetch(input: RequestInfo | URL, init: RequestInit = 
   ) {
     return new Response(
       JSON.stringify({
-        error: 'This is a read-only "View as" session. Exit view-as to make changes.',
+        error: 'This is a read-only "View as" session. Exit View-As to make changes.',
       }),
       { status: 403, headers: { 'Content-Type': 'application/json' } },
     );

@@ -101,7 +101,7 @@ const NAV: NavItem[] = [
   { href: '/admin/fax', label: 'Fax Center', icon: <Printer size={18} />, allow: ['admin', 'supervisor', 'va'], requiresFax: true },
   // PandaDoc packets (onboarding by default) and where each stands, kept
   // current by a PandaDoc webhook. Same access as the Fax Center.
-  { href: '/admin/esign', label: 'E-signatures', icon: <PenLine size={18} />, allow: ['admin', 'supervisor', 'va'], requiresFax: true },
+  { href: '/admin/esign', label: 'E-Signatures', icon: <PenLine size={18} />, allow: ['admin', 'supervisor', 'va'], requiresFax: true },
 ];
 
 const VIEW_AS_ROLE_LABELS: Record<Role, string> = {
@@ -292,7 +292,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             onClick={() => { stopViewAs(); window.location.href = '/admin/users'; }}
             style={viewAsExitBtnStyle}
           >
-            Exit view-as
+            Exit View-As
           </button>
         </div>
       )}
@@ -326,7 +326,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 {appSettings.branding.orgName}
               </div>
               <div style={{ fontSize: 11, color: '#94a3b8', lineHeight: 1.2 }}>
-                Staff portal
+                Staff Portal
               </div>
             </div>
           </Link>
@@ -434,10 +434,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             href="/"
             className="app-shell-footer-link"
             onClick={() => setMobileOpen(false)}
-            title={collapsed ? 'Back to public site' : undefined}
+            title={collapsed ? 'Back to Public Site' : undefined}
           >
             <span aria-hidden="true">←</span>
-            <span className="app-shell-nav-label"> Back to public site</span>
+            <span className="app-shell-nav-label"> Back to Public Site</span>
           </Link>
         </div>
       </aside>
