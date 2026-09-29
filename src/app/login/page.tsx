@@ -117,6 +117,8 @@ function LoginForm() {
   return (
     <div style={containerStyle}>
       <div style={cardStyle}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/images/logo-2026.webp" alt="Heart and Soul Healthcare" width={200} height={53} style={logoStyle} />
         {mode === 'signIn' && (
           <>
             <h1 style={titleStyle}>Sign in</h1>
@@ -275,6 +277,8 @@ const containerStyle: React.CSSProperties = {
   padding: 20,
   background: '#f5f7fa',
 };
+
+const logoStyle: React.CSSProperties = { display: 'block', width: 200, height: 'auto', margin: '0 auto 24px' };
 
 const cardStyle: React.CSSProperties = {
   width: '100%',

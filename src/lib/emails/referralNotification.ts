@@ -2,6 +2,7 @@ import 'server-only';
 import { Resend } from 'resend';
 import type { ReferralInput } from '@/lib/referrals';
 import { referralPortalButtonHtml } from '@/lib/emails/referralPortalLink';
+import { emailLogoBlock } from './logo';
 
 // Notification for a referral that arrived via the API intake (e.g. the GAPP
 // website). The portal's own /referral form already sends its own richer email
@@ -71,6 +72,7 @@ export async function sendReferralNotification(
 
   const html = `
     <div style="font-family:Arial,Helvetica,sans-serif;color:#111827;max-width:640px;">
+      ${emailLogoBlock()}
       <h2 style="margin:0 0 4px;">New referral</h2>
       <p style="margin:0 0 16px;color:#6b7280;font-size:13px;">via ${escapeHtml(
         sourceLabel

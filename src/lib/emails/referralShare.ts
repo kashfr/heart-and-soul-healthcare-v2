@@ -1,5 +1,6 @@
 import 'server-only';
 import { Resend } from 'resend';
+import { emailLogoBlock } from './logo';
 
 // Sent to a partner agency when staff share a referral with them. Contains the
 // secure, expiring link to the read-only referral view. No PHI in the email
@@ -54,6 +55,7 @@ export async function sendReferralShareEmail(
 
   const html = `
     <div style="font-family:Arial,Helvetica,sans-serif;color:#111827;max-width:600px;line-height:1.55;">
+      ${emailLogoBlock()}
       <p style="margin:0 0 12px;">Hello ${agency},</p>
       <p style="margin:0 0 12px;">${sharedBy} has shared a client referral with you for review and follow-up.</p>
       <p style="margin:0 0 18px;">Use the secure link below to view the referral details${
@@ -140,6 +142,7 @@ export async function sendReferralShareBatchEmail(
 
   const html = `
     <div style="font-family:Arial,Helvetica,sans-serif;color:#111827;max-width:600px;line-height:1.55;">
+      ${emailLogoBlock()}
       <p style="margin:0 0 12px;">Hello ${agency},</p>
       <p style="margin:0 0 12px;">${sharedBy} has shared ${count} client referral${count === 1 ? '' : 's'} with you for review and follow-up.</p>
       <p style="margin:0 0 12px;">Each link below is private to your agency, so please do not forward this email.</p>

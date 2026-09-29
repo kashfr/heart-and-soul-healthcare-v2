@@ -1,5 +1,6 @@
 import 'server-only';
 import { Resend } from 'resend';
+import { emailLogoBlock } from './logo';
 
 // Auto-responder sent to the PERSON WHO SUBMITTED a referral (the parent or
 // referrer), confirming receipt. Everyone who submits gets the confirmation;
@@ -71,6 +72,7 @@ export async function sendReferralConfirmation(
 
   const html = `
     <div style="font-family:Arial,Helvetica,sans-serif;color:#111827;max-width:600px;line-height:1.55;">
+      ${emailLogoBlock()}
       <p style="margin:0 0 12px;">${greeting}</p>
       <p style="margin:0 0 12px;">Thank you for reaching out to Heart &amp; Soul Healthcare. We received your referral for ${child} and our team will review it and contact you within 1 to 2 business days.</p>
       ${paidSection}

@@ -23,6 +23,7 @@ import {
   screenMixedPaidCaregiver,
   type ServiceKey,
 } from '@/lib/diagnosisCatalog';
+import { emailLogoBlock } from '@/lib/emails/logo';
 
 const GAPP_SERVICE_LABELS: Record<ServiceKey, string> = {
   nursing: 'Skilled Nursing',
@@ -146,6 +147,7 @@ export async function processContactSubmission(data: any) {
       replyTo: email,
       subject: `New Contact Form Submission: ${subject}`,
       html: `
+        ${emailLogoBlock()}
         <h2>New Contact Form Submission</h2>
         <p><strong>Name:</strong> ${escapeHtml(name)}</p>
         <p><strong>Email:</strong> ${escapeHtml(email)}</p>
@@ -385,6 +387,7 @@ export async function processReferralSubmission(data: any) {
       replyTo: referrer.email,
       subject: `New Client Referral: ${client.firstName} ${client.lastName}`,
       html: `
+        ${emailLogoBlock()}
         <h2>New Client Referral</h2>
 
         <h3>Client Information</h3>
