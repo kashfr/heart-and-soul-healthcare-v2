@@ -817,7 +817,7 @@ function OversightNotePageInner() {
                   style={hi('q3_clientName')}
                   aria-invalid={!!fe('q3_clientName')}
                 >
-                  <option value="">Select a client…</option>
+                  <option value="">Select a Client…</option>
                   {selectablePatients.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}

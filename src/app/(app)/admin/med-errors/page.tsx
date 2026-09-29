@@ -119,8 +119,8 @@ function Inner() {
           <div style={{ ...sectionTitleStyle, justifyContent: 'space-between', flexWrap: 'wrap' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
               <ShieldAlert size={16} /> {isStaff ? 'Reports' : 'My Reports'}
-              {openCount > 0 && <span style={countChipStyle}>{openCount} awaiting review</span>}
-              {isStaff && incidentOpen > 0 && <span style={countChipDangerStyle}>{incidentOpen} incident report{incidentOpen === 1 ? '' : 's'} owed</span>}
+              {openCount > 0 && <span style={countChipStyle}>{openCount} Awaiting Review</span>}
+              {isStaff && incidentOpen > 0 && <span style={countChipDangerStyle}>{incidentOpen} Incident Report{incidentOpen === 1 ? '' : 's'} Owed</span>}
             </span>
             <span style={{ display: 'inline-flex', gap: 6 }}>
               <button type="button" style={filter === 'open' ? filterActiveStyle : filterBtnStyle} onClick={() => setFilter('open')}>Awaiting Review</button>
@@ -139,8 +139,8 @@ function Inner() {
               {visible.map((r) => (
                 <li key={r.id} id={`me-${r.id}`} style={{ ...rowStyle, borderLeftColor: r.status === 'reviewed' ? '#27ae60' : effectiveIncidentRequired(r) ? '#b3261e' : '#e0a100', ...(r.id === highlightId ? hotStyle : null) }}>
                   <div style={rowHeadStyle}>
-                    {r.status === 'reviewed' ? <span style={chipSignedStyle}><Check size={11} /> Reviewed</span> : <span style={chipWarnStyle}><Clock size={11} /> Awaiting review</span>}
-                    {effectiveIncidentRequired(r) && <span style={chipDangerStyle}><ShieldAlert size={11} /> {r.review?.incidentReportFiledDate ? `Incident report filed ${formatDateUS(r.review.incidentReportFiledDate)}` : 'Incident report required'}</span>}
+                    {r.status === 'reviewed' ? <span style={chipSignedStyle}><Check size={11} /> Reviewed</span> : <span style={chipWarnStyle}><Clock size={11} /> Awaiting Review</span>}
+                    {effectiveIncidentRequired(r) && <span style={chipDangerStyle}><ShieldAlert size={11} /> {r.review?.incidentReportFiledDate ? `Incident Report Filed ${formatDateUS(r.review.incidentReportFiledDate)}` : 'Incident Report Required'}</span>}
                     <Link href={`/admin/clients/${r.patientId}`} style={clientLinkStyle}>{r.patientName}</Link>
                     <span style={metaStyle}>{medErrorTypeLabel(r.errorType)} · {r.medName} · discovered {formatLocalDateTimeUS(r.discoveredAt)} · reported by {r.reporterName}</span>
                   </div>

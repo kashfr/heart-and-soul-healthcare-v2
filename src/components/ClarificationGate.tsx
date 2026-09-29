@@ -93,12 +93,12 @@ function GateQueue({ items }: { items: OpenClarification[] }) {
                 </span>
                 {it.kind === 'correction' && (
                   <span style={correctionBadgeStyle}>
-                    <AlertTriangle size={11} /> Correction needed
+                    <AlertTriangle size={11} /> Correction Needed
                   </span>
                 )}
                 {it.hasCriticalVitals && (
                   <span style={criticalBadge}>
-                    <AlertTriangle size={11} /> Critical vitals
+                    <AlertTriangle size={11} /> Critical Vitals
                   </span>
                 )}
               </div>

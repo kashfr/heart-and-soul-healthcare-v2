@@ -169,7 +169,7 @@ export interface PartnerMatchSummary {
   level: PartnerMatchLevel;
   /** How many partners have positive evidence (0 when level is 'none'). */
   count: number;
-  /** Badge text, e.g. "3 partners" / "No partner match". */
+  /** Badge text, e.g. "3 Partners" / "No Partner Match". */
   label: string;
   /** Hover explanation: who matched and why, or what ruled everyone out. */
   detail: string;
@@ -213,7 +213,7 @@ export function summarizePartnerMatches(
     return {
       level: 'match',
       count: qualified.length,
-      label: qualified.length === 1 ? '1 partner' : `${qualified.length} partners`,
+      label: qualified.length === 1 ? '1 Partner' : `${qualified.length} Partners`,
       detail: rest > 0 ? `${detail}; +${rest} more` : detail,
     };
   }
@@ -233,5 +233,5 @@ export function summarizePartnerMatches(
   } else {
     detail = `No saved partner agency offers ${SERVICE_LABEL[service as GappServiceKey]}`;
   }
-  return { level: 'none', count: 0, label: 'No partner match', detail };
+  return { level: 'none', count: 0, label: 'No Partner Match', detail };
 }

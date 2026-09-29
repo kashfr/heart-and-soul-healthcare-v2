@@ -397,7 +397,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
             {a.outcomeByName ? ` (recorded by ${a.outcomeByName})` : ''}
           </div>
         ) : a.status === 'given' && a.scheduledTime === 'PRN' ? (
-          <span style={outcomePendingChip}>Result pending</span>
+          <span style={outcomePendingChip}>Result Pending</span>
         ) : null}
         {prev && (
           <div style={amendedNote}>
@@ -658,7 +658,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
                       {admin ? (
                         <div style={{ flex: 1, minWidth: 0 }}>{renderAdminDetails(admin)}</div>
                       ) : (
-                        <span style={notDocPill}>{order.isPRN ? 'None documented' : 'Not documented'}</span>
+                        <span style={notDocPill}>{order.isPRN ? 'None Documented' : 'Not Documented'}</span>
                       )}
                     </div>
                   ))}

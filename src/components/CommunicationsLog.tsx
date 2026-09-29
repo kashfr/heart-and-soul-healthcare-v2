@@ -89,13 +89,13 @@ export default function CommunicationsLog({ patientId, readOnly, onToast }: Prop
         <div style={filters}>
           {staffInLog.length > 1 && (
             <select aria-label="Filter by staff member" style={selectSmall} value={staffFilter} onChange={(e) => setStaffFilter(e.target.value)}>
-              <option value="">All staff</option>
+              <option value="">All Staff</option>
               {staffInLog.map(([uid, name]) => <option key={uid} value={uid}>{name}</option>)}
             </select>
           )}
           {!patientId && clientsInLog.length > 1 && (
             <select aria-label="Filter by client" style={selectSmall} value={clientFilter} onChange={(e) => setClientFilter(e.target.value)}>
-              <option value="">All clients</option>
+              <option value="">All Clients</option>
               {clientsInLog.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
             </select>
           )}
@@ -181,8 +181,8 @@ function EntryRow({ e, showClient, open, onToggle }: { e: CommunicationEntry; sh
 function StatusChip({ status }: { status: 'delivered' | 'partial' | 'failed' | 'logged' }) {
   const s = {
     delivered: { text: 'Delivered', bg: '#e8f4e8', fg: '#1e5c1e' },
-    partial: { text: 'Partly delivered', bg: '#fff4e0', fg: '#8a5a0d' },
-    failed: { text: 'Not delivered', bg: '#fdeaea', fg: '#b3261e' },
+    partial: { text: 'Partly Delivered', bg: '#fff4e0', fg: '#8a5a0d' },
+    failed: { text: 'Not Delivered', bg: '#fdeaea', fg: '#b3261e' },
     logged: { text: 'Logged', bg: '#eef2f6', fg: NAVY },
   }[status];
   return <span style={{ ...chip, background: s.bg, color: s.fg }}>{s.text}</span>;
@@ -247,7 +247,7 @@ function LogMessageModal({ data, patientId, onClose, onLogged }: { data: CommsPa
         <div id={fieldId('who')} style={grid2}>
           <Field label={form.direction === 'inbound' ? 'From staff member' : 'To staff member'}>
             <select style={{ ...select, ...(errors.who ? FIELD_ERROR_STYLE : null) }} value={form.staffUid} onChange={(e) => set('staffUid', e.target.value)}>
-              <option value="">Not a staff member</option>
+              <option value="">Not a Staff Member</option>
               {data.staff.map((s) => <option key={s.uid} value={s.uid}>{s.name}{s.credential ? `, ${s.credential}` : ''}</option>)}
             </select>
           </Field>
@@ -262,7 +262,7 @@ function LogMessageModal({ data, patientId, onClose, onLogged }: { data: CommsPa
               <div style={{ ...input, background: '#f6f9fc', display: 'flex', alignItems: 'center' }}>{clientName}</div>
             ) : (
               <select style={select} value={form.patientId} onChange={(e) => set('patientId', e.target.value)}>
-                <option value="">Not about one client</option>
+                <option value="">Not About One Client</option>
                 {data.clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             )}

@@ -19,10 +19,10 @@ const FIELD_ORDER: readonly DoseField[] = ['shiftBlock', 'status', 'parameters',
 const fieldId = (k: DoseField) => `ad-field-${k}`;
 
 const ADMIN_BY_OPTIONS = [
-  { value: 'nurse', label: 'Nurse (me)' },
-  { value: 'family', label: 'Family member' },
-  { value: 'responsibleParty', label: 'Responsible party' },
-  { value: 'self', label: 'Client (self)' },
+  { value: 'nurse', label: 'Nurse (Me)' },
+  { value: 'family', label: 'Family Member' },
+  { value: 'responsibleParty', label: 'Responsible Party' },
+  { value: 'self', label: 'Client (Self)' },
   { value: 'proxy', label: 'Proxy' },
 ];
 
@@ -411,7 +411,7 @@ export default function AdministerDoseModal({
                 </span>
                 {valueOptions.length > 0 ? (
                   <select value={value} onChange={(e) => { setValue(e.target.value); clearErr('value'); }} style={{ ...select, ...hi('value') }}>
-                    <option value="">Select a reading…</option>
+                    <option value="">Select a Reading…</option>
                     {valueOptions.map((o) => (
                       <option key={o} value={o}>
                         {/^-?\d+(\.\d+)?$/.test(o) && valueUnit ? `${o} ${valueUnit}` : o}
@@ -521,7 +521,7 @@ export default function AdministerDoseModal({
 
         {/* PRN effectiveness follow-up. The result is usually observed 30-60
             minutes after the dose, so it's OPTIONAL here — an unrecorded result
-            shows as "Result pending" on the grid until it's filled in. */}
+            shows as "Result Pending" on the grid until it's filled in. */}
         {status === 'given' && isPRN && (
           <label style={{ ...field, marginTop: 12 }}>
             <span style={fieldLabel}>Outcome / result (if already known)</span>

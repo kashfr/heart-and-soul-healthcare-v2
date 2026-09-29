@@ -506,7 +506,7 @@ export type PaidCareBasis = '' | 'medical' | 'behavioral' | 'unsure';
 export const PAID_CARE_BASIS_OPTIONS: { code: Exclude<PaidCareBasis, ''>; label: string }[] = [
   { code: 'medical', label: 'The medical or physical condition' },
   { code: 'behavioral', label: 'The autism, ADHD, or developmental diagnosis' },
-  { code: 'unsure', label: 'Not sure' },
+  { code: 'unsure', label: 'Not Sure' },
 ];
 
 const PAID_CARE_BASIS_LABEL = new Map(PAID_CARE_BASIS_OPTIONS.map((o) => [o.code, o.label]));

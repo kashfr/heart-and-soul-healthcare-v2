@@ -1408,7 +1408,7 @@ export default function SubmissionsPage() {
             className={styles.select}
             aria-label="Credential"
           >
-            <option value="">All credentials</option>
+            <option value="">All Credentials</option>
             <option value="HHA">HHA</option>
             <option value="CNA">CNA</option>
             <option value="LPN">LPN</option>
@@ -1423,7 +1423,7 @@ export default function SubmissionsPage() {
             className={styles.select}
               aria-label="Nurse"
             >
-              <option value="">All nurses</option>
+              <option value="">All Nurses</option>
               {nurseOptions.map((n) => (
                 <option key={n} value={n}>
                   {n}
@@ -1440,7 +1440,7 @@ export default function SubmissionsPage() {
             className={styles.select}
               aria-label="Client"
             >
-              <option value="">All clients</option>
+              <option value="">All Clients</option>
               {clientOptions.map((c) => (
                 <option key={c} value={c}>
                   {c}
@@ -1459,18 +1459,18 @@ export default function SubmissionsPage() {
             className={styles.select}
             aria-label="Sort by"
           >
-            <option value="submittedAt:desc">Newest submitted</option>
-            <option value="submittedAt:asc">Oldest submitted</option>
-            <option value="dateOfService:desc">Newest service date</option>
-            <option value="dateOfService:asc">Oldest service date</option>
+            <option value="submittedAt:desc">Newest Submitted</option>
+            <option value="submittedAt:asc">Oldest Submitted</option>
+            <option value="dateOfService:desc">Newest Service Date</option>
+            <option value="dateOfService:asc">Oldest Service Date</option>
             <option value="clientName:asc">Client A–Z</option>
             <option value="clientName:desc">Client Z–A</option>
             <option value="nurseName:asc">Nurse A–Z</option>
             <option value="nurseName:desc">Nurse Z–A</option>
-            {showHours && <option value="hours:desc">Most hours</option>}
-            {showHours && <option value="hours:asc">Fewest hours</option>}
-            <option value="credential:asc">Credential (RN first)</option>
-            <option value="flags:desc">Most flags</option>
+            {showHours && <option value="hours:desc">Most Hours</option>}
+            {showHours && <option value="hours:asc">Fewest Hours</option>}
+            <option value="credential:asc">Credential (RN First)</option>
+            <option value="flags:desc">Most Flags</option>
           </select>
         </div>
 
@@ -2110,7 +2110,7 @@ export default function SubmissionsPage() {
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                             {s.hasCriticalVitals ? (
                               <span style={{ ...flagBadgeRed, fontWeight: 700 }} title="Critical vital — provider-notification threshold">
-                                Critical vital
+                                Critical Vital
                               </span>
                             ) : s.hasAbnormalVitals && (
                               <span style={flagBadgeRed} title="Abnormal vitals">
@@ -2137,22 +2137,22 @@ export default function SubmissionsPage() {
                             )}
                             {s.medChangeReported && (
                               <span style={flagBadgeAmber} title="Medication started, changed, or stopped since the last shift — verify the MAR">
-                                Med change
+                                Med Change
                               </span>
                             )}
                             {needsCosign(s, requiredCosignCreds) && (
                               <span style={flagBadgeAmber} title="Awaiting RN co-signature">
-                                Needs co-sign
+                                Needs Co-Sign
                               </span>
                             )}
                             {s.clarificationStatus === 'open' && (
                               s.clarificationKind === 'correction' ? (
                                 <span style={flagBadgeRed} title="Open correction flag">
-                                  Needs correction
+                                  Needs Correction
                                 </span>
                               ) : (
                                 <span style={flagBadgeAmber} title="Open clarification flag">
-                                  Needs clarification
+                                  Needs Clarification
                                 </span>
                               )
                             )}
@@ -2182,7 +2182,7 @@ export default function SubmissionsPage() {
                                 style={flagBadgeBlocking}
                                 title="The author can't start or submit new notes until she amends this one."
                               >
-                                Blocking author
+                                Blocking Author
                               </span>
                             )}
                           </div>

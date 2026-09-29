@@ -743,7 +743,7 @@ export default function ReferralPage() {
                       onChange={handleChange}
                       required
                     >
-                      <option value="">Select a program</option>
+                      <option value="">Select a Program</option>
                       {programs.map((prog) => (
                         <option key={prog.value} value={prog.value}>{prog.label}</option>
                       ))}
@@ -806,7 +806,7 @@ export default function ReferralPage() {
                       disabled={!formData.programInterest}
                     >
                       <option value="">
-                        {formData.programInterest ? 'Select county' : 'Select a program first'}
+                        {formData.programInterest ? 'Select County' : 'Select a Program First'}
                       </option>
                       {counties && (
                         <>
@@ -821,7 +821,7 @@ export default function ReferralPage() {
                             ))}
                           </optgroup>
                           <optgroup label="Other">
-                            <option value="other">Other — My county is not listed</option>
+                            <option value="other">Other — My County Is Not Listed</option>
                           </optgroup>
                         </>
                       )}
@@ -1020,7 +1020,7 @@ export default function ReferralPage() {
                       onChange={handleChange}
                       required
                     >
-                      <option value="">Select referral source</option>
+                      <option value="">Select Referral Source</option>
                       {referralSources.map((source) => (
                         <option key={source.value} value={source.value}>{source.label}</option>
                       ))}
@@ -1044,7 +1044,7 @@ export default function ReferralPage() {
                         onChange={handleChange}
                         required
                       >
-                        <option value="">Select your relationship</option>
+                        <option value="">Select Your Relationship</option>
                         {RELATIONSHIP_OPTIONS.map((o) => (
                           <option key={o.code} value={o.code}>{o.label}</option>
                         ))}
@@ -1250,8 +1250,8 @@ export default function ReferralPage() {
                         value={formData.urgency}
                         onChange={handleChange}
                       >
-                        <option value="standard">Standard (1-2 weeks)</option>
-                        <option value="urgent">Urgent (within 1 week)</option>
+                        <option value="standard">Standard (1-2 Weeks)</option>
+                        <option value="urgent">Urgent (Within 1 Week)</option>
                         <option value="immediate">Immediate (ASAP)</option>
                       </select>
                     </div>
@@ -1366,7 +1366,7 @@ export default function ReferralPage() {
                           value={formData.behaviorRisk}
                           onChange={handleChange}
                         >
-                          <option value="">Please select</option>
+                          <option value="">Please Select</option>
                           {BEHAVIOR_RISK_OPTIONS.map((opt) => (
                             <option key={opt.code} value={opt.code}>
                               {opt.label}
@@ -1486,7 +1486,7 @@ export default function ReferralPage() {
                       onChange={handleChange}
                       required
                     >
-                      <option value="">Select an answer</option>
+                      <option value="">Select an Answer</option>
                       <option value="no">No</option>
                       <option value="yes">Yes</option>
                     </select>
@@ -1507,17 +1507,17 @@ export default function ReferralPage() {
                           onChange={handleChange}
                           required
                         >
-                          <option value="">Please select</option>
+                          <option value="">Please Select</option>
                           <option value="personal">
-                            Hands-on personal care (feeding, bathing, dressing, getting around)
+                            Hands-On Personal Care (Feeding, Bathing, Dressing, Getting Around)
                           </option>
                           <option value="nursing">
-                            Skilled medical or nursing care (feeding tube, trach, ventilator, oxygen, seizures)
+                            Skilled Medical or Nursing Care (Feeding Tube, Trach, Ventilator, Oxygen, Seizures)
                           </option>
                           <option value="behavioral">
-                            Behavioral support or autism-related needs
+                            Behavioral Support or Autism-Related Needs
                           </option>
-                          <option value="unsure">Not sure</option>
+                          <option value="unsure">Not Sure</option>
                         </select>
                         <FieldError message={fieldMessage('careNeeds')} />
                       </div>
@@ -1592,7 +1592,7 @@ export default function ReferralPage() {
                               onChange={handleChange}
                               required
                             >
-                              <option value="">Please select</option>
+                              <option value="">Please Select</option>
                               {PAID_CARE_BASIS_OPTIONS.map((opt) => (
                                 <option key={opt.code} value={opt.code}>
                                   {opt.label}
@@ -1726,7 +1726,7 @@ export default function ReferralPage() {
                               onChange={handleChange}
                               required
                             >
-                              <option value="">Select an answer</option>
+                              <option value="">Select an Answer</option>
                               <option value="yes">Yes</option>
                               <option value="no">No</option>
                             </select>

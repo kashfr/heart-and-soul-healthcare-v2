@@ -230,7 +230,7 @@ function ServesLine({ agency }: { agency: PartnerAgency }) {
           constraint in the referral smart-match, so an agency without it can
           never be suggested. */}
       <span style={counties.length > 0 ? countyCountBadgeStyle : noCountyBadgeStyle}>
-        {counties.length > 0 ? countyCountLabel(counties.length) : 'No counties'}
+        {counties.length > 0 ? `${counties.length} ${counties.length === 1 ? 'County' : 'Counties'}` : 'No Counties'}
       </span>
       {sample && <span style={{ fontWeight: 400 }}>{sample}</span>}
     </div>

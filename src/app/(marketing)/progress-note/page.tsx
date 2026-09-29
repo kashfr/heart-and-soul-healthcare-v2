@@ -2528,7 +2528,7 @@ function ProgressNotePageInner() {
             )}
             {saveStatus === 'idle' && (
               draftHydrated
-                ? 'Not yet saved'
+                ? 'Not Yet Saved'
                 : pendingDraft && !resumeDecided
                   ? '' /* waiting on resume-banner decision */
                   : 'Loading…'

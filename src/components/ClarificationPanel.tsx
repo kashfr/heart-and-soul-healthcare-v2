@@ -132,7 +132,7 @@ export default function ClarificationPanel({
         {isResolved && <span style={resolvedBadge}>Resolved</span>}
         {blocksNow && (
           <span style={blockingBadge} title="The author can't start or submit new notes until she amends this one.">
-            <Ban size={10} /> Blocking new notes
+            <Ban size={10} /> Blocking New Notes
           </span>
         )}
       </div>

@@ -771,7 +771,7 @@ function SupervisoryVisitPageInner() {
                   style={hi('q3_clientName')}
                   aria-invalid={!!fe('q3_clientName')}
                 >
-                  <option value="">Select a client…</option>
+                  <option value="">Select a Client…</option>
                   {/* Amend: the stored client always shows, even if the
                       roster has not loaded or the client is no longer active. */}
                   {isEditMode && selectedPatientId && !selectedPatient && (
@@ -816,7 +816,7 @@ function SupervisoryVisitPageInner() {
                   style={hi('sv_staffName')}
                   aria-invalid={!!fe('sv_staffName')}
                 >
-                  <option value="">Select staff…</option>
+                  <option value="">Select Staff…</option>
                   {staffNameUnlisted && <option value="__stored">{staffName}</option>}
                   {staffGroups.assigned.length > 0 && (
                     <optgroup label="Assigned to this client">

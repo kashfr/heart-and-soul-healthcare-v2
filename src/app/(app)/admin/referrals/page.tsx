@@ -400,7 +400,7 @@ export default function ReferralsPage() {
             style={filterSelectStyle}
             aria-label="Filter by assignee"
           >
-            <option value="all">All assignees</option>
+            <option value="all">All Assignees</option>
             <option value="unassigned">Unassigned</option>
             {staff.map((s) => (
               <option key={s.uid} value={s.uid}>
@@ -415,9 +415,9 @@ export default function ReferralsPage() {
             style={filterSelectStyle}
             aria-label="Filter by sharing"
           >
-            <option value="all">All sharing</option>
-            <option value="shared">Shared externally</option>
-            <option value="unshared">Not shared</option>
+            <option value="all">All Sharing</option>
+            <option value="shared">Shared Externally</option>
+            <option value="unshared">Not Shared</option>
           </select>
 
           <select
@@ -426,10 +426,10 @@ export default function ReferralsPage() {
             style={filterSelectStyle}
             aria-label="Filter by intake fit"
           >
-            <option value="all">All fits</option>
-            <option value="good">Good fit</option>
-            <option value="partial">Possible fit</option>
-            <option value="none">Not a fit</option>
+            <option value="all">All Fits</option>
+            <option value="good">Good Fit</option>
+            <option value="partial">Possible Fit</option>
+            <option value="none">Not a Fit</option>
           </select>
 
           <select
@@ -438,9 +438,9 @@ export default function ReferralsPage() {
             style={filterSelectStyle}
             aria-label="Filter by partner agency match"
           >
-            <option value="all">All partners</option>
-            <option value="match">Partner match</option>
-            <option value="none">No partner match</option>
+            <option value="all">All Partners</option>
+            <option value="match">Partner Match</option>
+            <option value="none">No Partner Match</option>
           </select>
 
           <div style={searchWrapStyle}>

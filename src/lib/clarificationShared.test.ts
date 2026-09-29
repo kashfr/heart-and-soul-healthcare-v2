@@ -71,13 +71,13 @@ describe('clarificationTurn', () => {
 
 describe('clarificationTurnLabel', () => {
   it('phrases the nurse\'s turn as an obligation for the author and a state for everyone else', () => {
-    expect(clarificationTurnLabel('nurse', true)).toBe('Your reply needed');
-    expect(clarificationTurnLabel('nurse', false)).toBe('Waiting on nurse');
+    expect(clarificationTurnLabel('nurse', true)).toBe('Your Reply Needed');
+    expect(clarificationTurnLabel('nurse', false)).toBe('Waiting on Nurse');
   });
 
   it('phrases the reviewer\'s turn from each side', () => {
-    expect(clarificationTurnLabel('reviewer', true)).toBe('Waiting on reviewer');
-    expect(clarificationTurnLabel('reviewer', false)).toBe('Nurse replied');
+    expect(clarificationTurnLabel('reviewer', true)).toBe('Waiting on Reviewer');
+    expect(clarificationTurnLabel('reviewer', false)).toBe('Nurse Replied');
   });
 
   it('is empty when nothing is open', () => {

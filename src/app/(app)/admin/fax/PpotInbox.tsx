@@ -381,7 +381,7 @@ function FileModal({
             <label style={fieldStyle}>
               <span style={fieldLabelStyle}>Which request does it answer?</span>
               <select value={requestKey} onChange={(e) => { setRequestKey(e.target.value); setErr(null); }} style={inp}>
-                <option value="">Choose a request…</option>
+                <option value="">Choose a Request…</option>
                 {openRequests.map((r) => (
                   <option key={r.key} value={r.key}>
                     {r.memberName}: {PPOT_REQUEST_LABEL[r.requestType].toLowerCase()}, sent to {r.recipientName || 'physician'} {formatDateUS(r.date)}

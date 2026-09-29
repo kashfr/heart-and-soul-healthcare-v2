@@ -151,8 +151,8 @@ export function clarificationTurn(
  * care-team note, sees the state of the thread.
  */
 export function clarificationTurnLabel(turn: ClarificationTurn, viewerIsAuthor: boolean): string {
-  if (turn === 'nurse') return viewerIsAuthor ? 'Your reply needed' : 'Waiting on nurse';
-  if (turn === 'reviewer') return viewerIsAuthor ? 'Waiting on reviewer' : 'Nurse replied';
+  if (turn === 'nurse') return viewerIsAuthor ? 'Your Reply Needed' : 'Waiting on Nurse';
+  if (turn === 'reviewer') return viewerIsAuthor ? 'Waiting on Reviewer' : 'Nurse Replied';
   return '';
 }
 

@@ -20,7 +20,7 @@ function describe(summary: ReferralShareSummary): { text: string; title: string 
   const since = summary.lastSharedAt ? ` (last on ${formatDate(summary.lastSharedAt)})` : '';
   if (summary.status === 'inactive') {
     return {
-      text: 'Share ended',
+      text: 'Share Ended',
       title: `Previously shared with ${summary.total} agenc${summary.total === 1 ? 'y' : 'ies'}; no link is currently active (expired or revoked)${since}.`,
     };
   }

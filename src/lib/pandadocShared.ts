@@ -114,14 +114,14 @@ export function packetStage(status: string, recipients: PandadocRecipient[]): Pa
 }
 
 export const PACKET_STAGE_LABEL: Record<PacketStage, string> = {
-  draft: 'Draft (not sent)',
-  'with-recipient': 'Waiting on the recipient',
+  draft: 'Draft (Not Sent)',
+  'with-recipient': 'Waiting on the Recipient',
   'awaiting-countersign': 'Waiting on Heart and Soul',
   completed: 'Completed',
   declined: 'Declined',
   voided: 'Voided',
   expired: 'Expired',
-  other: 'In progress',
+  other: 'In Progress',
 };
 
 /**

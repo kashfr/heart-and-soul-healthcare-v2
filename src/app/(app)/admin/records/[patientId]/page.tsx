@@ -479,7 +479,7 @@ export default function RecordDetailPage() {
                     onChange={(e) => setForm((f) => ({ ...f, route: e.target.value }))}
                     style={selectStyle}
                   >
-                    <option value="">Select route…</option>
+                    <option value="">Select Route…</option>
                     {ROUTES.map((r) => (
                       <option key={r} value={r}>
                         {r}
@@ -503,12 +503,12 @@ export default function RecordDetailPage() {
                     }
                     style={selectStyle}
                   >
-                    <option value="">Select frequency…</option>
+                    <option value="">Select Frequency…</option>
                     {/* Preserve a pre-existing free-text value that isn't one of
                         the standard options, so editing an old order doesn't
                         silently blank or change its frequency. */}
                     {form.frequencyLabel && !MED_FREQUENCIES.includes(form.frequencyLabel as (typeof MED_FREQUENCIES)[number]) && (
-                      <option value={form.frequencyLabel}>{form.frequencyLabel} (current)</option>
+                      <option value={form.frequencyLabel}>{form.frequencyLabel} (Current)</option>
                     )}
                     {MED_FREQUENCIES.map((freq) => (
                       <option key={freq} value={freq}>
@@ -526,7 +526,7 @@ export default function RecordDetailPage() {
                     onChange={(e) => setForm((f) => ({ ...f, prnFrequencyLabel: e.target.value }))}
                     style={selectStyle}
                   >
-                    <option value="">No set interval</option>
+                    <option value="">No Set Interval</option>
                     {PRN_SUB_FREQUENCIES.map((freq) => (
                       <option key={freq} value={freq}>
                         {freq}
@@ -941,17 +941,17 @@ function OrderTable({
                   {o.isPRN && <span style={prnBadgeStyle}>PRN</span>}
                   {!discontinued && o.verbalOrderPending && (
                     <span style={physicianNeededBadgeStyle} title="Taken as a verbal order; the physician's signed copy has not come back yet.">
-                      Verbal, awaiting signature
+                      Verbal, Awaiting Signature
                     </span>
                   )}
                   {!discontinued && o.verbalOrderCancelled && !o.verbalOrderPending && !o.orderSignedDate && (
                     <span style={physicianNeededBadgeStyle} title="The verbal order behind this med was cancelled before the physician signed it. Review whether it should stay on the MAR.">
-                      Verbal order cancelled
+                      Verbal Order Cancelled
                     </span>
                   )}
                   {!discontinued && physicianAttributionPending(o) && (
                     <span style={physicianNeededBadgeStyle} title="No ordering physician on this order yet; edit the order to add the name.">
-                      Physician needed
+                      Physician Needed
                     </span>
                   )}
                 </td>

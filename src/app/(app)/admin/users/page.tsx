@@ -417,7 +417,7 @@ function StaffTable({
                         style={blockedBadgeStyle}
                         title="Blocked from new notes until they amend a flagged note. Clear it from the note's correction panel (Remove Block or Mark Resolved)."
                       >
-                        Blocked — corrections
+                        Blocked — Corrections
                       </span>
                     )}
                     {s.manualNotesBlock && (
@@ -425,13 +425,13 @@ function StaffTable({
                         style={blockedBadgeStyle}
                         title="Manually blocked from new notes by an administrator. Toggle it off in Edit."
                       >
-                        Blocked — manual
+                        Blocked — Manual
                       </span>
                     )}
                   </div>
                   {s.emailChangeRequest && (
                     <div style={emailReqChipStyle} title={`Requested new email: ${s.emailChangeRequest.newEmail}`}>
-                      <Mail size={11} /> Email change requested
+                      <Mail size={11} /> Email Change Requested
                     </div>
                   )}
                 </td>

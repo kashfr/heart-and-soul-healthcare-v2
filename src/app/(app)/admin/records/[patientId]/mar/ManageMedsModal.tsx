@@ -320,7 +320,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
                   }}
                   style={{ ...select, ...hi('targetOrderId') }}
                 >
-                  <option value="">Select a medication…</option>
+                  <option value="">Select a Medication…</option>
                   {activeOrders.map((o) => (
                     <option key={o.id} value={o.id}>
                       {o.medName} {o.dose}{o.units ? ` ${o.units}` : ''}{o.isPRN ? ' (PRN)' : o.scheduledTimes?.length ? ` (${o.scheduledTimes.join(', ')})` : ''}{physicianAttributionPending(o) ? ' · physician needed' : ''}
@@ -375,15 +375,15 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
                 <div style={grid2}>
                   <Field id={fieldId('route')} error={errors.route} label="Route *">
                     <select value={route} onChange={(e) => { setRoute(e.target.value); clearErr('route'); }} style={{ ...select, ...hi('route') }}>
-                      <option value="">Select route…</option>
+                      <option value="">Select Route…</option>
                       {ROUTES.map((r) => <option key={r} value={r}>{r}</option>)}
                     </select>
                   </Field>
                   <Field label="Frequency">
                     <select value={frequencyLabel} onChange={(e) => { setFrequencyLabel(e.target.value); clearErr('times', 'indication'); }} style={select}>
-                      <option value="">Select frequency…</option>
+                      <option value="">Select Frequency…</option>
                       {frequencyLabel && !MED_FREQUENCIES.includes(frequencyLabel as (typeof MED_FREQUENCIES)[number]) && (
-                        <option value={frequencyLabel}>{frequencyLabel} (current)</option>
+                        <option value={frequencyLabel}>{frequencyLabel} (Current)</option>
                       )}
                       {MED_FREQUENCIES.map((freq) => <option key={freq} value={freq}>{freq}</option>)}
                     </select>
@@ -393,7 +393,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
                 {isPRN && (
                   <Field label="PRN frequency (how often it may be given)">
                     <select value={prnFrequencyLabel} onChange={(e) => setPrnFrequencyLabel(e.target.value)} style={select}>
-                      <option value="">No set interval</option>
+                      <option value="">No Set Interval</option>
                       {PRN_SUB_FREQUENCIES.map((freq) => <option key={freq} value={freq}>{freq}</option>)}
                     </select>
                     <span style={dateHint}>Optional. Take it from the order: “Q4H PRN” is Every 4 hours (Q4H); “BID PRN” is Twice daily (BID).</span>

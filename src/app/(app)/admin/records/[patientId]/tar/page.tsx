@@ -316,7 +316,7 @@ export default function MonthlyTarPage() {
                               </div>
                             )}
                             {physicianAttributionPending(task) && (
-                              <span style={physicianNeededChipStyle}>Physician needed</span>
+                              <span style={physicianNeededChipStyle}>Physician Needed</span>
                             )}
                           </>
                         ) : (

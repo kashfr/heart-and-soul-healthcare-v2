@@ -102,10 +102,10 @@ export default function SeizureLogSection({ patientId, patientName, patientDob }
       {events && (
         <>
           <div style={statRow}>
-            <Stat label="Last 30 days" value={String(stats.recentCount)} sub={stats.recentCount === 1 ? 'seizure' : 'seizures'} />
+            <Stat label="Last 30 Days" value={String(stats.recentCount)} sub={stats.recentCount === 1 ? 'seizure' : 'seizures'} />
             <Stat label="Longest (30d)" value={stats.longest !== null ? formatDuration(stats.longest) : 'n/a'} />
-            <Stat label="Rescue med (30d)" value={String(stats.rescue)} sub={stats.rescue === 1 ? 'dose' : 'doses'} />
-            <Stat label="Last seizure" value={stats.last ? formatDateUS(stats.last.date) : 'none logged'} sub={stats.last ? stats.last.startTime : ''} />
+            <Stat label="Rescue Med (30d)" value={String(stats.rescue)} sub={stats.rescue === 1 ? 'dose' : 'doses'} />
+            <Stat label="Last Seizure" value={stats.last ? formatDateUS(stats.last.date) : 'none logged'} sub={stats.last ? stats.last.startTime : ''} />
           </div>
 
           {(stats.clusterDays.length > 0 || stats.prolonged > 0) && (

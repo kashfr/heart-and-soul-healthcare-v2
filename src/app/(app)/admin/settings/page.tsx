@@ -607,10 +607,10 @@ export default function AdminSettingsPage() {
                 }
                 style={selectStyle}
               >
-                <option value="dateOfService">Date of service</option>
-                <option value="submittedAt">Submitted at</option>
-                <option value="clientName">Client name</option>
-                <option value="nurseName">Nurse name</option>
+                <option value="dateOfService">Date of Service</option>
+                <option value="submittedAt">Submitted At</option>
+                <option value="clientName">Client Name</option>
+                <option value="nurseName">Nurse Name</option>
               </select>
             </Field>
 
@@ -622,8 +622,8 @@ export default function AdminSettingsPage() {
                 }
                 style={selectStyle}
               >
-                <option value="desc">Newest first (descending)</option>
-                <option value="asc">Oldest first (ascending)</option>
+                <option value="desc">Newest First (Descending)</option>
+                <option value="asc">Oldest First (Ascending)</option>
               </select>
             </Field>
 
@@ -638,7 +638,7 @@ export default function AdminSettingsPage() {
                 <option value="active">Active</option>
                 <option value="archived">Archived</option>
                 <option value="all">All</option>
-                <option value="team">Care team</option>
+                <option value="team">Care Team</option>
               </select>
             </Field>
 
@@ -796,7 +796,7 @@ export default function AdminSettingsPage() {
                   }}
                   style={selectStyle}
                 >
-                  <option value="">Not set — only the flagger and admins are notified</option>
+                  <option value="">Not Set — Only the Flagger and Admins Are Notified</option>
                   {reviewerOptions.map((o) => (
                     <option key={o.uid} value={o.uid}>
                       {o.displayName}
@@ -812,7 +812,7 @@ export default function AdminSettingsPage() {
                   {draft.corrections.reviewerUid &&
                     !reviewerOptions.some((o) => o.uid === draft.corrections.reviewerUid) && (
                       <option value={draft.corrections.reviewerUid}>
-                        {draft.corrections.reviewerName || 'Current reviewer'}
+                        {draft.corrections.reviewerName || 'Current Reviewer'}
                       </option>
                     )}
                 </select>
@@ -1383,7 +1383,7 @@ export default function AdminSettingsPage() {
           <p style={sectionSubStyle}>
             What Heart &amp; Soul itself accepts: the GAPP services you offer and the
             Georgia counties you serve. Every card on the Referrals board is judged
-            against this profile (Good fit / Possible fit / Not a fit), which drives
+            against this profile (Good Fit / Possible Fit / Not a Fit), which drives
             the fit filter and, later, the refer-out workflow. Update it here whenever
             you add a service line or expand coverage.
           </p>

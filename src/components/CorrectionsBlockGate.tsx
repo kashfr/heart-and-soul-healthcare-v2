@@ -141,7 +141,7 @@ export default function CorrectionsBlockGate() {
                     {it.dateOfService ? ` · ${fmtDate(it.dateOfService)}` : ''}
                   </span>
                   <span style={correctionBadgeStyle}>
-                    <AlertTriangle size={11} /> Must be corrected
+                    <AlertTriangle size={11} /> Must Be Corrected
                   </span>
                 </div>
                 <div style={questionStyle}>

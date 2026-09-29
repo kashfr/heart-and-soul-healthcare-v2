@@ -254,7 +254,7 @@ export default function InProgressPage() {
                 </div>
                 {pendingApproval && (
                   <span style={badgeApproval}>
-                    <ShieldAlert size={13} /> Needs your approval
+                    <ShieldAlert size={13} /> Needs Your Approval
                   </span>
                 )}
                 <span style={ready ? badgeReady : badgeNeeds}>
@@ -264,7 +264,7 @@ export default function InProgressPage() {
                     </>
                   ) : (
                     <>
-                      <AlertTriangle size={13} /> {issues.length} to fix
+                      <AlertTriangle size={13} /> {issues.length} to Fix
                     </>
                   )}
                 </span>

@@ -16,7 +16,7 @@ export const ANNOUNCEMENT_ROLE_LABELS: Record<Role, string> = {
   nurse: 'Nurses',
   supervisor: 'Supervisors',
   admin: 'Admins',
-  va: 'Virtual assistants',
+  va: 'Virtual Assistants',
 };
 
 export const MAX_ANNOUNCEMENT_ITEMS = 8;

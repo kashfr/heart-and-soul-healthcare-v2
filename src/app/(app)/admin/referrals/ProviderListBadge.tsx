@@ -18,7 +18,7 @@ export default function ProviderListBadge({
   return (
     <span style={badgeStyle} title={title}>
       <FileText size={11} aria-hidden />
-      List sent
+      List Sent
     </span>
   );
 }

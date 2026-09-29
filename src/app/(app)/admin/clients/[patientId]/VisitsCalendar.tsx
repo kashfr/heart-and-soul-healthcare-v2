@@ -159,13 +159,13 @@ export default function VisitsCalendar({ visits, today, isStaff, busyId, onMark,
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                         <span style={v.type === 'supervisory' ? supChip : shiftChip}>
-                          {v.type === 'supervisory' ? 'Supervisory visit' : 'Shift'}
+                          {v.type === 'supervisory' ? 'Supervisory Visit' : 'Shift'}
                         </span>
                         {v.startTime && <span style={{ fontSize: 12.5, fontWeight: 700, color: '#2c3e50' }}>{fmtTime(v.startTime)}</span>}
                         {v.nurseName && <span style={{ fontSize: 13, color: '#2c3e50', fontWeight: 600 }}>{v.nurseName}</span>}
                         {v.status === 'completed' && <span style={doneChip}>Completed</span>}
                         {v.status === 'cancelled' && <span style={cancelledChip}>Cancelled</span>}
-                        {overdue && <span style={overdueChip}>Past date, not completed</span>}
+                        {overdue && <span style={overdueChip}>Past Date, Not Completed</span>}
                       </div>
                       {v.notes && <div style={{ fontSize: 12.5, color: '#7f8c8d', marginTop: 3 }}>{v.notes}</div>}
                     </div>

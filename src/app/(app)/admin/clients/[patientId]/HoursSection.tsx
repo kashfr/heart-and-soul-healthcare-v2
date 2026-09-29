@@ -297,7 +297,7 @@ export default function HoursSection({ patientId, patientName, program, notes, u
           <AlertTriangle size={14} style={{ flexShrink: 0 }} />
           <span>
             {monthLabel(month)}: {monthOverlapNotes.size} shift{monthOverlapNotes.size === 1 ? '' : 's'} overlap another nurse&apos;s shift on this client.
-            Both are counted in the totals below; check the rows marked “overlaps” before billing.
+            Both are counted in the totals below; check the rows marked “Overlaps” before billing.
           </span>
         </div>
       )}
@@ -409,7 +409,7 @@ export default function HoursSection({ patientId, patientName, program, notes, u
             </button>
           </span>
         </div>
-        <div style={{ ...muted, marginBottom: 10 }}>Shifts crossing midnight are split; a row marked “from prior day” is the tail of an overnight shift. Each day with more than one entry gets a day total. RN visits are listed but never added to shift hours.</div>
+        <div style={{ ...muted, marginBottom: 10 }}>Shifts crossing midnight are split; a row marked “From Prior Day” is the tail of an overnight shift. Each day with more than one entry gets a day total. RN visits are listed but never added to shift hours.</div>
         {monthRows.length === 0 ? (
           <div style={muted}>Nothing documented for this month.</div>
         ) : (
@@ -453,11 +453,11 @@ export default function HoursSection({ patientId, patientName, program, notes, u
                       </td>
                       <td style={td}>{r.nurseName || '—'}{r.credential && <span style={credTag}>{r.credential}</span>}</td>
                       <td style={td}>
-                        {isRn && <span style={rnChip} title="RN oversight visit">RN visit</span>}
+                        {isRn && <span style={rnChip} title="RN oversight visit">RN Visit</span>}
                         <Link href={`/admin/submissions/${r.noteId}`} style={{ color: NAVY }}>{r.window}</Link>
-                        {r.spill && <span style={spillBadge}>from prior day</span>}
+                        {r.spill && <span style={spillBadge}>From Prior Day</span>}
                         {overlaps.has(r.noteId) && (
-                          <span style={overBadge} title={`Overlaps ${overlapText(r.noteId)}`}>overlaps</span>
+                          <span style={overBadge} title={`Overlaps ${overlapText(r.noteId)}`}>Overlaps</span>
                         )}
                       </td>
                       <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: isRn ? '#1d4ed8' : undefined }}>{qty(r.hours)}</td>
@@ -556,7 +556,7 @@ export default function HoursSection({ patientId, patientName, program, notes, u
         {list.map((a) => {
           const months = monthsBetween(a.from, a.to);
           const daysLeft = Math.round((Date.parse(`${a.to}T00:00:00Z`) - Date.parse(`${todayISO}T00:00:00Z`)) / 86400000);
-          const status = daysLeft < 0 ? 'Expired' : a.from > todayISO ? 'Upcoming' : daysLeft <= HOURS_AUTH_EXPIRY_WARN_DAYS ? `Ends in ${daysLeft} day${daysLeft === 1 ? '' : 's'}` : 'Active';
+          const status = daysLeft < 0 ? 'Expired' : a.from > todayISO ? 'Upcoming' : daysLeft <= HOURS_AUTH_EXPIRY_WARN_DAYS ? `Ends in ${daysLeft} Day${daysLeft === 1 ? '' : 's'}` : 'Active';
           const units = unitsUsage(a, dayHours[a.covers], todayISO);
           return (
             <div key={a.id} style={authCard}>
@@ -672,7 +672,7 @@ function BucketSummary({ bucket, auth, cap, usage, isCurrent, month, countLabel,
         </div>
         {isRn ? (
           <div style={stat}>
-            <div style={statLabel}>Annual units</div>
+            <div style={statLabel}>Annual Units</div>
             <div style={statValue}>{units ? fmtUnits(units.usedUnits) : '—'}</div>
             <div style={statSub}>{units ? `of ${fmtUnits(units.totalUnits)} (${fmtUnits(Math.max(0, units.remainingUnits))} left)` : 'No unit total on the line'}</div>
           </div>
@@ -738,7 +738,7 @@ function MonthTable({ title: heading, bucket, months, list, dayHours, month, tod
               <tr key={ym} style={ym === month ? { background: '#f0f7ff' } : undefined}>
                 <td style={td}>
                   <button type="button" onClick={() => onPick(ym)} style={linkBtn}>{monthLabel(ym)}</button>
-                  {ym === todayISO.slice(0, 7) && <span style={nowBadge}>current</span>}
+                  {ym === todayISO.slice(0, 7) && <span style={nowBadge}>Current</span>}
                 </td>
                 <td style={{ ...td, textAlign: 'right' }}>{c == null ? '—' : fmtH(c)}</td>
                 <td style={{ ...td, textAlign: 'right' }}>{fmtH(u.used)}</td>
@@ -859,8 +859,8 @@ function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: Form
         <label style={field}>
           <span style={label}>Covers</span>
           <select value={covers} onChange={(e) => setCovers(e.target.value as HoursBucket)} style={select}>
-            <option value="shift">Shift hours (LPN / HHA / CNA shift notes)</option>
-            <option value="oversight">RN oversight visits</option>
+            <option value="shift">Shift Hours (LPN / HHA / CNA Shift Notes)</option>
+            <option value="oversight">RN Oversight Visits</option>
           </select>
         </label>
         <label style={field}>
@@ -874,7 +874,7 @@ function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: Form
         <label style={field}>
           <span style={label}>Type</span>
           <select value={kind} onChange={(e) => setKind(e.target.value as 'skilled' | 'unskilled')} style={select}>
-            <option value="skilled">Skilled nursing</option>
+            <option value="skilled">Skilled Nursing</option>
             <option value="unskilled">Unskilled</option>
           </select>
         </label>
@@ -885,9 +885,9 @@ function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: Form
         <label style={field}>
           <span style={label}>Per</span>
           <select value={rateBasis} onChange={(e) => setRateBasis(e.target.value as RateBasis)} style={select}>
-            <option value="week">Week (GAPP letter)</option>
-            <option value="day">Day (Therap LPN line)</option>
-            <option value="month">Month (Therap RN line)</option>
+            <option value="week">Week (GAPP Letter)</option>
+            <option value="day">Day (Therap LPN Line)</option>
+            <option value="month">Month (Therap RN Line)</option>
           </select>
         </label>
         <label style={field}>

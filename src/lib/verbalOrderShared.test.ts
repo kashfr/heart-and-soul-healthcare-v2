@@ -85,9 +85,9 @@ describe('urgency', () => {
 describe('labels', () => {
   it('reflects fax failure', () => {
     const base = { provider: 'srfax' as const, toNumber: '', faxDetailsId: '', queuedAt: null, sentAt: null, error: '', attempts: 1 };
-    expect(verbalOrderStatusLabel({ status: 'faxed', fax: { ...base, sentStatus: 'Failed' } })).toBe('Fax failed');
-    expect(verbalOrderStatusLabel({ status: 'faxed', fax: { ...base, sentStatus: 'Sent' } })).toBe('Faxed, awaiting signature');
-    expect(verbalOrderStatusLabel({ status: 'taken', fax: null })).toBe('Taken, not yet faxed');
+    expect(verbalOrderStatusLabel({ status: 'faxed', fax: { ...base, sentStatus: 'Failed' } })).toBe('Fax Failed');
+    expect(verbalOrderStatusLabel({ status: 'faxed', fax: { ...base, sentStatus: 'Sent' } })).toBe('Faxed, Awaiting Signature');
+    expect(verbalOrderStatusLabel({ status: 'taken', fax: null })).toBe('Taken, Not Yet Faxed');
     expect(verbalOrderStatusLabel({ status: 'cancelled', fax: { ...base, sentStatus: 'Failed' } })).toBe('Cancelled');
   });
   it('bell text', () => {
