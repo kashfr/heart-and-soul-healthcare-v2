@@ -80,6 +80,32 @@ describe('wording', () => {
     expect(text).toMatch(/allows Magnolia Manor to share Ann Torres's health information with Heart and Soul Healthcare/);
     expect(text).not.toMatch(/[–—]/);
     expect(roiIntroParagraphs({ memberName: 'A', program: '', facilityName: 'F', direction: 'both' }).join(' ')).toMatch(/with each other/);
-    expect(defaultRoiFaxNote('Ann Torres')).not.toMatch(/[–—]/);
+    expect(defaultRoiFaxNote({ memberName: 'Ann Torres', direction: 'to-us', information: 'Visit notes.' })).not.toMatch(/[–—]/);
+  });
+});
+
+describe('defaultRoiFaxNote', () => {
+  const base = { memberName: 'Ricky Yancey', information: 'Current medication list and orders; A1C and recent lab results.', returnFax: '4702351891' };
+
+  it('asks the facility to fax the listed records back when they share with us', () => {
+    const note = defaultRoiFaxNote({ ...base, direction: 'to-us' });
+    expect(note).toContain('Please fax the following records to Heart and Soul Healthcare at (470) 235-1891: Current medication list and orders; A1C and recent lab results.');
+    expect(note).not.toContain('keep them on file');
+  });
+
+  it('asks for records and to keep it on file when both ways', () => {
+    const note = defaultRoiFaxNote({ ...base, direction: 'both' });
+    expect(note).toContain('Please fax the following records');
+    expect(note).toContain('keep them on file');
+  });
+
+  it('only asks to keep it on file when we are the ones sharing', () => {
+    const note = defaultRoiFaxNote({ ...base, direction: 'from-us' });
+    expect(note).not.toContain('Please fax');
+    expect(note).toContain('keep them on file');
+  });
+
+  it('points at the release when the return fax is unknown (the browser placeholder)', () => {
+    expect(defaultRoiFaxNote({ ...base, returnFax: undefined, direction: 'to-us' })).toContain('at the fax number on the release:');
   });
 });
