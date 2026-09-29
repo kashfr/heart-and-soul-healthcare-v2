@@ -41,6 +41,7 @@ import CarePlanSection from './CarePlanSection';
 import HoursSection from './HoursSection';
 import DayProgramSection from './DayProgramSection';
 import PhysiciansSection from './PhysiciansSection';
+import GuardianSection from './GuardianSection';
 import ServicePlanSection from './ServicePlanSection';
 import CommunicationsLog from '@/components/CommunicationsLog';
 import { SERVICE_PLAN_DOC_CATEGORY, SERVICE_PLAN_MAX_DAYS } from '@/lib/servicePlanShared';
@@ -694,6 +695,17 @@ function ClientDashboardInner() {
               {realRole !== 'va' && (
                 <PhysiciansSection
                   key={`ph-${patientId}`}
+                  patientId={patientId}
+                  canEdit={realStaff && !isViewingAs}
+                  actorName={profile?.displayName || user?.email || ''}
+                  onToast={showToast}
+                />
+              )}
+              {/* Guardian and responsible parties: who signs consents and
+                  releases, plus payee/conservator contacts. */}
+              {realRole !== 'va' && (
+                <GuardianSection
+                  key={`gd-${patientId}`}
                   patientId={patientId}
                   canEdit={realStaff && !isViewingAs}
                   actorName={profile?.displayName || user?.email || ''}
