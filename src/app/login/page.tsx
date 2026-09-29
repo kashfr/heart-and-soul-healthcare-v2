@@ -7,6 +7,7 @@ import { auth } from '@/lib/firebase';
 import { useAuth } from '@/components/AuthProvider';
 import { safeLoginRedirect } from '@/lib/loginRedirect';
 import { escortToField, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
+import { PortalLoading } from '@/components/PortalLoading';
 
 type Mode = 'signIn' | 'reset';
 const RESET_EMAIL_ID = 'login-field-reset-email';
@@ -102,6 +103,16 @@ function LoginForm() {
     setResetSentTo(target);
     setSubmitting(false);
   };
+
+  // Until Firebase has restored (or ruled out) a saved session, we don't know
+  // whether this visitor is signed in. Showing the form in that gap flashed it
+  // at people who were, just before the redirect above whisked them away. Hold
+  // the loading screen instead, and keep holding it while that redirect runs.
+  // Not during a submit: a fresh sign-in keeps the form (and its busy button)
+  // on screen until router.replace lands.
+  if ((loading || user) && !submitting) {
+    return <PortalLoading label={user ? 'Signing you in…' : 'Loading…'} />;
+  }
 
   return (
     <div style={containerStyle}>
@@ -250,7 +261,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div style={containerStyle} />}>
+    <Suspense fallback={<PortalLoading />}>
       <LoginForm />
     </Suspense>
   );

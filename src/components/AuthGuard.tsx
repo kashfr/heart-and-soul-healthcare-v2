@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from './AuthProvider';
 import { useViewAs } from './ImpersonationProvider';
 import { buildLoginRedirect } from '@/lib/loginRedirect';
+import { PortalLoading } from './PortalLoading';
 import type { Role } from '@/lib/auth';
 
 interface AuthGuardProps {
@@ -33,11 +34,11 @@ export function AuthGuard({ children, allow }: AuthGuardProps) {
   }, [user, loading, router, pathname]);
 
   if (loading) {
-    return <GuardMessage>Loading…</GuardMessage>;
+    return <PortalLoading />;
   }
 
   if (!user) {
-    return <GuardMessage>Redirecting to sign in…</GuardMessage>;
+    return <PortalLoading label="Redirecting to sign in…" />;
   }
 
   if (allow && allow.length > 0 && (!effectiveRole || !allow.includes(effectiveRole))) {
