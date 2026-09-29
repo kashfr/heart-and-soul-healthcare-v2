@@ -42,6 +42,7 @@ import HoursSection from './HoursSection';
 import DayProgramSection from './DayProgramSection';
 import PhysiciansSection from './PhysiciansSection';
 import GuardianSection from './GuardianSection';
+import SupportCoordinatorSection from './SupportCoordinatorSection';
 import ServicePlanSection from './ServicePlanSection';
 import CommunicationsLog from '@/components/CommunicationsLog';
 import { SERVICE_PLAN_DOC_CATEGORY, SERVICE_PLAN_MAX_DAYS } from '@/lib/servicePlanShared';
@@ -706,6 +707,17 @@ function ClientDashboardInner() {
               {realRole !== 'va' && (
                 <GuardianSection
                   key={`gd-${patientId}`}
+                  patientId={patientId}
+                  canEdit={realStaff && !isViewingAs}
+                  actorName={profile?.displayName || user?.email || ''}
+                  onToast={showToast}
+                />
+              )}
+              {/* Support coordinator: who writes the ISP and handles
+                  authorizations and the annual meeting. */}
+              {realRole !== 'va' && (
+                <SupportCoordinatorSection
+                  key={`sc-${patientId}`}
                   patientId={patientId}
                   canEdit={realStaff && !isViewingAs}
                   actorName={profile?.displayName || user?.email || ''}
