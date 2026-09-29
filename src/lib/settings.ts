@@ -337,7 +337,30 @@ export interface EdwpSettings {
   userUids: string[] | null;
 }
 
+/**
+ * Support coordination agencies (NOW/COMP SC / ISC providers and case
+ * management agencies). The Agency field on a client's Support coordinator
+ * card picks from this list, so an agency is typed once, spelled the same
+ * everywhere, and its office address comes along. Managed in Settings.
+ */
+export interface SupportCoordinationAgency {
+  id: string;
+  name: string;
+  address: string;
+  /** Main office line, (XXX) XXX-XXXX or blank. */
+  phone: string;
+  fax: string;
+  /** After-hours / emergency line, e.g. a pager. */
+  afterHours: string;
+  notes: string;
+}
+
+export interface SupportCoordinationSettings {
+  agencies: SupportCoordinationAgency[];
+}
+
 export interface AppSettings {
+  supportCoordination: SupportCoordinationSettings;
   verbalOrders: VerbalOrdersSettings;
   fax: FaxSettings;
   edwp: EdwpSettings;
@@ -362,6 +385,7 @@ export interface AppSettings {
  * refactor for anyone who hasn't customized.
  */
 export const DEFAULT_SETTINGS: AppSettings = {
+  supportCoordination: { agencies: [] },
   verbalOrders: { overdueDays: 14, escalateDays: 30, returnFax: '' },
   fax: { enabled: false, userUids: [], recertLeadDays: 45, ppotPrefillIdentity: false },
   edwp: { userUids: null },
@@ -494,6 +518,7 @@ export function mergeWithDefaults(partial: unknown): AppSettings {
     fax: mergeFax(p.fax),
     edwp: mergeEdwp(p.edwp),
     esign: mergeEsign(p.esign),
+    supportCoordination: mergeSupportCoordination(p.supportCoordination),
     branding: mergeBranding(p.branding),
     emails: mergeEmails(p.emails),
     intake: mergeIntake(p.intake),
@@ -524,6 +549,30 @@ function mergeVerbalOrders(input: unknown): VerbalOrdersSettings {
   const escalateDays = Math.max(overdueDays, clampDays(src.escalateDays, d.escalateDays));
   const returnFax = typeof src.returnFax === 'string' ? src.returnFax.replace(/\D/g, '').slice(-10) : '';
   return { overdueDays, escalateDays, returnFax: returnFax.length === 10 ? returnFax : '' };
+}
+
+const SC_AGENCY_MAX = 40;
+const SC_TEXT_MAX: Record<Exclude<keyof SupportCoordinationAgency, 'id'>, number> = { name: 120, address: 200, phone: 40, fax: 40, afterHours: 60, notes: 500 };
+
+function mergeSupportCoordination(input: unknown): SupportCoordinationSettings {
+  const src = (input ?? {}) as Partial<SupportCoordinationSettings>;
+  if (!Array.isArray(src.agencies)) return { agencies: [] };
+  const seen = new Set<string>();
+  const agencies: SupportCoordinationAgency[] = [];
+  for (const raw of src.agencies) {
+    if (!raw || typeof raw !== 'object') continue;
+    const r = raw as Partial<SupportCoordinationAgency>;
+    const text = (k: keyof typeof SC_TEXT_MAX) => (typeof r[k] === 'string' ? (r[k] as string).trim().slice(0, SC_TEXT_MAX[k]) : '');
+    const name = text('name');
+    // Blank rows (an "Add agency" never filled in) and duplicate names drop out.
+    if (!name || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    const id = typeof r.id === 'string' && /^[a-z0-9-]{1,40}$/.test(r.id) ? r.id : name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'agency';
+    agencies.push({ id, name, address: text('address'), phone: text('phone'), fax: text('fax'), afterHours: text('afterHours'), notes: text('notes') });
+    if (agencies.length >= SC_AGENCY_MAX) break;
+  }
+  agencies.sort((a, b) => a.name.localeCompare(b.name));
+  return { agencies };
 }
 
 function mergeEsign(input: unknown): EsignSettings {
@@ -704,6 +753,19 @@ export function validateSettings(payload: unknown): AppSettings {
   const sca = (p.shiftChangeAlerts ?? {}) as Partial<ShiftChangeAlertsSettings>;
   const fax = (p.fax ?? {}) as Partial<FaxSettings>;
   const esign = (p.esign ?? {}) as Partial<EsignSettings>;
+  const scs = (p.supportCoordination ?? {}) as Partial<SupportCoordinationSettings>;
+  if (scs.agencies !== undefined) {
+    if (!Array.isArray(scs.agencies)) throw new SettingsValidationError('supportCoordination.agencies', 'Agencies must be a list.');
+    const names = new Set<string>();
+    scs.agencies.forEach((raw, i) => {
+      const r = (raw ?? {}) as Partial<SupportCoordinationAgency>;
+      const name = typeof r.name === 'string' ? r.name.trim() : '';
+      const hasOther = ['address', 'phone', 'fax', 'afterHours', 'notes'].some((k) => typeof (r as Record<string, unknown>)[k] === 'string' && ((r as Record<string, string>)[k]).trim());
+      if (!name && hasOther) throw new SettingsValidationError(`supportCoordination.agencies.${i}.name`, 'Enter the agency name, or remove this row.');
+      if (name && names.has(name.toLowerCase())) throw new SettingsValidationError(`supportCoordination.agencies.${i}.name`, 'This agency is already on the list.');
+      if (name) names.add(name.toLowerCase());
+    });
+  }
   if (
     esign.trackKeywords !== undefined &&
     (!Array.isArray(esign.trackKeywords) || esign.trackKeywords.some((w) => typeof w !== 'string'))

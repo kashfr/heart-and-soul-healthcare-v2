@@ -354,3 +354,26 @@ describe('esign settings (PandaDoc tracking)', () => {
     expect(() => validateSettings({ esign: { trackKeywords: 'onboarding' } })).toThrow(SettingsValidationError);
   });
 });
+
+describe('supportCoordination settings', () => {
+  it('defaults to an empty agency list', () => {
+    expect(mergeWithDefaults({}).supportCoordination.agencies).toEqual([]);
+  });
+
+  it('keeps named agencies, drops blank rows and duplicate names, and sorts by name', () => {
+    const out = mergeWithDefaults({ supportCoordination: { agencies: [
+      { id: 'ccs', name: ' Creative Consulting Services ', address: '353 Resource Pkwy, Winder, GA 30680' },
+      { name: '' },
+      { name: 'Benchmark Human Services' },
+      { name: 'creative consulting services' },
+    ] } });
+    expect(out.supportCoordination.agencies.map((a) => a.name)).toEqual(['Benchmark Human Services', 'Creative Consulting Services']);
+    expect(out.supportCoordination.agencies[1]).toMatchObject({ id: 'ccs', address: '353 Resource Pkwy, Winder, GA 30680', phone: '' });
+    expect(out.supportCoordination.agencies[0].id).toBe('benchmark-human-services');
+  });
+
+  it('rejects a filled-in row with no name, and a duplicate name', () => {
+    expect(() => validateSettings({ supportCoordination: { agencies: [{ name: '', address: 'x' }] } })).toThrow(/agency name/);
+    expect(() => validateSettings({ supportCoordination: { agencies: [{ name: 'A' }, { name: 'a' }] } })).toThrow(/already on the list/);
+  });
+});
