@@ -9,6 +9,11 @@ import { formatUSPhone } from '@/lib/phone';
 import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
 import { formatUSFaxNumber, normalizeUSFaxNumber } from '@/lib/verbalOrderShared';
 import { validateFaxSendInput, type FaxSendField, type OutboundFax } from '@/lib/faxShared';
+import { withSelectChevron } from '@/lib/selectChevron';
+import { getPhysicians } from '@/lib/physicians';
+import { getDayProgram } from '@/lib/dayProgram';
+import { getSupportCoordinator } from '@/lib/supportCoordinator';
+import { roiFacilityOptions, type RoiFacilityOption } from '@/lib/roiFacilityOptions';
 import {
   DEFAULT_ROI_INFORMATION,
   defaultRoiFaxNote,
@@ -311,6 +316,42 @@ function PrepareModal({ clients, onClose, onCreated }: { clients: RoiClient[]; o
   const [err, setErr] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<RoiField, string>>>({});
   const clear = (k: RoiField) => fieldErrors[k] && setFieldErrors((p) => ({ ...p, [k]: undefined }));
+  // Places this client's releases usually go, from the dashboard's Physicians,
+  // Day program, and Support coordinator cards. null = still loading.
+  const [facilityOptions, setFacilityOptions] = useState<RoiFacilityOption[] | null>(null);
+  const [facilityPick, setFacilityPick] = useState('');
+  // True when none of the cards could be read (a VA, for example, can use the
+  // Fax Center but not the client's clinical records).
+  const [facilityDenied, setFacilityDenied] = useState(false);
+
+  useEffect(() => {
+    setFacilityOptions(null);
+    setFacilityPick('');
+    setFacilityDenied(false);
+    if (!client) return;
+    let cancelled = false;
+    // Each card is read on its own so one missing (or unreadable) record
+    // doesn't hide the others.
+    let failures = 0;
+    const safe = <T,>(p: Promise<T>) => p.catch(() => { failures += 1; return null; });
+    Promise.all([safe(getPhysicians(client.id)), safe(getDayProgram(client.id)), safe(getSupportCoordinator(client.id))]).then(([ph, dp, sc]) => {
+      if (cancelled) return;
+      setFacilityDenied(failures === 3);
+      setFacilityOptions(roiFacilityOptions(ph, dp, sc));
+    });
+    return () => { cancelled = true; };
+  }, [client]);
+
+  const pickFacility = (key: string) => {
+    setFacilityPick(key);
+    const o = facilityOptions?.find((x) => x.key === key);
+    if (!o) return;
+    setName(o.name);
+    setAddress(o.address);
+    setPhone(o.phone ? formatUSPhone(o.phone) : '');
+    setFax(o.fax ? formatUSPhone(o.fax) : '');
+    setFieldErrors((p) => ({ ...p, facilityName: undefined, facilityAddress: undefined, facilityPhone: undefined, facilityFax: undefined }));
+  };
 
   const needle = q.trim().toLowerCase();
   const matches = useMemo(() => (needle.length < 2 ? [] : clients.filter((c) => `${c.name} ${c.dob}`.toLowerCase().includes(needle)).slice(0, 8)), [clients, needle]);
@@ -406,6 +447,34 @@ function PrepareModal({ clients, onClose, onCreated }: { clients: RoiClient[]; o
                   : 'Two copies in one PDF, one each way. The guardian signs both.'}
             </span>
           </div>
+
+          {client && (
+            <label style={fieldStyle}>
+              <span style={labelStyle}>Choose from {client.name.split(/\s+/)[0]}&apos;s profile</span>
+              {facilityOptions === null ? (
+                <span style={hintStyle}>Loading doctors and agencies…</span>
+              ) : facilityDenied ? (
+                <span style={hintStyle}>Your account can&apos;t open this client&apos;s profile. Type the facility below.</span>
+              ) : facilityOptions.length === 0 ? (
+                <span style={hintStyle}>Nothing on file yet. Add doctors on the client&apos;s Physicians card, or type the facility below.</span>
+              ) : (
+                <>
+                  <select value={facilityPick} onChange={(e) => pickFacility(e.target.value)} style={withSelectChevron(inp)}>
+                    <option value="">Someone else (type it in below)</option>
+                    {(['Physicians', 'Day program', 'Support coordination'] as const).map((g) => {
+                      const opts = facilityOptions.filter((o) => o.group === g);
+                      return opts.length === 0 ? null : (
+                        <optgroup key={g} label={g}>
+                          {opts.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+                        </optgroup>
+                      );
+                    })}
+                  </select>
+                  <span style={hintStyle}>Fills in the name, address, phone, and fax below. You can still edit them.</span>
+                </>
+              )}
+            </label>
+          )}
 
           <label style={fieldStyle} id={prepId('facilityName')}>
             <span style={labelStyle}>Facility or agency</span>
