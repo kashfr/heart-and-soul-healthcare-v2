@@ -190,7 +190,7 @@ export default function SupportCoordinatorSection({ patientId, canEdit, actorNam
                 >
                   <option value="">Select...</option>
                   {agencies.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                  <option value="other">Other (type it in)</option>
+                  <option value="other">Other (Type It In)</option>
                 </select>
               )}
               {(agencies.length === 0 || agencyChoice === 'other') && (
