@@ -23,37 +23,11 @@ import { authedFetch } from './authedFetch';
  * here automatically (sourceNoteId links back to the note).
  */
 
-/**
- * Document categories, grouped for the pickers. The original seven names are
- * load-bearing (survey-readiness currency checks, verbal-order filing, and
- * oversight-note auto-filing match on them) and must not be renamed; add new
- * ones freely.
- */
-export const DOC_CATEGORY_GROUPS = [
-  {
-    label: 'Care planning & orders',
-    categories: ['Plan of Care (485)', 'Service Plan', 'Initial Assessment', 'Nursing Assessment / 60-Day Summary', 'Physician Orders', 'Medication List'],
-  },
-  {
-    label: 'Visits & notes',
-    categories: ['Supervisory Visit', 'RN Oversight', 'Progress Note (scanned)'],
-  },
-  {
-    label: 'Medical events',
-    categories: ['Hospital Discharge', 'ER / Urgent Care Visit', 'Specialist / Physician Visit', 'Lab & Diagnostic Results', 'Incident Report'],
-  },
-  {
-    label: 'Program & payer',
-    categories: ['Authorization / Letter of Notification', 'ISP / Plan of Treatment', 'Consent / Release (ROI)', 'Eligibility / Medicaid'],
-  },
-  {
-    label: 'Other',
-    categories: ['Other'],
-  },
-] as const;
+// Categories live in docCategories.ts (no Firebase imports) so server code
+// can validate against the same list; re-exported here for existing imports.
+export { DOC_CATEGORY_GROUPS, DOC_CATEGORIES, type DocCategory } from './docCategories';
+import type { DocCategory } from './docCategories';
 
-export const DOC_CATEGORIES = DOC_CATEGORY_GROUPS.flatMap((g) => g.categories) as readonly DocCategory[];
-export type DocCategory = (typeof DOC_CATEGORY_GROUPS)[number]['categories'][number];
 
 /** Categories that should always show as filter chips (the compliance
  *  checklist), even when the client has none on file yet. */

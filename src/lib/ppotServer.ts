@@ -14,6 +14,7 @@ import { srfaxRetrieveInbound } from './fax/srfax';
 import { formatDateUS, formatDateUSFile } from './dateFormat';
 import { stampAppendixTIdentity } from './pdf/appendixTStamp';
 import { canUseFax } from './faxShared';
+import { validateFileFaxToClient, type FileFaxToClientInput } from './docCategories';
 import {
   cleanMedicaidId,
   defaultPpotNote,
@@ -684,6 +685,79 @@ export async function fileSignedPpot(p: {
   }
   console.info(`PPOT filed: ${p.requestKey} (${memberName}) from inbound fax ${p.faxId}; ${ordersUpdated} order date(s) updated`);
   return { ok: true, documentId, ordersUpdated };
+}
+
+/**
+ * File an incoming fax into a client's Documents: records a facility sent back
+ * on a release of information, labs, a discharge summary. Same claim/release
+ * pattern as fileSignedPpot so two people can't file one fax twice, and the
+ * fax leaves Incoming Faxes (and the Verbal Orders queue) once filed.
+ */
+export async function fileInboundFaxToClient(p: FileFaxToClientInput & { faxId: string; caller: AuthedCaller }): Promise<{ ok: boolean; status?: number; error?: string; documentId?: string }> {
+  const invalid = validateFileFaxToClient(p, agencyTodayISO());
+  const firstError = Object.values(invalid)[0];
+  if (firstError) return { ok: false, status: 400, error: firstError };
+
+  const db = adminDb();
+  const inboundRef = db.collection(INBOUND).doc(p.faxId);
+  const patientRef = db.collection('patients').doc(p.patientId);
+  const byName = p.caller.profile.displayName || p.caller.email || '';
+
+  const claim = await db.runTransaction(async (tx) => {
+    const [inb, pat] = await Promise.all([tx.get(inboundRef), tx.get(patientRef)]);
+    if (!inb.exists || !OPEN_INBOUND.includes(String(inb.data()?.status || ''))) return { error: 'That fax has already been filed or dismissed.', status: 409 };
+    if (!pat.exists) return { error: 'That client was not found.', status: 404 };
+    tx.update(inboundRef, { status: 'filing', filingBy: p.caller.uid, filingAt: FieldValue.serverTimestamp() });
+    return { fileName: String(inb.data()?.fileName || ''), prevStatus: String(inb.data()?.status || 'unmatched'), patientName: String(pat.data()?.name || '') };
+  });
+  if ('error' in claim) return { ok: false, status: claim.status, error: claim.error };
+
+  const release = () => inboundRef.update({ status: claim.prevStatus, filingBy: FieldValue.delete(), filingAt: FieldValue.delete() }).catch(() => undefined);
+  const got = await srfaxRetrieveInbound(claim.fileName, true);
+  if (!got.ok || !got.pdf) {
+    await release();
+    return { ok: false, status: 502, error: got.error || 'Could not download the fax from SRFax.' };
+  }
+
+  const title = p.title.trim();
+  const safe = title.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80) || 'Fax';
+  const fileName = `${safe}_${formatDateUSFile(p.docDate)}.pdf`;
+  const docRef = db.collection('patientDocuments').doc();
+  const storagePath = `patients/${p.patientId}/documents/${docRef.id}/${fileName}`;
+  try {
+    await adminBucket().file(storagePath).save(got.pdf, { contentType: 'application/pdf', resumable: false });
+    await docRef.set({
+      patientId: p.patientId,
+      category: p.category,
+      title,
+      fileName,
+      storagePath,
+      contentType: 'application/pdf',
+      size: got.pdf.length,
+      docDate: p.docDate,
+      uploadedBy: p.caller.uid,
+      uploadedByName: byName,
+      uploadedByRole: p.caller.role,
+      uploadedAt: FieldValue.serverTimestamp(),
+      archived: false,
+      inboundFaxId: p.faxId,
+    });
+  } catch (err) {
+    await release();
+    console.error('Fax filing to client failed:', err);
+    return { ok: false, status: 500, error: 'Could not save the fax to the client. Please try again.' };
+  }
+
+  await inboundRef.update({
+    status: 'filed',
+    filedPatientId: p.patientId,
+    filedDocumentId: docRef.id,
+    filedAt: FieldValue.serverTimestamp(),
+    filedBy: p.caller.uid,
+    filedByName: byName,
+  });
+  console.info(`Inbound fax ${p.faxId} filed to client ${p.patientId} as "${title}" (${p.category})`);
+  return { ok: true, documentId: docRef.id };
 }
 
 export interface ReceivedPpot {
