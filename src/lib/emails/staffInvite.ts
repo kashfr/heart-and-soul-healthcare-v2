@@ -11,6 +11,7 @@
  */
 import { Resend } from 'resend';
 import { getServerSettings } from '../settingsServer';
+import { emailLogoRow } from './logo';
 
 // The actual from-email *address* stays env-pinned because changing
 // it requires DNS/SPF/DKIM updates that go beyond a settings toggle.
@@ -86,6 +87,7 @@ export async function sendStaffInvite({
       <tr>
         <td align="center">
           <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
+            ${emailLogoRow()}
             <tr>
               <td style="padding:28px 32px 8px;">
                 <h1 style="margin:0;font-size:20px;color:#1a3a5c;">${isResend ? 'Password reset link' : `Welcome to ${escapeHtml(orgName)}`}</h1>

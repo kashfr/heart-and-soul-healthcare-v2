@@ -17,6 +17,7 @@ import {
   type VisitNotifyEvent,
   type VisitNotifyFacts,
 } from '../visitNotifyShared';
+import { emailLogoBlock } from './logo';
 
 const FROM_ADDRESS = 'notifications@heartandsoulhc.org';
 
@@ -53,8 +54,8 @@ export async function sendVisitNotice(params: {
 
   const html = `
   <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 560px; margin: 0 auto; color: #2c3e50;">
-    <div style="background: #1a3a5c; color: #fff; padding: 14px 20px; border-radius: 8px 8px 0 0; font-weight: 700;">
-      Heart and Soul Healthcare
+    <div style="border: 1px solid #dde3e9; border-bottom: 0; border-radius: 8px 8px 0 0; padding: 18px 20px 4px;">
+      ${emailLogoBlock()}
     </div>
     <div style="border: 1px solid #dde3e9; border-top: 0; border-radius: 0 0 8px 8px; padding: 20px;">
       ${text

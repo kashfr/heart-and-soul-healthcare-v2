@@ -11,6 +11,7 @@
 import { Resend } from 'resend';
 import { getServerSettings } from '../settingsServer';
 import { flagActivityEmailCopy, type FlagActivityContext } from '../flagActivity';
+import { emailLogoRow } from './logo';
 
 const FROM_ADDRESS = 'notifications@heartandsoulhc.org';
 
@@ -62,6 +63,7 @@ export async function sendFlagActivityNotice(params: FlagActivityNoticeParams): 
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f7fa;padding:32px 20px;">
       <tr><td align="center">
         <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
+            ${emailLogoRow()}
           <tr><td style="padding:28px 32px 8px;">
             <h1 style="margin:0;font-size:20px;color:#1a3a5c;">${escapeHtml(copy.headline)}</h1>
           </td></tr>

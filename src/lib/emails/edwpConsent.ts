@@ -3,6 +3,7 @@ import { Resend } from 'resend';
 import type { EdwpConsentRecord } from '@/lib/edwpConsentServer';
 import { PROGRAM_LABEL, serviceLabels, type EdwpProgram } from '@/lib/edwpConsent';
 import { formatDateUS } from '@/lib/dateFormat';
+import { emailLogoBlock } from './logo';
 
 // The three emails around the EDWP consent form:
 //   1. staff notification when a client signs (PDF attached)
@@ -98,6 +99,7 @@ export async function sendEdwpConsentNotification(
 
   const html = `
     <div style="font-family:Arial,Helvetica,sans-serif;color:#111827;max-width:640px;">
+      ${emailLogoBlock()}
       <h2 style="margin:0 0 4px;">EDWP consent form signed</h2>
       <p style="margin:0 0 16px;color:#6b7280;font-size:13px;">Submitted online via heartandsoulhc.org. The signed PDF is attached.</p>
       <table style="border-collapse:collapse;width:100%;font-size:14px;">${rowsHtml(rows)}</table>
@@ -126,6 +128,7 @@ export async function sendEdwpConsentCopy(
 
   const html = `
     <div style="font-family:Arial,Helvetica,sans-serif;color:#111827;max-width:600px;line-height:1.6;">
+      ${emailLogoBlock()}
       <p style="margin:0 0 12px;">Hi ${first},</p>
       <p style="margin:0 0 12px;">
         Thank you for completing the EDWP client consent form for <strong>${escapeHtml(consent.clientName)}</strong>.
@@ -168,6 +171,7 @@ export async function sendEdwpConsentRequest(input: ConsentRequestInput): Promis
 
   const html = `
     <div style="font-family:Arial,Helvetica,sans-serif;color:#111827;max-width:600px;line-height:1.6;">
+      ${emailLogoBlock()}
       <p style="margin:0 0 12px;">Hello,</p>
       <p style="margin:0 0 12px;">
         Heart &amp; Soul Healthcare is preparing to provide services for <strong>${escapeHtml(input.clientName)}</strong>
