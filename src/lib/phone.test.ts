@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { phoneDigits, formatUSPhone, isValidUSPhone } from './phone';
+import { phoneDigits, formatUSPhone, isValidUSPhone, formatUSPhoneExt } from './phone';
 
 describe('phoneDigits', () => {
   it('strips non-digits', () => {
@@ -69,5 +69,21 @@ describe('isValidUSPhone', () => {
     // phoneDigits caps at 10, so a leading "1" country code shifts the value —
     // the form normalizes before this check, but guard the raw case anyway.
     expect(isValidUSPhone('123-456-789')).toBe(false);
+  });
+});
+
+describe('formatUSPhoneExt', () => {
+  it('formats a plain number like formatUSPhone', () => {
+    expect(formatUSPhoneExt('4042960238')).toBe('(404) 296-0238');
+    expect(formatUSPhoneExt('404')).toBe('(404');
+  });
+
+  it('keeps an extension typed or pasted after the number', () => {
+    expect(formatUSPhoneExt('770-279-5115 ext. 145')).toBe('(770) 279-5115 ext. 145');
+    expect(formatUSPhoneExt('7702795115145')).toBe('(770) 279-5115 ext. 145');
+  });
+
+  it('drops a leading country code before reading the extension', () => {
+    expect(formatUSPhoneExt('+1 (770) 279-5115 x145')).toBe('(770) 279-5115 ext. 145');
   });
 });

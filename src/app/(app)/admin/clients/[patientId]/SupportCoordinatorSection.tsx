@@ -13,6 +13,7 @@ import {
 } from '@/lib/supportCoordinatorShared';
 import { FieldError, FIELD_ERROR_STYLE, applyFieldErrors } from '@/lib/formEscort';
 import { withSelectChevron } from '@/lib/selectChevron';
+import { formatUSPhone, formatUSPhoneExt } from '@/lib/phone';
 
 const NAVY = '#1a3a5c';
 
@@ -151,16 +152,16 @@ export default function SupportCoordinatorSection({ patientId, canEdit, actorNam
               <input style={inputFor(errors.agency)} value={draft.agency || ''} onChange={(e) => set('agency', e.target.value)} placeholder="e.g. Benchmark Human Services" />
             </Field>
             <Field id={fieldId('contact')} label="Office phone" error={errors.contact}>
-              <input type="tel" style={inputFor(errors.contact)} value={draft.phone || ''} onChange={(e) => set('phone', e.target.value)} />
+              <input type="tel" style={inputFor(errors.contact)} value={draft.phone || ''} onChange={(e) => set('phone', formatUSPhoneExt(e.target.value))} />
             </Field>
             <Field label="Cell">
-              <input type="tel" style={inputFor(errors.contact)} value={draft.cell || ''} onChange={(e) => set('cell', e.target.value)} />
+              <input type="tel" style={inputFor(errors.contact)} value={draft.cell || ''} onChange={(e) => set('cell', formatUSPhone(e.target.value))} />
             </Field>
             <Field id={fieldId('email')} label="Email" error={errors.email}>
               <input type="email" style={inputFor(errors.email || errors.contact)} value={draft.email || ''} onChange={(e) => set('email', e.target.value)} />
             </Field>
             <Field label="Fax">
-              <input type="tel" style={input} value={draft.fax || ''} onChange={(e) => set('fax', e.target.value)} />
+              <input type="tel" style={input} value={draft.fax || ''} onChange={(e) => set('fax', formatUSPhone(e.target.value))} />
             </Field>
             <Field label="Office address" wide>
               <input style={input} value={draft.address || ''} onChange={(e) => set('address', e.target.value)} />

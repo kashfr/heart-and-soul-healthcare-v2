@@ -14,6 +14,7 @@ import {
 } from '@/lib/physiciansShared';
 import { FieldError, FIELD_ERROR_STYLE, escortToField } from '@/lib/formEscort';
 import { withSelectChevron } from '@/lib/selectChevron';
+import { formatUSPhone, formatUSPhoneExt } from '@/lib/phone';
 
 const NAVY = '#1a3a5c';
 
@@ -179,10 +180,10 @@ export default function PhysiciansSection({ patientId, canEdit, actorName, onToa
                     <input style={input} value={p.address || ''} onChange={(ev) => setField(p.id, 'address', ev.target.value)} placeholder="Street, suite, city, state ZIP" />
                   </Field>
                   <Field label="Phone">
-                    <input type="tel" style={input} value={p.phone || ''} onChange={(ev) => setField(p.id, 'phone', ev.target.value)} />
+                    <input type="tel" style={input} value={p.phone || ''} onChange={(ev) => setField(p.id, 'phone', formatUSPhoneExt(ev.target.value))} />
                   </Field>
                   <Field id={fieldId(p.id, 'fax')} label="Fax" error={e.fax}>
-                    <input type="tel" style={inputFor(e.fax)} value={p.fax || ''} onChange={(ev) => setField(p.id, 'fax', ev.target.value)} />
+                    <input type="tel" style={inputFor(e.fax)} value={p.fax || ''} onChange={(ev) => setField(p.id, 'fax', formatUSPhone(ev.target.value))} />
                   </Field>
                   <Field label="Notes" wide>
                     <input style={input} value={p.notes || ''} onChange={(ev) => setField(p.id, 'notes', ev.target.value)} placeholder="Where this came from, last visit, etc." />
