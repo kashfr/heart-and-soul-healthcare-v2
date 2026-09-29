@@ -125,7 +125,7 @@ function ReferralPrintSheet({ referral }: { referral: Referral }) {
               <td style={logCell}>{n}</td>
               <td style={logCell} />
               <td style={logCell} />
-              <td style={logCell}>{'☐'} Reached&nbsp;&nbsp; {'☐'} Voicemail&nbsp;&nbsp; {'☐'} No answer</td>
+              <td style={logCell}>{'☐'} Reached&nbsp;&nbsp; {'☐'} Voicemail&nbsp;&nbsp; {'☐'} No Answer</td>
             </tr>
           ))}
         </tbody>
@@ -133,7 +133,7 @@ function ReferralPrintSheet({ referral }: { referral: Referral }) {
 
       <div style={{ marginTop: 12, fontSize: 13, color: '#111' }}>
         <strong>Follow-up date:</strong> ____________________ &nbsp;&nbsp;
-        <strong>Result:</strong> {'☐'} Scheduled&nbsp;&nbsp; {'☐'} Needs info&nbsp;&nbsp; {'☐'} Not interested
+        <strong>Result:</strong> {'☐'} Scheduled&nbsp;&nbsp; {'☐'} Needs Info&nbsp;&nbsp; {'☐'} Not Interested
       </div>
 
       <div style={{ marginTop: 14, fontSize: 13, fontWeight: 700, color: '#111' }}>Notes</div>

@@ -260,7 +260,7 @@ function Inner() {
             <label id={fieldId('patientId')} style={fieldStyle}>
               <span style={labelStyle}>Client *</span>
               <select value={form.patientId} onChange={(e) => { setOrders([]); setDayAdmins([]); setCareTeam([]); setForm((f) => ({ ...f, patientId: e.target.value, marOrderId: '', marAdministrationId: '', medName: '', doseOrdered: '', route: '' })); }} style={{ ...selectStyle, ...hi('patientId') }} disabled={submitting}>
-                <option value="">Choose a client</option>
+                <option value="">Choose a Client</option>
                 {patients.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
               {err('patientId')}
@@ -294,7 +294,7 @@ function Inner() {
             <label style={fieldStyle}>
               <span style={labelStyle}>Medication order</span>
               <select value={form.marOrderId} onChange={(e) => pickOrder(e.target.value)} style={selectStyle} disabled={submitting || !form.patientId}>
-                <option value="">{form.patientId ? (orders.length ? 'Choose the medication' : 'No active orders on this MAR') : 'Choose the client first'}</option>
+                <option value="">{form.patientId ? (orders.length ? 'Choose the Medication' : 'No Active Orders on This MAR') : 'Choose the Client First'}</option>
                 {orders.map((o) => <option key={o.id} value={o.id}>{o.medName} {o.dose}{o.units ? ` ${o.units}` : ''} {o.route}</option>)}
               </select>
             </label>
@@ -344,7 +344,7 @@ function Inner() {
             <label style={fieldStyle}>
               <span style={labelStyle}>Charted dose this report is about (optional)</span>
               <select value={form.marAdministrationId} onChange={(e) => set('marAdministrationId', e.target.value)} style={selectStyle} disabled={submitting}>
-                <option value="">{linkedDoses.length ? 'Choose the MAR entry, if one was charted' : 'No doses charted for this medication on that date'}</option>
+                <option value="">{linkedDoses.length ? 'Choose the MAR Entry, If One Was Charted' : 'No Doses Charted for This Medication on That Date'}</option>
                 {linkedDoses.map((a) => <option key={a.id} value={a.id}>{a.scheduledTime} slot, {a.status}{a.actualTime ? ` at ${a.actualTime}` : ''} by {a.initials || a.administratorName || 'unknown'}</option>)}
               </select>
               <span style={hintStyle}>Ties the report to the exact MAR entry so the reviewer can see what was charted.</span>
@@ -392,9 +392,9 @@ function Inner() {
                   style={selectStyle}
                   disabled={submitting}
                 >
-                  <option value="">Choose from the care team</option>
+                  <option value="">Choose from the Care Team</option>
                   {teamChoices.map((m) => <option key={m.uid} value={`${m.name}, ${m.credential}`}>{m.name}, {m.credential}</option>)}
-                  <option value="__other">Someone else (type the name)</option>
+                  <option value="__other">Someone Else (Type the Name)</option>
                 </select>
                 {form.responsibleName && !teamChoices.some((m) => `${m.name}, ${m.credential}` === form.responsibleName) && (
                   <input type="text" value={form.responsibleName.trim()} onChange={(e) => set('responsibleName', e.target.value || ' ')} style={{ ...inputStyle, marginTop: 6 }} placeholder="Name" disabled={submitting} />

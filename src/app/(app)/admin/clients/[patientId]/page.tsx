@@ -636,18 +636,18 @@ function ClientDashboardInner() {
           {/* Stat tiles */}
           <div style={tileGridStyle}>
             <StatTile
-              label="Last visit"
+              label="Last Visit"
               value={lastVisit ? (daysSinceVisit === 0 ? 'Today' : `${daysSinceVisit}d ago`) : 'None yet'}
               sub={lastVisit ? fmtDate(lastVisit) : 'No notes documented'}
             />
-            <StatTile label="Visits this month" value={String(visitsThisMonth)} sub={today.slice(0, 7)} />
+            <StatTile label="Visits This Month" value={String(visitsThisMonth)} sub={today.slice(0, 7)} />
             <StatTile
-              label="Active medications"
+              label="Active Medications"
               value={String(activeOrders.length)}
               sub={prnCount > 0 ? `${prnCount} PRN` : activeOrders.length > 0 ? 'All scheduled' : 'None on file'}
             />
             <StatTile
-              label="MAR compliance (30d)"
+              label="MAR Compliance (30d)"
               value={mar30.pctGiven === null ? '—' : `${mar30.pctGiven}%`}
               sub={mar30.expected === 0 ? 'No scheduled doses due' : `${mar30.given}/${mar30.expected} scheduled doses given`}
             />
@@ -666,7 +666,7 @@ function ClientDashboardInner() {
                       <li key={v.id} style={miniVisitRowStyle}>
                         <span style={{ fontWeight: 700, color: '#1a3a5c', minWidth: 96, flexShrink: 0 }}>{fmtDate(v.date)}</span>
                         <span style={{ color: '#2c3e50', minWidth: 0 }}>
-                          {v.type === 'supervisory' ? 'Supervisory visit' : 'Shift'}
+                          {v.type === 'supervisory' ? 'Supervisory Visit' : 'Shift'}
                           {v.startTime ? ` · ${fmtTime(v.startTime)}` : ''}
                           {v.nurseName ? ` · ${v.nurseName}` : ''}
                         </span>

@@ -494,7 +494,7 @@ function BulkShareModal({
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 13, color: '#5c6b7a' }}>Expires in</span>
               <select value={expiry} onChange={(e) => setExpiry(Number(e.target.value))} style={modalSelectStyle}>
-                {[7, 14, 30, 90].map((d) => <option key={d} value={d}>{d} days</option>)}
+                {[7, 14, 30, 90].map((d) => <option key={d} value={d}>{d} Days</option>)}
               </select>
             </div>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#5c6b7a', cursor: 'pointer' }}>

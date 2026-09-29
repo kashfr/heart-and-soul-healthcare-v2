@@ -33,10 +33,10 @@ import MedChangeRequestModal from './MedChangeRequestModal';
 const ADVERSE_VALUE = 'Adverse reaction / intolerance; document below';
 
 const ADMIN_BY_OPTIONS = [
-  { value: 'nurse', label: 'Nurse (me)' },
-  { value: 'family', label: 'Family member' },
-  { value: 'responsibleParty', label: 'Responsible party' },
-  { value: 'self', label: 'Client (self)' },
+  { value: 'nurse', label: 'Nurse (Me)' },
+  { value: 'family', label: 'Family Member' },
+  { value: 'responsibleParty', label: 'Responsible Party' },
+  { value: 'self', label: 'Client (Self)' },
   { value: 'proxy', label: 'Proxy' },
 ];
 

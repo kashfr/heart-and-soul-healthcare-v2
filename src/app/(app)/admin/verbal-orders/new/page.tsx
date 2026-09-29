@@ -230,7 +230,7 @@ function NewVerbalOrderInner() {
                 style={{ ...selectStyle, ...hi('patientId') }}
                 disabled={submitting}
               >
-                <option value="">Choose a client</option>
+                <option value="">Choose a Client</option>
                 {patients.map((p) => (
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
@@ -242,7 +242,7 @@ function NewVerbalOrderInner() {
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {(['medication', 'other'] as const).map((t) => (
                   <button key={t} type="button" disabled={submitting} onClick={() => setOrderType(t)} style={orderType === t ? chipActiveStyle : chipStyle}>
-                    {t === 'medication' ? 'Medication order' : 'Treatment or other order'}
+                    {t === 'medication' ? 'Medication Order' : 'Treatment or Other Order'}
                   </button>
                 ))}
               </div>
@@ -264,7 +264,7 @@ function NewVerbalOrderInner() {
               <select value={physicianSpecialty} onChange={(e) => setPhysicianSpecialty(e.target.value)} style={selectStyle} disabled={submitting}>
                 <option value="">Choose</option>
                 {VERBAL_ORDER_SPECIALTIES.map((s) => (
-                  <option key={s} value={s}>{s}</option>
+                  <option key={s} value={s}>{s.replace('Primary care', 'Primary Care')}</option>
                 ))}
               </select>
             </label>

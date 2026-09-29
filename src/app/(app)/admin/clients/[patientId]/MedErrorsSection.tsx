@@ -39,7 +39,7 @@ export default function MedErrorsSection({ patientId, canFile }: { patientId: st
       <div style={headerRowStyle}>
         <div style={titleStyle}>
           <ShieldAlert size={16} /> Medication Errors
-          {open.length > 0 && <span style={countChipStyle}>{open.length} awaiting review</span>}
+          {open.length > 0 && <span style={countChipStyle}>{open.length} Awaiting Review</span>}
         </div>
         {canFile && (
           <Link href={`/admin/med-errors/new?patient=${encodeURIComponent(patientId)}`} style={addBtnStyle}><Plus size={14} /> Report an Error</Link>
@@ -56,8 +56,8 @@ export default function MedErrorsSection({ patientId, canFile }: { patientId: st
           {items.map((r) => (
             <li key={r.id} style={{ ...rowStyle, borderLeftColor: r.status === 'reviewed' ? '#27ae60' : effectiveIncidentRequired(r) ? '#b3261e' : '#e0a100' }}>
               <div style={rowHeadStyle}>
-                {r.status === 'reviewed' ? <span style={chipSignedStyle}><Check size={11} /> Reviewed</span> : <span style={chipWarnStyle}><Clock size={11} /> Awaiting review</span>}
-                {effectiveIncidentRequired(r) && <span style={chipDangerStyle}>Incident report</span>}
+                {r.status === 'reviewed' ? <span style={chipSignedStyle}><Check size={11} /> Reviewed</span> : <span style={chipWarnStyle}><Clock size={11} /> Awaiting Review</span>}
+                {effectiveIncidentRequired(r) && <span style={chipDangerStyle}>Incident Report</span>}
                 <span style={metaStyle}>{medErrorTypeLabel(r.errorType)} · {r.medName} · {formatLocalDateTimeUS(r.discoveredAt)} · {r.reporterName}</span>
                 <Link href={`/admin/med-errors?r=${r.id}`} style={openLinkStyle}>Open</Link>
               </div>

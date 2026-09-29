@@ -522,7 +522,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           <p style={formDateStyle}>Form Date: {fmtDate(data.q6_dateofService) || data.q6_dateofService}</p>
           {(isNurse ? nurseArchived : staffArchived) && (
             <div style={archivedBadgeStyle} className="no-print">
-              Archived{isNurse ? ' from your view' : ''}
+              Archived{isNurse ? ' from Your View' : ''}
             </div>
           )}
           {!isNurse && nurseArchived && (

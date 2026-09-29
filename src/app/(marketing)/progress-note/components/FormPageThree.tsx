@@ -168,7 +168,7 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
                     onChange: (e) => setPainScale(e.target.value),
                   })}
                 >
-                  <option value="">Select scale...</option>
+                  <option value="">Select Scale...</option>
                   <option value="Numeric (0-10)">Numeric (0-10)</option>
                   <option value="FACES">FACES (Wong-Baker)</option>
                   <option value="FLACC">FLACC (Behavioral)</option>

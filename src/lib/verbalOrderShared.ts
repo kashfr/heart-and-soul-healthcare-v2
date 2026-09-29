@@ -203,15 +203,15 @@ export function verbalOrderAgeDays(order: Pick<VerbalOrder, 'takenDate'>, todayI
 }
 
 export const VERBAL_ORDER_STATUS_LABEL: Record<VerbalOrderStatus, string> = {
-  taken: 'Taken, not yet faxed',
-  faxed: 'Faxed, awaiting signature',
+  taken: 'Taken, Not Yet Faxed',
+  faxed: 'Faxed, Awaiting Signature',
   signed: 'Signed',
   cancelled: 'Cancelled',
 };
 
 export function verbalOrderStatusLabel(o: Pick<VerbalOrder, 'status' | 'fax'>): string {
-  if (isVerbalOrderOpen(o) && o.fax?.sentStatus === 'Failed') return 'Fax failed';
-  if (o.status === 'faxed' && o.fax?.sentStatus === 'In Progress') return 'Fax sending';
+  if (isVerbalOrderOpen(o) && o.fax?.sentStatus === 'Failed') return 'Fax Failed';
+  if (o.status === 'faxed' && o.fax?.sentStatus === 'In Progress') return 'Fax Sending';
   return VERBAL_ORDER_STATUS_LABEL[o.status];
 }
 

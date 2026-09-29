@@ -524,7 +524,7 @@ export default function FormPageOne({ formRef, register, watch, setValue, contro
                 onChange: (e) => onCredentialChange?.(e.target.value),
               })}
             >
-              <option value="">Select credential</option>
+              <option value="">Select Credential</option>
               <option value="RN">RN</option>
               <option value="LPN">LPN</option>
               <option value="CNA">CNA</option>

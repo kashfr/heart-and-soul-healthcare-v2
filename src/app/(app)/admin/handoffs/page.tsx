@@ -181,7 +181,7 @@ function StaffView({ highlightId }: { highlightId: string | null }) {
       <div style={{ ...sectionTitleStyle, justifyContent: 'space-between', flexWrap: 'wrap' }}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
           <ArrowLeftRight size={16} /> Recent Handoffs
-          {openCount > 0 && <span style={countChipStyle} title="Posts still waiting on at least one nurse">{openCount} open</span>}
+          {openCount > 0 && <span style={countChipStyle} title="Posts still waiting on at least one nurse">{openCount} Open</span>}
         </span>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <button type="button" style={filter === 'open' ? filterActiveStyle : filterBtnStyle} onClick={() => setFilter('open')}>Awaiting Acknowledgment</button>
@@ -226,7 +226,7 @@ function StaffView({ highlightId }: { highlightId: string | null }) {
                     <>
                       <span style={s.pendingNames.length ? pendingChipStyle : ackedChipStyle}>
                         {s.pendingNames.length ? <Clock size={11} /> : <Check size={11} />}
-                        {s.acknowledged} of {s.total} acknowledged
+                        {s.acknowledged} of {s.total} Acknowledged
                       </span>
                       {h.recipientIds.map((rid) => {
                         const acked = isAcknowledgedBy(h, rid);

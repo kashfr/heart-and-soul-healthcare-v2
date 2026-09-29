@@ -240,7 +240,7 @@ export default function DocumentsSection({
                   {d.title}
                   {d.autoFiled && (
                     <span style={autoChipStyle} title={d.servicePlanReviewId ? 'Filed automatically when the service plan was reviewed' : d.servicePlanId ? 'Filed automatically when the service plan was signed' : 'Filed automatically from the submitted note; re-filed when the note is amended'}>
-                      {d.servicePlanReviewId ? 'From plan review' : d.servicePlanId ? 'From service plan' : 'From note'}
+                      {d.servicePlanReviewId ? 'From Plan Review' : d.servicePlanId ? 'From Service Plan' : 'From Note'}
                     </span>
                   )}
                   {d.archived && <span style={archivedChipStyle}>Archived</span>}
@@ -432,7 +432,7 @@ function EditDocumentModal({
             style={{ ...selectStyle, ...(fieldErrors.category ? FIELD_ERROR_STYLE : null) }}
             aria-invalid={!!fieldErrors.category}
           >
-            <option value="">Select a category…</option>
+            <option value="">Select a Category…</option>
             <CategoryOptions />
           </select>
           <FieldError message={fieldErrors.category} />
@@ -512,7 +512,7 @@ function MoveDocumentModal({
         <label style={fieldStyle}>
           <span style={fieldLabelStyle}>Move to *</span>
           <select value={toPatientId} onChange={(e) => { setToPatientId(e.target.value); setError(null); }} style={selectStyle} disabled={!patients}>
-            <option value="">{patients ? 'Select a client…' : 'Loading clients…'}</option>
+            <option value="">{patients ? 'Select a Client…' : 'Loading Clients…'}</option>
             {(patients || []).map((p) => (
               <option key={p.id} value={p.id}>{p.name}{p.mrn ? ` (#${p.mrn})` : ''}</option>
             ))}
@@ -526,7 +526,7 @@ function MoveDocumentModal({
           <label style={fieldStyle}>
             <span style={fieldLabelStyle}>Category</span>
             <select value={category} onChange={(e) => setCategory(e.target.value as DocCategory)} style={selectStyle}>
-              <option value="">Keep current</option>
+              <option value="">Keep Current</option>
               <CategoryOptions />
             </select>
           </label>
@@ -723,7 +723,7 @@ function UploadDocumentModal({
             style={{ ...selectStyle, ...(fieldErrors.category ? FIELD_ERROR_STYLE : null) }}
             aria-invalid={!!fieldErrors.category}
           >
-            <option value="">Select a category…</option>
+            <option value="">Select a Category…</option>
             <CategoryOptions />
           </select>
           <FieldError message={fieldErrors.category} />

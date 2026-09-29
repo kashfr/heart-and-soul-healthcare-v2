@@ -227,8 +227,8 @@ export default function ReferralDetail({
               >
                 <option value="">
                   {fallbackService
-                    ? `From the form: ${SERVICE_LABEL[fallbackService]}`
-                    : 'From the form: not stated'}
+                    ? `From the Form: ${SERVICE_LABEL[fallbackService]}`
+                    : 'From the Form: Not Stated'}
                 </option>
                 {GAPP_SERVICES.map((svc) => (
                   <option key={svc.key} value={svc.key}>
@@ -424,10 +424,10 @@ const SHARE_STATUS_STYLE: Record<ShareStatus, React.CSSProperties> = {
 };
 
 const EXPIRY_OPTIONS = [
-  { days: 7, label: '7 days' },
-  { days: 14, label: '14 days' },
-  { days: 30, label: '30 days' },
-  { days: 90, label: '90 days' },
+  { days: 7, label: '7 Days' },
+  { days: 14, label: '14 Days' },
+  { days: 30, label: '30 Days' },
+  { days: 90, label: '90 Days' },
 ];
 
 // Email check used when staging a multi-agency recipient before it's added.

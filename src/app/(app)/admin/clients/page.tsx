@@ -602,7 +602,7 @@ function ClientsRosterInner() {
                 style={filterSelectStyle}
                 aria-label="Filter by program"
               >
-                <option value="">All programs</option>
+                <option value="">All Programs</option>
                 {PROGRAMS.map((pr) => (
                   <option key={pr.id} value={pr.id}>{pr.label}</option>
                 ))}
@@ -613,7 +613,7 @@ function ClientsRosterInner() {
                 style={filterSelectStyle}
                 aria-label="Filter by service level"
               >
-                <option value="">All service levels</option>
+                <option value="">All Service Levels</option>
                 {SERVICE_LEVELS.map((sl) => (
                   <option key={sl.id} value={sl.id}>{sl.label}</option>
                 ))}

@@ -131,7 +131,7 @@ export default function ClientCharts({ notes, admins, dob, vitalsOverride, basel
       case 'resp':
         return { lines: [{ key: 'resp', name: 'Respirations', color: NAVY }], bands: [{ low: ranges.respiration.low, high: ranges.respiration.high }], unit: '/min', cap: undefined as number | undefined };
       case 'pain':
-        return { lines: [{ key: 'pain', name: 'Pain score', color: AMBER }], bands: [], unit: '/10', cap: 10 as number | undefined };
+        return { lines: [{ key: 'pain', name: 'Pain Score', color: AMBER }], bands: [], unit: '/10', cap: 10 as number | undefined };
     }
   }, [metric, ranges]);
 

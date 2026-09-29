@@ -177,7 +177,7 @@ function BillingRatesInner() {
                       {r.note && <div style={noteStyle}>{r.note}</div>}
                     </td>
                     <td style={td}>
-                      <span style={r.credential ? credChip : anyChip}>{r.credential || 'Any nurse'}</span>
+                      <span style={r.credential ? credChip : anyChip}>{r.credential || 'Any Nurse'}</span>
                     </td>
                     <td style={td}>
                       <span style={codeStyle}>{r.serviceCode || '—'}</span>
@@ -277,15 +277,15 @@ function RateForm({ existing, uid, onCancel, onSaved }: {
         <label style={field}>
           <span style={label}>Covers *</span>
           <select value={bucket} onChange={(e) => setBucket(e.target.value as HoursBucket)} style={select}>
-            <option value="shift">Shift hours (LPN / HHA / CNA shift notes)</option>
-            <option value="oversight">RN oversight visits</option>
+            <option value="shift">Shift Hours (LPN / HHA / CNA Shift Notes)</option>
+            <option value="oversight">RN Oversight Visits</option>
           </select>
         </label>
         <label style={field}>
           <span style={label} title="Limit this rate to notes written by this nurse type. Leave on Any when the payer pays the same regardless.">Nurse type</span>
           <select value={credential} onChange={(e) => setCredential(e.target.value)} style={select}>
             {RATE_CREDENTIALS.map((c) => (
-              <option key={c || 'any'} value={c}>{c || 'Any nurse'}</option>
+              <option key={c || 'any'} value={c}>{c || 'Any Nurse'}</option>
             ))}
           </select>
         </label>

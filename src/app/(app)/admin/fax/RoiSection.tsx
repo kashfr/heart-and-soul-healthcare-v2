@@ -180,7 +180,7 @@ export default function RoiSection({
                     <td style={tdStyle}>
                       {r.status === 'awaiting-signature' && (
                         <>
-                          <span style={pill('#fef7e0', '#8a5a00')}>Waiting on signature</span>
+                          <span style={pill('#fef7e0', '#8a5a00')}>Waiting on Signature</span>
                           <div style={metaStyle}>Prepared {r.createdAt ? formatDateUS(r.createdAt.slice(0, 10)) : ''}{r.createdByName ? ` by ${r.createdByName}` : ''}</div>
                         </>
                       )}
@@ -460,7 +460,7 @@ function PrepareModal({ clients, onClose, onCreated }: { clients: RoiClient[]; o
               ) : (
                 <>
                   <select value={facilityPick} onChange={(e) => pickFacility(e.target.value)} style={withSelectChevron(inp)}>
-                    <option value="">Someone else (type it in below)</option>
+                    <option value="">Someone Else (Type It in Below)</option>
                     {(['Physicians', 'Day program', 'Support coordination'] as const).map((g) => {
                       const opts = facilityOptions.filter((o) => o.group === g);
                       return opts.length === 0 ? null : (

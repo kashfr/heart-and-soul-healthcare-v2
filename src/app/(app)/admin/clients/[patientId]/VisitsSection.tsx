@@ -105,10 +105,10 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={v.type === 'supervisory' ? supChipStyle : shiftChipStyle}>
-            {v.type === 'supervisory' ? 'Supervisory visit' : 'Shift'}
+            {v.type === 'supervisory' ? 'Supervisory Visit' : 'Shift'}
           </span>
           {v.nurseName && <span style={{ fontSize: 13, color: '#2c3e50', fontWeight: 600 }}>{v.nurseName}</span>}
-          {isOverdue && <span style={overdueChipStyle}>Past date, not completed</span>}
+          {isOverdue && <span style={overdueChipStyle}>Past Date, Not Completed</span>}
         </div>
         {v.notes && <div style={notesStyle}>{v.notes}</div>}
       </div>
@@ -211,7 +211,7 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <span style={v.type === 'supervisory' ? supChipStyle : shiftChipStyle}>
-                        {v.type === 'supervisory' ? 'Supervisory visit' : 'Shift'}
+                        {v.type === 'supervisory' ? 'Supervisory Visit' : 'Shift'}
                       </span>
                       <span style={v.status === 'completed' ? doneChipStyle : cancelledChipStyle}>
                         {v.status === 'completed' ? 'Completed' : 'Cancelled'}
@@ -377,8 +377,8 @@ function AddVisitModal({
             }}
             style={selectStyle}
           >
-            <option value="shift">Shift (regular nursing visit)</option>
-            <option value="supervisory">Supervisory visit (RN supervision)</option>
+            <option value="shift">Shift (Regular Nursing Visit)</option>
+            <option value="supervisory">Supervisory Visit (RN Supervision)</option>
           </select>
         </label>
 
@@ -387,7 +387,7 @@ function AddVisitModal({
             <span style={fieldLabelStyle}>{supervisory ? 'Supervisor (RN)' : 'Nurse (care team)'}</span>
             <select value={nurseUid} onChange={(e) => setNurseUid(e.target.value)} style={selectStyle}>
               <option value="">
-                {supervisory && supervisors === null ? 'Loading supervisors…' : 'Not assigned yet…'}
+                {supervisory && supervisors === null ? 'Loading Supervisors…' : 'Not Assigned Yet…'}
               </option>
               {assignPool.map((m) => (
                 <option key={m.uid} value={m.uid}>

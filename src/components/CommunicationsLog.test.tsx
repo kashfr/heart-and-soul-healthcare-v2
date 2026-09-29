@@ -47,7 +47,7 @@ describe('CommunicationsLog', () => {
     store.entries = [notice];
     render(<CommunicationsLog />);
     expect(await screen.findByText('Visit assigned')).toBeInTheDocument();
-    expect(screen.getByText('Partly delivered')).toBeInTheDocument();
+    expect(screen.getByText('Partly Delivered')).toBeInTheDocument();
     expect(screen.getByText('ZZ Test Client')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { expanded: false }));
@@ -67,7 +67,7 @@ describe('CommunicationsLog', () => {
 
     const sel = (id: string) => document.querySelector(`#comm-field-${id} select`) as HTMLSelectElement;
     fireEvent.change(sel('channel'), { target: { value: 'email' } });
-    fireEvent.change(screen.getByDisplayValue('Not a staff member'), { target: { value: 'ashley' } });
+    fireEvent.change(screen.getByDisplayValue('Not a Staff Member'), { target: { value: 'ashley' } });
     fireEvent.change(screen.getByPlaceholderText(/paste the email/i), { target: { value: 'Hi Ashley, please complete the visit.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Log Message' }));
     await waitFor(() => expect(logMock).toHaveBeenCalledTimes(1));

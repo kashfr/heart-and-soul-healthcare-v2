@@ -345,7 +345,7 @@ export default function FaxCenterPage() {
                       </td>
                       <td style={tdStyle}>
                         {f.kind === 'ppot' && f.ppot && (
-                          <div style={ppotTagStyle}>PPOT request · {PPOT_REQUEST_LABEL[f.ppot.requestType]}</div>
+                          <div style={ppotTagStyle}>PPOT Request · {PPOT_REQUEST_LABEL[f.ppot.requestType]}</div>
                         )}
                         {f.regarding || <span style={{ color: '#94a3b8' }}>None</span>}
                         <div style={metaStyle}>

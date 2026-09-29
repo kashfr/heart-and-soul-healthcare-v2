@@ -240,8 +240,8 @@ function AnnouncementCard({ a, staff, testUids, retiring, onRetire }: { a: Annou
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <span style={countPill}><Check size={12} /> {acked.length + others.length} read</span>
-          {expected.length > 0 && <span style={{ ...countPill, background: waiting.length ? '#fff4e0' : '#e6f4ec', color: waiting.length ? '#9a5b00' : '#0e7c4a' }}><Clock size={12} /> {waiting.length} waiting</span>}
+          <span style={countPill}><Check size={12} /> {acked.length + others.length} Read</span>
+          {expected.length > 0 && <span style={{ ...countPill, background: waiting.length ? '#fff4e0' : '#e6f4ec', color: waiting.length ? '#9a5b00' : '#0e7c4a' }}><Clock size={12} /> {waiting.length} Waiting</span>}
           {a.active && (
             <button type="button" style={secondaryBtnStyle} onClick={onRetire} disabled={retiring}>{retiring ? 'Retiring…' : 'Retire'}</button>
           )}

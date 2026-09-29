@@ -288,7 +288,7 @@ export default function ContactPage() {
                         onChange={handleChange}
                         required
                       >
-                        <option value="">Select a subject</option>
+                        <option value="">Select a Subject</option>
                         <option value="General Inquiry">General Inquiry</option>
                         <option value="Services Information">Services Information</option>
                         <option value="Program Questions">Program Questions</option>

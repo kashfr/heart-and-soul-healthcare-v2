@@ -187,8 +187,8 @@ export const STAGE_ACCENT: Record<ReferralStage, string> = {
 };
 
 export const SOURCE_LABEL: Record<ReferralSource, string> = {
-  'gapp-website': 'GAPP site',
-  'hs-website': 'Heart & Soul site',
+  'gapp-website': 'GAPP Site',
+  'hs-website': 'Heart & Soul Site',
 };
 
 export function statusFromStage(stage: ReferralStage): ReferralStatus {
@@ -276,8 +276,8 @@ export function downloadCsv(list: Referral[], context: CsvMatchContext) {
   // saved spreadsheets keep their column positions.
   const headers = [
     'Name', 'Phone', 'Email', 'County', 'Program', 'Source', 'Stage',
-    'Assigned to', 'Received', 'Referred by', 'Details',
-    'Fit', 'Partner matches', 'Matching agencies',
+    'Assigned To', 'Received', 'Referred By', 'Details',
+    'Fit', 'Partner Matches', 'Matching Agencies',
   ];
   const rows = list.map((r) => {
     const input = matchInputFor(r);

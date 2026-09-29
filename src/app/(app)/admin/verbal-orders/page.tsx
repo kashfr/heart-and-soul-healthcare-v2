@@ -206,8 +206,8 @@ function VerbalOrdersInner() {
           <div style={{ ...sectionTitleStyle, justifyContent: 'space-between', flexWrap: 'wrap' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
               <PhoneCall size={16} /> {isStaff ? 'Queue' : 'My Verbal Orders'}
-              {openCount > 0 && <span style={countChipStyle}>{openCount} open</span>}
-              {overdueCount > 0 && <span style={countChipWarnStyle}>{overdueCount} overdue</span>}
+              {openCount > 0 && <span style={countChipStyle}>{openCount} Open</span>}
+              {overdueCount > 0 && <span style={countChipWarnStyle}>{overdueCount} Overdue</span>}
             </span>
             <span style={{ display: 'inline-flex', gap: 6 }}>
               <button type="button" style={filter === 'open' ? filterActiveStyle : filterBtnStyle} onClick={() => setFilter('open')}>Awaiting Signature</button>
@@ -339,7 +339,7 @@ function UrgencyChip({ urgency, faxFailed, needsManualFax, label }: { urgency: V
   if (faxFailed) return <span style={chipDangerStyle}><AlertTriangle size={11} /> {label}</span>;
   if (urgency === 'escalated') return <span style={chipDangerStyle}><AlertTriangle size={11} /> Escalated</span>;
   if (urgency === 'overdue') return <span style={chipWarnStyle}><Clock size={11} /> Overdue</span>;
-  if (needsManualFax) return <span style={chipWarnStyle}><Send size={11} /> Needs fax</span>;
+  if (needsManualFax) return <span style={chipWarnStyle}><Send size={11} /> Needs Fax</span>;
   return <span style={chipOpenStyle}><Clock size={11} /> {label}</span>;
 }
 
@@ -548,11 +548,11 @@ function MatchFaxModal({ fax, openOrders, onClose, onPick, onPreview }: { fax: U
         <div style={{ ...mutedStyle, marginBottom: 10 }}>Open the preview and check the client name and order on the page before choosing.</div>
         {suggested.length > 0 && (
           <>
-            <div style={labelStyle}>Same physician fax number</div>
+            <div style={labelStyle}>Same Physician Fax Number</div>
             <div style={pickListStyle}>{suggested.map((o) => <Row key={o.id} o={o} />)}</div>
           </>
         )}
-        <div style={{ ...labelStyle, marginTop: 10 }}>All open orders</div>
+        <div style={{ ...labelStyle, marginTop: 10 }}>All Open Orders</div>
         <div style={pickListStyle}>{rest.length === 0 && suggested.length === 0 ? <div style={mutedStyle}>No open verbal orders.</div> : rest.map((o) => <Row key={o.id} o={o} />)}</div>
         <div style={actionsStyle}>
           <button type="button" style={cancelBtnStyle} onClick={onClose}>Close</button>

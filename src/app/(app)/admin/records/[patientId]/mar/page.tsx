@@ -31,9 +31,9 @@ import MedChart from '@/app/(marketing)/progress-note/components/MedChart';
 
 const ADMIN_BY_LABELS: Record<string, string> = {
   nurse: 'Nurse',
-  family: 'Family member',
-  responsibleParty: 'Responsible party',
-  self: 'Client (self)',
+  family: 'Family Member',
+  responsibleParty: 'Responsible Party',
+  self: 'Client (Self)',
   proxy: 'Proxy',
 };
 
@@ -485,7 +485,7 @@ export default function MonthlyMarPage() {
                             {order.status === 'discontinued' && <span style={dcChipStyle}>D/C</span>}
                             {order.status !== 'discontinued' && physicianAttributionPending(order) && (
                               <span style={physicianNeededChipStyle} title="No ordering physician on this order yet; update it via Manage meds.">
-                                Physician needed
+                                Physician Needed
                               </span>
                             )}
                           </div>
@@ -601,22 +601,22 @@ export default function MonthlyMarPage() {
             )}
 
             <div style={legendRowStyle}>
-              <span style={{ ...legendChipStyle, background: '#d8efd8', color: '#1e5c1e' }}>Initials = given</span>
+              <span style={{ ...legendChipStyle, background: '#d8efd8', color: '#1e5c1e' }}>Initials = Given</span>
               <span style={{ ...legendChipStyle, background: '#fcebcd', color: '#8a5a0d' }}>Held</span>
               <span style={{ ...legendChipStyle, background: '#f9dcd8', color: '#a82315' }}>Refused</span>
               <span style={{ ...legendChipStyle, background: 'white', color: '#5c6b7a', border: '1px solid #dde3ea' }}>
-                Blank = due, not documented
+                Blank = Due, Not Documented
               </span>
               <span style={{ ...legendChipStyle, ...inactiveCellStyle, color: '#5c6b7a' }}>
-                Hatched = order not active
+                Hatched = Order Not Active
               </span>
-              <span style={{ ...legendChipStyle, background: '#fde68a', color: '#1a3a5c' }}>Amber column = today</span>
-              <span style={{ ...legendChipStyle, background: '#eef4fb', color: '#1a3a5c' }}>* = given by family/proxy (see log)</span>
+              <span style={{ ...legendChipStyle, background: '#fde68a', color: '#1a3a5c' }}>Amber Column = Today</span>
+              <span style={{ ...legendChipStyle, background: '#eef4fb', color: '#1a3a5c' }}>* = Given by Family/Proxy (See Log)</span>
               {/* Future days are deliberately not chartable (a nurse documents
                   what happened, not what will). Saying so stops the silent
                   "why won't this box open?" dead end. */}
               <span style={{ ...legendChipStyle, background: 'white', color: '#5c6b7a', border: '1px solid #dde3ea' }}>
-                Future days can&apos;t be charted
+                Future Days Can&apos;t Be Charted
               </span>
             </div>
 
@@ -676,7 +676,7 @@ export default function MonthlyMarPage() {
                             </span>
                             {a.voided === true && (
                               <span style={{ display: 'block', fontSize: 10.5, color: '#5c6b7a', fontWeight: 700, marginTop: 3 }}>
-                                Removed — entered in error
+                                Removed — Entered in Error
                               </span>
                             )}
                           </td>
@@ -697,12 +697,12 @@ export default function MonthlyMarPage() {
                             )}
                             {(a.status === 'held' || a.status === 'refused') && a.prescriberNotified === true && (
                               <span style={{ display: 'block', fontSize: 10.5, color: '#1e5c1e', fontWeight: 600 }}>
-                                Prescriber notified
+                                Prescriber Notified
                               </span>
                             )}
                             {a.status === 'refused' && a.prescriberNotified === false && (
                               <span style={{ display: 'block', fontSize: 10.5, color: '#b45309', fontWeight: 600 }}>
-                                Prescriber not yet notified
+                                Prescriber Not Yet Notified
                               </span>
                             )}
                           </td>
@@ -720,7 +720,7 @@ export default function MonthlyMarPage() {
                                   Result Pending — Record
                                 </button>
                               ) : (
-                                <span style={resultPendingChipStyle}>Result pending</span>
+                                <span style={resultPendingChipStyle}>Result Pending</span>
                               )
                             ) : (
                               '-'

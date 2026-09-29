@@ -24,19 +24,19 @@ export type RangePreset =
   | 'c';
 
 export const RANGE_PRESETS: { value: RangePreset; label: string }[] = [
-  { value: '', label: 'Any date' },
+  { value: '', label: 'Any Date' },
   { value: 'today', label: 'Today' },
   { value: 'yesterday', label: 'Yesterday' },
-  { value: 'week', label: 'This week' },
-  { value: 'lastweek', label: 'Last week' },
-  { value: 'month', label: 'This month' },
-  { value: 'lastmonth', label: 'Last month' },
-  { value: '30d', label: 'Last 30 days' },
-  { value: '90d', label: 'Last 90 days' },
-  { value: 'year', label: 'This year' },
-  { value: 'lastyear', label: 'Last year' },
-  { value: 'm', label: 'Pick a month…' },
-  { value: 'c', label: 'Custom range…' },
+  { value: 'week', label: 'This Week' },
+  { value: 'lastweek', label: 'Last Week' },
+  { value: 'month', label: 'This Month' },
+  { value: 'lastmonth', label: 'Last Month' },
+  { value: '30d', label: 'Last 30 Days' },
+  { value: '90d', label: 'Last 90 Days' },
+  { value: 'year', label: 'This Year' },
+  { value: 'lastyear', label: 'Last Year' },
+  { value: 'm', label: 'Pick a Month…' },
+  { value: 'c', label: 'Custom Range…' },
 ];
 
 export function isRangePreset(v: string | null): v is RangePreset {

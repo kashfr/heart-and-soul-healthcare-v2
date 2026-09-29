@@ -213,7 +213,7 @@ export default function RecordTreatmentModal({
           <div id={fieldId('reason')} style={field}>
             <label style={label} htmlFor="tar-reason">Reason not carried out *</label>
             <select id="tar-reason" value={reason} onChange={(e) => { setReason(e.target.value); clearErr('reason'); }} style={{ ...select, ...hi('reason') }}>
-              <option value="">Select a reason…</option>
+              <option value="">Select a Reason…</option>
               {TAR_NOT_DONE_REASONS.map((r) => (
                 <option key={r} value={r}>{r}</option>
               ))}

@@ -26,9 +26,9 @@ export type QuickNoteCategory = 'observation' | 'physician' | 'concern' | 'follo
 
 export const QUICK_NOTE_CATEGORIES: { value: QuickNoteCategory; label: string }[] = [
   { value: 'observation', label: 'Observation' },
-  { value: 'physician', label: 'Physician / appointment' },
+  { value: 'physician', label: 'Physician / Appointment' },
   { value: 'concern', label: 'Concern' },
-  { value: 'followup', label: 'Follow-up needed' },
+  { value: 'followup', label: 'Follow-Up Needed' },
   { value: 'other', label: 'Other' },
 ];
 

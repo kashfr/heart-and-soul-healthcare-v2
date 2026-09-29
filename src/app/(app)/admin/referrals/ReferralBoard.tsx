@@ -229,7 +229,7 @@ function Column({
                 <SortableCard key={card.id} referral={card} onOpen={onOpen} />
               ))}
             </SortableContext>
-            {cards.length === 0 && <div style={emptyColStyle}>No referrals</div>}
+            {cards.length === 0 && <div style={emptyColStyle}>No Referrals</div>}
           </>
         )}
       </div>

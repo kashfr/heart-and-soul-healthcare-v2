@@ -291,7 +291,7 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
                     <div style={taskNameStyle}>
                       {t.name}
                       <span style={t.level === 'skilled' ? skilledChipStyle : anyChipStyle}>
-                        {t.level === 'skilled' ? 'RN/LPN' : 'All staff'}
+                        {t.level === 'skilled' ? 'RN/LPN' : 'All Staff'}
                       </span>
                     </div>
                     <div style={taskMetaStyle}>
@@ -304,7 +304,7 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
                           <ShieldCheck size={12} /> Approved · {t.approvedByName || 'RN'}
                         </span>
                       ) : (
-                        <span style={pendingChipStyle}>Pending RN approval</span>
+                        <span style={pendingChipStyle}>Pending RN Approval</span>
                       )}
                     </div>
                   </div>
@@ -332,7 +332,7 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
 
       {discontinued.length > 0 && (
         <details style={{ marginTop: 10 }}>
-          <summary style={dcSummaryStyle}>Discontinued tasks ({discontinued.length})</summary>
+          <summary style={dcSummaryStyle}>Discontinued Tasks ({discontinued.length})</summary>
           <ul style={listStyle}>
             {discontinued.map((t) => (
               <li key={t.id} style={{ ...taskRowStyle, opacity: 0.65 }}>
@@ -378,7 +378,7 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
                         />
                         <span style={{ flex: 1 }}>{t.name}</span>
                         <span style={t.level === 'skilled' ? skilledChipStyle : anyChipStyle}>
-                          {t.level === 'skilled' ? 'RN/LPN' : 'All staff'}
+                          {t.level === 'skilled' ? 'RN/LPN' : 'All Staff'}
                         </span>
                       </label>
                     ))}
@@ -405,8 +405,8 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
                     ))}
                   </select>
                   <select value={customLevel} onChange={(e) => setCustomLevel(e.target.value as CareTaskLevel)} style={selectStyle}>
-                    <option value="any">All staff</option>
-                    <option value="skilled">RN/LPN only</option>
+                    <option value="any">All Staff</option>
+                    <option value="skilled">RN/LPN Only</option>
                   </select>
                   <select value={customFrequency} onChange={(e) => setCustomFrequency(e.target.value)} style={selectStyle}>
                     {CARE_TASK_FREQUENCIES.map((f) => (
