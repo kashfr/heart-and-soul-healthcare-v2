@@ -9,7 +9,8 @@ const days = 31;
 const row = (name: string): MarPdfRow => ({
   medLine1: name,
   medLine2: '10 units · SubQ · Daily',
-  timeLabel: '08:00',
+  slot: '08:00',
+  isPRN: false,
   cells: Array.from({ length: days }, () => ({ label: '', status: 'none' as const, star: false })),
 });
 
