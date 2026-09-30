@@ -3,7 +3,9 @@
 Next.js + Firebase staff portal and marketing site. Merging to `main` deploys
 the app to Cloud Run; Firestore rules and indexes deploy separately (see
 DEPLOY-CHECKLIST.md). Run `npx tsc --noEmit`, `npm test`, and `npm run build`
-before pushing; CI runs the same three.
+before pushing; CI runs the same three. To see what is live, open
+https://www.heartandsoulhc.org/api/version (deployed commit, build id, build
+time).
 
 ## Feature notes
 
