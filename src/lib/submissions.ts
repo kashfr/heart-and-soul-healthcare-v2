@@ -255,6 +255,10 @@ export interface SubmissionSummary {
   /** Document type discriminator: '' = shift note, 'rn-oversight-visit' = RN oversight visit note,
    *  'home-supervisory-visit' = home supervisory visit. */
   noteType: string;
+  /** RN oversight visit stamped non-billable at submit (the month's RN hours
+   *  were already documented). Shown to everyone; the owner's hours views
+   *  recompute billing from the authorizations. */
+  nonBillable?: boolean;
   /** Author's clinical credential at submit time: HHA | CNA | LPN | RN. */
   credential: string;
   /** Author's Firebase uid (used by the cosign self-author guard + nurse-only filtering). */
@@ -494,6 +498,7 @@ function mapDocToSummary(
     clientName: (data.q3_clientName as string) || '',
     nurseName: (data.q11_nurseName as string) || '',
     noteType: (data.noteType as string) || '',
+    nonBillable: data.ov_nonBillable === 'Yes',
     credential: (data.q12_credential as string) || '',
     nurseId: (data.nurseId as string) || '',
     diagnosis: (data.q10_primaryDiagnosis as string) || '',

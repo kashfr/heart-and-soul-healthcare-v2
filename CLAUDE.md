@@ -17,4 +17,6 @@ Read the matching note before changing one of these features.
   docs/features/service-plan.md
 - Communications log (visit notices word for word, manual log):
   docs/features/communications-log.md
+- RN oversight hours (real visit times, billing capped at the monthly
+  authorization, non-billable follow-up visits): docs/features/oversight-hours.md
 - Declared test account and test client: TEST-ACCOUNT.md

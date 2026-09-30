@@ -2,7 +2,7 @@
  * Render tests for the RN Oversight Visit Note form: RN gating, the
  * oversight-model client filter, and the presence of every section.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 
 const mockAuth = vi.hoisted(() => ({
@@ -254,5 +254,52 @@ describe('OversightNotePage — autosave', () => {
     expect(mockDrafts.saveOversightDraft).not.toHaveBeenCalled();
     vi.useRealTimers();
     resolveLookup(null);
+  });
+});
+
+describe('OversightNotePage — documented vs. billable time', () => {
+  const allotment = (body: Record<string, unknown>) =>
+    mockAuthedFetch.authedFetch.mockImplementation(async (url: string) =>
+      String(url).startsWith('/api/oversight/allotment') ? { ok: true, json: async () => body } : { ok: true },
+    );
+  const pickClientAndDate = async () => {
+    const user = (await import('@testing-library/user-event')).default.setup();
+    render(<OversightNotePage />);
+    await waitFor(() => expect(screen.getByRole('option', { name: /Neal Kelly/ })).toBeInTheDocument());
+    await user.selectOptions(screen.getByRole('combobox'), 'p1');
+    fireEvent.change(document.getElementById('q6_dateofService')!, { target: { value: '2026-09-28' } });
+    return user;
+  };
+  afterEach(() => {
+    mockAuthedFetch.authedFetch.mockReset();
+    mockAuthedFetch.authedFetch.mockResolvedValue({ ok: true });
+  });
+
+  it('never locks Time out: the nurse records the real times and sees what bills', async () => {
+    allotment({ monthlyHours: 3, usedUnits: 0, remainingHours: 3, otherVisits: [] });
+    await pickClientAndDate();
+    expect(await screen.findByText(/0 of 3 RN hours documented so far/)).toBeInTheDocument();
+    const out = document.getElementById('ov_timeOut') as HTMLInputElement;
+    expect(out.readOnly).toBe(false);
+    fireEvent.change(document.getElementById('ov_timeIn')!, { target: { value: '17:00' } });
+    fireEvent.change(out, { target: { value: '19:30' } });
+    expect(await screen.findByText(/Billable: 2\.5 h\. September will stand at 2\.5 of 3 RN hours, 0\.5 h still unused\./)).toBeInTheDocument();
+    // Typing a time out is never overwritten.
+    expect(out.value).toBe('19:30');
+    fireEvent.change(out, { target: { value: '20:25' } });
+    expect(await screen.findByText(/3 h are billable .*the rest is documented but not billed/)).toBeInTheDocument();
+  });
+
+  it('says up front when the visit will be non-billable, naming the visit that used the hours', async () => {
+    allotment({ monthlyHours: 3, usedUnits: 12, remainingHours: 0, otherVisits: [{ dateISO: '2026-09-22', billableHours: 3 }] });
+    await pickClientAndDate();
+    expect(await screen.findByText(/Non-billable visit: September's 3 RN hours are already documented on the 09\/22\/2026 visit\. Enter the actual times\./)).toBeInTheDocument();
+    expect((document.getElementById('ov_timeOut') as HTMLInputElement).readOnly).toBe(false);
+  });
+
+  it('tells a NOW/COMP visit with no authorization on file to go through the office', async () => {
+    allotment({ monthlyHours: null, usedUnits: 0, remainingHours: null, otherVisits: [] });
+    await pickClientAndDate();
+    expect(await screen.findByText(/No RN oversight authorization is on file for September\. Ask the office/)).toBeInTheDocument();
   });
 });
