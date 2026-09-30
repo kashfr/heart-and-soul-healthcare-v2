@@ -192,16 +192,12 @@ const s = StyleSheet.create({
   },
   legendNote: { fontSize: 6.5, color: '#5c6b7a', marginTop: 5, lineHeight: 1.4 },
   sectionTitle: { fontSize: 9, fontFamily: 'Helvetica-Bold', color: NAVY, marginTop: 12, marginBottom: 4 },
-  sigRow: { flexDirection: 'row', flexWrap: 'wrap' },
-  sigEntry: {
-    flexDirection: 'row',
-    borderWidth: 0.5,
-    borderColor: BORDER,
-    paddingVertical: 3,
-    paddingHorizontal: 6,
-    marginRight: 6,
-    marginBottom: 4,
-  },
+  sigNote: { fontSize: 6.5, color: '#5c6b7a', marginBottom: 4 },
+  // Two side-by-side columns of signature lines (each 370pt wide).
+  sigGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  sigLine: { flexDirection: 'row', width: 370, marginBottom: 3 },
+  sigCell: { borderBottomWidth: 0.6, borderBottomColor: BORDER, minHeight: 14, justifyContent: 'flex-end', paddingHorizontal: 3, marginRight: 4 },
+  sigCellText: { fontSize: 7 },
   logTh: {
     backgroundColor: LIGHT,
     borderWidth: 0.5,
@@ -238,6 +234,28 @@ const CELL_FG: Record<MarCellStatus, string> = {
   none: '#1f2937',
   inactive: '#9aa6b2',
 };
+
+// Signature line widths: initials, printed name, credential / role, signature
+// (sums to 370 with the 4pt gaps).
+const SIG_W = [34, 120, 76, 124];
+// Header labels for the signature lines, printed as the first row.
+const SIG_LABELS = { initials: 'Initials', name: 'Printed name', credential: 'Credential / role' };
+/** Minimum signature lines on a printed MAR, so a blank month still has room for every nurse and proxy caregiver. */
+const MIN_SIG_LINES = 10;
+
+/**
+ * The legend's documented entries first (initials and name filled in, credential
+ * blank for the signer to complete), then blank lines up to the minimum, always
+ * an even count so the two columns balance.
+ */
+export function signatureRows(legend: Array<{ initials: string; name: string }>): Array<{ initials: string; name: string; credential: string }> {
+  const rows = [
+    { ...SIG_LABELS },
+    ...legend.map((l) => ({ initials: l.initials, name: l.name, credential: '' })),
+  ];
+  while (rows.length < MIN_SIG_LINES + 1 || rows.length % 2 === 1) rows.push({ initials: '', name: '', credential: '' });
+  return rows;
+}
 
 // Log-table column widths (landscape usable width ≈ 748pt).
 const LOG_W = [56, 34, 140, 44, 116, 150, 128, 36];
@@ -399,19 +417,25 @@ export default function MarPDF({
             : ''}
         </Text>
 
-        {/* Initial / signature legend */}
+        {/* Initial / signature legend. Everyone who charts on this record
+            signs here once: the documented entries are pre-filled with their
+            initials and name, and blank rows follow so a printed copy (a
+            future month taken to a day program, for example) gives each
+            nurse and each proxy-trained caregiver a line to print, initial,
+            and sign. Two-column layout so the block stays compact. */}
         <Text style={s.sectionTitle}>Initial / Signature Legend</Text>
-        <View style={s.sigRow}>
-          {legend.length === 0 ? (
-            <Text style={{ fontSize: 7, color: '#7f8c8d' }}>No administrations documented this month.</Text>
-          ) : (
-            legend.map((l, i) => (
-              <View key={i} style={s.sigEntry} wrap={false}>
-                <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 7 }}>{l.initials}</Text>
-                <Text style={{ fontSize: 7, marginLeft: 4 }}>· {l.name}</Text>
-              </View>
-            ))
-          )}
+        <Text style={s.sigNote}>
+          Each person who documents on this MAR prints their name, credential or role (RN, LPN, proxy caregiver), initials, and signature below.
+        </Text>
+        <View style={s.sigGrid}>
+          {signatureRows(legend).map((r, i) => (
+            <View key={i} style={s.sigLine} wrap={false}>
+              <View style={[s.sigCell, { width: SIG_W[0] }]}><Text style={s.sigCellText}>{r.initials}</Text></View>
+              <View style={[s.sigCell, { width: SIG_W[1] }]}><Text style={s.sigCellText}>{r.name}</Text></View>
+              <View style={[s.sigCell, { width: SIG_W[2] }]}><Text style={s.sigCellText}>{r.credential}</Text></View>
+              <View style={[s.sigCell, { width: SIG_W[3] }]}><Text style={s.sigCellText}> </Text></View>
+            </View>
+          ))}
         </View>
 
         {/* PRN & exception log */}
