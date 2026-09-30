@@ -275,25 +275,23 @@ describe('OversightNotePage — documented vs. billable time', () => {
     mockAuthedFetch.authedFetch.mockResolvedValue({ ok: true });
   });
 
-  it('never locks Time out: the nurse records the real times and sees what bills', async () => {
+  it('never locks Time out: the nurse records the real times, and the month bills at the authorization', async () => {
     allotment({ monthlyHours: 3, usedUnits: 0, remainingHours: 3, otherVisits: [] });
     await pickClientAndDate();
-    expect(await screen.findByText(/0 of 3 RN hours documented so far/)).toBeInTheDocument();
+    expect(await screen.findByText(/September: this visit bills the month's 3 authorized RN hours\. Enter the actual times\./)).toBeInTheDocument();
     const out = document.getElementById('ov_timeOut') as HTMLInputElement;
     expect(out.readOnly).toBe(false);
     fireEvent.change(document.getElementById('ov_timeIn')!, { target: { value: '17:00' } });
     fireEvent.change(out, { target: { value: '19:30' } });
-    expect(await screen.findByText(/Billable: 2\.5 h\. September will stand at 2\.5 of 3 RN hours, 0\.5 h still unused\./)).toBeInTheDocument();
+    expect(await screen.findByText(/September's 3 authorized RN hours bill with this visit\. The visit itself is documented as 2\.5 h\./)).toBeInTheDocument();
     // Typing a time out is never overwritten.
     expect(out.value).toBe('19:30');
-    fireEvent.change(out, { target: { value: '20:25' } });
-    expect(await screen.findByText(/3 h are billable .*the rest is documented but not billed/)).toBeInTheDocument();
   });
 
   it('says up front when the visit will be non-billable, naming the visit that used the hours', async () => {
     allotment({ monthlyHours: 3, usedUnits: 12, remainingHours: 0, otherVisits: [{ dateISO: '2026-09-22', billableHours: 3 }] });
     await pickClientAndDate();
-    expect(await screen.findByText(/Non-billable visit: September's 3 RN hours are already documented on the 09\/22\/2026 visit\. Enter the actual times\./)).toBeInTheDocument();
+    expect(await screen.findByText(/Non-billable visit: September's 3 RN hours already bill with the 09\/22\/2026 visit\. Enter the actual times\./)).toBeInTheDocument();
     expect((document.getElementById('ov_timeOut') as HTMLInputElement).readOnly).toBe(false);
   });
 

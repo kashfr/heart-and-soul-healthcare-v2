@@ -349,12 +349,11 @@ function OversightNotePageInner() {
     if (user?.uid) void clearOversightDraft(user.uid);
   }, [user?.uid]);
 
-  // --- Documented time vs. billable time ------------------------------------
-  // The nurse records the visit's real Time in and Time out. The month's RN
-  // authorization decides what is billed, never what is documented: the form
-  // shows where the month stands, what this visit will bill, and says up front
-  // when the visit will be recorded as non-billable (the hours are already
-  // used). Hours views cap billing the same way (oversightVisitBilling).
+  // --- Documented time vs. billed time --------------------------------------
+  // The nurse records the visit's real Time in and Time out; the portal never
+  // fills or adjusts them. Billing is separate: the month's first visit bills
+  // the RN authorization, and a later visit that month is non-billable, which
+  // the form says up front (shiftHours.oversightVisitBilling).
   const visitPatientId = watch('patientId');
   const visitDate = watch('q6_dateofService');
   const visitTimeIn = watch('ov_timeIn');
@@ -383,9 +382,7 @@ function OversightNotePageInner() {
   const visitProgram = watch('q2_program');
   const visitMonthName = visitDate ? monthLabel(String(visitDate).slice(0, 7)).split(' ')[0] : '';
   const visitPreview = allotmentCurrent ? previewOversightVisit(allotmentCurrent, String(visitTimeIn || ''), String(visitTimeOut || '')) : null;
-  const usedHours = allotmentCurrent ? allotmentCurrent.usedUnits / 4 : 0;
   const otherVisitDates = (allotmentCurrent?.otherVisits || []).filter((v) => v.billableHours > 0).map((v) => formatDateUS(v.dateISO));
-  const onDates = otherVisitDates.length ? ` on the ${otherVisitDates.join(' and ')} visit${otherVisitDates.length === 1 ? '' : 's'}` : '';
   /** NOW/COMP pays RN oversight from an authorization; without one on file
    *  for the visit's month the office has to enter it before a new visit is filed. */
   const authorizationMissing = !!allotmentCurrent && allotmentCurrent.monthlyHours == null && visitProgram === 'now-comp';
@@ -398,15 +395,10 @@ function OversightNotePageInner() {
         ? { tone: 'warn', text: `No RN oversight authorization is on file for ${visitMonthName}. Ask the office to enter this client's RN hours before filing this visit.` }
         : { tone: 'info', text: 'No RN oversight authorization is on file for this month. Enter the actual times.' }
       : monthUsedUp
-        ? { tone: 'warn', text: `Non-billable visit: ${visitMonthName}'s ${fmtH(allotmentCurrent.monthlyHours)} RN hours are already documented${onDates}. Enter the actual times.` }
+        ? { tone: 'warn', text: `Non-billable visit: ${visitMonthName}'s ${fmtH(allotmentCurrent.monthlyHours)} RN hours already bill with the ${otherVisitDates.join(' and ') || 'earlier'} visit. Enter the actual times.` }
         : !visitPreview
-          ? { tone: 'info', text: `${visitMonthName}: ${fmtH(usedHours)} of ${fmtH(allotmentCurrent.monthlyHours)} RN hours documented so far${onDates}. Enter the actual times.` }
-          : visitPreview.trimmed
-            ? { tone: 'warn', text: `This visit is ${fmtH(visitPreview.documentedHours)} h. ${fmtH(visitPreview.billableHours)} h are billable (all that is left of ${visitMonthName}'s ${fmtH(allotmentCurrent.monthlyHours)}); the rest is documented but not billed.` }
-            : {
-                tone: 'info',
-                text: `Billable: ${fmtH(visitPreview.billableHours)} h. ${visitMonthName} will stand at ${fmtH(usedHours + visitPreview.billableHours)} of ${fmtH(allotmentCurrent.monthlyHours)} RN hours${usedHours + visitPreview.billableHours < allotmentCurrent.monthlyHours ? `, ${fmtH(allotmentCurrent.monthlyHours - usedHours - visitPreview.billableHours)} h still unused` : ''}.`,
-              };
+          ? { tone: 'info', text: `${visitMonthName}: this visit bills the month's ${fmtH(allotmentCurrent.monthlyHours)} authorized RN hours. Enter the actual times.` }
+          : { tone: 'info', text: `${visitMonthName}'s ${fmtH(allotmentCurrent.monthlyHours)} authorized RN hours bill with this visit. The visit itself is documented as ${fmtH(visitPreview.documentedHours)} h.` };
 
   // --- Leaving the form ---------------------------------------------------
   const [showDiscard, setShowDiscard] = useState(false);
