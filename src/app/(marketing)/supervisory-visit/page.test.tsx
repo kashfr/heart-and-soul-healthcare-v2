@@ -107,7 +107,7 @@ describe('SupervisoryVisitPage', () => {
     }
     expect(screen.getByText(/What would you do if you had a complaint?/)).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getByLabelText(/^Supervisor \*/)).toHaveValue('Souz Payne');
+      expect(screen.getByLabelText(/^Supervisor$/)).toHaveValue('Souz Payne');
     });
   });
 
@@ -120,6 +120,10 @@ describe('SupervisoryVisitPage', () => {
     render(<SupervisoryVisitPage />);
     await waitFor(() => expect(screen.getByLabelText(/^License/)).toHaveValue('RN'));
     expect(screen.getByLabelText(/Credentials as printed/)).toHaveValue('DNP, RN');
+    // Name and credentials are the profile's, never typed.
+    expect(screen.getByLabelText(/^Supervisor$/)).toHaveAttribute('readonly');
+    expect(screen.getByLabelText(/^License/)).toHaveAttribute('readonly');
+    expect(screen.getByLabelText(/Credentials as printed/)).toHaveAttribute('readonly');
   });
 
   it('blocks field staff (nurse role), even with an RN credential', () => {

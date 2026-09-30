@@ -147,7 +147,7 @@ const OVERSIGHT_FIELD_MESSAGES: Record<string, string> = {
   ov_timeOut: 'Enter the time you left.',
   ov_location: 'Enter where the visit took place.',
   ov_visitType: 'Choose the visit type.',
-  q11_nurseName: 'Enter the RN name.',
+  q11_nurseName: 'Your staff profile has no display name. Ask the administrator to set it under Staff & Roles.',
   ov_generalCondition: 'Describe the general condition and any changes since the last visit.',
   ov_interactions: "Describe the conversations and the individual's responses during this visit.",
   ov_hcpStatus: 'Choose whether the HCP is current or needs updates.',
@@ -940,11 +940,14 @@ function OversightNotePageInner() {
                 <label className={styles.label} htmlFor="q11_nurseName">
                   RN name *
                 </label>
+                {/* The signed-in RN, from the staff profile; never typed. */}
                 <input
                   className={styles.input}
                   id="q11_nurseName"
-                  readOnly={isNurse}
-                  style={hi('q11_nurseName')}
+                  readOnly
+                  tabIndex={-1}
+                  title="Locked to your staff profile."
+                  style={{ background: '#f1f5f9', color: '#334155', cursor: 'not-allowed' }}
                   aria-invalid={!!fe('q11_nurseName')}
                   {...register('q11_nurseName')}
                 />

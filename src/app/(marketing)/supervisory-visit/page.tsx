@@ -139,7 +139,7 @@ const SUPERVISORY_FIELD_MESSAGES: Record<string, string> = {
   sv_timeOut: 'Enter the time you left.',
   sv_address: 'Enter the address where the visit took place.',
   sv_staffName: 'Choose the staff member performing duties.',
-  q11_nurseName: 'Enter the supervisor name.',
+  q11_nurseName: 'Your staff profile has no display name. Ask the administrator to set it under Staff & Roles.',
   sv_complaint: "Record the client's answer to the complaint question.",
   sv_anythingElse: "Record the client's answer, or note that they had nothing to add.",
   q16_temperature: 'Enter the temperature, or choose why vitals could not be obtained.',
@@ -855,12 +855,18 @@ function SupervisoryVisitPageInner() {
               </div>
               <div className={styles.f} style={{ flex: '1 1 48%' }}>
                 <label className={styles.label} htmlFor="q11_nurseName">
-                  Supervisor *
+                  Supervisor
                 </label>
+                {/* The signed-in supervisor. Name and credentials come from the
+                    staff profile and are never typed: they are the digital
+                    signature on everything she files. */}
                 <input
                   className={styles.input}
                   id="q11_nurseName"
-                  style={hi('q11_nurseName')}
+                  readOnly
+                  tabIndex={-1}
+                  title="Locked to your staff profile."
+                  style={{ background: '#f1f5f9', color: '#334155', cursor: 'not-allowed' }}
                   aria-invalid={!!fe('q11_nurseName')}
                   {...register('q11_nurseName')}
                 />
@@ -990,24 +996,37 @@ function SupervisoryVisitPageInner() {
                 <label className={styles.label} htmlFor="q12_credential">
                   License
                 </label>
-                {/* RN or LPN only: an LPN's supervisory visit is co-signed by an RN. */}
-                <select className={styles.select} id="q12_credential" {...register('q12_credential')}>
-                  <option value="RN">RN</option>
-                  <option value="LPN">LPN (an RN will co-sign)</option>
-                </select>
+                {/* From the staff profile: RN, or LPN (an RN then co-signs). */}
+                <input
+                  className={styles.input}
+                  id="q12_credential"
+                  value={`${String(watch('q12_credential') || '')}${watch('q12_credential') === 'LPN' ? ' (an RN will co-sign)' : ''}`}
+                  readOnly
+                  tabIndex={-1}
+                  title="Locked to your staff profile."
+                  style={{ background: '#f1f5f9', color: '#334155', cursor: 'not-allowed' }}
+                />
+                <input type="hidden" {...register('q12_credential')} />
+                <input type="hidden" {...register('sv_credentialsPrinted')} />
               </div>
             </div>
             <div className={styles.row}>
               <div className={styles.f} style={{ flex: '1 1 100%' }}>
-                <label className={styles.label} htmlFor="sv_credentialsPrinted">
+                <label className={styles.label} htmlFor="sv_credentialsDisplay">
                   Credentials as printed on the signature line
                 </label>
                 <input
                   className={styles.input}
-                  id="sv_credentialsPrinted"
-                  placeholder="Optional, e.g. DNP, RN. Leave blank to print the license."
-                  {...register('sv_credentialsPrinted')}
+                  id="sv_credentialsDisplay"
+                  value={String(watch('sv_credentialsPrinted') || watch('q12_credential') || '')}
+                  readOnly
+                  tabIndex={-1}
+                  title="Locked to your staff profile."
+                  style={{ background: '#f1f5f9', color: '#334155', cursor: 'not-allowed' }}
                 />
+                <p style={{ fontSize: 12, color: '#5c6b7a', margin: '4px 0 0' }}>
+                  From your staff profile. Ask the administrator to update it under Staff &amp; Roles if it is wrong.
+                </p>
               </div>
             </div>
             <div className={styles.row}>
