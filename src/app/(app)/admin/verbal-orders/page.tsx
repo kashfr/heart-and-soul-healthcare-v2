@@ -20,6 +20,7 @@ import {
   type VerbalOrder,
 } from '@/lib/verbalOrders';
 import { formatUSFaxNumber, inboundFaxSender, isVerbalOrderOpen, VERBAL_ORDER_CANCEL_REASON_MAX, verbalOrderAgeDays, verbalOrderStatusLabel, verbalOrderUrgency, type VerbalOrderUrgency } from '@/lib/verbalOrderShared';
+import { canUseFax } from '@/lib/faxShared';
 import { formatDateUS } from '@/lib/dateFormat';
 import { escortToField, FieldError, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
 
@@ -102,6 +103,11 @@ function VerbalOrdersInner() {
   const openCount = orders ? orders.filter(isVerbalOrderOpen).length : 0;
   const overdueCount = orders ? orders.filter((o) => ['overdue', 'escalated'].includes(verbalOrderUrgency(o, today, thresholds))).length : 0;
 
+  // A fax can only be a signed verbal order while an order is waiting on one.
+  // With nothing open, incoming faxes belong to the Fax Center alone; staff
+  // who cannot open the Fax Center still see them here so none goes unseen.
+  const showInbound = isStaff && inbound.length > 0 && (openCount > 0 || !canUseFax(settings.fax, user?.uid, role));
+
   const showToast = (m: string) => {
     setToast(m);
     setTimeout(() => setToast(''), 3500);
@@ -177,7 +183,7 @@ function VerbalOrdersInner() {
 
         {toast && <div style={toastStyle}>{toast}</div>}
 
-        {isStaff && inbound.length > 0 && (
+        {showInbound && (
           <section style={{ ...cardStyle, borderColor: '#f0c8c4', background: '#fffafa' }}>
             <div style={sectionTitleStyle}><Inbox size={16} /> Faxes That Need Matching <span style={countChipWarnStyle}>{inbound.length}</span></div>
             <p style={{ ...mutedStyle, marginBottom: 10 }}>

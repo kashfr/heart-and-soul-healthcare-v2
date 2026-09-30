@@ -238,6 +238,37 @@ export function verbalOrderBellText(kind: VerbalOrderBellKind, o: Pick<VerbalOrd
 }
 
 /**
+ * Which bell an incoming fax rings, beyond any PPOT bell. A fax can only be a
+ * signed verbal order when an order is waiting on a signature, so the
+ * verbal-order bells need the sender to match an open order. Anything else is
+ * just "a fax arrived", with a hint when orders are waiting (an office can
+ * fax back from a number other than the one the order went to).
+ *  - 'order': the sender matches exactly one open order.
+ *  - 'orders': the sender matches several; a person picks which.
+ *  - 'general': no order match and no PPOT match.
+ *  - null: a PPOT match only; its own bell already rang.
+ */
+export type InboundFaxBell =
+  | { kind: 'order'; orderId: string }
+  | { kind: 'orders' }
+  | { kind: 'general'; ordersAwaiting: boolean };
+
+export function inboundFaxBell(p: { candidateOrderIds: string[]; ppotCandidates: number; openOrders: number }): InboundFaxBell | null {
+  if (p.candidateOrderIds.length === 1) return { kind: 'order', orderId: p.candidateOrderIds[0] };
+  if (p.candidateOrderIds.length > 1) return { kind: 'orders' };
+  if (p.ppotCandidates > 0) return null;
+  return { kind: 'general', ordersAwaiting: p.openOrders > 0 };
+}
+
+/** Bell text for a fax that matched nothing. `from` comes from inboundFaxSender. */
+export function inboundFaxGeneralBellText(from: string, ordersAwaiting: boolean): string {
+  const head = `A fax${from ? ` from ${from}` : ''} arrived on the portal line.`;
+  return ordersAwaiting
+    ? `${head} A verbal order is awaiting a physician signature, so check whether this is the signed copy.`
+    : `${head} Review it in the Fax Center.`;
+}
+
+/**
  * Inbound-fax matcher: which open orders could this fax be the signed copy of?
  * Fax services report two sender numbers: the line's caller ID and the
  * machine's own "remote ID" header. Cloud fax providers (MetroFax, for one)
