@@ -11,7 +11,7 @@ import {
   type ProgressNoteFormData,
   type EditHistoryEntry,
 } from '@/lib/submissions';
-import { needsCosign } from '@/lib/cosignClient';
+import { credentialRequiresCosign } from '@/lib/cosignClient';
 import { useSettings } from '@/components/SettingsProvider';
 import { pdfFilenameFor, triggerDownload } from '@/lib/batchExport';
 import { formatDateUS } from '@/lib/dateFormat';
@@ -753,14 +753,10 @@ export default function SubmissionDetailPage({ params }: PageProps) {
 
             <ConditionalSection
               title="Overall Assessment of Client"
-              keys={['q16_temperature', 'q17_bloodPressure', 'q18_pulse', 'sv_generalConditions', 'sv_clientProgress', 'sv_problems', 'sv_rightsInformed', 'sv_clientSatisfied']}
+              keys={['sv_generalConditions', 'sv_clientProgress', 'sv_problems', 'sv_rightsInformed', 'sv_clientSatisfied']}
               data={data}
             >
-              <FieldRow>
-                <Field fieldKey="q16_temperature" label="Temp" value={data.q16_temperature ? `${data.q16_temperature} °F${data.q16_temperatureRoute ? ` (${data.q16_temperatureRoute})` : ''}` : ''} />
-                <Field fieldKey="q17_bloodPressure" label="BP" value={data.q17_bloodPressure ? `${data.q17_bloodPressure} mmHg` : ''} />
-                <Field fieldKey="q18_pulse" label="Pulse" value={data.q18_pulse ? `${data.q18_pulse} bpm` : ''} />
-              </FieldRow>
+              {/* Vitals show once, in the full Vital Signs section below. */}
               {hasValue(data.sv_generalConditions) && <TextBlock fieldKey="sv_generalConditions" label="General Conditions" value={data.sv_generalConditions} />}
               {hasValue(data.sv_clientProgress) && <TextBlock fieldKey="sv_clientProgress" label="Client Progress" value={data.sv_clientProgress} />}
               <Field fieldKey="sv_problems" label="Problems Encountered by Client" value={data.sv_problems} />
@@ -838,7 +834,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           )}
         </ConditionalSection>
 
-        {/* 5. VITAL SIGNS */}
+        {/* 5. VITAL SIGNS (every note type: the supervisory visit records the same full block) */}
         <ConditionalSection
           title="Vital Signs"
           keys={[
@@ -1408,7 +1404,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         <Section title="Signature">
           <FieldRow>
             <Field fieldKey="q11_nurseName" label="Printed Name" value={data.q11_nurseName} />
-            <Field fieldKey="q12_credential" label="Credential" value={data.q12_credential} />
+            <Field fieldKey="q12_credential" label="Credential" value={isSupervisory && data.sv_credentialsPrinted ? data.sv_credentialsPrinted : data.q12_credential} />
             <Field fieldKey="q62_shiftEndDate" label="Date Signed" value={fmtDate(data.q62_shiftEndDate)} />
           </FieldRow>
           {hasValue(data.q61_signature) && (
@@ -1425,12 +1421,14 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           )}
         </Section>
 
-        {/* 25b. RN CO-SIGNATURE — only relevant for HHA/CNA/LPN notes. RN-authored
-            notes don't need a second signature, so we skip the section entirely.
-            cosignedAt is a Firestore Timestamp so we read it from rawData
-            (Record<string, unknown>) rather than the string-cast data view. */}
-        {data.q12_credential !== 'RN' && data.q12_credential !== '' && (() => {
+        {/* 25b. RN CO-SIGNATURE — only for credentials that require one per
+            settings (an RN written as "DNP, RN" is still an RN), or when a
+            co-signature exists. cosignedAt is a Firestore Timestamp so we read
+            it from rawData (Record<string, unknown>) rather than the
+            string-cast data view. */}
+        {(() => {
           const cosignedAt = rawData.cosignedAt as { toDate(): Date } | null | undefined;
+          if (!cosignedAt && !credentialRequiresCosign(data.q12_credential, appSettings.cosign.requiredCredentials)) return null;
           return (
             <Section title="RN Co-Signature">
               {cosignedAt ? (
