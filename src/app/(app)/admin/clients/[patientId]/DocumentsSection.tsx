@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import Link from 'next/link';
-import { Archive, ArchiveRestore, ArrowRightLeft, ExternalLink, FileText, FileUp, Image as ImageIcon, Pencil, RefreshCw, Replace, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, ArrowRightLeft, ExternalLink, FileText, FileUp, FilePenLine, Image as ImageIcon, Pencil, RefreshCw, Replace, Trash2 } from 'lucide-react';
 import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
 import { withSelectChevron } from '@/lib/selectChevron';
 import {
@@ -11,6 +11,7 @@ import {
   DOC_CATEGORIES,
   DOC_CATEGORY_GROUPS,
   deletePatientDocument,
+  fileNoteDocument,
   getDocumentBlob,
   movePatientDocument,
   renderDocumentInWindow,
@@ -24,6 +25,7 @@ import {
   type PatientDocument,
 } from '@/lib/patientDocuments';
 import { getPatients, type Patient } from '@/lib/patients';
+import { isNoteFiledDocument, noteAmendHref } from '@/lib/noteDocLinks';
 
 function todayISO(): string {
   const d = new Date();
@@ -58,7 +60,11 @@ interface Props {
  * care, initial assessment, supervisory visits, physician orders, scans) with
  * view, staff edit / replace / archive, and admin delete. RN oversight visit
  * notes file themselves here (autoFiled + sourceNoteId); Sync backfills any
- * that were submitted before that existed or whose filing failed.
+ * that were submitted before that existed or whose filing failed. A filed
+ * note's PDF is a snapshot: its card cannot be edited here (the note is
+ * amended instead, which re-files it), and staff can re-render the stored
+ * PDF one at a time (Refresh PDF) or for the whole client (Refresh Visit
+ * PDFs) after a renderer fix.
  */
 export default function DocumentsSection({
   patientId,
@@ -77,7 +83,7 @@ export default function DocumentsSection({
   const [replacing, setReplacing] = useState<PatientDocument | null>(null);
   const [moving, setMoving] = useState<PatientDocument | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [syncing, setSyncing] = useState(false);
+  const [syncing, setSyncing] = useState<'sync' | 'refresh' | null>(null);
 
   const visible = useMemo(() => {
     return documents
@@ -164,24 +170,54 @@ export default function DocumentsSection({
     }
   };
 
-  const sync = async () => {
-    setSyncing(true);
+  const refreshPdf = async (d: PatientDocument) => {
+    if (!d.id || !d.sourceNoteId) return;
+    setBusyId(d.id);
     try {
-      const r = await syncNoteDocuments(patientId);
+      await fileNoteDocument(d.sourceNoteId);
+      onToast(`Re-rendered "${d.title}" from the note.`);
+      onChanged();
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : 'Could not refresh the PDF.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const sync = async (refresh: boolean) => {
+    if (
+      refresh &&
+      !window.confirm(
+        'Re-render every oversight and supervisory visit PDF for this client from the current notes?\n\nEach stored PDF is replaced in place with a fresh rendering of its note. Nothing about the notes changes.',
+      )
+    ) {
+      return;
+    }
+    setSyncing(refresh ? 'refresh' : 'sync');
+    try {
+      const r = await syncNoteDocuments(patientId, { refresh });
+      const done = r.filed + r.refreshed;
       onToast(
-        r.filed > 0
-          ? `Filed ${r.filed} visit ${r.filed === 1 ? 'note' : 'notes'}${r.skipped ? ` (${r.skipped} already on file)` : ''}.`
+        done > 0
+          ? [
+              r.filed ? `Filed ${r.filed} visit ${r.filed === 1 ? 'note' : 'notes'}` : '',
+              r.refreshed ? `Re-rendered ${r.refreshed} visit ${r.refreshed === 1 ? 'PDF' : 'PDFs'}` : '',
+            ]
+              .filter(Boolean)
+              .join(', ') +
+            (r.skipped ? ` (${r.skipped} already on file)` : '') +
+            (r.errors.length ? `. ${r.errors.length} failed: ${r.errors[0]}` : '.')
           : r.errors.length
             ? `Nothing filed: ${r.errors[0]}`
             : r.skipped
               ? `All ${r.skipped} visit ${r.skipped === 1 ? 'note is' : 'notes are'} already on file.`
               : 'No oversight or supervisory visit notes to file for this client.',
       );
-      if (r.filed > 0) onChanged();
+      if (done > 0) onChanged();
     } catch (err) {
       onToast(err instanceof Error ? err.message : 'Could not sync the notes.');
     } finally {
-      setSyncing(false);
+      setSyncing(null);
     }
   };
 
@@ -206,12 +242,23 @@ export default function DocumentsSection({
           {isStaff && (
             <button
               type="button"
-              onClick={sync}
-              disabled={syncing}
+              onClick={() => sync(false)}
+              disabled={syncing !== null}
               style={actionBtnStyle}
               title="File any RN oversight visit notes and home supervisory visits for this client that are not in Documents yet"
             >
-              <RefreshCw size={14} /> {syncing ? 'Syncing…' : 'Sync Visit Notes'}
+              <RefreshCw size={14} /> {syncing === 'sync' ? 'Syncing…' : 'Sync Visit Notes'}
+            </button>
+          )}
+          {isStaff && documents.some(isNoteFiledDocument) && (
+            <button
+              type="button"
+              onClick={() => sync(true)}
+              disabled={syncing !== null}
+              style={actionBtnStyle}
+              title="Re-render every oversight and supervisory visit PDF on file for this client from the current notes (after a form or renderer fix)"
+            >
+              <RefreshCw size={14} /> {syncing === 'refresh' ? 'Re-rendering…' : 'Refresh Visit PDFs'}
             </button>
           )}
           {canUpload && (
@@ -267,9 +314,29 @@ export default function DocumentsSection({
                 <button type="button" onClick={() => view(d)} style={actionBtnStyle} title="Open in a new tab">
                   <ExternalLink size={14} /> View
                 </button>
-                {isStaff && (
+                {isStaff && !isNoteFiledDocument(d) && (
                   <button type="button" onClick={() => setEditing(d)} disabled={busyId === d.id} style={actionBtnStyle} title="Edit the title, category, or date">
                     <Pencil size={14} /> Edit
+                  </button>
+                )}
+                {isNoteFiledDocument(d) && (
+                  <Link
+                    href={noteAmendHref(d) || '#'}
+                    style={{ ...actionBtnStyle, textDecoration: 'none' }}
+                    title="Open the note in amend mode. The date, wording and signature live on the note; saving the amendment re-files this PDF."
+                  >
+                    <FilePenLine size={14} /> Amend Note
+                  </Link>
+                )}
+                {isStaff && isNoteFiledDocument(d) && (
+                  <button
+                    type="button"
+                    onClick={() => refreshPdf(d)}
+                    disabled={busyId === d.id}
+                    style={actionBtnStyle}
+                    title="Re-render this PDF from the note as it stands now (the stored copy is a snapshot taken when the note was filed)"
+                  >
+                    <RefreshCw size={14} /> {busyId === d.id ? 'Re-rendering…' : 'Refresh PDF'}
                   </button>
                 )}
                 {isStaff && !d.autoFiled && (

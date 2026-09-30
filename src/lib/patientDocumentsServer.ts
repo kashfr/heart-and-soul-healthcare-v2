@@ -13,7 +13,8 @@ import { formatDateUS } from './dateFormat';
  *    client's Documents tab, keyed by sourceNoteId so a re-run (amendment,
  *    sync) replaces the bytes in place instead of adding a second copy.
  *  - syncNoteDocumentsForPatient: file every eligible note that has no
- *    document yet (backfill + self-heal when an auto-file failed).
+ *    document yet (backfill + self-heal when an auto-file failed); in
+ *    refresh mode, also re-render every note already on file.
  *  - deleteDocumentWithAudit: admin hard-delete of a document (bytes +
  *    metadata) with a deletedDocuments snapshot, like deleted notes.
  *  - cleanupReplacedFiles: after a client-side Replace, remove every object in
@@ -102,6 +103,8 @@ export async function fileNoteAsDocument(noteId: string, caller: AuthedCaller): 
     size: buffer.length,
     docDate: /^\d{4}-\d{2}-\d{2}$/.test(docDate) ? docDate : '',
     sourceNoteId: noteId,
+    // Which form amends it (the Documents tab's "Amend Note" button).
+    sourceNoteType: String(data.noteType || ''),
     autoFiled: true,
     autoFiledAt: FieldValue.serverTimestamp(),
   };
@@ -120,34 +123,53 @@ export async function fileNoteAsDocument(noteId: string, caller: AuthedCaller): 
   return { ok: true, documentId: docRef.id, replaced: !existing.empty };
 }
 
-/** File every eligible, unfiled note for one client. Returns what happened. */
+export interface SyncNoteDocumentsResult {
+  /** Notes that had no document and were filed. */
+  filed: number;
+  /** Notes already on file whose PDF was re-rendered (refresh mode only). */
+  refreshed: number;
+  /** Notes already on file and left alone. */
+  skipped: number;
+  errors: string[];
+}
+
+/**
+ * File every eligible, unfiled note for one client. With `refresh`, also
+ * re-render the PDF of every note already on file, so the stored copies
+ * catch up with the current renderer (a co-sign rule fix, a layout change)
+ * without anyone re-submitting or amending the notes. Returns what happened.
+ */
 export async function syncNoteDocumentsForPatient(
   patientId: string,
   caller: AuthedCaller,
-): Promise<{ filed: number; skipped: number; errors: string[] }> {
+  opts: { refresh?: boolean } = {},
+): Promise<SyncNoteDocumentsResult> {
   const notes = await adminDb().collection('progressNotes').where('patientId', '==', patientId).get();
   const filedDocs = await adminDb().collection('patientDocuments').where('patientId', '==', patientId).get();
   const already = new Set(filedDocs.docs.map((d) => String(d.data().sourceNoteId || '')).filter(Boolean));
   let filed = 0;
+  let refreshed = 0;
   let skipped = 0;
   const errors: string[] = [];
   for (const n of notes.docs) {
     const d = n.data();
     if (!NOTE_DOC_CATEGORY[String(d.noteType || '')]) continue;
     if ((d.status as string) === 'archived' || d.archivedAt) continue;
-    if (already.has(n.id)) {
+    const onFile = already.has(n.id);
+    if (onFile && !opts.refresh) {
       skipped += 1;
       continue;
     }
     try {
       const r = await fileNoteAsDocument(n.id, caller);
-      if (r.ok) filed += 1;
-      else errors.push(`${n.id}: ${r.message}`);
+      if (!r.ok) errors.push(`${n.id}: ${r.message}`);
+      else if (onFile) refreshed += 1;
+      else filed += 1;
     } catch (err) {
       errors.push(`${n.id}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  return { filed, skipped, errors };
+  return { filed, refreshed, skipped, errors };
 }
 
 /** Remove the auto-filed document for a note (used when the note is hard-deleted). */
