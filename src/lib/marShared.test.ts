@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  amendCarryForwardFields,
   amendmentChain,
   buildMarAdminFields,
   classifyDoseAgainstShift,
@@ -398,6 +399,120 @@ describe('buildMarAdminFields: prescriber-notified attestation', () => {
       meta,
     );
     expect(rebuilt.prescriberNotified).toBe(false);
+  });
+});
+
+describe('amendCarryForwardFields (what an amendment keeps from the original)', () => {
+  const meta: MarAdminFieldMeta = {
+    patientId: 'p1',
+    date: '2026-09-18',
+    sourceNoteId: '',
+    documenter: { uid: 'u1', name: 'Sam Jones', credential: 'LPN' },
+  };
+  const amender: MarAdminFieldMeta = {
+    ...meta,
+    documenter: { uid: 'u2', name: 'Rita Nash', credential: 'RN' },
+  };
+  const row: MarAdminFieldInput = {
+    orderId: 'o1', medName: 'Midodrine', dose: '5', units: 'mg', route: 'PO',
+    scheduledTime: '08:00', status: 'given', administeredByType: 'nurse',
+    administratorName: '', actualTime: '08:05', initials: 'SJ', reason: '',
+  };
+  // Mirrors amendMarAdministration: rebuild from the STORED doc's snapshots,
+  // with only status / time / reason coming from the amender.
+  const amend = (
+    stored: ReturnType<typeof buildMarAdminFields>,
+    change: Pick<MarAdminFieldInput, 'status' | 'actualTime' | 'reason'>,
+  ) =>
+    buildMarAdminFields(
+      {
+        orderId: stored.orderId,
+        medName: stored.medNameSnapshot,
+        dose: stored.doseSnapshot,
+        units: stored.unitsSnapshot,
+        route: stored.routeSnapshot,
+        scheduledTime: stored.scheduledTime,
+        administeredByType: 'nurse',
+        administratorName: '',
+        ...change,
+        ...amendCarryForwardFields(stored),
+      },
+      amender,
+    );
+
+  it('maps the stored snapshot names back to builder inputs', () => {
+    const stored = buildMarAdminFields(
+      {
+        ...row,
+        parameters: 'Give if SBP < 120', parametersChecked: true, parametersReading: 'BP 112/70',
+        value: '30', valueLabel: 'Residual', valueUnit: 'mL',
+      },
+      meta,
+    );
+    expect(amendCarryForwardFields(stored)).toEqual({
+      parameters: 'Give if SBP < 120',
+      parametersChecked: true,
+      parametersReading: 'BP 112/70',
+      value: '30',
+      valueLabel: 'Residual',
+      valueUnit: 'mL',
+    });
+  });
+
+  it('keeps the parameters, acknowledgment and reading when only the time is corrected', () => {
+    const stored = buildMarAdminFields(
+      { ...row, parameters: 'Give if SBP < 120', parametersChecked: true, parametersReading: 'BP 112/70' },
+      meta,
+    );
+    const next = amend(stored, { status: 'given', actualTime: '08:20', reason: '' });
+    expect(next.actualTime).toBe('08:20');
+    expect(next.parametersSnapshot).toBe('Give if SBP < 120');
+    expect(next.parametersChecked).toBe(true);
+    expect(next.parametersReading).toBe('BP 112/70');
+  });
+
+  it('keeps a check-style measurement, label and unit when only the time is corrected', () => {
+    const stored = buildMarAdminFields(
+      { ...row, medName: 'Gastric residual check', value: '30', valueLabel: 'Residual', valueUnit: 'mL' },
+      meta,
+    );
+    const next = amend(stored, { status: 'given', actualTime: '08:20', reason: '' });
+    expect(next.value).toBe('30');
+    expect(next.valueLabelSnapshot).toBe('Residual');
+    expect(next.valueUnitSnapshot).toBe('mL');
+  });
+
+  it('still applies the status rules: given corrected to held drops the value and the acknowledgment, keeps the reading', () => {
+    const stored = buildMarAdminFields(
+      {
+        ...row,
+        parameters: 'Give if SBP < 120', parametersChecked: true, parametersReading: 'BP 112/70',
+        value: '30', valueLabel: 'Residual', valueUnit: 'mL',
+      },
+      meta,
+    );
+    const next = amend(stored, { status: 'held', actualTime: '', reason: 'Charted on the wrong slot' });
+    expect(next.value).toBe('');
+    expect(next.parametersChecked).toBe(false);
+    expect(next.parametersSnapshot).toBe('Give if SBP < 120');
+    expect(next.parametersReading).toBe('BP 112/70');
+  });
+
+  it('carries a held dose\'s reading forward and never invents an acknowledgment on held-to-given', () => {
+    const stored = buildMarAdminFields(
+      { ...row, status: 'held', actualTime: '', reason: 'Above parameters', parameters: 'Give if SBP < 120', parametersReading: 'BP 132/84' },
+      meta,
+    );
+    const next = amend(stored, { status: 'given', actualTime: '08:30', reason: '' });
+    expect(next.parametersReading).toBe('BP 132/84');
+    expect(next.parametersChecked).toBe(false);
+  });
+
+  it('is blank-safe on legacy docs that predate these fields', () => {
+    expect(amendCarryForwardFields({})).toEqual({
+      parameters: '', parametersChecked: false, parametersReading: '',
+      value: '', valueLabel: '', valueUnit: '',
+    });
   });
 });
 

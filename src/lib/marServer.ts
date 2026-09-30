@@ -3,6 +3,7 @@ import { FieldValue, type DocumentData, type DocumentReference } from 'firebase-
 import { adminDb } from './firebaseAdmin';
 import type { AuthedCaller } from './adminAuthGuard';
 import {
+  amendCarryForwardFields,
   buildMarAdminFields,
   cleanTimeLabels,
   decideNurseDoseGate,
@@ -729,6 +730,11 @@ export async function amendMarAdministration(
       isPRN,
       indication: String(orig.indicationSnapshot || ''),
       noNoteAttestation: orig.noNoteAttestation === true,
+      // The amend form can't edit the parameters snapshot, the reading checked
+      // against them, or a check-style order's measurement, so they ride along
+      // from the original; otherwise the rebuild blanks them and the reading
+      // vanishes from the current record (grid cell, chart, printed MAR).
+      ...amendCarryForwardFields(orig),
       // A correction changes status / time / who gave it, never the meter
       // reading or what the scale called for, so the sliding-scale snapshot
       // rides forward untouched. (A wrong reading is fixed by removing the

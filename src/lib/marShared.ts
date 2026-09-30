@@ -192,6 +192,33 @@ export function buildMarAdminFields(r: MarAdminFieldInput, meta: MarAdminFieldMe
 }
 
 /**
+ * The inputs an amendment carries forward UNCHANGED from the stored doc it
+ * supersedes: the order's parameters snapshot, the documenter's "I checked
+ * them" acknowledgment and the reading she checked, and a check-style order's
+ * measurement with its label and unit. The amend form cannot edit any of
+ * these, and buildMarAdminFields blanks whatever it is not handed, so a
+ * correction (say, fixing the time given) that omitted them would leave the
+ * CURRENT record of the chain with no reading. Maps stored field names back to
+ * builder inputs; the builder's status rules still apply to the rebuilt doc
+ * (value only on given, parametersChecked only on given).
+ */
+export function amendCarryForwardFields(
+  orig: Record<string, unknown>,
+): Pick<
+  MarAdminFieldInput,
+  'parameters' | 'parametersChecked' | 'parametersReading' | 'value' | 'valueLabel' | 'valueUnit'
+> {
+  return {
+    parameters: String(orig.parametersSnapshot || ''),
+    parametersChecked: orig.parametersChecked === true,
+    parametersReading: String(orig.parametersReading || ''),
+    value: String(orig.value || ''),
+    valueLabel: String(orig.valueLabelSnapshot || ''),
+    valueUnit: String(orig.valueUnitSnapshot || ''),
+  };
+}
+
+/**
  * Normalise an allowed-values list from either an array or the comma-separated
  * string the order forms collect. Trims, drops blanks, and de-duplicates while
  * PRESERVING the author's order — a clinical scale reads in the order it was
