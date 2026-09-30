@@ -7,10 +7,10 @@ import { oversightAllotment, type HoursAuthorization } from '@/lib/shiftHours';
 /**
  * GET /api/oversight/allotment?patientId=&date=YYYY-MM-DD&exclude=<noteId>
  *
- * How long an RN oversight visit may run: the client's authorized RN hours for
- * the visit's month minus what their other oversight visits that month already
- * billed. The oversight form uses it to fill a read-only Time out so the
- * documented visit matches what can be billed.
+ * Where the client's month stands before this visit: the authorized RN hours,
+ * what their other oversight visits that month already bill (with dates), and
+ * what is left. The oversight form shows it while the nurse records the
+ * visit's real times; billing is capped separately (oversightVisitBilling).
  *
  * hoursAuthorizations is owner-only in rules, so this route (Admin SDK)
  * returns ONLY the numbers the form needs, never the authorization itself.

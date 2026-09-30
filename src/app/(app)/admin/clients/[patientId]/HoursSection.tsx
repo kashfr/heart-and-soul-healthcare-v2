@@ -37,6 +37,7 @@ import {
   monthUsage,
   monthsBetween,
   rateLabel,
+  oversightVisitBilling,
   splitShiftByDay,
   unitsUsage,
   type HoursAuthorization,
@@ -69,6 +70,10 @@ interface DayRow {
   hours: number;
   /** True when this day's hours came from a shift whose date of service is another day. */
   spill: boolean;
+  /** RN oversight only: time in to time out, when it differs from what bills. */
+  documented?: number;
+  /** RN oversight only: the month's hours were already used, so this visit bills nothing. */
+  nonBillable?: boolean;
 }
 
 /**
@@ -145,6 +150,16 @@ export default function HoursSection({ patientId, patientName, program, notes, u
       .join('; ');
   };
 
+  const list = useMemo(() => auths ?? [], [auths]);
+
+  // RN oversight bills against the month's authorization in visit order: a
+  // visit is documented as it happened, and counts here only up to what the
+  // month had left (shiftHours.oversightVisitBilling).
+  const oversightBilling = useMemo(
+    () => oversightVisitBilling(list, oversightNotes.filter((n) => n.dateISO && n.shiftStart && n.shiftEnd).map((n) => ({ id: n.id, dateISO: n.dateISO, timeIn: n.shiftStart, timeOut: n.shiftEnd }))),
+    [list, oversightNotes],
+  );
+
   // Every note cut at midnight, tagged with its bucket.
   const dayRows = useMemo<DayRow[]>(() => {
     const rows: DayRow[] = [];
@@ -159,12 +174,18 @@ export default function HoursSection({ patientId, patientName, program, notes, u
             ? `${formatDateUS(n.dateISO)} ${n.shiftStart} to ${n.shiftEnd}`
             : `${formatDateUS(n.dateISO)} ${n.shiftStart} to ${formatDateUS(endDate)} ${n.shiftEnd}`
           : `${formatDateUS(n.dateISO)} (${fmtH(parseFloat(n.totalHours) || 0)} h, no times)`;
+      const bill = bucket === 'oversight' ? oversightBilling.get(n.id) : undefined;
+      if (bill && segs.length > 0) {
+        const differs = Math.abs(bill.billableHours - bill.documentedHours) >= 0.005;
+        rows.push({ bucket, dateISO: n.dateISO, noteId: n.id, nurseName: n.nurseName, credential: n.credential || '', window, hours: bill.billableHours, spill: false, documented: differs ? bill.documentedHours : undefined, nonBillable: bill.nonBillable });
+        continue;
+      }
       for (const seg of segs) {
         rows.push({ bucket, dateISO: seg.dateISO, noteId: n.id, nurseName: n.nurseName, credential: n.credential || '', window, hours: seg.hours, spill: seg.dateISO !== n.dateISO });
       }
     }
     return rows.sort((a, b) => a.dateISO.localeCompare(b.dateISO) || a.window.localeCompare(b.window));
-  }, [notes]);
+  }, [notes, oversightBilling]);
 
   const dayHours = useMemo(() => {
     const out = { shift: new Map<string, number>(), oversight: new Map<string, number>() };
@@ -175,7 +196,6 @@ export default function HoursSection({ patientId, patientName, program, notes, u
     return out;
   }, [dayRows]);
 
-  const list = useMemo(() => auths ?? [], [auths]);
   const isCurrent = month === todayISO.slice(0, 7);
   const monthRows = dayRows.filter((r) => r.dateISO >= monthStartISO(month) && r.dateISO <= monthEndISO(month));
   const monthOverlapNotes = new Set(monthRows.filter((r) => r.bucket === 'shift' && overlaps.has(r.noteId)).map((r) => r.noteId));
@@ -456,6 +476,14 @@ export default function HoursSection({ patientId, patientName, program, notes, u
                         {isRn && <span style={rnChip} title="RN oversight visit">RN Visit</span>}
                         <Link href={`/admin/submissions/${r.noteId}`} style={{ color: NAVY }}>{r.window}</Link>
                         {r.spill && <span style={spillBadge}>From Prior Day</span>}
+                        {r.nonBillable && (
+                          <span style={spillBadge} title="The month's RN hours were already documented on an earlier visit. This visit is on the record and is not billed.">Non-Billable</span>
+                        )}
+                        {r.documented != null && !r.nonBillable && (
+                          <span style={{ color: '#64748b', fontSize: 12, marginLeft: 6 }} title="The visit ran past what the month's RN authorization had left. It is documented in full and billed up to the authorization.">
+                            {fmtH(r.documented)} h documented, {fmtH(r.hours)} h billable
+                          </span>
+                        )}
                         {overlaps.has(r.noteId) && (
                           <span style={overBadge} title={`Overlaps ${overlapText(r.noteId)}`}>Overlaps</span>
                         )}

@@ -36,13 +36,18 @@ import {
   hoursInRange,
   segmentsToDollars,
   segmentsToUnits,
+  oversightVisitBilling,
   splitShiftByDay,
+  type HoursAuthorization,
+  type OversightVisitBilling,
+  type OversightVisitWindow,
   totalOfSegments,
   touchesRange,
   type DaySegment,
   type HoursBucket,
   type QtyView,
 } from '@/lib/shiftHours';
+import { getAllHoursAuthorizations } from '@/lib/hoursAuthorizations';
 import { getBillingRates, type BillingRate } from '@/lib/billingRates';
 import { resolveRate, resolveRateRow } from '@/lib/billingRatesShared';
 import { getPatients } from '@/lib/patients';
@@ -117,6 +122,15 @@ function useDebounced<T>(value: T, delay = 250): T {
     return () => clearTimeout(t);
   }, [value, delay]);
   return v;
+}
+
+/** Tooltip for an RN oversight row's hours: documented time and what bills. */
+function oversightBillTitle(s: SubmissionSummary, b: OversightVisitBilling | undefined): string {
+  const window = `RN oversight visit, ${s.shiftStart || '?'} to ${s.shiftEnd || '?'}`;
+  if (!b || b.capHours == null) return `${window}. Counted as RN oversight hours, not shift hours.`;
+  if (b.nonBillable) return `${window} (${fmtH(b.documentedHours)} h documented). Non-billable: the month's ${fmtH(b.capHours)} RN hours were already documented on an earlier visit.`;
+  if (b.trimmed) return `${window} (${fmtH(b.documentedHours)} h documented). ${fmtH(b.billableHours)} h billable: all that was left of the month's ${fmtH(b.capHours)} RN hours.`;
+  return `${window}. Counted as RN oversight hours, not shift hours.`;
 }
 
 export default function SubmissionsPage() {
@@ -404,11 +418,36 @@ export default function SubmissionsPage() {
   // Drives the range filter (a 19:00 to 07:00 shift on 8/31 belongs to
   // September too), the Hours column, and the totals strip, so the numbers
   // agree with the client Hours tab and the roster badges.
+  // Each client's authorizations, so RN oversight visits bill only up to the
+  // month's authorized hours (the same cap the client Hours tab applies).
+  const [authsByPatient, setAuthsByPatient] = useState<Map<string, HoursAuthorization[]>>(new Map());
+  // RN oversight visits bill against the month's authorization in visit
+  // order: documented in full, counted only up to what the month had left.
+  // Archived notes are not billed and do not use up hours.
+  const oversightBillingById = useMemo(() => {
+    const byPatient = new Map<string, OversightVisitWindow[]>();
+    for (const s of allSubmissions) {
+      if (s.noteType !== 'rn-oversight-visit' || s.archivedAt || !s.patientId || !s.dateISO || !s.shiftStart || !s.shiftEnd) continue;
+      const list = byPatient.get(s.patientId) ?? [];
+      list.push({ id: s.id, dateISO: s.dateISO, timeIn: s.shiftStart, timeOut: s.shiftEnd });
+      byPatient.set(s.patientId, list);
+    }
+    const out = new Map<string, OversightVisitBilling>();
+    for (const [pid, visits] of byPatient) {
+      for (const [id, b] of oversightVisitBilling(authsByPatient.get(pid) ?? [], visits)) out.set(id, b);
+    }
+    return out;
+  }, [allSubmissions, authsByPatient]);
+
   const segmentsById = useMemo(() => {
     const m = new Map<string, DaySegment[]>();
-    for (const s of allSubmissions) m.set(s.id, splitShiftByDay(s));
+    for (const s of allSubmissions) {
+      const bill = oversightBillingById.get(s.id);
+      // A zero-hour segment keeps a non-billable visit inside date-range views.
+      m.set(s.id, bill ? [{ dateISO: s.dateISO, hours: bill.billableHours }] : splitShiftByDay(s));
+    }
     return m;
-  }, [allSubmissions]);
+  }, [allSubmissions, oversightBillingById]);
 
   // Hours a row contributes to the current view: the in-range slice when a
   // range is set, else the whole shift / visit. RN oversight visits (time in
@@ -462,11 +501,12 @@ export default function SubmissionsPage() {
   useEffect(() => {
     if (!showHours) return;
     let cancelled = false;
-    Promise.all([getBillingRates(), getPatients()])
-      .then(([r, patients]) => {
+    Promise.all([getBillingRates(), getPatients(), getAllHoursAuthorizations()])
+      .then(([r, patients, auths]) => {
         if (cancelled) return;
         setRates(r);
         setProgramByPatient(new Map(patients.map((p) => [p.id || '', p.program || ''])));
+        setAuthsByPatient(auths);
       })
       .catch((err) => console.error('Billing rates load failed:', err));
     return () => { cancelled = true; };
@@ -2046,6 +2086,14 @@ export default function SubmissionsPage() {
                               OVERSIGHT
                             </span>
                           )}
+                          {s.noteType === 'rn-oversight-visit' && (oversightBillingById.get(s.id)?.nonBillable ?? s.nonBillable) && (
+                            <span
+                              style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 4, fontSize: 10.5, fontWeight: 700, background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', whiteSpace: 'nowrap' }}
+                              title="The month's RN hours were already documented on an earlier visit. This visit is on the record and is not billed."
+                            >
+                              NON-BILLABLE
+                            </span>
+                          )}
                           {s.noteType === SUPERVISORY_NOTE_TYPE && (
                             <span
                               style={{
@@ -2084,7 +2132,7 @@ export default function SubmissionsPage() {
                                   : h == null
                                   ? 'No usable time window on this note'
                                   : rn
-                                    ? `RN oversight visit, ${s.shiftStart || '?'} to ${s.shiftEnd || '?'}. Counted as RN oversight hours, not shift hours.`
+                                    ? oversightBillTitle(s, oversightBillingById.get(s.id))
                                     : partial
                                       ? `${fmtH(h)} of this ${fmtH(total)}-hour shift falls inside the selected range (${s.shiftStart || '?'} to ${s.shiftEnd || '?'})`
                                       : `${s.shiftStart || '?'} to ${s.shiftEnd || '?'}`

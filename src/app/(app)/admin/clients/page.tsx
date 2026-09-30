@@ -40,7 +40,7 @@ import {
 import { reconcilePatient, worstSeverity, type Finding } from '@/lib/reconcile';
 import { getAllHoursAuthorizations } from '@/lib/hoursAuthorizations';
 import { getDayHoursByPatientSince } from '@/lib/submissions';
-import { addDaysISO, emptyBucketDayHours, hoursFindings, monthStartISO, type BucketDayHours, type HoursAuthorization } from '@/lib/shiftHours';
+import { addDaysISO, capOversightDayHours, emptyBucketDayHours, hoursFindings, monthStartISO, type BucketDayHours, type HoursAuthorization } from '@/lib/shiftHours';
 import { db } from '@/lib/firebase';
 import { authedFetch } from '@/lib/authedFetch';
 import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
@@ -501,7 +501,7 @@ function ClientsRosterInner() {
       const list = reconcilePatient(p, todayISO);
       if (showHours) {
         const auths = hoursAuths.get(p.id) ?? [];
-        for (const f of hoursFindings(auths, dayHoursByPatient.get(p.id) ?? emptyBucketDayHours(), todayISO)) {
+        for (const f of hoursFindings(auths, cappedDayHours(auths, dayHoursByPatient.get(p.id)), todayISO)) {
           list.push({ rule: `hours-${f.message}`, severity: f.severity, message: f.message });
         }
       }
@@ -1232,6 +1232,13 @@ function ClientsRosterInner() {
       {toast && <div style={toastStyle}>{toast}</div>}
     </div>
   );
+}
+
+/** RN oversight counts toward the month only up to its authorization
+ *  (shiftHours.capOversightDayHours); shift hours are untouched. */
+function cappedDayHours(auths: HoursAuthorization[], days: BucketDayHours | undefined): BucketDayHours {
+  const d = days ?? emptyBucketDayHours();
+  return { shift: d.shift, oversight: capOversightDayHours(auths, d.oversight) };
 }
 
 export default function ClientsRosterPage() {

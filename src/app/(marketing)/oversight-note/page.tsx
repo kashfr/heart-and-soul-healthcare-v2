@@ -41,7 +41,7 @@ import {
 import { useAuth } from '@/components/AuthProvider';
 import { authedFetch } from '@/lib/authedFetch';
 import { fileNoteDocument } from '@/lib/patientDocuments';
-import { addHoursToTime, fmtH, monthLabel, type OversightAllotment } from '@/lib/shiftHours';
+import { fmtH, monthLabel, previewOversightVisit, type OversightAllotment } from '@/lib/shiftHours';
 import { escortToField, FieldError, FIELD_ERROR_STYLE, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
 import SignatureCanvas, { type SignatureCanvasHandle } from '@/components/SignatureCanvas';
 import DeselectableRadio, {
@@ -349,12 +349,12 @@ function OversightNotePageInner() {
     if (user?.uid) void clearOversightDraft(user.uid);
   }, [user?.uid]);
 
-  // --- Visit length from the client's RN oversight authorization ----------
-  // Billing is by the month's authorized RN hours, so the documented visit
-  // must match: once the client, date, and Time in are set, Time out is
-  // computed (Time in + the hours left this month) and locked. When there is
-  // no oversight line, nothing left this month, or the visit would pass
-  // midnight, Time out stays editable and a note explains why.
+  // --- Documented time vs. billable time ------------------------------------
+  // The nurse records the visit's real Time in and Time out. The month's RN
+  // authorization decides what is billed, never what is documented: the form
+  // shows where the month stands, what this visit will bill, and says up front
+  // when the visit will be recorded as non-billable (the hours are already
+  // used). Hours views cap billing the same way (oversightVisitBilling).
   const visitPatientId = watch('patientId');
   const visitDate = watch('q6_dateofService');
   const visitTimeIn = watch('ov_timeIn');
@@ -379,29 +379,33 @@ function OversightNotePageInner() {
   }, [visitPatientId, visitDate, editId]);
   const allotmentCurrent =
     allotmentKey === `${String(visitPatientId || '')}|${String(visitDate || '')}` ? allotment : null;
-  const lockedTimeOut =
-    allotmentCurrent?.remainingHours && allotmentCurrent.remainingHours > 0 && visitTimeIn
-      ? addHoursToTime(String(visitTimeIn), allotmentCurrent.remainingHours)
-      : null;
-  useEffect(() => {
-    if (lockedTimeOut && getValues('ov_timeOut') !== lockedTimeOut) {
-      setValue('ov_timeOut', lockedTimeOut, { shouldDirty: true });
-    }
-  }, [lockedTimeOut, getValues, setValue]);
+  const visitTimeOut = watch('ov_timeOut');
+  const visitProgram = watch('q2_program');
   const visitMonthName = visitDate ? monthLabel(String(visitDate).slice(0, 7)).split(' ')[0] : '';
+  const visitPreview = allotmentCurrent ? previewOversightVisit(allotmentCurrent, String(visitTimeIn || ''), String(visitTimeOut || '')) : null;
+  const usedHours = allotmentCurrent ? allotmentCurrent.usedUnits / 4 : 0;
+  const otherVisitDates = (allotmentCurrent?.otherVisits || []).filter((v) => v.billableHours > 0).map((v) => formatDateUS(v.dateISO));
+  const onDates = otherVisitDates.length ? ` on the ${otherVisitDates.join(' and ')} visit${otherVisitDates.length === 1 ? '' : 's'}` : '';
+  /** NOW/COMP pays RN oversight from an authorization; without one on file
+   *  for the visit's month the office has to enter it before a new visit is filed. */
+  const authorizationMissing = !!allotmentCurrent && allotmentCurrent.monthlyHours == null && visitProgram === 'now-comp';
+  /** The month's hours are already documented: this visit is recorded, not billed. */
+  const monthUsedUp = !!allotmentCurrent && allotmentCurrent.monthlyHours != null && (allotmentCurrent.remainingHours ?? 0) <= 0;
   const timeOutHint: { tone: 'info' | 'warn'; text: string } | null = !allotmentCurrent
     ? null
     : allotmentCurrent.monthlyHours == null
-      ? { tone: 'warn', text: 'No RN oversight authorization on file for this month, so enter the time out yourself.' }
-      : (allotmentCurrent.remainingHours ?? 0) <= 0
-        ? { tone: 'warn', text: `${visitMonthName}'s ${fmtH(allotmentCurrent.monthlyHours)} RN hours are already used by another visit. This visit is not billable; enter the actual time out.` }
-        : !visitTimeIn
-          ? { tone: 'info', text: `Enter Time in; Time out fills in from the ${fmtH(allotmentCurrent.remainingHours ?? 0)} hours authorized for ${visitMonthName}.` }
-          : !lockedTimeOut
-            ? { tone: 'warn', text: `A ${fmtH(allotmentCurrent.remainingHours ?? 0)}-hour visit from this time in would pass midnight. Check Time in.` }
+      ? authorizationMissing
+        ? { tone: 'warn', text: `No RN oversight authorization is on file for ${visitMonthName}. Ask the office to enter this client's RN hours before filing this visit.` }
+        : { tone: 'info', text: 'No RN oversight authorization is on file for this month. Enter the actual times.' }
+      : monthUsedUp
+        ? { tone: 'warn', text: `Non-billable visit: ${visitMonthName}'s ${fmtH(allotmentCurrent.monthlyHours)} RN hours are already documented${onDates}. Enter the actual times.` }
+        : !visitPreview
+          ? { tone: 'info', text: `${visitMonthName}: ${fmtH(usedHours)} of ${fmtH(allotmentCurrent.monthlyHours)} RN hours documented so far${onDates}. Enter the actual times.` }
+          : visitPreview.trimmed
+            ? { tone: 'warn', text: `This visit is ${fmtH(visitPreview.documentedHours)} h. ${fmtH(visitPreview.billableHours)} h are billable (all that is left of ${visitMonthName}'s ${fmtH(allotmentCurrent.monthlyHours)}); the rest is documented but not billed.` }
             : {
                 tone: 'info',
-                text: `Set from the ${fmtH(allotmentCurrent.remainingHours ?? 0)} hours authorized for ${visitMonthName}${allotmentCurrent.usedUnits > 0 ? ` (after ${fmtH(allotmentCurrent.usedUnits / 4)} h used by another visit)` : ''}.`,
+                text: `Billable: ${fmtH(visitPreview.billableHours)} h. ${visitMonthName} will stand at ${fmtH(usedHours + visitPreview.billableHours)} of ${fmtH(allotmentCurrent.monthlyHours)} RN hours${usedHours + visitPreview.billableHours < allotmentCurrent.monthlyHours ? `, ${fmtH(allotmentCurrent.monthlyHours - usedHours - visitPreview.billableHours)} h still unused` : ''}.`,
               };
 
   // --- Leaving the form ---------------------------------------------------
@@ -597,7 +601,24 @@ function OversightNotePageInner() {
       escortToField('ov_timeOut');
       return;
     }
+    // A NOW/COMP visit bills against the month's RN authorization. With none
+    // on file the office enters it first (new visits only; an amendment to an
+    // older note is never blocked by a line that was entered later or lapsed).
+    if (!isEditMode && authorizationMissing) {
+      setFieldErrors({ q6_dateofService: `No RN oversight authorization is on file for ${visitMonthName}. Ask the office to enter this client's RN hours, then file the visit.` });
+      escortToField('q6_dateofService');
+      return;
+    }
     setFieldErrors({});
+
+    // Stamp what this visit bills, as the form showed it, so the note, its
+    // PDF and the Submissions list can label a non-billable or trimmed visit
+    // for people who cannot read the authorizations. The owner's hours views
+    // recompute from the authorizations and do not rely on this stamp.
+    if (allotmentCurrent && visitPreview) {
+      values.ov_billableHours = String(visitPreview.billableHours);
+      values.ov_nonBillable = visitPreview.nonBillable ? 'Yes' : '';
+    }
 
     if (isEditMode && editId) {
       // An edit needs a reason for the audit trail, same as the shift note.
@@ -881,25 +902,25 @@ function OversightNotePageInner() {
                 <label className={styles.label} htmlFor="ov_timeOut">
                   Time out *
                 </label>
-                <input
-                  className={styles.input}
-                  type="time"
-                  id="ov_timeOut"
-                  readOnly={!!lockedTimeOut}
-                  tabIndex={lockedTimeOut ? -1 : undefined}
-                  title={lockedTimeOut ? 'Set from the client\'s authorized RN hours' : undefined}
-                  style={{ ...hi('ov_timeOut'), ...(lockedTimeOut ? { background: '#f1f5f9', color: '#334155', cursor: 'not-allowed' } : null) }}
-                  aria-invalid={!!fe('ov_timeOut')}
-                  {...register('ov_timeOut')}
-                />
+                <input className={styles.input} type="time" id="ov_timeOut" style={hi('ov_timeOut')} aria-invalid={!!fe('ov_timeOut')} {...register('ov_timeOut')} />
                 <FieldError message={fe('ov_timeOut')} />
-                {timeOutHint && (
-                  <div style={{ fontSize: 12, marginTop: 4, lineHeight: 1.4, color: timeOutHint.tone === 'warn' ? '#b45309' : '#475569' }}>
-                    {lockedTimeOut ? '🔒 ' : ''}{timeOutHint.text}
-                  </div>
-                )}
               </div>
             </div>
+            {timeOutHint && (
+              <div
+                id="ov_billing"
+                role={timeOutHint.tone === 'warn' ? 'alert' : undefined}
+                style={{
+                  fontSize: 13, lineHeight: 1.45, marginTop: 2, marginBottom: 12, padding: '8px 12px', borderRadius: 6,
+                  border: `1px solid ${timeOutHint.tone === 'warn' ? '#f3d9a4' : '#dbe3ec'}`,
+                  background: timeOutHint.tone === 'warn' ? '#fff4e0' : '#f6f9fc',
+                  color: timeOutHint.tone === 'warn' ? '#7a4a00' : '#475569',
+                  fontWeight: timeOutHint.tone === 'warn' ? 600 : 400,
+                }}
+              >
+                {timeOutHint.text}
+              </div>
+            )}
 
             <div className={styles.row}>
               <div className={styles.f} style={{ flex: '1 1 55%' }}>
