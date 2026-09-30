@@ -111,6 +111,17 @@ describe('SupervisoryVisitPage', () => {
     });
   });
 
+  it('keeps the license to RN / LPN and carries longer credentials to the printed line', async () => {
+    mockAuth.useAuth.mockReturnValue({
+      user: { uid: 'sup-uid' },
+      profile: { displayName: 'Ashley Turner', credential: 'DNP, RN' },
+      role: 'supervisor',
+    });
+    render(<SupervisoryVisitPage />);
+    await waitFor(() => expect(screen.getByLabelText(/^License/)).toHaveValue('RN'));
+    expect(screen.getByLabelText(/Credentials as printed/)).toHaveValue('DNP, RN');
+  });
+
   it('blocks field staff (nurse role), even with an RN credential', () => {
     mockAuth.useAuth.mockReturnValue({
       user: { uid: 'rn-uid' },

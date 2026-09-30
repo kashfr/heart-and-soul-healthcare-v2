@@ -55,6 +55,20 @@ request of the nurse supervisors.
   (`getActiveFieldStaff`), the client's `assignedNurseIds` first.
 - Choosing a client fills the address from the roster.
 
+## Credential and co-signature
+
+- `q12_credential` is the supervisor's **license**, a fixed choice of RN or
+  LPN (never free text). `sv_credentialsPrinted` is optional wording for the
+  signature line ("DNP, RN"); the PDF and the admin view print it when set.
+- An RN's supervisory visit needs no co-signature. An LPN's does, by an RN,
+  through the same co-sign flow as shift notes (Submissions, Co-sign).
+- The rule that decides this is `credentialRequiresCosign` in
+  `src/lib/cosignClient.ts`: it reads the credential's tokens, so "DNP, RN"
+  is an RN and "LPN, CPR" is an LPN. Every consumer (Submissions flags, the
+  co-sign route, the PDF's "RN Co-Signature" block, the admin view) uses it.
+  Origin: a supervisor's PDF showed "Pending RN review" because she had
+  typed "DNP, RN" into what was then a free-text credential box (09/2026).
+
 ## What submit does
 
 1. Saves the note (duplicate check per supervisor + client + date).

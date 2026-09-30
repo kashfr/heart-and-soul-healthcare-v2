@@ -14,6 +14,7 @@ import { formatDuration, readSeizureEntries, seizureDurationSeconds, sortSeizure
 import { parseCareTaskCharting } from '@/lib/careTaskCharting';
 import { SUPERVISORY_NOTE_TYPE } from '@/lib/supervisoryVisit';
 import { followUpSummary, FOLLOW_UP_ACTION_KEY } from '@/lib/vitalsFollowUp';
+import { credentialRequiresCosign } from '@/lib/cosignClient';
 
 /**
  * Raw form data stored on a progress-note document. Every field is a string
@@ -41,6 +42,11 @@ export interface ProgressNotePDFProps {
     orgName?: string;
     tagline?: string;
   };
+  /**
+   * Credentials whose notes need an RN co-signature (from /admin/settings
+   * via the PDF route). Falls back to the built-in default list.
+   */
+  cosignRequiredCredentials?: readonly string[];
   /**
    * Post-submission edit history (the audit trail / amendments), already
    * formatted for display by the PDF route. When present and non-empty, an
@@ -986,7 +992,7 @@ function auditActionLabel(action: string): string {
   return map[action] || action;
 }
 
-export default function ProgressNotePDF({ data, vitalsOverride, branding, editHistory, fieldAmendments }: ProgressNotePDFProps) {
+export default function ProgressNotePDF({ data, vitalsOverride, branding, editHistory, fieldAmendments, cosignRequiredCredentials }: ProgressNotePDFProps) {
   const orgName = branding?.orgName || 'Heart and Soul Healthcare';
   const tagline = branding?.tagline ?? 'Compassionate Care, Professional Excellence';
   const credential = data.q12_credential || '';
@@ -1201,12 +1207,9 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
                 {hasValue(data.sv_anythingElse) && <TextBlock fieldKey="sv_anythingElse" label="Is there anything else you would like to tell me?" value={data.sv_anythingElse} />}
               </SectionBreakable>
             )}
+            {/* Vitals print once, in the full Vital Signs block below (with
+                abnormal highlighting and rechecks), not here as well. */}
             <SectionBreakable title="Overall Assessment of Client">
-              <FieldRow>
-                <FieldCol><Field fieldKey="q16_temperature" label="Temp" value={data.q16_temperature ? `${data.q16_temperature} °F${data.q16_temperatureRoute ? ` (${data.q16_temperatureRoute})` : ''}` : ''} /></FieldCol>
-                <FieldCol><Field fieldKey="q17_bloodPressure" label="BP" value={data.q17_bloodPressure ? `${data.q17_bloodPressure} mmHg` : ''} /></FieldCol>
-                <FieldCol><Field fieldKey="q18_pulse" label="Pulse" value={data.q18_pulse ? `${data.q18_pulse} bpm` : ''} /></FieldCol>
-              </FieldRow>
               {hasValue(data.sv_generalConditions) && <TextBlock fieldKey="sv_generalConditions" label="General Conditions" value={data.sv_generalConditions} />}
               {hasValue(data.sv_clientProgress) && <TextBlock fieldKey="sv_clientProgress" label="Client Progress" value={data.sv_clientProgress} />}
               <Field fieldKey="sv_problems" label="Problems Encountered by Client" value={data.sv_problems} />
@@ -1274,7 +1277,8 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
           </Section>
         )}
 
-        {/* 5. Vital Signs */}
+        {/* 5. Vital Signs (every note type: the supervisory visit records
+            the same full block, see #234) */}
         {anyHasValue(data, [
           'q16_vitalsNotObtainedReason',
           'q16_temperature', 'q16_temperatureRoute', 'q17_bloodPressure',
@@ -1695,7 +1699,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
           <View style={s.signatureGrid}>
             <View style={{ flex: 1 }}>
               <Field fieldKey="q11_nurseName" label="Printed Name" value={data.q11_nurseName} />
-              <Field fieldKey="q12_credential" label="Credential" value={data.q12_credential} />
+              <Field fieldKey="q12_credential" label="Credential" value={isSupervisory && data.sv_credentialsPrinted ? data.sv_credentialsPrinted : data.q12_credential} />
               <Field fieldKey="q62_shiftEndDate" label="Date Signed" value={fmtDate(data.q62_shiftEndDate)} />
             </View>
             <View style={{ flex: 1 }}>
@@ -1713,13 +1717,16 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
           </View>
         </Section>
 
-        {/* 25b. RN Co-Signature — only relevant for HHA/CNA/LPN notes. Always
-            rendered for those credentials (even when pending) so the printed
-            PDF shows the compliance status at a glance. `cosignedAt` reach
-            the renderer in multiple shapes (Timestamp / POJO / string), so
-            `readCosignedDate` normalizes them — see the helper above. */}
-        {data.q12_credential !== 'RN' && data.q12_credential !== '' && (() => {
+        {/* 25b. RN Co-Signature — only for credentials that require one
+            (HHA/CNA/LPN per settings; an RN written as "DNP, RN" is still an
+            RN). Rendered even when pending so the printed PDF shows the
+            compliance status at a glance, and always when a co-signature
+            exists. `cosignedAt` reaches the renderer in multiple shapes
+            (Timestamp / POJO / string), so `readCosignedDate` normalizes
+            them — see the helper above. */}
+        {(() => {
           const cosignedDate = readCosignedDate(data.cosignedAt);
+          if (!cosignedDate && !credentialRequiresCosign(data.q12_credential, cosignRequiredCredentials)) return null;
           return (
             <Section title="RN Co-Signature">
               {cosignedDate ? (

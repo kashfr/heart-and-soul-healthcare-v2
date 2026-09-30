@@ -46,6 +46,7 @@ import {
   type AssigneeOption,
 } from '@/lib/patientVisits';
 import { useAuth } from '@/components/AuthProvider';
+import { licensureFromCredential } from '@/lib/cosignClient';
 import { authedFetch } from '@/lib/authedFetch';
 import { fileNoteDocument } from '@/lib/patientDocuments';
 import { escortToField, FieldError, FIELD_ERROR_STYLE, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
@@ -221,7 +222,13 @@ function SupervisoryVisitPageInner() {
   useEffect(() => {
     if (isEditMode || !profile) return;
     if (profile.displayName) setValue('q11_nurseName', profile.displayName);
-    setValue('q12_credential', profile.credential || 'RN');
+    // Licensure drives the co-signature rule, so it is a fixed choice (RN or
+    // LPN), never free text. Anything longer ("DNP, RN") goes on the
+    // credentials-as-printed line for the signature block.
+    setValue('q12_credential', licensureFromCredential(profile.credential) || 'RN');
+    if (profile.credential && licensureFromCredential(profile.credential) !== profile.credential) {
+      setValue('sv_credentialsPrinted', profile.credential);
+    }
   }, [isEditMode, profile, setValue]);
 
   const selectablePatients = useMemo(
@@ -281,6 +288,14 @@ function SupervisoryVisitPageInner() {
         // Radio answers live in the radio store only (see oversight-note).
         if (radioKeys.has(k)) continue;
         if (typeof v === 'string') setValue(k, v);
+      }
+      // A note written when the credential was free text ("DNP, RN"): keep
+      // the wording on the printed line and reduce the licensure to RN / LPN.
+      const cred = String(flat.q12_credential || '');
+      const lic = licensureFromCredential(cred);
+      if (lic && cred !== lic) {
+        setValue('q12_credential', lic);
+        if (!flat.sv_credentialsPrinted) setValue('sv_credentialsPrinted', cred);
       }
       if (typeof flat.q61_signature === 'string' && flat.q61_signature) {
         setInitialSignature(flat.q61_signature);
@@ -504,6 +519,7 @@ function SupervisoryVisitPageInner() {
     if (values.sv_clientSatisfied !== 'No') values.sv_dissatisfaction = '';
 
     values.noteType = SUPERVISORY_NOTE_TYPE;
+    values.sv_credentialsPrinted = String(values.sv_credentialsPrinted || '').trim();
     // Rev 2 (09/2026): the full vitals block (respiration, SpO2 + source,
     // "unable to obtain" reasons, rechecks), matching the shift note.
     values.q1_formRev = '2';
@@ -972,9 +988,26 @@ function SupervisoryVisitPageInner() {
               </div>
               <div className={styles.f} style={{ flex: '1 1 35%' }}>
                 <label className={styles.label} htmlFor="q12_credential">
-                  Credentials
+                  License
                 </label>
-                <input className={styles.input} id="q12_credential" {...register('q12_credential')} />
+                {/* RN or LPN only: an LPN's supervisory visit is co-signed by an RN. */}
+                <select className={styles.select} id="q12_credential" {...register('q12_credential')}>
+                  <option value="RN">RN</option>
+                  <option value="LPN">LPN (an RN will co-sign)</option>
+                </select>
+              </div>
+            </div>
+            <div className={styles.row}>
+              <div className={styles.f} style={{ flex: '1 1 100%' }}>
+                <label className={styles.label} htmlFor="sv_credentialsPrinted">
+                  Credentials as printed on the signature line
+                </label>
+                <input
+                  className={styles.input}
+                  id="sv_credentialsPrinted"
+                  placeholder="Optional, e.g. DNP, RN. Leave blank to print the license."
+                  {...register('sv_credentialsPrinted')}
+                />
               </div>
             </div>
             <div className={styles.row}>

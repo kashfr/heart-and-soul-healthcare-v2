@@ -100,8 +100,9 @@ export async function renderNotePdf(data: ProgressNoteFormData, noteId?: string 
   if (noteId) {
     ({ editHistory, fieldAmendments } = await loadNoteAuditForPdf(noteId));
   }
+  const cosignRequiredCredentials = settings.cosign.requiredCredentials;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const element = React.createElement(ProgressNotePDF, { data, vitalsOverride, branding, editHistory, fieldAmendments }) as any;
+  const element = React.createElement(ProgressNotePDF, { data, vitalsOverride, branding, editHistory, fieldAmendments, cosignRequiredCredentials }) as any;
   return renderToBuffer(element);
 }
 

@@ -15,6 +15,49 @@
 export const COSIGN_REQUIRED_CREDENTIALS = new Set(['HHA', 'CNA', 'LPN']);
 
 /**
+ * The credential tokens in a free-text credential string: "DNP, RN" gives
+ * ['DNP', 'RN'], "lpn" gives ['LPN']. Splits on commas, slashes, and
+ * whitespace; upper-cases; drops empties.
+ */
+export function credentialTokens(credential: string | null | undefined): string[] {
+  return String(credential || '')
+    .split(/[\s,\/;]+/)
+    .map((t) => t.trim().toUpperCase())
+    .filter(Boolean);
+}
+
+/** True when the credential names an RN anywhere ("RN", "DNP, RN", "BSN RN"). */
+export const isRnCredential = (credential: string | null | undefined): boolean =>
+  credentialTokens(credential).includes('RN');
+
+/** 'RN' or 'LPN' when the credential names one, else null. RN wins over LPN. */
+export function licensureFromCredential(credential: string | null | undefined): 'RN' | 'LPN' | null {
+  const tokens = credentialTokens(credential);
+  if (tokens.includes('RN')) return 'RN';
+  if (tokens.includes('LPN')) return 'LPN';
+  return null;
+}
+
+/**
+ * Whether a note signed with this credential needs an RN co-signature. An RN
+ * (however the credential is written) never does; otherwise, any token in
+ * the required list does. A blank credential (legacy notes) never does.
+ */
+export function credentialRequiresCosign(
+  credential: string | null | undefined,
+  requiredCredentials?: ReadonlySet<string> | readonly string[],
+): boolean {
+  const required = requiredCredentials
+    ? requiredCredentials instanceof Set
+      ? requiredCredentials
+      : new Set(requiredCredentials)
+    : COSIGN_REQUIRED_CREDENTIALS;
+  const tokens = credentialTokens(credential);
+  if (tokens.includes('RN')) return false;
+  return tokens.some((t) => required.has(t));
+}
+
+/**
  * True when a note still needs an RN co-signature.
  *
  * - RN-authored notes never need co-sign.
@@ -36,10 +79,5 @@ export function needsCosign(
 ): boolean {
   if (s.status !== 'submitted') return false;
   if (s.cosignedAt != null) return false;
-  const required = requiredCredentials
-    ? requiredCredentials instanceof Set
-      ? requiredCredentials
-      : new Set(requiredCredentials)
-    : COSIGN_REQUIRED_CREDENTIALS;
-  return required.has(s.credential);
+  return credentialRequiresCosign(s.credential, requiredCredentials);
 }

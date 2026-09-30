@@ -1,3 +1,4 @@
+import { credentialRequiresCosign } from './cosignClient';
 import 'server-only';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
@@ -71,7 +72,7 @@ export async function cosignNote(
   const nurseId = String(data.nurseId || '');
 
   if (status !== 'submitted') return fail(noteId, 'wrong-status');
-  if (!required.has(credential)) return fail(noteId, 'wrong-credential');
+  if (!credentialRequiresCosign(credential, required)) return fail(noteId, 'wrong-credential');
   if (nurseId && nurseId === caller.uid) return fail(noteId, 'self-author');
   if (data.cosignedAt != null) return fail(noteId, 'already-cosigned');
 
