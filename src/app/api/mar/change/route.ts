@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
-import { looksLikeUnknownPhysician, parseValueOptions } from '@/lib/marShared';
+import { cleanTimeLabels, looksLikeUnknownPhysician, parseValueOptions } from '@/lib/marShared';
+import { parseSlidingScale, validateSlidingScale } from '@/lib/slidingScale';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { applyStandaloneChange, type StandaloneChangeInput } from '@/lib/marServer';
 
@@ -99,6 +100,13 @@ export async function POST(request: Request) {
   const scheduledTimes = Array.isArray(rawProposed.scheduledTimes)
     ? (rawProposed.scheduledTimes as unknown[]).map((t) => String(t)).filter(Boolean)
     : [];
+  // Sliding-scale order (see slidingScale.ts): the dose comes from a blood
+  // glucose table rather than a fixed amount. Anything posted under the key
+  // counts as "this is a sliding-scale order", so a malformed table is
+  // rejected below instead of being silently dropped into a dose-less order.
+  const postedScale = Array.isArray(rawProposed.slidingScale) ? (rawProposed.slidingScale as unknown[]) : [];
+  const slidingScale = parseSlidingScale(postedScale);
+  const isScale = postedScale.length > 0;
 
   if (type === 'add' || type === 'change') {
     const medName = String(rawProposed.medName || '').trim();
@@ -110,9 +118,16 @@ export async function POST(request: Request) {
     // A check-style order records a reading rather than an amount given, so it
     // carries no dose or units (mirrors the modal's rule; without this the
     // server rejected every edit to a check order the modal happily accepted).
-    const isCheck = !!String(rawProposed.valueLabel || '').trim();
-    if (!medName || !route || (!isCheck && (!dose || !units))) {
+    const isCheck = !isScale && !!String(rawProposed.valueLabel || '').trim();
+    if (!medName || !route || (!isCheck && !isScale && (!dose || !units))) {
       return NextResponse.json({ error: 'Medication, dose, units, and route are required.' }, { status: 400 });
+    }
+    if (isScale) {
+      const scaleError =
+        slidingScale.length !== postedScale.length
+          ? 'Check the sliding scale: every range needs a number.'
+          : validateSlidingScale(slidingScale);
+      if (scaleError) return NextResponse.json({ error: scaleError }, { status: 400 });
     }
     if (isCheck && parseValueOptions(rawProposed.valueOptions as string[] | string | undefined).length < 2) {
       return NextResponse.json(
@@ -169,6 +184,8 @@ export async function POST(request: Request) {
             route: String(rawProposed.route || ''),
             frequencyLabel: String(rawProposed.frequencyLabel || ''),
             scheduledTimes,
+            timeLabels: cleanTimeLabels(rawProposed.timeLabels, scheduledTimes, isPRN),
+            slidingScale,
             isPRN,
             prnFrequencyLabel: isPRN ? String(rawProposed.prnFrequencyLabel || '') : '',
             indication: String(rawProposed.indication || ''),
@@ -176,9 +193,9 @@ export async function POST(request: Request) {
             // forwarded: dropping them silently stripped the measurement from
             // any check order that was edited, and left the regimen comparison
             // seeing a measurement removal on every such edit.
-            valueLabel: String(rawProposed.valueLabel || ''),
-            valueUnit: String(rawProposed.valueUnit || ''),
-            valueOptions: parseValueOptions(rawProposed.valueOptions as string[] | string | undefined),
+            valueLabel: isScale ? '' : String(rawProposed.valueLabel || ''),
+            valueUnit: isScale ? '' : String(rawProposed.valueUnit || ''),
+            valueOptions: isScale ? [] : parseValueOptions(rawProposed.valueOptions as string[] | string | undefined),
             startDate: ISO_DATE_RE.test(String(rawProposed.startDate || '')) ? String(rawProposed.startDate) : today,
             // Shape-valid AND not in the future (a typo year would suppress
             // the staleness flag for over a year); bad values fall back to ''

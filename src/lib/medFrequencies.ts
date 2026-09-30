@@ -19,6 +19,8 @@ export const MED_FREQUENCIES = [
   'Four times daily (QID)',
   'Every morning',
   'Every evening',
+  'Before meals (AC)',
+  'Before meals and at bedtime',
   'At bedtime',
   'Every other day',
   'Every 4 hours (Q4H)',

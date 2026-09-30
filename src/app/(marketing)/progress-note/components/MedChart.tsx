@@ -11,7 +11,8 @@ import {
   type MarOrder,
   type MarAdministration,
 } from '@/lib/mar';
-import { resolveCurrentAdministrations, describeFrequency } from '@/lib/marShared';
+import { resolveCurrentAdministrations, describeFrequency, slotAnchor } from '@/lib/marShared';
+import { GLUCOSE_UNIT, isNoInsulinEntry, parseSlidingScale, summarizeSlidingScale } from '@/lib/slidingScale';
 import { authedFetch } from '@/lib/authedFetch';
 import { withSelectChevron } from '@/lib/selectChevron';
 import { escortToField, firstErrorKey, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
@@ -222,6 +223,10 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
 
   const statusLabel = (s: string, isCheck = false) =>
     s === 'given' ? (isCheck ? 'Done' : 'Given') : s === 'held' ? 'Held' : 'Refused';
+  /** Status as it reads for one entry: a check reads "Done", and a
+   *  sliding-scale check that called for no insulin reads that way. */
+  const entryStatusLabel = (a: MarAdministration) =>
+    isNoInsulinEntry(a) ? 'No Insulin Due' : statusLabel(a.status, !!(a.valueLabelSnapshot || '').trim());
   /** The recorded reading for a check-style order, e.g. "10 mL". Empty for an
    *  ordinary dose. The number IS the record on a check, so it must show
    *  wherever the entry is summarised, not only in the month grid. */
@@ -373,7 +378,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
     return (
       <>
         <span style={statusPill[a.status] || statusPill.given}>
-          {statusLabel(a.status, !!(a.valueLabelSnapshot || '').trim())}
+          {entryStatusLabel(a)}
           {readingOf(a) ? ` ${readingOf(a)}` : ''}
           {a.status === 'given' && a.actualTime ? ` ${a.actualTime}` : ''}
           {a.initials ? ` · ${a.initials}` : ''}
@@ -389,6 +394,15 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
           {a.administeredByType !== 'nurse' && a.documentedByName ? ` · documented by ${a.documentedByName}` : ''}
           {a.noNoteAttestation ? ' · attested (no note was on file)' : ''}
         </div>
+        {/* Sliding scale: the reading, what the scale called for, what was given. */}
+        {(a.glucoseReading || '').trim() && (
+          <div style={glucoseLine}>
+            Blood glucose {a.glucoseReading} {GLUCOSE_UNIT}
+            {a.scaleRangeSnapshot ? ` · Scale: ${a.scaleRangeSnapshot}` : ''}
+            {a.status === 'given' && !isNoInsulinEntry(a) ? ` · ${a.doseSnapshot} units given` : ''}
+            {(a.scaleDeviationReason || '').trim() ? ` · Differs from the scale: ${a.scaleDeviationReason}` : ''}
+          </div>
+        )}
         {/* Result line whenever a given dose HAS one (matches the grid + PDF);
             the pending nag stays scoped to true PRN slots. */}
         {a.status === 'given' && (a.outcome || '').trim() ? (
@@ -464,6 +478,12 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
         {amendFor === a.id && (
           <div style={amendBox}>
             <div style={amendTitle}>Correct This Entry</div>
+            {(a.glucoseReading || '').trim() && (
+              <div style={{ fontSize: 12.5, color: '#5c6b7a', lineHeight: 1.45, marginBottom: 10 }}>
+                The blood glucose reading and the units given stay as charted. If either is wrong, use{' '}
+                <em>Remove — Entered in Error</em> instead and chart the dose again.
+              </div>
+            )}
             <div style={amendStatusRow}>
               {(['given', 'held', 'refused'] as const).map((s) => (
                 <button
@@ -641,6 +661,11 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
                         {order.units ? ` ${order.units}` : ''} · {order.route}
                         {describeFrequency(order) ? ` · ${describeFrequency(order)}` : ''}
                       </div>
+                      {parseSlidingScale(order.slidingScale).length > 0 && (
+                        <div style={glucoseLine}>
+                          Sliding scale: {summarizeSlidingScale(parseSlidingScale(order.slidingScale))}
+                        </div>
+                      )}
                     </div>
                     <button
                       type="button"
@@ -654,7 +679,12 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
 
                   {slotRows.map(({ slot, admin }, i) => (
                     <div key={`${slot}-${i}`} style={slotRow}>
-                      <span style={slot === 'PRN' ? prnBadge : slotBadge}>{slot === 'PRN' ? 'PRN' : slot}</span>
+                      <span style={slot === 'PRN' ? prnBadge : slotBadge}>
+                        {slot === 'PRN' ? 'PRN' : slot}
+                        {slotAnchor(order, slot) && (
+                          <span style={{ display: 'block', fontSize: 10, fontWeight: 600 }}>{slotAnchor(order, slot)}</span>
+                        )}
+                      </span>
                       {admin ? (
                         <div style={{ flex: 1, minWidth: 0 }}>{renderAdminDetails(admin)}</div>
                       ) : (
@@ -674,8 +704,11 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
                           <div key={a.id} style={timelineRow}>
                             <span style={timelineDate}>{dayLabel(a.date).replace(`, ${a.date.slice(0, 4)}`, '')}</span>
                             <span style={statusPill[a.status] || statusPill.given}>
-                              {statusLabel(a.status, !!(a.valueLabelSnapshot || '').trim())}
+                              {entryStatusLabel(a)}
                               {readingOf(a) ? ` ${readingOf(a)}` : ''}
+                              {(a.glucoseReading || '').trim()
+                                ? ` BG ${a.glucoseReading}${a.status === 'given' && !isNoInsulinEntry(a) ? `, ${a.doseSnapshot}u` : ''}`
+                                : ''}
                               {a.status === 'given' && a.actualTime ? ` ${a.actualTime}` : ''}
                               {a.initials ? ` · ${a.initials}` : ''}
                             </span>
@@ -751,6 +784,7 @@ const statusPill: Record<string, CSSProperties> = {
 };
 const notDocPill: CSSProperties = { ...basePill, background: '#f1f3f5', color: '#7f8c8d', fontWeight: 600 };
 const byLine: CSSProperties = { fontSize: 12, color: '#7f8c8d', marginTop: 4, lineHeight: 1.4 };
+const glucoseLine: CSSProperties = { fontSize: 12, color: '#1a3a5c', marginTop: 4, lineHeight: 1.4 };
 const timelineBox: CSSProperties = { marginTop: 8, borderTop: '1px solid #e5e7eb', paddingTop: 8 };
 const timelineRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: '1px solid #f7f8f9' };
 const timelineDate: CSSProperties = { fontSize: 12.5, color: '#5c6b7a', fontWeight: 600, minWidth: 86 };

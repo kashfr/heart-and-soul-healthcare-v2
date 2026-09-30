@@ -23,6 +23,13 @@ import {
   parseHHMM,
   parseValueOptions,
   resolveCurrentAdministrations,
+  anchorDefaultTime,
+  cleanTimeLabels,
+  describeSlot,
+  isPristineSchedule,
+  slotAnchor,
+  suggestedScheduleFor,
+  timeLabelsFromRows,
   type MarAdminFieldInput,
   type MarAdminFieldMeta,
 } from './marShared';
@@ -927,15 +934,154 @@ describe('regimenFields', () => {
       route: 'PO (by mouth)',
       frequencyLabel: 'Every 5 hours',
       scheduledTimes: ['08:00', '13:00'],
+      timeLabels: {},
       isPRN: false,
       valueLabel: '',
       valueUnit: '',
+      slidingScale: [],
     });
     expect(regimenFields({ isPRN: true, scheduledTimes: ['08:00'] }).scheduledTimes).toEqual([]);
+  });
+
+  it('carries meal anchors and the sliding scale, and drops anchors for times not on the schedule', () => {
+    const f = regimenFields({
+      medName: 'Insulin lispro',
+      scheduledTimes: ['07:30', '17:00'],
+      timeLabels: { '07:30': 'Before Breakfast', '12:00': 'Before Lunch', '17:00': 'Nonsense' },
+      slidingScale: [
+        { min: 0, max: 150, units: 0, instruction: '' },
+        { min: 151, max: null, units: 2, instruction: '' },
+      ],
+    });
+    expect(f.timeLabels).toEqual({ '07:30': 'Before Breakfast' });
+    expect(f.slidingScale).toHaveLength(2);
+    expect(regimenFields({ isPRN: true, scheduledTimes: ['07:30'], timeLabels: { '07:30': 'Before Breakfast' } }).timeLabels).toEqual({});
   });
 
   it('round-trips with regimenFieldsChanged: a snapshot of an order changes nothing', () => {
     const order = { medName: 'Keppra', dose: '10', units: 'mL', route: 'G-tube', frequencyLabel: 'BID', scheduledTimes: ['08:00', '20:00'], isPRN: false };
     expect(regimenFieldsChanged(order, regimenFields(order))).toEqual([]);
+  });
+});
+
+describe('meal-anchored scheduled times', () => {
+  const order = { timeLabels: { '07:30': 'Before Breakfast', '21:00': 'At Bedtime' } };
+
+  it('reads a slot as the instruction with its clock time', () => {
+    expect(slotAnchor(order, '07:30')).toBe('Before Breakfast');
+    expect(describeSlot(order, '07:30')).toBe('Before Breakfast (07:30)');
+    expect(describeSlot(order, '12:00')).toBe('12:00');
+    expect(describeSlot({}, '08:00')).toBe('08:00');
+    expect(describeSlot(null, 'PRN')).toBe('PRN');
+  });
+
+  it('ignores a stored label that is not a known anchor', () => {
+    expect(slotAnchor({ timeLabels: { '08:00': 'Whenever' } }, '08:00')).toBe('');
+  });
+
+  it('keeps only known anchors for times on the schedule, and none for PRN', () => {
+    expect(
+      cleanTimeLabels({ '07:30': 'Before Breakfast', '09:00': 'Before Lunch', '17:00': 'junk' }, ['07:30', '17:00'], false),
+    ).toEqual({ '07:30': 'Before Breakfast' });
+    expect(cleanTimeLabels({ '07:30': 'Before Breakfast' }, ['07:30'], true)).toEqual({});
+    expect(cleanTimeLabels(null, ['07:30'], false)).toEqual({});
+    expect(cleanTimeLabels(['Before Breakfast'], ['07:30'], false)).toEqual({});
+  });
+
+  it('builds the label map from the form rows, skipping blank rows', () => {
+    expect(timeLabelsFromRows(['07:30', '', '20:00'], ['Before Breakfast', 'Before Lunch', ''])).toEqual({
+      '07:30': 'Before Breakfast',
+    });
+  });
+
+  it('suggests a schedule only for frequencies that imply one', () => {
+    expect(suggestedScheduleFor('Before meals (AC)')).toEqual({
+      times: ['07:30', '11:30', '17:00'],
+      anchors: ['Before Breakfast', 'Before Lunch', 'Before Dinner'],
+    });
+    expect(suggestedScheduleFor('Before meals and at bedtime')?.anchors).toEqual([
+      'Before Breakfast',
+      'Before Lunch',
+      'Before Dinner',
+      'At Bedtime',
+    ]);
+    expect(suggestedScheduleFor('At bedtime')).toEqual({ times: ['21:00'], anchors: ['At Bedtime'] });
+    expect(suggestedScheduleFor('Twice daily (BID)')).toBeNull();
+    expect(anchorDefaultTime('')).toBe('');
+  });
+
+  it('only an untouched schedule may be replaced by a suggestion', () => {
+    expect(isPristineSchedule(['08:00'], [''])).toBe(true);
+    expect(isPristineSchedule([''], [])).toBe(true);
+    expect(isPristineSchedule(['09:00'], [''])).toBe(false);
+    expect(isPristineSchedule(['08:00', '20:00'], ['', ''])).toBe(false);
+    expect(isPristineSchedule(['08:00'], ['Before Breakfast'])).toBe(false);
+  });
+
+  it('tying a time to a meal (or untying it) is a schedule change', () => {
+    const plain = { medName: 'Insulin', scheduledTimes: ['07:30'] };
+    const anchored = { ...plain, timeLabels: { '07:30': 'Before Breakfast' } };
+    expect(regimenFieldsChanged(plain, anchored)).toEqual(['scheduledTimes']);
+    expect(regimenFieldsChanged(anchored, plain)).toEqual(['scheduledTimes']);
+    expect(regimenFieldsChanged(anchored, { ...anchored })).toEqual([]);
+    // A label for a time that is not on the schedule is storage noise.
+    expect(regimenFieldsChanged(plain, { ...plain, timeLabels: { '12:00': 'Before Lunch' } })).toEqual([]);
+  });
+});
+
+describe('sliding scale on the regimen and the administration record', () => {
+  const scale = [
+    { min: 0, max: 150, units: 0, instruction: '' },
+    { min: 151, max: 200, units: 2, instruction: '' },
+    { min: 201, max: null, units: 4, instruction: 'Call the physician' },
+  ];
+  const order = { medName: 'Insulin lispro', dose: 'Per sliding scale', scheduledTimes: ['07:30'], slidingScale: scale };
+
+  it('editing the scale is a regimen change; re-saving it is not', () => {
+    expect(regimenFieldsChanged(order, { ...order, slidingScale: scale.map((r) => ({ ...r })) })).toEqual([]);
+    const moved = scale.map((r) => (r.min === 151 ? { ...r, units: 3 } : r));
+    expect(regimenFieldsChanged(order, { ...order, slidingScale: moved })).toEqual(['slidingScale']);
+    expect(regimenFieldsChanged(order, { ...order, slidingScale: [] })).toEqual(['slidingScale']);
+    expect(describeRegimenChanges(['slidingScale'])).toBe('sliding scale');
+  });
+
+  it('snapshots the reading, what the scale called for, and the units given', () => {
+    const f = buildMarAdminFields(
+      input({
+        dose: '4',
+        units: 'units',
+        glucoseReading: ' 232 ',
+        scaleDose: '4',
+        scaleRange: 'Above 200 mg/dL: 4 units. Call the physician',
+        scaleDeviationReason: 'should be dropped: the amount matches the scale',
+      }),
+      meta,
+    );
+    expect(f.glucoseReading).toBe('232');
+    expect(f.scaleDose).toBe('4');
+    expect(f.scaleRangeSnapshot).toBe('Above 200 mg/dL: 4 units. Call the physician');
+    expect(f.doseSnapshot).toBe('4');
+    expect(f.scaleDeviationReason).toBe('');
+  });
+
+  it('keeps the deviation reason only when a given amount differs from the scale', () => {
+    const differs = buildMarAdminFields(
+      input({ dose: '6', glucoseReading: '232', scaleDose: '4', scaleDeviationReason: ' one-time phone order ' }),
+      meta,
+    );
+    expect(differs.scaleDeviationReason).toBe('one-time phone order');
+    const held = buildMarAdminFields(
+      input({ status: 'held', reason: 'NPO', dose: 'Per sliding scale', glucoseReading: '232', scaleDose: '4', scaleDeviationReason: 'x' }),
+      meta,
+    );
+    expect(held.glucoseReading).toBe('232');
+    expect(held.scaleDeviationReason).toBe('');
+  });
+
+  it('an ordinary dose carries no sliding-scale fields', () => {
+    const f = buildMarAdminFields(input({ scaleDose: '4', scaleRange: 'x' }), meta);
+    expect(f.glucoseReading).toBe('');
+    expect(f.scaleDose).toBe('');
+    expect(f.scaleRangeSnapshot).toBe('');
   });
 });

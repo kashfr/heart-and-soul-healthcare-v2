@@ -14,6 +14,8 @@ export type MarCellStatus = 'given' | 'held' | 'refused' | 'none' | 'inactive';
 
 export interface MarPdfCell {
   label: string;
+  /** Second line under the label: the units given on a sliding-scale dose. */
+  sub?: string;
   status: MarCellStatus;
   star: boolean; // administered by family/proxy; see log
 }
@@ -28,7 +30,11 @@ export interface MarPdfRow {
   // the route: rows are wrap={false}, so an unbounded line would silently
   // clip on a survey document.
   medLine3?: string;
+  /** The order's sliding scale in full (never truncated: it is the dose). */
+  medScale?: string;
   slot: string; // 'HH:MM' or 'PRN'
+  /** The meal the time is tied to ("Before Breakfast"), printed under it. */
+  slotLabel?: string;
   isPRN: boolean; // PRN rows render in their own labeled section (D.6.b)
   cells: MarPdfCell[]; // one per day of the month
 }
@@ -45,6 +51,18 @@ export interface MarPdfLogEntry {
   result: string;
   initials: string;
   amendment?: string; // correction note (append-only audit trail), if this entry amends another
+}
+
+/** One row of the blood glucose / sliding scale log. */
+export interface MarPdfGlucoseEntry {
+  date: string;
+  time: string;
+  med: string;
+  reading: string;
+  scale: string; // the matched range, as ordered
+  given: string; // units given, "No insulin due", or held / refused + reason
+  by: string;
+  initials: string;
 }
 
 export interface MarPDFProps {
@@ -64,6 +82,7 @@ export interface MarPDFProps {
   rows: MarPdfRow[];
   legend: Array<{ initials: string; name: string }>;
   log: MarPdfLogEntry[];
+  glucoseLog?: MarPdfGlucoseEntry[];
   generatedAt: string;
   generatedBy: string;
 }
@@ -118,11 +137,10 @@ const s = StyleSheet.create({
     borderColor: BORDER,
     paddingVertical: 2,
     paddingHorizontal: 1,
-    fontSize: 6.5,
-    textAlign: 'center',
-    fontFamily: 'Helvetica-Bold',
-    color: NAVY,
   },
+  timeText: { fontSize: 6.5, textAlign: 'center', fontFamily: 'Helvetica-Bold', color: NAVY },
+  // The meal a time is tied to ("Before Breakfast"), under the clock time.
+  timeLabel: { fontSize: 5, textAlign: 'center', color: '#5c6b7a', marginTop: 1 },
   dayCell: {
     borderWidth: 0.5,
     borderColor: BORDER,
@@ -136,6 +154,10 @@ const s = StyleSheet.create({
   medMeta: { fontSize: 6, color: '#5c6b7a', marginTop: 1 },
   // Special instructions / PRN purpose (manual D.6.a.ii.e, D.6.b.ii.d).
   medInstructions: { fontSize: 6, color: '#2c3e50', marginTop: 1, fontFamily: 'Helvetica-Oblique' },
+  // The sliding scale, in full. It is the dose on the row, so it is never cut.
+  medScale: { fontSize: 6, color: NAVY, marginTop: 1 },
+  // Units given, under the blood glucose reading in a sliding-scale cell.
+  daySub: { fontSize: 5.5 },
   // Full-width section banner separating the routine portion of the grid
   // from the PRN / as-needed portion (manual D.6.a / D.6.b).
   sectionRow: {
@@ -219,6 +241,8 @@ const CELL_FG: Record<MarCellStatus, string> = {
 
 // Log-table column widths (landscape usable width ≈ 748pt).
 const LOG_W = [56, 34, 140, 44, 116, 150, 128, 36];
+// Blood glucose log column widths (same usable width).
+const GLUCOSE_W = [56, 34, 130, 66, 170, 150, 106, 36];
 
 export default function MarPDF({
   orgName,
@@ -228,6 +252,7 @@ export default function MarPDF({
   rows,
   legend,
   log,
+  glucoseLog = [],
   generatedAt,
   generatedBy,
 }: MarPDFProps) {
@@ -315,9 +340,13 @@ export default function MarPDF({
               <View style={s.medCell}>
                 <Text style={s.medName}>{row.medLine1}</Text>
                 <Text style={s.medMeta}>{row.medLine2}</Text>
+                {row.medScale ? <Text style={s.medScale}>{row.medScale}</Text> : null}
                 {row.medLine3 ? <Text style={s.medInstructions}>{row.medLine3}</Text> : null}
               </View>
-              <Text style={s.timeCell}>{row.slot}</Text>
+              <View style={s.timeCell}>
+                <Text style={s.timeText}>{row.slot}</Text>
+                {row.slotLabel ? <Text style={s.timeLabel}>{row.slotLabel}</Text> : null}
+              </View>
               {row.cells.map((cell, ci) => (
                 <View key={ci} style={[s.dayCell, { width: dayW, backgroundColor: CELL_BG[cell.status] }]}>
                   {cell.label ? (
@@ -337,10 +366,18 @@ export default function MarPDF({
                         </Text>
                       </View>
                     ) : (
-                      <Text style={[s.dayText, { color: CELL_FG[cell.status] }]}>
-                        {cell.label}
-                        {cell.star ? '*' : ''}
-                      </Text>
+                      <>
+                        <Text style={[s.dayText, { color: CELL_FG[cell.status] }]}>
+                          {cell.label}
+                          {cell.star && !cell.sub ? '*' : ''}
+                        </Text>
+                        {cell.sub ? (
+                          <Text style={[s.daySub, { color: CELL_FG[cell.status] }]}>
+                            {cell.sub}
+                            {cell.star ? '*' : ''}
+                          </Text>
+                        ) : null}
+                      </>
                     )
                   ) : null}
                 </View>
@@ -357,6 +394,9 @@ export default function MarPDF({
           E. Reasons a dose is held, refused, or otherwise not received are documented per dose in the log
           below (examples: refused, hospital, NPO (nothing by mouth), home visit, day service). PRN doses:
           reason and result are recorded in the log.
+          {glucoseLog.length > 0
+            ? ' F. Sliding scale: the box shows the blood glucose reading over the units given (u); each entry is listed in the blood glucose log below.'
+            : ''}
         </Text>
 
         {/* Initial / signature legend */}
@@ -408,6 +448,34 @@ export default function MarPDF({
             ))}
           </View>
         )}
+
+        {/* Blood glucose & sliding scale log */}
+        {glucoseLog.length > 0 ? (
+          <>
+            <Text style={s.sectionTitle}>Blood Glucose &amp; Sliding Scale Log</Text>
+            <View>
+              <View style={s.row}>
+                {['Date', 'Time', 'Medication', 'Blood glucose', 'Scale called for', 'Given', 'Administered by', 'Initials'].map(
+                  (h, i) => (
+                    <Text key={h} style={[s.logTh, { width: GLUCOSE_W[i] }]}>{h}</Text>
+                  ),
+                )}
+              </View>
+              {glucoseLog.map((e, i) => (
+                <View key={i} style={s.row} wrap={false}>
+                  <Text style={[s.logTd, { width: GLUCOSE_W[0] }]}>{e.date}</Text>
+                  <Text style={[s.logTd, { width: GLUCOSE_W[1] }]}>{e.time}</Text>
+                  <Text style={[s.logTd, { width: GLUCOSE_W[2] }]}>{e.med}</Text>
+                  <Text style={[s.logTd, { width: GLUCOSE_W[3] }]}>{e.reading}</Text>
+                  <Text style={[s.logTd, { width: GLUCOSE_W[4] }]}>{e.scale}</Text>
+                  <Text style={[s.logTd, { width: GLUCOSE_W[5] }]}>{e.given}</Text>
+                  <Text style={[s.logTd, { width: GLUCOSE_W[6] }]}>{e.by}</Text>
+                  <Text style={[s.logTd, { width: GLUCOSE_W[7] }]}>{e.initials}</Text>
+                </View>
+              ))}
+            </View>
+          </>
+        ) : null}
 
         <View style={s.footer} fixed>
           <Text>

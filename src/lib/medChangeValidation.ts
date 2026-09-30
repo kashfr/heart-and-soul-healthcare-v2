@@ -9,6 +9,7 @@
  * modals; change the wording only with the owner.
  */
 import { looksLikeUnknownPhysician, parseValueOptions } from './marShared';
+import { validateSlidingScaleForm, type SlidingScaleFormRow } from './slidingScale';
 
 export type MedChangeMode = 'add' | 'change' | 'discontinue';
 
@@ -17,6 +18,7 @@ export type MedChangeField =
   | 'medName'
   | 'dose'
   | 'units'
+  | 'slidingScale'
   | 'route'
   | 'times'
   | 'indication'
@@ -35,6 +37,7 @@ export const MED_CHANGE_FIELD_ORDER: readonly MedChangeField[] = [
   'medName',
   'dose',
   'units',
+  'slidingScale',
   'route',
   'times',
   'indication',
@@ -71,6 +74,10 @@ export interface MedChangeFormValues {
   valueLabel?: string;
   /** Comma-separated allowed readings for a check-style order. */
   valueOptions?: string;
+  /** Sliding-scale order: the dose comes from a blood glucose table, so dose
+   *  and units are not asked for and the table itself must be complete. */
+  slidingScaleOn?: boolean;
+  slidingScaleRows?: SlidingScaleFormRow[];
   /** Add-only "I administered a dose this shift" block (note modal only). */
   doseGiven?: boolean;
   doseByType?: string;
@@ -97,11 +104,15 @@ export function validateMedChangeForm(v: MedChangeFormValues): MedChangeFieldErr
 
   // A check records a reading rather than an amount, so it needs no dose or
   // units; requiring them would force junk values onto the order.
-  const isCheck = !!(v.valueLabel || '').trim();
-  const requiredMsg = isCheck ? REQUIRED_CHECK_FIELDS : REQUIRED_MED_FIELDS;
+  const isScale = v.slidingScaleOn === true;
+  const isCheck = !isScale && !!(v.valueLabel || '').trim();
+  const requiredMsg = isCheck || isScale ? REQUIRED_CHECK_FIELDS : REQUIRED_MED_FIELDS;
   if (!v.medName.trim()) errors.medName = requiredMsg;
   if (!v.route.trim()) errors.route = requiredMsg;
-  if (!isCheck) {
+  if (isScale) {
+    const scaleError = validateSlidingScaleForm(v.slidingScaleRows || []);
+    if (scaleError) errors.slidingScale = scaleError;
+  } else if (!isCheck) {
     if (!v.dose.trim()) errors.dose = REQUIRED_MED_FIELDS;
     if (!v.units.trim()) errors.units = REQUIRED_MED_FIELDS;
   }
@@ -151,6 +162,7 @@ export function medChangeServerErrorField(message: string): MedChangeField | nul
   if (m.startsWith('choose the medication')) return 'targetOrderId';
   if (m.startsWith('medication, dose, units, and route')) return 'medName';
   if (m.includes('allowed readings')) return 'valueOptions';
+  if (m.includes('sliding scale')) return 'slidingScale';
   if (m.includes('signed on')) return 'orderSignedDate';
   if (m.includes('physician')) return 'orderingPhysician';
   if (m.includes('scheduled time')) return 'times';
