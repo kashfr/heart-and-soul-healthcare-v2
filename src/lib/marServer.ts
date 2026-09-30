@@ -3,6 +3,7 @@ import { FieldValue, type DocumentData, type DocumentReference } from 'firebase-
 import { adminDb } from './firebaseAdmin';
 import type { AuthedCaller } from './adminAuthGuard';
 import {
+  amendCarryForwardFields,
   buildMarAdminFields,
   decideNurseDoseGate,
   deriveInitials,
@@ -713,6 +714,11 @@ export async function amendMarAdministration(
       isPRN,
       indication: String(orig.indicationSnapshot || ''),
       noNoteAttestation: orig.noNoteAttestation === true,
+      // The amend form can't edit the parameters snapshot, the reading checked
+      // against them, or a check-style order's measurement, so they ride along
+      // from the original; otherwise the rebuild blanks them and the reading
+      // vanishes from the current record (grid cell, chart, printed MAR).
+      ...amendCarryForwardFields(orig),
     },
     {
       patientId: String(orig.patientId || ''),
