@@ -57,9 +57,13 @@ request of the nurse supervisors.
 
 ## Credential and co-signature
 
-- `q12_credential` is the supervisor's **license**, a fixed choice of RN or
-  LPN (never free text). `sv_credentialsPrinted` is optional wording for the
-  signature line ("DNP, RN"); the PDF and the admin view print it when set.
+- The supervisor's name (`q11_nurseName`), license (`q12_credential`, RN
+  or LPN) and printed credentials (`sv_credentialsPrinted`, e.g. "DNP, RN")
+  all come from the signed-in staff profile and are read-only on the form,
+  the same as the progress note. Nothing about who signed is ever typed:
+  the profile is the digital signature. A wrong name or credential is fixed
+  on the profile under Staff & Roles, not on the form. The PDF and the admin
+  view print the credentials as they appear on the profile.
 - An RN's supervisory visit needs no co-signature. An LPN's does, by an RN,
   through the same co-sign flow as shift notes (Submissions, Co-sign).
 - The rule that decides this is `credentialRequiresCosign` in
