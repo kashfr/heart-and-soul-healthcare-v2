@@ -114,3 +114,32 @@ describe('medChangeServerErrorField', () => {
     expect(medChangeServerErrorField('')).toBeNull();
   });
 });
+
+describe('sliding-scale orders', () => {
+  const rows = [
+    { upTo: '150', units: '0', instruction: '' },
+    { upTo: '200', units: '2', instruction: '' },
+    { upTo: '', units: '4', instruction: 'Call the physician' },
+  ];
+
+  it('needs no dose or units, but does need a complete scale', () => {
+    expect(validateMedChangeForm(base({ dose: '', units: '', slidingScaleOn: true, slidingScaleRows: rows }))).toEqual({});
+    const e = validateMedChangeForm(
+      base({ dose: '', units: '', slidingScaleOn: true, slidingScaleRows: [rows[0], { ...rows[1], units: '' }, rows[2]] }),
+    );
+    expect(e.dose).toBeUndefined();
+    expect(e.units).toBeUndefined();
+    expect(e.slidingScale).toMatch(/range 2/i);
+  });
+
+  it('still requires dose and units when the scale is off', () => {
+    const e = validateMedChangeForm(base({ dose: '', units: '', slidingScaleOn: false, slidingScaleRows: rows }));
+    expect(e.dose).toBeTruthy();
+    expect(e.slidingScale).toBeUndefined();
+  });
+
+  it('lands a server rejection of the scale on the scale', () => {
+    expect(medChangeServerErrorField('Sliding scale ranges must run in order with no gaps or overlaps.')).toBe('slidingScale');
+    expect(medChangeServerErrorField('A sliding scale needs at least two blood glucose ranges.')).toBe('slidingScale');
+  });
+});

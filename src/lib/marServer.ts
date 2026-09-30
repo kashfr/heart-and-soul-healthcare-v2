@@ -4,6 +4,7 @@ import { adminDb } from './firebaseAdmin';
 import type { AuthedCaller } from './adminAuthGuard';
 import {
   buildMarAdminFields,
+  cleanTimeLabels,
   decideNurseDoseGate,
   deriveInitials,
   isSameDayAmendable,
@@ -12,6 +13,7 @@ import {
   regimenFieldsChanged,
 } from './marShared';
 import { agencyDayISO } from './clientDashboardShared';
+import { parseSlidingScale, SLIDING_SCALE_DOSE_LABEL } from './slidingScale';
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** Return `value` if it is an ISO YYYY-MM-DD date string, else `fallback`. Both
@@ -51,6 +53,8 @@ interface ProposedMedShape {
   route?: string;
   frequencyLabel?: string;
   scheduledTimes?: string[];
+  timeLabels?: Record<string, string>;
+  slidingScale?: unknown;
   isPRN?: boolean;
   prnFrequencyLabel?: string;
   indication?: string;
@@ -65,6 +69,33 @@ interface ProposedMedShape {
   notes?: string;
 }
 
+/** Dose / units as stored: a sliding-scale order carries no fixed dose, so it
+ *  reads "Per sliding scale" no matter what the payload typed there. */
+function doseFields(p: ProposedMedShape): { dose: string; units: string } {
+  return parseSlidingScale(p.slidingScale).length > 0
+    ? { dose: SLIDING_SCALE_DOSE_LABEL, units: '' }
+    : { dose: String(p.dose || ''), units: String(p.units || '') };
+}
+
+/** The regimen half of a proposal, in the shape the comparison reads. One
+ *  place so the "did the regimen move?" check and the same-day amendment write
+ *  can never look at different field lists. */
+function regimenOf(p: ProposedMedShape) {
+  return {
+    medName: p.medName,
+    ...doseFields(p),
+    route: p.route,
+    frequencyLabel: p.frequencyLabel,
+    scheduledTimes: p.scheduledTimes,
+    timeLabels: p.timeLabels,
+    isPRN: p.isPRN,
+    prnFrequencyLabel: p.prnFrequencyLabel,
+    valueLabel: p.valueLabel,
+    valueUnit: p.valueUnit,
+    slidingScale: p.slidingScale,
+  };
+}
+
 function orderFromProposed(
   patientId: string,
   p: ProposedMedShape,
@@ -72,14 +103,16 @@ function orderFromProposed(
   caller: AuthedCaller,
   extra: Record<string, unknown> = {},
 ) {
+  const scheduledTimes = p.isPRN ? [] : Array.isArray(p.scheduledTimes) ? p.scheduledTimes : [];
   return {
     patientId,
     medName: String(p.medName || ''),
-    dose: String(p.dose || ''),
-    units: String(p.units || ''),
+    ...doseFields(p),
     route: String(p.route || ''),
     frequencyLabel: String(p.frequencyLabel || ''),
-    scheduledTimes: p.isPRN ? [] : Array.isArray(p.scheduledTimes) ? p.scheduledTimes : [],
+    scheduledTimes,
+    timeLabels: cleanTimeLabels(p.timeLabels, scheduledTimes, !!p.isPRN),
+    slidingScale: parseSlidingScale(p.slidingScale),
     isPRN: !!p.isPRN,
     prnFrequencyLabel: p.isPRN ? String(p.prnFrequencyLabel || '').trim() : '',
     indication: String(p.indication || ''),
@@ -185,18 +218,7 @@ async function applyChangeInBatch(
     // Does this edit change HOW the med is given, or only who ordered it and
     // why? Re-derived here rather than trusted from the client, so a crafted
     // payload can't turn a dose change into a silent in-place edit.
-    const regimenChanges = regimenFieldsChanged(old, {
-      medName: p.medName,
-      dose: p.dose,
-      units: p.units,
-      route: p.route,
-      frequencyLabel: p.frequencyLabel,
-      scheduledTimes: p.scheduledTimes,
-      isPRN: p.isPRN,
-      prnFrequencyLabel: p.prnFrequencyLabel,
-      valueLabel: p.valueLabel,
-      valueUnit: p.valueUnit,
-    });
+    const regimenChanges = regimenFieldsChanged(old, regimenOf(p));
 
     if (regimenChanges.length === 0) {
       // CORRECTION: nothing about the administration changed, so the order is
@@ -232,17 +254,7 @@ async function applyChangeInBatch(
       // they were before. See isSameDayAmendable for why both conditions are
       // required.
       batch.update(oldRef, {
-        ...regimenFields({
-          medName: p.medName,
-          dose: p.dose,
-          units: p.units,
-          route: p.route,
-          frequencyLabel: p.frequencyLabel,
-          scheduledTimes: p.scheduledTimes,
-          isPRN: p.isPRN,
-          valueLabel: p.valueLabel,
-          valueUnit: p.valueUnit,
-        }),
+        ...regimenFields(regimenOf(p)),
         ...correctionFields(p),
         lastEditedAt: FieldValue.serverTimestamp(),
         lastEditedBy: caller.uid,
@@ -409,13 +421,17 @@ export interface StandaloneChangeResult {
  *  storage on the change-request doc (Firestore rejects undefined). The ORDER
  *  itself is still built by orderFromProposed, which coerces independently. */
 function cleanProposed(p: ProposedMedShape) {
+  const scheduledTimes = p.isPRN ? [] : Array.isArray(p.scheduledTimes) ? p.scheduledTimes.filter(Boolean) : [];
+  const { dose, units } = doseFields(p);
   return {
     medName: String(p.medName || '').trim(),
-    dose: String(p.dose || '').trim(),
-    units: String(p.units || '').trim(),
+    dose: dose.trim(),
+    units: units.trim(),
     route: String(p.route || '').trim(),
     frequencyLabel: String(p.frequencyLabel || '').trim(),
-    scheduledTimes: p.isPRN ? [] : Array.isArray(p.scheduledTimes) ? p.scheduledTimes.filter(Boolean) : [],
+    scheduledTimes,
+    timeLabels: cleanTimeLabels(p.timeLabels, scheduledTimes, !!p.isPRN),
+    slidingScale: parseSlidingScale(p.slidingScale),
     isPRN: !!p.isPRN,
     prnFrequencyLabel: p.isPRN ? String(p.prnFrequencyLabel || '').trim() : '',
     indication: String(p.indication || '').trim(),
@@ -713,6 +729,14 @@ export async function amendMarAdministration(
       isPRN,
       indication: String(orig.indicationSnapshot || ''),
       noNoteAttestation: orig.noNoteAttestation === true,
+      // A correction changes status / time / who gave it, never the meter
+      // reading or what the scale called for, so the sliding-scale snapshot
+      // rides forward untouched. (A wrong reading is fixed by removing the
+      // entry as entered in error and charting it again.)
+      glucoseReading: String(orig.glucoseReading || ''),
+      scaleDose: String(orig.scaleDose || ''),
+      scaleRange: String(orig.scaleRangeSnapshot || ''),
+      scaleDeviationReason: String(orig.scaleDeviationReason || ''),
     },
     {
       patientId: String(orig.patientId || ''),

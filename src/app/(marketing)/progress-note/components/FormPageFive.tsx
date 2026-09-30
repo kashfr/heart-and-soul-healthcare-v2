@@ -15,7 +15,15 @@ import {
   type MarChangeRequest,
   type MarAdministration,
 } from '@/lib/mar';
-import { classifyDoseAgainstShift, doseTimeStatus, resolveCurrentAdministrations, type DoseTimeStatus } from '@/lib/marShared';
+import { classifyDoseAgainstShift, doseTimeStatus, resolveCurrentAdministrations, slotAnchor, type DoseTimeStatus } from '@/lib/marShared';
+import {
+  lookupScaleDose,
+  parseSlidingScale,
+  resolveScaleCharting,
+  scaleMarkProblems,
+  type SlidingScaleRow,
+} from '@/lib/slidingScale';
+import SlidingScaleCharting from '@/components/mar/SlidingScaleCharting';
 import MedChart from './MedChart';
 import { formatDateUS } from '@/lib/dateFormat';
 import {
@@ -217,6 +225,11 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
   const marPrnTextVal = String(watch('q43_prnMeds') || '');
   const medNoteVisible = medNoteOpen || marSchedTextVal.trim() !== '';
 
+  // The sliding scale on a mark's order ([] when it has none, or the order is
+  // no longer on file).
+  const scaleRowsFor = (orderId: string): SlidingScaleRow[] =>
+    orderId ? parseSlidingScale(marAllOrders.find((o) => o.id === orderId)?.slidingScale) : [];
+
   // One row per scheduled time (PRN orders get a single 'PRN' row).
   const marRows: { order: MarOrder; slot: string }[] = [];
   for (const o of marApplicableOrders) {
@@ -229,7 +242,19 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
   // resumed "extra"/unlisted marks that have no current order row.
   const patchMarkByKey = (key: string, fallback: MarAdminRecord, patch: Partial<MarAdminRecord>) => {
     const existing = marAdminState[key] || fallback;
-    setMarAdmin(key, { ...existing, ...patch });
+    const next = { ...existing, ...patch };
+    // Sliding-scale order: look the dose up from the reading HERE, where the
+    // order's scale is at hand, and keep the answer on the mark. The submit
+    // gate and the write read only the mark (this card may be collapsed or
+    // unmounted by then).
+    const rows = scaleRowsFor(next.orderId);
+    if (rows.length > 0) {
+      const lookup = lookupScaleDose(rows, next.glucoseReading);
+      next.hasSlidingScale = true;
+      next.scaleDose = lookup.scaleDose;
+      next.scaleRange = lookup.scaleRange;
+    }
+    setMarAdmin(key, next);
   };
 
   const updateMark = (order: MarOrder, slot: string, patch: Partial<MarAdminRecord>) => {
@@ -328,8 +353,23 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
     indication?: string;
     parameters?: string;
     prnGivenToday?: number;
+    /** The order's sliding scale; non-empty makes this a sliding-scale card. */
+    scaleRows?: SlidingScaleRow[];
   }) => {
     const status = opts.rec?.status || '';
+    // Sliding-scale order: the nurse types the meter reading and the dose is
+    // looked up from the order's scale (never read off the table by eye).
+    const scaleRows = opts.scaleRows || [];
+    const isScale = scaleRows.length > 0;
+    const scaleEntry = {
+      glucoseReading: opts.rec?.glucoseReading || '',
+      customDose: opts.rec?.scaleCustomDose === true,
+      unitsGiven: opts.rec?.scaleUnitsGiven || '',
+      deviationReason: opts.rec?.scaleDeviationReason || '',
+    };
+    const scaleResult = isScale ? resolveScaleCharting(scaleRows, status, scaleEntry) : null;
+    const noInsulinDue =
+      isScale && !scaleEntry.customDose && lookupScaleDose(scaleRows, scaleEntry.glucoseReading).row?.units === 0;
     const isNurseAdmin = !opts.rec || !opts.rec.administeredByType || opts.rec.administeredByType === 'nurse';
     const indication = (opts.indication || '').trim();
     // Hold / check-before-giving criteria from the order. Shown on the card
@@ -387,6 +427,26 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
           </div>
         )}
 
+        {/* Sliding scale: the reading comes first, because the dose (and
+            whether any insulin is due at all) is decided by it. */}
+        {isScale && !lockedByPrior && (
+          <SlidingScaleCharting
+            rows={scaleRows}
+            status={status}
+            entry={scaleEntry}
+            onChange={(patch) =>
+              opts.onPatch({
+                ...(patch.glucoseReading !== undefined ? { glucoseReading: patch.glucoseReading } : {}),
+                ...(patch.customDose !== undefined ? { scaleCustomDose: patch.customDose } : {}),
+                ...(patch.unitsGiven !== undefined ? { scaleUnitsGiven: patch.unitsGiven } : {}),
+                ...(patch.deviationReason !== undefined ? { scaleDeviationReason: patch.deviationReason } : {}),
+              })
+            }
+            errors={status ? scaleResult?.errors : undefined}
+            givenByOther={!isNurseAdmin}
+          />
+        )}
+
         {lockedByPrior ? (
           <div style={marLockedRowStyle}>
             Already documented today. To correct it, open the medication chart and amend the entry — a scheduled
@@ -401,7 +461,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
                 onClick={() => opts.onPatch({ status: status === s ? '' : s })}
                 style={status === s ? marStatusBtnActive[s] : marStatusBtnStyle}
               >
-                {s === 'given' ? 'Given' : s === 'held' ? 'Held' : 'Refused'}
+                {s === 'given' ? (noInsulinDue ? 'No Insulin Due' : 'Given') : s === 'held' ? 'Held' : 'Refused'}
               </button>
             ))}
             {opts.extra && status && (
@@ -415,7 +475,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
         {status === 'given' && (
           <div style={marDetailGridStyle}>
             <label style={marFieldStyle}>
-              <span style={marFieldLabelStyle}>Time given</span>
+              <span style={marFieldLabelStyle}>{noInsulinDue ? 'Time checked' : 'Time given'}</span>
               <input type="time" value={opts.rec?.actualTime || ''} onChange={(e) => opts.onPatch({ actualTime: e.target.value })} style={marInputStyle} />
             </label>
             <label style={marFieldStyle}>
@@ -594,13 +654,15 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
       rec: marAdminState[key],
       medName: order.medName,
       doseLabel: `${order.dose}${order.units ? ` ${order.units}` : ''} · ${order.route}`,
-      badgeLabel: slot === 'PRN' ? 'PRN' : slot,
+      // A meal-anchored time reads as the instruction, then the clock time.
+      badgeLabel: slot === 'PRN' ? 'PRN' : slotAnchor(order, slot) ? `${slotAnchor(order, slot)} ${slot}` : slot,
       scheduledSlot: slot,
       prior: priorFor(order.id || '', slot, order.medName),
       onPatch: (patch) => updateMark(order, slot, patch),
       isPRN: slot === 'PRN',
       indication: order.indication,
       parameters: order.parameters,
+      scaleRows: parseSlidingScale(order.slidingScale),
       prnGivenToday: slot === 'PRN' ? prnGivenToday(order.id || '') : 0,
     });
   };
@@ -617,6 +679,9 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
     const rec = marAdminState[marAdminKey(marPatientId, order.id || '', slot)];
     if (rec?.status) {
       if ((rec.status === 'held' || rec.status === 'refused') && !(rec.reason || '').trim()) return false;
+      // Same for a sliding-scale dose still missing its reading (or the
+      // reason it differs from the scale).
+      if (rec.hasSlidingScale && scaleMarkProblems(rec).length > 0) return false;
       return true;
     }
     return !!priorFor(order.id || '', slot, order.medName);
@@ -944,6 +1009,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
                         parameters:
                           rec.parameters || marAllOrders.find((o) => o.id === rec.orderId)?.parameters || '',
                         prnGivenToday: rec.orderId ? prnGivenToday(rec.orderId) : 0,
+                        scaleRows: scaleRowsFor(rec.orderId),
                       });
                     })}
                   </>

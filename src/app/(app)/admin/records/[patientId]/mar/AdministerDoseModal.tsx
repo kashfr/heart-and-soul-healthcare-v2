@@ -4,7 +4,16 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { parseValueOptions, writeMarAdministrations, type MarOrder } from '@/lib/mar';
-import { decideNurseDoseGate, parseHHMM, orderParameters } from '@/lib/marShared';
+import { decideNurseDoseGate, describeSlot, parseHHMM, orderParameters } from '@/lib/marShared';
+import {
+  EMPTY_SCALE_ENTRY,
+  SLIDING_SCALE_UNITS,
+  lookupScaleDose,
+  parseSlidingScale,
+  resolveScaleCharting,
+  type ScaleChartingEntry,
+} from '@/lib/slidingScale';
+import SlidingScaleCharting from '@/components/mar/SlidingScaleCharting';
 import { getMyShiftWindowsForDate, type ShiftWindow } from '@/lib/submissions';
 import { formatDateUS } from '@/lib/dateFormat';
 import { withSelectChevron } from '@/lib/selectChevron';
@@ -12,10 +21,10 @@ import { escortToField, firstErrorKey, FieldError, FIELD_ERROR_STYLE, FIELD_ERRO
 
 /** Every problem the save can raise, keyed by where it is shown. `shiftBlock`
  *  is not a field: it is the notice at the top of the modal. */
-type DoseField = 'shiftBlock' | 'status' | 'parameters' | 'parametersReading' | 'value' | 'actualTime' | 'administratorName' | 'reason' | 'attest';
+type DoseField = 'shiftBlock' | 'glucoseReading' | 'unitsGiven' | 'deviationReason' | 'status' | 'parameters' | 'parametersReading' | 'value' | 'actualTime' | 'administratorName' | 'reason' | 'attest';
 type DoseErrors = Partial<Record<DoseField, string>>;
 /** Top-to-bottom order on the sheet, so the escort lands on the topmost problem. */
-const FIELD_ORDER: readonly DoseField[] = ['shiftBlock', 'status', 'parameters', 'parametersReading', 'value', 'actualTime', 'administratorName', 'reason', 'attest'];
+const FIELD_ORDER: readonly DoseField[] = ['shiftBlock', 'glucoseReading', 'unitsGiven', 'deviationReason', 'status', 'parameters', 'parametersReading', 'value', 'actualTime', 'administratorName', 'reason', 'attest'];
 const fieldId = (k: DoseField) => `ad-field-${k}`;
 
 const ADMIN_BY_OPTIONS = [
@@ -91,6 +100,15 @@ export default function AdministerDoseModal({
   const needsParametersReading = !!parameters && (status === 'given' || status === 'held');
   // Reading for a check-style order (e.g. gastric residual in mL).
   const [value, setValue] = useState('');
+  // Sliding-scale order: the dose is looked up from the meter reading typed
+  // here, never read off the table by eye (see slidingScale.ts).
+  const scaleRows = parseSlidingScale(order.slidingScale);
+  const isScale = scaleRows.length > 0;
+  const [scaleEntry, setScaleEntry] = useState<ScaleChartingEntry>(EMPTY_SCALE_ENTRY);
+  // The reading calls for no insulin: the entry records the check with 0
+  // units, so the wording drops "given".
+  const noInsulinDue =
+    isScale && !scaleEntry.customDose && lookupScaleDose(scaleRows, scaleEntry.glucoseReading).row?.units === 0;
   const [busy, setBusy] = useState(false);
   // Per-field problems (outlined and explained where they sit) and the
   // server's answer, which has no field and lives next to the buttons.
@@ -202,6 +220,8 @@ export default function AdministerDoseModal({
     if (needsReason && !reason.trim()) {
       e.reason = status === 'given' ? 'A PRN dose needs a reason (why it was given).' : 'A reason is required.';
     }
+    const scale = isScale ? resolveScaleCharting(scaleRows, status, scaleEntry) : null;
+    if (scale) Object.assign(e, scale.errors);
     if (status === 'given' && !isNurseAdmin && administeredByType !== 'self' && !administratorName.trim()) {
       e.administratorName = 'Enter the name of the person who administered it (e.g., "Jane Doe (daughter)").';
     }
@@ -271,8 +291,10 @@ export default function AdministerDoseModal({
             patientId,
             orderId: order.id || '',
             medName: order.medName,
-            dose: order.dose,
-            units: order.units || '',
+            // A given sliding-scale dose records the units actually given;
+            // anything else keeps the order's own dose text.
+            dose: scale && status === 'given' ? scale.doseGiven : order.dose,
+            units: scale && status === 'given' ? SLIDING_SCALE_UNITS : order.units || '',
             route: order.route,
             scheduledTime: slot,
             status,
@@ -291,6 +313,10 @@ export default function AdministerDoseModal({
             value,
             valueLabel,
             valueUnit,
+            glucoseReading: scale?.glucoseReading || '',
+            scaleDose: scale?.scaleDose || '',
+            scaleRange: scale?.scaleRange || '',
+            scaleDeviationReason: scale?.deviationReason || '',
           },
         ],
         { patientId, date: dateISO, sourceNoteId: '', documenter },
@@ -315,7 +341,7 @@ export default function AdministerDoseModal({
               {isCheck
                 ? `${valueLabel}${valueUnit ? ` (${valueUnit})` : ''}`
                 : `${order.dose}${order.units ? ` ${order.units}` : ''}`}
-              {' · '}{order.route} · {isPRN ? 'PRN' : slot}
+              {' · '}{order.route} · {isPRN ? 'PRN' : describeSlot(order, slot)}
             </div>
             <div style={dateLine}>{prettyDate(dateISO)}</div>
           </div>
@@ -351,6 +377,23 @@ export default function AdministerDoseModal({
           </div>
         )}
 
+        {/* Sliding scale: the reading comes first, because the dose (and
+            whether any insulin is due at all) is decided by it. */}
+        {isScale && (
+          <SlidingScaleCharting
+            rows={scaleRows}
+            status={status}
+            entry={scaleEntry}
+            onChange={(patch) => {
+              setScaleEntry((cur) => ({ ...cur, ...patch }));
+              clearErr('glucoseReading', 'unitsGiven', 'deviationReason');
+            }}
+            errors={errors}
+            fieldId={fieldId}
+            givenByOther={!isNurseAdmin}
+          />
+        )}
+
         <div id={fieldId('status')} style={errors.status ? { ...statusRow, ...FIELD_ERROR_WRAP_STYLE } : statusRow}>
           {(['given', 'held', 'refused'] as const).map((s) => (
             <button
@@ -362,7 +405,7 @@ export default function AdministerDoseModal({
               }}
               style={status === s ? statusActive[s] : statusBtn}
             >
-              {s === 'given' ? (isCheck ? 'Done' : 'Given') : s === 'held' ? 'Held' : 'Refused'}
+              {s === 'given' ? (isCheck ? 'Done' : noInsulinDue ? 'No Insulin Due' : 'Given') : s === 'held' ? 'Held' : 'Refused'}
             </button>
           ))}
         </div>
@@ -434,7 +477,7 @@ export default function AdministerDoseModal({
               </label>
             )}
             <label id={fieldId('actualTime')} style={field}>
-              <span style={fieldLabel}>{isCheck ? 'Time checked' : 'Time given'}</span>
+              <span style={fieldLabel}>{isCheck || noInsulinDue ? 'Time checked' : 'Time given'}</span>
               <input
                 type="time"
                 value={actualTime}

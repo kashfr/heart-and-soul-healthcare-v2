@@ -4,12 +4,14 @@ import { renderToBuffer, type DocumentProps } from '@react-pdf/renderer';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { getServerSettings } from '@/lib/settingsServer';
-import { compareMarOrders, resolveCurrentAdministrations, describeFrequency } from '@/lib/marShared';
+import { cleanTimeLabels, compareMarOrders, resolveCurrentAdministrations, describeFrequency } from '@/lib/marShared';
+import { GLUCOSE_UNIT, isNoInsulinEntry, parseSlidingScale, summarizeSlidingScale, type SlidingScaleRow } from '@/lib/slidingScale';
 import { formatDateUS, formatMonthUSFile } from '@/lib/dateFormat';
 import MarPDF, {
   type MarPdfCell,
   type MarPdfRow,
   type MarPdfLogEntry,
+  type MarPdfGlucoseEntry,
   type MarCellStatus,
 } from '@/lib/pdf/MarPDF';
 
@@ -55,6 +57,8 @@ interface OrderDoc {
   route: string;
   frequencyLabel: string;
   scheduledTimes: string[];
+  timeLabels: Record<string, string>; // meal anchors, keyed by 'HH:MM'
+  slidingScale: SlidingScaleRow[]; // dose looked up from a blood glucose reading
   isPRN: boolean;
   prnFrequencyLabel: string; // PRN only: how often it may be given
   indication: string; // standing purpose — printed on PRN rows (manual D.6.b.ii.d)
@@ -88,6 +92,10 @@ interface AdminDoc {
   /** Reading for a check-style order (gastric residual, etc.); '' for doses. */
   value: string;
   valueUnit: string;
+  /** Sliding-scale dose: meter reading, the matched range, why it differs. */
+  glucoseReading: string;
+  scaleRange: string;
+  scaleDeviationReason: string;
   documentedBy: string;
   documentedByName: string;
   documentedByCredential: string;
@@ -181,6 +189,8 @@ export async function POST(request: Request) {
         route: String(o.route || ''),
         frequencyLabel: String(o.frequencyLabel || ''),
         scheduledTimes: Array.isArray(o.scheduledTimes) ? o.scheduledTimes.map(String) : [],
+        timeLabels: cleanTimeLabels(o.timeLabels, o.scheduledTimes, !!o.isPRN),
+        slidingScale: parseSlidingScale(o.slidingScale),
         isPRN: !!o.isPRN,
         prnFrequencyLabel: String(o.prnFrequencyLabel || ''),
         indication: String(o.indication || ''),
@@ -225,6 +235,9 @@ export async function POST(request: Request) {
         outcome: String(a.outcome || ''),
         value: String(a.value || ''),
         valueUnit: String(a.valueUnitSnapshot || ''),
+        glucoseReading: String(a.glucoseReading || '').trim(),
+        scaleRange: String(a.scaleRangeSnapshot || ''),
+        scaleDeviationReason: String(a.scaleDeviationReason || ''),
         documentedBy: String(a.documentedBy || ''),
         documentedByName: String(a.documentedByName || ''),
         documentedByCredential: String(a.documentedByCredential || ''),
@@ -270,14 +283,21 @@ export async function POST(request: Request) {
             continue;
           }
           const first = hits[0];
+          // A sliding-scale entry prints its reading over the units given
+          // ("182" over "4u"); its initials are in the blood glucose log.
+          const scaleUnits = (h: AdminDoc) =>
+            h.status === 'given' ? `${h.doseSnapshot}u` : h.status === 'held' ? 'Held' : 'Ref';
           cells.push({
             // A check-style order records a reading; the number is the record,
             // so print it in the box rather than the documenter's initials
             // (which stay in the legend and the exception log).
             label:
               hits.length > 1
-                ? hits.map((h) => h.value || h.initials || '·').join('/')
-                : first.value || first.initials || '✓',
+                ? hits
+                    .map((h) => (h.glucoseReading ? `${h.glucoseReading}/${scaleUnits(h)}` : h.value || h.initials || '·'))
+                    .join('/')
+                : first.glucoseReading || first.value || first.initials || '✓',
+            sub: hits.length === 1 && first.glucoseReading ? scaleUnits(first) : undefined,
             status: (first.status as MarCellStatus) || 'given',
             star: hits.some((h) => h.administeredByType && h.administeredByType !== 'nurse'),
           });
@@ -299,6 +319,9 @@ export async function POST(request: Request) {
           // lives on the order itself.
           // Parameters lead (hold / check criteria are what a surveyor and
           // the next nurse need first), then the PRN purpose, then notes.
+          // The whole sliding scale, uncapped: it IS the dose on this row, so
+          // it must never print truncated. Bounded by the 15-range limit.
+          medScale: o.slidingScale.length > 0 ? `Sliding scale (${GLUCOSE_UNIT}: units): ${summarizeSlidingScale(o.slidingScale)}` : undefined,
           medLine3: truncate(
             [
               o.parameters ? `Parameters: ${o.parameters}` : '',
@@ -310,6 +333,7 @@ export async function POST(request: Request) {
             220,
           ),
           slot,
+          slotLabel: o.timeLabels[slot] || undefined,
           isPRN: o.isPRN,
           cells,
         });
@@ -372,6 +396,31 @@ export async function POST(request: Request) {
         };
       });
 
+    // The month's blood glucose record: every live entry that carries a meter
+    // reading, with what the scale called for and what was given.
+    const glucoseLog: MarPdfGlucoseEntry[] = adminsCurrent
+      .filter((a) => a.glucoseReading)
+      .sort((a, b) => (a.date + a.actualTime).localeCompare(b.date + b.actualTime))
+      .map((a) => ({
+        date: shortDate(a.date),
+        time: a.actualTime || '-',
+        med: a.medNameSnapshot,
+        reading: `${a.glucoseReading} ${GLUCOSE_UNIT}`,
+        scale: a.scaleRange || '-',
+        given: [
+          a.status === 'given'
+            ? isNoInsulinEntry(a)
+              ? 'No insulin due'
+              : `${a.doseSnapshot} units`
+            : `${statusWord(a.status)}${a.reason ? `: ${a.reason}` : ''}`,
+          a.scaleDeviationReason ? `Differs from the scale: ${a.scaleDeviationReason}` : '',
+        ]
+          .filter(Boolean)
+          .join('. '),
+        by: adminBy(a),
+        initials: a.initials || '-',
+      }));
+
     // Legend keyed by the documenting USER, not the initials string, so one
     // nurse prints as one row even where historical docs carry differently-
     // formed initials (they were once free-typed; derived-only now). Every
@@ -412,6 +461,7 @@ export async function POST(request: Request) {
       rows,
       legend: legendEntries,
       log,
+      glucoseLog,
       generatedAt: new Date().toLocaleString('en-US'),
       generatedBy: caller.profile.displayName || caller.email || '',
     });

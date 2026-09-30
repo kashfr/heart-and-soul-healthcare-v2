@@ -19,4 +19,6 @@ Read the matching note before changing one of these features.
   docs/features/communications-log.md
 - RN oversight hours (real visit times, billing capped at the monthly
   authorization, non-billable follow-up visits): docs/features/oversight-hours.md
+- Sliding scale insulin and meal-anchored medication times (MAR orders,
+  dose charting, printed MAR): docs/features/sliding-scale.md
 - Declared test account and test client: TEST-ACCOUNT.md
