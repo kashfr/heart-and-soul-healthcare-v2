@@ -5,10 +5,11 @@ import { fileNoteAsDocument } from '@/lib/patientDocumentsServer';
 /**
  * POST /api/documents/file-note  { noteId }
  *
- * Render a submitted RN oversight visit note to PDF and file it under the
- * client's Documents tab (category RN Oversight), replacing an earlier
- * filing of the same note. Called by the oversight form right after submit
- * and after an amendment. Author or staff only.
+ * Render a submitted RN oversight visit note or home supervisory visit to
+ * PDF and file it under the client's Documents tab, replacing an earlier
+ * filing of the same note. Called by the note forms right after submit and
+ * after an amendment, and by the Documents tab's "Refresh PDF" button.
+ * Author or staff only.
  */
 export async function POST(request: Request) {
   let caller;

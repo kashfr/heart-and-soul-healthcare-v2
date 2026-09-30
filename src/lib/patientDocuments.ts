@@ -74,6 +74,8 @@ export interface PatientDocument {
   replacedByName?: string;
   /** Present on documents the server filed from a submitted note. */
   sourceNoteId?: string;
+  /** The note's noteType (filed since 09/2026); older entries infer it from the category. */
+  sourceNoteType?: string;
   autoFiled?: boolean;
   /** Present on the PDF filed when a Service Plan is signed. */
   servicePlanId?: string;
@@ -426,8 +428,11 @@ export async function deletePatientDocument(id: string): Promise<void> {
 
 /**
  * Ask the server to render a submitted note to PDF and file it under the
- * client's Documents (RN oversight visits). Idempotent per note. Non-fatal
- * for callers: a failed filing is repaired by syncNoteDocuments.
+ * client's Documents (RN oversight visits, home supervisory visits).
+ * Idempotent per note: an entry already on file gets its PDF re-rendered
+ * in place, which is what the Documents tab's "Refresh PDF" button does.
+ * Non-fatal for the note forms: a failed filing is repaired by
+ * syncNoteDocuments.
  */
 export async function fileNoteDocument(noteId: string): Promise<void> {
   const res = await authedFetch('/api/documents/file-note', {
@@ -441,16 +446,28 @@ export async function fileNoteDocument(noteId: string): Promise<void> {
   }
 }
 
-/** Staff: file every unfiled oversight note for a client (backfill / repair). */
-export async function syncNoteDocuments(patientId: string): Promise<{ filed: number; skipped: number; errors: string[] }> {
+export interface SyncNoteDocumentsSummary {
+  filed: number;
+  /** PDFs re-rendered in place (only when `refresh` was asked for). */
+  refreshed: number;
+  skipped: number;
+  errors: string[];
+}
+
+/**
+ * Staff: file every unfiled oversight note and supervisory visit for a
+ * client (backfill / repair). With `refresh`, also re-render every visit
+ * PDF already on file from the current note and renderer.
+ */
+export async function syncNoteDocuments(patientId: string, opts: { refresh?: boolean } = {}): Promise<SyncNoteDocumentsSummary> {
   const res = await authedFetch('/api/documents/sync-notes', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ patientId }),
+    body: JSON.stringify({ patientId, ...(opts.refresh ? { refresh: true } : {}) }),
   });
-  const body = (await res.json().catch(() => ({}))) as { filed?: number; skipped?: number; errors?: string[]; error?: string };
+  const body = (await res.json().catch(() => ({}))) as Partial<SyncNoteDocumentsSummary> & { error?: string };
   if (!res.ok) throw new Error(body.error || 'Could not sync the notes.');
-  return { filed: body.filed ?? 0, skipped: body.skipped ?? 0, errors: body.errors ?? [] };
+  return { filed: body.filed ?? 0, refreshed: body.refreshed ?? 0, skipped: body.skipped ?? 0, errors: body.errors ?? [] };
 }
 
 /** Admin-only: move a wrongly filed document to another client (privileged route). */

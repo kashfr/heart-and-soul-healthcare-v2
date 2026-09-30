@@ -86,6 +86,34 @@ request of the nurse supervisors.
 Steps 2 and 3 are non-fatal: staff can "Sync Visit Notes" on the Documents tab
 or mark the visit on the Schedule tab.
 
+## The filed PDF on the Documents tab
+
+The Documents entry is a snapshot of the note, rendered when it was filed
+and re-rendered whenever the note is amended (`fileNoteAsDocument` upserts
+by `sourceNoteId`, and stores `sourceNoteType` since 09/2026). It is not a
+separate record, so on a note-filed entry the tab does not offer Edit:
+retitling or redating the card would be overwritten by the next filing and
+would never change the note. Instead (`DocumentsSection.tsx`,
+`src/lib/noteDocLinks.ts`):
+
+- **Amend Note** (everyone who can see the tab) opens the note in amend mode
+  (`/supervisory-visit?edit=<noteId>`, or `/oversight-note?edit=` for an RN
+  oversight visit; entries filed before the type was stored are told apart
+  by their category). The date, wording and signature live on the note;
+  saving the amendment re-files the PDF.
+- **Refresh PDF** (staff) re-renders that one stored PDF from the note as it
+  stands, through `/api/documents/file-note`. For when the renderer changed
+  after filing, e.g. a PDF still showing "Pending RN review" from before the
+  co-sign rule fix.
+- **Refresh Visit PDFs** (staff, toolbar, after a confirmation) re-renders
+  every oversight and supervisory visit PDF on file for the client in one
+  go: `/api/documents/sync-notes` with `refresh: true`
+  (`syncNoteDocumentsForPatient`). Plain **Sync Visit Notes** still files
+  only notes with no entry yet.
+
+Origin: a supervisor changed the date on the Documents card expecting the
+visit to move; the card saved but the note and PDF did not change (09/2026).
+
 ## Elsewhere in the app
 
 - Never counts toward shift or oversight hours or billing (`readShiftWindow`
