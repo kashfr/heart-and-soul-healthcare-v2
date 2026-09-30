@@ -379,80 +379,68 @@ describe('oversight visit allotment', () => {
   // Aaronesse-style line: 3 h monthly RN oversight.
   const rn3 = { ...kimRn, rateHours: 3, totalUnits: 144 };
   it('a first visit in the month has the full monthly hours available', () => {
-    const a = oversightAllotment([rn3], '2026-09-22', []);
-    expect(a).toEqual({ monthlyHours: 3, usedUnits: 0, remainingHours: 3, otherVisits: [] });
+    expect(oversightAllotment([rn3], '2026-09-22', [])).toEqual({ monthlyHours: 3, usedUnits: 0, remainingHours: 3, otherVisits: [] });
   });
-  it('subtracts the other visits that month in whole units, and lists them', () => {
-    // an earlier 09/05 visit of 1:10 bills 5 units (1.25 h), leaving 7 units = 1.75 h
+  it('any earlier visit that month already bills the whole authorization', () => {
     const a = oversightAllotment([rn3], '2026-09-22', [{ dateISO: '2026-09-05', timeIn: '10:00', timeOut: '11:10' }]);
-    expect(a.usedUnits).toBe(5);
-    expect(a.remainingHours).toBe(1.75);
-    expect(a.otherVisits).toHaveLength(1);
-    expect(a.otherVisits[0].dateISO).toBe('2026-09-05');
-    expect(a.otherVisits[0].billableHours).toBeCloseTo(1.17, 2);
+    expect(a.usedUnits).toBe(12);
+    expect(a.remainingHours).toBe(0);
+    expect(a.otherVisits).toEqual([{ dateISO: '2026-09-05', billableHours: 3 }]);
     // visits in another month don't count
     expect(oversightAllotment([rn3], '2026-09-22', [{ dateISO: '2026-08-30', timeIn: '10:00', timeOut: '13:00' }]).remainingHours).toBe(3);
   });
-  it('never goes below zero, and is null without an oversight line', () => {
-    const a = oversightAllotment([rn3], '2026-09-22', [{ dateISO: '2026-09-01', timeIn: '09:00', timeOut: '13:00' }]);
-    expect(a.remainingHours).toBe(0);
-    // the 4-hour visit bills only the 3 authorized
-    expect(a.otherVisits).toEqual([{ dateISO: '2026-09-01', billableHours: 3 }]);
+  it('is null without an oversight line', () => {
     expect(oversightAllotment([kimLpn], '2026-09-22', []).remainingHours).toBeNull();
   });
 });
 
-describe('oversight documented vs. billable', () => {
+describe('oversight documented vs. billed', () => {
   const rn3 = { ...kimRn, rateHours: 3, totalUnits: 144 };
   const v = (id: string, dateISO: string, timeIn: string, timeOut: string) => ({ id, dateISO, timeIn, timeOut });
 
-  it('bills a visit as documented when it fits the month', () => {
-    const b = oversightVisitBilling([rn3], [v('a', '2026-09-22', '17:00', '19:45')]).get('a')!;
-    expect(b).toEqual({ documentedHours: 2.75, billableHours: 2.75, capHours: 3, trimmed: false, nonBillable: false });
+  it('bills the month at the authorization on a short first visit, keeping its documented time (the 2.72 h case)', () => {
+    const b = oversightVisitBilling([rn3], [v('a', '2026-09-22', '18:05', '20:48')]).get('a')!;
+    expect(b.documentedHours).toBeCloseTo(2.72, 2);
+    expect(b).toMatchObject({ billableHours: 3, capHours: 3, toppedUp: true, trimmed: false, nonBillable: false });
   });
 
-  it('documents a long visit in full and bills only the authorization (the 3.37 h case)', () => {
+  it('bills a long first visit at the authorization too (the 3.37 h case)', () => {
     const b = oversightVisitBilling([rn3], [v('a', '2026-09-22', '17:03', '20:25')]).get('a')!;
     expect(b.documentedHours).toBeCloseTo(3.37, 2);
-    expect(b.billableHours).toBe(3);
-    expect(b.trimmed).toBe(true);
-    expect(b.nonBillable).toBe(false);
+    expect(b).toMatchObject({ billableHours: 3, trimmed: true, toppedUp: false, nonBillable: false });
   });
 
-  it('marks a follow-up visit non-billable once the month is used, in visit order', () => {
-    const m = oversightVisitBilling([rn3], [v('late', '2026-09-28', '10:00', '10:20'), v('first', '2026-09-22', '17:00', '20:00')]);
-    expect(m.get('first')).toMatchObject({ billableHours: 3, nonBillable: false });
-    expect(m.get('late')).toMatchObject({ billableHours: 0, nonBillable: true, trimmed: false });
+  it('an exact visit is neither trimmed nor topped up', () => {
+    expect(oversightVisitBilling([rn3], [v('a', '2026-09-22', '17:00', '20:00')]).get('a')).toEqual({ documentedHours: 3, billableHours: 3, capHours: 3, trimmed: false, toppedUp: false, nonBillable: false });
+  });
+
+  it('makes every later visit that month non-billable, in date order', () => {
+    const m = oversightVisitBilling([rn3], [v('late', '2026-09-28', '10:00', '10:20'), v('first', '2026-09-10', '10:00', '12:00')]);
+    expect(m.get('first')).toMatchObject({ billableHours: 3, toppedUp: true });
+    expect(m.get('late')).toMatchObject({ billableHours: 0, nonBillable: true, toppedUp: false });
     expect(m.get('late')!.documentedHours).toBeCloseTo(0.333, 2);
   });
 
-  it('bills a short first visit and a follow-up up to the month, never more', () => {
-    const m = oversightVisitBilling([rn3], [v('a', '2026-09-10', '10:00', '12:00'), v('b', '2026-09-20', '09:00', '11:00')]);
-    expect(m.get('a')!.billableHours).toBe(2);
-    expect(m.get('b')).toMatchObject({ documentedHours: 2, billableHours: 1, trimmed: true });
-  });
-
   it('starts each month fresh, and leaves a month with no RN line as documented', () => {
-    const m = oversightVisitBilling([rn3], [v('sep', '2026-09-22', '17:00', '20:00'), v('oct', '2026-10-05', '10:00', '13:00')]);
+    const m = oversightVisitBilling([rn3], [v('sep', '2026-09-22', '17:00', '20:00'), v('oct', '2026-10-05', '10:00', '11:00')]);
     expect(m.get('oct')!.billableHours).toBe(3);
     const none = oversightVisitBilling([kimLpn], [v('x', '2026-09-22', '17:00', '20:30')]).get('x')!;
-    expect(none).toEqual({ documentedHours: 3.5, billableHours: 3.5, capHours: null, trimmed: false, nonBillable: false });
+    expect(none).toEqual({ documentedHours: 3.5, billableHours: 3.5, capHours: null, trimmed: false, toppedUp: false, nonBillable: false });
   });
 
-  it('caps a day map the same way for the roster', () => {
-    const days = new Map([['2026-09-22', 3.37], ['2026-09-28', 0.5], ['2026-10-02', 2]]);
+  it('applies the same rule to a day map for the roster; a month with no visit bills nothing', () => {
+    const days = new Map([['2026-09-22', 2.72], ['2026-09-28', 0.5], ['2026-10-02', 0]]);
     const capped = capOversightDayHours([rn3], days);
-    expect([...capped.entries()]).toEqual([['2026-09-22', 3], ['2026-09-28', 0], ['2026-10-02', 2]]);
+    expect([...capped.entries()]).toEqual([['2026-09-22', 3], ['2026-09-28', 0], ['2026-10-02', 0]]);
   });
 
   it('previews what the visit being written will bill', () => {
     const fresh = oversightAllotment([rn3], '2026-09-22', []);
     expect(previewOversightVisit(fresh, '17:03', '')).toBeNull();
     expect(previewOversightVisit(fresh, '17:03', '16:00')).toBeNull();
-    expect(previewOversightVisit(fresh, '17:00', '19:30')).toEqual({ documentedHours: 2.5, billableHours: 2.5, trimmed: false, nonBillable: false });
-    expect(previewOversightVisit(fresh, '17:03', '20:25')).toMatchObject({ billableHours: 3, trimmed: true });
-    const used = oversightAllotment([rn3], '2026-09-28', [{ dateISO: '2026-09-22', timeIn: '17:00', timeOut: '20:00' }]);
+    expect(previewOversightVisit(fresh, '17:00', '19:30')).toEqual({ documentedHours: 2.5, billableHours: 3, trimmed: false, toppedUp: true, nonBillable: false });
+    const used = oversightAllotment([rn3], '2026-09-28', [{ dateISO: '2026-09-22', timeIn: '17:00', timeOut: '19:00' }]);
     expect(previewOversightVisit(used, '10:00', '10:20')).toMatchObject({ billableHours: 0, nonBillable: true });
   });
-
 });
+

@@ -152,9 +152,9 @@ export default function HoursSection({ patientId, patientName, program, notes, u
 
   const list = useMemo(() => auths ?? [], [auths]);
 
-  // RN oversight bills against the month's authorization in visit order: a
-  // visit is documented as it happened, and counts here only up to what the
-  // month had left (shiftHours.oversightVisitBilling).
+  // RN oversight: the month's first visit bills the authorization, later
+  // visits that month bill nothing, and every visit keeps its documented
+  // time (shiftHours.oversightVisitBilling).
   const oversightBilling = useMemo(
     () => oversightVisitBilling(list, oversightNotes.filter((n) => n.dateISO && n.shiftStart && n.shiftEnd).map((n) => ({ id: n.id, dateISO: n.dateISO, timeIn: n.shiftStart, timeOut: n.shiftEnd }))),
     [list, oversightNotes],
@@ -477,11 +477,11 @@ export default function HoursSection({ patientId, patientName, program, notes, u
                         <Link href={`/admin/submissions/${r.noteId}`} style={{ color: NAVY }}>{r.window}</Link>
                         {r.spill && <span style={spillBadge}>From Prior Day</span>}
                         {r.nonBillable && (
-                          <span style={spillBadge} title="The month's RN hours were already documented on an earlier visit. This visit is on the record and is not billed.">Non-Billable</span>
+                          <span style={spillBadge} title="The month's authorized RN hours bill with an earlier visit. This visit is on the record and is not billed.">Non-Billable</span>
                         )}
                         {r.documented != null && !r.nonBillable && (
-                          <span style={{ color: '#64748b', fontSize: 12, marginLeft: 6 }} title="The visit ran past what the month's RN authorization had left. It is documented in full and billed up to the authorization.">
-                            {fmtH(r.documented)} h documented, {fmtH(r.hours)} h billable
+                          <span style={{ color: '#64748b', fontSize: 12, marginLeft: 6 }} title="The month is billed at its RN authorization with this visit, which covers the other RN oversight duties done during the month. The visit's own times are unchanged.">
+                            {fmtH(r.documented)} h documented, {fmtH(r.hours)} h billed
                           </span>
                         )}
                         {overlaps.has(r.noteId) && (

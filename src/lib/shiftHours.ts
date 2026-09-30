@@ -637,15 +637,17 @@ function fmtUS(iso: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// RN oversight: documented time vs. billable time.
+// RN oversight: documented time vs. billed time.
 //
 // An oversight note records the visit as it happened (the nurse's own Time in
-// and Time out). Billing is a separate question: the client's RN line
-// authorizes so many hours a month, so each month's visits are billed in
-// order until the authorization is used. A visit that runs past what is left
-// is documented in full and billed only up to the authorization; a visit
-// after the hours are used is documented and not billed. Nothing is ever
-// billed that was not documented.
+// and Time out); the portal never fills or adjusts them. Billing is separate:
+// the client's RN line authorizes so many hours a month, and the owner bills
+// the month AT the authorization once an RN visit is documented, because the
+// RN oversight service also covers the other oversight duties done during the
+// month (owner's decision, 09/30/2026). So the month's first visit, in date
+// order, bills the full authorization whatever its length, and any later
+// visit that month is documented and not billed. A month with no visit bills
+// nothing. Nothing is billed in a month without a documented visit.
 // ---------------------------------------------------------------------------
 
 export interface OversightVisitWindow {
@@ -658,75 +660,67 @@ export interface OversightVisitWindow {
 export interface OversightVisitBilling {
   /** Time in to time out, exact. */
   documentedHours: number;
-  /** What counts toward the month's authorization (whole units / 4 when trimmed). */
+  /** What this visit bills: the month's authorization on the first visit, 0 after. */
   billableHours: number;
   /** The month's authorized hours; null when no RN line covers the visit date. */
   capHours: number | null;
-  /** The visit ran past what was left: part of it is documented but not billed. */
+  /** The visit ran longer than the authorization; the excess is documented, not billed. */
   trimmed: boolean;
-  /** The month's hours were already used: documented only. (A month with no
-   *  RN line is not capped at all; its visits count as documented, as before.) */
+  /** The visit was shorter than the authorization; the month still bills in full. */
+  toppedUp: boolean;
+  /** An earlier visit this month already billed the authorization: documented only.
+   *  (A month with no RN line is not capped; its visits count as documented.) */
   nonBillable: boolean;
 }
 
 const visitHours = (v: { dateISO: string; timeIn: string; timeOut: string }): number =>
   totalOfSegments(splitShiftByDay({ dateISO: v.dateISO, shiftStart: v.timeIn, shiftEnd: v.timeOut, shiftEndDate: v.dateISO, totalHours: '' }));
 
+/** What one visit bills, given whether the month was already billed. */
+function billVisit(documentedHours: number, cap: number | null, monthAlreadyBilled: boolean): Omit<OversightVisitBilling, 'capHours'> {
+  if (cap == null) return { documentedHours, billableHours: documentedHours, trimmed: false, toppedUp: false, nonBillable: false };
+  if (monthAlreadyBilled) return { documentedHours, billableHours: 0, trimmed: false, toppedUp: false, nonBillable: true };
+  const d = Math.round(documentedHours * 100) / 100;
+  return { documentedHours, billableHours: cap, trimmed: d > cap, toppedUp: d < cap, nonBillable: false };
+}
+
 /**
- * Bill one client's oversight visits against the RN authorization, month by
- * month, in the order they happened (date, then time in, then id as a stable
- * tiebreak). Pure: pass the client's lines and every visit to consider.
+ * Bill one client's oversight visits month by month, in the order they
+ * happened (date, then time in, then id as a stable tiebreak): the first
+ * visit of a month with an RN line bills the month's authorization; later
+ * visits that month bill nothing. Pure: pass the client's lines and visits.
  */
 export function oversightVisitBilling(auths: HoursAuthorization[], visits: OversightVisitWindow[]): Map<string, OversightVisitBilling> {
   const out = new Map<string, OversightVisitBilling>();
-  const remaining = new Map<string, number>();
+  const billedMonths = new Set<string>();
   const ordered = [...visits].sort((a, b) => a.dateISO.localeCompare(b.dateISO) || a.timeIn.localeCompare(b.timeIn) || a.id.localeCompare(b.id));
   for (const v of ordered) {
-    const documentedHours = visitHours(v);
     const ym = monthKeyOf(v.dateISO);
     const line = authForMonth(auths, ym, 'oversight');
     const cap = line ? monthCap(line, ym) : null;
-    if (cap == null) {
-      out.set(v.id, { documentedHours, billableHours: documentedHours, capHours: null, trimmed: false, nonBillable: false });
-      continue;
-    }
-    if (!remaining.has(ym)) remaining.set(ym, Math.round(cap * UNITS_PER_HOUR));
-    const left = remaining.get(ym) ?? 0;
-    const units = hoursToUnits(documentedHours);
-    const billUnits = Math.min(units, left);
-    remaining.set(ym, left - billUnits);
-    out.set(v.id, {
-      documentedHours,
-      // Untrimmed visits keep their exact hours so day totals round the way they always have.
-      billableHours: billUnits === units ? documentedHours : billUnits / UNITS_PER_HOUR,
-      capHours: cap,
-      trimmed: billUnits < units && billUnits > 0,
-      nonBillable: billUnits === 0,
-    });
+    out.set(v.id, { ...billVisit(visitHours(v), cap, billedMonths.has(ym)), capHours: cap });
+    if (cap != null) billedMonths.add(ym);
   }
   return out;
 }
 
 /**
- * The same cap applied to a day -> hours map (the roster badges have day
- * totals, not visits): each month's days are counted in order until the
- * month's authorization is used. Months with no RN line are left as they are.
+ * The same rule on a day -> hours map (the roster badges have day totals, not
+ * visits): the first day of a month with oversight hours bills the month's
+ * authorization, later days bill nothing. Months with no RN line are left as
+ * they are.
  */
 export function capOversightDayHours(auths: HoursAuthorization[], dayHours: Map<string, number>): Map<string, number> {
   const out = new Map<string, number>();
-  const remaining = new Map<string, number>();
+  const billedMonths = new Set<string>();
   for (const dateISO of [...dayHours.keys()].sort()) {
     const hours = dayHours.get(dateISO) ?? 0;
     const ym = monthKeyOf(dateISO);
     const line = authForMonth(auths, ym, 'oversight');
     const cap = line ? monthCap(line, ym) : null;
-    if (cap == null) { out.set(dateISO, hours); continue; }
-    if (!remaining.has(ym)) remaining.set(ym, Math.round(cap * UNITS_PER_HOUR));
-    const left = remaining.get(ym) ?? 0;
-    const units = hoursToUnits(hours);
-    const billUnits = Math.min(units, left);
-    remaining.set(ym, left - billUnits);
-    out.set(dateISO, billUnits === units ? hours : billUnits / UNITS_PER_HOUR);
+    if (cap == null || !(hours > 0)) { out.set(dateISO, cap == null ? hours : 0); continue; }
+    out.set(dateISO, billedMonths.has(ym) ? 0 : cap);
+    billedMonths.add(ym);
   }
   return out;
 }
@@ -744,8 +738,9 @@ export interface OversightAllotment {
 
 /**
  * Where a client's month stands before this visit: the authorized RN hours,
- * what the other visits that month already bill, and what is left. The form
- * shows it; the nurse still records the visit's real times.
+ * what the other visits that month already bill (the authorization once any
+ * visit is on file), and what is left. The form shows it; the nurse still
+ * records the visit's real times.
  */
 export function oversightAllotment(
   auths: HoursAuthorization[],
@@ -771,16 +766,8 @@ export function oversightAllotment(
  * What the visit being written will bill, given where the month stands.
  * null until both times are entered and out is after in.
  */
-export function previewOversightVisit(allotment: OversightAllotment, timeIn: string, timeOut: string): { documentedHours: number; billableHours: number; trimmed: boolean; nonBillable: boolean } | null {
+export function previewOversightVisit(allotment: OversightAllotment, timeIn: string, timeOut: string): { documentedHours: number; billableHours: number; trimmed: boolean; toppedUp: boolean; nonBillable: boolean } | null {
   if (!/^\d{1,2}:\d{2}$/.test(timeIn) || !/^\d{1,2}:\d{2}$/.test(timeOut) || timeOut <= timeIn) return null;
   const documentedHours = visitHours({ dateISO: '2000-01-01', timeIn, timeOut });
-  if (allotment.remainingHours == null) return { documentedHours, billableHours: documentedHours, trimmed: false, nonBillable: false };
-  const units = hoursToUnits(documentedHours);
-  const billUnits = Math.min(units, Math.round(allotment.remainingHours * UNITS_PER_HOUR));
-  return {
-    documentedHours,
-    billableHours: billUnits === units ? documentedHours : billUnits / UNITS_PER_HOUR,
-    trimmed: billUnits < units && billUnits > 0,
-    nonBillable: billUnits === 0,
-  };
+  return billVisit(documentedHours, allotment.monthlyHours, allotment.monthlyHours != null && (allotment.remainingHours ?? 0) <= 0);
 }

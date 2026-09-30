@@ -128,9 +128,9 @@ function useDebounced<T>(value: T, delay = 250): T {
 function oversightBillTitle(s: SubmissionSummary, b: OversightVisitBilling | undefined): string {
   const window = `RN oversight visit, ${s.shiftStart || '?'} to ${s.shiftEnd || '?'}`;
   if (!b || b.capHours == null) return `${window}. Counted as RN oversight hours, not shift hours.`;
-  if (b.nonBillable) return `${window} (${fmtH(b.documentedHours)} h documented). Non-billable: the month's ${fmtH(b.capHours)} RN hours were already documented on an earlier visit.`;
-  if (b.trimmed) return `${window} (${fmtH(b.documentedHours)} h documented). ${fmtH(b.billableHours)} h billable: all that was left of the month's ${fmtH(b.capHours)} RN hours.`;
-  return `${window}. Counted as RN oversight hours, not shift hours.`;
+  if (b.nonBillable) return `${window} (${fmtH(b.documentedHours)} h documented). Non-billable: the month's ${fmtH(b.capHours)} RN hours bill with an earlier visit.`;
+  if (b.trimmed || b.toppedUp) return `${window} (${fmtH(b.documentedHours)} h documented). Bills the month's ${fmtH(b.capHours)} authorized RN hours.`;
+  return `${window}. Bills the month's ${fmtH(b.capHours)} authorized RN hours.`;
 }
 
 export default function SubmissionsPage() {
@@ -421,9 +421,9 @@ export default function SubmissionsPage() {
   // Each client's authorizations, so RN oversight visits bill only up to the
   // month's authorized hours (the same cap the client Hours tab applies).
   const [authsByPatient, setAuthsByPatient] = useState<Map<string, HoursAuthorization[]>>(new Map());
-  // RN oversight visits bill against the month's authorization in visit
-  // order: documented in full, counted only up to what the month had left.
-  // Archived notes are not billed and do not use up hours.
+  // RN oversight: the month's first visit bills the authorization, later
+  // visits that month bill nothing (shiftHours.oversightVisitBilling).
+  // Archived notes are not billed and do not use up the month.
   const oversightBillingById = useMemo(() => {
     const byPatient = new Map<string, OversightVisitWindow[]>();
     for (const s of allSubmissions) {
@@ -2089,7 +2089,7 @@ export default function SubmissionsPage() {
                           {s.noteType === 'rn-oversight-visit' && (oversightBillingById.get(s.id)?.nonBillable ?? s.nonBillable) && (
                             <span
                               style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 4, fontSize: 10.5, fontWeight: 700, background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', whiteSpace: 'nowrap' }}
-                              title="The month's RN hours were already documented on an earlier visit. This visit is on the record and is not billed."
+                              title="The month's authorized RN hours bill with an earlier visit. This visit is on the record and is not billed."
                             >
                               NON-BILLABLE
                             </span>
