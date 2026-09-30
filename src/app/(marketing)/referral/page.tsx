@@ -13,6 +13,7 @@ import {
   PAID_CARE_BASIS_OPTIONS,
   RELATIONSHIP_OPTIONS,
   highBehaviorPaidFlag,
+  screenAgencyStaff,
   screenCaregiverRelationship,
   inferService,
   screenBehavioralPaidCaregiver,
@@ -48,11 +49,11 @@ import styles from './page.module.css';
 // "Next" or "Submit" escorts to the topmost problem.
 type ReferralField =
   | 'programInterest' | 'clientCounty' | 'clientFirstName' | 'clientLastName' | 'clientDOB' | 'clientPhone' | 'clientSecondaryPhone' | 'clientEmail'
-  | 'referralSource' | 'relationship' | 'referrerName' | 'diagnoses' | 'equipment' | 'behaviorRisk' | 'seekingPaidCaregiver' | 'careNeeds' | 'paidCareBasis' | 'hasGuardianship';
+  | 'referralSource' | 'relationship' | 'referrerName' | 'diagnoses' | 'equipment' | 'behaviorRisk' | 'seekingPaidCaregiver' | 'careNeeds' | 'paidCareBasis' | 'hasGuardianship' | 'wantsAgencyStaff';
 type ReferralFieldErrors = Partial<Record<ReferralField, string>>;
 const FIELD_ORDER: ReferralField[] = [
   'programInterest', 'clientCounty', 'clientFirstName', 'clientLastName', 'clientDOB', 'clientPhone', 'clientSecondaryPhone', 'clientEmail',
-  'referralSource', 'relationship', 'referrerName', 'diagnoses', 'equipment', 'behaviorRisk', 'seekingPaidCaregiver', 'careNeeds', 'paidCareBasis', 'hasGuardianship',
+  'referralSource', 'relationship', 'referrerName', 'diagnoses', 'equipment', 'behaviorRisk', 'seekingPaidCaregiver', 'careNeeds', 'paidCareBasis', 'hasGuardianship', 'wantsAgencyStaff',
 ];
 // Banner labels (the careNeeds label depends on who is filling the form).
 const FIELD_LABEL: Record<Exclude<ReferralField, 'careNeeds'>, string> = {
@@ -73,6 +74,7 @@ const FIELD_LABEL: Record<Exclude<ReferralField, 'careNeeds'>, string> = {
   paidCareBasis: 'What the hands-on care is for',
   relationship: 'Your relationship to the child',
   hasGuardianship: 'Legal guardianship question',
+  wantsAgencyStaff: 'Nurse or aide in the home question',
 };
 const fieldId = (k: ReferralField) => `ref-field-${k}`;
 
@@ -194,6 +196,7 @@ export default function ReferralPage() {
     paidCareBasis: '' as PaidCareBasis,
     relationship: '' as CaregiverRelationship,
     hasGuardianship: '' as '' | 'yes' | 'no',
+    wantsAgencyStaff: '' as '' | 'yes' | 'no',
     diagnoses: [] as string[],
     diagnosisOther: '',
     equipment: [] as string[],
@@ -344,8 +347,21 @@ export default function ReferralPage() {
       behaviorRisk: formData.behaviorRisk,
       seekingPaidCaregiver: seekingPaidGapp ? 'yes' : 'no',
     }) !== null;
-  const isBlocked =
+  const otherBlock =
     isPaidBehavioralBlock || isPaidYoungChildBlock || isPaidMixedBlock || isPaidFosterBlock;
+  // Declining agency staff leaves only the paid-parent path (GAPP only).
+  // Refused when that path is closed too: not seeking pay, a young child, or
+  // only nursing needs listed. Shown only when no other stop is already
+  // explaining why.
+  const staffScreen = screenAgencyStaff({
+    wantsAgencyStaff: showGappClinical ? formData.wantsAgencyStaff : '',
+    seekingPaidCaregiver: formData.seekingPaidCaregiver,
+    dob: formData.clientDOB,
+    equipment: formData.equipment,
+  });
+  const isStaffBlock =
+    !otherBlock && formData.seekingPaidCaregiver !== '' && staffScreen.block !== null;
+  const isBlocked = otherBlock || isStaffBlock;
   const memberWord = childAge && childAge.years >= 18 ? 'member' : 'child';
 
   // "None of these" is mutually exclusive with every real answer, both ways.
@@ -392,6 +408,7 @@ export default function ReferralPage() {
       if (isPaidMixedDx && !formData.paidCareBasis) errs.paidCareBasis = 'Please tell us what the hands-on care is mainly for.';
       if (showGappClinical && !formData.relationship) errs.relationship = 'Please choose your relationship to the child.';
       if (asksGuardianship && !isPaidFosterBlock && !formData.hasGuardianship) errs.hasGuardianship = 'Please answer Yes or No.';
+      if (showGappClinical && !formData.wantsAgencyStaff) errs.wantsAgencyStaff = 'Please answer Yes or No.';
     }
     return errs;
   };
@@ -544,6 +561,7 @@ export default function ReferralPage() {
           paidCareBasis: showGappClinical ? formData.paidCareBasis : '',
           relationship: showGappClinical ? formData.relationship : '',
           hasGuardianship: showGappClinical ? formData.hasGuardianship : '',
+          wantsAgencyStaff: showGappClinical ? formData.wantsAgencyStaff : '',
           diagnoses: showGappClinical ? formData.diagnoses : [],
           diagnosisOther: showGappClinical ? formData.diagnosisOther : '',
           equipment: showGappClinical ? formData.equipment : [],
@@ -593,7 +611,8 @@ export default function ReferralPage() {
           (formData.seekingPaidCaregiver === 'no' || formData.careNeeds) &&
           (!isPaidMixedDx || formData.paidCareBasis) &&
           (!showGappClinical || formData.relationship) &&
-          (!asksGuardianship || isPaidFosterBlock || formData.hasGuardianship)
+          (!asksGuardianship || isPaidFosterBlock || formData.hasGuardianship) &&
+          (!showGappClinical || formData.wantsAgencyStaff)
         );
       default:
         return true;
@@ -644,6 +663,7 @@ export default function ReferralPage() {
                       urgency: 'standard', additionalNotes: '',
                       seekingPaidCaregiver: '', careNeeds: '', paidCareBasis: '' as PaidCareBasis,
                       relationship: '' as CaregiverRelationship, hasGuardianship: '' as '' | 'yes' | 'no',
+                      wantsAgencyStaff: '' as '' | 'yes' | 'no',
                       diagnoses: [], diagnosisOther: '', equipment: [],
                       behaviorRisk: '' as BehaviorRisk, currentServices: [],
                     });
@@ -1445,8 +1465,8 @@ export default function ReferralPage() {
                             not available for autism, behavioral, or developmental
                             needs
                           </strong>
-                          . If you are unsure, choose No. It will not affect your
-                          application.
+                          . If you choose No, a nurse or aide from our agency, not a
+                          family member, provides your care.
                         </>
                       ) : sourceView === 'family' ? (
                         <>
@@ -1459,8 +1479,8 @@ export default function ReferralPage() {
                             not available for autism, behavioral, or developmental
                             needs
                           </strong>
-                          . If you are unsure, choose No. It will not affect your
-                          child&apos;s application.
+                          . If you choose No, a nurse or aide from our agency, not
+                          you, provides your child&apos;s care.
                         </>
                       ) : (
                         <>
@@ -1473,8 +1493,8 @@ export default function ReferralPage() {
                             not available for autism, behavioral, or developmental
                             needs
                           </strong>
-                          . If unsure, choose No. It will not affect the
-                          application.
+                          . If No, a nurse or aide from our agency, not a family
+                          member, provides the child&apos;s care.
                         </>
                       )}
                     </p>
@@ -1824,6 +1844,71 @@ export default function ReferralPage() {
                     </>
                   )}
 
+                  {/* Agency staff in the home (GAPP). Every paid-caregiver
+                      stop keys on the paid answer being Yes; this makes "No"
+                      mean what it says. Declining staff with no paid-parent
+                      path left is a dead end (the Williams twins, 9/29). */}
+                  {showGappClinical && (
+                    <>
+                      <div className="form-group" id={fieldId('wantsAgencyStaff')}>
+                        <label htmlFor="wantsAgencyStaff" className="form-label">
+                          Do you want a nurse or aide from our agency to come to the
+                          home to care for {careSubject}? *
+                        </label>
+                        <p style={{ margin: '0 0 8px', fontSize: 13, color: '#5c6b7a', lineHeight: 1.5 }}>
+                          GAPP care is provided in the home by a nurse or aide who
+                          works for an agency like ours. A parent can be paid only for
+                          hands-on personal care, never for nursing care.
+                        </p>
+                        <select
+                          id="wantsAgencyStaff"
+                          name="wantsAgencyStaff"
+                          className={`form-select ${isFieldInvalid('wantsAgencyStaff') ? styles.fieldError : ''}`}
+                          value={formData.wantsAgencyStaff}
+                          onChange={handleChange}
+                          required
+                        >
+                          <option value="">Select an Answer</option>
+                          <option value="yes">Yes</option>
+                          <option value="no">No</option>
+                        </select>
+                        <FieldError message={fieldMessage('wantsAgencyStaff')} />
+                      </div>
+
+                      {isStaffBlock && (
+                        <div className={styles.countyNotice}>
+                          <AlertCircle size={16} />
+                          <p>
+                            <strong>We cannot accept this referral as answered.</strong>{' '}
+                            You told us you do not want a nurse or aide from our agency
+                            in the home.{' '}
+                            {staffScreen.reason === 'no-service' &&
+                              'You are also not applying to be the paid caregiver. That leaves no one to provide the care, so there is no GAPP service we can set up.'}
+                            {staffScreen.reason === 'young-child' &&
+                              'A parent cannot be paid for nursing care, and for an infant or young child Medicaid does not pay a parent for everyday care like feeding, bathing, and dressing. Without a nurse or aide, there is no GAPP service we can set up.'}
+                            {staffScreen.reason === 'nursing-only' &&
+                              'A parent can be paid only for hands-on personal care (feeding, bathing, dressing, toileting, getting around), never for nursing care, and no personal care needs are listed above. Without a nurse, there is no GAPP service we can set up.'}{' '}
+                            Neither we nor our partner agencies can act on this referral,
+                            so please do not submit it. If you do want a nurse or aide to
+                            help with the care, change this answer to <strong>Yes</strong>.
+                          </p>
+                        </div>
+                      )}
+
+                      {!isBlocked && staffScreen.flag && (
+                        <div className={styles.countyNotice}>
+                          <AlertCircle size={16} />
+                          <p>
+                            <strong>A nurse must still visit to assess {careSubject}.</strong>{' '}
+                            Even when a parent is the paid caregiver, Medicaid sets the
+                            paid hours from an assessment by a skilled nurse. Without
+                            that visit, no hours can be approved.
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  )}
+
                   {/* CMO disclosure. Per the January 2026 GAPP Provider
                       Teleconference: "if a member wants to apply for GAPP
                       services, that they will be removed from their CMO if they
@@ -1910,6 +1995,9 @@ export default function ReferralPage() {
                   )}
                   {isPaidMixedBlock && (
                     <FieldError message="This referral cannot be submitted as answered: a parent cannot be paid for care related to autism, ADHD, or developmental delay. Change the paid caregiver answer to No to send the referral for the medical condition." />
+                  )}
+                  {isStaffBlock && (
+                    <FieldError message="This referral cannot be submitted as answered: without a nurse or aide from an agency in the home, there is no GAPP service to set up. See the note above, or change that answer to Yes." />
                   )}
                   {isPaidFosterBlock && (
                     <FieldError message="This referral cannot be submitted as answered: foster parents cannot be paid under the Family Caregiver Option. Change the paid caregiver answer to No to send the referral for the child's care." />

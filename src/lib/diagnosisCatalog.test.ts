@@ -24,6 +24,7 @@ import {
   relationshipLabel,
   RELATIONSHIP_OPTIONS,
   screenCaregiverRelationship,
+  screenAgencyStaff,
   screenBehavioralPaidCaregiver,
   screenMixedPaidCaregiver,
   screenYoungPaidCaregiver,
@@ -449,5 +450,58 @@ describe('highBehaviorPaidFlag', () => {
   it('stays quiet otherwise', () => {
     expect(highBehaviorPaidFlag({ behaviorRisk: 'managed', seekingPaidCaregiver: 'yes' })).toBeNull();
     expect(highBehaviorPaidFlag({ behaviorRisk: 'high', seekingPaidCaregiver: 'no' })).toBeNull();
+  });
+});
+
+describe('screenAgencyStaff (the Williams twins)', () => {
+  const NOW = new Date('2026-09-30T12:00:00Z').getTime();
+  // Age 1, feeding tube, help with feeding and bathing. On the form the mother
+  // answered No to being paid; on the phone she wanted pay and no nurse.
+  const twin = {
+    dob: '2025-06-24',
+    equipment: ['feeding_tube', 'help_feeding', 'help_hygiene'],
+  };
+  const screen = (o: Record<string, unknown>) => screenAgencyStaff({ ...twin, ...o }, NOW);
+
+  it('does nothing when the family wants agency staff, or was never asked', () => {
+    expect(screen({ wantsAgencyStaff: 'yes', seekingPaidCaregiver: 'no' }).block).toBeNull();
+    expect(screen({ seekingPaidCaregiver: 'no' })).toEqual({ block: null, reason: null, flag: null });
+  });
+
+  it('refuses no staff + not seeking pay: nobody is left to provide care', () => {
+    const r = screen({ wantsAgencyStaff: 'no', seekingPaidCaregiver: 'no' });
+    expect(r.reason).toBe('no-service');
+    expect(r.block).toContain('cannot be accepted');
+  });
+
+  it('refuses no staff + paid for a child under 6, even with a feeding tube', () => {
+    const r = screen({ wantsAgencyStaff: 'no', seekingPaidCaregiver: 'yes' });
+    expect(r.reason).toBe('young-child');
+  });
+
+  it('lets a young child through on a mobility need at 18 months or older', () => {
+    const r = screen({ wantsAgencyStaff: 'no', seekingPaidCaregiver: 'yes', dob: '2022-03-01', equipment: ['wheelchair'] });
+    expect(r.block).toBeNull();
+    expect(r.flag).toContain('does NOT want a nurse or aide');
+    expect(screen({ wantsAgencyStaff: 'no', seekingPaidCaregiver: 'yes', dob: '2025-09-01', equipment: ['wheelchair'] }).reason).toBe('young-child');
+  });
+
+  it('at 6 or older, allows only when a personal-care need is listed', () => {
+    const older = { wantsAgencyStaff: 'no', seekingPaidCaregiver: 'yes', dob: '2014-01-01' };
+    expect(screen({ ...older, equipment: ['feeding_tube'] }).reason).toBe('nursing-only');
+    expect(screen({ ...older, equipment: ['equip_none'] }).reason).toBe('nursing-only');
+    const ok = screen({ ...older, equipment: ['feeding_tube', 'help_hygiene'] });
+    expect(ok.block).toBeNull();
+    expect(ok.flag).toContain('must still assess');
+  });
+
+  it('has no dashes in any copy', () => {
+    const copy = [
+      screen({ wantsAgencyStaff: 'no', seekingPaidCaregiver: 'no' }).block,
+      screen({ wantsAgencyStaff: 'no', seekingPaidCaregiver: 'yes' }).block,
+      screen({ wantsAgencyStaff: 'no', seekingPaidCaregiver: 'yes', dob: '2014-01-01', equipment: ['trach'] }).block,
+      screen({ wantsAgencyStaff: 'no', seekingPaidCaregiver: 'yes', dob: '2014-01-01', equipment: ['help_feeding'] }).flag,
+    ];
+    for (const c of copy) expect(c).not.toMatch(/[—–]/);
   });
 });

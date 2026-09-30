@@ -15,6 +15,7 @@ import {
   paidCareBasisLabel,
   relationshipLabel,
   screenCaregiverRelationship,
+  screenAgencyStaff,
   screenBehavioralPaidCaregiver,
   screenMixedPaidCaregiver,
   type BehaviorRisk,
@@ -57,6 +58,8 @@ interface IncomingPayload {
     relationship?: CaregiverRelationship;
     /** Asked only when the relationship screen needs it. */
     hasGuardianship?: '' | 'yes' | 'no';
+    /** Does the family want a nurse or aide from the agency in the home? */
+    wantsAgencyStaff?: '' | 'yes' | 'no';
     fullName?: string;
     phoneNumber?: string;
     emailAddress?: string;
@@ -157,6 +160,7 @@ function toReferralInput(payload: IncomingPayload): ReferralInput {
   // Who is asking to be paid (guardianship / not-the-applicant notes), and a
   // paid request that reports behaviors needing help to manage.
   const relationship = screenCaregiverRelationship(r);
+  const staffFlag = screenAgencyStaff(r).flag;
   const behaviorFlag = highBehaviorPaidFlag(r);
 
   const inferred = inferService(r);
@@ -186,6 +190,7 @@ function toReferralInput(payload: IncomingPayload): ReferralInput {
       ...(reviewFlag ? [{ label: '⚠ Review', value: reviewFlag }] : []),
       ...(ageFlag ? [{ label: '⚠ Young child', value: ageFlag }] : []),
       ...(relationship.flag ? [{ label: '⚠ Relationship', value: relationship.flag }] : []),
+      ...(staffFlag ? [{ label: '⚠ Agency staff', value: staffFlag }] : []),
       ...(behaviorFlag ? [{ label: '⚠ Behavior', value: behaviorFlag }] : []),
       ...(inferred.conflict
         ? [{ label: '⚠ Care need unclear', value: inferred.conflict }]
@@ -207,6 +212,9 @@ function toReferralInput(payload: IncomingPayload): ReferralInput {
       },
       { label: 'Inferred service need', value: inferredValue },
       { label: 'Seeking paid caregiver', value: seekingValue },
+      ...(r.wantsAgencyStaff
+        ? [{ label: 'Wants agency staff in the home', value: r.wantsAgencyStaff === 'yes' ? 'Yes' : 'No' }]
+        : []),
       ...(relationship.asksGuardianship
         ? [{
             label: 'Legal guardianship',
@@ -277,7 +285,12 @@ export async function POST(req: Request) {
   // dead ends are refused, not stored, and not emailed. There is nothing the
   // agency can do with them. 422 (not 5xx) so the site treats it as a refusal
   // rather than an outage and does not fire its portal-down fallback email.
-  const refusal = paidCaregiverRefusal(payload.referral ?? {});
+  // Declining agency staff is refused whether or not pay is sought, so it
+  // runs after (and outside) the paid-only checks, matching the forms.
+  const staff = screenAgencyStaff(payload.referral ?? {});
+  const refusal =
+    paidCaregiverRefusal(payload.referral ?? {}) ??
+    (staff.block ? { code: `no-agency-staff-${staff.reason}`, reason: staff.block } : null);
   if (refusal) {
     return NextResponse.json(
       { error: refusal.reason, refused: refusal.code },

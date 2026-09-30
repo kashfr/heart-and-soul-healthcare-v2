@@ -19,6 +19,7 @@ import {
   paidCareBasisLabel,
   relationshipLabel,
   screenCaregiverRelationship,
+  screenAgencyStaff,
   screenBehavioralPaidCaregiver,
   screenMixedPaidCaregiver,
   type ServiceKey,
@@ -239,6 +240,13 @@ export async function processReferralSubmission(data: any) {
       return { success: false, refused: 'foster-paid-caregiver', error: relationship.block };
     }
   }
+  // Declining agency staff (GAPP) is refused whether or not pay is sought.
+  if (program?.interest === 'gapp') {
+    const staff = screenAgencyStaff({ ...details, dob: client?.dob });
+    if (staff.block) {
+      return { success: false, refused: `no-agency-staff-${staff.reason}`, error: staff.block };
+    }
+  }
 
   try {
     // 1. Store in the unified referrals collection so it appears in the admin
@@ -294,6 +302,9 @@ export async function processReferralSubmission(data: any) {
           ...(reviewFlag ? [{ label: '⚠ Review', value: reviewFlag }] : []),
           ...(ageFlag ? [{ label: '⚠ Young child', value: ageFlag }] : []),
           ...(relationship?.flag ? [{ label: '⚠ Relationship', value: relationship.flag }] : []),
+          ...(program.interest === 'gapp' && screenAgencyStaff({ ...details, dob: client.dob }).flag
+            ? [{ label: '⚠ Agency staff', value: screenAgencyStaff({ ...details, dob: client.dob }).flag as string }]
+            : []),
           ...(behaviorFlag ? [{ label: '⚠ Behavior', value: behaviorFlag }] : []),
           ...(inferred?.conflict
             ? [{ label: '⚠ Care need unclear', value: inferred.conflict }]
@@ -358,6 +369,9 @@ export async function processReferralSubmission(data: any) {
                   ),
                 },
               ]
+            : []),
+          ...(program.interest === 'gapp' && details.wantsAgencyStaff
+            ? [{ label: 'Wants agency staff in the home', value: details.wantsAgencyStaff === 'yes' ? 'Yes' : 'No' }]
             : []),
           ...(relationship?.asksGuardianship
             ? [{
