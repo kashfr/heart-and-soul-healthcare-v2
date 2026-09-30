@@ -2,11 +2,12 @@
 
 import { useEffect, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { stageChangeRequest, type MarOrder, type MarDocumenter, type MarChangeRequestType } from '@/lib/mar';
+import { orderRecordsValue, stageChangeRequest, type MarOrder, type MarDocumenter, type MarChangeRequestType } from '@/lib/mar';
 import { setMarAdmin, unlistedMarAdminKey } from './marAdminStore';
 import { MED_FREQUENCIES, PRN_FREQUENCY, PRN_SUB_FREQUENCIES } from '@/lib/medFrequencies';
 import {
   describeSlot,
+  inheritMeasurement,
   isPristineSchedule,
   looksLikeUnknownPhysician,
   suggestedScheduleFor,
@@ -104,7 +105,7 @@ export default function MedChangeRequestModal({
   const [timeAnchors, setTimeAnchors] = useState<string[]>(['']);
   // Sliding-scale order: the dose comes from a blood glucose table, so the
   // fixed dose / units inputs are replaced by the table.
-  const [scaleOn, setScaleOn] = useState(false);
+  const [scaleChecked, setScaleOn] = useState(false);
   const [scaleRows, setScaleRows] = useState<SlidingScaleFormRow[]>(starterSlidingScaleForm());
   const [indication, setIndication] = useState('');
   const [orderingPhysician, setOrderingPhysician] = useState('');
@@ -129,6 +130,15 @@ export default function MedChangeRequestModal({
   const [doseByName, setDoseByName] = useState('');
 
   const [reason, setReason] = useState('');
+
+  // Changing a check-style order (one that records a reading, such as a
+  // gastric residual check; see MarOrder.valueLabel). This form has no inputs
+  // for the measurement, so it is carried through from the order untouched,
+  // dose and units stay optional, and the row cannot become a sliding scale.
+  const changeTarget = mode === 'change' ? activeOrders.find((o) => o.id === targetOrderId) : undefined;
+  const checkLabel = changeTarget && orderRecordsValue(changeTarget) ? (changeTarget.valueLabel || '').trim() : '';
+  const isCheckTarget = !!checkLabel;
+  const scaleOn = scaleChecked && !isCheckTarget;
 
   // Choosing a frequency that implies a schedule ("Before meals") fills the
   // times in, but only while the schedule is still the untouched default.
@@ -192,6 +202,7 @@ export default function MedChangeRequestModal({
       orderingPhysician,
       orderSignedDate,
       physicianUnknown,
+      valueLabel: checkLabel,
       slidingScaleOn: scaleOn,
       slidingScaleRows: scaleRows,
       // The "I gave a dose" shortcut is not offered on a sliding-scale order
@@ -202,6 +213,9 @@ export default function MedChangeRequestModal({
       doseTime,
       today: todayISO(),
     });
+    // The allowed readings are not edited here (they ride along from the
+    // order as they are), so there is no field to send the nurse to.
+    delete fieldErrors.valueOptions;
     setErrors(fieldErrors);
     const first = firstErrorKey(MED_CHANGE_FIELD_ORDER, fieldErrors);
     if (first) {
@@ -211,7 +225,7 @@ export default function MedChangeRequestModal({
 
     setSubmitting(true);
     try {
-      const proposedMed = {
+      const entered = {
         medName, route, frequencyLabel,
         dose: scaleOn ? '' : dose,
         units: scaleOn ? '' : units,
@@ -227,6 +241,9 @@ export default function MedChangeRequestModal({
         notes,
       };
       const target = activeOrders.find((o) => o.id === targetOrderId);
+      // A change keeps the order's measurement exactly as it is, so editing a
+      // check-style order here can never strip what it records.
+      const proposedMed = mode === 'change' && target ? inheritMeasurement(entered, target) : entered;
 
       if (mode === 'add') {
         await stageChangeRequest(
@@ -366,6 +383,13 @@ export default function MedChangeRequestModal({
                 <Field id={fieldId('medName')} error={errors.medName} label="Medication name *">
                   <input type="text" value={medName} onChange={(e) => { setMedName(e.target.value); clearErr('medName'); }} style={{ ...input, ...hi('medName') }} placeholder="e.g., Acetaminophen" />
                 </Field>
+                {isCheckTarget && (
+                  <p style={{ fontSize: 12.5, color: '#6b7280', margin: '0 0 12px', lineHeight: 1.5 }}>
+                    This row records a <strong>{checkLabel}</strong> reading each time it is charted. The reading and
+                    its allowed values stay as they are.
+                  </p>
+                )}
+                {!isCheckTarget && (
                 <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 12, cursor: 'pointer' }}>
                   <input
                     type="checkbox"
@@ -383,6 +407,7 @@ export default function MedChangeRequestModal({
                     <strong>Sliding scale.</strong> The dose depends on a blood glucose reading (insulin).
                   </span>
                 </label>
+                )}
                 {scaleOn ? (
                   <div id={fieldId('slidingScale')} style={{ marginBottom: 12 }}>
                     <div style={{ ...fieldLabel, marginBottom: 4 }}>Sliding scale from the order *</div>
@@ -395,10 +420,10 @@ export default function MedChangeRequestModal({
                   </div>
                 ) : (
                 <div style={grid2}>
-                  <Field id={fieldId('dose')} error={errors.dose} label="Dose *">
+                  <Field id={fieldId('dose')} error={errors.dose} label={isCheckTarget ? 'Dose' : 'Dose *'}>
                     <input type="text" value={dose} onChange={(e) => { setDose(e.target.value); clearErr('dose'); }} style={{ ...input, ...hi('dose') }} placeholder="e.g., 500" />
                   </Field>
-                  <Field id={fieldId('units')} error={errors.units} label="Units *">
+                  <Field id={fieldId('units')} error={errors.units} label={isCheckTarget ? 'Units' : 'Units *'}>
                     <input type="text" list="cr-units" value={units} onChange={(e) => { setUnits(e.target.value); clearErr('units'); }} style={{ ...input, ...hi('units') }} placeholder="e.g., mg" />
                     <datalist id="cr-units">{UNITS.map((u) => <option key={u} value={u} />)}</datalist>
                   </Field>

@@ -8,6 +8,7 @@ import {
   cleanTimeLabels,
   decideNurseDoseGate,
   deriveInitials,
+  inheritMeasurement,
   isSameDayAmendable,
   parseValueOptions,
   regimenFields,
@@ -214,7 +215,9 @@ async function applyChangeInBatch(
     if (!oldSnap.exists || String(old.patientId || '') !== patientId || String(old.status || '') !== 'active') {
       return false;
     }
-    const p = (data.proposedMed || {}) as ProposedMedShape;
+    // A proposal that carries no measurement (the note modal has no inputs for
+    // it) keeps the order's own, so it can never strip a check-style order.
+    const p = inheritMeasurement((data.proposedMed || {}) as ProposedMedShape, old);
 
     // Does this edit change HOW the med is given, or only who ordered it and
     // why? Re-derived here rather than trusted from the client, so a crafted
