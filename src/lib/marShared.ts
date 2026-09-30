@@ -234,6 +234,50 @@ export function parseValueOptions(input: string[] | string | undefined): string[
   return out;
 }
 
+/** What makes an order a check-style row (see MarOrder.valueLabel): the
+ *  measurement, its unit, and the readings the nurse picks from. */
+export interface MeasurementConfig {
+  valueLabel?: string;
+  valueUnit?: string;
+  valueOptions?: string[] | string;
+}
+
+/**
+ * The measurement half of a proposal as it is stored, or nothing at all when
+ * the proposal does not speak to it. A missing `valueLabel` means the form
+ * that built the proposal has no measurement inputs (the progress note's
+ * modal), which is different from a blank one: blank is the standalone form
+ * saying "this order is not a check". Keeping the keys off the record is what
+ * lets inheritMeasurement tell the two apart.
+ */
+export function measurementFields(
+  p: MeasurementConfig,
+): { valueLabel: string; valueUnit: string; valueOptions: string[] } | Record<string, never> {
+  if (p.valueLabel === undefined || p.valueLabel === null) return {};
+  return {
+    valueLabel: String(p.valueLabel).trim(),
+    valueUnit: String(p.valueUnit || '').trim(),
+    valueOptions: parseValueOptions(p.valueOptions),
+  };
+}
+
+/**
+ * A change that says nothing about the measurement leaves the order's
+ * measurement exactly as it is. Without this, a check-style order (a gastric
+ * residual check) edited from a form with no measurement inputs would be read
+ * as "measurement removed": a regimen change that turns the row into an
+ * ordinary dose row with no dose.
+ *
+ * Shared: the note modal calls it so the staged change carries the config, and
+ * the server calls it again when applying, so a change staged by an older page
+ * (or a draft staged before this existed) cannot strip it either.
+ */
+export function inheritMeasurement<T extends object>(proposed: T, current: MeasurementConfig): T & MeasurementConfig {
+  const own = (proposed as MeasurementConfig).valueLabel;
+  if (own !== undefined && own !== null) return proposed;
+  return { ...proposed, ...measurementFields({ ...current, valueLabel: current.valueLabel || '' }) };
+}
+
 /** The order's administration parameters, trimmed ('' when none). One place
  *  to read them so every charting surface agrees on what "has parameters"
  *  means (whitespace-only is none). */
@@ -522,6 +566,7 @@ export function regimenFields(o: RegimenComparable): {
   scheduledTimes: string[];
   timeLabels: Record<string, string>;
   isPRN: boolean;
+  prnFrequencyLabel: string;
   valueLabel: string;
   valueUnit: string;
   slidingScale: SlidingScaleRow[];
@@ -537,6 +582,8 @@ export function regimenFields(o: RegimenComparable): {
     scheduledTimes,
     timeLabels: cleanTimeLabels(o.timeLabels, scheduledTimes, isPRN),
     isPRN,
+    // Blank on a scheduled order, the same as every write path stores it.
+    prnFrequencyLabel: isPRN ? String(o.prnFrequencyLabel || '').trim() : '',
     valueLabel: String(o.valueLabel || ''),
     valueUnit: String(o.valueUnit || ''),
     slidingScale: parseSlidingScale(o.slidingScale),

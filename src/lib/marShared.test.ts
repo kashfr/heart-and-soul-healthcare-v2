@@ -16,6 +16,9 @@ import {
   physicianOrderStale,
   regimenFieldsChanged,
   regimenFields,
+  REGIMEN_FIELDS,
+  inheritMeasurement,
+  measurementFields,
   isSameDayAmendable,
   isCorrectionOnly,
   describeRegimenChanges,
@@ -772,6 +775,86 @@ describe('regimenFieldsChanged', () => {
   });
 });
 
+describe('measurementFields / inheritMeasurement', () => {
+  const residualCheck = {
+    medName: 'Gastric residual check',
+    dose: '',
+    units: '',
+    route: 'G-tube',
+    frequencyLabel: 'Every 4 hours (Q4H)',
+    scheduledTimes: ['08:00', '12:00'],
+    isPRN: false,
+    valueLabel: 'Gastric residual',
+    valueUnit: 'mL',
+    valueOptions: ['0', '10', '20', '30'],
+  };
+  // What the progress note's modal collects: no measurement keys at all.
+  const noteEdit = {
+    medName: 'Gastric residual check',
+    dose: '',
+    units: '',
+    route: 'G-tube',
+    frequencyLabel: 'Every 4 hours (Q4H)',
+    scheduledTimes: ['08:00', '12:00', '16:00'],
+    isPRN: false,
+  };
+
+  it('measurementFields stores the config normalized, or nothing when the proposal has none', () => {
+    expect(measurementFields({ valueLabel: ' Gastric residual ', valueUnit: ' mL ', valueOptions: '0, 10, 10, 20' })).toEqual({
+      valueLabel: 'Gastric residual',
+      valueUnit: 'mL',
+      valueOptions: ['0', '10', '20'],
+    });
+    // Blank is a statement ("not a check") and is kept; absent is not.
+    expect(measurementFields({ valueLabel: '' })).toEqual({ valueLabel: '', valueUnit: '', valueOptions: [] });
+    expect(measurementFields({})).toEqual({});
+    expect(measurementFields({ valueUnit: 'mL', valueOptions: ['0', '10'] })).toEqual({});
+  });
+
+  it('a proposal with no measurement inherits the order\'s, unchanged', () => {
+    const p = inheritMeasurement(noteEdit, residualCheck);
+    expect(p.valueLabel).toBe('Gastric residual');
+    expect(p.valueUnit).toBe('mL');
+    expect(p.valueOptions).toEqual(['0', '10', '20', '30']);
+    // Everything the nurse did enter is untouched.
+    expect(p.scheduledTimes).toEqual(['08:00', '12:00', '16:00']);
+  });
+
+  it('a note-side edit of a check-style order no longer reads as the measurement being removed', () => {
+    // Before: the bare proposal compared as valueLabel + valueUnit removed.
+    expect(regimenFieldsChanged(residualCheck, noteEdit)).toEqual(['scheduledTimes', 'valueLabel', 'valueUnit']);
+    const p = inheritMeasurement(noteEdit, residualCheck);
+    expect(regimenFieldsChanged(residualCheck, p)).toEqual(['scheduledTimes']);
+    // And the replacement order (or the amended one) still records the reading.
+    expect(regimenFields(p)).toMatchObject({ valueLabel: 'Gastric residual', valueUnit: 'mL' });
+    expect(measurementFields(p)).toEqual({ valueLabel: 'Gastric residual', valueUnit: 'mL', valueOptions: ['0', '10', '20', '30'] });
+  });
+
+  it('a documentation-only note edit of a check-style order stays a correction', () => {
+    const p = inheritMeasurement({ ...noteEdit, scheduledTimes: ['08:00', '12:00'] }, residualCheck);
+    expect(isCorrectionOnly(residualCheck, p)).toBe(true);
+  });
+
+  it('an explicit measurement on the proposal wins, including an explicit blank', () => {
+    // The standalone MAR form always sends the keys, so it can still rename
+    // the measurement or turn a check back into an ordinary dose row.
+    const renamed = inheritMeasurement({ ...noteEdit, valueLabel: 'Residual volume', valueUnit: 'cc', valueOptions: ['0', '5'] }, residualCheck);
+    expect(renamed).toMatchObject({ valueLabel: 'Residual volume', valueUnit: 'cc', valueOptions: ['0', '5'] });
+    const cleared = inheritMeasurement({ ...noteEdit, valueLabel: '', valueUnit: '', valueOptions: [] }, residualCheck);
+    expect(cleared.valueLabel).toBe('');
+    expect(regimenFieldsChanged(residualCheck, cleared)).toContain('valueLabel');
+  });
+
+  it('inheriting from an ordinary order yields an explicit "not a check"', () => {
+    const plain: { medName: string; dose: string; units: string; valueLabel?: string } = { medName: 'Keppra', dose: '10', units: 'mL' };
+    expect(inheritMeasurement({ medName: 'Keppra', dose: '15', units: 'mL' }, plain)).toMatchObject({
+      valueLabel: '',
+      valueUnit: '',
+      valueOptions: [],
+    });
+  });
+});
+
 describe('describeFrequency', () => {
   it('reads a PRN order with a sub-frequency the way the order is written', () => {
     expect(
@@ -936,11 +1019,37 @@ describe('regimenFields', () => {
       scheduledTimes: ['08:00', '13:00'],
       timeLabels: {},
       isPRN: false,
+      prnFrequencyLabel: '',
       valueLabel: '',
       valueUnit: '',
       slidingScale: [],
     });
     expect(regimenFields({ isPRN: true, scheduledTimes: ['08:00'] }).scheduledTimes).toEqual([]);
+  });
+
+  it('carries the PRN sub-frequency, and blanks it on a scheduled order', () => {
+    const prn = { medName: 'Acetaminophen', isPRN: true, frequencyLabel: 'As needed (PRN)', prnFrequencyLabel: ' Every 6 hours (Q6H) ' };
+    expect(regimenFields(prn).prnFrequencyLabel).toBe('Every 6 hours (Q6H)');
+    expect(regimenFields({ ...prn, prnFrequencyLabel: undefined }).prnFrequencyLabel).toBe('');
+    expect(regimenFields({ ...prn, isPRN: false }).prnFrequencyLabel).toBe('');
+  });
+
+  it('a same-day amendment of only the PRN interval writes the new interval and remembers the old', () => {
+    // What applyChangeInBatch does on the amendment path: the order is
+    // rewritten with regimenFields(proposal), and previousValues keeps
+    // regimenFields(order as it stood).
+    const order = { medName: 'Acetaminophen', dose: '500', units: 'mg', route: 'PO (by mouth)', frequencyLabel: 'As needed (PRN)', isPRN: true, prnFrequencyLabel: 'Every 4 hours (Q4H)' };
+    const proposal = { ...order, prnFrequencyLabel: 'Every 6 hours (Q6H)' };
+    expect(regimenFieldsChanged(order, proposal)).toEqual(['prnFrequencyLabel']);
+    expect(regimenFields(proposal).prnFrequencyLabel).toBe('Every 6 hours (Q6H)');
+    expect(regimenFields(order).prnFrequencyLabel).toBe('Every 4 hours (Q4H)');
+    // Once written, the amended order no longer differs from the proposal.
+    expect(regimenFieldsChanged({ ...order, ...regimenFields(proposal) }, proposal)).toEqual([]);
+  });
+
+  it('snapshots every field the comparison can report, so an amendment never records a change it did not write', () => {
+    const snapshot = regimenFields({});
+    for (const field of REGIMEN_FIELDS) expect(snapshot).toHaveProperty(field);
   });
 
   it('carries meal anchors and the sliding scale, and drops anchors for times not on the schedule', () => {

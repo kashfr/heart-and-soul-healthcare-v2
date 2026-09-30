@@ -12,7 +12,7 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { buildMarAdminFields, cleanTimeLabels, parseValueOptions, DEFAULT_ML_VALUE_OPTIONS } from './marShared';
+import { buildMarAdminFields, cleanTimeLabels, measurementFields, parseValueOptions, DEFAULT_ML_VALUE_OPTIONS } from './marShared';
 import type { MarChangeKind, RegimenField } from './marShared';
 import { parseSlidingScale, SLIDING_SCALE_DOSE_LABEL, type SlidingScaleRow } from './slidingScale';
 
@@ -638,6 +638,11 @@ export interface ProposedMed {
   isPRN: boolean;
   prnFrequencyLabel?: string;
   indication: string;
+  // Check-style order config (see MarOrder.valueLabel). Left off entirely by a
+  // form that cannot edit it; the change then keeps the order's own.
+  valueLabel?: string;
+  valueUnit?: string;
+  valueOptions?: string[];
   startDate: string;
   orderSignedDate: string;
   orderingPhysician: string;
@@ -720,6 +725,7 @@ function normalizeProposed(p: ProposedMed): ProposedMed {
     isPRN: p.isPRN,
     prnFrequencyLabel: p.isPRN ? p.prnFrequencyLabel?.trim() ?? '' : '',
     indication: p.indication.trim(),
+    ...measurementFields(p),
     startDate: p.startDate,
     orderSignedDate: p.orderSignedDate?.trim() ?? '',
     orderingPhysician: p.orderingPhysician.trim(),
