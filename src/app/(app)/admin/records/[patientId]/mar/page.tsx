@@ -175,6 +175,10 @@ export default function MonthlyMarPage() {
   const monthStart = dayISO(month, 1);
   const monthEnd = dayISO(month, days);
   const isCurrentMonth = month === currentMonth();
+  // A month ahead of today has no doses yet; it prints as a blank paper MAR
+  // (the orders active that month, empty boxes, signature lines) for a nurse
+  // to take on site.
+  const isFutureMonth = month > currentMonth();
 
   const refreshAdmins = async () => {
     setAdmins(await getAdministrationsForRange(patientId, monthStart, monthEnd));
@@ -460,11 +464,16 @@ export default function MonthlyMarPage() {
                     Jump to Current Month
                   </button>
                 )}
+                {isFutureMonth && (
+                  <div style={{ fontSize: 12, color: '#5c6b7a', marginTop: 2 }}>
+                    Future month. Export PDF prints a blank paper MAR with this month&apos;s orders and signature lines.
+                  </div>
+                )}
               </div>
               <button
                 type="button"
                 onClick={() => setMonth(shiftMonth(month, 1))}
-                style={{ ...navBtnStyle, visibility: isCurrentMonth ? 'hidden' : 'visible' }}
+                style={navBtnStyle}
                 aria-label="Next month"
               >
                 <ChevronRight size={18} />
