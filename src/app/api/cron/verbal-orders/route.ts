@@ -9,13 +9,14 @@ import {
   notifyStaffGeneric,
   recordFaxStatus,
   serializeVerbalOrder,
+  verbalOrderStaffUids,
   verbalOrderThresholds,
 } from '@/lib/verbalOrderServer';
 import { pollInFlightFaxes } from '@/lib/faxCenterServer';
 import { faxRecipientUids, listOpenPpotRequests, ppotInboundBellText, runPpotRecertSweep, runPpotReminderSweep } from '@/lib/ppotServer';
 import { createPortalNotification } from '@/lib/notificationsServer';
 import { ppotCandidatesForInbound } from '@/lib/ppotShared';
-import { candidateOrdersForInboundFax, inboundFaxSender, verbalOrderUrgency } from '@/lib/verbalOrderShared';
+import { candidateOrdersForInboundFax, inboundFaxBell, inboundFaxGeneralBellText, inboundFaxSender, verbalOrderUrgency } from '@/lib/verbalOrderShared';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -30,7 +31,9 @@ function ymd(d: Date): string {
  *
  *  1. Inbound: list unread SRFax faxes from the last 14 days and record each
  *     under verbalOrderInbound with the open orders whose physician fax matches
- *     the sender ('suggested') or none ('unmatched'), then ring staff. Nothing
+ *     the sender ('suggested') or none ('unmatched'), then ring staff: the
+ *     verbal-order bell only when the sender matches an open order, otherwise
+ *     a plain "a fax arrived" (see inboundFaxBell). Nothing
  *     is filed automatically: a person opens the fax and matches it on the
  *     queue, which is what files it and marks the order signed. The fax stays
  *     unread in SRFax until then.
@@ -80,6 +83,7 @@ export async function GET(request: Request) {
       // to is suggested as the signed copy in the Fax Center.
       const openPpot = await listOpenPpotRequests().catch(() => []);
       let ppotRecipients: string[] | null = null;
+      let staffUids: string[] | null = null;
       if (!inbox.ok) summary.errors.push(`inbox: ${inbox.error || 'failed'}`);
       for (const fax of inbox.faxes) {
         summary.inboundSeen++;
@@ -111,16 +115,35 @@ export async function GET(request: Request) {
           ppotRecipients ??= await faxRecipientUids();
           const text = ppotInboundBellText(inboundFaxSender(fax.callerId, fax.remoteId).from, openPpot.filter((r) => ppotCandidateKeys.includes(r.key)));
           for (const uid of ppotRecipients) await createPortalNotification(db, { userId: uid, kind: 'ppot-returned', text, href: '/admin/fax' });
-          // A fax from a PPOT physician with no open verbal order from that
-          // number is almost certainly the PPOT: don't also ring the
-          // verbal-order bell for it.
-          if (candidates.length === 0) continue;
         }
-        if (candidates.length === 1) {
-          const o = open.find((x) => x.id === candidates[0]);
+        // The verbal-order bell rings only when the sender matches an open
+        // order. A fax from a PPOT physician with no such order is almost
+        // certainly the PPOT, and one that matches nothing is just a fax.
+        const bell = inboundFaxBell({ candidateOrderIds: candidates, ppotCandidates: ppotCandidateKeys.length, openOrders: open.length });
+        if (!bell) continue;
+        if (bell.kind === 'order') {
+          const o = open.find((x) => x.id === bell.orderId);
           if (o) await notifyStaff('fax-returned', o, `/admin/verbal-orders?vo=${o.id}`);
-        } else {
+        } else if (bell.kind === 'orders') {
           await notifyStaffGeneric('A fax arrived on the portal line that may be a signed verbal order. Match it under Verbal orders.', '/admin/verbal-orders');
+        } else {
+          // Matches nothing we are waiting on: records, labs, a referral. Say
+          // only that a fax arrived. Fax Center users file it there. While an
+          // order is awaiting a signature it could still be that order coming
+          // back from another number, so the staff who work the verbal-order
+          // queue are pointed there instead (they are also the fallback when
+          // nobody has the Fax Center).
+          ppotRecipients ??= await faxRecipientUids();
+          const faxUids = new Set(ppotRecipients);
+          const toQueue = new Set<string>();
+          if (bell.ordersAwaiting || faxUids.size === 0) {
+            staffUids ??= await verbalOrderStaffUids();
+            for (const uid of staffUids) toQueue.add(uid);
+          }
+          const text = inboundFaxGeneralBellText(inboundFaxSender(fax.callerId, fax.remoteId).from, bell.ordersAwaiting);
+          for (const uid of new Set([...faxUids, ...toQueue])) {
+            await createPortalNotification(db, { userId: uid, kind: 'fax-inbound', text, href: toQueue.has(uid) ? '/admin/verbal-orders' : '/admin/fax' });
+          }
         }
       }
     } catch (err) {

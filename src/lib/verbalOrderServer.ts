@@ -548,6 +548,12 @@ export async function markSignTokenUsed(token: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /** Bell every active admin + supervisor (never the taking nurse for 'taken'). */
+/** Active admins and supervisors: the people who work the verbal-order queue. */
+export async function verbalOrderStaffUids(): Promise<string[]> {
+  const staff = await adminDb().collection('users').where('role', 'in', ['admin', 'supervisor']).get();
+  return staff.docs.filter((u) => (u.data() as { active?: boolean }).active !== false).map((u) => u.id);
+}
+
 export async function notifyStaffGeneric(text: string, href: string): Promise<number> {
   const db = adminDb();
   const staff = await db.collection('users').where('role', 'in', ['admin', 'supervisor']).get();

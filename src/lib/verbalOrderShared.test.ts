@@ -5,6 +5,8 @@ import {
   isVerbalOrderOpen,
   parseVerbalOrderStatus,
   formatUSFaxNumber,
+  inboundFaxBell,
+  inboundFaxGeneralBellText,
   inboundFaxSender,
   normalizeUSFaxNumber,
   validateVerbalOrderInput,
@@ -113,6 +115,27 @@ describe('candidateOrdersForInboundFax', () => {
     expect(candidateOrdersForInboundFax(['5034367151', '4045550101'], orders)).toEqual(['a']);
     expect(candidateOrdersForInboundFax(['', '4045550101'], orders)).toEqual(['a']);
     expect(candidateOrdersForInboundFax(['5034367151', ''], orders)).toEqual([]);
+  });
+});
+
+describe('inboundFaxBell', () => {
+  it('rings the verbal-order bell only when the sender matches an open order', () => {
+    expect(inboundFaxBell({ candidateOrderIds: ['a'], ppotCandidates: 0, openOrders: 1 })).toEqual({ kind: 'order', orderId: 'a' });
+    expect(inboundFaxBell({ candidateOrderIds: ['a', 'c'], ppotCandidates: 0, openOrders: 2 })).toEqual({ kind: 'orders' });
+    expect(inboundFaxBell({ candidateOrderIds: ['a'], ppotCandidates: 1, openOrders: 1 })).toEqual({ kind: 'order', orderId: 'a' });
+  });
+  it('stays quiet for a PPOT-only match (its own bell already rang)', () => {
+    expect(inboundFaxBell({ candidateOrderIds: [], ppotCandidates: 1, openOrders: 0 })).toBeNull();
+    expect(inboundFaxBell({ candidateOrderIds: [], ppotCandidates: 1, openOrders: 3 })).toBeNull();
+  });
+  it('treats a fax that matches nothing as a plain fax, never a verbal order', () => {
+    expect(inboundFaxBell({ candidateOrderIds: [], ppotCandidates: 0, openOrders: 0 })).toEqual({ kind: 'general', ordersAwaiting: false });
+    expect(inboundFaxBell({ candidateOrderIds: [], ppotCandidates: 0, openOrders: 2 })).toEqual({ kind: 'general', ordersAwaiting: true });
+  });
+  it('mentions verbal orders only while one is awaiting a signature', () => {
+    expect(inboundFaxGeneralBellText('(503) 436-7197', false)).toBe('A fax from (503) 436-7197 arrived on the portal line. Review it in the Fax Center.');
+    expect(inboundFaxGeneralBellText('', false)).not.toMatch(/verbal order/i);
+    expect(inboundFaxGeneralBellText('(503) 436-7197', true)).toMatch(/verbal order is awaiting/);
   });
 });
 
