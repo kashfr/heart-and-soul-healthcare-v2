@@ -12,8 +12,9 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { buildMarAdminFields, parseValueOptions, DEFAULT_ML_VALUE_OPTIONS } from './marShared';
+import { buildMarAdminFields, cleanTimeLabels, parseValueOptions, DEFAULT_ML_VALUE_OPTIONS } from './marShared';
 import type { MarChangeKind, RegimenField } from './marShared';
+import { parseSlidingScale, SLIDING_SCALE_DOSE_LABEL, type SlidingScaleRow } from './slidingScale';
 
 // Re-exported so UI code can keep importing these from '@/lib/mar' alongside
 // the order types; they live in marShared because the server-only med-change
@@ -55,6 +56,22 @@ export interface MarOrder {
   route: string;
   frequencyLabel: string; // free text, e.g. "BID", "Every morning"
   scheduledTimes: string[]; // 'HH:MM' 24h slots; empty for PRN
+  /**
+   * Meal anchors for scheduled times, keyed by the 'HH:MM' slot: "Before
+   * Breakfast", "Before Lunch", "Before Dinner", "At Bedtime". The slot keeps
+   * a clock time (the client's usual time for that meal) so due / late colors,
+   * shift-window gates, and dose slot keys keep working; the anchor is shown
+   * with the time wherever the time is shown. See TIME_ANCHORS in marShared.
+   */
+  timeLabels?: Record<string, string>;
+  /**
+   * Sliding-scale dosing (insulin by blood glucose). When present, the order
+   * has no fixed dose: `dose` reads "Per sliding scale" and each charted dose
+   * records the meter reading, what the scale called for, and the units
+   * actually given. A regimen field: editing the scale is a dose change. See
+   * slidingScale.ts.
+   */
+  slidingScale?: SlidingScaleRow[];
   isPRN: boolean;
   /**
    * PRN only: how often the med MAY be given when needed — "Every 4 hours
@@ -151,6 +168,8 @@ export interface MarOrderInput {
   route: string;
   frequencyLabel: string;
   scheduledTimes: string[];
+  timeLabels?: Record<string, string>;
+  slidingScale?: SlidingScaleRow[];
   isPRN: boolean;
   prnFrequencyLabel?: string;
   indication?: string;
@@ -174,21 +193,27 @@ export function orderRecordsValue(order: { valueLabel?: string }): boolean {
 // PRN orders carry no scheduled times; normalize so the stored shape is
 // consistent and free of undefined (Firestore rejects undefined values).
 function normalizeInput(input: MarOrderInput) {
+  const scheduledTimes = input.isPRN
+    ? []
+    : Array.from(new Set(input.scheduledTimes.filter(Boolean))).sort();
+  // A sliding-scale order has no fixed dose and is never a check-style order.
+  const slidingScale = parseSlidingScale(input.slidingScale);
+  const scaled = slidingScale.length > 0;
   return {
     medName: input.medName.trim(),
-    dose: input.dose.trim(),
-    units: input.units.trim(),
+    dose: scaled ? SLIDING_SCALE_DOSE_LABEL : input.dose.trim(),
+    units: scaled ? '' : input.units.trim(),
     route: input.route.trim(),
     frequencyLabel: input.frequencyLabel.trim(),
-    scheduledTimes: input.isPRN
-      ? []
-      : Array.from(new Set(input.scheduledTimes.filter(Boolean))).sort(),
+    scheduledTimes,
+    timeLabels: cleanTimeLabels(input.timeLabels, scheduledTimes, input.isPRN),
+    slidingScale,
     isPRN: input.isPRN,
     prnFrequencyLabel: input.isPRN ? input.prnFrequencyLabel?.trim() ?? '' : '',
     indication: input.indication?.trim() ?? '',
-    valueLabel: input.valueLabel?.trim() ?? '',
-    valueUnit: input.valueUnit?.trim() ?? '',
-    valueOptions: parseValueOptions(input.valueOptions),
+    valueLabel: scaled ? '' : input.valueLabel?.trim() ?? '',
+    valueUnit: scaled ? '' : input.valueUnit?.trim() ?? '',
+    valueOptions: scaled ? [] : parseValueOptions(input.valueOptions),
     startDate: input.startDate,
     endDate: input.endDate ?? null,
     orderSignedDate: input.orderSignedDate?.trim() ?? '',
@@ -322,6 +347,14 @@ export interface MarAdministration {
   value?: string;
   valueLabelSnapshot?: string;
   valueUnitSnapshot?: string;
+  // Sliding-scale dose (see MarOrder.slidingScale): the meter reading in
+  // mg/dL, the units the scale called for at that reading, the matched range
+  // in words, and (only when the amount given differs from the scale) why.
+  // On a given sliding-scale dose, doseSnapshot is the units actually given.
+  glucoseReading?: string;
+  scaleDose?: string;
+  scaleRangeSnapshot?: string;
+  scaleDeviationReason?: string;
   date: string; // YYYY-MM-DD (date of service)
   scheduledTime: string; // 'HH:MM' or 'PRN'
   status: AdminStatus;
@@ -398,6 +431,12 @@ export interface MarAdministrationDraft {
   value?: string; // measurement, for a check-style order (e.g. gastric residual)
   valueLabel?: string;
   valueUnit?: string;
+  // Sliding-scale dose: reading, what the scale called for, and why the amount
+  // given differs (when it does). `dose` carries the units actually given.
+  glucoseReading?: string;
+  scaleDose?: string;
+  scaleRange?: string;
+  scaleDeviationReason?: string;
   // Grid modal only: the nurse checked the no-note-on-file personal
   // attestation, persisted so the record shows which control admitted it.
   noNoteAttestation?: boolean;
@@ -594,6 +633,8 @@ export interface ProposedMed {
   route: string;
   frequencyLabel: string;
   scheduledTimes: string[];
+  timeLabels?: Record<string, string>;
+  slidingScale?: SlidingScaleRow[];
   isPRN: boolean;
   prnFrequencyLabel?: string;
   indication: string;
@@ -664,13 +705,18 @@ export interface MarChangeRequestInput {
 }
 
 function normalizeProposed(p: ProposedMed): ProposedMed {
+  const scheduledTimes = p.isPRN ? [] : Array.from(new Set(p.scheduledTimes.filter(Boolean))).sort();
+  const slidingScale = parseSlidingScale(p.slidingScale);
+  const scaled = slidingScale.length > 0;
   return {
     medName: p.medName.trim(),
-    dose: p.dose.trim(),
-    units: p.units.trim(),
+    dose: scaled ? SLIDING_SCALE_DOSE_LABEL : p.dose.trim(),
+    units: scaled ? '' : p.units.trim(),
     route: p.route.trim(),
     frequencyLabel: p.frequencyLabel.trim(),
-    scheduledTimes: p.isPRN ? [] : Array.from(new Set(p.scheduledTimes.filter(Boolean))).sort(),
+    scheduledTimes,
+    timeLabels: cleanTimeLabels(p.timeLabels, scheduledTimes, p.isPRN),
+    slidingScale,
     isPRN: p.isPRN,
     prnFrequencyLabel: p.isPRN ? p.prnFrequencyLabel?.trim() ?? '' : '',
     indication: p.indication.trim(),

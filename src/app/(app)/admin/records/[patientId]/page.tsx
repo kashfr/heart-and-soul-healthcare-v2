@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, Plus, Pencil, Ban, Clock, X, Pill, CalendarDays } from 'lucide-react';
+import { ArrowLeft, Plus, Pencil, Ban, Pill, CalendarDays } from 'lucide-react';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import {
   getPatient,
@@ -22,7 +22,26 @@ import {
   type MarActor,
 } from '@/lib/mar';
 import { MED_FREQUENCIES, PRN_FREQUENCY, PRN_SUB_FREQUENCIES } from '@/lib/medFrequencies';
-import { looksLikeUnknownPhysician, physicianAttributionPending, describeFrequency } from '@/lib/marShared';
+import {
+  looksLikeUnknownPhysician,
+  physicianAttributionPending,
+  describeFrequency,
+  describeSlot,
+  isPristineSchedule,
+  suggestedScheduleFor,
+  timeLabelsFromRows,
+} from '@/lib/marShared';
+import {
+  parseSlidingScale,
+  slidingScaleFromForm,
+  slidingScaleToForm,
+  starterSlidingScaleForm,
+  validateSlidingScaleForm,
+  type SlidingScaleFormRow,
+} from '@/lib/slidingScale';
+import ScheduledTimesEditor from '@/components/mar/ScheduledTimesEditor';
+import SlidingScaleEditor from '@/components/mar/SlidingScaleEditor';
+import SlidingScaleTable from '@/components/mar/SlidingScaleTable';
 
 interface OrderForm {
   medName: string;
@@ -33,6 +52,11 @@ interface OrderForm {
   /** PRN only: how often it may be given, e.g. "Every 4 hours (Q4H)". */
   prnFrequencyLabel: string;
   scheduledTimes: string[];
+  /** Meal anchor per scheduled-time row ("Before Breakfast"); '' = clock time. */
+  timeAnchors: string[];
+  /** Sliding-scale order: the dose comes from a blood glucose table. */
+  scaleOn: boolean;
+  scaleRows: SlidingScaleFormRow[];
   isPRN: boolean;
   indication: string;
   // Check-style order: records a measurement instead of an amount given.
@@ -69,6 +93,9 @@ function emptyForm(): OrderForm {
     frequencyLabel: '',
     prnFrequencyLabel: '',
     scheduledTimes: ['08:00'],
+    timeAnchors: [''],
+    scaleOn: false,
+    scaleRows: starterSlidingScaleForm(),
     isPRN: false,
     indication: '',
     valueLabel: '',
@@ -93,7 +120,7 @@ function formatDate(d?: string | null): string {
 function scheduleSummary(o: MarOrder): string {
   if (o.isPRN) return 'PRN (as needed)';
   if (!o.scheduledTimes || o.scheduledTimes.length === 0) return '-';
-  return o.scheduledTimes.join(', ');
+  return o.scheduledTimes.map((t) => describeSlot(o, t)).join(', ');
 }
 
 export default function RecordDetailPage() {
@@ -172,14 +199,21 @@ export default function RecordDetailPage() {
   };
 
   const openEdit = (o: MarOrder) => {
+    const orderTimes = o.scheduledTimes && o.scheduledTimes.length > 0 ? [...o.scheduledTimes] : ['08:00'];
+    const scale = parseSlidingScale(o.slidingScale);
     setForm({
       medName: o.medName || '',
-      dose: o.dose || '',
+      // A sliding-scale order's stored dose is only the "Per sliding scale"
+      // label, not something to edit.
+      dose: scale.length > 0 ? '' : o.dose || '',
       units: o.units || '',
       route: o.route || '',
       frequencyLabel: o.isPRN ? PRN_FREQUENCY : o.frequencyLabel || '',
       prnFrequencyLabel: o.isPRN ? o.prnFrequencyLabel || '' : '',
-      scheduledTimes: o.scheduledTimes && o.scheduledTimes.length > 0 ? [...o.scheduledTimes] : ['08:00'],
+      scheduledTimes: orderTimes,
+      timeAnchors: orderTimes.map((t) => o.timeLabels?.[t] || ''),
+      scaleOn: scale.length > 0,
+      scaleRows: scale.length > 0 ? slidingScaleToForm(scale) : starterSlidingScaleForm(),
       // Legacy rows could hold the PRN frequency label with isPRN false (the
       // old independent checkbox); trust the label so a re-save heals them.
       isPRN: !!o.isPRN || o.frequencyLabel === PRN_FREQUENCY,
@@ -199,13 +233,6 @@ export default function RecordDetailPage() {
     setFormOpen(true);
   };
 
-  // Scheduled-times editor helpers
-  const setTimeAt = (i: number, value: string) =>
-    setForm((f) => ({ ...f, scheduledTimes: f.scheduledTimes.map((t, idx) => (idx === i ? value : t)) }));
-  const addTime = () => setForm((f) => ({ ...f, scheduledTimes: [...f.scheduledTimes, ''] }));
-  const removeTime = (i: number) =>
-    setForm((f) => ({ ...f, scheduledTimes: f.scheduledTimes.filter((_, idx) => idx !== i) }));
-
   const handleSaveOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isViewingAs) return;
@@ -215,14 +242,21 @@ export default function RecordDetailPage() {
     }
     // A check records a reading rather than an amount, so it needs no dose or
     // units — requiring them would force junk values onto the order.
-    const isCheck = !!form.valueLabel.trim();
+    const isCheck = !form.scaleOn && !!form.valueLabel.trim();
     if (!form.medName.trim() || !form.route.trim() || !form.startDate) {
       showToast('Medication, route, and start date are required.');
       return;
     }
-    if (!isCheck && (!form.dose.trim() || !form.units.trim())) {
+    if (!isCheck && !form.scaleOn && (!form.dose.trim() || !form.units.trim())) {
       showToast('Medication, dose, units, route, and start date are required.');
       return;
+    }
+    if (form.scaleOn) {
+      const scaleError = validateSlidingScaleForm(form.scaleRows);
+      if (scaleError) {
+        showToast(scaleError);
+        return;
+      }
     }
     if (isCheck && parseValueOptions(form.valueOptions).length < 2) {
       showToast('Add at least two allowed readings so the nurse picks from a list instead of typing.');
@@ -258,6 +292,8 @@ export default function RecordDetailPage() {
         frequencyLabel: form.frequencyLabel,
         prnFrequencyLabel: form.prnFrequencyLabel,
         scheduledTimes: form.scheduledTimes,
+        timeLabels: timeLabelsFromRows(form.scheduledTimes, form.timeAnchors),
+        slidingScale: form.scaleOn ? slidingScaleFromForm(form.scaleRows) || [] : [],
         isPRN: form.isPRN,
         indication: form.indication,
         valueLabel: form.valueLabel,
@@ -442,6 +478,34 @@ export default function RecordDetailPage() {
                 />
               </Field>
 
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 12, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={form.scaleOn}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      scaleOn: e.target.checked,
+                      // Sliding-scale insulin goes under the skin; pre-fill
+                      // the route only when nothing was chosen yet.
+                      route: e.target.checked && !f.route ? 'Subcutaneous' : f.route,
+                    }))
+                  }
+                  style={{ marginTop: 2 }}
+                />
+                <span style={{ fontSize: 13, color: '#2c3e50', lineHeight: 1.4 }}>
+                  <strong>Sliding scale.</strong> The dose depends on a blood glucose reading (insulin).
+                </span>
+              </label>
+              {form.scaleOn ? (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ ...fieldLabelStyle, marginBottom: 4 }}>Sliding scale from the order *</div>
+                  <SlidingScaleEditor
+                    rows={form.scaleRows}
+                    onChange={(rows) => setForm((f) => ({ ...f, scaleRows: rows }))}
+                  />
+                </div>
+              ) : (
               <div style={gridTwoStyle}>
                 <Field label={form.valueLabel.trim() ? 'Dose' : 'Dose *'}>
                   <input
@@ -470,6 +534,7 @@ export default function RecordDetailPage() {
                   </datalist>
                 </Field>
               </div>
+              )}
 
               <div style={gridTwoStyle}>
                 <Field label="Route *">
@@ -493,6 +558,15 @@ export default function RecordDetailPage() {
                     onChange={(e) =>
                       setForm((f) => ({
                         ...f,
+                        // A frequency that implies a schedule ("Before meals")
+                        // fills the times in, but only while the schedule is
+                        // still the untouched default.
+                        ...(() => {
+                          const suggested = suggestedScheduleFor(e.target.value);
+                          return suggested && isPristineSchedule(f.scheduledTimes, f.timeAnchors)
+                            ? { scheduledTimes: suggested.times, timeAnchors: suggested.anchors }
+                            : {};
+                        })(),
                         frequencyLabel: e.target.value,
                         // Single PRN control (PR #77): the "As needed (PRN)"
                         // frequency IS the PRN switch; no separate checkbox.
@@ -541,33 +615,12 @@ export default function RecordDetailPage() {
 
               {!form.isPRN && (
                 <div style={{ marginBottom: 12 }}>
-                  <div style={fieldLabelStyle}>Scheduled times *</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {form.scheduledTimes.map((t, i) => (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <Clock size={15} color="#7f8c8d" />
-                        <input
-                          type="time"
-                          value={t}
-                          onChange={(e) => setTimeAt(i, e.target.value)}
-                          style={{ ...inputStyle, maxWidth: 150 }}
-                        />
-                        {form.scheduledTimes.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => removeTime(i)}
-                            style={removeTimeBtnStyle}
-                            aria-label="Remove time"
-                          >
-                            <X size={14} />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  <button type="button" onClick={addTime} style={addTimeBtnStyle}>
-                    <Plus size={13} /> Add Time
-                  </button>
+                  <div style={{ ...fieldLabelStyle, marginBottom: 4 }}>Scheduled times *</div>
+                  <ScheduledTimesEditor
+                    times={form.scheduledTimes}
+                    anchors={form.timeAnchors}
+                    onChange={(t, a) => setForm((f) => ({ ...f, scheduledTimes: t, timeAnchors: a }))}
+                  />
                 </div>
               )}
 
@@ -590,6 +643,7 @@ export default function RecordDetailPage() {
                   confirming an amount given. Naming a measurement is what turns
                   this row into a check, so dose and units stop being required.
                   Used for gastric residual on tube-fed clients. */}
+              {!form.scaleOn && (
               <div style={gridTwoStyle}>
                 <Field label="Measurement recorded (optional)">
                   <input
@@ -615,7 +669,8 @@ export default function RecordDetailPage() {
                   />
                 </Field>
               </div>
-              {form.valueLabel.trim() && (
+              )}
+              {!form.scaleOn && form.valueLabel.trim() && (
                 <>
                   {/* The nurse PICKS a reading rather than typing one: a
                       mistyped clinical value (300 for 30 on a residual) is a
@@ -825,6 +880,13 @@ export default function RecordDetailPage() {
                   }
                 />
               </div>
+
+              {parseSlidingScale(viewOrder.slidingScale).length > 0 && (
+                <div style={{ marginTop: 14, background: '#f5f9fe', border: '1px solid #c8def5', borderRadius: 8, padding: '10px 12px' }}>
+                  <div style={{ ...detailLabelStyle, color: '#1a3a5c' }}>Sliding scale</div>
+                  <SlidingScaleTable rows={parseSlidingScale(viewOrder.slidingScale)} />
+                </div>
+              )}
 
               {viewOrder.parameters && (
                 <div style={{ marginTop: 14, background: '#fff7e6', border: '1px solid #f5d9a8', borderRadius: 8, padding: '10px 12px' }}>
@@ -1055,6 +1117,4 @@ const selectStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 const gridTwoStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 };
-const removeTimeBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', color: '#c44', border: 'none', padding: 4, borderRadius: 4, cursor: 'pointer' };
-const addTimeBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, background: 'white', color: '#0e7c4a', border: '1px dashed #0e7c4a', padding: '7px 12px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', marginTop: 8 };
 const toastStyle: React.CSSProperties = { position: 'fixed', bottom: 20, right: 20, background: '#2c3e50', color: 'white', padding: '10px 16px', borderRadius: 8, fontSize: 13, boxShadow: '0 8px 20px rgba(0,0,0,0.2)', zIndex: 1100 };

@@ -42,6 +42,18 @@ export interface MarAdminRecord {
   reason: string;
   outcome?: string; // PRN effectiveness/result (required at submit for a given PRN)
   prescriberNotified?: boolean; // held/refused: documenter notified the prescriber
+  // Sliding-scale order (see slidingScale.ts). The reading the nurse typed,
+  // plus what the order's scale called for at that reading, looked up when
+  // she typed it so the submit gate and write need only this mark. A given
+  // dose records the scale's amount unless scaleCustomDose is on, in which
+  // case scaleUnitsGiven and the reason it differs are required.
+  hasSlidingScale?: boolean;
+  glucoseReading?: string;
+  scaleDose?: string;
+  scaleRange?: string;
+  scaleCustomDose?: boolean;
+  scaleUnitsGiven?: string;
+  scaleDeviationReason?: string;
   sessionId?: string; // the note session (submissionId) that created this mark
 }
 

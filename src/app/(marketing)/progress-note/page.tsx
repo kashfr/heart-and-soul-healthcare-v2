@@ -44,6 +44,7 @@ import {
   orderAppliesOn,
 } from '@/lib/mar';
 import { classifyDoseAgainstShift, computeRequiredDoseGaps, resolveCurrentAdministrations } from '@/lib/marShared';
+import { SLIDING_SCALE_UNITS, scaleMarkDoseGiven, scaleMarkProblems } from '@/lib/slidingScale';
 import { seizureGaps } from '@/lib/seizureShared';
 import { vitalsRecheckGaps } from '@/lib/vitalsRecheck';
 import { vitalsFollowUpApplies, vitalsFollowUpGaps } from '@/lib/vitalsFollowUp';
@@ -1682,6 +1683,11 @@ function ProgressNotePageInner() {
           ) {
             incomplete.push(`${med}: the reading you checked against the parameters (e.g., BP)`);
           }
+          // Sliding-scale dose: the reading the dose was looked up from, and
+          // (when the amount given differs from the scale) the amount and why.
+          if (m.hasSlidingScale) {
+            for (const problem of scaleMarkProblems(m)) incomplete.push(`${med}: ${problem}`);
+          }
           // A family/proxy dose is legal (starred on the MAR) but must say WHO
           // gave it — an anonymous escape hatch would defeat the attestation.
           if (
@@ -2178,8 +2184,14 @@ function ProgressNotePageInner() {
             patientId: r.patientId,
             orderId: r.orderId,
             medName: r.medName,
-            dose: r.dose,
-            units: r.units,
+            // A given sliding-scale dose records the units actually given;
+            // anything else keeps the order's own dose text.
+            dose: r.hasSlidingScale && r.status === 'given' ? scaleMarkDoseGiven(r) : r.dose,
+            units: r.hasSlidingScale && r.status === 'given' ? SLIDING_SCALE_UNITS : r.units,
+            glucoseReading: r.hasSlidingScale ? r.glucoseReading || '' : '',
+            scaleDose: r.hasSlidingScale ? r.scaleDose || '' : '',
+            scaleRange: r.hasSlidingScale ? r.scaleRange || '' : '',
+            scaleDeviationReason: r.hasSlidingScale && r.scaleCustomDose ? r.scaleDeviationReason || '' : '',
             route: r.route,
             scheduledTime: r.scheduledTime,
             status: r.status as 'given' | 'held' | 'refused',

@@ -3,6 +3,7 @@
  * (/api/mar/pdf route). Keep this file free of any Firebase import; the PDF
  * route must not pull the client SDK into the server bundle.
  */
+import { parseSlidingScale, slidingScaleKey, type SlidingScaleRow } from './slidingScale';
 
 export interface MarOrderSortable {
   medName?: string;
@@ -93,6 +94,14 @@ export interface MarAdminFieldInput {
   value?: string;
   valueLabel?: string;
   valueUnit?: string;
+  // Sliding-scale dose (see slidingScale.ts). The meter reading the dose was
+  // looked up from, what the scale called for at that reading, and the matched
+  // row in words. For a GIVEN sliding-scale dose the caller passes the units
+  // actually given as `dose`; if that differs from the scale, the reason.
+  glucoseReading?: string;
+  scaleDose?: string;
+  scaleRange?: string;
+  scaleDeviationReason?: string;
   // The nurse checked the explicit "no note on file — I personally
   // administered this" attestation in the grid modal. Persisted so the record
   // shows which control path admitted it. Meaningful only for a nurse-given
@@ -125,6 +134,8 @@ export interface MarAdminFieldMeta {
 export function buildMarAdminFields(r: MarAdminFieldInput, meta: MarAdminFieldMeta) {
   const isNurse = !r.administeredByType || r.administeredByType === 'nurse';
   const isPRN = !!r.isPRN || r.scheduledTime === 'PRN';
+  const glucose = (r.glucoseReading || '').trim();
+  const scaleDose = (r.scaleDose || '').trim();
   return {
     patientId: meta.patientId,
     orderId: r.orderId,
@@ -162,6 +173,17 @@ export function buildMarAdminFields(r: MarAdminFieldInput, meta: MarAdminFieldMe
     value: r.status === 'given' ? (r.value || '').trim() : '',
     valueLabelSnapshot: (r.valueLabel || '').trim(),
     valueUnitSnapshot: (r.valueUnit || '').trim(),
+    // Sliding scale: the reading is a measured fact, so it is kept for any
+    // status (a held or refused dose may still have a fingerstick behind it).
+    // What the scale called for rides with it; the deviation reason exists
+    // only when a GIVEN amount differs from the scale.
+    glucoseReading: glucose,
+    scaleDose: glucose ? scaleDose : '',
+    scaleRangeSnapshot: glucose ? (r.scaleRange || '').trim() : '',
+    scaleDeviationReason:
+      r.status === 'given' && glucose && scaleDose && Number(r.dose) !== Number(scaleDose)
+        ? (r.scaleDeviationReason || '').trim()
+        : '',
     sourceNoteId: meta.sourceNoteId,
     documentedBy: meta.documenter.uid,
     documentedByName: meta.documenter.name,
@@ -198,6 +220,109 @@ export const DEFAULT_ML_VALUE_OPTIONS = [
 ];
 
 // ---------------------------------------------------------------------------
+// Meal-anchored scheduled times ("before breakfast").
+// ---------------------------------------------------------------------------
+
+/**
+ * A scheduled time may be tied to an event in the client's day instead of
+ * being a bare clock time: "Before Breakfast", not "07:30". The order still
+ * stores a clock time for that slot (the client's USUAL time for the meal),
+ * because everything downstream runs on it: the due / late colors, the
+ * shift-window gates, the required-dose check, row order on the MAR, and the
+ * slot key each charted dose is filed under. The anchor is a label on top of
+ * that time (MarOrder.timeLabels, keyed by the 'HH:MM' slot), shown wherever
+ * the time is shown so the nurse reads the instruction, not just the clock.
+ */
+export const TIME_ANCHORS = [
+  { label: 'Before Breakfast', defaultTime: '07:30' },
+  { label: 'Before Lunch', defaultTime: '11:30' },
+  { label: 'Before Dinner', defaultTime: '17:00' },
+  { label: 'At Bedtime', defaultTime: '21:00' },
+] as const;
+
+export type TimeAnchorLabel = (typeof TIME_ANCHORS)[number]['label'];
+
+const TIME_ANCHOR_LABELS = new Set<string>(TIME_ANCHORS.map((a) => a.label));
+
+/** The usual clock time to suggest for an anchor ('' for a plain clock time). */
+export function anchorDefaultTime(label: string): string {
+  return TIME_ANCHORS.find((a) => a.label === label)?.defaultTime || '';
+}
+
+/**
+ * The stored label map for a set of scheduled times: only known anchors, only
+ * for times actually on the schedule, nothing for a PRN order. Every write
+ * path runs the labels through this, so junk can never reach an order.
+ */
+export function cleanTimeLabels(
+  labels: unknown,
+  times: unknown,
+  isPRN: boolean,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (isPRN || !labels || typeof labels !== 'object' || Array.isArray(labels)) return out;
+  const onSchedule = new Set(Array.isArray(times) ? times.map((t) => String(t).trim()) : []);
+  for (const [time, label] of Object.entries(labels as Record<string, unknown>)) {
+    const l = String(label ?? '').trim();
+    if (onSchedule.has(time) && TIME_ANCHOR_LABELS.has(l)) out[time] = l;
+  }
+  return out;
+}
+
+/** The label map from an order form's parallel rows (times[i] goes with
+ *  anchors[i]); rows without a time or an anchor contribute nothing. */
+export function timeLabelsFromRows(times: string[], anchors: string[]): Record<string, string> {
+  const raw: Record<string, string> = {};
+  times.forEach((t, i) => {
+    if (t && anchors[i]) raw[t] = anchors[i];
+  });
+  return cleanTimeLabels(raw, times, false);
+}
+
+/** The anchor for one slot of an order ('' for a plain clock time or PRN). */
+export function slotAnchor(
+  order: { timeLabels?: Record<string, string> } | null | undefined,
+  slot: string,
+): string {
+  const l = order?.timeLabels?.[slot];
+  return typeof l === 'string' && TIME_ANCHOR_LABELS.has(l) ? l : '';
+}
+
+/** A slot as it should read: "Before Breakfast (07:30)", or just the time. */
+export function describeSlot(
+  order: { timeLabels?: Record<string, string> } | null | undefined,
+  slot: string,
+): string {
+  const anchor = slotAnchor(order, slot);
+  return anchor ? `${anchor} (${slot})` : slot;
+}
+
+/**
+ * The schedule to pre-fill when a frequency implies one, or null when it does
+ * not. Only ever applied to an untouched schedule (see isPristineSchedule), so
+ * it can never overwrite times someone typed.
+ */
+export function suggestedScheduleFor(frequencyLabel: string): { times: string[]; anchors: string[] } | null {
+  const pick = (labels: string[]) => ({
+    times: labels.map((l) => anchorDefaultTime(l)),
+    anchors: labels,
+  });
+  if (frequencyLabel === 'Before meals (AC)') {
+    return pick(['Before Breakfast', 'Before Lunch', 'Before Dinner']);
+  }
+  if (frequencyLabel === 'Before meals and at bedtime') {
+    return pick(['Before Breakfast', 'Before Lunch', 'Before Dinner', 'At Bedtime']);
+  }
+  if (frequencyLabel === 'At bedtime') return pick(['At Bedtime']);
+  return null;
+}
+
+/** True while the scheduled-times editor still shows only its default row. */
+export function isPristineSchedule(times: string[], anchors: string[]): boolean {
+  return times.length === 1 && (times[0] === '08:00' || times[0] === '') && !anchors.some(Boolean);
+}
+
+// ---------------------------------------------------------------------------
 // Correction vs. new regimen: what a "change" actually does to the order.
 // ---------------------------------------------------------------------------
 
@@ -228,6 +353,7 @@ export const REGIMEN_FIELDS = [
   'prnFrequencyLabel',
   'valueLabel',
   'valueUnit',
+  'slidingScale',
 ] as const;
 
 export type RegimenField = (typeof REGIMEN_FIELDS)[number];
@@ -249,6 +375,7 @@ export const REGIMEN_FIELD_LABELS: Record<RegimenField, string> = {
   prnFrequencyLabel: 'PRN frequency',
   valueLabel: 'measurement',
   valueUnit: 'measurement unit',
+  slidingScale: 'sliding scale',
 };
 
 /** The subset of an order (or a proposal) the regimen comparison reads. */
@@ -263,6 +390,13 @@ export interface RegimenComparable {
   prnFrequencyLabel?: string;
   valueLabel?: string;
   valueUnit?: string;
+  /** Meal anchors for the scheduled times, keyed by 'HH:MM'. Compared as part
+   *  of the schedule: "08:00" and "before breakfast at 08:00" are different
+   *  instructions for when to give the med. */
+  timeLabels?: Record<string, string>;
+  /** Sliding-scale rows (see slidingScale.ts); unknown because it is compared
+   *  straight off a Firestore doc or a posted payload. */
+  slidingScale?: unknown;
 }
 
 function normText(v: unknown): string {
@@ -271,10 +405,14 @@ function normText(v: unknown): string {
 
 /** Scheduled times compared as a set: order and duplicates are storage detail,
  *  and a PRN order carries none, so re-saving must not read as a change. */
-function normTimes(times: unknown, isPRN: boolean): string {
+function normTimes(times: unknown, isPRN: boolean, labels?: unknown): string {
   if (isPRN) return '';
   const arr = Array.isArray(times) ? times.map((t) => String(t).trim()).filter(Boolean) : [];
-  return Array.from(new Set(arr)).sort().join(',');
+  const clean = cleanTimeLabels(labels, arr, false);
+  return Array.from(new Set(arr))
+    .sort()
+    .map((t) => (clean[t] ? `${t}=${clean[t]}` : t))
+    .join(',');
 }
 
 /**
@@ -311,11 +449,19 @@ export function regimenFieldsChanged(
   if (currentPRN && proposedPRN && normText(current.prnFrequencyLabel) !== normText(proposed.prnFrequencyLabel)) {
     changed.push('prnFrequencyLabel');
   }
-  if (normTimes(current.scheduledTimes, currentPRN) !== normTimes(proposed.scheduledTimes, proposedPRN)) {
+  if (
+    normTimes(current.scheduledTimes, currentPRN, current.timeLabels) !==
+    normTimes(proposed.scheduledTimes, proposedPRN, proposed.timeLabels)
+  ) {
     changed.push('scheduledTimes');
   }
   if (normText(current.valueLabel) !== normText(proposed.valueLabel)) changed.push('valueLabel');
   if (normText(current.valueUnit) !== normText(proposed.valueUnit)) changed.push('valueUnit');
+  // The scale IS the dose on a sliding-scale order, so editing any range or
+  // amount is a dose change and starts a new regimen like one.
+  if (slidingScaleKey(current.slidingScale) !== slidingScaleKey(proposed.slidingScale)) {
+    changed.push('slidingScale');
+  }
   return changed;
 }
 
@@ -347,21 +493,26 @@ export function regimenFields(o: RegimenComparable): {
   route: string;
   frequencyLabel: string;
   scheduledTimes: string[];
+  timeLabels: Record<string, string>;
   isPRN: boolean;
   valueLabel: string;
   valueUnit: string;
+  slidingScale: SlidingScaleRow[];
 } {
   const isPRN = o.isPRN === true;
+  const scheduledTimes = isPRN ? [] : Array.from(new Set((o.scheduledTimes || []).filter(Boolean))).sort();
   return {
     medName: String(o.medName || ''),
     dose: String(o.dose || ''),
     units: String(o.units || ''),
     route: String(o.route || ''),
     frequencyLabel: String(o.frequencyLabel || ''),
-    scheduledTimes: isPRN ? [] : Array.from(new Set((o.scheduledTimes || []).filter(Boolean))).sort(),
+    scheduledTimes,
+    timeLabels: cleanTimeLabels(o.timeLabels, scheduledTimes, isPRN),
     isPRN,
     valueLabel: String(o.valueLabel || ''),
     valueUnit: String(o.valueUnit || ''),
+    slidingScale: parseSlidingScale(o.slidingScale),
   };
 }
 
