@@ -1,3 +1,5 @@
+import { DOC_CATEGORIES } from './docCategories';
+import { noteDocDetails } from './noteDocLinks';
 import 'server-only';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminBucket, adminDb } from './firebaseAdmin';
@@ -48,6 +50,7 @@ export type FileNoteResult =
   | { ok: true; documentId: string; replaced: boolean }
   | { ok: false; reason: 'not-found' | 'not-eligible' | 'no-patient' | 'forbidden'; message: string };
 
+
 /**
  * Render + file one note. Caller must be staff or the note's author. The
  * document is owned by the note's author (uploadedBy = nurseId) so the
@@ -93,15 +96,21 @@ export async function fileNoteAsDocument(noteId: string, caller: AuthedCaller): 
   await cleanupFolderExcept(patientId, docRef.id, storagePath);
 
   const docDate = isoFromAnyDate(String(data.q6_dateofService || ''));
+  // Staff may retitle, recategorize or redate a filed note by hand (the
+  // Documents tab's Edit). Re-filing then refreshes the PDF and keeps their
+  // title, category and date instead of putting the note's back.
+  const details = noteDocDetails(existing.empty ? null : existing.docs[0].data(), {
+    title: noteDocTitle(data),
+    category,
+    docDate: /^\d{4}-\d{2}-\d{2}$/.test(docDate) ? docDate : '',
+  });
   const base = {
     patientId,
-    category,
-    title: noteDocTitle(data),
+    ...details,
     fileName,
     storagePath,
     contentType: 'application/pdf',
     size: buffer.length,
-    docDate: /^\d{4}-\d{2}-\d{2}$/.test(docDate) ? docDate : '',
     sourceNoteId: noteId,
     // Which form amends it (the Documents tab's "Amend Note" button).
     sourceNoteType: String(data.noteType || ''),
@@ -296,5 +305,33 @@ export async function deleteDocumentWithAudit(
       console.error('Document file cleanup failed (metadata already deleted):', err);
     }
   }
+  return { ok: true };
+}
+
+/**
+ * Staff edit of a document's title, category and date. Validates the same
+ * way the edit dialog does. Stamps detailsEditedAt/By so a later re-file of
+ * a note-filed entry keeps these details (fileNoteAsDocument).
+ */
+export async function updateDocumentDetailsServer(
+  id: string,
+  patch: { title: string; category: string; docDate: string },
+  caller: AuthedCaller,
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  const title = patch.title.trim().slice(0, 200);
+  if (!title) return { ok: false, status: 400, error: 'Enter a title.' };
+  if (!(DOC_CATEGORIES as readonly string[]).includes(patch.category)) return { ok: false, status: 400, error: 'Choose a category from the list.' };
+  if (patch.docDate && !/^\d{4}-\d{2}-\d{2}$/.test(patch.docDate)) return { ok: false, status: 400, error: 'The date must be YYYY-MM-DD.' };
+  const ref = adminDb().collection('patientDocuments').doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) return { ok: false, status: 404, error: 'Document not found.' };
+  await ref.update({
+    title,
+    category: patch.category,
+    docDate: patch.docDate,
+    detailsEditedAt: FieldValue.serverTimestamp(),
+    detailsEditedBy: caller.uid,
+    detailsEditedByName: caller.profile.displayName || caller.email || '',
+  });
   return { ok: true };
 }
