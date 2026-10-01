@@ -48,7 +48,6 @@ import {
 import { useAuth } from '@/components/AuthProvider';
 import { licensureFromCredential } from '@/lib/cosignClient';
 import { authedFetch } from '@/lib/authedFetch';
-import { fileNoteDocument } from '@/lib/patientDocuments';
 import { escortToField, FieldError, FIELD_ERROR_STYLE, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
 import SignatureCanvas, { type SignatureCanvasHandle } from '@/components/SignatureCanvas';
 import DeselectableRadio, {
@@ -61,6 +60,19 @@ import DeselectableRadio, {
 import VitalSignsFields from '../progress-note/components/VitalSignsFields';
 import VitalsRecheckSection from '../progress-note/components/VitalsRecheckSection';
 import { isBpRoutinelyRequired } from '@/lib/vitalRanges';
+import { getServicePlans } from '@/lib/servicePlans';
+import { fileNoteDocument, getPatientDocuments } from '@/lib/patientDocuments';
+import {
+  needsServicePlanAction,
+  servicePlanStatus,
+  servicePlanStatusLabel,
+  SV_PLAN_NOT_TODAY,
+  SV_PLAN_REVIEW,
+  SV_PLAN_REVISE,
+  SV_PLAN_WRITE,
+  SERVICE_PLAN_DOC_CATEGORY,
+  type ServicePlanStatus,
+} from '@/lib/servicePlanShared';
 import type { FormValues } from '../progress-note/types';
 import styles from '../progress-note/page.module.css';
 
@@ -162,6 +174,8 @@ const SUPERVISORY_FIELD_MESSAGES: Record<string, string> = {
   sv_satisfiedWithStaff: 'Choose whether the client is satisfied with the staff.',
   sv_staffFeedback: "Document the client's feedback on the staff's performance.",
   q61_signature: 'Sign the form before submitting.',
+  sv_servicePlanAction: "Choose what you are doing about the client's service plan.",
+  sv_servicePlanReason: 'Say why the service plan is not being reviewed or revised today.',
 };
 
 const addressOf = (p: Patient | undefined): string => {
@@ -238,6 +252,47 @@ function SupervisoryVisitPageInner() {
 
   const selectedPatientId = watch('patientId');
   const selectedPatient = patients.find((p) => p.id === selectedPatientId);
+
+  // --- The client's service plan --------------------------------------------
+  // A supervisory visit is the natural time to check the plan, so the form
+  // shows where it stands and, when it is missing, overdue, or due within 30
+  // days of the visit, requires an answer (review now, revise now, or not
+  // today with a reason). The status is stamped on the note as it stood when
+  // the form loaded; an amendment keeps the stamp rather than re-reading it.
+  const planVisitDate = String(watch('q6_dateofService') || '');
+  const planKey = `${String(selectedPatientId || '')}|${planVisitDate}`;
+  const [planResult, setPlanResult] = useState<{ key: string; status: ServicePlanStatus | null; inPortal: boolean } | null>(null);
+  useEffect(() => {
+    const pid = String(selectedPatientId || '');
+    if (isEditMode || !pid) return;
+    let cancelled = false;
+    const asOf = /^\d{4}-\d{2}-\d{2}$/.test(planVisitDate)
+      ? planVisitDate
+      : new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    Promise.all([getServicePlans(pid), getPatientDocuments(pid)])
+      .then(([plans, docs]) => {
+        if (cancelled) return;
+        const docDates = docs.filter((d) => !d.archived && d.category === SERVICE_PLAN_DOC_CATEGORY).map((d) => d.docDate);
+        setPlanResult({ key: `${pid}|${planVisitDate}`, status: servicePlanStatus(plans[0] || null, asOf, 30, docDates), inPortal: plans.length > 0 });
+      })
+      .catch((err) => {
+        console.warn('Service plan status lookup failed:', err);
+        if (!cancelled) setPlanResult({ key: `${pid}|${planVisitDate}`, status: null, inPortal: false });
+      });
+    return () => { cancelled = true; };
+  }, [selectedPatientId, planVisitDate, isEditMode]);
+  const planCurrent = planResult && planResult.key === planKey ? planResult : null;
+  useEffect(() => {
+    if (isEditMode) return;
+    setValue('sv_servicePlanStatus', planCurrent?.status?.stage || '');
+    setValue('sv_servicePlanDue', planCurrent?.status?.dueISO || '');
+    setValue('sv_servicePlanInPortal', planCurrent?.status ? (planCurrent.inPortal ? 'Yes' : 'No') : '');
+  }, [planCurrent, isEditMode, setValue]);
+  const planStage = String(watch('sv_servicePlanStatus') || '');
+  const planDue = String(watch('sv_servicePlanDue') || '');
+  const planNeedsAction = needsServicePlanAction(planStage);
+  // Reviewing needs a plan in the portal; a paper-only plan is rewritten here.
+  const planInPortal = String(watch('sv_servicePlanInPortal') || '') !== 'No';
   const handleSelectPatient = useCallback(
     (id: string) => {
       const p = patients.find((x) => x.id === id);
@@ -518,11 +573,17 @@ function SupervisoryVisitPageInner() {
     if (values.sv_problems !== 'Yes') values.sv_problemsDetail = '';
     if (values.sv_clientSatisfied !== 'No') values.sv_dissatisfaction = '';
 
+    // The service plan answer only applies when the plan needed action, and a
+    // reason only to "Not today": drop leftovers from an earlier client or answer.
+    if (!needsServicePlanAction(String(values.sv_servicePlanStatus || ''))) values.sv_servicePlanAction = '';
+    if (values.sv_servicePlanAction !== SV_PLAN_NOT_TODAY) values.sv_servicePlanReason = '';
+
     values.noteType = SUPERVISORY_NOTE_TYPE;
     values.sv_credentialsPrinted = String(values.sv_credentialsPrinted || '').trim();
     // Rev 2 (09/2026): the full vitals block (respiration, SpO2 + source,
     // "unable to obtain" reasons, rechecks), matching the shift note.
-    values.q1_formRev = '2';
+    // Rev 3 (09/30/2026): the service plan check.
+    values.q1_formRev = '3';
     // Signed at the end of the visit; stamp the signed date from the visit
     // date so the signature block never renders "Date Signed: --".
     values.q62_shiftEndDate = String(values.q6_dateofService || '');
@@ -643,6 +704,17 @@ function SupervisoryVisitPageInner() {
         );
       } catch (err) {
         console.warn('Marking the scheduled supervisory visit completed failed (non-fatal):', err);
+      }
+      // Chose to review or revise the plan now: go straight there, while the
+      // supervisor is still in the home with the family.
+      const planPid = encodeURIComponent(String(values.patientId || ''));
+      if (planPid && values.sv_servicePlanAction === SV_PLAN_REVIEW) {
+        router.push(`/admin/clients/${planPid}/service-plan/review?visit=${encodeURIComponent(docId)}`);
+        return;
+      }
+      if (planPid && (values.sv_servicePlanAction === SV_PLAN_REVISE || values.sv_servicePlanAction === SV_PLAN_WRITE)) {
+        router.push(`/admin/clients/${planPid}/service-plan/new?visit=${encodeURIComponent(docId)}`);
+        return;
       }
       const c = encodeURIComponent(String(values.q3_clientName || ''));
       const d = encodeURIComponent(String(values.q6_dateofService || ''));
@@ -984,6 +1056,76 @@ function SupervisoryVisitPageInner() {
             <Area id="sv_recommendations" error={fe('sv_recommendations')} label="Recommendations:" register={register} />
           </div>
 
+          {/* SERVICE PLAN */}
+          <div className={styles.section}>
+            <span className={styles.sectionLabel}>SERVICE PLAN</span>
+            <input type="hidden" {...register('sv_servicePlanStatus')} />
+            <input type="hidden" {...register('sv_servicePlanDue')} />
+            <input type="hidden" {...register('sv_servicePlanInPortal')} />
+            {!selectedPatientId ? (
+              <p style={planHintStyle}>Choose the client to see where their service plan stands.</p>
+            ) : !isEditMode && !planCurrent ? (
+              <p style={planHintStyle}>Checking the service plan...</p>
+            ) : !planStage ? (
+              <p style={planHintStyle}>
+                {isEditMode
+                  ? 'This visit was filed before the service plan check was added.'
+                  : "The service plan status could not be loaded. Check the client's Service Plan tab."}
+              </p>
+            ) : (
+              <>
+                <div
+                  style={{
+                    padding: '10px 12px', borderRadius: 6, marginBottom: 12, fontSize: 14, lineHeight: 1.45,
+                    border: `1px solid ${planNeedsAction ? '#f3d9a4' : '#cfe6cf'}`,
+                    background: planNeedsAction ? '#fff4e0' : '#e8f4e8',
+                    color: planNeedsAction ? '#7a4a00' : '#1e5c1e',
+                  }}
+                >
+                  <strong>{servicePlanStatusLabel(planStage, planDue)}.</strong>{' '}
+                  {planStage === 'none'
+                    ? 'This client has no service plan. Write it with the family while you are in the home.'
+                    : !planInPortal && planNeedsAction
+                      ? 'The current plan is on paper (filed under Documents). Write it in the portal with the family during this visit.'
+                    : planStage === 'overdue'
+                      ? 'Nursing service plans are reviewed and updated at least every 62 days. Review or revise it during this visit.'
+                      : planStage === 'due-soon'
+                        ? 'It comes due before the next monthly visit. Review or revise it during this visit.'
+                        : 'No service plan action is needed at this visit.'}
+                </div>
+                {planNeedsAction && (
+                  <>
+                    <div className={styles.row}>
+                      <div className={styles.f} style={{ flex: '1 1 100%' }}>
+                        <label className={styles.label}>What are you doing about the service plan? *</label>
+                        <RadioRow
+                          name="sv_servicePlanAction"
+                          error={fe('sv_servicePlanAction')}
+                          onPick={() => onRadioPick('sv_servicePlanAction')}
+                          options={planStage === 'none' || !planInPortal ? [SV_PLAN_WRITE, SV_PLAN_NOT_TODAY] : [SV_PLAN_REVIEW, SV_PLAN_REVISE, SV_PLAN_NOT_TODAY]}
+                        />
+                        {!isEditMode && answers.sv_servicePlanAction && answers.sv_servicePlanAction !== SV_PLAN_NOT_TODAY && (
+                          <p style={{ ...planHintStyle, marginTop: 6 }}>
+                            After you submit this visit, the service plan opens so you can finish it with the family.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    {answers.sv_servicePlanAction === SV_PLAN_NOT_TODAY && (
+                      <Area
+                        id="sv_servicePlanReason"
+                        error={fe('sv_servicePlanReason')}
+                        label="Why not today? (the reason is kept with this visit)"
+                        register={register}
+                        required
+                      />
+                    )}
+                  </>
+                )}
+              </>
+            )}
+          </div>
+
           {/* SIGNATURE */}
           <div className={styles.section}>
             <span className={styles.sectionLabel}>SUPERVISOR SIGNATURE</span>
@@ -1191,3 +1333,5 @@ export default function SupervisoryVisitPage() {
     </ViewAsWriteBlock>
   );
 }
+
+const planHintStyle: React.CSSProperties = { margin: 0, fontSize: 13, color: '#5c6b7a', lineHeight: 1.45 };

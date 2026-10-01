@@ -61,8 +61,14 @@ const mockDrafts = vi.hoisted(() => ({
 vi.mock('@/lib/drafts', () => mockDrafts);
 
 vi.mock('@/lib/authedFetch', () => ({ authedFetch: vi.fn().mockResolvedValue({ ok: true }) }));
-const mockDocuments = vi.hoisted(() => ({ fileNoteDocument: vi.fn(async () => {}) }));
+const mockDocuments = vi.hoisted(() => ({
+  fileNoteDocument: vi.fn(async () => {}),
+  getPatientDocuments: vi.fn(async () => [] as Array<{ category: string; docDate: string; archived: boolean }>),
+}));
 vi.mock('@/lib/patientDocuments', () => mockDocuments);
+// The client's service plans; by default one signed 09/20/2026 (current at a 09/28 visit).
+const mockPlans = vi.hoisted(() => ({ getServicePlans: vi.fn(async () => [] as Array<{ id: string; signedDate: string; reviews: never[] }>) }));
+vi.mock('@/lib/servicePlans', () => mockPlans);
 
 // A stand-in pad: one click "signs".
 vi.mock('@/components/SignatureCanvas', () => ({
@@ -84,6 +90,8 @@ beforeEach(() => {
   mockSubmissions.findDuplicateSubmission.mockResolvedValue(null);
   mockSubmissions.saveSubmission.mockResolvedValue('note-id');
   mockDrafts.loadSupervisoryDraft.mockResolvedValue(null);
+  mockPlans.getServicePlans.mockResolvedValue([{ id: 'plan1', signedDate: '2026-09-20', reviews: [] }]);
+  mockDocuments.getPatientDocuments.mockResolvedValue([]);
   for (const k of Array.from(mockSearchParams.keys())) mockSearchParams.delete(k);
   mockAuth.useAuth.mockReturnValue({
     user: { uid: 'sup-uid' },
@@ -91,6 +99,39 @@ beforeEach(() => {
     role: 'supervisor',
   });
 });
+
+/** Fills every required field of a visit for client p1 on 09/28/2026 and signs. */
+async function fillCompleteVisit() {
+    render(<SupervisoryVisitPage />);
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Neal Kelly' })).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText(/Client name/), { target: { value: 'p1' } });
+    fireEvent.change(screen.getByLabelText(/^Date \*/), { target: { value: '2026-09-28' } });
+    fireEvent.change(screen.getByLabelText(/^Time in/), { target: { value: '10:00' } });
+    fireEvent.change(screen.getByLabelText(/^Time out/), { target: { value: '10:45' } });
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Ann Lee, CNA' })).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText(/Staff performing duties/), { target: { value: 'n2' } });
+    fireEvent.change(screen.getByLabelText(/^Temperature \(°F\)/), { target: { value: '98.4' } });
+    fireEvent.change(screen.getByLabelText('Temperature route'), { target: { value: 'Oral' } });
+    fireEvent.change(screen.getByLabelText('Systolic'), { target: { value: '118' } });
+    fireEvent.change(screen.getByLabelText('Diastolic'), { target: { value: '76' } });
+    fireEvent.change(document.getElementById('q18_pulse')!, { target: { value: '72' } });
+    fireEvent.change(document.getElementById('q19_respiration')!, { target: { value: '16' } });
+    fireEvent.change(document.getElementById('q20_oxygenSaturation')!, { target: { value: '98' } });
+    fireEvent.change(document.getElementById('q21_oxygenSource')!, { target: { value: 'Room Air' } });
+    fireEvent.change(screen.getByLabelText(/What would you do if you had a complaint/), { target: { value: 'Call the office.' } });
+    fireEvent.change(screen.getByLabelText(/anything else you would like to tell me/), { target: { value: 'No.' } });
+    fireEvent.change(screen.getByLabelText(/General conditions/), { target: { value: 'Alert, home clean.' } });
+    fireEvent.change(screen.getByLabelText(/Document client progress/), { target: { value: 'Walking further.' } });
+    const pick = (name: string, value: string) =>
+      fireEvent.click(document.getElementById(name)!.querySelector(`input[value="${value}"]`)!);
+    pick('sv_problems', 'No');
+    pick('sv_rightsInformed', 'Yes');
+    pick('sv_clientSatisfied', 'Yes');
+    pick('sv_interviewMethod', 'In person');
+    pick('sv_levelOfCare', 'Yes');
+    pick('sv_satisfiedWithStaff', 'Yes');
+    fireEvent.click(screen.getByRole('button', { name: 'test-sign' }));
+}
 
 describe('SupervisoryVisitPage', () => {
   it("renders the paper form's sections for a supervisor, with the supervisor prefilled", async () => {
@@ -171,35 +212,7 @@ describe('SupervisoryVisitPage', () => {
   });
 
   it('saves a complete visit, files it into Documents, and completes the scheduled visit', async () => {
-    render(<SupervisoryVisitPage />);
-    await waitFor(() => expect(screen.getByRole('option', { name: 'Neal Kelly' })).toBeInTheDocument());
-    fireEvent.change(screen.getByLabelText(/Client name/), { target: { value: 'p1' } });
-    fireEvent.change(screen.getByLabelText(/^Date \*/), { target: { value: '2026-09-28' } });
-    fireEvent.change(screen.getByLabelText(/^Time in/), { target: { value: '10:00' } });
-    fireEvent.change(screen.getByLabelText(/^Time out/), { target: { value: '10:45' } });
-    await waitFor(() => expect(screen.getByRole('option', { name: 'Ann Lee, CNA' })).toBeInTheDocument());
-    fireEvent.change(screen.getByLabelText(/Staff performing duties/), { target: { value: 'n2' } });
-    fireEvent.change(screen.getByLabelText(/^Temperature \(°F\)/), { target: { value: '98.4' } });
-    fireEvent.change(screen.getByLabelText('Temperature route'), { target: { value: 'Oral' } });
-    fireEvent.change(screen.getByLabelText('Systolic'), { target: { value: '118' } });
-    fireEvent.change(screen.getByLabelText('Diastolic'), { target: { value: '76' } });
-    fireEvent.change(document.getElementById('q18_pulse')!, { target: { value: '72' } });
-    fireEvent.change(document.getElementById('q19_respiration')!, { target: { value: '16' } });
-    fireEvent.change(document.getElementById('q20_oxygenSaturation')!, { target: { value: '98' } });
-    fireEvent.change(document.getElementById('q21_oxygenSource')!, { target: { value: 'Room Air' } });
-    fireEvent.change(screen.getByLabelText(/What would you do if you had a complaint/), { target: { value: 'Call the office.' } });
-    fireEvent.change(screen.getByLabelText(/anything else you would like to tell me/), { target: { value: 'No.' } });
-    fireEvent.change(screen.getByLabelText(/General conditions/), { target: { value: 'Alert, home clean.' } });
-    fireEvent.change(screen.getByLabelText(/Document client progress/), { target: { value: 'Walking further.' } });
-    const pick = (name: string, value: string) =>
-      fireEvent.click(document.getElementById(name)!.querySelector(`input[value="${value}"]`)!);
-    pick('sv_problems', 'No');
-    pick('sv_rightsInformed', 'Yes');
-    pick('sv_clientSatisfied', 'Yes');
-    pick('sv_interviewMethod', 'In person');
-    pick('sv_levelOfCare', 'Yes');
-    pick('sv_satisfiedWithStaff', 'Yes');
-    fireEvent.click(screen.getByRole('button', { name: 'test-sign' }));
+    await fillCompleteVisit();
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit Supervisory Visit' }));
 
@@ -218,7 +231,10 @@ describe('SupervisoryVisitPage', () => {
       q19_respiration: '16',
       q20_oxygenSaturation: '98',
       q21_oxygenSource: 'Room Air',
-      q1_formRev: '2',
+      q1_formRev: '3',
+      sv_servicePlanStatus: 'current',
+      sv_servicePlanDue: '2026-11-21',
+      sv_servicePlanAction: '',
       sv_problems: 'No',
       sv_interviewMethod: 'In person',
       q11_nurseName: 'Souz Payne',
@@ -233,7 +249,8 @@ describe('SupervisoryVisitPage', () => {
     await waitFor(() =>
       expect(mockRouter.push).toHaveBeenCalledWith(expect.stringMatching(/^\/progress-note\/submitted\/note-id\?.*t=supervisory$/)),
     );
-  });
+    // Filling a whole visit takes a few seconds under full-suite load.
+  }, 20_000);
 
   it("flags a vital outside its normal range for the client's age", async () => {
     render(<SupervisoryVisitPage />);
@@ -252,4 +269,63 @@ describe('SupervisoryVisitPage', () => {
     expect(alert).toHaveBeenCalled();
     alert.mockRestore();
   });
+});
+
+describe('SupervisoryVisitPage: service plan check', () => {
+  const submit = () => fireEvent.click(screen.getByRole('button', { name: 'Submit Supervisory Visit' }));
+  const pickPlan = (value: string) => fireEvent.click(document.getElementById('sv_servicePlanAction')!.querySelector(`input[value="${value}"]`)!);
+
+  it('shows a current plan as information only', async () => {
+    await fillCompleteVisit();
+    expect(await screen.findByText('Current through 11/21/2026.')).toBeInTheDocument();
+    expect(document.getElementById('sv_servicePlanAction')).toBeNull();
+    // Filling a whole visit takes a few seconds under full-suite load.
+  }, 20_000);
+
+  it('requires an answer for an overdue plan, then opens the review after submit', async () => {
+    mockPlans.getServicePlans.mockResolvedValue([{ id: 'plan1', signedDate: '2026-06-30', reviews: [] }]);
+    await fillCompleteVisit();
+    expect(await screen.findByText('Overdue since 08/31/2026.')).toBeInTheDocument();
+    submit();
+    expect(await screen.findByText("Choose what you are doing about the client's service plan.")).toBeInTheDocument();
+    expect(mockSubmissions.saveSubmission).not.toHaveBeenCalled();
+    pickPlan('Review the plan now (no changes)');
+    submit();
+    await waitFor(() => expect(mockSubmissions.saveSubmission).toHaveBeenCalledTimes(1));
+    expect(mockSubmissions.saveSubmission.mock.calls[0][0]).toMatchObject({
+      sv_servicePlanStatus: 'overdue',
+      sv_servicePlanDue: '2026-08-31',
+      sv_servicePlanAction: 'Review the plan now (no changes)',
+      sv_servicePlanReason: '',
+    });
+    await waitFor(() => expect(mockRouter.push).toHaveBeenCalledWith('/admin/clients/p1/service-plan/review?visit=note-id'));
+    // Filling a whole visit takes a few seconds under full-suite load.
+  }, 20_000);
+
+  it('"Not today" needs a reason, which is kept with the visit', async () => {
+    mockPlans.getServicePlans.mockResolvedValue([{ id: 'plan1', signedDate: '2026-06-30', reviews: [] }]);
+    await fillCompleteVisit();
+    await screen.findByText('Overdue since 08/31/2026.');
+    pickPlan('Not today');
+    submit();
+    expect(await screen.findByText('Say why the service plan is not being reviewed or revised today.')).toBeInTheDocument();
+    fireEvent.change(document.getElementById('sv_servicePlanReason')!, { target: { value: 'Mother not home; set for 10/03.' } });
+    submit();
+    await waitFor(() => expect(mockSubmissions.saveSubmission).toHaveBeenCalledTimes(1));
+    expect(mockSubmissions.saveSubmission.mock.calls[0][0]).toMatchObject({ sv_servicePlanAction: 'Not today', sv_servicePlanReason: 'Mother not home; set for 10/03.' });
+    await waitFor(() => expect(mockRouter.push).toHaveBeenCalledWith(expect.stringMatching(/^\/progress-note\/submitted\/note-id/)));
+    // Filling a whole visit takes a few seconds under full-suite load.
+  }, 20_000);
+
+  it('a paper-only plan offers to write it in the portal, then opens the plan form', async () => {
+    mockPlans.getServicePlans.mockResolvedValue([]);
+    mockDocuments.getPatientDocuments.mockResolvedValue([{ category: 'Service Plan', docDate: '2026-06-30', archived: false }]);
+    await fillCompleteVisit();
+    expect(await screen.findByText(/The current plan is on paper/)).toBeInTheDocument();
+    expect(document.querySelector('#sv_servicePlanAction input[value="Review the plan now (no changes)"]')).toBeNull();
+    pickPlan('Write the plan now');
+    submit();
+    await waitFor(() => expect(mockRouter.push).toHaveBeenCalledWith('/admin/clients/p1/service-plan/new?visit=note-id'));
+    // Filling a whole visit takes a few seconds under full-suite load.
+  }, 20_000);
 });

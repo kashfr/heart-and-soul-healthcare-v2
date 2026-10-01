@@ -524,3 +524,62 @@ export function planDifferences(plan: Pick<ServicePlanInput, 'diagnosis' | 'alle
 
 /** The Documents category the signed PDF is filed under. */
 export const SERVICE_PLAN_DOC_CATEGORY = 'Service Plan';
+
+// ---------------------------------------------------------------------------
+// Where a client's service plan stands on a given day. Drives the check on
+// the supervisory visit form and the daily reminders.
+// ---------------------------------------------------------------------------
+
+export type ServicePlanStage = 'none' | 'overdue' | 'due-soon' | 'current';
+
+export interface ServicePlanStatus {
+  stage: ServicePlanStage;
+  /** Newest signing or review, YYYY-MM-DD; '' when no plan is on file. */
+  lastISO: string;
+  /** Review due by (last + 62 days); '' when no plan is on file. */
+  dueISO: string;
+}
+
+/**
+ * `soonDays`: how far ahead counts as "due soon". The supervisory form uses
+ * 30 (the plan comes due before the next monthly visit); reminders use 7.
+ * A plan due today is due soon, not overdue.
+ *
+ * `docDates`: dates of the client's non-archived "Service Plan" documents.
+ * Most plans before 09/2026 are on paper, filed under Documents; they count,
+ * the same evidence the Survey Readiness card uses. A portal plan's signing
+ * and reviews file documents too, so either source alone is enough.
+ */
+export function servicePlanStatus(plan: Pick<ServicePlanRecord, 'signedDate' | 'reviews'> | null, asOfISO: string, soonDays: number, docDates: string[] = []): ServicePlanStatus {
+  const lastISO = [plan ? lastReviewedISO(plan) : '', ...docDates.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))].sort().pop() || '';
+  if (!lastISO) return { stage: 'none', lastISO: '', dueISO: '' };
+  const dueISO = addDaysISO(lastISO, SERVICE_PLAN_MAX_DAYS);
+  const stage: ServicePlanStage = dueISO < asOfISO ? 'overdue' : dueISO <= addDaysISO(asOfISO, soonDays) ? 'due-soon' : 'current';
+  return { stage, lastISO, dueISO };
+}
+
+/** The stages that need someone to act. */
+export const needsServicePlanAction = (stage: string): boolean => stage === 'none' || stage === 'overdue' || stage === 'due-soon';
+
+/** "Overdue since 08/31/2026", "Due by 11/29/2026", "Current through ...", "No service plan on file". */
+export function servicePlanStatusLabel(stage: string, dueISO: string): string {
+  const us = (iso: string) => (/^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso.slice(5, 7)}/${iso.slice(8, 10)}/${iso.slice(0, 4)}` : iso);
+  switch (stage) {
+    case 'none':
+      return 'No service plan on file';
+    case 'overdue':
+      return `Overdue since ${us(dueISO)}`;
+    case 'due-soon':
+      return `Due by ${us(dueISO)}`;
+    case 'current':
+      return `Current through ${us(dueISO)}`;
+    default:
+      return '';
+  }
+}
+
+/** The supervisory visit's service plan answers (radio values, stored as typed). */
+export const SV_PLAN_REVIEW = 'Review the plan now (no changes)';
+export const SV_PLAN_REVISE = 'Revise the plan now';
+export const SV_PLAN_WRITE = 'Write the plan now';
+export const SV_PLAN_NOT_TODAY = 'Not today';
