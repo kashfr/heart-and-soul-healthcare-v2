@@ -299,6 +299,7 @@ export default function DocumentsSection({
                   {d.size ? ` · ${fmtSize(d.size)}` : ''}
                   {d.uploadedByName ? ` · ${d.autoFiled ? 'documented' : 'uploaded'} by ${d.uploadedByName}` : ''}
                   {d.replacedByName ? ` · file replaced by ${d.replacedByName}` : ''}
+                  {d.detailsEditedByName ? ` · details edited by ${d.detailsEditedByName}` : ''}
                   {d.movedByName ? ` · moved here by ${d.movedByName}` : ''}
                   {d.sourceNoteId && (
                     <>
@@ -314,8 +315,18 @@ export default function DocumentsSection({
                 <button type="button" onClick={() => view(d)} style={actionBtnStyle} title="Open in a new tab">
                   <ExternalLink size={14} /> View
                 </button>
-                {isStaff && !isNoteFiledDocument(d) && (
-                  <button type="button" onClick={() => setEditing(d)} disabled={busyId === d.id} style={actionBtnStyle} title="Edit the title, category, or date">
+                {isStaff && (
+                  <button
+                    type="button"
+                    onClick={() => setEditing(d)}
+                    disabled={busyId === d.id}
+                    style={actionBtnStyle}
+                    title={
+                      isNoteFiledDocument(d)
+                        ? 'Edit how this entry is listed (title, category, date). The note itself does not change; use Amend Note for that. Your edits are kept when the PDF is refreshed.'
+                        : 'Edit the title, category, or date'
+                    }
+                  >
                     <Pencil size={14} /> Edit
                   </button>
                 )}
@@ -480,6 +491,11 @@ function EditDocumentModal({
       <div style={sheetStyle}>
         <div style={sheetTitleStyle}>Edit Document Details</div>
         <div style={{ ...hintStyle, marginBottom: 12 }}>File: {d.fileName}</div>
+        {isNoteFiledDocument(d) && (
+          <div style={{ ...hintStyle, marginBottom: 12, background: '#f6f9fc', border: '1px solid #dbe3ec', borderRadius: 6, padding: '8px 10px' }}>
+            This changes how the entry is listed here. The visit note keeps its own date and wording (use Amend Note to change those), and refreshing the PDF keeps the details you set here.
+          </div>
+        )}
         <label style={fieldStyle} id={editFieldId('title')}>
           <span style={fieldLabelStyle}>Title *</span>
           <input

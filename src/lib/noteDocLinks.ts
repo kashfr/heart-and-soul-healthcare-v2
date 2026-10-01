@@ -35,3 +35,19 @@ export function noteAmendHref(d: NoteFiledDocument): string | null {
   // Unknown type: the note's own page offers the right Amend link.
   return `/admin/submissions/${encodeURIComponent(id)}`;
 }
+
+/**
+ * Title, category and date for a note-filed entry: the note's own, unless
+ * staff edited the entry by hand (detailsEditedAt), in which case theirs stay.
+ */
+export function noteDocDetails(
+  prior: Record<string, unknown> | null,
+  fromNote: { title: string; category: string; docDate: string },
+): { title: string; category: string; docDate: string } {
+  if (!prior || prior.detailsEditedAt == null) return fromNote;
+  return {
+    title: String(prior.title || fromNote.title),
+    category: String(prior.category || fromNote.category),
+    docDate: typeof prior.docDate === 'string' ? prior.docDate : fromNote.docDate,
+  };
+}

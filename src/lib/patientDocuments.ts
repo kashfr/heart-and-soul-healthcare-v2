@@ -72,6 +72,10 @@ export interface PatientDocument {
   replacedAt?: unknown;
   replacedBy?: string;
   replacedByName?: string;
+  /** Set when staff edited the title, category, or date by hand. A note-filed
+   *  entry keeps those details when the note is re-filed. */
+  detailsEditedAt?: unknown;
+  detailsEditedByName?: string;
   /** Present on documents the server filed from a submitted note. */
   sourceNoteId?: string;
   /** The note's noteType (filed since 09/2026); older entries infer it from the category. */
@@ -360,11 +364,16 @@ export async function updateDocumentDetails(
   id: string,
   patch: { title: string; category: DocCategory; docDate: string },
 ): Promise<void> {
-  await updateDoc(doc(db, 'patientDocuments', id), {
-    title: patch.title.trim(),
-    category: patch.category,
-    docDate: patch.docDate,
+  // Through the server so a note-filed entry is marked as edited by hand
+  // (a later re-file of the note keeps these details).
+  const res = await authedFetch(`/api/documents/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ title: patch.title.trim(), category: patch.category, docDate: patch.docDate }),
   });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Could not save (${res.status}).`);
+  }
 }
 
 /**

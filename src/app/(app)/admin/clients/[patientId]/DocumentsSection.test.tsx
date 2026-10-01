@@ -82,12 +82,13 @@ beforeEach(() => {
 });
 
 describe('DocumentsSection, entries filed from a note', () => {
-  it('offers Amend Note and Refresh PDF instead of Edit', () => {
+  it('offers Edit beside Amend Note and Refresh PDF, and the dialog explains the difference', () => {
     renderSection([fromNote]);
     const amend = screen.getByRole('link', { name: /amend note/i });
     expect(amend).toHaveAttribute('href', '/supervisory-visit?edit=note-1');
     expect(screen.getByRole('button', { name: /refresh pdf/i })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^edit$/i })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
+    expect(screen.getByText(/The visit note keeps its own date and wording/)).toBeInTheDocument();
   });
 
   it('keeps Edit (and no note buttons) on an uploaded file', () => {

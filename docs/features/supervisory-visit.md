@@ -107,12 +107,16 @@ or mark the visit on the Schedule tab.
 
 The Documents entry is a snapshot of the note, rendered when it was filed
 and re-rendered whenever the note is amended (`fileNoteAsDocument` upserts
-by `sourceNoteId`, and stores `sourceNoteType` since 09/2026). It is not a
-separate record, so on a note-filed entry the tab does not offer Edit:
-retitling or redating the card would be overwritten by the next filing and
-would never change the note. Instead (`DocumentsSection.tsx`,
-`src/lib/noteDocLinks.ts`):
+by `sourceNoteId`, and stores `sourceNoteType` since 09/2026). Its buttons
+(`DocumentsSection.tsx`, `src/lib/noteDocLinks.ts`):
 
+- **Edit** (staff) changes how the entry is listed: title, category, date.
+  It does not change the note. Owner's request (09/30/2026), after Edit had
+  been removed in favor of Amend Note: both coexist. Edits go through
+  `PATCH /api/documents/[id]`, which stamps `detailsEditedAt/By/ByName`, and
+  a later re-file (an amendment, Refresh PDF, Refresh Visit PDFs) refreshes
+  the PDF but keeps the hand-edited title, category and date
+  (`noteDocDetails`). The row shows "details edited by ...".
 - **Amend Note** (everyone who can see the tab) opens the note in amend mode
   (`/supervisory-visit?edit=<noteId>`, or `/oversight-note?edit=` for an RN
   oversight visit; entries filed before the type was stored are told apart
@@ -130,6 +134,7 @@ would never change the note. Instead (`DocumentsSection.tsx`,
 
 Origin: a supervisor changed the date on the Documents card expecting the
 visit to move; the card saved but the note and PDF did not change (09/2026).
+The Edit dialog on a note-filed entry now says so in words.
 
 ## Elsewhere in the app
 
