@@ -43,6 +43,7 @@ import {
 import {
   getActiveFieldStaff,
   completeScheduledSupervisoryVisit,
+  scheduleNextSupervisoryVisit,
   type AssigneeOption,
 } from '@/lib/patientVisits';
 import { useAuth } from '@/components/AuthProvider';
@@ -705,6 +706,24 @@ function SupervisoryVisitPageInner() {
       } catch (err) {
         console.warn('Marking the scheduled supervisory visit completed failed (non-fatal):', err);
       }
+      // Put the next supervisory visit on the calendar, 30 days out and
+      // assigned to this supervisor, unless one is already pending. Non-fatal:
+      // the daily sweep offers an open visit if the calendar stays empty.
+      let nextVisitISO = '';
+      try {
+        const d = new Date();
+        const todayLocal = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const credential = String(profile?.credential || '');
+        nextVisitISO = await scheduleNextSupervisoryVisit(
+          String(values.patientId || ''),
+          String(values.q6_dateofService || ''),
+          { uid: user?.uid || '', name: profile?.displayName || user?.email || '' },
+          `${profile?.displayName || user?.email || ''}${credential ? `, ${credential}` : ''}`,
+          todayLocal,
+        );
+      } catch (err) {
+        console.warn('Scheduling the next supervisory visit failed (non-fatal):', err);
+      }
       // Chose to review or revise the plan now: go straight there, while the
       // supervisor is still in the home with the family.
       const planPid = encodeURIComponent(String(values.patientId || ''));
@@ -718,7 +737,7 @@ function SupervisoryVisitPageInner() {
       }
       const c = encodeURIComponent(String(values.q3_clientName || ''));
       const d = encodeURIComponent(String(values.q6_dateofService || ''));
-      router.push(`/progress-note/submitted/${docId}?c=${c}&d=${d}&t=supervisory`);
+      router.push(`/progress-note/submitted/${docId}?c=${c}&d=${d}&t=supervisory${nextVisitISO ? `&next=${encodeURIComponent(nextVisitISO)}` : ''}`);
     } catch (err) {
       console.error('Supervisory visit submit failed:', err);
       setSubmitError('The form could not be submitted. Please check your connection and try again.');

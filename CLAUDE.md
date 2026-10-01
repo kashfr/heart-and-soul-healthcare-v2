@@ -13,6 +13,8 @@ Read the matching note before changing one of these features.
 
 - Home Supervisory Visit form, shared vitals component, abnormal-vitals
   follow-up: docs/features/supervisory-visit.md
+- Supervisory visit scheduling (next visit on filing, open visits offered to
+  all supervisors, accept, hand-off, daily sweep): docs/features/supervisory-scheduling.md
 - Per-client vitals baselines (client record, note snapshot, how the
   ranges are judged): docs/features/vitals-baselines.md
 - Service Plan (per-client signed plan, tab + form + PDF filing):

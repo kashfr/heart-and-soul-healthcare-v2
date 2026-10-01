@@ -100,8 +100,12 @@ request of the nurse supervisors.
    status `scheduled`, same client, same date
    (`completeScheduledSupervisoryVisit`). Nothing scheduled is not an error.
 
-Steps 2 and 3 are non-fatal: staff can "Sync Visit Notes" on the Documents tab
-or mark the visit on the Schedule tab.
+4. Puts the next supervisory visit on the calendar 30 days out, assigned to
+   the filing supervisor, unless one is already pending
+   (`scheduleNextSupervisoryVisit`; see docs/features/supervisory-scheduling.md).
+
+Steps 2, 3 and 4 are non-fatal: staff can "Sync Visit Notes" on the Documents
+tab or mark / add the visit on the Schedule tab.
 
 ## The filed PDF on the Documents tab
 

@@ -1,11 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { CalendarClock, CalendarPlus, Check, History, Undo2, X } from 'lucide-react';
+import { CalendarClock, CalendarPlus, Check, HandHelping, History, Undo2, UserCheck, X } from 'lucide-react';
 import {
+  acceptOfferedVisit,
   addVisit,
   getActiveSupervisors,
+  handOffVisit,
   notifyVisitAssignee,
+  offerVisitToAll,
   setVisitStatus,
   type AssigneeOption,
   type PatientVisit,
@@ -60,7 +63,28 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
   const [showHistory, setShowHistory] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [view, setView] = useState<'calendar' | 'list'>('calendar');
+  // The supervisory visit being handed off (modal), and the supervisor list
+  // it offers; loaded on first open.
+  const [handOffFor, setHandOffFor] = useState<PatientVisit | null>(null);
   const today = todayISO();
+
+  // An open supervisory visit: offered to every supervisor, nobody has taken it.
+  const isOpen = (v: PatientVisit) => v.type === 'supervisory' && v.status === 'scheduled' && v.offeredToAll === true && !v.nurseId;
+  // The signed-in person may take an open visit (staff = admin or supervisor;
+  // field nurses never see these controls).
+  const canTake = isStaff;
+
+  const accept = async (v: PatientVisit) => {
+    if (!v.id) return;
+    setBusyId(v.id);
+    try {
+      const r = await acceptOfferedVisit(v.id);
+      onToast(r.ok ? 'You have this visit. The other supervisors were told.' : r.message || 'Could not accept the visit.');
+      onChanged();
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   const upcoming = useMemo(() => upcomingVisits(visits, today, 5), [visits, today]);
   const moreScheduled = useMemo(() => scheduledBeyond(visits, today, 5), [visits, today]);
@@ -108,12 +132,26 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
             {v.type === 'supervisory' ? 'Supervisory Visit' : 'Shift'}
           </span>
           {v.nurseName && <span style={{ fontSize: 13, color: '#2c3e50', fontWeight: 600 }}>{v.nurseName}</span>}
+          {isOpen(v) && <span style={openChipStyle}>Needs a Supervisor</span>}
           {isOverdue && <span style={overdueChipStyle}>Past Date, Not Completed</span>}
         </div>
         {v.notes && <div style={notesStyle}>{v.notes}</div>}
+        {v.handedOffFromName && v.releaseReason && (
+          <div style={notesStyle}>Handed off by {v.handedOffFromName}: {v.releaseReason}</div>
+        )}
       </div>
       {isStaff && (
-        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {isOpen(v) && canTake && (
+            <button type="button" onClick={() => accept(v)} disabled={busyId === v.id} style={acceptBtnStyle} title="Take this visit">
+              <UserCheck size={13} /> Accept
+            </button>
+          )}
+          {v.type === 'supervisory' && v.status === 'scheduled' && !isOpen(v) && (
+            <button type="button" onClick={() => setHandOffFor(v)} disabled={busyId === v.id} style={actionBtnStyle} title="Hand this visit to another supervisor">
+              <HandHelping size={13} /> Hand Off
+            </button>
+          )}
           <button type="button" onClick={() => mark(v, 'completed')} disabled={busyId === v.id} style={actionBtnStyle} title="Mark completed">
             <Check size={13} /> Done
           </button>
@@ -170,6 +208,8 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
           isStaff={isStaff}
           busyId={busyId}
           onMark={mark}
+          onAccept={accept}
+          onHandOff={(v) => setHandOffFor(v)}
           onAddOn={(dateISO) => {
             setAddDate(dateISO);
             setAddOpen(true);
@@ -237,6 +277,18 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
         </div>
       )}
 
+      {handOffFor && (
+        <HandOffModal
+          visit={handOffFor}
+          actorUid={actor.uid}
+          onClose={() => setHandOffFor(null)}
+          onDone={(msg) => {
+            onToast(msg);
+            onChanged();
+          }}
+        />
+      )}
+
       {addOpen && (
         <AddVisitModal
           patientId={patientId}
@@ -244,8 +296,18 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
           careTeam={careTeam}
           initialDate={addDate || undefined}
           onClose={() => setAddOpen(false)}
-          onAdded={async ({ visitId, assigneeUid, assigneeName }) => {
+          onAdded={async ({ visitId, assigneeUid, assigneeName, offerToAll }) => {
             onChanged();
+            if (offerToAll) {
+              const r = await offerVisitToAll(visitId);
+              onToast(
+                r.ok
+                  ? `Visit scheduled and offered to ${r.notified} supervisor${r.notified === 1 ? '' : 's'}. The first to accept takes it.`
+                  : `Visit scheduled, but it could not be offered: ${r.message || 'try again from the visit.'}`,
+              );
+              onChanged();
+              return;
+            }
             if (!assigneeUid) {
               onToast('Visit scheduled.');
               return;
@@ -279,13 +341,16 @@ function AddVisitModal({
   careTeam: Array<{ uid: string; name: string; credential: string }>;
   initialDate?: string; // preset when opened from a calendar day
   onClose: () => void;
-  onAdded: (added: { visitId: string; assigneeUid: string; assigneeName: string }) => void;
+  onAdded: (added: { visitId: string; assigneeUid: string; assigneeName: string; offerToAll: boolean }) => void;
 }) {
   const [date, setDate] = useState(initialDate || todayISO());
   const [startTime, setStartTime] = useState('');
   const [type, setType] = useState<VisitType>('shift');
   const [nurseUid, setNurseUid] = useState('');
   const [nurseFree, setNurseFree] = useState('');
+  // Supervisory visit with no assignee: offer it to every supervisor instead
+  // of leaving it unassigned (the first to accept takes it).
+  const [offerToAll, setOfferToAll] = useState(false);
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -318,6 +383,7 @@ function AddVisitModal({
     setBusy(true);
     setError(null);
     const pick = assignPool.find((m) => m.uid === nurseUid);
+    const offering = supervisory && !pick && offerToAll;
     try {
       const visitId = await addVisit(
         {
@@ -326,12 +392,12 @@ function AddVisitModal({
           startTime,
           type,
           nurseId: pick?.uid || '',
-          nurseName: pick ? `${pick.name}${pick.credential ? `, ${pick.credential}` : ''}` : nurseFree.trim(),
+          nurseName: pick ? `${pick.name}${pick.credential ? `, ${pick.credential}` : ''}` : offering ? '' : nurseFree.trim(),
           notes,
         },
         actor,
       );
-      onAdded({ visitId, assigneeUid: pick?.uid || '', assigneeName: pick?.name || '' });
+      onAdded({ visitId, assigneeUid: pick?.uid || '', assigneeName: pick?.name || '', offerToAll: offering });
       onClose();
     } catch {
       setError('Could not schedule the visit. Please try again.');
@@ -397,7 +463,15 @@ function AddVisitModal({
               ))}
             </select>
           </label>
-          {!nurseUid && (
+          {!nurseUid && supervisory && (
+            <label style={{ ...fieldStyle, flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingTop: 22 }}>
+              <input type="checkbox" checked={offerToAll} onChange={(e) => setOfferToAll(e.target.checked)} style={{ marginTop: 3 }} />
+              <span style={{ fontSize: 12.5, color: '#2c3e50', lineHeight: 1.4 }}>
+                Offer it to all supervisors. Each gets a text and email; the first to accept takes it.
+              </span>
+            </label>
+          )}
+          {!nurseUid && !(supervisory && offerToAll) && (
             <label style={fieldStyle}>
               <span style={fieldLabelStyle}>Or type a name</span>
               <input
@@ -436,6 +510,97 @@ function AddVisitModal({
   );
 }
 
+/**
+ * Hand a supervisory visit to a named supervisor, or release it to every
+ * other supervisor as an open offer. The assignee or an admin may do this
+ * (the server re-checks); the reason travels with the notice.
+ */
+function HandOffModal({ visit, actorUid, onClose, onDone }: { visit: PatientVisit; actorUid: string; onClose: () => void; onDone: (msg: string) => void }) {
+  const [supervisors, setSupervisors] = useState<AssigneeOption[] | null>(null);
+  const [toUid, setToUid] = useState('');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [reasonError, setReasonError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getActiveSupervisors().then((s) => {
+      if (!cancelled) setSupervisors(s.filter((x) => x.uid !== visit.nurseId));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [visit.nurseId]);
+  const mine = visit.nurseId === actorUid;
+
+  const save = async () => {
+    if (busy || !visit.id) return;
+    if (!reason.trim()) {
+      setReasonError('Say why, so whoever takes it knows (e.g., out that week).');
+      escortToField('handoff-reason');
+      return;
+    }
+    setReasonError(null);
+    setBusy(true);
+    setError(null);
+    const r = await handOffVisit(visit.id, toUid, reason.trim());
+    if (!r.ok) {
+      setError(r.message || 'Could not hand off the visit.');
+      setBusy(false);
+      return;
+    }
+    const to = supervisors?.find((s) => s.uid === toUid);
+    onDone(
+      toUid
+        ? `Visit handed to ${to?.name || 'the supervisor'}. They were notified by text and email.`
+        : `Visit released and offered to ${r.notified} supervisor${r.notified === 1 ? '' : 's'}. The first to accept takes it.`,
+    );
+    onClose();
+  };
+
+  return (
+    <div style={backdropStyle} role="dialog" aria-modal="true" aria-label="Hand off a supervisory visit">
+      <div style={sheetStyle}>
+        <div style={sheetTitleStyle}>Hand Off This Supervisory Visit</div>
+        <p style={{ fontSize: 13, color: '#5c6b7a', margin: '0 0 12px', lineHeight: 1.5 }}>
+          {fmtDate(visit.date)}{visit.startTime ? ` at ${fmtTime(visit.startTime)}` : ''}, currently {mine ? 'yours' : `assigned to ${visit.nurseName || 'nobody'}`}.
+          Hand it to one supervisor, or release it to all of them and the first to accept takes it.
+        </p>
+        <label style={fieldStyle}>
+          <span style={fieldLabelStyle}>Hand it to</span>
+          <select value={toUid} onChange={(e) => setToUid(e.target.value)} style={selectStyle}>
+            <option value="">{supervisors === null ? 'Loading Supervisors…' : 'All Supervisors (First to Accept Takes It)'}</option>
+            {(supervisors ?? []).map((s) => (
+              <option key={s.uid} value={s.uid}>
+                {s.name}{s.credential ? `, ${s.credential}` : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label style={fieldStyle} id="handoff-reason">
+          <span style={fieldLabelStyle}>Reason *</span>
+          <input
+            type="text"
+            value={reason}
+            onChange={(e) => { setReason(e.target.value); if (reasonError) setReasonError(null); }}
+            style={{ ...inputStyle, ...(reasonError ? FIELD_ERROR_STYLE : null) }}
+            placeholder="e.g., out of town that week"
+            aria-invalid={!!reasonError}
+          />
+          <FieldError message={reasonError} />
+        </label>
+        {error && <div style={errBoxStyle}>{error}</div>}
+        <div style={actionsStyle}>
+          <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="button" style={saveBtnStyle} onClick={save} disabled={busy}>
+            {busy ? 'Sending…' : toUid ? 'Hand Off' : 'Release to All Supervisors'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const NAVY = '#1a3a5c';
 const toolbarStyle: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 12 };
 const hintStyle: CSSProperties = { fontSize: 12.5, color: '#7f8c8d', flex: 1, minWidth: 200 };
@@ -449,6 +614,8 @@ const rowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10
 const overdueRowStyle: CSSProperties = { background: '#fff7e6', borderColor: '#f5d9a8' };
 const supChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#e0e7ff', color: '#3730a3', fontSize: 10.5, fontWeight: 700 };
 const shiftChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#e8eef4', color: NAVY, fontSize: 10.5, fontWeight: 700 };
+const openChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#fff3e0', color: '#b45309', fontSize: 10.5, fontWeight: 700 };
+const acceptBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: '#0e7c4a', color: 'white', border: '1px solid #0e7c4a', padding: '6px 10px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
 const overdueChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#fdeaea', color: '#b3261e', fontSize: 10.5, fontWeight: 700 };
 const notesStyle: CSSProperties = { fontSize: 12.5, color: '#7f8c8d', marginTop: 3 };
 const moreLineStyle: CSSProperties = { fontSize: 12, color: '#8a949e', marginTop: 8, paddingLeft: 4 };
