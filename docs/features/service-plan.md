@@ -50,6 +50,38 @@ change does not write a new plan and does not re-file the full plan PDF.
 - The tab shows the reviews, "last reviewed", and "next review due by" (red
   once overdue).
 
+## Keeping plans from being skipped (09/30/2026)
+
+The owner's rule: nurses must not skip service plans, or at least checking
+that the plan is still good. Three layers, none of which blocks a visit:
+
+1. **The supervisory visit asks.** The visit form (rev 3) shows the plan's
+   status and, when it is missing, overdue, or due within 30 days of the
+   visit, requires an answer: review now, revise now (write now when there is
+   none, or only a paper plan), or not today with a reason. See
+   docs/features/supervisory-visit.md.
+2. **It hands off.** Review or revise sends the supervisor straight from the
+   filed visit to the plan page (`?visit=<noteId>`), which shows a
+   "Supervisory visit filed. Next: ..." banner (`FromVisitBanner`). The plan
+   pages do not autosave a draft.
+3. **Daily reminders** (`sweepServicePlanReminders`, run from the morning
+   window of `/api/cron/visit-reminders`, so no new scheduler job):
+   - a client is due a reminder when the plan is missing, overdue, or due
+     within 7 days; once when it enters a stage or its due date moves, and
+     every 7 days while overdue or missing (`servicePlanReminders.ts`);
+   - it goes to whoever is scheduled for the next supervisory visit, else
+     whoever did the last one, else the admins; only active supervisors and
+     admins count;
+   - one portal bell per client (one bell listing them all past three
+     clients, linking to Communications) and one PHI-free digest email per
+     person, each recorded in the Communications log;
+   - state per client in `servicePlanReminders/{patientId}` (server-only).
+
+**Status** (`servicePlanStatus`): the newest of the portal plan's signing or
+reviews and any non-archived "Service Plan" document under Documents (paper
+plans count, the same evidence the Survey Readiness card uses). Due 62 days
+later.
+
 ## Storage
 
 - Top-level collection `servicePlans`, one doc per signed plan. Server-only

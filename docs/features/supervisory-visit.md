@@ -55,6 +55,23 @@ request of the nurse supervisors.
   (`getActiveFieldStaff`), the client's `assignedNurseIds` first.
 - Choosing a client fills the address from the roster.
 
+## Service plan check (rev 3, 09/30/2026)
+
+- A "Service Plan" section before the signature shows the client's plan
+  status as of the visit date (`servicePlanStatus` with a 30-day window:
+  portal plan and filed "Service Plan" documents, due 62 days after the
+  newest).
+- Missing, overdue, or due within 30 days: `sv_servicePlanAction` is
+  required ("Review the plan now (no changes)", "Revise the plan now", or
+  "Write the plan now" when there is no plan in the portal, or "Not today"),
+  and "Not today" requires `sv_servicePlanReason`. Current: information only.
+- Stamped on the note: `sv_servicePlanStatus`, `sv_servicePlanDue`,
+  `sv_servicePlanInPortal`. An amendment keeps the stamp. Rev 1 and 2 visits
+  are never asked. The PDF prints a "Service Plan" section.
+- After submit, review or revise goes straight to the plan page instead of
+  the confirmation page. See docs/features/service-plan.md for the daily
+  reminders.
+
 ## Credential and co-signature
 
 - The supervisor's name (`q11_nurseName`), license (`q12_credential`, RN

@@ -166,4 +166,17 @@ describe('scheduledSupervisoryVisitsOn', () => {
     d.q5_ageYears = '1';
     expect(getSupervisoryIncomplete(d)).toEqual([]);
   });
+
+  it('rev 3 asks about the service plan only when it needs action, and wants a reason for "Not today"', () => {
+    const d: Record<string, string> = { ...completeVisit(), q1_formRev: '3', sv_servicePlanStatus: 'overdue' };
+    expect(getSupervisoryIncomplete(d).map((i) => i.key)).toEqual(['sv_servicePlanAction']);
+    d.sv_servicePlanAction = 'Not today';
+    expect(getSupervisoryIncomplete(d).map((i) => i.key)).toEqual(['sv_servicePlanReason']);
+    d.sv_servicePlanReason = 'Mother not home; scheduled with her for 10/03.';
+    expect(getSupervisoryIncomplete(d)).toEqual([]);
+    expect(getSupervisoryIncomplete({ ...completeVisit(), q1_formRev: '3', sv_servicePlanStatus: 'current' })).toEqual([]);
+    // Older visits and an unloaded status are never flagged.
+    expect(getSupervisoryIncomplete({ ...completeVisit(), q1_formRev: '2', sv_servicePlanStatus: 'overdue' })).toEqual([]);
+    expect(getSupervisoryIncomplete({ ...completeVisit(), q1_formRev: '3', sv_servicePlanStatus: '' })).toEqual([]);
+  });
 });

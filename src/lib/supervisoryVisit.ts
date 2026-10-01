@@ -30,6 +30,7 @@ export interface SupervisoryIssue {
 }
 
 import { isBpRoutinelyRequired } from './vitalRanges';
+import { needsServicePlanAction, SV_PLAN_NOT_TODAY } from './servicePlanShared';
 
 const has = (d: Record<string, string>, k: string): boolean => (d[k] ?? '').trim() !== '';
 /** A vital is filled by its own value OR the section-level "unable to obtain vitals" reason. */
@@ -115,6 +116,22 @@ const SUPERVISORY_RULES: SvRule[] = [
     applies: (d) => d.sv_satisfiedWithStaff === 'No',
   },
 
+  // Rev 3 (09/30/2026): when the client's service plan is missing, overdue,
+  // or due within 30 days of the visit, the supervisor says what she is doing
+  // about it, and gives a reason for "Not today". The status is stamped on
+  // the note (sv_servicePlanStatus) when the form loads the plan.
+  {
+    key: 'sv_servicePlanAction',
+    label: 'Service plan: review, revise, or not today',
+    applies: (d) => Number(d.q1_formRev || '0') >= 3 && needsServicePlanAction(d.sv_servicePlanStatus || ''),
+  },
+  {
+    key: 'sv_servicePlanReason',
+    label: 'Why the service plan is not being done today',
+    applies: (d) =>
+      Number(d.q1_formRev || '0') >= 3 && needsServicePlanAction(d.sv_servicePlanStatus || '') && d.sv_servicePlanAction === SV_PLAN_NOT_TODAY,
+  },
+
   { key: 'q61_signature', label: 'Supervisor signature' },
 ];
 
@@ -137,4 +154,5 @@ export const SUPERVISORY_RADIO_KEYS = [
   'sv_interviewMethod',
   'sv_levelOfCare',
   'sv_satisfiedWithStaff',
+  'sv_servicePlanAction',
 ] as const;

@@ -13,6 +13,7 @@ import { readVitalsRechecks, recheckAbnormalVitals, recheckBloodPressure, rechec
 import { formatDuration, readSeizureEntries, seizureDurationSeconds, sortSeizuresByStart } from '../seizureShared';
 import { parseCareTaskCharting } from '@/lib/careTaskCharting';
 import { SUPERVISORY_NOTE_TYPE } from '@/lib/supervisoryVisit';
+import { servicePlanStatusLabel } from '@/lib/servicePlanShared';
 import { followUpSummary, FOLLOW_UP_ACTION_KEY } from '@/lib/vitalsFollowUp';
 import { credentialRequiresCosign } from '@/lib/cosignClient';
 
@@ -1010,6 +1011,8 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
 
   const isOversight = data.noteType === 'rn-oversight-visit';
   const isSupervisory = data.noteType === SUPERVISORY_NOTE_TYPE;
+  // Supervisory-only keys not on the shared note type.
+  const svRaw = data as unknown as Record<string, string | undefined>;
   /** Shift progress note: the only type that renders the shift groups. */
   const isShift = !isOversight && !isSupervisory;
 
@@ -1229,6 +1232,13 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
             {hasValue(data.sv_recommendations) && (
               <SectionBreakable title="Recommendations">
                 <TextBlock fieldKey="sv_recommendations" label="Recommendations" value={data.sv_recommendations} />
+              </SectionBreakable>
+            )}
+            {hasValue(svRaw.sv_servicePlanStatus) && (
+              <SectionBreakable title="Service Plan">
+                <Field label="Status at This Visit" value={servicePlanStatusLabel(String(svRaw.sv_servicePlanStatus), String(svRaw.sv_servicePlanDue || ''))} />
+                {hasValue(svRaw.sv_servicePlanAction) && <Field fieldKey="sv_servicePlanAction" label="Action" value={String(svRaw.sv_servicePlanAction)} />}
+                {hasValue(svRaw.sv_servicePlanReason) && <TextBlock fieldKey="sv_servicePlanReason" label="Reason Not Done Today" value={String(svRaw.sv_servicePlanReason)} />}
               </SectionBreakable>
             )}
           </>

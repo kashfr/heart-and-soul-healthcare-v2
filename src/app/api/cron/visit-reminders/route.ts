@@ -5,6 +5,7 @@ import { sendSms } from '@/lib/sms/sendSms';
 import { sendVisitNotice } from '@/lib/emails/visitNotice';
 import { createPortalNotification } from '@/lib/notificationsServer';
 import { recordCommunication } from '@/lib/communicationsServer';
+import { sweepServicePlanReminders } from '@/lib/servicePlanRemindersServer';
 import {
   needsMorningNudge,
   visitEmailBody,
@@ -171,8 +172,22 @@ export async function GET(request: Request) {
       }
     }
 
+    // Once a day (the morning window): service plans that are missing,
+    // overdue, or due within 7 days. Isolated: a failure here never affects
+    // the visit reminders above.
+    let servicePlans: { clientsDue: number; recipients: number } | { error: string } | null = null;
+    if (window === 'morning') {
+      try {
+        servicePlans = await sweepServicePlanReminders(agencyDateISO(0));
+      } catch (err) {
+        console.error('Service plan reminder sweep failed:', err);
+        servicePlans = { error: 'Service plan reminder sweep failed.' };
+      }
+    }
+
     return NextResponse.json({
       ok: true,
+      servicePlans,
       window,
       date: targetDate,
       reminded,

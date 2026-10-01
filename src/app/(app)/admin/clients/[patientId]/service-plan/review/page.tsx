@@ -1,5 +1,6 @@
 'use client';
 
+import FromVisitBanner from '@/components/FromVisitBanner';
 import { Suspense, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -198,6 +199,7 @@ function Inner() {
         </p>
       </header>
 
+      <FromVisitBanner what="review the service plan" />
       {errorList.length > 0 && (
         <div style={{ ...noticeStyle, flexDirection: 'column', alignItems: 'flex-start' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><AlertTriangle size={16} /> {errorList.length === 1 ? 'One field needs attention:' : `${errorList.length} fields need attention:`}</div>

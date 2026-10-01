@@ -67,6 +67,7 @@ export const COMM_EVENT_LABEL: Record<string, string> = {
   'visit-restored': 'Visit back on the schedule',
   'visit-reminder': 'Visit reminder (day of)',
   'visit-reminder-tomorrow': 'Visit reminder (day before)',
+  'service-plan-reminder': 'Service plan reminder',
   manual: 'Logged by hand',
 };
 export const eventLabel = (e: string): string => COMM_EVENT_LABEL[e] || e;
