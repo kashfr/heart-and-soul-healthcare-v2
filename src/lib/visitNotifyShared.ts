@@ -13,7 +13,9 @@ export type VisitNotifyEvent =
   | 'cancelled'
   | 'restored'
   | 'reminder' // day-of nudge (sent the morning of the visit)
-  | 'reminder_tomorrow'; // evening-before reminder (sent ~6 PM the prior day)
+  | 'reminder_tomorrow' // evening-before reminder (sent ~6 PM the prior day)
+  | 'auto_next' // the next supervisory visit, put on the calendar by the portal after one was filed
+  | 'offered'; // an open supervisory visit offered to every supervisor; the first to accept takes it
 
 export interface VisitNotifyFacts {
   date: string; // YYYY-MM-DD
@@ -88,6 +90,10 @@ export function visitSmsBody(event: VisitNotifyEvent, facts: VisitNotifyFacts): 
       return `Heart & Soul Healthcare reminder: you have a ${what} today, ${when}. Sign in for client details: ${PORTAL_LOGIN_URL}`;
     case 'reminder_tomorrow':
       return `Heart & Soul Healthcare reminder: you have a ${what} tomorrow, ${when}. Sign in for client details: ${PORTAL_LOGIN_URL}`;
+    case 'auto_next':
+      return `Heart & Soul Healthcare: your next ${what} was scheduled for ${when}. Sign in for client details: ${PORTAL_LOGIN_URL}`;
+    case 'offered':
+      return `Heart & Soul Healthcare: a ${what} on ${when} needs a supervisor. The first to accept takes it. Sign in to accept: ${PORTAL_LOGIN_URL}`;
   }
 }
 
@@ -104,6 +110,10 @@ export function visitEmailSubject(event: VisitNotifyEvent, facts: VisitNotifyFac
       return `Visit Reminder for Today: ${when}`;
     case 'reminder_tomorrow':
       return `Visit Reminder for Tomorrow: ${when}`;
+    case 'auto_next':
+      return `Next Supervisory Visit Scheduled: ${when}`;
+    case 'offered':
+      return `Supervisory Visit Needs a Supervisor: ${when}`;
   }
 }
 
@@ -125,6 +135,10 @@ export function visitEmailBody(
           ? `A reminder: you have a ${what} today, ${when}.`
           : event === 'reminder_tomorrow'
             ? `A reminder: you have a ${what} tomorrow, ${when}.`
-            : `Your ${what} on ${when} is back on the schedule.`;
+            : event === 'auto_next'
+              ? `Your next ${what} was scheduled for ${when}, 30 days after the one you filed. Move it on the client's Schedule tab if that day does not work, or hand it to another supervisor.`
+              : event === 'offered'
+                ? `A ${what} on ${when} needs a supervisor. It is offered to every supervisor; the first to accept takes it. Open the client's Schedule tab and click Accept if you can make it.`
+                : `Your ${what} on ${when} is back on the schedule.`;
   return `${greeting}\n\n${line}\n\nFor the client's name and details, sign in to the staff portal (client information is never included in email or text): ${PORTAL_LOGIN_URL}\n\nHeart and Soul Healthcare`;
 }

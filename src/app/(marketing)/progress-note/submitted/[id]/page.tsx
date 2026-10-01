@@ -27,6 +27,9 @@ export default function SubmittedPage({ params }: { params: Promise<{ id: string
   // /supervisory-visit); both reuse this confirmation page.
   const isOversight = searchParams.get('t') === 'oversight';
   const isSupervisory = searchParams.get('t') === 'supervisory';
+  // The next supervisory visit the portal put on the calendar (30 days out,
+  // assigned to the filer), so she leaves knowing when she is due back.
+  const nextVisit = searchParams.get('next') || '';
 
   return (
     <div
@@ -67,6 +70,12 @@ export default function SubmittedPage({ params }: { params: Promise<{ id: string
         {dateOfService ? <> for <strong>{formatDateUS(dateOfService)}</strong></> : null} has been saved
         successfully.
       </p>
+      {isSupervisory && /^\d{4}-\d{2}-\d{2}$/.test(nextVisit) && (
+        <p style={{ color: '#1a3a5c', lineHeight: 1.6, margin: '-12px 0 24px', fontSize: 14 }}>
+          The next supervisory visit was scheduled for <strong>{formatDateUS(nextVisit)}</strong> and assigned to you.
+          Move it or hand it to another supervisor on the client&apos;s Schedule tab if needed.
+        </p>
+      )}
 
       <div
         style={{

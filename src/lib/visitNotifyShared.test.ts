@@ -154,3 +154,19 @@ describe('PHI-free by construction', () => {
     expect(everything).not.toMatch(/MRN|record #|diagnosis/i);
   });
 });
+
+describe('offered and auto-next notices stay PHI-free', () => {
+  const facts = { date: '2026-10-05', startTime: '10:00', type: 'supervisory' as const };
+  it('offered: says a supervisory visit needs a supervisor and where to accept', () => {
+    expect(visitSmsBody('offered', facts)).toBe(
+      'Heart & Soul Healthcare: a supervisory visit on Mon, Oct 5 at 10:00 AM needs a supervisor. The first to accept takes it. Sign in to accept: https://www.heartandsoulhc.org/login',
+    );
+    expect(visitEmailSubject('offered', facts)).toBe('Supervisory Visit Needs a Supervisor: Mon, Oct 5');
+    expect(visitEmailBody('offered', facts, 'Nya')).toContain('the first to accept takes it');
+  });
+  it('auto_next: tells the supervisor her next visit was scheduled', () => {
+    expect(visitSmsBody('auto_next', facts)).toContain('your next supervisory visit was scheduled for Mon, Oct 5 at 10:00 AM');
+    expect(visitEmailSubject('auto_next', facts)).toBe('Next Supervisory Visit Scheduled: Mon, Oct 5');
+    expect(visitEmailBody('auto_next', facts, '')).toContain('30 days after the one you filed');
+  });
+});

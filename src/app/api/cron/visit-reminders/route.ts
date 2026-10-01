@@ -6,6 +6,7 @@ import { sendVisitNotice } from '@/lib/emails/visitNotice';
 import { createPortalNotification } from '@/lib/notificationsServer';
 import { recordCommunication } from '@/lib/communicationsServer';
 import { sweepServicePlanReminders } from '@/lib/servicePlanRemindersServer';
+import { sweepSupervisoryVisits } from '@/lib/supervisorySchedulingServer';
 import {
   needsMorningNudge,
   visitEmailBody,
@@ -185,9 +186,25 @@ export async function GET(request: Request) {
       }
     }
 
+    // Once a day (the morning window): clients whose next supervisory visit
+    // is due within 7 days, overdue, or has never happened, with nothing on
+    // the calendar, get an open visit offered to every supervisor; open
+    // visits nobody accepted are offered again weekly. Isolated like the
+    // service plan sweep.
+    let supervisoryVisits: { created: number; reoffered: number; notified: number } | { error: string } | null = null;
+    if (window === 'morning') {
+      try {
+        supervisoryVisits = await sweepSupervisoryVisits(agencyDateISO(0));
+      } catch (err) {
+        console.error('Supervisory visit sweep failed:', err);
+        supervisoryVisits = { error: 'Supervisory visit sweep failed.' };
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       servicePlans,
+      supervisoryVisits,
       window,
       date: targetDate,
       reminded,
