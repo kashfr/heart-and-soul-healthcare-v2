@@ -24,6 +24,8 @@ import {
   type DocUploader,
   type PatientDocument,
 } from '@/lib/patientDocuments';
+import { browseDocuments, DEFAULT_DOCUMENT_FILTERS, type DocumentFilters } from '@/lib/documentBrowse';
+import DocumentBrowseToolbar from './DocumentBrowseToolbar';
 import { getPatients, type Patient } from '@/lib/patients';
 import { isNoteFiledDocument, noteAmendHref } from '@/lib/noteDocLinks';
 
@@ -76,8 +78,11 @@ export default function DocumentsSection({
   onChanged,
   onToast,
 }: Props) {
-  const [filter, setFilter] = useState<string>('All');
-  const [showArchived, setShowArchived] = useState(false);
+  const [filters, setFilters] = useState<DocumentFilters>(DEFAULT_DOCUMENT_FILTERS);
+  const toggleCategory = (category: string) => setFilters((current) => ({
+    ...current, categories: current.categories.includes(category)
+      ? current.categories.filter((c) => c !== category) : [...current.categories, category],
+  }));
   const [uploadOpen, setUploadOpen] = useState(false);
   const [editing, setEditing] = useState<PatientDocument | null>(null);
   const [replacing, setReplacing] = useState<PatientDocument | null>(null);
@@ -85,30 +90,28 @@ export default function DocumentsSection({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<'sync' | 'refresh' | null>(null);
 
-  const visible = useMemo(() => {
-    return documents
-      .filter((d) => (showArchived ? true : !d.archived))
-      .filter((d) => filter === 'All' || d.category === filter);
-  }, [documents, filter, showArchived]);
+  const visible = useMemo(() => browseDocuments(documents, filters, isStaff), [documents, filters, isStaff]);
+  const accessible = useMemo(() => documents.filter((d) => isStaff || !d.archived), [documents, isStaff]);
 
   const counts = useMemo(() => {
     const map = new Map<string, number>();
-    for (const d of documents) {
-      if (d.archived) continue;
+    for (const d of accessible) {
+      if (filters.status === 'active' && d.archived) continue;
+      if (filters.status === 'archived' && !d.archived) continue;
       map.set(d.category, (map.get(d.category) || 0) + 1);
     }
     return map;
-  }, [documents]);
+  }, [accessible, filters.status]);
 
   // Filter chips: the compliance checklist categories always, plus any other
   // category this client has documents in (catalog order, unknown legacy
   // names last), so the row stays readable now that the catalog is long.
   const chipCategories = useMemo(() => {
-    const present = new Set(documents.map((d) => d.category));
+    const present = new Set(accessible.map((d) => d.category));
     const ordered = DOC_CATEGORIES.filter((c) => CORE_DOC_CATEGORIES.includes(c) || present.has(c));
     const legacy = Array.from(present).filter((c) => !(DOC_CATEGORIES as readonly string[]).includes(c)).sort();
     return [...ordered, ...legacy];
-  }, [documents]);
+  }, [accessible]);
 
   const view = async (d: PatientDocument) => {
     // Open the tab SYNCHRONOUSLY inside the click gesture — after the awaited
@@ -226,19 +229,13 @@ export default function DocumentsSection({
       <div style={toolbarStyle}>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flex: 1 }}>
           {['All', ...chipCategories].map((c) => (
-            <button key={c} type="button" onClick={() => setFilter(c)} style={filter === c ? chipActiveStyle : chipStyle}>
+            <button key={c} type="button" aria-pressed={c === 'All' ? filters.categories.length === 0 : filters.categories.includes(c)} onClick={() => c === 'All' ? setFilters((f) => ({ ...f, categories: [] })) : toggleCategory(c)} style={(c === 'All' ? filters.categories.length === 0 : filters.categories.includes(c)) ? chipActiveStyle : chipStyle}>
               {c}
               {c !== 'All' && counts.get(c) ? ` (${counts.get(c)})` : ''}
             </button>
           ))}
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
-          {isStaff && documents.some((d) => d.archived) && (
-            <label style={archToggleStyle}>
-              <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
-              Show archived
-            </label>
-          )}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           {isStaff && (
             <button
               type="button"
@@ -269,11 +266,13 @@ export default function DocumentsSection({
         </div>
       </div>
 
+      <DocumentBrowseToolbar filters={filters} onChange={setFilters} isStaff={isStaff} shown={visible.length} total={accessible.length} />
+
       {visible.length === 0 ? (
         <div style={emptyStyle}>
-          {documents.filter((d) => !d.archived).length === 0
+          {accessible.length === 0
             ? 'No documents on file yet. Upload the plan of care, initial assessment, and supervisory visit forms so they travel with the record.'
-            : 'No documents match this filter.'}
+            : 'No documents match your filters. Try changing them or choose Clear filters.'}
         </div>
       ) : (
         <ul style={listStyle}>
@@ -282,7 +281,7 @@ export default function DocumentsSection({
               <span style={docIconStyle}>
                 {d.contentType.startsWith('image/') ? <ImageIcon size={15} /> : <FileText size={15} />}
               </span>
-              <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ flex: '1 1 220px', minWidth: 0, overflowWrap: 'anywhere' }}>
                 <div style={docTitleStyle}>
                   {d.title}
                   {d.autoFiled && (
@@ -311,7 +310,7 @@ export default function DocumentsSection({
                   )}
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <div style={{ display: 'flex', gap: 6, maxWidth: '100%', flexWrap: 'wrap', justifyContent: 'flex-end', marginLeft: 'auto' }}>
                 <button type="button" onClick={() => view(d)} style={actionBtnStyle} title="Open in a new tab">
                   <ExternalLink size={14} /> View
                 </button>
@@ -859,11 +858,10 @@ const NAVY = '#1a3a5c';
 const toolbarStyle: CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap', marginBottom: 12 };
 const chipStyle: CSSProperties = { padding: '4px 10px', borderRadius: 999, border: '1px solid #d0d7de', background: 'white', color: '#374151', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const chipActiveStyle: CSSProperties = { ...chipStyle, background: NAVY, color: 'white', border: `1px solid ${NAVY}` };
-const archToggleStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#5c6b7a', cursor: 'pointer' };
 const uploadBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0e7c4a', color: 'white', border: 'none', padding: '7px 13px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
 const emptyStyle: CSSProperties = { padding: '20px 14px', color: '#7f8c8d', fontSize: 13, textAlign: 'center', background: '#f8fafc', borderRadius: 8, lineHeight: 1.5 };
 const listStyle: CSSProperties = { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 };
-const rowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 10 };
+const rowStyle: CSSProperties = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 10 };
 const docIconStyle: CSSProperties = { width: 30, height: 30, borderRadius: 8, background: '#e8eef4', color: NAVY, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
 const docTitleStyle: CSSProperties = { fontWeight: 600, fontSize: 13.5, color: '#1f2937', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
 const docMetaStyle: CSSProperties = { fontSize: 12, color: '#7f8c8d', marginTop: 2 };
