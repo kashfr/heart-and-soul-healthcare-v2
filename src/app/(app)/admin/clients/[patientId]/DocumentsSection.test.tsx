@@ -144,3 +144,50 @@ describe('DocumentsSection, entries filed from a note', () => {
     confirm.mockRestore();
   });
 });
+
+describe('Document filters and sorting', () => {
+  it('combines category selections, searches filenames, and clears back to the default', () => {
+    renderSection([fromNote, uploaded, { ...uploaded, id: 'other', title: 'Supply order', category: 'Physician Orders', fileName: 'gloves.pdf' }]);
+    fireEvent.click(screen.getByRole('button', { name: 'Supervisory Visit (1)' }));
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Plan of Care (485) (1)' }));
+    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'All' }));
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'GLOVES' } });
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+    expect(screen.getByText('Supply order')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(screen.getAllByRole('listitem')).toHaveLength(3);
+    expect(screen.getByRole('status')).toHaveTextContent('Showing 3 of 3 documents');
+  });
+  it('changes sort order without altering the documents', () => {
+    renderSection([fromNote, uploaded]);
+    expect(screen.getAllByRole('listitem')[0]).toHaveTextContent(fromNote.title);
+    fireEvent.change(screen.getByLabelText('Sort by'), { target: { value: 'date-asc' } });
+    expect(screen.getAllByRole('listitem')[0]).toHaveTextContent(uploaded.title);
+  });
+  it('filters archived-only records and shows a helpful empty result', () => {
+    renderSection([{ ...uploaded, archived: true }]);
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'archived' } });
+    expect(screen.getByText(uploaded.title)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Source'), { target: { value: 'notes' } });
+    expect(screen.getByText(/No documents match your filters/)).toBeInTheDocument();
+  });
+  it('reports invalid date ranges and applies inclusive date boundaries', () => {
+    renderSection([fromNote, uploaded]);
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    fireEvent.change(screen.getByLabelText('Document date from'), { target: { value: '2026-09-22' } });
+    fireEvent.change(screen.getByLabelText('Document date to'), { target: { value: '2026-09-22' } });
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+    fireEvent.change(screen.getByLabelText('Document date to'), { target: { value: '2026-09-01' } });
+    expect(screen.getByRole('alert')).toHaveTextContent('The from date must be on or before the to date.');
+  });
+  it('hides archived metadata and the status picker from nonstaff', () => {
+    renderSection([uploaded, { ...uploaded, id: 'archived', category: 'Secret category', archived: true }], { isStaff: false });
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    expect(screen.queryByLabelText('Status')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Secret category/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Showing 1 of 1 documents');
+  });
+});
