@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 const fileNoteMock = vi.fn<(noteId: string) => Promise<void>>(async () => {});
+const refreshPlanMock = vi.fn<(id: string) => Promise<void>>(async () => {});
 const syncMock = vi.fn<(patientId: string, opts?: { refresh?: boolean }) => Promise<{ filed: number; refreshed: number; skipped: number; errors: string[] }>>(async () => ({ filed: 0, refreshed: 0, skipped: 0, errors: [] }));
 
 vi.mock('@/lib/patientDocuments', async () => {
@@ -14,6 +15,7 @@ vi.mock('@/lib/patientDocuments', async () => {
     fileNoteDocument: (noteId: string) => fileNoteMock(noteId),
     getDocumentBlob: vi.fn(),
     movePatientDocument: vi.fn(),
+    refreshServicePlanDocumentPdf: (id: string) => refreshPlanMock(id),
     renderDocumentInWindow: vi.fn(),
     replaceDocumentFile: vi.fn(),
     setDocumentArchived: vi.fn(),
@@ -191,3 +193,26 @@ describe('Document filters and sorting', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Showing 1 of 1 documents');
   });
 });
+
+describe('DocumentsSection, entries filed from a service plan', () => {
+  const planReview: PatientDocument = {
+    ...base,
+    id: 'doc-review',
+    category: 'Service Plan',
+    title: 'Service Plan Review, 09/28/2026 (plan signed 09/28/2026), no changes',
+    docDate: '2026-09-28',
+    autoFiled: true,
+    servicePlanId: 'plan-1',
+    servicePlanReviewId: 'review-1',
+  };
+  it('offers Refresh PDF, which re-renders the stored copy in place', async () => {
+    const { onToast, onChanged } = renderSection([planReview]);
+    expect(screen.queryByRole('link', { name: /amend note/i })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /refresh pdf/i }));
+    await waitFor(() => expect(refreshPlanMock).toHaveBeenCalledWith('doc-review'));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    expect(onToast).toHaveBeenCalledWith(expect.stringMatching(/current layout/i));
+    expect(fileNoteMock).not.toHaveBeenCalled();
+  });
+});
+

@@ -264,3 +264,37 @@ export async function getServicePlanReview(planId: string, reviewId: string): Pr
   const review = plan?.reviews.find((r) => r.id === reviewId);
   return plan && review ? { plan, review } : null;
 }
+
+/**
+ * Re-render a service plan or service plan review PDF filed under Documents,
+ * in place (same file, same document entry), with the current layout. The
+ * filed copy is a snapshot taken at signing; this changes only how it is
+ * laid out, never what it says: a plan is rendered as signed (without the
+ * reviews that came after it), a review as recorded.
+ */
+export async function refreshServicePlanDocument(documentId: string): Promise<{ ok: true; title: string } | { ok: false; status: number; error: string }> {
+  const ref = adminDb().collection('patientDocuments').doc(documentId);
+  const snap = await ref.get();
+  if (!snap.exists) return { ok: false, status: 404, error: 'Document not found.' };
+  const d = snap.data() || {};
+  const planId = String(d.servicePlanId || '');
+  if (!planId) return { ok: false, status: 400, error: 'This document was not filed from a service plan.' };
+  const plan = await getServicePlan(planId);
+  if (!plan) return { ok: false, status: 404, error: 'The service plan behind this document was not found.' };
+  const reviewId = String(d.servicePlanReviewId || '');
+  let pdf: Buffer;
+  if (reviewId) {
+    const review = plan.reviews.find((r) => r.id === reviewId);
+    if (!review) return { ok: false, status: 404, error: 'The review behind this document was not found.' };
+    pdf = await renderServicePlanReviewPdf(plan, review);
+  } else {
+    pdf = await renderServicePlanPdf({ ...plan, reviews: [] });
+  }
+  const storagePath = String(d.storagePath || '');
+  if (!storagePath.startsWith(`patients/${plan.patientId}/documents/${documentId}/`)) {
+    return { ok: false, status: 409, error: 'The stored file is not where it should be; nothing was changed.' };
+  }
+  await adminBucket().file(storagePath).save(pdf, { contentType: 'application/pdf', resumable: false });
+  await ref.update({ size: pdf.length, refreshedAt: FieldValue.serverTimestamp() });
+  return { ok: true, title: String(d.title || '') };
+}

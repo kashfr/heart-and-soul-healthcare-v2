@@ -360,6 +360,15 @@ export async function setDocumentArchived(
 }
 
 /** Staff-only relabel: title, category, date on the document. */
+/** Staff: re-render a filed service plan or review PDF in place (current layout). */
+export async function refreshServicePlanDocumentPdf(id: string): Promise<void> {
+  const res = await authedFetch(`/api/documents/${encodeURIComponent(id)}/refresh-service-plan`, { method: 'POST' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Could not refresh the PDF (${res.status}).`);
+  }
+}
+
 export async function updateDocumentDetails(
   id: string,
   patch: { title: string; category: DocCategory; docDate: string },

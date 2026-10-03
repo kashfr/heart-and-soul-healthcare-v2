@@ -14,6 +14,7 @@ import {
   fileNoteDocument,
   getDocumentBlob,
   movePatientDocument,
+  refreshServicePlanDocumentPdf,
   renderDocumentInWindow,
   replaceDocumentFile,
   setDocumentArchived,
@@ -174,11 +175,16 @@ export default function DocumentsSection({
   };
 
   const refreshPdf = async (d: PatientDocument) => {
-    if (!d.id || !d.sourceNoteId) return;
+    if (!d.id || (!d.sourceNoteId && !d.servicePlanId)) return;
     setBusyId(d.id);
     try {
-      await fileNoteDocument(d.sourceNoteId);
-      onToast(`Re-rendered "${d.title}" from the note.`);
+      if (d.sourceNoteId) {
+        await fileNoteDocument(d.sourceNoteId);
+        onToast(`Re-rendered "${d.title}" from the note.`);
+      } else {
+        await refreshServicePlanDocumentPdf(d.id);
+        onToast(`Re-rendered "${d.title}" with the current layout.`);
+      }
       onChanged();
     } catch (err) {
       onToast(err instanceof Error ? err.message : 'Could not refresh the PDF.');
@@ -338,13 +344,17 @@ export default function DocumentsSection({
                     <FilePenLine size={14} /> Amend Note
                   </Link>
                 )}
-                {isStaff && isNoteFiledDocument(d) && (
+                {isStaff && (isNoteFiledDocument(d) || !!d.servicePlanId) && (
                   <button
                     type="button"
                     onClick={() => refreshPdf(d)}
                     disabled={busyId === d.id}
                     style={actionBtnStyle}
-                    title="Re-render this PDF from the note as it stands now (the stored copy is a snapshot taken when the note was filed)"
+                    title={
+                      d.servicePlanId
+                        ? 'Re-render this PDF with the current layout. The wording, dates and signatures stay as signed.'
+                        : 'Re-render this PDF from the note as it stands now (the stored copy is a snapshot taken when the note was filed)'
+                    }
                   >
                     <RefreshCw size={14} /> {busyId === d.id ? 'Re-rendering…' : 'Refresh PDF'}
                   </button>
