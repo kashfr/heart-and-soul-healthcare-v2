@@ -24,6 +24,16 @@ const ADMIN_BY_LABELS: Record<string, string> = {
   proxy: 'Proxy',
 };
 
+/** Blank log rows on a printout that will be written on by hand. */
+const LOG_WRITE_IN_ROWS = 6;
+
+/** The agency's current month, 'YYYY-MM' (Georgia time, not the container's UTC). */
+function agencyMonth(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit' })
+    .format(new Date())
+    .slice(0, 7);
+}
+
 function daysInMonth(month: string): number {
   const [y, m] = month.split('-').map(Number);
   return new Date(y, m, 0).getDate();
@@ -454,6 +464,11 @@ export async function POST(request: Request) {
       rows,
       legend: legendEntries,
       log,
+      // A month that is not over yet is printed and used as a paper MAR (a
+      // future month for a day program, or the rest of the current month),
+      // so its log needs ruled rows to write in. A finished month prints the
+      // record as it stands.
+      logWriteInRows: month >= agencyMonth() ? LOG_WRITE_IN_ROWS : 0,
       generatedAt: new Date().toLocaleString('en-US'),
       generatedBy: caller.profile.displayName || caller.email || '',
     });
