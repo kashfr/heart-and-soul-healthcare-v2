@@ -144,7 +144,12 @@ later.
 - Multi-line values render one `Text` per line (`Lines`), and
   `hyphenationCallback` keeps whole words (the default split "in-juries").
 - The PDF is rebuilt from the record on every "View PDF"; the copy filed
-  under Documents is the one rendered at signing.
+  under Documents is the one rendered at signing. Its **Refresh PDF** button
+  (staff) re-renders that stored copy in place with the current layout
+  (`refreshServicePlanDocument`, `POST /api/documents/[id]/refresh-service-plan`):
+  a plan as signed, without the later reviews; a review as recorded.
+- Signature blocks align their two columns to the bottom so the printed
+  name and the signature share one line (10/2026).
 
 ## Tests
 
