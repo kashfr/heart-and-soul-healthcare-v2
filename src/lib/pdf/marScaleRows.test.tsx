@@ -87,7 +87,7 @@ describe('MAR PDF sliding-scale rows', () => {
     // an unbreakable block taller than one page collapses the layout), so a
     // blank month is the grid page plus, at most, one page for the log.
     const without = await pages(props({ rows, legend: [], logWriteInRows: 0 }));
-    const withRows = await pages(props({ rows, legend: [], logWriteInRows: 20 }));
+    const withRows = await pages(props({ rows, legend: [], logWriteInRows: 6 }));
     expect(without).toBe(1);
     expect(withRows).toBeGreaterThanOrEqual(1);
     expect(withRows).toBeLessThanOrEqual(2);

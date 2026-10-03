@@ -25,7 +25,7 @@ const ADMIN_BY_LABELS: Record<string, string> = {
 };
 
 /** Blank log rows on a printout that will be written on by hand. */
-const LOG_WRITE_IN_ROWS = 20;
+const LOG_WRITE_IN_ROWS = 6;
 
 /** The agency's current month, 'YYYY-MM' (Georgia time, not the container's UTC). */
 function agencyMonth(): string {
