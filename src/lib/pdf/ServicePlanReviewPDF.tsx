@@ -24,7 +24,7 @@ const s = StyleSheet.create({
   value: { flex: 1, fontSize: 10.5, lineHeight: 1.35 },
   para: { fontSize: 10.5, lineHeight: 1.35, marginTop: 10, marginBottom: 4 },
   listItem: { fontSize: 10.5, lineHeight: 1.35, marginLeft: 10 },
-  sigBlock: { marginTop: 26, flexDirection: 'row', gap: 30 },
+  sigBlock: { marginTop: 26, flexDirection: 'row', alignItems: 'flex-end', gap: 30 },
   sigCol: { flex: 1 },
   sigLine: { borderTopWidth: 0.75, borderTopColor: INK, paddingTop: 3, fontSize: 8.5, color: MUTED },
   sigImage: { width: 190, height: 60 },

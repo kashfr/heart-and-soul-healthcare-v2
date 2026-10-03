@@ -41,7 +41,7 @@ const s = StyleSheet.create({
   td: { flex: 1, padding: 5 },
   cell: { fontSize: 10, lineHeight: 1.3 },
   tdLeft: { borderRightWidth: 0.75, borderRightColor: RULE },
-  sigBlock: { marginTop: 14, flexDirection: 'row', gap: 30 },
+  sigBlock: { marginTop: 14, flexDirection: 'row', alignItems: 'flex-end', gap: 30 },
   sigCol: { flex: 1 },
   sigLine: { borderTopWidth: 0.75, borderTopColor: INK, paddingTop: 3, fontSize: 8.5, color: MUTED },
   sigImage: { width: 190, height: 60 },
