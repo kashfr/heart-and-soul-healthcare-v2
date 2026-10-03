@@ -75,6 +75,13 @@ export interface MarPDFProps {
   rows: MarPdfRow[];
   legend: Array<{ initials: string; name: string }>;
   log: MarPdfLogEntry[];
+  /** Blank, ruled rows printed under the log for staff to write in by hand.
+   *  The route asks for them when the month is not over yet (the current
+   *  month or a future one), since that printout is used as a paper MAR.
+   *  Keep it small enough that title + rows fit on one page: with no real
+   *  entries the section is unbreakable, and an unbreakable block taller
+   *  than a page collapses the whole layout. */
+  logWriteInRows?: number;
   generatedAt: string;
   generatedBy: string;
 }
@@ -223,6 +230,7 @@ const s = StyleSheet.create({
     color: NAVY,
   },
   logTd: { borderWidth: 0.5, borderColor: BORDER, padding: 3, fontSize: 7 },
+  logBlankTd: { borderWidth: 0.5, borderColor: BORDER, height: 20 },
   footer: {
     position: 'absolute',
     bottom: 12,
@@ -287,6 +295,7 @@ export default function MarPDF({
   rows,
   legend,
   log,
+  logWriteInRows = 0,
   generatedAt,
   generatedBy,
 }: MarPDFProps) {
@@ -482,9 +491,18 @@ export default function MarPDF({
           ))}
         </View>
 
-        {/* PRN & exception log */}
+        {/* PRN & exception log. On a blank printout (no entries, only rows to
+            write in) the whole section stays together, so the column headers
+            never end up on a different page from the rows under them. */}
+        <View wrap={log.length > 0}>
         <Text style={s.sectionTitle}>PRN, Refused &amp; Exception Log</Text>
-        {log.length === 0 ? (
+        {logWriteInRows > 0 ? (
+          <Text style={{ fontSize: 7, color: '#5c6b7a', marginBottom: 4 }}>
+            Write in every PRN dose (with the reason and the result) and every dose that was held, refused, or
+            not given (with the reason).
+          </Text>
+        ) : null}
+        {log.length === 0 && logWriteInRows === 0 ? (
           <Text style={{ fontSize: 7, color: '#7f8c8d' }}>None this month.</Text>
         ) : (
           <View>
@@ -514,8 +532,17 @@ export default function MarPDF({
                 ) : null}
               </View>
             ))}
+            {/* Ruled blank rows, tall enough to write in by hand. */}
+            {Array.from({ length: logWriteInRows }, (_, i) => (
+              <View key={`blank-${i}`} style={s.row} wrap={false}>
+                {LOG_W.map((w, ci) => (
+                  <View key={ci} style={[s.logBlankTd, { width: w }]} />
+                ))}
+              </View>
+            ))}
           </View>
         )}
+        </View>
 
         <View style={s.footer} fixed>
           <Text>

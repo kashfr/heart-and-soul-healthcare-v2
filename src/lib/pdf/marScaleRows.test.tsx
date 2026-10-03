@@ -75,4 +75,21 @@ describe('MAR PDF sliding-scale rows', () => {
     // 93 doses used to add 93 log rows (three more pages); the grid now carries them.
     expect(n).toBe(1);
   }, 30000);
+
+  it('a blank month prints ruled rows to write in under the exception log', async () => {
+    const empty = mk(() => blank);
+    const rows = [
+      { medLine1: 'Keppra', medLine2: '1500 mg · J-tube', slot: '12:00', isPRN: false, cells: empty },
+      scaleRow('07:30', 'Before Breakfast', empty),
+      { medLine1: 'Tylenol', medLine2: '500 mg · PO (by mouth) · As needed (PRN)', medLine3: 'For: Pain', slot: 'PRN', isPRN: true, cells: empty },
+    ];
+    // The write-in block is kept together (it must stay shorter than a page:
+    // an unbreakable block taller than one page collapses the layout), so a
+    // blank month is the grid page plus, at most, one page for the log.
+    const without = await pages(props({ rows, legend: [], logWriteInRows: 0 }));
+    const withRows = await pages(props({ rows, legend: [], logWriteInRows: 20 }));
+    expect(without).toBe(1);
+    expect(withRows).toBeGreaterThanOrEqual(1);
+    expect(withRows).toBeLessThanOrEqual(2);
+  }, 30000);
 });
