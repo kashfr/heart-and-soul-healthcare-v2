@@ -96,10 +96,31 @@ error and charting it again.
 
 ### Where it shows
 
-Grid row (scale summary), grid cell (reading over units over initials), a
-"Blood Glucose & Sliding Scale Log" under the grid and on the printed MAR,
-the medication chart, and the order detail view. The printed MAR prints the
-whole scale on the row, never truncated.
+On the MAR grid (screen and printed), a sliding-scale row has three labeled
+lines per time: "Blood glucose (mg/dL)", "Units given", "Initials". The
+labels sit beside the sliding scale, and each day's box carries the reading,
+the units (or Held / Ref), and the initials on the matching line. Changed on
+10/02/2026 at the RN supervisor's request: a bare "232 / 4u" in a box told a
+non-clinical reader nothing. The lines are keyed off the ORDER having a
+scale, so blank future-month printouts get the three lines to write in.
+
+- Screen: `ScaleLineLabels` and `ScaleLines` in
+  `src/components/mar/ScaleGridLines.tsx` share one fixed line height and are
+  both vertically centered in the row, which is what keeps a label aligned
+  with its values. Do not give either one its own padding or border height.
+- Print: `MarPDF.tsx` carves the label column (`SCALE_LABEL_W`) out of the
+  medication column so the Time and day columns stay aligned with every
+  other row; `isScale` on the row turns it on. The whole scale prints on the
+  row, never truncated.
+
+There is no per-dose glucose log (removed the same day, same request: three
+or four doses a day made it pages long). The grid is the record. Only the
+exceptions go to the PRN, Refused & Exception Log, each leading with its
+reading: a held or refused insulin dose, and a given amount that differs
+from the scale (with what the scale called for and why).
+
+Also shown on the medication chart (per-dose line and History) and the order
+detail view.
 
 ## Rules and indexes
 

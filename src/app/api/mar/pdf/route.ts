@@ -5,13 +5,12 @@ import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { getServerSettings } from '@/lib/settingsServer';
 import { cleanTimeLabels, compareMarOrders, resolveCurrentAdministrations, describeFrequency } from '@/lib/marShared';
-import { GLUCOSE_UNIT, isNoInsulinEntry, parseSlidingScale, summarizeSlidingScale, type SlidingScaleRow } from '@/lib/slidingScale';
+import { GLUCOSE_UNIT, parseSlidingScale, summarizeSlidingScale, type SlidingScaleRow } from '@/lib/slidingScale';
 import { formatDateUS, formatMonthUSFile } from '@/lib/dateFormat';
 import MarPDF, {
   type MarPdfCell,
   type MarPdfRow,
   type MarPdfLogEntry,
-  type MarPdfGlucoseEntry,
   type MarCellStatus,
 } from '@/lib/pdf/MarPDF';
 
@@ -283,21 +282,31 @@ export async function POST(request: Request) {
             continue;
           }
           const first = hits[0];
-          // A sliding-scale entry prints its reading over the units given
-          // ("182" over "4u"); its initials are in the blood glucose log.
+          // A sliding-scale row prints three labeled lines per time: the
+          // blood glucose reading, the units given, and the initials (RN
+          // supervisor, 10/02/2026: a bare "232" in a box told a non-clinical
+          // reader nothing). Keyed off the ORDER, so a held or refused dose
+          // with no reading still lands on the right lines.
           const scaleUnits = (h: AdminDoc) =>
             h.status === 'given' ? `${h.doseSnapshot}u` : h.status === 'held' ? 'Held' : 'Ref';
+          if (o.slidingScale.length > 0) {
+            cells.push({
+              label: hits.map((h) => h.glucoseReading).filter(Boolean).join('/'),
+              sub: hits.map(scaleUnits).join('/'),
+              initials: hits.map((h) => h.initials).filter(Boolean).join('/'),
+              status: (first.status as MarCellStatus) || 'given',
+              star: hits.some((h) => h.administeredByType && h.administeredByType !== 'nurse'),
+            });
+            continue;
+          }
           cells.push({
             // A check-style order records a reading; the number is the record,
             // so print it in the box rather than the documenter's initials
             // (which stay in the legend and the exception log).
             label:
               hits.length > 1
-                ? hits
-                    .map((h) => (h.glucoseReading ? `${h.glucoseReading}/${scaleUnits(h)}` : h.value || h.initials || '·'))
-                    .join('/')
-                : first.glucoseReading || first.value || first.initials || '✓',
-            sub: hits.length === 1 && first.glucoseReading ? scaleUnits(first) : undefined,
+                ? hits.map((h) => h.value || h.initials || '·').join('/')
+                : first.value || first.initials || '✓',
             status: (first.status as MarCellStatus) || 'given',
             star: hits.some((h) => h.administeredByType && h.administeredByType !== 'nurse'),
           });
@@ -334,6 +343,7 @@ export async function POST(request: Request) {
           ),
           slot,
           slotLabel: o.timeLabels[slot] || undefined,
+          isScale: o.slidingScale.length > 0,
           isPRN: o.isPRN,
           cells,
         });
@@ -349,6 +359,7 @@ export async function POST(request: Request) {
           a.status !== 'given' ||
           (a.administeredByType && a.administeredByType !== 'nurse') ||
           !rowOrderIds.has(a.orderId) ||
+          !!a.scaleDeviationReason || // an amount that differs from the sliding scale
           !!a.amends, // corrections always appear in the audit log
       )
       .sort((a, b) => (a.date + a.actualTime).localeCompare(b.date + b.actualTime))
@@ -371,13 +382,20 @@ export async function POST(request: Request) {
           // legacy docs without the field print nothing at all).
           // The reading checked against the order's parameters leads, so a
           // "held per parameters" entry prints with the BP it was based on.
+          // A sliding-scale entry in this log (held, refused, or an amount
+          // that differs from the scale) leads with its reading and, for a
+          // deviation, what the scale called for and why it was not followed.
           reason: [
+            a.glucoseReading ? `Blood glucose ${a.glucoseReading} ${GLUCOSE_UNIT}` : '',
+            a.scaleDeviationReason
+              ? `Scale called for ${a.scaleRange || 'a different amount'}; differs because: ${a.scaleDeviationReason}`
+              : '',
             a.parametersReading ? `Checked: ${a.parametersReading}` : '',
             (a.status === 'held' || a.status === 'refused') && a.prescriberNotified === true
               ? `${a.reason || '-'} (prescriber notified)`
               : a.status === 'refused' && a.prescriberNotified === false
                 ? `${a.reason || '-'} (prescriber not yet notified)`
-                : a.reason || '-',
+                : a.reason || (a.glucoseReading || a.scaleDeviationReason ? '' : '-'),
           ]
             .filter(Boolean)
             .join(' · '),
@@ -395,31 +413,6 @@ export async function POST(request: Request) {
           amendment,
         };
       });
-
-    // The month's blood glucose record: every live entry that carries a meter
-    // reading, with what the scale called for and what was given.
-    const glucoseLog: MarPdfGlucoseEntry[] = adminsCurrent
-      .filter((a) => a.glucoseReading)
-      .sort((a, b) => (a.date + a.actualTime).localeCompare(b.date + b.actualTime))
-      .map((a) => ({
-        date: shortDate(a.date),
-        time: a.actualTime || '-',
-        med: a.medNameSnapshot,
-        reading: `${a.glucoseReading} ${GLUCOSE_UNIT}`,
-        scale: a.scaleRange || '-',
-        given: [
-          a.status === 'given'
-            ? isNoInsulinEntry(a)
-              ? 'No insulin due'
-              : `${a.doseSnapshot} units`
-            : `${statusWord(a.status)}${a.reason ? `: ${a.reason}` : ''}`,
-          a.scaleDeviationReason ? `Differs from the scale: ${a.scaleDeviationReason}` : '',
-        ]
-          .filter(Boolean)
-          .join('. '),
-        by: adminBy(a),
-        initials: a.initials || '-',
-      }));
 
     // Legend keyed by the documenting USER, not the initials string, so one
     // nurse prints as one row even where historical docs carry differently-
@@ -461,7 +454,6 @@ export async function POST(request: Request) {
       rows,
       legend: legendEntries,
       log,
-      glucoseLog,
       generatedAt: new Date().toLocaleString('en-US'),
       generatedBy: caller.profile.displayName || caller.email || '',
     });
