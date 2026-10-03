@@ -59,8 +59,10 @@ Both charting surfaces (the grid's `AdministerDoseModal` and the progress
 note's dose card) render `SlidingScaleCharting` and judge the entry with
 `resolveScaleCharting`:
 
-- The nurse types the meter reading; the app looks the dose up and shows
-  it. She never reads the table by eye.
+- The blood glucose reading is the first field, above the scale (RN
+  supervisor's request, 10/02/2026). The nurse types the meter reading; the
+  scale below highlights the matching row and the app shows the dose. She
+  never reads the table by eye.
 - A GIVEN entry requires the reading (10 to 999, whole number). Held and
   refused may carry one but do not need it.
 - A reading that calls for 0 units is recorded as status `given` with

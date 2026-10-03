@@ -43,9 +43,11 @@ export default function SlidingScaleCharting({ rows, status, entry, onChange, er
   return (
     <div style={box}>
       <div style={title}>Sliding Scale: Check Blood Glucose First</div>
-      <SlidingScaleTable rows={rows} activeRow={row} />
 
-      <label id={fieldId?.('glucoseReading')} style={{ ...field, marginTop: 10 }}>
+      {/* The reading comes before the scale (RN supervisor, 10/02/2026): the
+          nurse checks the blood sugar, records it, and only then looks at the
+          scale, which highlights the row her reading falls on. */}
+      <label id={fieldId?.('glucoseReading')} style={field}>
         <span style={fieldLabel}>
           Blood glucose reading ({GLUCOSE_UNIT}){status === 'given' || !status ? ' *' : ''}
         </span>
@@ -60,6 +62,10 @@ export default function SlidingScaleCharting({ rows, status, entry, onChange, er
         />
         {e.glucoseReading && <span style={errText} role="alert">{e.glucoseReading}</span>}
       </label>
+
+      <div style={{ marginTop: 10 }}>
+        <SlidingScaleTable rows={rows} activeRow={row} />
+      </div>
 
       {lookup.low && (
         <div style={lowAlert} role="alert">
