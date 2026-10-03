@@ -25,7 +25,7 @@ const s = StyleSheet.create({
   headerRule: { borderBottomWidth: 1.5, borderBottomColor: CORAL, marginTop: 5, marginBottom: 8 },
   title: { fontSize: 15, fontFamily: 'Helvetica-Bold', textAlign: 'center', marginBottom: 10, letterSpacing: 0.5 },
   row: { flexDirection: 'row', marginBottom: 4 },
-  label: { fontFamily: 'Helvetica-Bold', width: 168, paddingRight: 6 },
+  label: { fontFamily: 'Helvetica-Bold', flexShrink: 0, maxWidth: 220, paddingRight: 5 },
   value: { fontSize: 10, lineHeight: 1.3 },
   inline: { marginBottom: 4, fontSize: 10, lineHeight: 1.3 },
   block: { marginBottom: 5 },
