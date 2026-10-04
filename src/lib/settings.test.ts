@@ -4,6 +4,7 @@ import {
   mergeWithDefaults,
   validateSettings,
   SettingsValidationError,
+  formatRegions,
 } from './settings';
 
 describe('mergeWithDefaults', () => {
@@ -370,6 +371,27 @@ describe('supportCoordination settings', () => {
     expect(out.supportCoordination.agencies.map((a) => a.name)).toEqual(['Benchmark Human Services', 'Creative Consulting Services']);
     expect(out.supportCoordination.agencies[1]).toMatchObject({ id: 'ccs', address: '353 Resource Pkwy, Winder, GA 30680', phone: '' });
     expect(out.supportCoordination.agencies[0].id).toBe('benchmark-human-services');
+  });
+
+  it('keeps valid regions (deduped, ascending) and drops anything outside 1-6', () => {
+    const out = mergeWithDefaults({ supportCoordination: { agencies: [
+      { name: 'Compass Coordination', regions: [3, 1, 3, 9, 0, '2'] },
+      { name: 'Creative Consulting Services' },
+    ] } });
+    expect(out.supportCoordination.agencies[0].regions).toEqual([1, 3]);
+    expect(out.supportCoordination.agencies[1].regions).toEqual([]);
+  });
+
+  it('rejects regions outside 1-6', () => {
+    expect(() => validateSettings({ supportCoordination: { agencies: [{ name: 'A', regions: [7] }] } })).toThrow(/1 through 6/);
+    expect(() => validateSettings({ supportCoordination: { agencies: [{ name: 'A', regions: [1, 6] }] } })).not.toThrow();
+  });
+
+  it('formats regions for display', () => {
+    expect(formatRegions([])).toBe('');
+    expect(formatRegions([1])).toBe('Region 1');
+    expect(formatRegions([1, 3, 5, 6])).toBe('Regions 1, 3, 5, 6');
+    expect(formatRegions([1, 2, 3, 4, 5, 6])).toBe('All regions');
   });
 
   it('rejects a filled-in row with no name, and a duplicate name', () => {

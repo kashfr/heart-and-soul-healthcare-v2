@@ -14,6 +14,7 @@ import {
   ALL_VITAL_AGE_GROUPS,
   ALL_VITAL_RANGE_KEYS,
   RN_COSIGN_SESSION_KEY,
+  DBHDD_REGIONS,
   type AppSettings,
   type SubmissionsSortKey,
   type SubmissionsSortDir,
@@ -949,6 +950,48 @@ export default function AdminSettingsPage() {
                       <input type="text" value={a.notes} style={inputStyle} onChange={(e) => update('notes', e.target.value)} />
                     </Field>
                   </div>
+                  <fieldset id={settingsFieldId(key('regions'))} style={{ border: 'none', padding: 0, margin: '10px 0 0' }}>
+                    <legend style={{ fontSize: 12.5, fontWeight: 600, color: '#2c3e50', marginBottom: 6, padding: 0 }}>DBHDD regions served</legend>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {DBHDD_REGIONS.map((n) => {
+                        const on = (a.regions || []).includes(n);
+                        return (
+                          <label
+                            key={n}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer',
+                              padding: '5px 10px', borderRadius: 6,
+                              border: `1px solid ${on ? '#1a3a5c' : '#d1d5db'}`,
+                              background: on ? '#e8eef5' : '#fff',
+                              color: '#2c3e50',
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={on}
+                              onChange={() => {
+                                clearFieldError(key('regions'));
+                                setDirty(true);
+                                setDraft((prev) => ({
+                                  ...prev,
+                                  supportCoordination: {
+                                    agencies: prev.supportCoordination.agencies.map((x, j) => {
+                                      if (j !== i) return x;
+                                      const cur = x.regions || [];
+                                      const next = cur.includes(n) ? cur.filter((r) => r !== n) : [...cur, n].sort((p, q) => p - q);
+                                      return { ...x, regions: next };
+                                    }),
+                                  },
+                                }));
+                              }}
+                            />
+                            Region {n}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <FieldError message={fieldErrors[key('regions')]} />
+                  </fieldset>
                   <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
                     <button
                       type="button"
@@ -974,7 +1017,7 @@ export default function AdminSettingsPage() {
               setDraft((prev) => ({
                 ...prev,
                 supportCoordination: {
-                  agencies: [...prev.supportCoordination.agencies, { id: `new-${Date.now().toString(36)}`, name: '', address: '', phone: '', fax: '', afterHours: '', notes: '' }],
+                  agencies: [...prev.supportCoordination.agencies, { id: `new-${Date.now().toString(36)}`, name: '', address: '', phone: '', fax: '', afterHours: '', notes: '', regions: [] }],
                 },
               }));
             }}

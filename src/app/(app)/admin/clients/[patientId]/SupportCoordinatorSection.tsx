@@ -15,6 +15,7 @@ import { FieldError, FIELD_ERROR_STYLE, applyFieldErrors } from '@/lib/formEscor
 import { withSelectChevron } from '@/lib/selectChevron';
 import { useSettings } from '@/components/SettingsProvider';
 import { formatUSPhone, formatUSPhoneExt } from '@/lib/phone';
+import { formatRegions } from '@/lib/settings';
 
 const NAVY = '#1a3a5c';
 
@@ -151,7 +152,10 @@ export default function SupportCoordinatorSection({ patientId, canEdit, actorNam
             <div style={{ fontSize: 13.5, color: '#2c3e50' }}>
               <strong style={{ color: NAVY }}>{record!.name}</strong>
               {record!.title && <span style={chip}>{record!.title}</span>}
-              {record!.agency && <div style={sub}>{record!.agency}</div>}
+              {record!.agency && (() => {
+                const regions = formatRegions(agencies.find((a) => a.name.toLowerCase() === record!.agency!.trim().toLowerCase())?.regions);
+                return <div style={sub}>{record!.agency}{regions && <span style={{ color: '#6b7280' }}> ({regions})</span>}</div>;
+              })()}
               <div style={contactLine}>
                 {record!.phone && <span>Office <a href={`tel:${record!.phone}`} style={link}>{record!.phone}</a></span>}
                 {record!.cell && <span>Cell <a href={`tel:${record!.cell}`} style={link}>{record!.cell}</a></span>}

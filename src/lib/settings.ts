@@ -353,6 +353,19 @@ export interface SupportCoordinationAgency {
   /** After-hours / emergency line, e.g. a pager. */
   afterHours: string;
   notes: string;
+  /** DBHDD regions (1-6) the agency serves, ascending. Empty = not recorded. */
+  regions: number[];
+}
+
+/** Georgia DBHDD field office regions. */
+export const DBHDD_REGIONS = [1, 2, 3, 4, 5, 6] as const;
+
+/** "Regions 1, 3, 5, 6", "Region 1", "All regions", or '' when none are recorded. */
+export function formatRegions(regions: readonly number[] | undefined): string {
+  const r = (regions || []).filter((n) => (DBHDD_REGIONS as readonly number[]).includes(n));
+  if (r.length === 0) return '';
+  if (r.length === DBHDD_REGIONS.length) return 'All regions';
+  return `${r.length === 1 ? 'Region' : 'Regions'} ${r.join(', ')}`;
 }
 
 export interface SupportCoordinationSettings {
@@ -552,7 +565,7 @@ function mergeVerbalOrders(input: unknown): VerbalOrdersSettings {
 }
 
 const SC_AGENCY_MAX = 40;
-const SC_TEXT_MAX: Record<Exclude<keyof SupportCoordinationAgency, 'id'>, number> = { name: 120, address: 200, phone: 40, fax: 40, afterHours: 60, notes: 500 };
+const SC_TEXT_MAX: Record<Exclude<keyof SupportCoordinationAgency, 'id' | 'regions'>, number> = { name: 120, address: 200, phone: 40, fax: 40, afterHours: 60, notes: 500 };
 
 function mergeSupportCoordination(input: unknown): SupportCoordinationSettings {
   const src = (input ?? {}) as Partial<SupportCoordinationSettings>;
@@ -568,7 +581,10 @@ function mergeSupportCoordination(input: unknown): SupportCoordinationSettings {
     if (!name || seen.has(name.toLowerCase())) continue;
     seen.add(name.toLowerCase());
     const id = typeof r.id === 'string' && /^[a-z0-9-]{1,40}$/.test(r.id) ? r.id : name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'agency';
-    agencies.push({ id, name, address: text('address'), phone: text('phone'), fax: text('fax'), afterHours: text('afterHours'), notes: text('notes') });
+    const regions = Array.isArray(r.regions)
+      ? Array.from(new Set(r.regions.filter((n): n is number => (DBHDD_REGIONS as readonly number[]).includes(n as number)))).sort((a, b) => a - b)
+      : [];
+    agencies.push({ id, name, address: text('address'), phone: text('phone'), fax: text('fax'), afterHours: text('afterHours'), notes: text('notes'), regions });
     if (agencies.length >= SC_AGENCY_MAX) break;
   }
   agencies.sort((a, b) => a.name.localeCompare(b.name));
@@ -764,6 +780,9 @@ export function validateSettings(payload: unknown): AppSettings {
       if (!name && hasOther) throw new SettingsValidationError(`supportCoordination.agencies.${i}.name`, 'Enter the agency name, or remove this row.');
       if (name && names.has(name.toLowerCase())) throw new SettingsValidationError(`supportCoordination.agencies.${i}.name`, 'This agency is already on the list.');
       if (name) names.add(name.toLowerCase());
+      if (r.regions !== undefined && (!Array.isArray(r.regions) || r.regions.some((n) => !(DBHDD_REGIONS as readonly number[]).includes(n as number)))) {
+        throw new SettingsValidationError(`supportCoordination.agencies.${i}.regions`, 'Regions must be numbers 1 through 6.');
+      }
     });
   }
   if (
