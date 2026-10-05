@@ -97,6 +97,9 @@ export interface Referral {
   providerListSentAt?: string | null;
   /** Family email the list went to; empty string for the no-email-on-file path. */
   providerListSentTo?: string | null;
+  /** The client record created from this referral, once there is one. */
+  patientId?: string | null;
+  convertedAt?: string | null;
 }
 
 /**

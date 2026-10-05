@@ -3,6 +3,8 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
 
+import { INBOUND_FAX_ID_RE } from '@/lib/inboundFaxPdf';
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +19,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ fax
     throw err;
   }
   const { faxId } = await params;
-  if (!/^[0-9]{1,20}$/.test(faxId)) return NextResponse.json({ error: 'Bad id' }, { status: 400 });
+  if (!INBOUND_FAX_ID_RE.test(faxId)) return NextResponse.json({ error: 'Bad id' }, { status: 400 });
   const ref = adminDb().collection('verbalOrderInbound').doc(faxId);
   const snap = await ref.get();
   if (!snap.exists) return NextResponse.json({ error: 'Fax not found.' }, { status: 404 });

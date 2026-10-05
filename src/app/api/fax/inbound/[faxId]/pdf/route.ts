@@ -3,6 +3,8 @@ import { AdminAuthError } from '@/lib/adminAuthGuard';
 import { requireFaxAccess } from '@/lib/faxCenterServer';
 import { readIncomingFaxPdf } from '@/lib/ppotServer';
 
+import { INBOUND_FAX_ID_RE } from '@/lib/inboundFaxPdf';
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -15,7 +17,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ faxI
     throw err;
   }
   const { faxId } = await params;
-  if (!/^[0-9]{1,20}$/.test(faxId)) return NextResponse.json({ error: 'Bad id' }, { status: 400 });
+  if (!INBOUND_FAX_ID_RE.test(faxId)) return NextResponse.json({ error: 'Bad id' }, { status: 400 });
   const got = await readIncomingFaxPdf(faxId);
   if (!got.ok || !got.pdf) return NextResponse.json({ error: got.error }, { status: got.status || 500 });
   return new Response(new Uint8Array(got.pdf), {

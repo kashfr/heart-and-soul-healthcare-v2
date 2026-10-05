@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Ban, CheckCircle2, EyeOff, Eye, FileCheck2, FolderInput, Hourglass, Inbox, X } from 'lucide-react';
+import { Ban, CheckCircle2, EyeOff, Eye, FileCheck2, FileUp, FolderInput, Hourglass, Inbox, X } from 'lucide-react';
 import FileToClientModal from './FileToClientModal';
+import UploadFaxModal from './UploadFaxModal';
 import { withSelectChevron } from '@/lib/selectChevron';
 import { authedFetch } from '@/lib/authedFetch';
 import PdfPreviewModal from '@/components/PdfPreviewModal';
@@ -23,6 +24,9 @@ interface IncomingFax {
   receivedAt: string;
   ppotCandidateKeys: string[];
   verbalOrderCandidates: number;
+  /** 'line' for the portal fax line; 'upload' for one someone added by hand. */
+  source?: 'line' | 'upload';
+  note?: string;
 }
 
 interface ReceivedPpot {
@@ -47,6 +51,7 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [filing, setFiling] = useState<IncomingFax | null>(null);
   const [filingToClient, setFilingToClient] = useState<IncomingFax | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [canDismiss, setCanDismiss] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -102,17 +107,25 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
         </div>
       )}
 
-      {incoming.length > 0 && (
-        <section style={{ marginBottom: 22 }}>
+      <section style={{ marginBottom: 22 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <h2 style={sectionTitleStyle}>
             <Inbox size={16} style={{ verticalAlign: -2, marginRight: 6 }} />
-            Incoming Faxes ({incoming.length})
+            Incoming Faxes{incoming.length > 0 ? ` (${incoming.length})` : ''}
           </h2>
-          <p style={noteStyle}>
-            Faxes on the portal line that haven&apos;t been filed. Open one to see what it is. Records, labs, and other papers
-            about a client go to their Documents with File to Client; a signed Appendix T is filed against its request.
-            Signed verbal orders are matched under Verbal Orders instead.
-          </p>
+          <button onClick={() => setUploading(true)} style={ghostBtnStyle} title="A fax that came to another fax number, or on paper">
+            <FileUp size={14} /> Add a Received Fax
+          </button>
+        </div>
+        <p style={noteStyle}>
+          Faxes on the portal line that haven&apos;t been filed. Open one to see what it is. Records, labs, and other papers
+          go to a client&apos;s Documents, or to a referral that has no client record yet, with File to Client; a signed
+          Appendix T is filed against its request. Signed verbal orders are matched under Verbal Orders instead. A fax that
+          reached another number (or came on paper) can be added with Add a Received Fax.
+        </p>
+        {incoming.length === 0 ? (
+          <div style={{ ...tableWrapStyle, padding: '14px 16px', fontSize: 13.5, color: '#7f8c8d' }}>No faxes waiting to be filed.</div>
+        ) : (
           <div style={tableWrapStyle}>
             <table style={tableStyle}>
               <tbody>
@@ -128,7 +141,8 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
                             Dialed from {sender.line}
                           </div>
                         )}
-                        <div style={metaStyle}>{f.receivedAt} · {f.pages} page{f.pages === 1 ? '' : 's'}</div>
+                        <div style={metaStyle}>{f.receivedAt} · {f.pages} page{f.pages === 1 ? '' : 's'}{f.source === 'upload' ? ' · added by hand' : ''}</div>
+                        {f.note && <div style={metaStyle}>{f.note}</div>}
                       </td>
                       <td style={tdStyle}>
                         {suggested.length > 0 ? (
@@ -168,8 +182,8 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
               </tbody>
             </table>
           </div>
-        </section>
-      )}
+        )}
+      </section>
 
       {openRequests.length > 0 && (
         <section style={{ marginBottom: 22 }}>
@@ -285,6 +299,17 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
           onClose={() => setFilingToClient(null)}
           onFiled={(msg) => {
             setFilingToClient(null);
+            setNotice(msg);
+            void load();
+          }}
+        />
+      )}
+      {uploading && (
+        <UploadFaxModal
+          today={today}
+          onClose={() => setUploading(false)}
+          onAdded={(msg) => {
+            setUploading(false);
             setNotice(msg);
             void load();
           }}

@@ -149,6 +149,9 @@ export interface Referral extends ReferralInput {
   providerListSentTo: string | null;
   submittedAt: string | null;
   updatedAt: string | null;
+  /** The client record created from this referral, once there is one. */
+  patientId: string | null;
+  convertedAt: string | null;
 }
 
 // Upper bounds on stored text, so a single referral can never bloat a Firestore
@@ -285,6 +288,8 @@ function toReferral(id: string, data: FirebaseFirestore.DocumentData): Referral 
     details: Array.isArray(data.details) ? data.details : [],
     submittedAt: toIso(data.submittedAt),
     updatedAt: toIso(data.updatedAt),
+    patientId: data.patientId ? String(data.patientId) : null,
+    convertedAt: toIso(data.convertedAt),
   };
 }
 

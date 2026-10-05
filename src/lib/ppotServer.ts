@@ -9,8 +9,10 @@ import { createPortalNotification } from './notificationsServer';
 import { getReferral, listReferrals, logReferralActivity } from './referrals';
 import { sendOutboundFax, type FaxSender, type SendFaxResult } from './faxCenterServer';
 import { agencyTodayISO } from './verbalOrderServer';
-import { formatUSFaxNumber, normalizeUSFaxNumber } from './verbalOrderShared';
-import { srfaxRetrieveInbound } from './fax/srfax';
+import { PDFDocument } from 'pdf-lib';
+import { candidateOrdersForInboundFax, formatUSFaxNumber, normalizeUSFaxNumber, type VerbalOrder } from './verbalOrderShared';
+import { readInboundFaxBytes } from './inboundFaxPdf';
+import { addReferralDocument } from './referralDocumentsServer';
 import { formatDateUS, formatDateUSFile } from './dateFormat';
 import { stampAppendixTIdentity } from './pdf/appendixTStamp';
 import { canUseFax } from './faxShared';
@@ -18,6 +20,7 @@ import { validateFileFaxToClient, type FileFaxToClientInput } from './docCategor
 import {
   cleanMedicaidId,
   defaultPpotNote,
+  ppotCandidatesForInbound,
   latestAuthEnd,
   ppotSubjectFromReferral,
   PPOT_REQUEST_LABEL,
@@ -541,16 +544,135 @@ export async function listIncomingFaxes(): Promise<IncomingFax[]> {
       receivedAt: String(x.receivedAt || ''),
       ppotCandidateKeys: Array.isArray(x.ppotCandidateKeys) ? (x.ppotCandidateKeys as string[]) : [],
       verbalOrderCandidates: Array.isArray(x.candidateOrderIds) ? (x.candidateOrderIds as string[]).length : 0,
+      source: x.source === 'upload' ? 'upload' : 'line',
+      note: String(x.note || ''),
     };
   });
+}
+
+/**
+ * Record a fax that did not arrive on the portal line (it came to another
+ * fax number, or on paper) so it can be filed like any other: the PDF is
+ * stored, the sender is matched against open PPOT requests and verbal
+ * orders, and it joins Incoming Faxes.
+ */
+export async function addUploadedInboundFax(p: {
+  pdf: Buffer;
+  fromNumber: string;
+  receivedDate: string; // YYYY-MM-DD
+  note: string;
+  caller: AuthedCaller;
+}): Promise<{ ok: boolean; status?: number; error?: string; id?: string; pages?: number; suggested?: string[] }> {
+  if (p.pdf.subarray(0, 5).toString() !== '%PDF-') return { ok: false, status: 400, error: 'The file must be a PDF.' };
+  let pages = 0;
+  try {
+    pages = (await PDFDocument.load(p.pdf)).getPageCount();
+  } catch {
+    return { ok: false, status: 400, error: 'That PDF could not be read. Try saving or printing it to a new PDF.' };
+  }
+  const from = normalizeUSFaxNumber(p.fromNumber);
+  const db = adminDb();
+  const [openPpot, ordersSnap] = await Promise.all([
+    listOpenPpotRequests().catch(() => []),
+    db.collection('verbalOrders').where('status', 'in', ['taken', 'faxed']).get(),
+  ]);
+  const openOrders: Pick<VerbalOrder, 'id' | 'physicianFax' | 'status'>[] = ordersSnap.docs.map((d) => ({ id: d.id, physicianFax: String(d.data().physicianFax || ''), status: d.data().status === 'faxed' ? 'faxed' : 'taken' }));
+  const ppotCandidateKeys = from ? ppotCandidatesForInbound([from], openPpot) : [];
+  const candidates = from ? candidateOrdersForInboundFax([from], openOrders) : [];
+  const ref = db.collection(INBOUND).doc(`up_${db.collection(INBOUND).doc().id}`);
+  const storagePath = `faxes/inbound-uploads/${ref.id}/fax.pdf`;
+  await adminBucket().file(storagePath).save(p.pdf, { contentType: 'application/pdf', resumable: false });
+  const when = new Date(`${p.receivedDate}T12:00:00-04:00`);
+  await ref.set({
+    source: 'upload',
+    // The verbal-order flows key a fax by the "|id" suffix of its file name.
+    fileName: `upload|${ref.id}`,
+    storagePath,
+    callerId: '',
+    remoteId: from,
+    pages,
+    receivedAt: formatDateUS(p.receivedDate),
+    epochTime: Math.floor(when.getTime() / 1000),
+    note: p.note.trim().slice(0, 300),
+    status: candidates.length > 0 || ppotCandidateKeys.length > 0 ? 'suggested' : 'unmatched',
+    candidateOrderIds: candidates,
+    ppotCandidateKeys,
+    matchedOrderId: '',
+    addedBy: p.caller.uid,
+    addedByName: p.caller.profile.displayName || p.caller.email || '',
+    firstSeenAt: FieldValue.serverTimestamp(),
+  });
+  return { ok: true, id: ref.id, pages, suggested: openPpot.filter((r) => ppotCandidateKeys.includes(r.key)).map((r) => r.memberName) };
+}
+
+/**
+ * File an inbound fax against a referral that has no client record yet.
+ * The copy stays with the referral (referralDocuments) and moves into the
+ * client's Documents when the record is created.
+ */
+export async function fileInboundFaxToReferral(p: { faxId: string; referralId: string; category: string; title: string; docDate: string; caller: AuthedCaller }): Promise<{ ok: boolean; status?: number; error?: string; documentId?: string }> {
+  const invalid = validateFileFaxToClient({ ...p, patientId: p.referralId }, agencyTodayISO());
+  const firstError = Object.values(invalid)[0];
+  if (firstError) return { ok: false, status: 400, error: firstError };
+  const referral = await getReferral(p.referralId);
+  if (!referral) return { ok: false, status: 404, error: 'That referral was not found.' };
+
+  const db = adminDb();
+  const inboundRef = db.collection(INBOUND).doc(p.faxId);
+  const byName = p.caller.profile.displayName || p.caller.email || '';
+  const claim = await db.runTransaction(async (tx) => {
+    const inb = await tx.get(inboundRef);
+    if (!inb.exists || !OPEN_INBOUND.includes(String(inb.data()?.status || ''))) return { error: 'That fax has already been filed or dismissed.', status: 409 };
+    tx.update(inboundRef, { status: 'filing', filingBy: p.caller.uid, filingAt: FieldValue.serverTimestamp() });
+    return { fileName: String(inb.data()?.fileName || ''), storagePath: String(inb.data()?.storagePath || ''), prevStatus: String(inb.data()?.status || 'unmatched') };
+  });
+  if ('error' in claim) return { ok: false, status: claim.status, error: claim.error };
+  const release = () => inboundRef.update({ status: claim.prevStatus, filingBy: FieldValue.delete(), filingAt: FieldValue.delete() }).catch(() => undefined);
+  const got = await readInboundFaxBytes(claim, true);
+  if (!got.ok || !got.pdf) {
+    await release();
+    return { ok: false, status: 502, error: got.error || 'Could not download the fax.' };
+  }
+  const title = p.title.trim();
+  const safe = title.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80) || 'Fax';
+  let documentId = '';
+  try {
+    documentId = await addReferralDocument({
+      referralId: p.referralId,
+      pdf: got.pdf,
+      category: p.category,
+      title,
+      fileName: `${safe}_${formatDateUSFile(p.docDate)}.pdf`,
+      docDate: p.docDate,
+      by: { uid: p.caller.uid, name: byName, role: p.caller.role },
+      inboundFaxId: p.faxId,
+    });
+  } catch (err) {
+    await release();
+    console.error('Fax filing to referral failed:', err);
+    return { ok: false, status: 500, error: 'Could not save the fax to the referral. Please try again.' };
+  }
+  await inboundRef.update({ status: 'filed', filedReferralId: p.referralId, filedDocumentId: documentId, filedAt: FieldValue.serverTimestamp(), filedBy: p.caller.uid, filedByName: byName });
+  try {
+    await logReferralActivity(p.referralId, {
+      type: 'contact',
+      text: `Fax filed to this referral: "${title}" (${p.category}). It moves to the client's Documents when the client record is created.`,
+      byUid: p.caller.uid,
+      byName,
+      byRole: p.caller.role,
+    });
+  } catch (err) {
+    console.error('Fax filing to referral: activity failed (non-fatal):', err);
+  }
+  return { ok: true, documentId };
 }
 
 /** Download an unfiled inbound fax for preview (stays unread in SRFax). */
 export async function readIncomingFaxPdf(faxId: string): Promise<{ ok: boolean; pdf?: Buffer; error?: string; status?: number }> {
   const snap = await adminDb().collection(INBOUND).doc(faxId).get();
   const d = snap.data() || {};
-  if (!snap.exists || !d.fileName) return { ok: false, status: 404, error: 'Fax not found.' };
-  const got = await srfaxRetrieveInbound(String(d.fileName), false);
+  if (!snap.exists || (!d.fileName && !d.storagePath)) return { ok: false, status: 404, error: 'Fax not found.' };
+  const got = await readInboundFaxBytes(d, false);
   if (!got.ok || !got.pdf) return { ok: false, status: 502, error: got.error || 'Could not download the fax.' };
   return { ok: true, pdf: got.pdf };
 }
@@ -590,12 +712,12 @@ export async function fileSignedPpot(p: {
     if (!req.exists) return { error: 'That PPOT request was not found.', status: 404 };
     if (req.data()?.status !== 'sent') return { error: 'That PPOT request already has a signed copy on file.', status: 409 };
     tx.update(inboundRef, { status: 'filing', filingBy: p.caller.uid, filingAt: FieldValue.serverTimestamp() });
-    return { fileName: String(inb.data()?.fileName || ''), prevStatus: String(inb.data()?.status || 'unmatched'), request: req.data() || {} };
+    return { fileName: String(inb.data()?.fileName || ''), storagePath: String(inb.data()?.storagePath || ''), prevStatus: String(inb.data()?.status || 'unmatched'), request: req.data() || {} };
   });
   if ('error' in claim) return { ok: false, status: claim.status, error: claim.error };
 
   const release = () => inboundRef.update({ status: claim.prevStatus, filingBy: FieldValue.delete(), filingAt: FieldValue.delete() }).catch(() => undefined);
-  const got = await srfaxRetrieveInbound(claim.fileName, true);
+  const got = await readInboundFaxBytes(claim, true);
   if (!got.ok || !got.pdf) {
     await release();
     return { ok: false, status: 502, error: got.error || 'Could not download the fax from SRFax.' };
@@ -708,12 +830,12 @@ export async function fileInboundFaxToClient(p: FileFaxToClientInput & { faxId: 
     if (!inb.exists || !OPEN_INBOUND.includes(String(inb.data()?.status || ''))) return { error: 'That fax has already been filed or dismissed.', status: 409 };
     if (!pat.exists) return { error: 'That client was not found.', status: 404 };
     tx.update(inboundRef, { status: 'filing', filingBy: p.caller.uid, filingAt: FieldValue.serverTimestamp() });
-    return { fileName: String(inb.data()?.fileName || ''), prevStatus: String(inb.data()?.status || 'unmatched'), patientName: String(pat.data()?.name || '') };
+    return { fileName: String(inb.data()?.fileName || ''), storagePath: String(inb.data()?.storagePath || ''), prevStatus: String(inb.data()?.status || 'unmatched'), patientName: String(pat.data()?.name || '') };
   });
   if ('error' in claim) return { ok: false, status: claim.status, error: claim.error };
 
   const release = () => inboundRef.update({ status: claim.prevStatus, filingBy: FieldValue.delete(), filingAt: FieldValue.delete() }).catch(() => undefined);
-  const got = await srfaxRetrieveInbound(claim.fileName, true);
+  const got = await readInboundFaxBytes(claim, true);
   if (!got.ok || !got.pdf) {
     await release();
     return { ok: false, status: 502, error: got.error || 'Could not download the fax from SRFax.' };
