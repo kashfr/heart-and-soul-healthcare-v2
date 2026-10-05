@@ -761,6 +761,10 @@ service cloud.firestore {
     match /roiRequests/{id} {
       allow read, write: if false;
     }
+    // Papers filed against a referral before it has a client record. Server-only.
+    match /referralDocuments/{id} {
+      allow read, write: if false;
+    }
     match /ppotRecertReminders/{key} {
       allow read, write: if false;
     }

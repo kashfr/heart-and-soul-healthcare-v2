@@ -95,6 +95,8 @@ export interface Patient {
    * Reads are still author-only when this list is empty or missing.
    */
   assignedNurseIds?: string[];
+  /** The referral this record was created from, when it was. */
+  referralId?: string;
 }
 
 /**

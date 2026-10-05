@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
 import { getVerbalOrder, recordVerbalOrderSigned } from '@/lib/verbalOrderServer';
-import { srfaxRetrieveInbound } from '@/lib/fax/srfax';
+import { readInboundFaxBytes } from '@/lib/inboundFaxPdf';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { FieldValue } from 'firebase-admin/firestore';
 
@@ -61,7 +61,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (!known?.exists || String((known.data() || {}).fileName || '') !== inboundFaxFileName || !['unmatched', 'suggested'].includes(knownStatus)) {
       return NextResponse.json({ error: 'That fax is not waiting to be matched.' }, { status: 400 });
     }
-    const got = await srfaxRetrieveInbound(inboundFaxFileName, true);
+    const got = await readInboundFaxBytes(known.data() || {}, true);
     if (!got.ok || !got.pdf) return NextResponse.json({ error: got.error || 'Could not download that fax.' }, { status: 502 });
     signedPdf = got.pdf;
   }

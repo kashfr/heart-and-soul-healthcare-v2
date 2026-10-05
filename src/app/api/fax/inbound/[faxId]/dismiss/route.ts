@@ -3,6 +3,8 @@ import { AdminAuthError } from '@/lib/adminAuthGuard';
 import { requireFaxAccess } from '@/lib/faxCenterServer';
 import { dismissIncomingFax } from '@/lib/ppotServer';
 
+import { INBOUND_FAX_ID_RE } from '@/lib/inboundFaxPdf';
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -23,7 +25,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ fax
     return NextResponse.json({ error: 'Only an admin or supervisor can dismiss an incoming fax.' }, { status: 403 });
   }
   const { faxId } = await params;
-  if (!/^[0-9]{1,20}$/.test(faxId)) return NextResponse.json({ error: 'Bad id' }, { status: 400 });
+  if (!INBOUND_FAX_ID_RE.test(faxId)) return NextResponse.json({ error: 'Bad id' }, { status: 400 });
   const result = await dismissIncomingFax(faxId, caller);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status || 500 });
   return NextResponse.json({ ok: true });

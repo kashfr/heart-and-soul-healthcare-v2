@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   X, Phone, Mail, Printer, MessageSquare, ArrowRightLeft, UserCheck,
-  Inbox, PhoneCall, Send, Share2, Copy, Check, Trash2, Plus, Stethoscope, FileSignature,
+  Inbox, PhoneCall, Send, Share2, Copy, Check, Trash2, Plus, Stethoscope, FileSignature, UserPlus, ExternalLink,
 } from 'lucide-react';
+import ReferralDocuments from './ReferralDocuments';
+import ConvertReferralModal from './ConvertReferralModal';
 import Link from 'next/link';
 import { useEffectiveUser } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
@@ -56,6 +58,10 @@ export default function ReferralDetail({
   const [savingNote, setSavingNote] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
   const [activityError, setActivityError] = useState<string | null>(null);
+  const [converting, setConverting] = useState(false);
+  const [created, setCreated] = useState<{ patientId: string; mrn: string; documentsMoved: number } | null>(null);
+  const canCreateClient = viewerRole === 'admin' || viewerRole === 'supervisor';
+  const patientId = created?.patientId || referral.patientId || null;
 
   const loadActivity = useCallback(async () => {
     setActivityLoading(true);
@@ -258,6 +264,20 @@ export default function ReferralDetail({
             </tbody>
           </table>
 
+          {patientId && (
+            <div style={clientNoteStyle}>
+              <UserPlus size={14} style={{ flexShrink: 0 }} />
+              <span style={{ flex: 1 }}>
+                {created ? `Client record created${created.mrn ? ` (record #${created.mrn})` : ''}${created.documentsMoved ? `, with ${created.documentsMoved} document${created.documentsMoved === 1 ? '' : 's'} filed to it` : ''}.` : 'This referral has a client record.'}
+              </span>
+              <Link href={`/admin/clients/${patientId}`} style={clientLinkStyle}>
+                Open Client Record <ExternalLink size={12} />
+              </Link>
+            </div>
+          )}
+
+          <ReferralDocuments referralId={referral.id} patientId={patientId} refreshKey={referral.updatedAt} />
+
           {/* Share with a partner agency */}
           <div style={sectionTitleStyle}>Share with Agency</div>
           {referral.providerListSentAt && (
@@ -358,6 +378,11 @@ export default function ReferralDetail({
               <FileSignature size={15} /> Request PPOT
             </Link>
           )}
+          {canCreateClient && !patientId && referral.stage !== 'closed' && referral.stage !== 'referred_out' && (
+            <button onClick={() => setConverting(true)} style={{ ...ghostBtnStyle, color: '#1a3a5c', borderColor: '#1a3a5c' }} disabled={busy}>
+              <UserPlus size={15} /> Create Client Record
+            </button>
+          )}
           {canDelete && (
             <>
               <div style={{ flex: 1 }} />
@@ -379,9 +404,24 @@ export default function ReferralDetail({
           )}
         </div>
       </aside>
+      {converting && (
+        <ConvertReferralModal
+          referralId={referral.id}
+          clientName={referral.clientName || 'this client'}
+          onClose={() => setConverting(false)}
+          onCreated={(r) => {
+            setConverting(false);
+            setCreated(r);
+            onChanged?.();
+          }}
+        />
+      )}
     </div>
   );
 }
+
+const clientNoteStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, background: '#e6f4ea', border: '1px solid #b7dfc1', color: '#1e7e34', borderRadius: 8, padding: '9px 12px', fontSize: 13 };
+const clientLinkStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, color: '#1e7e34', fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap' };
 
 const ACTIVITY_ICON: Record<ReferralActivityType, React.ReactNode> = {
   created: <Inbox size={14} />,

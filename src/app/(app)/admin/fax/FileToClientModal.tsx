@@ -18,7 +18,10 @@ interface Fax {
   receivedAt: string;
 }
 
-interface Client {
+/** Where a fax can be filed: a client's Documents, or a referral that has no
+ *  client record yet (its papers follow it when the record is created). */
+interface Target {
+  kind: 'client' | 'referral';
   id: string;
   name: string;
   dob: string;
@@ -39,15 +42,16 @@ const fid = (k: FileFaxToClientField) => `fax-to-client-${k}`;
 const SUGGEST_WINDOW_DAYS = 21;
 
 /**
- * File an incoming fax into a client's Documents. Suggests the clients whose
- * release of information we faxed in the last three weeks, since records sent
- * back on a release often come from a different fax number (a hospital's eFax
- * service) than the one we sent to, so they can't be matched by number.
+ * File an incoming fax into a client's Documents, or against an open referral.
+ * Suggests the clients whose release of information we faxed in the last
+ * three weeks, since records sent back on a release often come from a
+ * different fax number (a hospital's eFax service) than the one we sent to,
+ * so they can't be matched by number.
  */
 export default function FileToClientModal({ fax, today, onView, onClose, onFiled }: { fax: Fax; today: string; onView: () => void; onClose: () => void; onFiled: (message: string) => void }) {
-  const [clients, setClients] = useState<Client[] | null>(null);
+  const [targets, setTargets] = useState<Target[] | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  const [client, setClient] = useState<Client | null>(null);
+  const [client, setClient] = useState<Target | null>(null);
   const [q, setQ] = useState('');
   const [category, setCategory] = useState('');
   const [title, setTitle] = useState('');
@@ -58,13 +62,22 @@ export default function FileToClientModal({ fax, today, onView, onClose, onFiled
 
   useEffect(() => {
     let cancelled = false;
-    authedFetch('/api/fax/roi')
-      .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
-      .then(({ ok, d }) => {
+    // Clients (with their releases, for the suggestions) and open referrals.
+    Promise.all([
+      authedFetch('/api/fax/roi').then((r) => r.json().then((d) => ({ ok: r.ok, d }))),
+      authedFetch('/api/fax/ppot').then((r) => r.json().then((d) => ({ ok: r.ok, d }))),
+    ])
+      .then(([roi, ppot]) => {
         if (cancelled) return;
-        if (!ok) throw new Error(d.error || 'Could not load clients.');
-        const list: Client[] = (d.clients || []).map((c: Client) => ({ id: c.id, name: c.name, dob: c.dob }));
-        setClients(list);
+        if (!roi.ok) throw new Error(roi.d.error || 'Could not load clients.');
+        const d = roi.d;
+        const list: Target[] = (d.clients || []).map((c: Target) => ({ kind: 'client' as const, id: c.id, name: c.name, dob: c.dob }));
+        if (ppot.ok) {
+          for (const s of (ppot.d.subjects || []) as Array<{ kind: string; id: string; name: string; dob: string }>) {
+            if (s.kind === 'referral') list.push({ kind: 'referral', id: s.id, name: s.name, dob: s.dob });
+          }
+        }
+        setTargets(list);
         const cutoff = new Date(Date.now() - SUGGEST_WINDOW_DAYS * 86400000).toISOString();
         const out: Suggestion[] = [];
         for (const r of (d.rois || []) as RoiRecord[]) {
@@ -75,17 +88,17 @@ export default function FileToClientModal({ fax, today, onView, onClose, onFiled
         }
         setSuggestions(out.sort((a, b) => b.faxedOn.localeCompare(a.faxedOn)));
       })
-      .catch((e) => { if (!cancelled) { setClients([]); setErr(e instanceof Error ? e.message : 'Could not load clients.'); } });
+      .catch((e) => { if (!cancelled) { setTargets([]); setErr(e instanceof Error ? e.message : 'Could not load clients.'); } });
     return () => { cancelled = true; };
   }, []);
 
   const needle = q.trim().toLowerCase();
-  const matches = useMemo(() => (needle.length < 2 || !clients ? [] : clients.filter((c) => `${c.name} ${c.dob}`.toLowerCase().includes(needle)).slice(0, 8)), [clients, needle]);
+  const matches = useMemo(() => (needle.length < 2 || !targets ? [] : targets.filter((c) => `${c.name} ${c.dob}`.toLowerCase().includes(needle)).slice(0, 8)), [targets, needle]);
   const clear = (k: FileFaxToClientField) => errors[k] && setErrors((e) => ({ ...e, [k]: undefined }));
 
-  const pick = (c: Client) => { setClient(c); setQ(''); clear('patientId'); };
+  const pick = (c: Target) => { setClient(c); setQ(''); clear('patientId'); };
   const pickSuggestion = (s: Suggestion) => {
-    pick(clients?.find((c) => c.id === s.clientId) || { id: s.clientId, name: s.clientName, dob: '' });
+    pick(targets?.find((c) => c.kind === 'client' && c.id === s.clientId) || { kind: 'client', id: s.clientId, name: s.clientName, dob: '' });
     if (!title.trim()) { setTitle(`Records from ${s.facility}`); clear('title'); }
   };
 
@@ -97,10 +110,15 @@ export default function FileToClientModal({ fax, today, onView, onClose, onFiled
     if (!applyFieldErrors(validateFileFaxToClient(body, today), ORDER, setErrors, fid)) return;
     setBusy(true);
     try {
-      const res = await authedFetch(`/api/fax/inbound/${fax.id}/client`, { method: 'POST', body: JSON.stringify(body) });
+      const payload = client!.kind === 'referral' ? { referralId: client!.id, category, title, docDate } : body;
+      const res = await authedFetch(`/api/fax/inbound/${fax.id}/client`, { method: 'POST', body: JSON.stringify(payload) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
-      onFiled(`Filed "${title.trim()}" to ${client!.name}'s Documents (${category}).`);
+      onFiled(
+        client!.kind === 'referral'
+          ? `Filed "${title.trim()}" to ${client!.name}'s referral (${category}). It moves to the client's Documents when the client record is created.`
+          : `Filed "${title.trim()}" to ${client!.name}'s Documents (${category}).`,
+      );
     } catch (e2) {
       setErr(e2 instanceof Error ? e2.message : 'Could not file the fax.');
     } finally {
@@ -114,7 +132,7 @@ export default function FileToClientModal({ fax, today, onView, onClose, onFiled
     <div style={backdrop} onClick={busy ? undefined : onClose}>
       <div style={modal} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="fax-to-client-title">
         <div style={header}>
-          <strong id="fax-to-client-title" style={{ fontSize: 16, color: '#1a3a5c' }}>File to a Client&apos;s Documents</strong>
+          <strong id="fax-to-client-title" style={{ fontSize: 16, color: '#1a3a5c' }}>File to a Client or Referral</strong>
           <button onClick={onClose} style={closeBtn} aria-label="Close" disabled={busy}><X size={18} /></button>
         </div>
         <form onSubmit={submit} noValidate style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -137,12 +155,12 @@ export default function FileToClientModal({ fax, today, onView, onClose, onFiled
             )}
 
             <div style={field} id={fid('patientId')}>
-              <span style={label}>Client</span>
+              <span style={label}>Client or referral</span>
               {client ? (
                 <div style={chosen}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 700 }}>{client.name}</div>
-                    {client.dob && <div style={meta}>DOB {client.dob}</div>}
+                    <div style={meta}>{client.kind === 'referral' ? 'Referral (no client record yet)' : 'Client'}{client.dob ? ` · DOB ${client.dob}` : ''}</div>
                   </div>
                   <button type="button" onClick={() => setClient(null)} style={linkBtn}>Change</button>
                 </div>
@@ -150,19 +168,19 @@ export default function FileToClientModal({ fax, today, onView, onClose, onFiled
                 <div style={{ position: 'relative' }}>
                   <div style={{ ...searchWrap, ...(errors.patientId ? FIELD_ERROR_STYLE : null) }}>
                     <Search size={15} style={{ color: '#94a3b8', flexShrink: 0 }} />
-                    <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={clients === null ? 'Loading clients…' : 'Search a client by name or DOB'} style={searchInput} disabled={clients === null} />
+                    <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={targets === null ? 'Loading…' : 'Search a client or referral by name or DOB'} style={searchInput} disabled={targets === null} />
                   </div>
                   {matches.length > 0 && (
                     <div style={results} role="listbox">
                       {matches.map((c) => (
-                        <button type="button" key={c.id} onClick={() => pick(c)} style={resultRow}>
+                        <button type="button" key={`${c.kind}:${c.id}`} onClick={() => pick(c)} style={resultRow}>
                           <span style={{ fontWeight: 600 }}>{c.name}</span>
-                          <span style={meta}>{c.dob ? `DOB ${c.dob}` : ''}</span>
+                          <span style={meta}>{c.kind === 'referral' ? 'Referral' : 'Client'}{c.dob ? ` · DOB ${c.dob}` : ''}</span>
                         </button>
                       ))}
                     </div>
                   )}
-                  {needle.length >= 2 && clients && matches.length === 0 && <div style={{ ...meta, marginTop: 6 }}>No client matches.</div>}
+                  {needle.length >= 2 && targets && matches.length === 0 && <div style={{ ...meta, marginTop: 6 }}>No client or open referral matches.</div>}
                 </div>
               )}
               <FieldError message={errors.patientId} />
@@ -199,7 +217,7 @@ export default function FileToClientModal({ fax, today, onView, onClose, onFiled
           <div style={footer}>
             <button type="button" onClick={onClose} style={ghostBtn} disabled={busy}>Cancel</button>
             <button type="submit" style={primaryBtn} disabled={busy}>
-              <FolderInput size={14} /> {busy ? 'Filing…' : 'File to Client'}
+              <FolderInput size={14} /> {busy ? 'Filing…' : client?.kind === 'referral' ? 'File to Referral' : 'File to Client'}
             </button>
           </div>
         </form>
