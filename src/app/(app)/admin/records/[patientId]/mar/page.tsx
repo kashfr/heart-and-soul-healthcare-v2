@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { btn, btnIcon, btnPrimary } from '@/components/buttons';
 import Link from 'next/link';
 import { useParams, usePathname, useSearchParams } from 'next/navigation';
 import { ArrowLeft, ChevronLeft, ChevronRight, FileDown, Pill, PlusCircle } from 'lucide-react';
@@ -424,12 +425,12 @@ export default function MonthlyMarPage() {
                   </div>
                 </div>
                 {!isNurse && (
-                  <button type="button" onClick={handleExport} disabled={exporting} style={exportBtnStyle}>
+                  <button type="button" onClick={handleExport} disabled={exporting} className={btn} style={{ flexShrink: 0 }}>
                     <FileDown size={15} /> {exporting ? 'Exporting…' : 'Export PDF'}
                   </button>
                 )}
                 {canManageMeds && (
-                  <button type="button" onClick={() => setManageMeds(true)} style={manageBtnStyle}>
+                  <button type="button" onClick={() => setManageMeds(true)} className={btnPrimary}>
                     <PlusCircle size={15} /> Manage Medications
                   </button>
                 )}
@@ -446,7 +447,7 @@ export default function MonthlyMarPage() {
             </header>
 
             <div style={monthNavStyle}>
-              <button type="button" onClick={() => setMonth(shiftMonth(month, -1))} style={navBtnStyle} aria-label="Previous month">
+              <button type="button" onClick={() => setMonth(shiftMonth(month, -1))} className={`${btn} ${btnIcon}`} aria-label="Previous month" title="Previous month">
                 <ChevronLeft size={18} />
               </button>
               <div style={{ textAlign: 'center' }}>
@@ -465,8 +466,9 @@ export default function MonthlyMarPage() {
               <button
                 type="button"
                 onClick={() => setMonth(shiftMonth(month, 1))}
-                style={navBtnStyle}
+                className={`${btn} ${btnIcon}`}
                 aria-label="Next month"
+                title="Next month"
               >
                 <ChevronRight size={18} />
               </button>
@@ -878,27 +880,15 @@ const resultPendingChipStyle: React.CSSProperties = {
   whiteSpace: 'nowrap',
 };
 
+// Stays amber like the chip it replaces: a PRN dose still waiting on its
+// outcome is an attention signal, not an ordinary row action.
 const resultPendingBtnStyle: React.CSSProperties = {
   ...resultPendingChipStyle,
   cursor: 'pointer',
   fontFamily: 'inherit',
 };
 
-const manageBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: '#0e7c4a',
-  color: 'white',
-  border: 'none',
-  padding: '9px 14px',
-  borderRadius: 8,
-  fontSize: 13.5,
-  fontWeight: 700,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-  whiteSpace: 'nowrap',
-};
+
 
 function HeaderField({ label, value, highlight }: { label: string; value?: string | null; highlight?: boolean }) {
   return (
@@ -918,12 +908,10 @@ const headerCardStyle: React.CSSProperties = { background: 'white', border: '1px
 const headerIconStyle: React.CSSProperties = { width: 46, height: 46, borderRadius: 10, background: '#eef5ff', color: '#1a3a5c', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
 const titleStyle: React.CSSProperties = { fontSize: 22, color: '#2c3e50', margin: 0 };
 const headerMetaStyle: React.CSSProperties = { fontSize: 13.5, color: '#5c6b7a', marginTop: 4 };
-const exportBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#1a3a5c', color: 'white', padding: '10px 16px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 };
 const headerGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginTop: 16, paddingTop: 16, borderTop: '1px solid #f1f3f5' };
 const headerFieldLabelStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: '#9aa6b2', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 };
 const headerFieldValueStyle: React.CSSProperties = { fontSize: 14, lineHeight: 1.45 };
 const monthNavStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 18, marginBottom: 14 };
-const navBtnStyle: React.CSSProperties = { width: 38, height: 38, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'white', border: '1px solid #d0d7de', borderRadius: 8, color: '#2c3e50', cursor: 'pointer' };
 const jumpBtnStyle: React.CSSProperties = { marginTop: 2, fontSize: 12, fontWeight: 600, color: '#1a73c4', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 };
 const emptyStyle: React.CSSProperties = { textAlign: 'center', padding: '40px 20px', background: 'white', borderRadius: 10, color: '#7f8c8d', fontSize: 14, border: '1px solid #e5e7eb' };
 const gridWrapStyle: React.CSSProperties = { background: 'white', borderRadius: 10, border: '1px solid #e5e7eb', overflowX: 'auto', marginBottom: 12 };

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type CSSProperties } from 'react';
+import { btn, btnPrimary, btnSm } from '@/components/buttons';
 import Link from 'next/link';
 import { CheckCircle2, FileText, PenLine } from 'lucide-react';
 import PdfPreviewModal from '@/components/PdfPreviewModal';
@@ -69,11 +70,11 @@ export default function ServicePlanSection({ patientId, canAuthor }: Props) {
         {canAuthor && plans !== undefined && !loadError && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {current && (
-              <Link href={`${base}/review`} style={primaryLink}>
+              <Link href={`${base}/review`} className={btnPrimary}>
                 <CheckCircle2 size={14} /> Review, No Changes
               </Link>
             )}
-            <Link href={`${base}/new`} style={current ? secondaryLink : primaryLink}>
+            <Link href={`${base}/new`} className={current ? btn : btnPrimary}>
               <PenLine size={14} /> {current ? 'Revise Service Plan' : 'Write Service Plan'}
             </Link>
           </div>
@@ -105,11 +106,11 @@ export default function ServicePlanSection({ patientId, canAuthor }: Props) {
                 <div style={planMeta}>Signed {formatDateUS(shown.signedDate)} by {shown.supervisorName}{shown.supervisorCredentials ? `, ${shown.supervisorCredentials}` : ''}</div>
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button type="button" onClick={() => setPreview({ title: `Service Plan, signed ${formatDateUS(shown.signedDate)}`, url: servicePlanPdfUrl(shown.id) })} style={ghostBtn}>
+                <button type="button" onClick={() => setPreview({ title: `Service Plan, signed ${formatDateUS(shown.signedDate)}`, url: servicePlanPdfUrl(shown.id) })} className={`${btn} ${btnSm}`}>
                   <FileText size={13} /> View PDF
                 </button>
                 {canAuthor && shown.id !== current?.id && (
-                  <Link href={`${base}/new?from=${encodeURIComponent(shown.id)}`} style={ghostLink}><PenLine size={13} /> Revise from This Plan</Link>
+                  <Link href={`${base}/new?from=${encodeURIComponent(shown.id)}`} className={`${btn} ${btnSm}`}><PenLine size={13} /> Revise from This Plan</Link>
                 )}
               </div>
             </div>
@@ -146,10 +147,6 @@ export default function ServicePlanSection({ patientId, canAuthor }: Props) {
 
 const headRow: CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 12 };
 const sub: CSSProperties = { fontSize: 12.5, color: '#7f8c8d', margin: 0, lineHeight: 1.5 };
-const primaryLink: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: NAVY, color: 'white', border: `1px solid ${NAVY}`, padding: '8px 13px', borderRadius: 8, fontSize: 13, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap' };
-const secondaryLink: CSSProperties = { ...primaryLink, background: 'white', color: NAVY };
-const ghostBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', border: '1px solid #d0d7de', borderRadius: 6, padding: '6px 10px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', color: NAVY, fontFamily: 'inherit' };
-const ghostLink: CSSProperties = { ...ghostBtn, textDecoration: 'none' };
 const linkBtn: CSSProperties = { background: 'transparent', border: 'none', color: NAVY, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline', padding: 0, flexShrink: 0 };
 const errBox: CSSProperties = { background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '8px 11px', fontSize: 13 };
 const muted: CSSProperties = { fontSize: 13, color: '#5c6b7a' };

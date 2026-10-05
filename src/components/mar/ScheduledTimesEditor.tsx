@@ -1,6 +1,7 @@
 'use client';
 
 import type { CSSProperties } from 'react';
+import { btn, btnDanger, btnIcon, btnSm } from '@/components/buttons';
 import { Plus, X } from 'lucide-react';
 import { TIME_ANCHORS, anchorDefaultTime } from '@/lib/marShared';
 import { withSelectChevron } from '@/lib/selectChevron';
@@ -79,14 +80,14 @@ export default function ScheduledTimesEditor({ times, anchors, onChange }: Props
               aria-label={`Scheduled time ${i + 1}: clock time`}
             />
             {times.length > 1 && (
-              <button type="button" onClick={() => removeRow(i)} style={removeBtn} aria-label="Remove time">
+              <button type="button" onClick={() => removeRow(i)} className={`${btnDanger} ${btnIcon} ${btnSm}`} aria-label="Remove time" title="Remove time">
                 <X size={14} />
               </button>
             )}
           </div>
         ))}
       </div>
-      <button type="button" onClick={addRow} style={addBtn}>
+      <button type="button" onClick={addRow} className={`${btn} ${btnSm}`} style={{ marginTop: 8 }}>
         <Plus size={13} /> Add Time
       </button>
       {anyAnchor && (
@@ -103,6 +104,4 @@ const input: CSSProperties = { padding: '9px 11px', border: '1px solid #d0d7de',
 const row: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
 const anchorSelect: CSSProperties = { ...withSelectChevron(input), width: 190, maxWidth: '100%' };
 const timeInput: CSSProperties = { ...input, width: 140 };
-const removeBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', color: '#c44', border: 'none', padding: 4, borderRadius: 4, cursor: 'pointer' };
-const addBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, background: 'white', color: '#0e7c4a', border: '1px dashed #0e7c4a', padding: '7px 12px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', marginTop: 8 };
 const hint: CSSProperties = { fontSize: 11.5, color: '#8a949e', lineHeight: 1.4, marginTop: 6 };

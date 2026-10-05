@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { btn, btnDanger, btnIcon, btnPrimary, btnSm } from '@/components/buttons';
 import { Search, X, RefreshCw, Plus, Pencil, Trash2, Mail, Phone } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { formatUSPhone, isValidUSPhone } from '@/lib/phone';
@@ -109,10 +110,10 @@ export default function AgenciesPage() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={load} style={ghostBtnStyle} title="Refresh">
+            <button onClick={load} className={btn} title="Refresh">
               <RefreshCw size={15} /> Refresh
             </button>
-            <button onClick={() => setEditing('new')} style={primaryBtnStyle}>
+            <button onClick={() => setEditing('new')} className={btnPrimary}>
               <Plus size={15} /> Add Agency
             </button>
           </div>
@@ -141,7 +142,7 @@ export default function AgenciesPage() {
           <div style={{ ...emptyStyle, color: '#b3261e' }}>
             {error}
             <div style={{ marginTop: 12 }}>
-              <button onClick={load} style={ghostBtnStyle}>Try Again</button>
+              <button onClick={load} className={btn}>Try Again</button>
             </div>
           </div>
         ) : filtered.length === 0 ? (
@@ -180,8 +181,8 @@ export default function AgenciesPage() {
                     <td style={{ ...tdStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{a.shareCount}</td>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(a.lastSharedAt)}</td>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                      <button onClick={() => setEditing(a)} style={iconBtnStyle} title="Edit"><Pencil size={15} /></button>
-                      <button onClick={() => remove(a)} style={{ ...iconBtnStyle, color: '#b3261e' }} title="Remove"><Trash2 size={15} /></button>
+                      <button onClick={() => setEditing(a)} className={`${btn} ${btnIcon} ${btnSm}`} title="Edit" aria-label={`Edit ${a.name}`}><Pencil size={15} /></button>
+                      <button onClick={() => remove(a)} className={`${btnDanger} ${btnIcon} ${btnSm}`} style={{ marginLeft: 6 }} title="Remove" aria-label={`Remove ${a.name}`}><Trash2 size={15} /></button>
                     </td>
                   </tr>
                 ))}
@@ -384,7 +385,7 @@ function AgencyForm({
                   <option key={c} value={c} />
                 ))}
               </datalist>
-              <button type="button" onClick={addCounty} style={ghostBtnStyle}>
+              <button type="button" onClick={addCounty} className={btn}>
                 <Plus size={14} /> Add
               </button>
             </div>
@@ -394,11 +395,11 @@ function AgencyForm({
           {err && <div role="alert" style={{ color: '#b3261e', fontSize: 13, fontWeight: 600 }}>{err}</div>}
         </div>
         <div style={modalFooterStyle}>
-          <button onClick={onClose} style={ghostBtnStyle}>Cancel</button>
+          <button onClick={onClose} className={btn}>Cancel</button>
           <button
             onClick={submit}
             disabled={saving}
-            style={{ ...primaryBtnStyle, opacity: saving ? 0.55 : 1 }}
+            className={btnPrimary}
           >
             {saving ? 'Saving…' : agency ? 'Save Changes' : 'Add Agency'}
           </button>
@@ -440,8 +441,6 @@ const headerStyle: React.CSSProperties = { marginBottom: 20, display: 'flex', al
 const kickerStyle: React.CSSProperties = { fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: '#27ae60', margin: 0 };
 const titleStyle: React.CSSProperties = { fontSize: 32, color: '#2c3e50', margin: '4px 0 0' };
 const subtitleStyle: React.CSSProperties = { color: '#7f8c8d', fontSize: 15, marginTop: 6, maxWidth: 620 };
-const ghostBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', border: '1px solid #d1d5db', borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer', fontFamily: 'inherit' };
-const primaryBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#1a3a5c', color: 'white', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const searchWrapStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, background: 'white', border: '1px solid #d1d5db', borderRadius: 8, padding: '7px 12px', maxWidth: 360 };
 const searchInputStyle: React.CSSProperties = { border: 'none', outline: 'none', fontSize: 14, flex: 1, fontFamily: 'inherit', color: '#111827' };
 const searchClearStyle: React.CSSProperties = { background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'inline-flex' };
@@ -489,7 +488,6 @@ const chipRemoveStyle: React.CSSProperties = {
   border: 'none', color: '#5c7aa3', cursor: 'pointer', padding: 0,
 };
 const linkStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, color: '#1a3a5c', textDecoration: 'none' };
-const iconBtnStyle: React.CSSProperties = { background: 'transparent', border: 'none', color: '#5c6b7a', cursor: 'pointer', padding: 6, display: 'inline-flex' };
 const backdropStyle: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 };
 const modalStyle: React.CSSProperties = { background: 'white', borderRadius: 12, width: '100%', maxWidth: 520, maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' };
 const modalHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #e5e7eb' };

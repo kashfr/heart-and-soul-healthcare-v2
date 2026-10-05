@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { btn, btnPrimary } from '@/components/buttons';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { AlertTriangle, CheckCircle2, ShieldAlert, X } from 'lucide-react';
@@ -218,8 +219,8 @@ function Inner() {
               </div>
             )}
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 18, flexWrap: 'wrap' }}>
-              <Link href={`/admin/med-errors?r=${done.id}`} style={primaryLinkStyle}>View Report</Link>
-              {form.patientId && <Link href={`/admin/clients/${form.patientId}`} style={secondaryLinkStyle}>Back to {patient?.name || 'client'}</Link>}
+              <Link href={`/admin/med-errors?r=${done.id}`} className={btnPrimary}>View Report</Link>
+              {form.patientId && <Link href={`/admin/clients/${form.patientId}`} className={btn}>Back to {patient?.name || 'client'}</Link>}
             </div>
           </div>
         </div>
@@ -483,8 +484,8 @@ function Inner() {
         </section>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <Link href={form.patientId ? `/admin/clients/${form.patientId}` : '/admin'} style={secondaryLinkStyle}>Cancel</Link>
-          <button type="button" style={{ ...primaryBtnStyle, opacity: submitting ? 0.6 : 1 }} disabled={submitting} onClick={() => void submit()}>{submitting ? 'Filing…' : 'File Report'}</button>
+          <Link href={form.patientId ? `/admin/clients/${form.patientId}` : '/admin'} className={btn}>Cancel</Link>
+          <button type="button" className={btnPrimary} disabled={submitting} onClick={() => void submit()}>{submitting ? 'Filing…' : 'File Report'}</button>
         </div>
       </div>
       <style jsx global>{`.med-error-sig { width: 100%; height: auto; display: block; touch-action: none; }`}</style>
@@ -518,6 +519,3 @@ const checkRowStyle: CSSProperties = { display: 'flex', alignItems: 'center', ga
 const notifRowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 };
 const sigWrapStyle: CSSProperties = { border: '1px solid #d0d7de', borderRadius: 8, overflow: 'hidden', background: 'white' };
 const linkBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'transparent', border: 'none', color: '#5c6b7a', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const primaryBtnStyle: CSSProperties = { background: NAVY, color: 'white', border: 'none', padding: '11px 18px', borderRadius: 8, fontSize: 14.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
-const primaryLinkStyle: CSSProperties = { ...primaryBtnStyle, textDecoration: 'none', display: 'inline-block' };
-const secondaryLinkStyle: CSSProperties = { display: 'inline-block', background: 'white', color: '#374151', border: '1px solid #d0d7de', padding: '11px 16px', borderRadius: 8, fontSize: 14, fontWeight: 600, textDecoration: 'none' };

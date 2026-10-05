@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState, type CSSProperties } from 'react';
+import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -316,7 +317,7 @@ export default function InProgressPage() {
                               type="button"
                               onClick={() => decide(id, 'deny', denyNote.trim())}
                               disabled={busyId === id}
-                              style={denyConfirmBtn}
+                              className={`${btnDanger} ${btnSm}`}
                             >
                               {busyId === id ? 'Denying…' : 'Confirm Deny'}
                             </button>
@@ -324,7 +325,7 @@ export default function InProgressPage() {
                               type="button"
                               onClick={() => { setDenyForId(null); setDenyNote(''); }}
                               disabled={busyId === id}
-                              style={ghostBtn}
+                              className={`${btn} ${btnSm}`}
                             >
                               Cancel
                             </button>
@@ -336,7 +337,7 @@ export default function InProgressPage() {
                             type="button"
                             onClick={() => decide(id, 'approve')}
                             disabled={busyId === id}
-                            style={approveBtn}
+                            className={`${btnPrimary} ${btnSm}`}
                           >
                             {busyId === id ? 'Approving…' : 'Approve Second Note'}
                           </button>
@@ -344,7 +345,7 @@ export default function InProgressPage() {
                             type="button"
                             onClick={() => { setDenyForId(id); setActionError(null); }}
                             disabled={busyId === id}
-                            style={denyBtn}
+                            className={`${btnDanger} ${btnSm}`}
                           >
                             Deny
                           </button>
@@ -618,44 +619,6 @@ const approvalPanel: CSSProperties = {
   borderRadius: 8,
   padding: '14px 16px',
   marginBottom: 14,
-};
-
-const approveBtn: CSSProperties = {
-  background: '#0e7c4a',
-  color: 'white',
-  border: 'none',
-  padding: '8px 14px',
-  borderRadius: 6,
-  fontSize: 13,
-  fontWeight: 700,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-
-const denyBtn: CSSProperties = {
-  background: 'white',
-  color: '#b3261e',
-  border: '1px solid #f5c6c0',
-  padding: '8px 14px',
-  borderRadius: 6,
-  fontSize: 13,
-  fontWeight: 700,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-
-const denyConfirmBtn: CSSProperties = { ...denyBtn, background: '#fdecea' };
-
-const ghostBtn: CSSProperties = {
-  background: 'transparent',
-  color: '#6b7280',
-  border: '1px solid #d1d5db',
-  padding: '8px 14px',
-  borderRadius: 6,
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
 };
 
 const denyTextareaStyle: CSSProperties = {

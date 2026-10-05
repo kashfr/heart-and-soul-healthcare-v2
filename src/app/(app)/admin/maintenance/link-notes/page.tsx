@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { btn, btnPrimary, btnSm } from '@/components/buttons';
 import Link from 'next/link';
 import { useAuth } from '@/components/AuthProvider';
 import { authedFetch } from '@/lib/authedFetch';
@@ -101,19 +102,6 @@ const subStyle: React.CSSProperties = {
   lineHeight: 1.5,
 };
 
-const primaryBtn: React.CSSProperties = {
-  background: '#0e7c4a',
-  color: 'white',
-  border: 'none',
-  padding: '10px 18px',
-  borderRadius: 6,
-  fontSize: 14,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-  whiteSpace: 'nowrap',
-};
-
 const cardStyle: React.CSSProperties = {
   background: 'white',
   border: '1px solid #dfe5ec',
@@ -146,30 +134,6 @@ const candidateRowStyle: React.CSSProperties = {
   gap: 12,
   padding: '8px 0',
   borderTop: '1px solid #eef2f7',
-};
-
-const linkBtnStyle: React.CSSProperties = {
-  background: '#0e7c4a',
-  color: 'white',
-  border: 'none',
-  padding: '6px 12px',
-  borderRadius: 4,
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-
-const skipBtnStyle: React.CSSProperties = {
-  background: 'white',
-  color: '#5c6b7a',
-  border: '1px solid #dfe5ec',
-  padding: '6px 12px',
-  borderRadius: 4,
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
 };
 
 const summaryStyle: React.CSSProperties = {
@@ -358,7 +322,7 @@ export default function LinkNotesPage() {
           type="button"
           onClick={runBackfill}
           disabled={runningBackfill}
-          style={{ ...primaryBtn, opacity: runningBackfill ? 0.6 : 1, cursor: runningBackfill ? 'wait' : 'pointer' }}
+          className={btnPrimary}
         >
           {runningBackfill ? 'Running…' : 'Run Backfill'}
         </button>
@@ -392,7 +356,7 @@ export default function LinkNotesPage() {
               type="button"
               onClick={() => runAgeFix(false)}
               disabled={ageBusy !== null}
-              style={{ ...skipBtnStyle, padding: '10px 16px', fontSize: 14, opacity: ageBusy ? 0.6 : 1 }}
+              className={btn}
             >
               {ageBusy === 'preview' ? 'Previewing…' : 'Preview'}
             </button>
@@ -401,7 +365,7 @@ export default function LinkNotesPage() {
               onClick={() => runAgeFix(true)}
               disabled={ageBusy !== null || !ageResult || ageResult.changeCount === 0}
               title={!ageResult ? 'Run Preview first' : ageResult.changeCount === 0 ? 'Nothing to fix' : undefined}
-              style={{ ...primaryBtn, opacity: ageBusy !== null || !ageResult || ageResult.changeCount === 0 ? 0.5 : 1 }}
+              className={btnPrimary}
             >
               {ageBusy === 'apply' ? 'Applying…' : 'Apply Fixes'}
             </button>
@@ -470,7 +434,7 @@ export default function LinkNotesPage() {
             type="button"
             onClick={runDuplicateAudit}
             disabled={dupBusy}
-            style={{ ...primaryBtn, opacity: dupBusy ? 0.6 : 1, cursor: dupBusy ? 'wait' : 'pointer' }}
+            className={btnPrimary}
           >
             {dupBusy ? 'Scanning…' : 'Scan for Duplicates'}
           </button>
@@ -585,7 +549,7 @@ export default function LinkNotesPage() {
                       type="button"
                       onClick={() => linkOrSkip(item.noteId, c.patientId)}
                       disabled={isProcessing}
-                      style={{ ...linkBtnStyle, opacity: isProcessing ? 0.6 : 1 }}
+                      className={`${btnPrimary} ${btnSm}`}
                     >
                       Link
                     </button>
@@ -597,7 +561,7 @@ export default function LinkNotesPage() {
                   type="button"
                   onClick={() => linkOrSkip(item.noteId, null)}
                   disabled={processingIds.has(item.noteId)}
-                  style={{ ...skipBtnStyle, opacity: processingIds.has(item.noteId) ? 0.6 : 1 }}
+                  className={`${btn} ${btnSm}`}
                 >
                   Skip — None of the Above
                 </button>

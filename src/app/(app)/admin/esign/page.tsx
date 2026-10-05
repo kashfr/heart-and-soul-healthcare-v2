@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { btn, btnDanger, btnSm } from '@/components/buttons';
 import { AlertTriangle, ArchiveRestore, CheckCircle2, Clock, Eye, EyeOff, ExternalLink, PenLine, RefreshCw, Search, Upload, X, XCircle } from 'lucide-react';
 import PdfPreviewModal from '@/components/PdfPreviewModal';
 import { authedFetch } from '@/lib/authedFetch';
@@ -181,17 +182,17 @@ export default function EsignPage() {
         </td>
         <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
           {canFiles && p.signedCopy && (
-            <button onClick={() => setPreview(p)} style={ghostBtnStyle} disabled={busy === p.id} title={`View the signed copy (uploaded by ${p.signedCopy.uploadedByName})`}>
+            <button onClick={() => setPreview(p)} className={`${btn} ${btnSm}`} disabled={busy === p.id} title={`View the signed copy (uploaded by ${p.signedCopy.uploadedByName})`}>
               <Eye size={14} /> View Signed Copy
             </button>
           )}
           {!p.signedCopy && (
-            <a href={pandadocUrl(p.id)} target="_blank" rel="noopener noreferrer" style={{ ...ghostBtnStyle, textDecoration: 'none' }} title="Open this document in PandaDoc (sign in to PandaDoc if asked)">
+            <a href={pandadocUrl(p.id)} target="_blank" rel="noopener noreferrer" className={`${btn} ${btnSm}`} title="Open this document in PandaDoc (sign in to PandaDoc if asked)">
               <ExternalLink size={14} /> View in PandaDoc
             </a>
           )}
           {canFiles && p.stage === 'completed' && !p.signedCopy && (
-            <button onClick={() => pickUpload(p.id)} style={{ ...ghostBtnStyle, marginLeft: 6 }} disabled={busy === p.id}>
+            <button onClick={() => pickUpload(p.id)} className={`${btn} ${btnSm}`} style={{ marginLeft: 6 }} disabled={busy === p.id}>
               <Upload size={14} /> {busy === p.id ? 'Saving…' : 'Attach Signed PDF'}
             </button>
           )}
@@ -199,13 +200,14 @@ export default function EsignPage() {
             <span style={metaStyle}>{p.signedCopy ? 'Signed copy on file' : 'Signed copy not attached yet'}</span>
           )}
           {canFiles && p.signedCopy && (
-            <button onClick={() => pickUpload(p.id)} style={{ ...ghostBtnStyle, marginLeft: 6 }} disabled={busy === p.id} title="Attach a different PDF in its place">
+            <button onClick={() => pickUpload(p.id)} className={`${btn} ${btnSm}`} style={{ marginLeft: 6 }} disabled={busy === p.id} title="Attach a different PDF in its place">
               <Upload size={14} /> Replace
             </button>
           )}
           <button
             onClick={() => setHidden(p, !p.hidden)}
-            style={{ ...ghostBtnStyle, marginLeft: 6 }}
+            className={`${p.hidden ? btn : btnDanger} ${btnSm}`}
+            style={{ marginLeft: 6 }}
             disabled={busy === p.id}
             title={p.hidden ? 'Put it back on the list' : 'Take it off this list'}
           >
@@ -228,7 +230,7 @@ export default function EsignPage() {
               {canFiles ? ' When a packet is complete, attach the signed PDF from PandaDoc here.' : ''}
             </p>
           </div>
-          <button onClick={load} style={ghostBtnStyle} title="Refresh">
+          <button onClick={load} className={btn} title="Refresh">
             <RefreshCw size={15} /> Refresh
           </button>
         </header>
@@ -322,7 +324,6 @@ const kickerStyle: React.CSSProperties = { fontSize: 12, fontWeight: 700, letter
 const titleStyle: React.CSSProperties = { fontSize: 32, color: '#2c3e50', margin: '4px 0 0' };
 const subtitleStyle: React.CSSProperties = { color: '#7f8c8d', fontSize: 15, marginTop: 6, maxWidth: 640 };
 const sectionTitleStyle: React.CSSProperties = { fontSize: 15, fontWeight: 700, color: '#2c3e50', margin: '0 0 10px' };
-const ghostBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', border: '1px solid #d1d5db', borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer', fontFamily: 'inherit' };
 const warnBannerStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, background: '#fef7e0', border: '1px solid #f3d27a', color: '#6b4a00', borderRadius: 8, padding: '10px 14px', fontSize: 13.5, marginBottom: 14 };
 const searchWrapStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, background: 'white', border: '1px solid #d1d5db', borderRadius: 8, padding: '7px 12px', maxWidth: 360 };
 const searchInputStyle: React.CSSProperties = { border: 'none', outline: 'none', fontSize: 14, flex: 1, fontFamily: 'inherit', color: '#111827' };

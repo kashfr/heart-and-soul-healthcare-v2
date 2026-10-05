@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
 import { Scale, Pencil, Plus, Trash2 } from 'lucide-react';
 import { formatDateUS } from '@/lib/dateFormat';
 import { getGuardian, saveGuardian } from '@/lib/guardian';
@@ -134,7 +135,7 @@ export default function GuardianSection({ patientId, canEdit, actorName, onToast
       <div style={head}>
         <div style={title}><Scale size={16} /> Guardian and Responsible Parties</div>
         {canEdit && !editing && record !== undefined && !loadError && (
-          <button type="button" onClick={startEdit} style={ghostBtn}>
+          <button type="button" onClick={startEdit} className={btn}>
             <Pencil size={13} /> {hasRecord ? 'Edit' : 'Add'}
           </button>
         )}
@@ -200,7 +201,7 @@ export default function GuardianSection({ patientId, canEdit, actorName, onToast
                 <div key={c.id} style={editRow}>
                   <div style={editRowHead}>
                     <span style={{ fontWeight: 700, color: NAVY, fontSize: 13 }}>Contact {i + 1}</span>
-                    <button type="button" onClick={() => setDraft((d) => d.filter((x) => x.id !== c.id))} style={removeBtn} aria-label={`Remove contact ${i + 1}`}>
+                    <button type="button" onClick={() => setDraft((d) => d.filter((x) => x.id !== c.id))} className={`${btnDanger} ${btnSm}`} aria-label={`Remove contact ${i + 1}`}>
                       <Trash2 size={13} /> Remove
                     </button>
                   </div>
@@ -235,13 +236,13 @@ export default function GuardianSection({ patientId, canEdit, actorName, onToast
             })}
             <FieldError message={errors.contacts} />
           </div>
-          <button type="button" onClick={() => setDraft((d) => [...d, { id: newId(), role: '', name: '' }])} style={{ ...ghostBtn, marginTop: 6 }}>
+          <button type="button" onClick={() => setDraft((d) => [...d, { id: newId(), role: '', name: '' }])} className={btn} style={{ marginTop: 6 }}>
             <Plus size={13} /> Add Contact
           </button>
           {saveError && <div style={{ ...errBox, marginTop: 10 }}>{saveError}</div>}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-            <button type="button" onClick={() => setEditing(false)} style={ghostBtn} disabled={saving}>Cancel</button>
-            <button type="button" onClick={save} style={primaryBtn} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+            <button type="button" onClick={() => setEditing(false)} className={btn} disabled={saving}>Cancel</button>
+            <button type="button" onClick={save} className={btnPrimary} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
           </div>
         </div>
       )}
@@ -262,9 +263,6 @@ function Field({ id, label: l, error, wide, children }: { id?: string; label: st
 const card: CSSProperties = { background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: 18, marginBottom: 14 };
 const head: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 };
 const title: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 700, color: NAVY };
-const ghostBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', border: '1px solid #d0d7de', borderRadius: 6, padding: '6px 10px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', color: NAVY };
-const removeBtn: CSSProperties = { ...ghostBtn, color: '#b3261e', padding: '4px 8px' };
-const primaryBtn: CSSProperties = { background: NAVY, color: 'white', border: '1px solid ' + NAVY, borderRadius: 6, padding: '7px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
 const choiceBtn: CSSProperties = { background: 'white', border: '1px solid #d0d7de', borderRadius: 6, padding: '6px 12px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: NAVY };
 const choiceBtnOn: CSSProperties = { background: NAVY, color: 'white', border: '1px solid ' + NAVY };
 const errBox: CSSProperties = { background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '8px 11px', fontSize: 13 };

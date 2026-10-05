@@ -1,6 +1,7 @@
 'use client';
 
 import FromVisitBanner from '@/components/FromVisitBanner';
+import { btn, btnPrimary } from '@/components/buttons';
 import { Suspense, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
@@ -197,8 +198,8 @@ function Inner() {
                 : `The signed plan is saved as the current service plan for ${patient?.name || 'this client'}, but the PDF could not be filed under Documents. Open the plan and download the PDF to file it by hand.`}
             </p>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 18, flexWrap: 'wrap' }}>
-              <Link href={`/admin/clients/${patientId}?tab=serviceplan`} style={primaryLinkStyle}>View Service Plan</Link>
-              <Link href={`/admin/clients/${patientId}`} style={secondaryLinkStyle}>Back to {patient?.name || 'Client'}</Link>
+              <Link href={`/admin/clients/${patientId}?tab=serviceplan`} className={btnPrimary}>View Service Plan</Link>
+              <Link href={`/admin/clients/${patientId}`} className={btn}>Back to {patient?.name || 'Client'}</Link>
             </div>
           </div>
         </div>
@@ -448,8 +449,8 @@ function Inner() {
         </section>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <Link href={`/admin/clients/${patientId}?tab=serviceplan`} style={secondaryLinkStyle}>Cancel</Link>
-          <button type="button" style={{ ...primaryBtnStyle, opacity: submitting ? 0.6 : 1 }} disabled={submitting} onClick={() => void submit()}>{submitting ? 'Signing...' : 'Sign and File the Plan'}</button>
+          <Link href={`/admin/clients/${patientId}?tab=serviceplan`} className={btn}>Cancel</Link>
+          <button type="button" className={btnPrimary} disabled={submitting} onClick={() => void submit()}>{submitting ? 'Signing...' : 'Sign and File the Plan'}</button>
         </div>
       </div>
       <style jsx global>{`.service-plan-sig { width: 100%; height: auto; display: block; touch-action: none; }`}</style>
@@ -510,6 +511,3 @@ const goalHeadStyle: CSSProperties = { display: 'grid', gridTemplateColumns: '1f
 const goalRowStyle: CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr 28px', gap: 8, marginBottom: 8 };
 const sigWrapStyle: CSSProperties = { border: '1px solid #d0d7de', borderRadius: 8, overflow: 'hidden', background: 'white' };
 const linkBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'transparent', border: 'none', color: NAVY, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', padding: 0 };
-const primaryBtnStyle: CSSProperties = { background: NAVY, color: 'white', border: 'none', padding: '11px 18px', borderRadius: 8, fontSize: 14.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
-const primaryLinkStyle: CSSProperties = { ...primaryBtnStyle, textDecoration: 'none', display: 'inline-block' };
-const secondaryLinkStyle: CSSProperties = { display: 'inline-block', background: 'white', color: '#374151', border: '1px solid #d0d7de', padding: '11px 16px', borderRadius: 8, fontSize: 14, fontWeight: 600, textDecoration: 'none' };

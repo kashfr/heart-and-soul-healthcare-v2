@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, use, useMemo, createContext, useContext } from 'react';
+import { btn, btnPrimary } from '@/components/buttons';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { CheckCircle2 } from 'lucide-react';
@@ -467,7 +468,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
                       ? `/supervisory-visit?edit=${id}`
                       : `/progress-note?edit=${id}`
                 }
-                className={styles.btn}
+                className={btn}
               >
                 Amend
               </Link>
@@ -475,7 +476,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             {hasValue(data.patientId) && isShift && (
               <Link
                 href={`/admin/records/${data.patientId}/mar`}
-                className={styles.btn}
+                className={btn}
                 title="Open this client's MAR to check the orders against what the note reports"
               >
                 MAR
@@ -484,7 +485,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             <button
               onClick={handleDownloadPdf}
               disabled={downloadingPdf}
-              className={styles.btnPrimary}
+              className={btnPrimary}
             >
               {downloadingPdf ? 'Generating PDF…' : 'Download PDF'}
             </button>
@@ -492,14 +493,14 @@ export default function SubmissionDetailPage({ params }: PageProps) {
               isArchivedForViewer ? (
                 <button
                   onClick={() => handleArchiveToggle('restore')}
-                  className={styles.btn}
+                  className={btn}
                 >
                   Restore
                 </button>
               ) : (
                 <button
                   onClick={() => handleArchiveToggle('archive')}
-                  className={styles.btn}
+                  className={btn}
                 >
                   Archive
                 </button>
@@ -1563,7 +1564,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
               <button
                 type="button"
                 onClick={() => setCosignModalOpen(true)}
-                style={stickyCosignBtnStyle}
+                className={btnPrimary}
               >
                 <CheckCircle2 size={16} />
                 Co-Sign This Note
@@ -1796,20 +1797,6 @@ const stickyCosignInnerStyle: React.CSSProperties = {
   justifyContent: 'space-between',
   gap: 16,
   flexWrap: 'wrap',
-};
-
-const stickyCosignBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: '#27ae60',
-  color: 'white',
-  border: 'none',
-  padding: '10px 18px',
-  borderRadius: 6,
-  fontSize: 14,
-  fontWeight: 700,
-  cursor: 'pointer',
 };
 
 const cosignToastStyle: React.CSSProperties = {

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
 import { CalendarClock, CalendarPlus, Check, HandHelping, History, Undo2, UserCheck, X } from 'lucide-react';
 import {
   acceptOfferedVisit,
@@ -143,19 +144,19 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
       {isStaff && (
         <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {isOpen(v) && canTake && (
-            <button type="button" onClick={() => accept(v)} disabled={busyId === v.id} style={acceptBtnStyle} title="Take this visit">
+            <button type="button" onClick={() => accept(v)} disabled={busyId === v.id} className={`${btnPrimary} ${btnSm}`} title="Take this visit">
               <UserCheck size={13} /> Accept
             </button>
           )}
           {v.type === 'supervisory' && v.status === 'scheduled' && !isOpen(v) && (
-            <button type="button" onClick={() => setHandOffFor(v)} disabled={busyId === v.id} style={actionBtnStyle} title="Hand this visit to another supervisor">
+            <button type="button" onClick={() => setHandOffFor(v)} disabled={busyId === v.id} className={`${btn} ${btnSm}`} title="Hand this visit to another supervisor">
               <HandHelping size={13} /> Hand Off
             </button>
           )}
-          <button type="button" onClick={() => mark(v, 'completed')} disabled={busyId === v.id} style={actionBtnStyle} title="Mark completed">
+          <button type="button" onClick={() => mark(v, 'completed')} disabled={busyId === v.id} className={`${btn} ${btnSm}`} title="Mark completed">
             <Check size={13} /> Done
           </button>
-          <button type="button" onClick={() => mark(v, 'cancelled')} disabled={busyId === v.id} style={actionBtnStyle} title="Cancel this visit">
+          <button type="button" onClick={() => mark(v, 'cancelled')} disabled={busyId === v.id} className={`${btnDanger} ${btnSm}`} title="Cancel this visit">
             <X size={13} /> Cancel
           </button>
         </div>
@@ -188,7 +189,7 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
           </button>
         </div>
         {isStaff && (
-          <button type="button" onClick={() => { setAddDate(null); setAddOpen(true); }} style={addBtnStyle}>
+          <button type="button" onClick={() => { setAddDate(null); setAddOpen(true); }} className={btnPrimary}>
             <CalendarPlus size={15} /> Add Visit
           </button>
         )}
@@ -264,7 +265,7 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
                       type="button"
                       onClick={() => mark(v, 'scheduled')}
                       disabled={busyId === v.id}
-                      style={actionBtnStyle}
+                      className={`${btn} ${btnSm}`}
                       title="Put this visit back on the schedule"
                     >
                       <Undo2 size={13} /> Restore
@@ -498,10 +499,10 @@ function AddVisitModal({
         {error && <div style={errBoxStyle}>{error}</div>}
 
         <div style={actionsStyle}>
-          <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={busy}>
+          <button type="button" className={btn} onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button type="button" style={saveBtnStyle} onClick={save} disabled={busy}>
+          <button type="button" className={btnPrimary} onClick={save} disabled={busy}>
             {busy ? 'Saving…' : 'Schedule Visit'}
           </button>
         </div>
@@ -591,8 +592,8 @@ function HandOffModal({ visit, actorUid, onClose, onDone }: { visit: PatientVisi
         </label>
         {error && <div style={errBoxStyle}>{error}</div>}
         <div style={actionsStyle}>
-          <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={busy}>Cancel</button>
-          <button type="button" style={saveBtnStyle} onClick={save} disabled={busy}>
+          <button type="button" className={btn} onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="button" className={btnPrimary} onClick={save} disabled={busy}>
             {busy ? 'Sending…' : toUid ? 'Hand Off' : 'Release to All Supervisors'}
           </button>
         </div>
@@ -604,7 +605,6 @@ function HandOffModal({ visit, actorUid, onClose, onDone }: { visit: PatientVisi
 const NAVY = '#1a3a5c';
 const toolbarStyle: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 12 };
 const hintStyle: CSSProperties = { fontSize: 12.5, color: '#7f8c8d', flex: 1, minWidth: 200 };
-const addBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: NAVY, color: 'white', border: 'none', padding: '7px 13px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
 const groupLabelStyle: CSSProperties = { fontSize: 11.5, fontWeight: 700, color: '#8a949e', textTransform: 'uppercase', letterSpacing: 0.4, margin: '10px 0 6px' };
 const viewToggleStyle: CSSProperties = { display: 'inline-flex', background: '#eef2f6', borderRadius: 8, padding: 2, gap: 2 };
 const viewPillStyle: CSSProperties = { background: 'transparent', border: 'none', padding: '5px 12px', borderRadius: 6, fontSize: 12.5, fontWeight: 600, color: '#5c6b7a', cursor: 'pointer', fontFamily: 'inherit' };
@@ -615,14 +615,12 @@ const overdueRowStyle: CSSProperties = { background: '#fff7e6', borderColor: '#f
 const supChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#e0e7ff', color: '#3730a3', fontSize: 10.5, fontWeight: 700 };
 const shiftChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#e8eef4', color: NAVY, fontSize: 10.5, fontWeight: 700 };
 const openChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#fff3e0', color: '#b45309', fontSize: 10.5, fontWeight: 700 };
-const acceptBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: '#0e7c4a', color: 'white', border: '1px solid #0e7c4a', padding: '6px 10px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
 const overdueChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#fdeaea', color: '#b3261e', fontSize: 10.5, fontWeight: 700 };
 const notesStyle: CSSProperties = { fontSize: 12.5, color: '#7f8c8d', marginTop: 3 };
 const moreLineStyle: CSSProperties = { fontSize: 12, color: '#8a949e', marginTop: 8, paddingLeft: 4 };
 const historyToggleStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, background: 'transparent', border: 'none', color: '#5c6b7a', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', padding: 0 };
 const doneChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#e8f4e8', color: '#1e5c1e', fontSize: 10.5, fontWeight: 700 };
 const cancelledChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#f1f5f9', color: '#64748b', fontSize: 10.5, fontWeight: 700 };
-const actionBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'white', color: '#2c3e50', border: '1px solid #d0d7de', padding: '6px 10px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
 const emptyStyle: CSSProperties = { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px 14px', color: '#7f8c8d', fontSize: 13, textAlign: 'center', background: '#f8fafc', borderRadius: 8 };
 const backdropStyle: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 3200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '10vh 16px', overflowY: 'auto' };
 const sheetStyle: CSSProperties = { width: '100%', maxWidth: 480, background: 'white', borderRadius: 12, padding: 18, boxShadow: '0 10px 40px rgba(0,0,0,0.25)' };
@@ -639,8 +637,6 @@ const selectStyle: CSSProperties = {
 const grid2Style: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 };
 const errBoxStyle: CSSProperties = { background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '8px 11px', fontSize: 13, marginBottom: 10 };
 const actionsStyle: CSSProperties = { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 };
-const cancelBtnStyle: CSSProperties = { background: 'white', color: '#374151', border: '1px solid #d0d7de', padding: '9px 16px', borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const saveBtnStyle: CSSProperties = { background: NAVY, color: 'white', border: `1px solid ${NAVY}`, padding: '9px 16px', borderRadius: 6, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
 
 function dateBadgeStyle(isOverdue: boolean): CSSProperties {
   return {

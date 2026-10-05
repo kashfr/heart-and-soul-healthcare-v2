@@ -1,6 +1,7 @@
 'use client';
 
 import FromVisitBanner from '@/components/FromVisitBanner';
+import { btn, btnPrimary } from '@/components/buttons';
 import { Suspense, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -160,7 +161,7 @@ function Inner() {
     return (
       <Shell>
         <div style={noticeStyle}><AlertTriangle size={16} /> This client has no service plan to review yet.</div>
-        <Link href={reviseHref} style={primaryLinkStyle}>Write the Service Plan</Link>
+        <Link href={reviseHref} className={btnPrimary}>Write the Service Plan</Link>
       </Shell>
     );
   }
@@ -178,7 +179,7 @@ function Inner() {
               : 'The review is saved, but its PDF could not be filed under Documents. Open it from the Service plan tab and file it by hand.'}
           </p>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 18, flexWrap: 'wrap' }}>
-            <Link href={tabHref} style={primaryLinkStyle}>View Service Plan</Link>
+            <Link href={tabHref} className={btnPrimary}>View Service Plan</Link>
           </div>
         </div>
       </Shell>
@@ -221,7 +222,7 @@ function Inner() {
           <p style={{ margin: '0 0 10px', lineHeight: 1.5 }}>
             The rules require the plan to be revised when any of these items change. Revise the plan, or, if these differences do not change the plan, explain why in the note below.
           </p>
-          <Link href={reviseHref} style={primaryLinkStyle}><PenLine size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Revise the Plan Instead</Link>
+          <Link href={reviseHref} className={btnPrimary}><PenLine size={14} style={{ verticalAlign: -2, marginRight: 6 }} />Revise the Plan Instead</Link>
         </section>
       ) : (
         <div style={okBoxStyle}><CheckCircle2 size={16} style={{ flexShrink: 0 }} /> The diagnosis, allergies, diet, active medications and approved care-plan tasks in the client record all match this plan.</div>
@@ -266,8 +267,8 @@ function Inner() {
       </section>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-        <Link href={tabHref} style={secondaryLinkStyle}>Cancel</Link>
-        <button type="button" style={{ ...primaryBtnStyle, opacity: submitting ? 0.6 : 1 }} disabled={submitting} onClick={() => void submit()}>{submitting ? 'Saving...' : 'Sign the Review'}</button>
+        <Link href={tabHref} className={btn}>Cancel</Link>
+        <button type="button" className={btnPrimary} disabled={submitting} onClick={() => void submit()}>{submitting ? 'Saving...' : 'Sign the Review'}</button>
       </div>
       <style jsx global>{`.service-plan-sig { width: 100%; height: auto; display: block; touch-action: none; }`}</style>
     </Shell>
@@ -309,6 +310,3 @@ const errorLinkStyle: CSSProperties = { background: 'transparent', border: 'none
 const checkRowStyle: CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 14, color: '#2c3e50', lineHeight: 1.45, cursor: 'pointer' };
 const sigWrapStyle: CSSProperties = { border: '1px solid #d0d7de', borderRadius: 8, overflow: 'hidden', background: 'white' };
 const linkBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'transparent', border: 'none', color: NAVY, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', padding: 0 };
-const primaryBtnStyle: CSSProperties = { background: NAVY, color: 'white', border: 'none', padding: '11px 18px', borderRadius: 8, fontSize: 14.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
-const primaryLinkStyle: CSSProperties = { ...primaryBtnStyle, textDecoration: 'none', display: 'inline-block', fontSize: 13.5, padding: '9px 14px' };
-const secondaryLinkStyle: CSSProperties = { display: 'inline-block', background: 'white', color: '#374151', border: '1px solid #d0d7de', padding: '11px 16px', borderRadius: 8, fontSize: 14, fontWeight: 600, textDecoration: 'none' };

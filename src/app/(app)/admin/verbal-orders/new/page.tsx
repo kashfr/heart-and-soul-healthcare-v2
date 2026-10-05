@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { btn, btnPrimary, btnSm } from '@/components/buttons';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { AlertTriangle, CheckCircle2, PhoneCall, Pill, Plus, X } from 'lucide-react';
@@ -177,8 +178,8 @@ function NewVerbalOrderInner() {
               </p>
             )}
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 18, flexWrap: 'wrap' }}>
-              <Link href={`/admin/verbal-orders?vo=${done.id}`} style={primaryLinkStyle}>View in Verbal Orders</Link>
-              {patientId && <Link href={`/admin/clients/${patientId}`} style={secondaryLinkStyle}>Back to {patient?.name || 'client'}</Link>}
+              <Link href={`/admin/verbal-orders?vo=${done.id}`} className={btnPrimary}>View in Verbal Orders</Link>
+              {patientId && <Link href={`/admin/clients/${patientId}`} className={btn}>Back to {patient?.name || 'client'}</Link>}
             </div>
           </div>
         </div>
@@ -302,7 +303,7 @@ function NewVerbalOrderInner() {
                     order is marked &ldquo;verbal, awaiting signature&rdquo; until the physician&apos;s signed copy comes back.
                   </div>
                 </div>
-                <button type="button" style={secondaryBtnStyle} disabled={!patientId || submitting || !!marApplied} onClick={() => setMarModalOpen(true)}>
+                <button type="button" className={`${btn} ${btnSm}`} disabled={!patientId || submitting || !!marApplied} onClick={() => setMarModalOpen(true)}>
                   <Plus size={14} /> {marApplied ? 'Entered' : 'Enter on MAR'}
                 </button>
               </div>
@@ -338,8 +339,8 @@ function NewVerbalOrderInner() {
         </section>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
-          <Link href={patientId ? `/admin/clients/${patientId}` : '/admin'} style={secondaryLinkStyle}>Cancel</Link>
-          <button type="button" style={{ ...primaryBtnStyle, opacity: submitting ? 0.6 : 1 }} disabled={submitting} onClick={() => void submit()}>
+          <Link href={patientId ? `/admin/clients/${patientId}` : '/admin'} className={btn}>Cancel</Link>
+          <button type="button" className={btnPrimary} disabled={submitting} onClick={() => void submit()}>
             {submitting ? 'Saving and faxing…' : 'Save and Fax to Physician'}
           </button>
         </div>
@@ -395,7 +396,3 @@ const marDoneStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap
 const checkRowStyle: CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13.5, color: '#2c3e50', lineHeight: 1.45, cursor: 'pointer' };
 const sigWrapStyle: CSSProperties = { border: '1px solid #d0d7de', borderRadius: 8, overflow: 'hidden', background: 'white' };
 const linkBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'transparent', border: 'none', color: '#5c6b7a', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const primaryBtnStyle: CSSProperties = { background: NAVY, color: 'white', border: 'none', padding: '11px 18px', borderRadius: 8, fontSize: 14.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
-const secondaryBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', color: NAVY, border: `1px solid ${NAVY}`, padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
-const primaryLinkStyle: CSSProperties = { ...primaryBtnStyle, textDecoration: 'none', display: 'inline-block' };
-const secondaryLinkStyle: CSSProperties = { display: 'inline-block', background: 'white', color: '#374151', border: '1px solid #d0d7de', padding: '11px 16px', borderRadius: 8, fontSize: 14, fontWeight: 600, textDecoration: 'none' };

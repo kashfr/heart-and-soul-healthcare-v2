@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { btn, btnDanger, btnIcon, btnPrimary, btnSm } from '@/components/buttons';
 import Link from 'next/link';
 import { ArrowLeft, DollarSign, Pencil, Plus, Trash2 } from 'lucide-react';
 import { AuthGuard } from '@/components/AuthGuard';
@@ -124,7 +125,7 @@ function BillingRatesInner() {
           </p>
         </div>
         {editing === null && (
-          <button type="button" onClick={() => setEditing('new')} style={primaryBtn}><Plus size={14} /> Add Rate</button>
+          <button type="button" onClick={() => setEditing('new')} className={btnPrimary}><Plus size={14} /> Add Rate</button>
         )}
       </div>
 
@@ -194,8 +195,8 @@ function BillingRatesInner() {
                       <span style={active ? okBadge : future ? futureBadge : endedBadge}>{active ? 'Active' : future ? 'Upcoming' : 'Ended'}</span>
                     </td>
                     <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      <button type="button" onClick={() => setEditing(r)} style={iconBtn} aria-label="Edit rate" title="Edit this rate"><Pencil size={14} /></button>
-                      <button type="button" onClick={() => remove(r)} style={{ ...iconBtn, color: '#b3261e', marginLeft: 6 }} aria-label="Delete rate" title="Delete this rate"><Trash2 size={14} /></button>
+                      <button type="button" onClick={() => setEditing(r)} className={`${btn} ${btnIcon} ${btnSm}`} aria-label="Edit rate" title="Edit this rate"><Pencil size={14} /></button>
+                      <button type="button" onClick={() => remove(r)} className={`${btnDanger} ${btnIcon} ${btnSm}`} style={{ marginLeft: 6 }} aria-label="Delete rate" title="Delete this rate"><Trash2 size={14} /></button>
                     </td>
                   </tr>
                 );
@@ -321,8 +322,8 @@ function RateForm({ existing, uid, onCancel, onSaved }: {
       {rate && Number.isFinite(rateNum) && <div style={{ ...muted, marginTop: 6 }}>{fmtDollars(rateNum)} per unit = {fmtDollars(rateNum * 4)} per hour.</div>}
       {err && <div style={{ ...errBox, marginTop: 10 }}>{err}</div>}
       <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-        <button type="button" onClick={submit} disabled={saving} style={primaryBtn}>{saving ? 'Saving…' : existing ? 'Save Changes' : 'Add Rate'}</button>
-        <button type="button" onClick={onCancel} disabled={saving} style={smallBtn}>Cancel</button>
+        <button type="button" onClick={submit} disabled={saving} className={btnPrimary}>{saving ? 'Saving…' : existing ? 'Save Changes' : 'Add Rate'}</button>
+        <button type="button" onClick={onCancel} disabled={saving} className={btn}>Cancel</button>
       </div>
     </div>
   );
@@ -361,9 +362,6 @@ const rnChip: CSSProperties = { ...badgeBase, background: '#dbeafe', color: '#1d
 const shiftChip: CSSProperties = { ...badgeBase, background: '#e9f6f2', color: '#14544a', border: '1px solid #b9e3d8' };
 const credChip: CSSProperties = { ...badgeBase, background: '#eef4fb', color: NAVY, border: '1px solid #c8def5' };
 const anyChip: CSSProperties = { ...badgeBase, background: '#f8fafc', color: '#64748b', border: '1px solid #e2e8f0', fontWeight: 600 };
-const iconBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'white', border: '1px solid #d0d7de', borderRadius: 6, padding: 6, cursor: 'pointer', color: NAVY };
-const smallBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', border: '1px solid #d0d7de', borderRadius: 6, padding: '7px 12px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: NAVY, fontFamily: 'inherit' };
-const primaryBtn: CSSProperties = { ...smallBtn, background: NAVY, color: 'white', border: `1px solid ${NAVY}` };
 const formCard: CSSProperties = { border: '1px solid #c8def5', background: '#f8fbff', borderRadius: 10, padding: 14, marginBottom: 14 };
 const grid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 };
 const field: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 };

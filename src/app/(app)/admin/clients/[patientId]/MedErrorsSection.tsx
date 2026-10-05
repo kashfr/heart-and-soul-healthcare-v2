@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type CSSProperties } from 'react';
+import { btnPrimary } from '@/components/buttons';
 import Link from 'next/link';
 import { AlertTriangle, Check, Clock, Plus, ShieldAlert } from 'lucide-react';
 import { getMedErrorsForPatient, type MedErrorReport } from '@/lib/medErrors';
@@ -42,7 +43,7 @@ export default function MedErrorsSection({ patientId, canFile }: { patientId: st
           {open.length > 0 && <span style={countChipStyle}>{open.length} Awaiting Review</span>}
         </div>
         {canFile && (
-          <Link href={`/admin/med-errors/new?patient=${encodeURIComponent(patientId)}`} style={addBtnStyle}><Plus size={14} /> Report an Error</Link>
+          <Link href={`/admin/med-errors/new?patient=${encodeURIComponent(patientId)}`} className={btnPrimary}><Plus size={14} /> Report an Error</Link>
         )}
       </div>
       {items === null ? (
@@ -73,7 +74,6 @@ const NAVY = '#1a3a5c';
 const cardStyle: CSSProperties = { background: 'white', borderWidth: 1, borderStyle: 'solid', borderColor: '#e5e7eb', borderRadius: 12, padding: '16px 18px', marginTop: 16 };
 const headerRowStyle: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 12 };
 const titleStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 7, fontWeight: 700, fontSize: 15, color: NAVY };
-const addBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: NAVY, color: 'white', padding: '7px 13px', borderRadius: 8, fontSize: 13, fontWeight: 700, textDecoration: 'none' };
 const emptyStyle: CSSProperties = { padding: '16px 14px', color: '#7f8c8d', fontSize: 13, background: '#f8fafc', borderRadius: 8, lineHeight: 1.5 };
 const listStyle: CSSProperties = { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 };
 const rowStyle: CSSProperties = { background: 'white', borderWidth: 1, borderStyle: 'solid', borderColor: '#e5e7eb', borderLeftWidth: 4, borderRadius: 10, padding: '10px 12px' };

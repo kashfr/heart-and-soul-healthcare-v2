@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState, useEffect } from 'react';
+import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Archive as ArchiveIcon, Download, RotateCcw, X, Search, Plus, CheckCircle2, Clock, FileSpreadsheet } from 'lucide-react';
@@ -1297,7 +1298,7 @@ export default function SubmissionsPage() {
           {canAuthorProgressNote && (
             <Link
               href={myDraft ? '/progress-note?resume=1' : '/progress-note'}
-              className={styles.newNoteBtn}
+              className={btnPrimary}
             >
               <Plus size={16} />
               {myDraft ? 'Resume Draft' : 'New Progress Note'}
@@ -1306,14 +1307,14 @@ export default function SubmissionsPage() {
           {/* RN oversight visit note — same gate the form enforces: an RN
               credential, or an admin/supervisor signing in their own name. */}
           {canAuthorOversightNote && (
-            <Link href="/oversight-note" className={styles.newNoteBtnSecondary}>
+            <Link href="/oversight-note" className={btn}>
               <Plus size={16} />
               New Oversight Note
             </Link>
           )}
           {/* Home supervisory visit — supervisors and admins only, like the form. */}
           {canAuthorSupervisory && (
-            <Link href="/supervisory-visit" className={styles.newNoteBtnSecondary}>
+            <Link href="/supervisory-visit" className={btn}>
               <Plus size={16} />
               New Supervisory Visit
             </Link>
@@ -1673,11 +1674,7 @@ export default function SubmissionsPage() {
             {isRn && (
               <button
                 onClick={() => setCosignTargets([...selectedSubmissions])}
-                style={{
-                  ...bulkCosignBtnStyle,
-                  opacity: bulkCosignState.canBulkCosign ? 1 : 0.55,
-                  cursor: bulkCosignState.canBulkCosign ? 'pointer' : 'not-allowed',
-                }}
+                className={btnPrimary}
                 disabled={busy || !bulkCosignState.canBulkCosign}
                 title={
                   bulkCosignState.canBulkCosign
@@ -1689,14 +1686,15 @@ export default function SubmissionsPage() {
                 Co-Sign Selected
               </button>
             )}
-            <button onClick={openExportModal} style={exportBtnStyle} disabled={busy}>
+            {/* One primary per bar: co-signing leads for RNs, export for everyone else. */}
+            <button onClick={openExportModal} className={isRn ? btn : btnPrimary} disabled={busy}>
               <Download size={14} />
               Export as PDF
             </button>
             {scope !== 'archived' ? (
               <button
                 onClick={() => handleBulkArchive('archive')}
-                style={archiveBtnStyle}
+                className={btn}
                 disabled={busy}
               >
                 <ArchiveIcon size={14} />
@@ -1705,14 +1703,14 @@ export default function SubmissionsPage() {
             ) : (
               <button
                 onClick={() => handleBulkArchive('restore')}
-                style={restoreBtnStyle}
+                className={btn}
                 disabled={busy}
               >
                 <RotateCcw size={14} />
                 Restore
               </button>
             )}
-            <button onClick={clearSelection} style={clearBtnStyle} disabled={busy}>
+            <button onClick={clearSelection} className={btn} disabled={busy}>
               <X size={14} />
               Clear
             </button>
@@ -2014,13 +2012,13 @@ export default function SubmissionsPage() {
                       </td>
                       <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }} className={styles.cActions}>
                         <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
-                          <Link href="/progress-note?resume=1" style={viewBtnStyle}>
+                          <Link href="/progress-note?resume=1" className={`${btn} ${btnSm}`}>
                             Resume
                           </Link>
                           <button
                             onClick={handleDiscardDraft}
                             disabled={discardingDraft}
-                            style={rowArchiveBtnStyle}
+                            className={`${btnDanger} ${btnSm}`}
                           >
                             {discardingDraft ? 'Discarding…' : 'Discard'}
                           </button>
@@ -2253,7 +2251,7 @@ export default function SubmissionsPage() {
                               // which defeats the compliance review.
                               <Link
                                 href={`/admin/submissions/${s.id}?cosign=1${returnQs ? `&back=${encodeURIComponent(returnQs)}` : ''}`}
-                                style={rowCosignBtnStyle}
+                                className={`${btnPrimary} ${btnSm}`}
                                 title="Review and co-sign this note"
                               >
                                 Co-Sign
@@ -2270,7 +2268,7 @@ export default function SubmissionsPage() {
                               rowArchived ? (
                                 <button
                                   onClick={() => handleRowArchive(s, 'restore')}
-                                  style={rowArchiveBtnStyle}
+                                  className={`${btn} ${btnSm}`}
                                   disabled={busy}
                                 >
                                   Restore
@@ -2278,7 +2276,7 @@ export default function SubmissionsPage() {
                               ) : (
                                 <button
                                   onClick={() => handleRowArchive(s, 'archive')}
-                                  style={rowArchiveBtnStyle}
+                                  className={`${btn} ${btnSm}`}
                                   disabled={busy}
                                 >
                                   Archive
@@ -2290,7 +2288,7 @@ export default function SubmissionsPage() {
                             {role === 'admin' && (
                               <button
                                 onClick={() => handleRowDelete(s)}
-                                style={rowDeleteBtnStyle}
+                                className={`${btnDanger} ${btnSm}`}
                                 disabled={busy}
                                 title="Permanently delete this note (admin only)"
                               >
@@ -2312,7 +2310,7 @@ export default function SubmissionsPage() {
                   type="button"
                   onClick={() => updateParams({ p: String(safePage - 1) })}
                   disabled={safePage <= 1}
-                  style={safePage <= 1 ? { ...pageBtnStyle, ...pageBtnDisabledStyle } : pageBtnStyle}
+                  className={`${btn} ${btnSm}`}
                 >
                   ← Prev
                 </button>
@@ -2323,7 +2321,7 @@ export default function SubmissionsPage() {
                   type="button"
                   onClick={() => updateParams({ p: String(safePage + 1) })}
                   disabled={safePage >= pageCount}
-                  style={safePage >= pageCount ? { ...pageBtnStyle, ...pageBtnDisabledStyle } : pageBtnStyle}
+                  className={`${btn} ${btnSm}`}
                 >
                   Next →
                 </button>
@@ -2425,11 +2423,11 @@ export default function SubmissionsPage() {
                 <button
                   onClick={closeExportModal}
                   disabled={exporting}
-                  style={secondaryBtnStyle}
+                  className={btn}
                 >
                   Cancel
                 </button>
-                <button onClick={handleExport} disabled={exporting} style={primaryBtnStyle}>
+                <button onClick={handleExport} disabled={exporting} className={btnPrimary}>
                   {exporting ? 'Exporting…' : 'Download'}
                 </button>
               </div>
@@ -2825,80 +2823,6 @@ const clearFiltersBtnStyle: React.CSSProperties = {
   fontFamily: 'inherit',
 };
 
-const archiveBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: '#5c6b7a',
-  color: 'white',
-  padding: '8px 14px',
-  borderRadius: 6,
-  border: 'none',
-  fontSize: 13,
-  fontWeight: 700,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-
-const restoreBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: '#34495e',
-  color: 'white',
-  padding: '8px 14px',
-  borderRadius: 6,
-  border: 'none',
-  fontSize: 13,
-  fontWeight: 700,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-
-const exportBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: '#27ae60',
-  color: 'white',
-  padding: '8px 14px',
-  borderRadius: 6,
-  border: 'none',
-  fontSize: 13,
-  fontWeight: 700,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-
-const bulkCosignBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: '#1a3a5c',
-  color: 'white',
-  padding: '8px 14px',
-  borderRadius: 6,
-  border: 'none',
-  fontSize: 13,
-  fontWeight: 700,
-  fontFamily: 'inherit',
-};
-
-const clearBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 4,
-  background: 'white',
-  color: '#5c6b7a',
-  padding: '8px 12px',
-  borderRadius: 6,
-  border: '1px solid #dfe5ec',
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-
 const loadingStyle: React.CSSProperties = {
   textAlign: 'center',
   padding: '40px 20px',
@@ -3028,57 +2952,6 @@ const draftBadgeStyle: React.CSSProperties = {
   border: '1px solid #fcd34d',
 };
 
-const viewBtnStyle: React.CSSProperties = {
-  display: 'inline-block',
-  background: '#34495e',
-  color: 'white',
-  padding: '5px 11px',
-  borderRadius: 4,
-  textDecoration: 'none',
-  fontSize: 13,
-  fontWeight: 600,
-  whiteSpace: 'nowrap',
-};
-
-const rowArchiveBtnStyle: React.CSSProperties = {
-  display: 'inline-block',
-  background: '#f5f5f5',
-  color: '#2c3e50',
-  padding: '5px 11px',
-  borderRadius: 4,
-  border: '1px solid #ddd',
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
-};
-
-const rowDeleteBtnStyle: React.CSSProperties = {
-  display: 'inline-block',
-  background: '#fff',
-  color: '#c62828',
-  padding: '5px 11px',
-  borderRadius: 4,
-  border: '1px solid #f0b4b4',
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
-};
-
-const rowCosignBtnStyle: React.CSSProperties = {
-  display: 'inline-block',
-  background: '#27ae60',
-  color: 'white',
-  padding: '5px 11px',
-  borderRadius: 4,
-  border: 'none',
-  fontSize: 13,
-  fontWeight: 700,
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
-};
-
 const checkboxStyle: React.CSSProperties = {
   width: 16,
   height: 16,
@@ -3093,29 +2966,6 @@ const paginationStyle: React.CSSProperties = {
   justifyContent: 'center',
   gap: 16,
   marginTop: 16,
-};
-
-const pageBtnStyle: React.CSSProperties = {
-  background: 'white',
-  border: '1px solid #dfe5ec',
-  color: '#2c3e50',
-  padding: '6px 12px',
-  borderRadius: 6,
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-
-// Merged into pageBtnStyle when the button is at an edge of the pagination
-// (Prev on page 1, Next on the last page). Mirrors the disabled affordances
-// used elsewhere — muted bg + text, no-drop cursor — so the user can tell
-// at a glance there's nowhere to go in that direction.
-const pageBtnDisabledStyle: React.CSSProperties = {
-  background: '#f5f7fa',
-  color: '#a5afba',
-  borderColor: '#e5eaf0',
-  cursor: 'not-allowed',
 };
 
 const pageMetaStyle: React.CSSProperties = {
@@ -3227,26 +3077,3 @@ const errorStyle: React.CSSProperties = {
   fontSize: 13,
 };
 
-const primaryBtnStyle: React.CSSProperties = {
-  background: '#27ae60',
-  color: 'white',
-  padding: '10px 14px',
-  borderRadius: 6,
-  border: 'none',
-  fontSize: 14,
-  fontWeight: 700,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-
-const secondaryBtnStyle: React.CSSProperties = {
-  background: '#eef1f4',
-  color: '#2c3e50',
-  padding: '10px 14px',
-  borderRadius: 6,
-  border: 'none',
-  fontSize: 14,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};

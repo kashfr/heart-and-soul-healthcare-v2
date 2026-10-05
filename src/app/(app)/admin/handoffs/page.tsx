@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { btn, btnIcon, btnSm } from '@/components/buttons';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { AlertTriangle, ArrowLeftRight, Check, Clock, RefreshCw } from 'lucide-react';
@@ -110,7 +111,7 @@ function NurseView({ uid, readOnly, highlightId }: { uid: string; readOnly: bool
         ) : historyError ? (
           <div style={errRowStyle}>
             <AlertTriangle size={14} /> Your acknowledged handoffs couldn&apos;t be loaded.
-            <button type="button" style={retryBtnStyle} onClick={loadHistory}>Retry</button>
+            <button type="button" className={`${btn} ${btnSm}`} style={{ marginLeft: 'auto' }} onClick={loadHistory}>Retry</button>
           </div>
         ) : history.length === 0 ? (
           <div style={mutedStyle}>Nothing acknowledged yet.</div>
@@ -186,7 +187,7 @@ function StaffView({ highlightId }: { highlightId: string | null }) {
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <button type="button" style={filter === 'open' ? filterActiveStyle : filterBtnStyle} onClick={() => setFilter('open')}>Awaiting Acknowledgment</button>
           <button type="button" style={filter === 'all' ? filterActiveStyle : filterBtnStyle} onClick={() => setFilter('all')}>All</button>
-          <button type="button" style={filterBtnStyle} onClick={load} title="Refresh"><RefreshCw size={13} /></button>
+          <button type="button" className={`${btn} ${btnIcon} ${btnSm}`} onClick={load} title="Refresh" aria-label="Refresh"><RefreshCw size={13} /></button>
         </span>
       </div>
 
@@ -195,7 +196,7 @@ function StaffView({ highlightId }: { highlightId: string | null }) {
       ) : error ? (
         <div style={errRowStyle}>
           <AlertTriangle size={14} /> Handoffs couldn&apos;t be loaded.
-          <button type="button" style={retryBtnStyle} onClick={load}>Retry</button>
+          <button type="button" className={`${btn} ${btnSm}`} style={{ marginLeft: 'auto' }} onClick={load}>Retry</button>
         </div>
       ) : visible.length === 0 ? (
         <div style={mutedStyle}>
@@ -277,4 +278,3 @@ const filterBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'cen
 const filterActiveStyle: CSSProperties = { ...filterBtnStyle, background: '#e8eef4', color: NAVY, borderColor: NAVY };
 const mutedStyle: CSSProperties = { fontSize: 13, color: '#7f8c8d' };
 const errRowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', background: '#fdeaea', color: '#b3261e', borderRadius: 8, fontSize: 13, fontWeight: 600 };
-const retryBtnStyle: CSSProperties = { background: 'white', color: '#b3261e', border: '1px solid #e5b6b1', padding: '4px 12px', borderRadius: 6, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', marginLeft: 'auto' };
