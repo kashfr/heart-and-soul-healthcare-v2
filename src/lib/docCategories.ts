@@ -47,7 +47,9 @@ export type FileFaxToClientField = keyof FileFaxToClientInput;
 /** Field errors for filing an incoming fax into a client's Documents. */
 export function validateFileFaxToClient(input: Partial<FileFaxToClientInput>, todayISO: string): Partial<Record<FileFaxToClientField, string>> {
   const e: Partial<Record<FileFaxToClientField, string>> = {};
-  if (!/^[A-Za-z0-9]{1,64}$/.test(String(input.patientId || ''))) e.patientId = 'Choose the client this fax belongs to.';
+  // A referral id from the GAPP site's intake looks like ext_<hash>, so
+  // underscores (and hyphens) must pass here as well as plain client ids.
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(String(input.patientId || ''))) e.patientId = 'Choose the client or referral this fax belongs to.';
   if (!isDocCategory(String(input.category || ''))) e.category = 'Choose a category.';
   const title = String(input.title || '').trim();
   if (!title) e.title = 'Give the document a title.';
