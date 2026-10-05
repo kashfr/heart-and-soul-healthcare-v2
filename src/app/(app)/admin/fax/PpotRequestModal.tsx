@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { btn, btnPrimary } from '@/components/buttons';
 import { ExternalLink, FileText, Search, Send, X } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { formatUSPhone } from '@/lib/phone';
@@ -240,8 +241,8 @@ export default function PpotRequestModal({
             {err && <div role="alert" style={{ color: '#b3261e', fontSize: 13, fontWeight: 600 }}>{err}</div>}
           </div>
           <div style={modalFooterStyle}>
-            <button type="button" onClick={onClose} style={ghostBtnStyle} disabled={busy}>Cancel</button>
-            <button type="submit" style={primaryBtnStyle} disabled={busy}>
+            <button type="button" onClick={onClose} className={btn} disabled={busy}>Cancel</button>
+            <button type="submit" className={btnPrimary} disabled={busy}>
               <Send size={14} /> {busy ? 'Sending…' : 'Fax the Request'}
             </button>
           </div>
@@ -256,8 +257,6 @@ const modalStyle: React.CSSProperties = { background: 'white', borderRadius: 12,
 const modalHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #e5e7eb' };
 const modalFooterStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, padding: '14px 20px', borderTop: '1px solid #e5e7eb' };
 const closeBtnStyle: React.CSSProperties = { background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'inline-flex' };
-const ghostBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', border: '1px solid #d1d5db', borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer', fontFamily: 'inherit' };
-const primaryBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#1a3a5c', color: 'white', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const linkBtnStyle: React.CSSProperties = { background: 'transparent', border: 'none', color: '#1a3a5c', fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' };
 const twoColStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 };
 const fieldStyle: React.CSSProperties = { display: 'grid', gap: 5 };

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
 import { Ban, Eye, EyeOff, FileSignature, FileUp, Search, Send, ShieldCheck, Undo2, X } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import PdfPreviewModal from '@/components/PdfPreviewModal';
@@ -207,37 +208,37 @@ export default function RoiSection({
                     <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
                       {r.status === 'awaiting-signature' && (
                         <>
-                          <button onClick={() => setPreview({ title: `Release to Sign: ${r.memberName}, ${r.facility.name}`, url: `/api/fax/roi/${r.id}/form` })} style={ghostBtnStyle} title="See the prepared form, and download it to send for signature">
+                          <button onClick={() => setPreview({ title: `Release to Sign: ${r.memberName}, ${r.facility.name}`, url: `/api/fax/roi/${r.id}/form` })} className={`${btn} ${btnSm}`} title="See the prepared form, and download it to send for signature">
                             <Eye size={14} /> Form
                           </button>
-                          <button onClick={() => setUploading(r)} style={{ ...ghostBtnStyle, marginLeft: 6 }}>
+                          <button onClick={() => setUploading(r)} className={`${btn} ${btnSm}`} style={{ marginLeft: 6 }}>
                             <FileUp size={14} /> Upload Signed
                           </button>
-                          <button onClick={() => act(r, 'cancel', `Cancel the release for ${r.memberName} with ${r.facility.name}? Use this if it won't be signed.`)} style={{ ...ghostBtnStyle, marginLeft: 6 }} disabled={busy === r.id}>
+                          <button onClick={() => act(r, 'cancel', `Cancel the release for ${r.memberName} with ${r.facility.name}? Use this if it won't be signed.`)} className={`${btnDanger} ${btnSm}`} style={{ marginLeft: 6 }} disabled={busy === r.id}>
                             <Ban size={14} /> Cancel
                           </button>
                         </>
                       )}
                       {r.status === 'signed' && (
                         <>
-                          <button onClick={() => setPreview({ title: `Signed Release: ${r.memberName}, ${r.facility.name}`, url: `/api/fax/roi/${r.id}/signed` })} style={ghostBtnStyle}>
+                          <button onClick={() => setPreview({ title: `Signed Release: ${r.memberName}, ${r.facility.name}`, url: `/api/fax/roi/${r.id}/signed` })} className={`${btn} ${btnSm}`}>
                             <Eye size={14} /> View
                           </button>
-                          <button onClick={() => setFaxing(r)} style={{ ...primaryBtnStyle, marginLeft: 6 }} disabled={!faxConfigured}>
+                          <button onClick={() => setFaxing(r)} className={`${btnPrimary} ${btnSm}`} style={{ marginLeft: 6 }} disabled={!faxConfigured}>
                             <Send size={14} /> Fax to Facility
                           </button>
-                          <button onClick={() => setUploading(r)} style={{ ...ghostBtnStyle, marginLeft: 6 }} title="Upload a corrected signed copy">
+                          <button onClick={() => setUploading(r)} className={`${btn} ${btnSm}`} style={{ marginLeft: 6 }} title="Upload a corrected signed copy">
                             <FileUp size={14} /> Replace
                           </button>
                         </>
                       )}
                       {r.status !== 'awaiting-signature' &&
                         (r.hidden ? (
-                          <button onClick={() => act(r, 'unhide')} style={{ ...ghostBtnStyle, marginLeft: 6 }} disabled={busy === r.id}>
+                          <button onClick={() => act(r, 'unhide')} className={`${btn} ${btnSm}`} style={{ marginLeft: 6 }} disabled={busy === r.id}>
                             <Undo2 size={14} /> Restore
                           </button>
                         ) : (
-                          <button onClick={() => act(r, 'hide')} style={{ ...ghostBtnStyle, marginLeft: 6 }} disabled={busy === r.id} title="Take it off this list. The signed copy stays in the client's Documents.">
+                          <button onClick={() => act(r, 'hide')} className={`${btn} ${btnSm}`} style={{ marginLeft: 6 }} disabled={busy === r.id} title="Take it off this list. The signed copy stays in the client's Documents.">
                             <EyeOff size={14} /> Remove
                           </button>
                         ))}
@@ -524,8 +525,8 @@ function PrepareModal({ clients, onClose, onCreated }: { clients: RoiClient[]; o
           {err && <div role="alert" style={errStyle}>{err}</div>}
         </div>
         <div style={footerStyle}>
-          <button type="button" onClick={onClose} style={ghostBtnStyle} disabled={busy}>Cancel</button>
-          <button type="submit" style={primaryBtnStyle} disabled={busy}>
+          <button type="button" onClick={onClose} className={btn} disabled={busy}>Cancel</button>
+          <button type="submit" className={btnPrimary} disabled={busy}>
             <FileSignature size={14} /> {busy ? 'Preparing…' : 'Prepare and Preview'}
           </button>
         </div>
@@ -583,8 +584,8 @@ function UploadModal({ roi, today, onClose, onDone }: { roi: RoiRecord; today: s
           {err && <div role="alert" style={errStyle}>{err}</div>}
         </div>
         <div style={footerStyle}>
-          <button type="button" onClick={onClose} style={ghostBtnStyle} disabled={busy}>Cancel</button>
-          <button type="submit" style={primaryBtnStyle} disabled={busy}>
+          <button type="button" onClick={onClose} className={btn} disabled={busy}>Cancel</button>
+          <button type="submit" className={btnPrimary} disabled={busy}>
             <FileUp size={14} /> {busy ? 'Uploading…' : 'File Signed Copy'}
           </button>
         </div>
@@ -662,8 +663,8 @@ function FaxModal({ roi, onClose, onSent }: { roi: RoiRecord; onClose: () => voi
           {err && <div role="alert" style={errStyle}>{err}</div>}
         </div>
         <div style={footerStyle}>
-          <button type="button" onClick={onClose} style={ghostBtnStyle} disabled={busy}>Cancel</button>
-          <button type="submit" style={primaryBtnStyle} disabled={busy}>
+          <button type="button" onClick={onClose} className={btn} disabled={busy}>Cancel</button>
+          <button type="submit" className={btnPrimary} disabled={busy}>
             <Send size={14} /> {busy ? 'Sending…' : 'Fax It'}
           </button>
         </div>
@@ -696,8 +697,6 @@ const tableWrapStyle: React.CSSProperties = { background: 'white', border: '1px 
 const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 14 };
 const tdStyle: React.CSSProperties = { padding: '12px 16px', borderBottom: '1px solid #f1f5f9', color: '#374151', verticalAlign: 'top' };
 const metaStyle: React.CSSProperties = { fontSize: 12.5, color: '#7f8c8d', marginTop: 3 };
-const ghostBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', border: '1px solid #d1d5db', borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer', fontFamily: 'inherit' };
-const primaryBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#1a3a5c', color: 'white', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const linkBtnStyle: React.CSSProperties = { background: 'transparent', border: 'none', color: '#1a3a5c', fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' };
 const closeBtnStyle: React.CSSProperties = { background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'inline-flex' };
 const backdropStyle: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 };

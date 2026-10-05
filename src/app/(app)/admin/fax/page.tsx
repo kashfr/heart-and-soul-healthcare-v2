@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { btn, btnPrimary, btnSm } from '@/components/buttons';
 import { AlertTriangle, Archive, ArchiveRestore, BellOff, CalendarClock, CheckCircle2, Clock, Eye, FileSignature, FileUp, RefreshCw, RotateCw, Search, Send, ShieldCheck, X } from 'lucide-react';
 import PpotRequestModal, { type PpotSubjectRow } from './PpotRequestModal';
 import PpotInbox from './PpotInbox';
@@ -218,16 +219,16 @@ export default function FaxCenterPage() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <button onClick={() => { void load(); void loadPpot(); setInboxKey((k) => k + 1); }} style={ghostBtnStyle} title="Refresh">
+            <button onClick={() => { void load(); void loadPpot(); setInboxKey((k) => k + 1); }} className={btn} title="Refresh">
               <RefreshCw size={15} /> Refresh
             </button>
-            <button onClick={() => setComposing(true)} style={ghostBtnStyle} disabled={!configured}>
+            <button onClick={() => setComposing(true)} className={btn} disabled={!configured}>
               <Send size={15} /> Send a Fax
             </button>
-            <button onClick={() => setRoiOpen((n) => n + 1)} style={ghostBtnStyle}>
+            <button onClick={() => setRoiOpen((n) => n + 1)} className={btn}>
               <ShieldCheck size={15} /> Release of Information
             </button>
-            <button onClick={() => setPpotOpen({ initial: null })} style={primaryBtnStyle} disabled={!configured}>
+            <button onClick={() => setPpotOpen({ initial: null })} className={btnPrimary} disabled={!configured}>
               <FileSignature size={15} /> Request a PPOT
             </button>
           </div>
@@ -266,10 +267,10 @@ export default function FaxCenterPage() {
                         </div>
                       </td>
                       <td style={{ ...tdStyle, textAlign: 'right' }}>
-                        <button onClick={() => setPpotOpen({ initial: c })} style={ghostBtnStyle} disabled={!configured}>
+                        <button onClick={() => setPpotOpen({ initial: c })} className={`${btn} ${btnSm}`} disabled={!configured}>
                           <FileSignature size={14} /> Request PPOT
                         </button>
-                        <button onClick={() => dismissRecert(c)} style={{ ...ghostBtnStyle, marginLeft: 6 }} title="Not needed this cycle (discharged, transferred, handled another way)">
+                        <button onClick={() => dismissRecert(c)} className={`${btn} ${btnSm}`} style={{ marginLeft: 6 }} title="Not needed this cycle (discharged, transferred, handled another way)">
                           <BellOff size={14} /> Dismiss
                         </button>
                       </td>
@@ -317,7 +318,7 @@ export default function FaxCenterPage() {
           <div style={{ ...emptyStyle, color: '#b3261e' }}>
             {error}
             <div style={{ marginTop: 12 }}>
-              <button onClick={load} style={ghostBtnStyle}>Try Again</button>
+              <button onClick={load} className={btn}>Try Again</button>
             </div>
           </div>
         ) : shown.length === 0 ? (
@@ -364,18 +365,18 @@ export default function FaxCenterPage() {
                         <div style={metaStyle}>{fmtDateTime(f.createdAt)}</div>
                       </td>
                       <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        <button onClick={() => setPreview(f)} style={ghostBtnStyle} title="See exactly what was faxed, cover sheet included">
+                        <button onClick={() => setPreview(f)} className={`${btn} ${btnSm}`} title="See exactly what was faxed, cover sheet included">
                           <Eye size={14} /> View
                         </button>
                         {state === 'failed' && (
-                          <button onClick={() => retry(f)} style={{ ...ghostBtnStyle, marginLeft: 6 }} disabled={busyId === f.id || !configured}>
+                          <button onClick={() => retry(f)} className={`${btn} ${btnSm}`} style={{ marginLeft: 6 }} disabled={busyId === f.id || !configured}>
                             <RotateCw size={14} /> Resend
                           </button>
                         )}
                         {state !== 'sending' && (
                           <button
                             onClick={() => setArchived(f, !f.archived)}
-                            style={{ ...ghostBtnStyle, marginLeft: 6 }}
+                            className={`${btn} ${btnSm}`} style={{ marginLeft: 6 }}
                             disabled={busyId === f.id}
                             title={f.archived ? 'Put it back on the list' : 'Hide it from this list (kept on record)'}
                           >
@@ -579,8 +580,8 @@ function SendModal({ onClose, onSent, onDone }: { onClose: () => void; onSent: (
             {err && <div role="alert" style={{ color: '#b3261e', fontSize: 13, fontWeight: 600 }}>{err}</div>}
           </div>
           <div style={modalFooterStyle}>
-            <button type="button" onClick={onClose} style={ghostBtnStyle} disabled={busy}>Cancel</button>
-            <button type="submit" style={primaryBtnStyle} disabled={busy}>
+            <button type="button" onClick={onClose} className={btn} disabled={busy}>Cancel</button>
+            <button type="submit" className={btnPrimary} disabled={busy}>
               <Send size={14} /> {busy ? 'Sending…' : 'Send Fax'}
             </button>
           </div>
@@ -597,8 +598,6 @@ const headerStyle: React.CSSProperties = { marginBottom: 20, display: 'flex', al
 const kickerStyle: React.CSSProperties = { fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: '#27ae60', margin: 0 };
 const titleStyle: React.CSSProperties = { fontSize: 32, color: '#2c3e50', margin: '4px 0 0' };
 const subtitleStyle: React.CSSProperties = { color: '#7f8c8d', fontSize: 15, marginTop: 6, maxWidth: 620 };
-const ghostBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', border: '1px solid #d1d5db', borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer', fontFamily: 'inherit' };
-const primaryBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#1a3a5c', color: 'white', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const warnBannerStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, background: '#fef7e0', border: '1px solid #f3d27a', color: '#6b4a00', borderRadius: 8, padding: '10px 14px', fontSize: 13.5, marginBottom: 14 };
 const searchWrapStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, background: 'white', border: '1px solid #d1d5db', borderRadius: 8, padding: '7px 12px', maxWidth: 360 };
 const searchInputStyle: React.CSSProperties = { border: 'none', outline: 'none', fontSize: 14, flex: 1, fontFamily: 'inherit', color: '#111827' };

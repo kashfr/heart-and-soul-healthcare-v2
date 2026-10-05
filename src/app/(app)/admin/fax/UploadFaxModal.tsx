@@ -5,6 +5,7 @@ import { FileUp, X } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { formatUSPhone } from '@/lib/phone';
 import { FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
+import { btn, btnPrimary } from '@/components/buttons';
 
 // "Add a Received Fax": a fax that came to another fax number (the old
 // MetroFax line, a physician's office faxing the number they had on file),
@@ -99,8 +100,8 @@ export default function UploadFaxModal({ today, onClose, onAdded }: { today: str
             {err && <div role="alert" style={{ color: '#b3261e', fontSize: 13, fontWeight: 600 }}>{err}</div>}
           </div>
           <div style={footer}>
-            <button type="button" onClick={onClose} style={ghostBtn} disabled={busy}>Cancel</button>
-            <button type="submit" style={primaryBtn} disabled={busy}>
+            <button type="button" onClick={onClose} className={btn} disabled={busy}>Cancel</button>
+            <button type="submit" className={btnPrimary} disabled={busy}>
               <FileUp size={14} /> {busy ? 'Adding…' : 'Add to Incoming Faxes'}
             </button>
           </div>
@@ -120,5 +121,3 @@ const label: React.CSSProperties = { fontSize: 12, color: '#5c6b7a', fontWeight:
 const hint: React.CSSProperties = { fontSize: 12, color: '#7f8c8d', lineHeight: 1.45 };
 const twoCol: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 };
 const inp: React.CSSProperties = { width: '100%', boxSizing: 'border-box', border: '1px solid #d1d5db', borderRadius: 8, padding: '8px 10px', fontSize: 14, fontFamily: 'inherit', color: '#111827' };
-const ghostBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', border: '1px solid #d1d5db', borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer', fontFamily: 'inherit' };
-const primaryBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#1a3a5c', color: 'white', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
