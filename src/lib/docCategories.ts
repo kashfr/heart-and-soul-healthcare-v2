@@ -23,7 +23,7 @@ export const DOC_CATEGORY_GROUPS = [
   },
   {
     label: 'Other',
-    categories: ['Other'],
+    categories: ['Provider Correspondence', 'Other'],
   },
 ] as const;
 
