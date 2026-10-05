@@ -13,6 +13,10 @@ describe('validateFileFaxToClient', () => {
     expect(validateFileFaxToClient({ ...ok, category: 'Random' }, '2026-09-29').category).toBeTruthy();
   });
 
+  it('accepts a referral id from the GAPP site intake (ext_ plus a hash)', () => {
+    expect(validateFileFaxToClient({ ...ok, patientId: 'ext_3c55b3ac2958422a8d3b82771a74f32d1234abcd' }, '2026-09-29')).toEqual({});
+  });
+
   it('rejects a future document date', () => {
     expect(validateFileFaxToClient({ ...ok, docDate: '2026-10-01' }, '2026-09-29').docDate).toBeTruthy();
   });
