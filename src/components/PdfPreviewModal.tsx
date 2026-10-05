@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { btn } from '@/components/buttons';
 import { Download, ExternalLink, X } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 
@@ -56,10 +57,10 @@ export default function PdfPreviewModal({ title, url, onClose }: { title: string
           <strong style={{ fontSize: 15, color: '#1a3a5c', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</strong>
           {blobUrl && (
             <>
-              <a href={blobUrl} download={fileName} style={btnStyle}>
+              <a href={blobUrl} download={fileName} className={btn}>
                 <Download size={14} /> Download
               </a>
-              <a href={blobUrl} target="_blank" rel="noopener noreferrer" style={btnStyle}>
+              <a href={blobUrl} target="_blank" rel="noopener noreferrer" className={btn}>
                 <ExternalLink size={14} /> Open in new tab
               </a>
             </>
@@ -85,7 +86,6 @@ export default function PdfPreviewModal({ title, url, onClose }: { title: string
 const backdropStyle: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 };
 const modalStyle: React.CSSProperties = { background: 'white', borderRadius: 12, width: '100%', maxWidth: 960, height: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' };
 const headerStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', borderBottom: '1px solid #e5e7eb', flexWrap: 'wrap' };
-const btnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', border: '1px solid #d1d5db', borderRadius: 8, padding: '7px 11px', fontSize: 13, fontWeight: 600, color: '#374151', textDecoration: 'none', fontFamily: 'inherit' };
 const closeStyle: React.CSSProperties = { background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'inline-flex', padding: 4 };
 const bodyStyle: React.CSSProperties = { flex: 1, minHeight: 0, background: '#f1f5f9' };
 const frameStyle: React.CSSProperties = { width: '100%', height: '100%', border: 'none', display: 'block' };

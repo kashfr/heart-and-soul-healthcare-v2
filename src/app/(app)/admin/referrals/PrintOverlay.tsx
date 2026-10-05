@@ -1,6 +1,7 @@
 'use client';
 
 import { Printer } from 'lucide-react';
+import { btn, btnPrimary } from '@/components/buttons';
 import { formatDateUS } from '@/lib/dateFormat';
 import { fieldRows, formatDate, SOURCE_LABEL, STAGE_LABEL, type Referral } from './types';
 
@@ -26,10 +27,10 @@ export default function PrintOverlay({
           Each referral prints on its own page with a call log.
         </span>
         <div style={{ flex: 1 }} />
-        <button onClick={() => window.print()} style={printNowBtnStyle}>
+        <button onClick={() => window.print()} className={btnPrimary}>
           <Printer size={15} /> Print
         </button>
-        <button onClick={onClose} style={printCloseBtnStyle}>
+        <button onClick={onClose} className={btn}>
           Close
         </button>
       </div>
@@ -163,31 +164,6 @@ const printToolbarStyle: React.CSSProperties = {
   background: '#1f2937',
   color: 'white',
   flexWrap: 'wrap',
-};
-const printNowBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: '#27ae60',
-  color: 'white',
-  border: 'none',
-  borderRadius: 8,
-  padding: '8px 16px',
-  fontSize: 14,
-  fontWeight: 700,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-const printCloseBtnStyle: React.CSSProperties = {
-  background: 'rgba(255,255,255,0.14)',
-  color: 'white',
-  border: '1px solid rgba(255,255,255,0.35)',
-  borderRadius: 8,
-  padding: '8px 14px',
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
 };
 const printRootStyle: React.CSSProperties = {
   padding: '24px 16px',

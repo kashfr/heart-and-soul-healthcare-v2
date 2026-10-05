@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { btn, btnPrimary } from '@/components/buttons';
 import { UserPlus, X } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { formatDateUS } from '@/lib/dateFormat';
@@ -130,9 +131,9 @@ export default function ConvertReferralModal({
             {err && <div role="alert" style={{ color: '#b3261e', fontSize: 13, fontWeight: 600 }}>{err}</div>}
           </div>
           <div style={footer}>
-            <button type="button" onClick={onClose} style={ghostBtn} disabled={busy}>Cancel</button>
+            <button type="button" onClick={onClose} className={btn} disabled={busy}>Cancel</button>
             {plan && !existing && (
-              <button type="submit" style={primaryBtn} disabled={busy}>
+              <button type="submit" className={btnPrimary} disabled={busy}>
                 <UserPlus size={14} /> {busy ? 'Creating…' : 'Create Client Record'}
               </button>
             )}
@@ -165,5 +166,3 @@ const field: React.CSSProperties = { display: 'grid', gap: 5 };
 const label: React.CSSProperties = { fontSize: 12, color: '#5c6b7a', fontWeight: 600 };
 const hint: React.CSSProperties = { fontSize: 12, color: '#7f8c8d', lineHeight: 1.45, margin: 0 };
 const inp: React.CSSProperties = { width: '100%', boxSizing: 'border-box', border: '1px solid #d1d5db', borderRadius: 8, padding: '8px 10px', fontSize: 14, fontFamily: 'inherit', color: '#111827' };
-const ghostBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', border: '1px solid #d1d5db', borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer', fontFamily: 'inherit' };
-const primaryBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#1a3a5c', color: 'white', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };

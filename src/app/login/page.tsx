@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useState, type FormEvent } from 'react';
+import { btnPrimary } from '@/components/buttons';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
@@ -157,7 +158,7 @@ function LoginForm() {
 
               {error && <div style={errorStyle}>{error}</div>}
 
-              <button type="submit" disabled={submitting} style={primaryBtnStyle}>
+              <button type="submit" disabled={submitting} className={btnPrimary} style={{ width: '100%' }}>
                 {submitting ? 'Signing in…' : 'Sign In'}
               </button>
             </form>
@@ -208,7 +209,7 @@ function LoginForm() {
 
               {error && <div style={errorStyle}>{error}</div>}
 
-              <button type="submit" disabled={submitting} style={primaryBtnStyle}>
+              <button type="submit" disabled={submitting} className={btnPrimary} style={{ width: '100%' }}>
                 {submitting ? 'Sending…' : 'Send Reset Link'}
               </button>
             </form>
@@ -237,7 +238,7 @@ function LoginForm() {
             <button
               type="button"
               onClick={() => switchMode('signIn')}
-              style={primaryBtnStyle}
+              className={btnPrimary} style={{ width: '100%' }}
             >
               Back to Sign In
             </button>
@@ -343,17 +344,6 @@ const successStyle: React.CSSProperties = {
   fontSize: 13,
   fontWeight: 500,
   marginBottom: 16,
-};
-
-const primaryBtnStyle: React.CSSProperties = {
-  background: '#27ae60',
-  color: 'white',
-  padding: '12px 16px',
-  borderRadius: 6,
-  border: 'none',
-  fontSize: 15,
-  fontWeight: 700,
-  cursor: 'pointer',
 };
 
 const forgotRowStyle: React.CSSProperties = {

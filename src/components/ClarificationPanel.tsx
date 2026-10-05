@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
 import { MessageCircleQuestion, CheckCircle2, Ban } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { escortToField, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
@@ -143,14 +144,14 @@ export default function ClarificationPanel({
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button
               type="button"
-              style={secondaryBtn}
+              className={`${btn} ${btnSm}`}
               onClick={() => { setFlagKind('clarification'); setMode('flag'); setTextError(null); }}
             >
               Flag for Clarification
             </button>
             <button
               type="button"
-              style={correctionBtn}
+              className={`${btnDanger} ${btnSm}`}
               onClick={() => { setFlagKind('correction'); setMode('flag'); setTextError(null); }}
             >
               Flag a Correction
@@ -192,19 +193,19 @@ export default function ClarificationPanel({
         {isOpen && mode === null && (
           <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
             {(isAuthor || canReview) && (
-              <button type="button" style={secondaryBtn} onClick={() => { setMode('respond'); setTextError(null); }}>
+              <button type="button" className={`${btn} ${btnSm}`} onClick={() => { setMode('respond'); setTextError(null); }}>
                 {clarificationMessages(clarification).length > 1 ? 'Add a Reply' : 'Respond'}
               </button>
             )}
             {canReview && (
-              <button type="button" style={primaryBtn} onClick={() => { setMode('resolve'); setTextError(null); }}>
+              <button type="button" className={`${btnPrimary} ${btnSm}`} onClick={() => { setMode('resolve'); setTextError(null); }}>
                 Mark Resolved
               </button>
             )}
             {canReview && isCorrection && (
               <button
                 type="button"
-                style={blocksNow ? ghostBtn : correctionBtn}
+                className={`${blocksNow ? btn : btnDanger} ${btnSm}`}
                 disabled={blockBusy}
                 onClick={() => setBlock(!blocksNow)}
                 title={
@@ -263,7 +264,7 @@ export default function ClarificationPanel({
             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
               <button
                 type="button"
-                style={ghostBtn}
+                className={`${btn} ${btnSm}`}
                 onClick={() => {
                   setMode(null);
                   setText('');
@@ -276,10 +277,7 @@ export default function ClarificationPanel({
               </button>
               <button
                 type="button"
-                style={{
-                  ...primaryBtn,
-                  ...(busy ? { opacity: 0.5, cursor: 'not-allowed' } : {}),
-                }}
+                className={`${btnPrimary} ${btnSm}`}
                 disabled={busy}
                 onClick={() => submit(mode)}
               >
@@ -311,7 +309,3 @@ const metaStyle: React.CSSProperties = { fontSize: 11, color: '#64748b' };
 const msgStyle: React.CSSProperties = { fontSize: 13.5, color: '#1f2937', lineHeight: 1.5, marginTop: 3, whiteSpace: 'pre-wrap' };
 const textareaStyle: React.CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', resize: 'vertical' };
 const errStyle: React.CSSProperties = { color: '#b3261e', fontSize: 12.5, marginTop: 6 };
-const primaryBtn: React.CSSProperties = { background: '#1a3a5c', color: 'white', border: 'none', borderRadius: 6, padding: '7px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const secondaryBtn: React.CSSProperties = { background: 'white', color: '#1a3a5c', border: '1px solid #1a3a5c', borderRadius: 6, padding: '7px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const correctionBtn: React.CSSProperties = { background: '#b3261e', color: 'white', border: 'none', borderRadius: 6, padding: '7px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const ghostBtn: React.CSSProperties = { background: 'transparent', color: '#5c6b7a', border: '1px solid #cbd5e1', borderRadius: 6, padding: '7px 14px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' };

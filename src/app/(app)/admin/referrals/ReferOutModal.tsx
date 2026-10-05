@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { btn, btnPrimary, btnSm } from '@/components/buttons';
 import { X, Copy, Check, FileText } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import type { GappServiceKey } from '@/lib/georgia';
@@ -157,7 +158,7 @@ export default function ReferOutModal({
                 </div>
                 None of your saved agencies {county ? `covers ${county}` : 'match this referral'}.
                 You can email the family the official GAPP provider list instead.
-                <button type="button" onClick={() => { setMode('providerList'); setError(null); setFieldErrors({}); }} style={noMatchBtn}>
+                <button type="button" onClick={() => { setMode('providerList'); setError(null); setFieldErrors({}); }} className={`${btnPrimary} ${btnSm}`} style={{ display: 'flex', width: 'fit-content', marginTop: 8 }}>
                   Email the Provider List
                 </button>
               </div>
@@ -200,11 +201,11 @@ export default function ReferOutModal({
             {error && <div role="alert" style={{ color: '#b3261e', fontSize: 13, fontWeight: 600 }}>{error}</div>}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 6 }}>
-              <button onClick={onClose} style={ghostBtn}>Cancel</button>
+              <button onClick={onClose} className={btn}>Cancel</button>
               <button
                 onClick={submit}
                 disabled={saving}
-                style={{ ...primaryBtn, opacity: saving ? 0.55 : 1 }}
+                className={btnPrimary}
               >
                 {saving ? 'Saving…' : 'Move to Referred Out'}
               </button>
@@ -248,11 +249,11 @@ export default function ReferOutModal({
             {error && <div role="alert" style={{ color: '#b3261e', fontSize: 13, fontWeight: 600 }}>{error}</div>}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 6 }}>
-              <button onClick={onClose} style={ghostBtn}>Cancel</button>
+              <button onClick={onClose} className={btn}>Cancel</button>
               <button
                 onClick={() => submitProviderList(false)}
                 disabled={saving}
-                style={{ ...primaryBtn, opacity: saving ? 0.55 : 1 }}
+                className={btnPrimary}
               >
                 {saving ? 'Sending…' : 'Email List & Move to Referred Out'}
               </button>
@@ -262,14 +263,14 @@ export default function ReferOutModal({
               <div style={{ fontWeight: 600, marginBottom: 6 }}>No Email on File?</div>
               Copy the link to text or read off by phone, then record it:
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                <button type="button" onClick={copyListLink} style={ghostBtn}>
+                <button type="button" onClick={copyListLink} className={`${btn} ${btnSm}`}>
                   {copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'Copied' : 'Copy List Link'}
                 </button>
                 <button
                   type="button"
                   onClick={() => submitProviderList(true)}
                   disabled={saving}
-                  style={{ ...ghostBtn, color: '#1a3a5c' }}
+                  className={`${btn} ${btnSm}`}
                 >
                   Mark as Given &amp; Move
                 </button>
@@ -309,23 +310,9 @@ const input: React.CSSProperties = {
   width: '100%', boxSizing: 'border-box', border: '1px solid #d1d5db', borderRadius: 8,
   padding: '9px 11px', fontSize: 14, fontFamily: 'inherit', color: '#111827',
 };
-const ghostBtn: React.CSSProperties = {
-  display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', color: '#5c6b7a',
-  border: '1px solid #d1d5db', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600,
-  cursor: 'pointer', fontFamily: 'inherit',
-};
-const primaryBtn: React.CSSProperties = {
-  background: '#1a3a5c', color: 'white', border: 'none', borderRadius: 8, padding: '9px 16px',
-  fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
-};
 const noMatchBox: React.CSSProperties = {
   background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 12px',
   fontSize: 12.5, color: '#9a6400', lineHeight: 1.5,
-};
-const noMatchBtn: React.CSSProperties = {
-  display: 'block', marginTop: 8, background: '#1a3a5c', color: 'white', border: 'none',
-  borderRadius: 8, padding: '7px 12px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
-  fontFamily: 'inherit',
 };
 const noEmailBox: React.CSSProperties = {
   background: '#f5f7fa', border: '1px solid #e5e7eb', borderRadius: 8, padding: '10px 12px',

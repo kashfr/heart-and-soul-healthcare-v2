@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { btn, btnDanger, btnPrimary } from '@/components/buttons';
 import { Printer, Download, Trash2, Share2, X, Check } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import {
@@ -170,7 +171,7 @@ export default function ReferralTable({ referrals, onOpen, onPrint, onDelete, ca
         <div style={{ flex: 1 }} />
         <button
           onClick={() => actionTarget.length > 0 && onPrint(actionTarget)}
-          style={ghostBtnStyle}
+          className={btn}
           title="Open a printable call sheet for these referrals"
         >
           <Printer size={15} /> Print
@@ -178,12 +179,12 @@ export default function ReferralTable({ referrals, onOpen, onPrint, onDelete, ca
         </button>
         <button
           onClick={() => downloadCsv(actionTarget, { intake: settings.intake, agencies })}
-          style={ghostBtnStyle}
+          className={btn}
         >
           <Download size={15} /> Export CSV
         </button>
         {selectedVisible.length > 0 && (
-          <button onClick={() => setShareOpen(true)} style={shareBtnStyle}>
+          <button onClick={() => setShareOpen(true)} className={btnPrimary}>
             <Share2 size={15} /> Share ({selectedVisible.length})
           </button>
         )}
@@ -196,7 +197,7 @@ export default function ReferralTable({ referrals, onOpen, onPrint, onDelete, ca
                 clearSelection();
               }
             }}
-            style={deleteBtnStyle}
+            className={btnDanger}
           >
             <Trash2 size={15} /> Delete ({selectedVisible.length})
           </button>
@@ -455,7 +456,7 @@ function BulkShareModal({
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
-              <button onClick={onDone} style={modalPrimaryStyle}>Done</button>
+              <button onClick={onDone} className={btnPrimary}>Done</button>
             </div>
           </div>
         ) : (
@@ -503,11 +504,11 @@ function BulkShareModal({
             </label>
             {error && <div role="alert" style={{ color: '#b3261e', fontSize: 13, fontWeight: 600 }}>{error}</div>}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 6 }}>
-              <button onClick={onClose} style={ghostBtnStyle}>Cancel</button>
+              <button onClick={onClose} className={btn}>Cancel</button>
               <button
                 onClick={submit}
                 disabled={sending}
-                style={{ ...modalPrimaryStyle, opacity: sending ? 0.55 : 1 }}
+                className={btnPrimary}
               >
                 {sending ? 'Sending…' : `Create & Email ${n} Link${n === 1 ? '' : 's'}`}
               </button>
@@ -522,11 +523,6 @@ function BulkShareModal({
 const SELECT_CHEVRON =
   "white url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\") no-repeat right 10px center";
 
-const shareBtnStyle: React.CSSProperties = {
-  display: 'inline-flex', alignItems: 'center', gap: 6, background: '#1a3a5c', color: 'white',
-  border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600,
-  cursor: 'pointer', fontFamily: 'inherit',
-};
 const modalBackdropStyle: React.CSSProperties = {
   position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 1000,
   display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
@@ -552,10 +548,6 @@ const modalSelectStyle: React.CSSProperties = {
   fontSize: 13, fontFamily: 'inherit', color: '#111827',
   background: SELECT_CHEVRON, backgroundSize: '14px', cursor: 'pointer',
 };
-const modalPrimaryStyle: React.CSSProperties = {
-  background: '#1a3a5c', color: 'white', border: 'none', borderRadius: 8, padding: '9px 16px',
-  fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
-};
 
 const actionsBarStyle: React.CSSProperties = {
   display: 'flex',
@@ -572,34 +564,6 @@ const linkBtnStyle: React.CSSProperties = {
   cursor: 'pointer',
   fontFamily: 'inherit',
   textDecoration: 'underline',
-};
-const ghostBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: 'white',
-  color: '#5c6b7a',
-  border: '1px solid #d1d5db',
-  borderRadius: 8,
-  padding: '8px 14px',
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-const deleteBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: 'white',
-  color: '#b3261e',
-  border: '1px solid #f0c2bd',
-  borderRadius: 8,
-  padding: '8px 14px',
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
 };
 const tableWrapStyle: React.CSSProperties = {
   background: 'white',

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { btn, btnPrimary } from '@/components/buttons';
 import Link from 'next/link';
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, MessageSquarePlus, X, XCircle } from 'lucide-react';
 import { getCommunications, logCommunication, type CommsPayload } from '@/lib/communications';
@@ -79,7 +80,7 @@ export default function CommunicationsLog({ patientId, readOnly, onToast }: Prop
           Every notice the portal sends staff about {patientId ? "this client's" : "clients'"} care, word for word, and whether it was delivered. Log emails, calls and texts sent outside the portal so the record is complete.
         </p>
         {!readOnly && data && (
-          <button type="button" style={primaryBtn} onClick={() => setLogging(true)}>
+          <button type="button" className={btnPrimary} onClick={() => setLogging(true)}>
             <MessageSquarePlus size={14} /> Log a Message
           </button>
         )}
@@ -281,8 +282,8 @@ function LogMessageModal({ data, patientId, onClose, onLogged }: { data: CommsPa
 
         {saveError && <div style={{ ...errBox, marginBottom: 10 }}><AlertTriangle size={14} style={{ verticalAlign: -2 }} /> {saveError}</div>}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button type="button" style={ghostBtn} onClick={onClose} disabled={saving}>Cancel</button>
-          <button type="button" style={primaryBtn} onClick={() => void save()} disabled={saving}>{saving ? 'Saving...' : 'Log Message'}</button>
+          <button type="button" className={btn} onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="button" className={btnPrimary} onClick={() => void save()} disabled={saving}>{saving ? 'Saving...' : 'Log Message'}</button>
         </div>
       </div>
     </div>
@@ -324,8 +325,6 @@ const bodyText: CSSProperties = { whiteSpace: 'pre-wrap', fontFamily: 'inherit',
 const clientLink: CSSProperties = { fontSize: 12.5, fontWeight: 700, color: NAVY };
 const errBox: CSSProperties = { background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '8px 11px', fontSize: 13 };
 const muted: CSSProperties = { fontSize: 13, color: '#5c6b7a' };
-const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: NAVY, color: 'white', border: `1px solid ${NAVY}`, borderRadius: 8, padding: '8px 13px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
-const ghostBtn: CSSProperties = { background: 'white', border: '1px solid #d0d7de', borderRadius: 8, padding: '8px 13px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: NAVY, fontFamily: 'inherit' };
 const overlay: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '40px 16px', zIndex: 3000, overflowY: 'auto' };
 const modal: CSSProperties = { background: 'white', borderRadius: 12, padding: 18, width: '100%', maxWidth: 620, boxShadow: '0 20px 50px rgba(0,0,0,0.25)' };
 const modalHead: CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 };

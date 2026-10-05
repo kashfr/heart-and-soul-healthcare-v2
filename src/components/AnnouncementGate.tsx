@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { btnPrimary } from '@/components/buttons';
 import { Megaphone, Check } from 'lucide-react';
 import { useAuth, useEffectiveUser } from './AuthProvider';
 import { subscribeActiveAnnouncements, acknowledgeAnnouncement } from '@/lib/announcements';
@@ -99,7 +100,7 @@ export default function AnnouncementGate() {
         {error && <div role="alert" style={errorStyle}>{error}</div>}
 
         <div style={actionsStyle}>
-          <button type="button" onClick={() => void gotIt()} disabled={busy} style={{ ...btnStyle, opacity: busy ? 0.7 : 1 }}>
+          <button type="button" onClick={() => void gotIt()} disabled={busy} className={btnPrimary}>
             <Check size={16} /> {busy ? 'Saving…' : 'Got It'}
           </button>
         </div>
@@ -118,4 +119,3 @@ const numStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', 
 const footerNoteStyle: CSSProperties = { marginTop: 16, padding: '10px 12px', background: '#fff7e6', border: '1px solid #f5d38a', borderRadius: 8, fontSize: 13.5, color: '#6b4a00', lineHeight: 1.45 };
 const errorStyle: CSSProperties = { marginTop: 12, fontSize: 13, color: '#b3261e', fontWeight: 600 };
 const actionsStyle: CSSProperties = { display: 'flex', justifyContent: 'flex-end', marginTop: 18, paddingTop: 14, borderTop: '1px solid #f1f5f9' };
-const btnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0e7c4a', color: 'white', border: 'none', borderRadius: 8, padding: '10px 18px', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };

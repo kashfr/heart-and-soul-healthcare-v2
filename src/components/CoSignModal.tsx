@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
+import { btn, btnPrimary } from '@/components/buttons';
 import { CheckCircle2, ExternalLink, X } from 'lucide-react';
 import SignatureCanvas, { type SignatureCanvasHandle } from './SignatureCanvas';
 import { authedFetch } from '@/lib/authedFetch';
@@ -244,13 +245,13 @@ export default function CoSignModal({ notes, onClose, onSuccess }: CoSignModalPr
         </div>
 
         <div style={footerStyle}>
-          <button onClick={onClose} disabled={submitting} style={secondaryBtnStyle} type="button">
+          <button onClick={onClose} disabled={submitting} className={btn} type="button">
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={submitting}
-            style={{ ...primaryBtnStyle, opacity: submitting ? 0.6 : 1, cursor: submitting ? 'not-allowed' : 'pointer' }}
+            className={btnPrimary}
             type="button"
           >
             {submitting ? (
@@ -418,29 +419,4 @@ const footerStyle: React.CSSProperties = {
   display: 'flex',
   justifyContent: 'flex-end',
   gap: 10,
-};
-
-const secondaryBtnStyle: React.CSSProperties = {
-  background: 'white',
-  color: '#1a3a5c',
-  border: '1px solid #cbd5e1',
-  padding: '10px 16px',
-  borderRadius: 6,
-  fontSize: 14,
-  fontWeight: 600,
-  cursor: 'pointer',
-};
-
-const primaryBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: '#27ae60',
-  color: 'white',
-  border: 'none',
-  padding: '10px 16px',
-  borderRadius: 6,
-  fontSize: 14,
-  fontWeight: 700,
-  cursor: 'pointer',
 };

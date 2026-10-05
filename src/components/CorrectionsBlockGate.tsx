@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { btnPrimary, btnSm } from '@/components/buttons';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { AlertTriangle, Phone, ArrowRight, Ban } from 'lucide-react';
@@ -153,7 +154,7 @@ export default function CorrectionsBlockGate() {
                 <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                   {/* Full reload (plain <a>) so the gate re-evaluates and steps
                       aside once the edit param matches this note. */}
-                  <a href={`/progress-note?edit=${it.noteId}`} style={fixBtn}>
+                  <a href={`/progress-note?edit=${it.noteId}`} className={`${btnPrimary} ${btnSm}`}>
                     Fix This Note <ArrowRight size={15} />
                   </a>
                 </div>
@@ -207,5 +208,4 @@ const cardStyle: React.CSSProperties = { border: '1px solid #e5e7eb', background
 const numStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: '50%', background: '#b3261e', color: 'white', fontSize: 11, fontWeight: 700, flexShrink: 0 };
 const correctionBadgeStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: '#fee2e2', color: '#b3261e', border: '1px solid #fca5a5', borderRadius: 999, padding: '1px 8px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3 };
 const questionStyle: React.CSSProperties = { fontSize: 13.5, color: '#1f2937', lineHeight: 1.5, margin: '8px 0 10px' };
-const fixBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#b3261e', color: 'white', borderRadius: 6, padding: '8px 14px', fontSize: 13, fontWeight: 600, textDecoration: 'none', fontFamily: 'inherit' };
 const footerStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 18, paddingTop: 14, borderTop: '1px solid #f1f5f9' };
