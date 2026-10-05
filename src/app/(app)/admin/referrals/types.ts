@@ -338,6 +338,15 @@ const ORDER_STEP = 1000;
  * column. `before` is the order of the card that will sit just above the drop
  * point; `after` the card just below. Either may be undefined at an edge.
  */
+/**
+ * Board order within a stage column: by order, then id, so cards with
+ * (nearly) equal order after many midpoint reorders keep a stable position.
+ * The drawer's Previous / Next walk this same order.
+ */
+export function compareInStage(a: Pick<Referral, 'order' | 'id'>, b: Pick<Referral, 'order' | 'id'>): number {
+  return a.order - b.order || a.id.localeCompare(b.id);
+}
+
 export function orderBetween(
   before: number | undefined,
   after: number | undefined

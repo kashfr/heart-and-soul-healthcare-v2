@@ -1,0 +1,102 @@
+/*
+ * Shared button styles, lifted from the progress note's Previous / Next
+ * buttons so action rows look the same everywhere. Use the class names via
+ * src/components/buttons.ts:
+ *
+ *   <button className={btn}>Print</button>
+ *   <button className={btnPrimary}>Create Client Record</button>
+ *   <button className={btnDanger}>Delete</button>
+ *   <Link className={btn} href="...">Request PPOT</Link>
+ *
+ * A Link gets the same look (the base class resets text-decoration).
+ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 42px;
+  padding: 10px 18px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #1f3a5f;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.12s ease;
+}
+
+.btn:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: #94a3b8;
+  box-shadow: 0 3px 8px rgba(15, 23, 42, 0.1);
+  transform: translateY(-1px);
+}
+
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(74, 111, 165, 0.35);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+/* The one action the row is for. */
+.primary {
+  background: #1a3a5c;
+  border-color: #1a3a5c;
+  color: #ffffff;
+}
+
+.primary:hover:not(:disabled) {
+  background: #16314d;
+  border-color: #16314d;
+}
+
+/* Delete and the like: same shape, red ink, never filled. */
+.danger {
+  color: #b3261e;
+  border-color: #f1c4c0;
+}
+
+.danger:hover:not(:disabled) {
+  background: #fdf2f2;
+  border-color: #e39a94;
+}
+
+/* A square button holding only an icon (previous / next, close). */
+.icon {
+  min-height: 38px;
+  width: 38px;
+  padding: 0;
+}
+
+/* A shorter button for dense rows (tables, lists). */
+.sm {
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: 13px;
+  border-radius: 8px;
+}

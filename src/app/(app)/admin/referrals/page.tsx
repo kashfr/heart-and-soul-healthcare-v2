@@ -20,6 +20,7 @@ import {
   serviceForReferral,
   statusFromStage,
   type Referral, type ReferralStage, type StaffOption,
+  compareInStage,
 } from './types';
 
 type View = 'board' | 'table';
@@ -163,6 +164,7 @@ export default function ReferralsPage() {
     [referrals, selectedId]
   );
 
+
   // Close drawer / print preview on Escape.
   useEffect(() => {
     if (!selectedId && !printList) return;
@@ -208,6 +210,21 @@ export default function ReferralsPage() {
       return hay.includes(needle);
     });
   }, [referrals, q, assigneeFilter, shareFilter, fitFilter, settings.intake, partnerFilter, agencies]);
+
+  // Previous / Next in the drawer walk the open referral's stage column in
+  // board order, limited to what the current filters show.
+  const stageNav = useMemo(() => {
+    if (!selected) return null;
+    const column = filtered.filter((r) => r.stage === selected.stage).sort(compareInStage);
+    const index = column.findIndex((r) => r.id === selected.id);
+    if (index < 0) return null;
+    return {
+      index,
+      total: column.length,
+      prevId: index > 0 ? column[index - 1].id : null,
+      nextId: index < column.length - 1 ? column[index + 1].id : null,
+    };
+  }, [filtered, selected]);
 
   // --- Mutations (optimistic, with server reconcile) ---
 
@@ -512,6 +529,8 @@ export default function ReferralsPage() {
           onDelete={() => handleDelete(selected.id)}
           canDelete={canDelete}
           onChanged={load}
+          nav={stageNav}
+          onNavigate={(id) => setSelectedId(id)}
         />
       )}
 
