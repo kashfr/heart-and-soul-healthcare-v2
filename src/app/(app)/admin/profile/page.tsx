@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { btnDanger, btnPrimary } from '@/components/buttons';
 import { Phone, Mail, Clock, Check } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { authedFetch } from '@/lib/authedFetch';
@@ -174,7 +175,7 @@ export default function MyProfilePage() {
               type="button"
               onClick={savePhone}
               disabled={phoneBusy}
-              style={{ ...primaryBtn, ...(phoneBusy ? disabledBtn : {}) }}
+              className={btnPrimary}
             >
               {phoneBusy ? 'Saving…' : 'Save Phone'}
             </button>
@@ -208,7 +209,7 @@ export default function MyProfilePage() {
               </div>
               {emailErr && <div style={errStyle}>{emailErr}</div>}
               <div style={{ marginTop: 10 }}>
-                <button type="button" onClick={withdrawEmailRequest} disabled={emailBusy} style={secondaryBtn}>
+                <button type="button" onClick={withdrawEmailRequest} disabled={emailBusy} className={btnDanger}>
                   {emailBusy ? 'Working…' : 'Withdraw Request'}
                 </button>
               </div>
@@ -242,7 +243,7 @@ export default function MyProfilePage() {
                   type="button"
                   onClick={submitEmailRequest}
                   disabled={emailBusy}
-                  style={{ ...primaryBtn, ...(emailBusy ? disabledBtn : {}) }}
+                  className={btnPrimary}
                 >
                   {emailBusy ? 'Submitting…' : 'Request Email Change'}
                 </button>
@@ -269,9 +270,6 @@ const sectionHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: '
 const sectionTitleStyle: React.CSSProperties = { fontSize: 16, color: '#2c3e50', margin: 0 };
 const inputStyle: React.CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '9px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 14, fontFamily: 'inherit' };
 const textareaStyle: React.CSSProperties = { ...inputStyle, resize: 'vertical' };
-const primaryBtn: React.CSSProperties = { background: '#1a3a5c', color: 'white', border: 'none', borderRadius: 6, padding: '9px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const secondaryBtn: React.CSSProperties = { background: 'white', color: '#1a3a5c', border: '1px solid #1a3a5c', borderRadius: 6, padding: '8px 14px', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const disabledBtn: React.CSSProperties = { opacity: 0.5, cursor: 'not-allowed' };
 const errStyle: React.CSSProperties = { color: '#b3261e', fontSize: 13, marginTop: 8 };
 const okStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, color: '#166534', fontSize: 13, marginTop: 8 };
 const pendingBoxStyle: React.CSSProperties = { background: '#fff8ec', border: '1px solid #f0d9a8', borderRadius: 8, padding: '14px 16px' };

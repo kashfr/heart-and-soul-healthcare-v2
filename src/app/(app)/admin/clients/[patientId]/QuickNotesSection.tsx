@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { btn, btnPrimary, btnSm } from '@/components/buttons';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { StickyNote, Plus, ChevronDown, ChevronUp, ChevronRight, AlertTriangle, X } from 'lucide-react';
 import { escortToField, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
@@ -134,7 +135,7 @@ export default function QuickNotesSection({ patientId, actor, onToast }: QuickNo
         </div>
         <button
           type="button"
-          style={{ ...addBtnStyle, opacity: actor.uid ? 1 : 0.55 }}
+          className={btnPrimary}
           onClick={() => setModalOpen(true)}
           disabled={!actor.uid}
         >
@@ -147,7 +148,7 @@ export default function QuickNotesSection({ patientId, actor, onToast }: QuickNo
       ) : loadError ? (
         <div style={errorRowStyle}>
           <AlertTriangle size={14} style={{ flexShrink: 0 }} /> Quick notes couldn&apos;t be loaded.
-          <button type="button" style={retryBtnStyle} onClick={() => void refresh()}>
+          <button type="button" className={`${btn} ${btnSm}`} style={{ marginLeft: 'auto' }} onClick={() => void refresh()}>
             Retry
           </button>
         </div>
@@ -287,10 +288,10 @@ function QuickNoteDetail({
         </div>
 
         <div style={actionsStyle}>
-          <button type="button" style={cancelBtnStyle} onClick={onClose}>
+          <button type="button" className={btn} onClick={onClose}>
             Close
           </button>
-          <button type="button" style={saveBtnStyle} onClick={onFollowUp}>
+          <button type="button" className={btnPrimary} onClick={onFollowUp}>
             Add follow-up note
           </button>
         </div>
@@ -428,12 +429,12 @@ function AddQuickNoteModal({
         </div>
 
         <div style={actionsStyle}>
-          <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={busy}>
+          <button type="button" className={btn} onClick={onClose} disabled={busy}>
             Cancel
           </button>
           <button
             type="button"
-            style={{ ...saveBtnStyle, opacity: busy ? 0.55 : 1 }}
+            className={btnPrimary}
             onClick={() => void save()}
             disabled={busy}
           >
@@ -485,7 +486,6 @@ const NAVY = '#1a3a5c';
 const cardStyle: CSSProperties = { background: 'white', borderWidth: 1, borderStyle: 'solid', borderColor: '#e5e7eb', borderRadius: 12, padding: '16px 18px', marginTop: 16 };
 const headerRowStyle: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 12 };
 const titleStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 7, fontWeight: 700, fontSize: 15, color: NAVY };
-const addBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: NAVY, color: 'white', border: 'none', padding: '7px 13px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
 const emptyStyle: CSSProperties = { padding: '16px 14px', color: '#7f8c8d', fontSize: 13, background: '#f8fafc', borderRadius: 8, lineHeight: 1.5 };
 const listStyle: CSSProperties = { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 };
 const rowBtnStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '10px 12px', background: 'white', borderWidth: 1, borderStyle: 'solid', borderColor: '#e5e7eb', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' };
@@ -501,7 +501,6 @@ const detailTextStyle: CSSProperties = { fontSize: 14.5, color: '#1f2937', lineH
 const detailFootnoteStyle: CSSProperties = { fontSize: 11.5, color: '#8a949e', lineHeight: 1.45, marginBottom: 12 };
 const toggleStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, background: 'transparent', border: 'none', color: '#5c6b7a', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', padding: 0, marginTop: 10 };
 const errorRowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', background: '#fdeaea', color: '#b3261e', borderRadius: 8, fontSize: 13, fontWeight: 600 };
-const retryBtnStyle: CSSProperties = { background: 'white', color: '#b3261e', border: '1px solid #e5b6b1', padding: '4px 12px', borderRadius: 6, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', marginLeft: 'auto' };
 
 const backdropStyle: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 3200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '10vh 16px', overflowY: 'auto' };
 const sheetStyle: CSSProperties = { width: '100%', maxWidth: 480, background: 'white', borderRadius: 12, padding: 18, boxShadow: '0 10px 40px rgba(0,0,0,0.25)' };
@@ -521,5 +520,3 @@ const chipBtnConcernActiveStyle: CSSProperties = { background: '#fdeaea', color:
 const concernHintStyle: CSSProperties = { display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 12, color: '#b3261e', marginTop: 6, lineHeight: 1.45 };
 const errBoxStyle: CSSProperties = { background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '8px 11px', fontSize: 13, marginBottom: 10 };
 const actionsStyle: CSSProperties = { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 };
-const cancelBtnStyle: CSSProperties = { background: 'white', color: '#374151', border: '1px solid #d0d7de', padding: '9px 16px', borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const saveBtnStyle: CSSProperties = { background: NAVY, color: 'white', border: 'none', padding: '9px 16px', borderRadius: 6, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };

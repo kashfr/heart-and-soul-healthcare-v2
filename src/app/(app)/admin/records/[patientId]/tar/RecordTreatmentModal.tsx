@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type CSSProperties } from 'react';
+import { btn, btnPrimary } from '@/components/buttons';
 import { X } from 'lucide-react';
 import { recordTarEntry } from '@/lib/tar';
 import { withSelectChevron } from '@/lib/selectChevron';
@@ -247,8 +248,8 @@ export default function RecordTreatmentModal({
         {error && <div style={errorBox} role="alert">{error}</div>}
 
         <div style={actions}>
-          <button type="button" onClick={onClose} style={cancelBtn} disabled={saving}>Cancel</button>
-          <button type="button" onClick={save} style={saveBtn} disabled={saving}>
+          <button type="button" onClick={onClose} className={btn} disabled={saving}>Cancel</button>
+          <button type="button" onClick={save} className={btnPrimary} disabled={saving}>
             {saving ? 'Saving…' : 'Save Entry'}
           </button>
         </div>
@@ -274,5 +275,3 @@ const segActive: CSSProperties = { ...seg, background: '#1a3a5c', color: 'white'
 const hint: CSSProperties = { fontSize: 11.5, color: '#7f8c8d', marginTop: 6, lineHeight: 1.45 };
 const errorBox: CSSProperties = { background: '#fdecea', border: '1px solid #f5c2bd', color: '#a3261c', borderRadius: 6, padding: '10px 12px', fontSize: 13, marginBottom: 12 };
 const actions: CSSProperties = { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 6 };
-const cancelBtn: CSSProperties = { padding: '10px 16px', borderRadius: 6, border: '1px solid #d0d7de', background: 'white', color: '#2c3e50', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const saveBtn: CSSProperties = { padding: '10px 18px', borderRadius: 6, border: 'none', background: '#0e7c4a', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };

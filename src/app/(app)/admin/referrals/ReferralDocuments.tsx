@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { btn, btnSm } from '@/components/buttons';
 import { Eye, FileText } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { formatDateUS } from '@/lib/dateFormat';
@@ -55,7 +56,7 @@ export default function ReferralDocuments({ referralId, patientId, refreshKey }:
                 {d.patientDocumentId ? ' · now in the client’s Documents' : patientId ? '' : ' · moves to the client’s Documents when the record is created'}
               </div>
             </div>
-            <button type="button" onClick={() => setPreview(d)} style={viewBtnStyle}>
+            <button type="button" onClick={() => setPreview(d)} className={`${btn} ${btnSm}`} style={{ flexShrink: 0 }}>
               <Eye size={14} /> View
             </button>
           </div>
@@ -71,4 +72,3 @@ const listStyle: React.CSSProperties = { border: '1px solid #e5e7eb', borderRadi
 const rowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderBottom: '1px solid #f1f5f9', background: 'white' };
 const metaStyle: React.CSSProperties = { fontSize: 12, color: '#7f8c8d', marginTop: 2 };
 const emptyStyle: React.CSSProperties = { fontSize: 13, color: '#7f8c8d', padding: '8px 0' };
-const viewBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, background: 'white', border: '1px solid #d1d5db', borderRadius: 8, padding: '6px 10px', fontSize: 12.5, fontWeight: 600, color: '#374151', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 };

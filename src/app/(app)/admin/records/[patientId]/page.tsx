@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { btn, btnDanger, btnIcon, btnPrimary, btnSm } from '@/components/buttons';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { ArrowLeft, Plus, Pencil, Ban, Pill, CalendarDays } from 'lucide-react';
@@ -385,10 +386,10 @@ export default function RecordDetailPage() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0, flexWrap: 'wrap' }}>
-                  <Link href={`/admin/records/${patientId}/mar`} style={marLinkStyle}>
+                  <Link href={`/admin/records/${patientId}/mar`} className={btn} style={{ flexShrink: 0 }}>
                     <CalendarDays size={14} /> Monthly MAR
                   </Link>
-                  <Link href={`/admin/records/${patientId}/tar`} style={marLinkStyle}>
+                  <Link href={`/admin/records/${patientId}/tar`} className={btn} style={{ flexShrink: 0 }}>
                     <CalendarDays size={14} /> Monthly TAR
                   </Link>
                   <Link href={`/admin/clients?edit=${patientId}`} style={editHeaderLinkStyle}>
@@ -420,7 +421,7 @@ export default function RecordDetailPage() {
             <div style={sectionHeaderRowStyle}>
               <h2 style={sectionTitleStyle}>Medication Orders</h2>
               {!isViewingAs && (
-                <button onClick={openAdd} style={primaryBtnStyle}>
+                <button onClick={openAdd} className={btnPrimary}>
                   <Plus size={16} /> Add Medication
                 </button>
               )}
@@ -784,10 +785,10 @@ export default function RecordDetailPage() {
               </Field>
 
               <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
-                <button type="button" onClick={() => setFormOpen(false)} disabled={submitting} style={secondaryBtnStyle}>
+                <button type="button" onClick={() => setFormOpen(false)} disabled={submitting} className={btn}>
                   Cancel
                 </button>
-                <button type="submit" disabled={submitting} style={primaryBtnStyle}>
+                <button type="submit" disabled={submitting} className={btnPrimary}>
                   {submitting ? 'Saving…' : editingId ? 'Update Order' : 'Save Order'}
                 </button>
               </div>
@@ -830,10 +831,10 @@ export default function RecordDetailPage() {
                 />
               </Field>
               <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
-                <button type="button" onClick={() => setDcTarget(null)} disabled={submitting} style={secondaryBtnStyle}>
+                <button type="button" onClick={() => setDcTarget(null)} disabled={submitting} className={btn}>
                   Cancel
                 </button>
-                <button type="submit" disabled={submitting} style={dangerBtnStyle}>
+                <button type="submit" disabled={submitting} className={btnDanger}>
                   {submitting ? 'Saving…' : 'Discontinue'}
                 </button>
               </div>
@@ -913,14 +914,14 @@ export default function RecordDetailPage() {
               )}
 
               <div style={{ display: 'flex', gap: 10, marginTop: 18, justifyContent: 'flex-end' }}>
-                <button type="button" onClick={() => setViewOrder(null)} style={secondaryBtnStyle}>
+                <button type="button" onClick={() => setViewOrder(null)} className={btn}>
                   Close
                 </button>
                 {viewOrder.status === 'active' && !isViewingAs && (
                   <button
                     type="button"
                     onClick={() => { const o = viewOrder; setViewOrder(null); openEdit(o); }}
-                    style={primaryBtnStyle}
+                    className={btnPrimary}
                   >
                     <Pencil size={14} /> Edit Order
                   </button>
@@ -1027,12 +1028,13 @@ function OrderTable({
                 {!discontinued && (
                   // Stop row-click (view) from firing when using the action buttons.
                   <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
-                    <button onClick={() => onEdit?.(o)} style={iconBtnStyle} aria-label={`Edit ${o.medName}`} title="Edit">
+                    <button onClick={() => onEdit?.(o)} className={`${btn} ${btnIcon} ${btnSm}`} aria-label={`Edit ${o.medName}`} title="Edit">
                       <Pencil size={14} />
                     </button>
                     <button
                       onClick={() => onDiscontinue?.(o)}
-                      style={{ ...iconBtnStyle, color: '#c44' }}
+                      className={`${btnDanger} ${btnIcon} ${btnSm}`}
+                      style={{ marginLeft: 6 }}
                       aria-label={`Discontinue ${o.medName}`}
                       title="Discontinue"
                     >
@@ -1071,7 +1073,6 @@ const headerIconStyle: React.CSSProperties = { width: 46, height: 46, borderRadi
 const titleStyle: React.CSSProperties = { fontSize: 24, color: '#2c3e50', margin: 0 };
 const headerMetaStyle: React.CSSProperties = { fontSize: 13, color: '#7f8c8d', marginTop: 4 };
 const editHeaderLinkStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, color: '#1a73c4', textDecoration: 'none', fontSize: 13, fontWeight: 600, flexShrink: 0 };
-const marLinkStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#1a3a5c', color: 'white', textDecoration: 'none', fontSize: 13, fontWeight: 600, padding: '8px 12px', borderRadius: 6, flexShrink: 0 };
 const notFlaggedStyle: React.CSSProperties = { marginTop: 14, background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: 8, padding: '10px 14px', fontSize: 13, lineHeight: 1.5 };
 const headerGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginTop: 16, paddingTop: 16, borderTop: '1px solid #f1f3f5' };
 const headerFieldLabelStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: '#9aa6b2', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 };
@@ -1093,10 +1094,6 @@ const dcBadgeStyle: React.CSSProperties = { display: 'inline-block', background:
 const detailGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 14 };
 const detailLabelStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: '#9aa6b2', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 };
 const detailValueStyle: React.CSSProperties = { fontSize: 14.5, color: '#2c3e50' };
-const primaryBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#27ae60', color: 'white', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
-const secondaryBtnStyle: React.CSSProperties = { background: '#eef1f4', color: '#2c3e50', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const dangerBtnStyle: React.CSSProperties = { background: '#c0392b', color: 'white', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
-const iconBtnStyle: React.CSSProperties = { background: 'transparent', border: 'none', padding: 6, margin: '0 2px', borderRadius: 4, cursor: 'pointer', color: '#5c6b7a' };
 const modalBackdropStyle: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 };
 const modalStyle: React.CSSProperties = { background: 'white', borderRadius: 10, width: '100%', maxWidth: 600, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 12px 40px rgba(0,0,0,0.25)' };
 const modalHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #f1f3f5' };

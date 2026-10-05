@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type CSSProperties } from 'react';
+import { btn, btnPrimary } from '@/components/buttons';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
@@ -110,10 +111,10 @@ export default function RecordOutcomeModal({ admin, onClose, onSaved }: Props) {
         {error && <div style={errBox} role="alert">{error}</div>}
 
         <div style={actions}>
-          <button type="button" style={cancelBtn} onClick={onClose} disabled={busy}>
+          <button type="button" className={btn} onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button type="button" style={saveBtn} onClick={save} disabled={busy}>
+          <button type="button" className={btnPrimary} onClick={save} disabled={busy}>
             {busy ? 'Saving…' : 'Save Result'}
           </button>
         </div>
@@ -136,5 +137,3 @@ const textarea: CSSProperties = { width: '100%', padding: '9px 11px', border: '1
 const hint: CSSProperties = { fontSize: 11.5, color: '#8a949e', lineHeight: 1.4, marginTop: 2 };
 const errBox: CSSProperties = { marginTop: 12, background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '8px 11px', fontSize: 13 };
 const actions: CSSProperties = { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 };
-const cancelBtn: CSSProperties = { background: 'white', color: '#374151', border: '1px solid #d0d7de', padding: '9px 16px', borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const saveBtn: CSSProperties = { background: '#1a3a5c', color: 'white', border: '1px solid #1a3a5c', padding: '9px 16px', borderRadius: 6, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { btnDanger, btnIcon, btnPrimary, btnSm } from '@/components/buttons';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { Megaphone, Plus, Trash2, Check, Clock, AlertTriangle, Archive } from 'lucide-react';
 import { db } from '@/lib/firebase';
@@ -166,7 +167,7 @@ export default function AnnouncementsPage() {
                   <FieldError message={errors[`item-${i}-text`]} />
                 </div>
               </div>
-              <button type="button" title="Remove this item" style={iconBtnStyle} disabled={items.length === 1}
+              <button type="button" title="Remove this item" aria-label="Remove this item" className={`${btnDanger} ${btnIcon} ${btnSm}`} style={{ marginTop: 4, flexShrink: 0 }} disabled={items.length === 1}
                 onClick={() => { setErrors({}); setItems((prev) => prev.filter((_, j) => j !== i)); }}>
                 <Trash2 size={15} />
               </button>
@@ -204,7 +205,7 @@ export default function AnnouncementsPage() {
           {formError && <div style={noticeStyle} role="alert"><AlertTriangle size={16} /> {formError}</div>}
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-            <button type="button" style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1 }} onClick={() => void submit()} disabled={saving}>
+            <button type="button" className={btnPrimary} onClick={() => void submit()} disabled={saving}>
               {saving ? 'Publishing…' : 'Publish'}
             </button>
           </div>
@@ -243,7 +244,7 @@ function AnnouncementCard({ a, staff, testUids, retiring, onRetire }: { a: Annou
           <span style={countPill}><Check size={12} /> {acked.length + others.length} Read</span>
           {expected.length > 0 && <span style={{ ...countPill, background: waiting.length ? '#fff4e0' : '#e6f4ec', color: waiting.length ? '#9a5b00' : '#0e7c4a' }}><Clock size={12} /> {waiting.length} Waiting</span>}
           {a.active && (
-            <button type="button" style={secondaryBtnStyle} onClick={onRetire} disabled={retiring}>{retiring ? 'Retiring…' : 'Retire'}</button>
+            <button type="button" className={`${btnDanger} ${btnSm}`} onClick={onRetire} disabled={retiring}>{retiring ? 'Retiring…' : 'Retire'}</button>
           )}
         </div>
       </div>
@@ -294,14 +295,11 @@ const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: 
 const textareaStyle: CSSProperties = { ...inputStyle, height: 'auto', minHeight: 60, resize: 'vertical', lineHeight: 1.5 };
 const itemRowStyle: CSSProperties = { display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 4 };
 const numStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: '50%', background: '#0e7c4a', color: 'white', fontSize: 11.5, fontWeight: 700, flexShrink: 0, marginTop: 9 };
-const iconBtnStyle: CSSProperties = { background: 'transparent', border: '1px solid #e5e7eb', borderRadius: 6, color: '#7f8c8d', width: 32, height: 32, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', marginTop: 4, flexShrink: 0 };
 const linkBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'transparent', border: 'none', color: NAVY, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', padding: 0 };
 const chipStyle: CSSProperties = { background: '#f1f5f9', color: '#475569', borderWidth: 1, borderStyle: 'solid', borderColor: '#e2e8f0', padding: '8px 12px', borderRadius: 999, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const chipActiveStyle: CSSProperties = { ...chipStyle, background: '#e8eef4', color: NAVY, borderColor: NAVY };
 const noticeStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, background: '#fdeaea', color: '#b3261e', border: '1px solid #f0c8c4', borderRadius: 8, padding: '10px 14px', fontSize: 13.5, fontWeight: 600, marginBottom: 14 };
 const okStyle: CSSProperties = { ...noticeStyle, background: '#e6f4ec', color: '#0e7c4a', border: '1px solid #b7e0c6' };
-const primaryBtnStyle: CSSProperties = { background: NAVY, color: 'white', border: 'none', padding: '11px 18px', borderRadius: 8, fontSize: 14.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
-const secondaryBtnStyle: CSSProperties = { background: 'white', color: '#374151', border: '1px solid #d0d7de', padding: '7px 12px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const countPill: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: '#e6f4ec', color: '#0e7c4a', borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700 };
 const activePill: CSSProperties = { display: 'inline-block', background: '#e6f4ec', color: '#0e7c4a', borderRadius: 999, padding: '1px 8px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3 };
 const retiredPill: CSSProperties = { ...activePill, background: '#f1f5f9', color: '#64748b' };

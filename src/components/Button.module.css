@@ -101,3 +101,10 @@
   font-size: 13px;
   border-radius: 8px;
 }
+
+/* An icon-only button in a dense row: `${btn} ${btnIcon} ${btnSm}`. */
+.icon.sm {
+  width: 34px;
+  min-height: 34px;
+  padding: 0;
+}

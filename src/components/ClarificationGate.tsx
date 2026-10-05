@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { btnPrimary, btnSm } from '@/components/buttons';
 import { usePathname } from 'next/navigation';
 import { MessageCircleQuestion, AlertTriangle, ArrowRight } from 'lucide-react';
 import { useAuth, useEffectiveUser } from './AuthProvider';
@@ -115,7 +116,7 @@ function GateQueue({ items }: { items: OpenClarification[] }) {
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 {/* Full reload (plain <a>) so the gate re-evaluates against the new
                     path and steps aside on the destination note page. */}
-                <a href={`/admin/submissions/${it.noteId}?clarify=1`} style={reviewBtn}>
+                <a href={`/admin/submissions/${it.noteId}?clarify=1`} className={`${btnPrimary} ${btnSm}`}>
                   Review Note &amp; Reply <ArrowRight size={15} />
                 </a>
               </div>
@@ -143,5 +144,4 @@ const numStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'cen
 const criticalBadge: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: '#fef2f2', color: '#b3261e', border: '1px solid #fecaca', borderRadius: 999, padding: '1px 8px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3 };
 const correctionBadgeStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: '#fee2e2', color: '#b3261e', border: '1px solid #fca5a5', borderRadius: 999, padding: '1px 8px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3 };
 const questionStyle: React.CSSProperties = { fontSize: 13.5, color: '#1f2937', lineHeight: 1.5, margin: '8px 0 10px' };
-const reviewBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#1a3a5c', color: 'white', borderRadius: 6, padding: '8px 14px', fontSize: 13, fontWeight: 600, textDecoration: 'none', fontFamily: 'inherit' };
 const footerStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 18, paddingTop: 14, borderTop: '1px solid #f1f5f9' };

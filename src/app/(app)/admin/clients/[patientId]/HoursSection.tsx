@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { btn, btnDanger, btnIcon, btnPrimary, btnSm } from '@/components/buttons';
 import Link from 'next/link';
 import { AlertTriangle, ChevronLeft, ChevronRight, Clock, Copy, FileText, Pencil, Plus, Stethoscope, Trash2 } from 'lucide-react';
 import { formatDateUS } from '@/lib/dateFormat';
@@ -333,11 +334,11 @@ export default function HoursSection({ patientId, patientName, program, notes, u
         <div style={head}>
           <div style={title}><Clock size={16} /> Hours for {monthLabel(month)}</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <button type="button" onClick={() => shiftMonth(-1)} style={iconBtn} aria-label="Previous month"><ChevronLeft size={15} /></button>
+            <button type="button" onClick={() => shiftMonth(-1)} className={`${btn} ${btnIcon} ${btnSm}`} aria-label="Previous month" title="Previous month"><ChevronLeft size={15} /></button>
             <input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} style={input} aria-label="Month" />
-            <button type="button" onClick={() => shiftMonth(1)} style={iconBtn} aria-label="Next month"><ChevronRight size={15} /></button>
+            <button type="button" onClick={() => shiftMonth(1)} className={`${btn} ${btnIcon} ${btnSm}`} aria-label="Next month" title="Next month"><ChevronRight size={15} /></button>
             {!isCurrent && (
-              <button type="button" onClick={() => setMonth(todayISO.slice(0, 7))} style={smallBtn}>This Month</button>
+              <button type="button" onClick={() => setMonth(todayISO.slice(0, 7))} className={`${btn} ${btnSm}`}>This Month</button>
             )}
           </div>
         </div>
@@ -387,12 +388,12 @@ export default function HoursSection({ patientId, patientName, program, notes, u
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
           <div style={{ ...muted, flex: 1, minWidth: 240 }}>{answerText}</div>
-          <button type="button" onClick={copyAnswer} style={smallBtn} title="Copy a one-line answer for the parent">
+          <button type="button" onClick={copyAnswer} className={btn} title="Copy a one-line answer for the parent">
             <Copy size={13} /> {copied ? 'Copied' : 'Copy Answer'}
           </button>
           <Link
             href={`/admin/submissions?view=all&range=m&m=${month}&client=${encodeURIComponent(patientName)}`}
-            style={{ ...smallBtn, textDecoration: 'none' }}
+            className={btn}
             title="Open these notes on the Shift Notes list"
           >
             Open in Shift Notes
@@ -561,7 +562,7 @@ export default function HoursSection({ patientId, patientName, program, notes, u
         <div style={head}>
           <div style={title}><FileText size={16} /> Hours Authorizations</div>
           {editing === null && (
-            <button type="button" onClick={() => setEditing('new')} style={primaryBtn}><Plus size={14} /> Add Authorization</button>
+            <button type="button" onClick={() => setEditing('new')} className={btnPrimary}><Plus size={14} /> Add Authorization</button>
           )}
         </div>
         <div style={{ ...muted, marginBottom: 12 }}>
@@ -619,8 +620,8 @@ export default function HoursSection({ patientId, patientName, program, notes, u
                 </div>
                 {editing === null && (
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <button type="button" onClick={() => setEditing(a)} style={iconBtn} aria-label="Edit"><Pencil size={14} /></button>
-                    <button type="button" onClick={() => remove(a)} style={{ ...iconBtn, color: '#b3261e' }} aria-label="Delete"><Trash2 size={14} /></button>
+                    <button type="button" onClick={() => setEditing(a)} className={`${btn} ${btnIcon} ${btnSm}`} aria-label="Edit" title="Edit"><Pencil size={14} /></button>
+                    <button type="button" onClick={() => remove(a)} className={`${btnDanger} ${btnIcon} ${btnSm}`} aria-label="Delete" title="Delete"><Trash2 size={14} /></button>
                   </div>
                 )}
               </div>
@@ -972,8 +973,8 @@ function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: Form
 
       {err && <div style={{ ...errBox, marginTop: 10 }}>{err}</div>}
       <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-        <button type="button" onClick={submit} disabled={saving} style={primaryBtn}>{saving ? 'Saving…' : existing ? 'Save Changes' : 'Add Authorization'}</button>
-        <button type="button" onClick={onCancel} disabled={saving} style={smallBtn}>Cancel</button>
+        <button type="button" onClick={submit} disabled={saving} className={btnPrimary}>{saving ? 'Saving…' : existing ? 'Save Changes' : 'Add Authorization'}</button>
+        <button type="button" onClick={onCancel} disabled={saving} className={btn}>Cancel</button>
       </div>
     </div>
   );
@@ -1002,9 +1003,7 @@ const th: CSSProperties = { textAlign: 'left', padding: '6px 8px', borderBottom:
 const td: CSSProperties = { padding: '6px 8px', borderBottom: '1px solid #eef1f4', verticalAlign: 'top' };
 const input: CSSProperties = { padding: '7px 10px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 13, fontFamily: 'inherit', color: '#2c3e50', background: 'white', width: '100%', boxSizing: 'border-box' };
 const select: CSSProperties = withSelectChevron(input);
-const iconBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'white', border: '1px solid #d0d7de', borderRadius: 6, padding: 6, cursor: 'pointer', color: NAVY };
 const smallBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', border: '1px solid #d0d7de', borderRadius: 6, padding: '6px 10px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', color: NAVY, fontFamily: 'inherit' };
-const primaryBtn: CSSProperties = { ...smallBtn, background: NAVY, color: 'white', borderColor: NAVY };
 const linkBtn: CSSProperties = { background: 'none', border: 'none', padding: 0, color: NAVY, fontWeight: 600, cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' };
 const badgeBase: CSSProperties = { display: 'inline-block', marginLeft: 8, padding: '1px 7px', borderRadius: 999, fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3, verticalAlign: 'middle' };
 const okBadge: CSSProperties = { ...badgeBase, background: '#e9f6f2', color: '#14544a', border: '1px solid #b9e3d8' };

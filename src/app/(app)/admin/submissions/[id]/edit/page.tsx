@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, use } from 'react';
+import { btn, btnPrimary } from '@/components/buttons';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -126,10 +127,10 @@ export default function EditSubmissionPage({ params }: PageProps) {
                 Changes saved successfully
               </span>
             )}
-            <Link href={`/admin/submissions/${id}`} style={cancelBtnStyle}>
+            <Link href={`/admin/submissions/${id}`} className={btn}>
               Cancel
             </Link>
-            <button onClick={handleSave} disabled={saving} style={saveBtnStyle}>
+            <button onClick={handleSave} disabled={saving} className={btnPrimary}>
               {saving ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
@@ -233,10 +234,10 @@ export default function EditSubmissionPage({ params }: PageProps) {
               Changes saved successfully
             </span>
           )}
-          <Link href={`/admin/submissions/${id}`} style={cancelBtnStyle}>
+          <Link href={`/admin/submissions/${id}`} className={btn}>
             Cancel
           </Link>
-          <button onClick={handleSave} disabled={saving} style={saveBtnStyle}>
+          <button onClick={handleSave} disabled={saving} className={btnPrimary}>
             {saving ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
@@ -443,27 +444,3 @@ const editTextareaStyle: React.CSSProperties = {
   fontFamily: 'inherit',
 };
 
-const saveBtnStyle: React.CSSProperties = {
-  background: '#27ae60',
-  color: 'white',
-  border: 'none',
-  padding: '8px 24px',
-  borderRadius: 4,
-  cursor: 'pointer',
-  fontWeight: 600,
-  fontSize: 14,
-};
-
-const cancelBtnStyle: React.CSSProperties = {
-  display: 'inline-block',
-  background: '#f5f5f5',
-  color: '#333',
-  border: '1px solid #ccc',
-  padding: '8px 20px',
-  borderRadius: 4,
-  cursor: 'pointer',
-  fontWeight: 600,
-  fontSize: 14,
-  textDecoration: 'none',
-  textAlign: 'center',
-};

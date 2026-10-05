@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { btn, btnDanger, btnIcon, btnPrimary, btnSm } from '@/components/buttons';
 import { Plus, ShieldCheck, Pencil, Ban } from 'lucide-react';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import {
@@ -261,11 +262,11 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
         {!isViewingAs && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {pending.length > 0 && (
-              <button type="button" style={approveBtnStyle} onClick={handleApprove} disabled={busy} title="Stamps your name, role, and the time on each pending task. Intended for the RN supervisor.">
+              <button type="button" className={btn} onClick={handleApprove} disabled={busy} title="Stamps your name, role, and the time on each pending task. Intended for the RN supervisor.">
                 <ShieldCheck size={15} /> Approve All Pending ({pending.length})
               </button>
             )}
-            <button type="button" style={addBtnStyle} onClick={() => setAddOpen(true)} disabled={busy}>
+            <button type="button" className={btnPrimary} onClick={() => setAddOpen(true)} disabled={busy}>
               <Plus size={15} /> Add Tasks
             </button>
           </div>
@@ -311,14 +312,14 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
                   {!isViewingAs && (
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                       {!t.approvedAt && (
-                        <button type="button" style={approveOneBtnStyle} onClick={() => handleApproveOne(t)} disabled={busy} title="Approve this task (stamps your name, role, and the time)">
+                        <button type="button" className={`${btn} ${btnSm}`} onClick={() => handleApproveOne(t)} disabled={busy} title="Approve this task (stamps your name, role, and the time)">
                           <ShieldCheck size={13} /> Approve
                         </button>
                       )}
-                      <button type="button" style={iconBtnStyle} onClick={() => openEdit(t)} disabled={busy} title="Edit frequency / instructions">
+                      <button type="button" className={`${btn} ${btnIcon} ${btnSm}`} onClick={() => openEdit(t)} disabled={busy} title="Edit frequency / instructions" aria-label={`Edit ${t.name}`}>
                         <Pencil size={14} />
                       </button>
-                      <button type="button" style={iconBtnDangerStyle} onClick={() => { setDcTarget(t); setDcReason(''); setDcReasonError(''); }} disabled={busy} title="Discontinue task">
+                      <button type="button" className={`${btnDanger} ${btnIcon} ${btnSm}`} onClick={() => { setDcTarget(t); setDcReason(''); setDcReasonError(''); }} disabled={busy} title="Discontinue task" aria-label={`Discontinue ${t.name}`}>
                         <Ban size={14} />
                       </button>
                     </div>
@@ -425,10 +426,10 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
             </div>
             <FieldError message={pickError} />
             <div style={modalActionsStyle}>
-              <button type="button" style={secondaryBtnStyle} onClick={() => { setAddOpen(false); setPickError(''); }} disabled={busy}>
+              <button type="button" className={btn} onClick={() => { setAddOpen(false); setPickError(''); }} disabled={busy}>
                 Cancel
               </button>
-              <button type="button" style={addBtnStyle} onClick={handleAdd} disabled={busy}>
+              <button type="button" className={btnPrimary} onClick={handleAdd} disabled={busy}>
                 {busy ? 'Saving…' : `Add ${pickedCount || ''} Task${pickedCount === 1 ? '' : 's'}`}
               </button>
             </div>
@@ -512,8 +513,8 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
               <p style={editWarnStyle}>Editing clears this task&apos;s RN approval; it returns to pending review.</p>
             )}
             <div style={modalActionsStyle}>
-              <button type="button" style={secondaryBtnStyle} onClick={() => setEditTarget(null)} disabled={busy}>Cancel</button>
-              <button type="button" style={addBtnStyle} onClick={handleEdit} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+              <button type="button" className={btn} onClick={() => setEditTarget(null)} disabled={busy}>Cancel</button>
+              <button type="button" className={btnPrimary} onClick={handleEdit} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
             </div>
           </div>
         </div>
@@ -541,8 +542,8 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
               <FieldError message={dcReasonError} />
             </div>
             <div style={modalActionsStyle}>
-              <button type="button" style={secondaryBtnStyle} onClick={() => { setDcTarget(null); setDcReasonError(''); }} disabled={busy}>Cancel</button>
-              <button type="button" style={dangerBtnStyle} onClick={handleDiscontinue} disabled={busy}>
+              <button type="button" className={btn} onClick={() => { setDcTarget(null); setDcReasonError(''); }} disabled={busy}>Cancel</button>
+              <button type="button" className={btnDanger} onClick={handleDiscontinue} disabled={busy}>
                 {busy ? 'Saving…' : 'Discontinue'}
               </button>
             </div>
@@ -558,10 +559,6 @@ const GREEN = '#0e7c4a';
 const sectionHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 };
 const subStyle: React.CSSProperties = { fontSize: 13, color: '#64748b', margin: 0, maxWidth: 520, lineHeight: 1.5 };
 const pendingBannerStyle: React.CSSProperties = { color: '#b45309', fontWeight: 600 };
-const addBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 14px', background: GREEN, color: 'white', border: 'none', borderRadius: 8, fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const approveBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 14px', background: NAVY, color: 'white', border: 'none', borderRadius: 8, fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const secondaryBtnStyle: React.CSSProperties = { padding: '9px 14px', background: 'white', color: '#374151', border: '1px solid #d0d7de', borderRadius: 8, fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const dangerBtnStyle: React.CSSProperties = { padding: '9px 14px', background: '#c62828', color: 'white', border: 'none', borderRadius: 8, fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const errorStyle: React.CSSProperties = { padding: '10px 12px', background: '#fff5f5', border: '1px solid #f5c6c6', color: '#c62828', borderRadius: 8, fontSize: 13.5, marginBottom: 12 };
 const emptyStyle: React.CSSProperties = { padding: '24px 16px', textAlign: 'center', color: '#7f8c8d', fontSize: 14, background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 10 };
 const groupTitleStyle: React.CSSProperties = { fontSize: 13, textTransform: 'uppercase', letterSpacing: 0.6, color: '#64748b', margin: '0 0 6px' };
@@ -573,9 +570,6 @@ const skilledChipStyle: React.CSSProperties = { fontSize: 10.5, fontWeight: 700,
 const anyChipStyle: React.CSSProperties = { fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: '#f1f5f1', color: '#3d6b47', border: '1px solid #d5e5d8', whiteSpace: 'nowrap' };
 const approvedChipStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 600, color: GREEN };
 const pendingChipStyle: React.CSSProperties = { display: 'inline-block', fontSize: 11.5, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#fdf3e7', color: '#b45309', border: '1px solid #f0d9b8' };
-const iconBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, background: 'white', border: '1px solid #d0d7de', borderRadius: 7, color: '#374151', cursor: 'pointer' };
-const approveOneBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, height: 30, padding: '0 10px', background: 'white', border: `1px solid ${NAVY}`, borderRadius: 7, color: NAVY, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' };
-const iconBtnDangerStyle: React.CSSProperties = { ...iconBtnStyle, color: '#c62828', borderColor: '#f5c6c6' };
 const dcSummaryStyle: React.CSSProperties = { cursor: 'pointer', fontSize: 13.5, color: '#64748b', marginBottom: 8 };
 const backdropStyle: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 16 };
 const modalStyle: React.CSSProperties = { background: 'white', borderRadius: 12, padding: 20, width: '100%', maxWidth: 620, maxHeight: '86vh', display: 'flex', flexDirection: 'column' };

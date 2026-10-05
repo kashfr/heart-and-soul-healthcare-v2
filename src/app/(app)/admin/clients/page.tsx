@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { btn, btnDanger, btnIcon, btnPrimary, btnSm } from '@/components/buttons';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -577,7 +578,7 @@ function ClientsRosterInner() {
             </p>
           </div>
           {canManageRoster && (
-            <button onClick={handleOpenAdd} style={primaryBtnStyle}>
+            <button onClick={handleOpenAdd} className={btnPrimary}>
               <Plus size={16} /> Add Patient
             </button>
           )}
@@ -731,7 +732,8 @@ function ClientsRosterInner() {
                       <Link
                         href={marHrefFor(p)}
                         onClick={(e) => e.stopPropagation()}
-                        style={chartPillStyle}
+                        className={`${btn} ${btnSm}`}
+                        style={{ marginRight: 6 }}
                         title={`Open ${p.name}'s monthly MAR${p.requiresMar ? '' : ' (no MAR on file)'}`}
                       >
                         <Pill size={12} /> MAR
@@ -739,7 +741,8 @@ function ClientsRosterInner() {
                       <Link
                         href={tarHrefFor(p)}
                         onClick={(e) => e.stopPropagation()}
-                        style={chartPillStyle}
+                        className={`${btn} ${btnSm}`}
+                        style={{ marginRight: 6 }}
                         title={`Open ${p.name}'s monthly TAR`}
                       >
                         <Stethoscope size={12} /> TAR
@@ -752,8 +755,9 @@ function ClientsRosterInner() {
                             e.stopPropagation();
                             handleEdit(p);
                           }}
-                          style={iconBtnStyle}
+                          className={`${btn} ${btnIcon} ${btnSm}`}
                           aria-label={`Edit ${p.name}`}
+                          title="Edit"
                         >
                           <Pencil size={14} />
                         </button>
@@ -762,8 +766,10 @@ function ClientsRosterInner() {
                             e.stopPropagation();
                             handleRemove(p);
                           }}
-                          style={{ ...iconBtnStyle, color: '#c44' }}
+                          className={`${btnDanger} ${btnIcon} ${btnSm}`}
+                          style={{ marginLeft: 6 }}
                           aria-label={`Remove ${p.name}`}
+                          title="Remove"
                         >
                           <Trash2 size={14} />
                         </button>
@@ -1189,7 +1195,8 @@ function ClientsRosterInner() {
                           setPickerOpen(false);
                           setPickerQuery('');
                         }}
-                        style={pickerCloseStyle}
+                        className={`${btn} ${btnSm}`}
+                        style={{ marginTop: 8 }}
                       >
                         Done
                       </button>
@@ -1198,7 +1205,7 @@ function ClientsRosterInner() {
                     <button
                       type="button"
                       onClick={() => setPickerOpen(true)}
-                      style={addNurseBtnStyle}
+                      className={`${btn} ${btnSm}`}
                       disabled={savingCareTeam}
                     >
                       <UserPlus size={14} /> Add Nurse
@@ -1216,11 +1223,11 @@ function ClientsRosterInner() {
                   type="button"
                   onClick={() => setFormOpen(false)}
                   disabled={submitting}
-                  style={secondaryBtnStyle}
+                  className={btn}
                 >
                   Cancel
                 </button>
-                <button type="submit" disabled={submitting} style={primaryBtnStyle}>
+                <button type="submit" disabled={submitting} className={btnPrimary}>
                   {submitting ? 'Saving…' : editingId ? 'Update Patient' : 'Save Patient'}
                 </button>
               </div>
@@ -1282,21 +1289,6 @@ const altRowStyle: React.CSSProperties = { background: '#fafbfc' };
 const nameLinkStyle: React.CSSProperties = { color: '#2c3e50', textDecoration: 'none', fontWeight: 600 };
 // Quick-open pills to the monthly grids — the two-click charting path that
 // used to be the Medications/Treatments sidebar tabs.
-const chartPillStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 4,
-  background: '#eef4fb',
-  color: '#1a3a5c',
-  border: '1px solid #c8def5',
-  borderRadius: 999,
-  padding: '4px 10px',
-  fontSize: 11.5,
-  fontWeight: 700,
-  textDecoration: 'none',
-  marginRight: 6,
-  letterSpacing: 0.3,
-};
 // whiteSpace: nowrap is load-bearing — without it "23 yrs" wraps into a
 // squished two-line circle when the Age column gets tight.
 const ageBadgeStyle: React.CSSProperties = {
@@ -1304,9 +1296,6 @@ const ageBadgeStyle: React.CSSProperties = {
   fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 999,
   whiteSpace: 'nowrap', lineHeight: 1.4,
 };
-const primaryBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#27ae60', color: 'white', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
-const secondaryBtnStyle: React.CSSProperties = { background: '#eef1f4', color: '#2c3e50', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const iconBtnStyle: React.CSSProperties = { background: 'transparent', border: 'none', padding: 6, margin: '0 2px', borderRadius: 4, cursor: 'pointer', color: '#5c6b7a' };
 const modalBackdropStyle: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 };
 const modalStyle: React.CSSProperties = { background: 'white', borderRadius: 10, width: '100%', maxWidth: 640, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 12px 40px rgba(0,0,0,0.25)' };
 const modalHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #f1f3f5' };
@@ -1435,9 +1424,7 @@ const chipStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'ce
 const chipCredStyle: React.CSSProperties = { fontSize: 10, fontWeight: 700, background: '#1a3a5c', color: 'white', padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4 };
 const chipTestStyle: React.CSSProperties = { fontSize: 10, fontWeight: 700, background: '#fdecea', color: '#a3261c', padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4, textTransform: 'uppercase' };
 const chipRemoveBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', color: '#1a3a5c', border: 'none', padding: 2, borderRadius: 999, cursor: 'pointer' };
-const addNurseBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', color: '#0e7c4a', border: '1px dashed #0e7c4a', padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const pickerListStyle: React.CSSProperties = { marginTop: 8, maxHeight: 200, overflowY: 'auto', border: '1px solid #e5eaf0', borderRadius: 6, background: 'white' };
 const pickerEmptyStyle: React.CSSProperties = { padding: '10px 12px', color: '#7f8c8d', fontSize: 13, fontStyle: 'italic' };
 const pickerItemStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', borderBottom: '1px solid #f1f3f5', padding: '10px 12px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' };
 const pickerCredStyle: React.CSSProperties = { fontSize: 10, fontWeight: 700, background: '#1a3a5c', color: 'white', padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4, marginLeft: 'auto' };
-const pickerCloseStyle: React.CSSProperties = { marginTop: 8, background: 'transparent', border: 'none', color: '#5c6b7a', fontSize: 13, fontWeight: 600, cursor: 'pointer', padding: '4px 0', fontFamily: 'inherit' };

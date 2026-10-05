@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { btn, btnPrimary } from '@/components/buttons';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -555,15 +556,15 @@ function ClientDashboardInner() {
                 {/* Hidden during view-as: the note form blocks the session
                     anyway (ViewAsWriteBlock), so don't offer a dead door. */}
                 {!isViewingAs && (
-                  <Link href={`/progress-note?patient=${patientId}`} style={secondaryActionStyle}>
+                  <Link href={`/progress-note?patient=${patientId}`} className={btn}>
                     <FileText size={15} /> New Progress Note
                   </Link>
                 )}
-                <Link href={marHref} style={primaryActionStyle}>
+                <Link href={marHref} className={btnPrimary}>
                   <Pill size={15} /> Open MAR
                 </Link>
                 {!isNurse && (
-                  <Link href={`/admin/records/${patientId}`} style={secondaryActionStyle}>
+                  <Link href={`/admin/records/${patientId}`} className={btn}>
                     <ClipboardList size={15} /> Manage Record
                   </Link>
                 )}
@@ -1191,8 +1192,6 @@ const avatarStyle: React.CSSProperties = { width: 52, height: 52, borderRadius: 
 const titleStyle: React.CSSProperties = { fontSize: 22, color: '#1f2937', margin: 0, lineHeight: 1.2 };
 const identityLineStyle: React.CSSProperties = { fontSize: 13.5, color: '#5c6b7a', marginTop: 4 };
 const addressLineStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 5, fontSize: 13, color: '#5c6b7a', marginTop: 4 };
-const primaryActionStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: NAVY, color: 'white', padding: '9px 14px', borderRadius: 8, fontSize: 13.5, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap' };
-const secondaryActionStyle: React.CSSProperties = { ...primaryActionStyle, background: 'white', color: NAVY, border: `1px solid ${NAVY}` };
 const headerGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginTop: 14, paddingTop: 14, borderTop: '1px solid #f1f3f5' };
 const headerFieldLabelStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: '#8a949e', textTransform: 'uppercase', letterSpacing: 0.4 };
 const headerFieldValueStyle: React.CSSProperties = { fontSize: 13.5, marginTop: 3, lineHeight: 1.4 };

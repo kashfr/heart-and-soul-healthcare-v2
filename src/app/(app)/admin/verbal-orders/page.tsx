@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { AlertTriangle, Ban, Check, Clock, Download, Eye, FileSignature, Inbox, PhoneCall, Plus, RefreshCw, Send, X } from 'lucide-react';
@@ -177,7 +178,7 @@ function VerbalOrdersInner() {
             </p>
           </div>
           {!isViewingAs && (
-            <Link href="/admin/verbal-orders/new" style={primaryLinkStyle}><Plus size={15} /> Take a Verbal Order</Link>
+            <Link href="/admin/verbal-orders/new" className={btnPrimary}><Plus size={15} /> Take a Verbal Order</Link>
           )}
         </header>
 
@@ -197,9 +198,9 @@ function VerbalOrdersInner() {
                     <span style={{ fontWeight: 700, color: '#2c3e50' }}>From {inboundFaxSender(f.callerId, f.remoteId).from || 'unknown sender'}</span>
                     <span style={metaStyle}>{f.receivedAt} · {f.pages} page{f.pages === 1 ? '' : 's'}{f.candidateOrderIds.length ? ' · sender matches an open order' : ''}</span>
                     <span style={{ display: 'inline-flex', gap: 6, marginLeft: 'auto', flexWrap: 'wrap' }}>
-                      <button type="button" style={smallBtnStyle} onClick={() => void previewFax(f)}><Eye size={13} /> Preview</button>
-                      <button type="button" style={{ ...smallBtnStyle, background: '#e6f6ec', color: '#1e7a44', borderColor: '#bfe3cc' }} onClick={() => setMatchFax(f)}><FileSignature size={13} /> Match to an Order</button>
-                      <button type="button" style={{ ...smallBtnStyle, color: '#5c6b7a' }} onClick={() => void dismissFax(f)}><X size={13} /> Not a Signed Order</button>
+                      <button type="button" className={`${btn} ${btnSm}`} onClick={() => void previewFax(f)}><Eye size={13} /> Preview</button>
+                      <button type="button" className={`${btnPrimary} ${btnSm}`} onClick={() => setMatchFax(f)}><FileSignature size={13} /> Match to an Order</button>
+                      <button type="button" className={`${btn} ${btnSm}`} onClick={() => void dismissFax(f)}><X size={13} /> Not a Signed Order</button>
                     </span>
                   </div>
                 </li>
@@ -225,7 +226,7 @@ function VerbalOrdersInner() {
           {orders === null ? (
             <div style={mutedStyle}>Loading…</div>
           ) : error ? (
-            <div style={errRowStyle}><AlertTriangle size={14} /> Verbal orders couldn&apos;t be loaded. <button type="button" style={retryBtnStyle} onClick={reload}>Retry</button></div>
+            <div style={errRowStyle}><AlertTriangle size={14} /> Verbal orders couldn&apos;t be loaded. <button type="button" className={`${btn} ${btnSm}`} style={{ marginLeft: 'auto' }} onClick={reload}>Retry</button></div>
           ) : visible.length === 0 ? (
             <div style={mutedStyle}>{filter === 'open' ? 'Nothing is awaiting a physician signature.' : 'No verbal orders yet.'}</div>
           ) : (
@@ -275,19 +276,19 @@ function VerbalOrdersInner() {
                       </div>
                     )}
                     <div style={actionsRowStyle}>
-                      <button type="button" style={smallBtnStyle} onClick={() => void download(o)}><Download size={13} /> PDF</button>
+                      <button type="button" className={`${btn} ${btnSm}`} onClick={() => void download(o)}><Download size={13} /> PDF</button>
                       {canAct && (
-                        <button type="button" style={{ ...smallBtnStyle, opacity: busyId === o.id ? 0.6 : 1 }} disabled={busyId === o.id} onClick={() => void resend(o)}>
+                        <button type="button" className={`${btn} ${btnSm}`} disabled={busyId === o.id} onClick={() => void resend(o)}>
                           <Send size={13} /> {busyId === o.id ? 'Sending…' : o.status === 'taken' ? 'Fax Now' : 'Resend Fax'}
                         </button>
                       )}
                       {isOpen && isStaff && !isViewingAs && (
-                        <button type="button" style={{ ...smallBtnStyle, background: '#e6f6ec', color: '#1e7a44', borderColor: '#bfe3cc' }} onClick={() => setSignModal({ order: o })}>
+                        <button type="button" className={`${btnPrimary} ${btnSm}`} onClick={() => setSignModal({ order: o })}>
                           <FileSignature size={13} /> Record Signature
                         </button>
                       )}
                       {canAct && (
-                        <button type="button" style={{ ...smallBtnStyle, background: '#fdeaea', color: '#b3261e', borderColor: '#f0c8c4' }} onClick={() => setCancelModal(o)}>
+                        <button type="button" className={`${btnDanger} ${btnSm}`} onClick={() => setCancelModal(o)}>
                           <Ban size={13} /> Cancel Order
                         </button>
                       )}
@@ -431,8 +432,8 @@ function RecordSignatureModal({ order, fax, onClose, onDone }: { order: VerbalOr
         )}
         {err && <div style={errBoxStyle} role="alert">{err}</div>}
         <div style={actionsStyle}>
-          <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={busy}>Cancel</button>
-          <button type="button" style={{ ...saveBtnStyle, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Record Signature'}</button>
+          <button type="button" className={btn} onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="button" className={btnPrimary} disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Record Signature'}</button>
         </div>
       </div>
     </div>
@@ -506,8 +507,8 @@ function CancelOrderModal({ order, onClose, onDone }: { order: VerbalOrder; onCl
         </label>
         {err && <div style={errBoxStyle} role="alert">{err}</div>}
         <div style={actionsStyle}>
-          <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={busy}>Keep Order</button>
-          <button type="button" style={{ ...saveBtnStyle, background: '#b3261e', opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => void save()}>{busy ? 'Cancelling…' : 'Cancel Order'}</button>
+          <button type="button" className={btn} onClick={onClose} disabled={busy}>Keep Order</button>
+          <button type="button" className={btnDanger} disabled={busy} onClick={() => void save()}>{busy ? 'Cancelling…' : 'Cancel Order'}</button>
         </div>
       </div>
     </div>
@@ -541,15 +542,15 @@ function MatchFaxModal({ fax, openOrders, onClose, onPick, onPreview }: { fax: U
               Taken {formatDateUS(pending.takenDate)} · fax {formatUSFaxNumber(pending.physicianFax)}
             </div>
             <div style={actionsStyle}>
-              <button type="button" style={cancelBtnStyle} onClick={() => setPending(null)}>Cancel</button>
-              <button type="button" style={saveBtnStyle} onClick={() => onPick(pending)}>Confirm</button>
+              <button type="button" className={btn} onClick={() => setPending(null)}>Cancel</button>
+              <button type="button" className={btnPrimary} onClick={() => onPick(pending)}>Confirm</button>
             </div>
           </>
         ) : (
         <>
         <div style={{ ...sheetHintStyle, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span>From {inboundFaxSender(fax.callerId, fax.remoteId).from || 'unknown'} · {fax.receivedAt} · {fax.pages} page{fax.pages === 1 ? '' : 's'}</span>
-          <button type="button" style={smallBtnStyle} onClick={onPreview}><Eye size={13} /> Preview the Fax</button>
+          <button type="button" className={`${btn} ${btnSm}`} onClick={onPreview}><Eye size={13} /> Preview the Fax</button>
         </div>
         <div style={{ ...mutedStyle, marginBottom: 10 }}>Open the preview and check the client name and order on the page before choosing.</div>
         {suggested.length > 0 && (
@@ -561,7 +562,7 @@ function MatchFaxModal({ fax, openOrders, onClose, onPick, onPreview }: { fax: U
         <div style={{ ...labelStyle, marginTop: 10 }}>All Open Orders</div>
         <div style={pickListStyle}>{rest.length === 0 && suggested.length === 0 ? <div style={mutedStyle}>No open verbal orders.</div> : rest.map((o) => <Row key={o.id} o={o} />)}</div>
         <div style={actionsStyle}>
-          <button type="button" style={cancelBtnStyle} onClick={onClose}>Close</button>
+          <button type="button" className={btn} onClick={onClose}>Close</button>
         </div>
         </>
         )}
@@ -594,7 +595,6 @@ const clientLinkStyle: CSSProperties = { fontWeight: 700, color: NAVY, textDecor
 const metaStyle: CSSProperties = { fontSize: 12.5, color: '#5c6b7a' };
 const textStyle: CSSProperties = { fontSize: 14, color: '#1f2937', lineHeight: 1.55, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' };
 const actionsRowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 10 };
-const smallBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, background: '#f1f5f9', color: NAVY, borderWidth: 1, borderStyle: 'solid', borderColor: '#e2e8f0', padding: '6px 11px', borderRadius: 999, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
 const chip = (bg: string, fg: string): CSSProperties => ({ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 999, background: bg, color: fg, fontSize: 11.5, fontWeight: 700 });
 const chipSignedStyle = chip('#e6f6ec', '#1e7a44');
 const chipOpenStyle = chip('#e8eef4', NAVY);
@@ -608,9 +608,7 @@ const filterActiveStyle: CSSProperties = { ...filterBtnStyle, background: '#e8ee
 const mutedStyle: CSSProperties = { fontSize: 13, color: '#7f8c8d', lineHeight: 1.5 };
 const hintStyle: CSSProperties = { fontSize: 12, color: '#8a949e', lineHeight: 1.4 };
 const errRowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', background: '#fdeaea', color: '#b3261e', borderRadius: 8, fontSize: 13, fontWeight: 600 };
-const retryBtnStyle: CSSProperties = { background: 'white', color: '#b3261e', border: '1px solid #e5b6b1', padding: '4px 12px', borderRadius: 6, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', marginLeft: 'auto' };
 const toastStyle: CSSProperties = { background: '#1f2937', color: 'white', padding: '10px 14px', borderRadius: 8, fontSize: 13.5, marginBottom: 14 };
-const primaryLinkStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: NAVY, color: 'white', padding: '10px 16px', borderRadius: 8, fontSize: 14, fontWeight: 700, textDecoration: 'none' };
 const backdropStyle: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 3200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '10vh 16px', overflowY: 'auto' };
 const sheetStyle: CSSProperties = { width: '100%', maxWidth: 520, background: 'white', borderRadius: 12, padding: 18, boxShadow: '0 10px 40px rgba(0,0,0,0.25)' };
 const sheetTitleStyle: CSSProperties = { fontWeight: 700, fontSize: 17, color: '#1f2937', marginBottom: 6 };
@@ -621,7 +619,5 @@ const labelStyle: CSSProperties = { fontSize: 12, fontWeight: 600, color: '#5c6b
 const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', height: 38 };
 const errBoxStyle: CSSProperties = { background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '8px 11px', fontSize: 13, marginBottom: 10 };
 const actionsStyle: CSSProperties = { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 };
-const cancelBtnStyle: CSSProperties = { background: 'white', color: '#374151', border: '1px solid #d0d7de', padding: '9px 16px', borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const saveBtnStyle: CSSProperties = { background: NAVY, color: 'white', border: 'none', padding: '9px 16px', borderRadius: 6, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
 const pickListStyle: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6, maxHeight: '40vh', overflowY: 'auto' };
 const pickRowStyle: CSSProperties = { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, width: '100%', textAlign: 'left', background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 10px', cursor: 'pointer', fontFamily: 'inherit' };

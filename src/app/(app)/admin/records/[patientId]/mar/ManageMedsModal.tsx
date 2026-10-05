@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { btn, btnDanger, btnPrimary } from '@/components/buttons';
 import { createPortal } from 'react-dom';
 import { authedFetch } from '@/lib/authedFetch';
 import { MED_FREQUENCIES, PRN_FREQUENCY, PRN_SUB_FREQUENCIES } from '@/lib/medFrequencies';
@@ -633,8 +634,8 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
             {submitError && <div style={errorBox} role="alert">{submitError}</div>}
 
             <div style={{ display: 'flex', gap: 10, marginTop: 8, justifyContent: 'flex-end' }}>
-              <button type="button" onClick={onClose} disabled={submitting} style={secondaryBtn}>Cancel</button>
-              <button type="button" onClick={handleSubmit} disabled={submitting} style={primaryBtn}>
+              <button type="button" onClick={onClose} disabled={submitting} className={btn}>Cancel</button>
+              <button type="button" onClick={handleSubmit} disabled={submitting} className={mode === 'discontinue' ? btnDanger : btnPrimary}>
                 {submitting ? 'Saving…' : mode === 'discontinue' ? 'Discontinue' : mode === 'change' ? 'Save Change' : 'Add Medication'}
               </button>
             </div>
@@ -682,5 +683,3 @@ const noticeBase: CSSProperties = {
 const correctionNoticeStyle: CSSProperties = { ...noticeBase, color: '#14532d', background: '#f0fdf4', borderColor: '#86efac' };
 const regimenNoticeStyle: CSSProperties = { ...noticeBase, color: '#7c2d12', background: '#fff7ed', borderColor: '#f59e0b' };
 const errorBox: CSSProperties = { background: '#fef2f2', border: '1px solid #fecaca', color: '#b3261e', borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: 10 };
-const secondaryBtn: CSSProperties = { background: '#eef1f4', color: '#2c3e50', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const primaryBtn: CSSProperties = { background: '#27ae60', color: 'white', padding: '10px 16px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };

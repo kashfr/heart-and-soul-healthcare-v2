@@ -1,6 +1,7 @@
 'use client';
 
 import type { CSSProperties } from 'react';
+import { btn, btnDanger, btnIcon, btnSm } from '@/components/buttons';
 import { Plus, X } from 'lucide-react';
 import { GLUCOSE_UNIT, type SlidingScaleFormRow } from '@/lib/slidingScale';
 
@@ -82,7 +83,7 @@ export default function SlidingScaleEditor({ rows, onChange, invalid }: Props) {
                 placeholder={i === 0 ? 'e.g., Treat low blood sugar, call the physician' : last ? 'e.g., Call the physician' : ''}
               />
               {rows.length > 2 && (
-                <button type="button" onClick={() => removeRow(i)} style={removeBtn} aria-label={`Remove range ${i + 1}`}>
+                <button type="button" onClick={() => removeRow(i)} className={`${btnDanger} ${btnIcon} ${btnSm}`} style={{ flexShrink: 0 }} aria-label={`Remove range ${i + 1}`} title="Remove range">
                   <X size={14} />
                 </button>
               )}
@@ -90,7 +91,7 @@ export default function SlidingScaleEditor({ rows, onChange, invalid }: Props) {
           </div>
         );
       })}
-      <button type="button" onClick={addRow} style={addBtn}>
+      <button type="button" onClick={addRow} className={`${btn} ${btnSm}`} style={{ marginTop: 8 }}>
         <Plus size={13} /> Add Range
       </button>
       <div style={hint}>
@@ -114,6 +115,4 @@ const muted: CSSProperties = { fontSize: 13, color: '#6b7280', whiteSpace: 'nowr
 const inputBase: CSSProperties = { padding: '7px 9px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', height: 34, background: 'white' };
 const numInput: CSSProperties = { ...inputBase, width: 58, textAlign: 'center' };
 const textInput: CSSProperties = { ...inputBase, flex: 1, minWidth: 0, width: '100%' };
-const removeBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', color: '#c44', border: 'none', padding: 4, borderRadius: 4, cursor: 'pointer', flexShrink: 0 };
-const addBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, background: 'white', color: '#0e7c4a', border: '1px dashed #0e7c4a', padding: '6px 11px', borderRadius: 6, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', marginTop: 8 };
 const hint: CSSProperties = { fontSize: 11.5, color: '#8a949e', lineHeight: 1.45, marginTop: 8 };

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { btn } from '@/components/buttons';
 import { Search, X, RefreshCw, LayoutGrid, List } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { useEffectiveUser } from '@/components/AuthProvider';
@@ -386,7 +387,7 @@ export default function ReferralsPage() {
               intake pipeline.
             </p>
           </div>
-          <button onClick={load} style={refreshBtnStyle} title="Refresh">
+          <button onClick={load} className={btn} style={{ flexShrink: 0 }} title="Refresh">
             <RefreshCw size={15} /> Refresh
           </button>
         </header>
@@ -494,7 +495,7 @@ export default function ReferralsPage() {
           <div style={{ ...emptyStyle, color: '#b3261e' }}>
             {error}
             <div style={{ marginTop: 12 }}>
-              <button onClick={load} style={refreshBtnStyle}>
+              <button onClick={load} className={btn}>
                 Try Again
               </button>
             </div>
@@ -581,21 +582,6 @@ const kickerStyle: React.CSSProperties = {
 };
 const titleStyle: React.CSSProperties = { fontSize: 32, color: '#2c3e50', margin: '4px 0 0' };
 const subtitleStyle: React.CSSProperties = { color: '#7f8c8d', fontSize: 15, marginTop: 6, maxWidth: 640 };
-const refreshBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: 'white',
-  border: '1px solid #d1d5db',
-  borderRadius: 8,
-  padding: '8px 12px',
-  fontSize: 13,
-  fontWeight: 600,
-  color: '#374151',
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-  flexShrink: 0,
-};
 const toolbarStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',

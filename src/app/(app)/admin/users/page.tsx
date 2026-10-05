@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
 import {
   Plus,
   Mail,
@@ -231,7 +232,7 @@ export default function AdminUsersPage() {
               Invite admins, supervisors, and nurses. Click any row to edit a staff member, deactivate access, or resend a password-reset link.
             </p>
           </div>
-          <button onClick={() => setAddOpen(true)} style={primaryBtnStyle}>
+          <button onClick={() => setAddOpen(true)} className={btnPrimary}>
             <Plus size={16} /> Add Staff
           </button>
         </header>
@@ -496,10 +497,8 @@ function StaffTable({
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); onViewAs(s); }}
-                        style={viewAsRowBtnStyle}
+                        className={`${btn} ${btnSm}`}
                         title={`See the portal exactly as ${s.displayName || 'this staff member'} (read-only)`}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = '#345d78'; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = '#3f6f8f'; }}
                       >
                         <Eye size={13} />
                         View As
@@ -680,10 +679,10 @@ function AddStaffModal({
           {error && <div style={errorStyle}>{error}</div>}
 
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
-            <button type="button" onClick={onClose} disabled={submitting} style={secondaryBtnStyle}>
+            <button type="button" onClick={onClose} disabled={submitting} className={btn}>
               Cancel
             </button>
-            <button type="submit" disabled={submitting} style={primaryBtnStyle}>
+            <button type="submit" disabled={submitting} className={btnPrimary}>
               {submitting ? 'Creating…' : 'Create Account'}
             </button>
           </div>
@@ -915,7 +914,7 @@ function EditStaffModal({
                   type="button"
                   onClick={handleApproveEmailRequest}
                   disabled={!!busy}
-                  style={{ ...approveBtnStyle, ...(busy ? { opacity: 0.6, cursor: 'not-allowed' } : {}) }}
+                  className={`${btnPrimary} ${btnSm}`}
                 >
                   {busy === 'approveEmail' ? 'Approving…' : 'Approve & Change Email'}
                 </button>
@@ -923,7 +922,7 @@ function EditStaffModal({
                   type="button"
                   onClick={handleDismissEmailRequest}
                   disabled={!!busy}
-                  style={{ ...secondaryBtnStyle, ...(busy ? { opacity: 0.6, cursor: 'not-allowed' } : {}) }}
+                  className={`${btn} ${btnSm}`}
                 >
                   {busy === 'dismissEmail' ? 'Dismissing…' : 'Dismiss'}
                 </button>
@@ -1038,7 +1037,7 @@ function EditStaffModal({
               type="button"
               onClick={handleResendLink}
               disabled={!!busy}
-              style={secondaryBtnStyle}
+              className={btn}
               title="Generate a fresh password-reset link (old link will still work until it expires)."
             >
               {busy === 'link' ? (
@@ -1057,10 +1056,7 @@ function EditStaffModal({
                 type="button"
                 onClick={handleDeactivate}
                 disabled={!!busy || isSelf}
-                style={{
-                  ...dangerBtnStyle,
-                  ...(isSelf ? disabledBtnStyle : {}),
-                }}
+                className={btnDanger}
                 title={isSelf ? 'You cannot deactivate yourself.' : 'Disable sign-in without deleting history.'}
               >
                 <UserMinus size={14} />
@@ -1071,7 +1067,7 @@ function EditStaffModal({
                 type="button"
                 onClick={handleReactivate}
                 disabled={!!busy}
-                style={secondaryBtnStyle}
+                className={btn}
               >
                 <UserCheck size={14} />
                 {busy === 'reactivate' ? 'Reactivating…' : 'Reactivate'}
@@ -1083,7 +1079,7 @@ function EditStaffModal({
                 type="button"
                 onClick={handleToggleManualBlock}
                 disabled={!!busy}
-                style={staff.manualNotesBlock ? secondaryBtnStyle : dangerBtnStyle}
+                className={staff.manualNotesBlock ? btn : btnDanger}
                 title={
                   staff.manualNotesBlock
                     ? 'Allow this nurse to start and submit new progress notes again.'
@@ -1100,10 +1096,10 @@ function EditStaffModal({
 
             <div style={{ flex: 1 }} />
 
-            <button type="button" onClick={close} disabled={!!busy} style={secondaryBtnStyle}>
+            <button type="button" onClick={close} disabled={!!busy} className={btn}>
               Cancel
             </button>
-            <button type="submit" disabled={!!busy} style={primaryBtnStyle}>
+            <button type="submit" disabled={!!busy} className={btnPrimary}>
               {busy === 'save' ? 'Saving…' : 'Save Changes'}
             </button>
           </div>
@@ -1197,11 +1193,11 @@ function SuccessModal({ result, onClose }: { result: CreateResult; onClose: () =
           </div>
 
           <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
-            <button onClick={handleCopy} style={secondaryBtnStyle}>
+            <button onClick={handleCopy} className={btn}>
               {copied ? <><CheckCircle2 size={14} /> Copied</> : <><Copy size={14} /> Copy Link</>}
             </button>
             <div style={{ flex: 1 }} />
-            <button onClick={onClose} style={primaryBtnStyle}>Done</button>
+            <button onClick={onClose} className={btnPrimary}>Done</button>
           </div>
         </div>
       </div>
@@ -1259,14 +1255,8 @@ const statusBadgeStyle: React.CSSProperties = { display: 'inline-block', padding
 const selfBadgeStyle: React.CSSProperties = { marginLeft: 8, fontSize: 10, padding: '2px 6px', borderRadius: 999, background: '#eef5ff', color: '#1a3a5c', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 };
 const testBadgeStyle: React.CSSProperties = { marginLeft: 8, fontSize: 10, padding: '2px 6px', borderRadius: 999, background: '#fdecea', color: '#a3261c', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 };
 const blockedBadgeStyle: React.CSSProperties = { marginLeft: 8, fontSize: 10, padding: '2px 6px', borderRadius: 999, background: '#7f1d1d', color: 'white', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 };
-const viewAsRowBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, background: '#3f6f8f', color: 'white', border: 'none', borderRadius: 999, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', transition: 'background 0.15s ease' };
 const emailReqChipStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 5, background: '#fff4e5', color: '#a35400', border: '1px solid #f0d9a8', borderRadius: 999, padding: '2px 9px', fontSize: 11, fontWeight: 700, letterSpacing: 0.2 };
 const emailReqBoxStyle: React.CSSProperties = { background: '#fff8ec', border: '1px solid #f0d9a8', borderRadius: 8, padding: '14px 16px', marginBottom: 18 };
-const approveBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#27ae60', color: 'white', border: 'none', borderRadius: 6, padding: '8px 14px', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
-const primaryBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#27ae60', color: 'white', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
-const secondaryBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#eef1f4', color: '#2c3e50', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const dangerBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fdecea', color: '#b3261e', padding: '10px 14px', borderRadius: 6, border: '1px solid #f5c6c0', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const disabledBtnStyle: React.CSSProperties = { opacity: 0.45, cursor: 'not-allowed' };
 const actionsRowStyle: React.CSSProperties = { display: 'flex', gap: 10, alignItems: 'center', marginTop: 20, flexWrap: 'wrap' };
 const modalBackdropStyle: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 };
 const modalStyle: React.CSSProperties = { background: 'white', borderRadius: 10, width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 12px 40px rgba(0,0,0,0.25)' };

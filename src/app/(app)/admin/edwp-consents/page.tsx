@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { btn, btnPrimary, btnSm } from '@/components/buttons';
 import { Check, Copy, Download, RefreshCw, Search, Send, X } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { buildEdwpConsentUrl } from '@/lib/shareLink';
@@ -127,13 +128,13 @@ export default function EdwpConsentsPage() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <button onClick={load} style={ghostBtnStyle} title="Refresh">
+            <button onClick={load} className={btn} title="Refresh">
               <RefreshCw size={15} /> Refresh
             </button>
-            <button onClick={copyLink} style={ghostBtnStyle} title={buildEdwpConsentUrl()}>
+            <button onClick={copyLink} className={btn} title={buildEdwpConsentUrl()}>
               {copied ? <Check size={15} /> : <Copy size={15} />} {copied ? 'Copied' : 'Copy Form Link'}
             </button>
-            <button onClick={() => setSending(true)} style={primaryBtnStyle}>
+            <button onClick={() => setSending(true)} className={btnPrimary}>
               <Send size={15} /> Send Form to a Client
             </button>
           </div>
@@ -157,7 +158,7 @@ export default function EdwpConsentsPage() {
           <div style={{ ...emptyStyle, color: '#b3261e' }}>
             {error}
             <div style={{ marginTop: 12 }}>
-              <button onClick={load} style={ghostBtnStyle}>Try Again</button>
+              <button onClick={load} className={btn}>Try Again</button>
             </div>
           </div>
         ) : (
@@ -241,7 +242,7 @@ export default function EdwpConsentsPage() {
                             <td style={{ ...tdStyle, textAlign: 'right' }}>
                               <button
                                 onClick={() => downloadPdf(c)}
-                                style={ghostBtnStyle}
+                                className={`${btn} ${btnSm}`}
                                 disabled={downloading === c.id}
                                 title="Download signed PDF"
                               >
@@ -350,8 +351,8 @@ function SendModal({ onClose, onSent }: { onClose: () => void; onSent: (invite: 
             {err && <div role="alert" style={{ color: '#b3261e', fontSize: 13, fontWeight: 600 }}>{err}</div>}
           </div>
           <div style={modalFooterStyle}>
-            <button type="button" onClick={onClose} style={ghostBtnStyle} disabled={busy}>Cancel</button>
-            <button type="submit" style={primaryBtnStyle} disabled={busy}>
+            <button type="button" onClick={onClose} className={btn} disabled={busy}>Cancel</button>
+            <button type="submit" className={btnPrimary} disabled={busy}>
               <Send size={14} /> {busy ? 'Sending…' : 'Send Email'}
             </button>
           </div>
@@ -369,8 +370,6 @@ const kickerStyle: React.CSSProperties = { fontSize: 12, fontWeight: 700, letter
 const titleStyle: React.CSSProperties = { fontSize: 32, color: '#2c3e50', margin: '4px 0 0' };
 const subtitleStyle: React.CSSProperties = { color: '#7f8c8d', fontSize: 15, marginTop: 6, maxWidth: 620 };
 const sectionTitleStyle: React.CSSProperties = { fontSize: 15, fontWeight: 700, color: '#2c3e50', margin: '0 0 10px' };
-const ghostBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', border: '1px solid #d1d5db', borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer', fontFamily: 'inherit' };
-const primaryBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#1a3a5c', color: 'white', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const searchWrapStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, background: 'white', border: '1px solid #d1d5db', borderRadius: 8, padding: '7px 12px', maxWidth: 360 };
 const searchInputStyle: React.CSSProperties = { border: 'none', outline: 'none', fontSize: 14, flex: 1, fontFamily: 'inherit', color: '#111827' };
 const searchClearStyle: React.CSSProperties = { background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'inline-flex' };

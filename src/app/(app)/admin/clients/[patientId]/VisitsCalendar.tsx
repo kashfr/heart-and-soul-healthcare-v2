@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState, type CSSProperties } from 'react';
+import { btn, btnDanger, btnIcon, btnPrimary, btnSm } from '@/components/buttons';
 import { CalendarPlus, Check, ChevronLeft, ChevronRight, HandHelping, Undo2, UserCheck, X } from 'lucide-react';
 import type { PatientVisit } from '@/lib/patientVisits';
 import { groupVisitsByDate, monthGridDays, monthTitle, shiftMonth } from '@/lib/clientDashboardShared';
@@ -93,15 +94,15 @@ export default function VisitsCalendar({ visits, today, isStaff, busyId, onMark,
     <div>
       <div style={headerStyle}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <button type="button" onClick={() => nav(-1)} style={navBtnStyle} aria-label="Previous month">
+          <button type="button" onClick={() => nav(-1)} className={`${btn} ${btnIcon} ${btnSm}`} aria-label="Previous month" title="Previous month">
             <ChevronLeft size={16} />
           </button>
-          <button type="button" onClick={() => nav(1)} style={navBtnStyle} aria-label="Next month">
+          <button type="button" onClick={() => nav(1)} className={`${btn} ${btnIcon} ${btnSm}`} aria-label="Next month" title="Next month">
             <ChevronRight size={16} />
           </button>
           <span style={titleStyle}>{monthTitle(month.year, month.month0)}</span>
         </div>
-        <button type="button" onClick={goToday} style={todayBtnStyle}>
+        <button type="button" onClick={goToday} className={`${btn} ${btnSm}`}>
           Today
         </button>
       </div>
@@ -148,7 +149,7 @@ export default function VisitsCalendar({ visits, today, isStaff, busyId, onMark,
           <div style={panelHeaderStyle}>
             <span style={{ fontWeight: 700, color: '#1f2937', fontSize: 14 }}>{fmtDayTitle(selected)}</span>
             {isStaff && (
-              <button type="button" onClick={() => onAddOn(selected)} style={panelAddBtnStyle}>
+              <button type="button" onClick={() => onAddOn(selected)} className={`${btnPrimary} ${btnSm}`}>
                 <CalendarPlus size={13} /> Add Visit This Day
               </button>
             )}
@@ -178,25 +179,25 @@ export default function VisitsCalendar({ visits, today, isStaff, busyId, onMark,
                     {isStaff && v.status === 'scheduled' && (
                       <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                         {isOpen(v) && (
-                          <button type="button" onClick={() => onAccept(v)} disabled={busyId === v.id} style={{ ...panelActionStyle, background: '#0e7c4a', color: 'white', borderColor: '#0e7c4a' }} title="Take this visit">
+                          <button type="button" onClick={() => onAccept(v)} disabled={busyId === v.id} className={`${btnPrimary} ${btnSm}`} title="Take this visit">
                             <UserCheck size={13} /> Accept
                           </button>
                         )}
                         {v.type === 'supervisory' && !isOpen(v) && (
-                          <button type="button" onClick={() => onHandOff(v)} disabled={busyId === v.id} style={panelActionStyle} title="Hand this visit to another supervisor">
+                          <button type="button" onClick={() => onHandOff(v)} disabled={busyId === v.id} className={`${btn} ${btnSm}`} title="Hand this visit to another supervisor">
                             <HandHelping size={13} /> Hand Off
                           </button>
                         )}
-                        <button type="button" onClick={() => onMark(v, 'completed')} disabled={busyId === v.id} style={panelActionStyle} title="Mark completed">
+                        <button type="button" onClick={() => onMark(v, 'completed')} disabled={busyId === v.id} className={`${btn} ${btnSm}`} title="Mark completed">
                           <Check size={13} /> Done
                         </button>
-                        <button type="button" onClick={() => onMark(v, 'cancelled')} disabled={busyId === v.id} style={panelActionStyle} title="Cancel this visit">
+                        <button type="button" onClick={() => onMark(v, 'cancelled')} disabled={busyId === v.id} className={`${btnDanger} ${btnSm}`} title="Cancel this visit">
                           <X size={13} /> Cancel
                         </button>
                       </div>
                     )}
                     {isStaff && v.status !== 'scheduled' && (
-                      <button type="button" onClick={() => onMark(v, 'scheduled')} disabled={busyId === v.id} style={panelActionStyle} title="Put this visit back on the schedule">
+                      <button type="button" onClick={() => onMark(v, 'scheduled')} disabled={busyId === v.id} className={`${btn} ${btnSm}`} title="Put this visit back on the schedule">
                         <Undo2 size={13} /> Restore
                       </button>
                     )}
@@ -213,9 +214,7 @@ export default function VisitsCalendar({ visits, today, isStaff, busyId, onMark,
 
 const NAVY = '#1a3a5c';
 const headerStyle: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 };
-const navBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, background: 'white', border: '1px solid #d0d7de', borderRadius: 7, color: '#2c3e50', cursor: 'pointer' };
 const titleStyle: CSSProperties = { fontSize: 15, fontWeight: 700, color: '#1f2937', marginLeft: 4, minWidth: 130 };
-const todayBtnStyle: CSSProperties = { background: 'white', border: '1px solid #d0d7de', borderRadius: 7, padding: '5px 12px', fontSize: 12.5, fontWeight: 600, color: NAVY, cursor: 'pointer', fontFamily: 'inherit' };
 const weekHeaderStyle: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 4 };
 const weekdayStyle: CSSProperties = { fontSize: 10.5, fontWeight: 700, color: '#8a949e', textTransform: 'uppercase', letterSpacing: 0.4, textAlign: 'center' };
 const gridStyle: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 };
@@ -232,10 +231,8 @@ const chipStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center',
 const moreChipStyle: CSSProperties = { fontSize: 10, fontWeight: 700, color: '#8a949e', paddingLeft: 3 };
 const panelStyle: CSSProperties = { marginTop: 10, background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px' };
 const panelHeaderStyle: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 8 };
-const panelAddBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, background: NAVY, color: 'white', border: 'none', padding: '5px 11px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
 const panelListStyle: CSSProperties = { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 6 };
 const panelRowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 8 };
-const panelActionStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'white', color: '#2c3e50', border: '1px solid #d0d7de', padding: '5px 9px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
 const supChip: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#e0e7ff', color: '#3730a3', fontSize: 10.5, fontWeight: 700 };
 const shiftChip: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#e8eef4', color: NAVY, fontSize: 10.5, fontWeight: 700 };
 const openChip: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#fff3e0', color: '#b45309', fontSize: 10.5, fontWeight: 700 };

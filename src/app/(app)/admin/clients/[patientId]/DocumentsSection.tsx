@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
 import Link from 'next/link';
 import { Archive, ArchiveRestore, ArrowRightLeft, ExternalLink, FileText, FileUp, FilePenLine, Image as ImageIcon, Pencil, RefreshCw, Replace, Trash2 } from 'lucide-react';
 import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
@@ -247,7 +248,7 @@ export default function DocumentsSection({
               type="button"
               onClick={() => sync(false)}
               disabled={syncing !== null}
-              style={actionBtnStyle}
+              className={btn}
               title="File any RN oversight visit notes and home supervisory visits for this client that are not in Documents yet"
             >
               <RefreshCw size={14} /> {syncing === 'sync' ? 'Syncing…' : 'Sync Visit Notes'}
@@ -258,14 +259,14 @@ export default function DocumentsSection({
               type="button"
               onClick={() => sync(true)}
               disabled={syncing !== null}
-              style={actionBtnStyle}
+              className={btn}
               title="Re-render every oversight and supervisory visit PDF on file for this client from the current notes (after a form or renderer fix)"
             >
               <RefreshCw size={14} /> {syncing === 'refresh' ? 'Re-rendering…' : 'Refresh Visit PDFs'}
             </button>
           )}
           {canUpload && (
-            <button type="button" onClick={() => setUploadOpen(true)} style={uploadBtnStyle}>
+            <button type="button" onClick={() => setUploadOpen(true)} className={btnPrimary}>
               <FileUp size={15} /> Upload
             </button>
           )}
@@ -317,7 +318,7 @@ export default function DocumentsSection({
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 6, maxWidth: '100%', flexWrap: 'wrap', justifyContent: 'flex-end', marginLeft: 'auto' }}>
-                <button type="button" onClick={() => view(d)} style={actionBtnStyle} title="Open in a new tab">
+                <button type="button" onClick={() => view(d)} className={`${btn} ${btnSm}`} title="Open in a new tab">
                   <ExternalLink size={14} /> View
                 </button>
                 {isStaff && (
@@ -325,7 +326,7 @@ export default function DocumentsSection({
                     type="button"
                     onClick={() => setEditing(d)}
                     disabled={busyId === d.id}
-                    style={actionBtnStyle}
+                    className={`${btn} ${btnSm}`}
                     title={
                       isNoteFiledDocument(d)
                         ? 'Edit how this entry is listed (title, category, date). The note itself does not change; use Amend Note for that. Your edits are kept when the PDF is refreshed.'
@@ -338,7 +339,7 @@ export default function DocumentsSection({
                 {isNoteFiledDocument(d) && (
                   <Link
                     href={noteAmendHref(d) || '#'}
-                    style={{ ...actionBtnStyle, textDecoration: 'none' }}
+                    className={`${btn} ${btnSm}`}
                     title="Open the note in amend mode. The date, wording and signature live on the note; saving the amendment re-files this PDF."
                   >
                     <FilePenLine size={14} /> Amend Note
@@ -349,7 +350,7 @@ export default function DocumentsSection({
                     type="button"
                     onClick={() => refreshPdf(d)}
                     disabled={busyId === d.id}
-                    style={actionBtnStyle}
+                    className={`${btn} ${btnSm}`}
                     title={
                       d.servicePlanId
                         ? 'Re-render this PDF with the current layout. The wording, dates and signatures stay as signed.'
@@ -360,7 +361,7 @@ export default function DocumentsSection({
                   </button>
                 )}
                 {isStaff && !d.autoFiled && (
-                  <button type="button" onClick={() => setReplacing(d)} disabled={busyId === d.id} style={actionBtnStyle} title="Upload a different file in place of this one (the old file is removed)">
+                  <button type="button" onClick={() => setReplacing(d)} disabled={busyId === d.id} className={`${btn} ${btnSm}`} title="Upload a different file in place of this one (the old file is removed)">
                     <Replace size={14} /> Replace
                   </button>
                 )}
@@ -369,7 +370,7 @@ export default function DocumentsSection({
                     type="button"
                     onClick={() => toggleArchived(d)}
                     disabled={busyId === d.id}
-                    style={actionBtnStyle}
+                    className={`${btn} ${btnSm}`}
                     title={d.archived ? 'Restore to the active list' : 'Archive (the file is kept)'}
                   >
                     {d.archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
@@ -377,12 +378,12 @@ export default function DocumentsSection({
                   </button>
                 )}
                 {isAdmin && !d.autoFiled && (
-                  <button type="button" onClick={() => setMoving(d)} disabled={busyId === d.id} style={actionBtnStyle} title="Move this document to another client's chart (uploaded to the wrong client)">
+                  <button type="button" onClick={() => setMoving(d)} disabled={busyId === d.id} className={`${btn} ${btnSm}`} title="Move this document to another client's chart (uploaded to the wrong client)">
                     <ArrowRightLeft size={14} /> Move
                   </button>
                 )}
                 {isAdmin && (
-                  <button type="button" onClick={() => remove(d)} disabled={busyId === d.id} style={{ ...actionBtnStyle, color: '#b3261e', borderColor: '#f3b8b8' }} title="Permanently delete this document (admin only)">
+                  <button type="button" onClick={() => remove(d)} disabled={busyId === d.id} className={`${btnDanger} ${btnSm}`} title="Permanently delete this document (admin only)">
                     <Trash2 size={14} /> Delete
                   </button>
                 )}
@@ -542,8 +543,8 @@ function EditDocumentModal({
         </label>
         {error && <div style={errBoxStyle}>{error}</div>}
         <div style={actionsStyle}>
-          <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={saving}>Cancel</button>
-          <button type="button" style={saveBtnStyle} onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</button>
+          <button type="button" className={btn} onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="button" className={btnPrimary} onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</button>
         </div>
       </div>
     </div>
@@ -629,8 +630,8 @@ function MoveDocumentModal({
         </div>
         {error && <div style={errBoxStyle}>{error}</div>}
         <div style={actionsStyle}>
-          <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={saving}>Cancel</button>
-          <button type="button" style={saveBtnStyle} onClick={save} disabled={saving || !patients}>{saving ? 'Moving…' : 'Move Document'}</button>
+          <button type="button" className={btn} onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="button" className={btnPrimary} onClick={save} disabled={saving || !patients}>{saving ? 'Moving…' : 'Move Document'}</button>
         </div>
       </div>
     </div>
@@ -703,8 +704,8 @@ function ReplaceDocumentModal({
         )}
         {error && <div style={errBoxStyle}>{error}</div>}
         <div style={actionsStyle}>
-          <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={uploading}>Cancel</button>
-          <button type="button" style={saveBtnStyle} onClick={save} disabled={uploading}>{uploading ? 'Uploading…' : 'Replace File'}</button>
+          <button type="button" className={btn} onClick={onClose} disabled={uploading}>Cancel</button>
+          <button type="button" className={btnPrimary} onClick={save} disabled={uploading}>{uploading ? 'Uploading…' : 'Replace File'}</button>
         </div>
       </div>
     </div>
@@ -852,10 +853,10 @@ function UploadDocumentModal({
         {error && <div style={errBoxStyle}>{error}</div>}
 
         <div style={actionsStyle}>
-          <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={uploading}>
+          <button type="button" className={btn} onClick={onClose} disabled={uploading}>
             Cancel
           </button>
-          <button type="button" style={saveBtnStyle} onClick={save} disabled={uploading}>
+          <button type="button" className={btnPrimary} onClick={save} disabled={uploading}>
             {uploading ? 'Uploading…' : 'Upload'}
           </button>
         </div>
@@ -868,7 +869,6 @@ const NAVY = '#1a3a5c';
 const toolbarStyle: CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap', marginBottom: 12 };
 const chipStyle: CSSProperties = { padding: '4px 10px', borderRadius: 999, border: '1px solid #d0d7de', background: 'white', color: '#374151', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const chipActiveStyle: CSSProperties = { ...chipStyle, background: NAVY, color: 'white', border: `1px solid ${NAVY}` };
-const uploadBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0e7c4a', color: 'white', border: 'none', padding: '7px 13px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
 const emptyStyle: CSSProperties = { padding: '20px 14px', color: '#7f8c8d', fontSize: 13, textAlign: 'center', background: '#f8fafc', borderRadius: 8, lineHeight: 1.5 };
 const listStyle: CSSProperties = { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 };
 const rowStyle: CSSProperties = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 10 };
@@ -878,7 +878,6 @@ const docMetaStyle: CSSProperties = { fontSize: 12, color: '#7f8c8d', marginTop:
 const categoryChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#e8eef4', color: NAVY, fontSize: 10.5, fontWeight: 700 };
 const archivedChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#f1f5f9', color: '#64748b', fontSize: 10.5, fontWeight: 700 };
 const autoChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#dbeafe', color: '#1d4ed8', border: '1px solid #bfdbfe', fontSize: 10.5, fontWeight: 700 };
-const actionBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'white', color: '#2c3e50', border: '1px solid #d0d7de', padding: '6px 10px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
 const backdropStyle: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 3200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '8vh 16px', overflowY: 'auto' };
 const sheetStyle: CSSProperties = { width: '100%', maxWidth: 520, background: 'white', borderRadius: 12, padding: 18, boxShadow: '0 10px 40px rgba(0,0,0,0.25)' };
 const sheetTitleStyle: CSSProperties = { fontWeight: 700, fontSize: 17, color: '#1f2937', marginBottom: 12 };
@@ -895,5 +894,3 @@ const progressBarStyle: CSSProperties = { position: 'absolute', inset: 0, width:
 const progressTextStyle: CSSProperties = { position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: 11.5, fontWeight: 700, color: '#1f2937' };
 const errBoxStyle: CSSProperties = { background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '8px 11px', fontSize: 13, marginBottom: 10 };
 const actionsStyle: CSSProperties = { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 };
-const cancelBtnStyle: CSSProperties = { background: 'white', color: '#374151', border: '1px solid #d0d7de', padding: '9px 16px', borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const saveBtnStyle: CSSProperties = { background: NAVY, color: 'white', border: `1px solid ${NAVY}`, padding: '9px 16px', borderRadius: 6, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };

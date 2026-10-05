@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { btn, btnPrimary, btnSm } from '@/components/buttons';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { AlertTriangle, Check, Clock, Download, Plus, RefreshCw, ShieldAlert, X } from 'lucide-react';
@@ -109,7 +110,7 @@ function Inner() {
             </p>
           </div>
           {!isViewingAs && (isStaff || !!credential) && (
-            <Link href="/admin/med-errors/new" style={primaryLinkStyle}><Plus size={15} /> Report an Error</Link>
+            <Link href="/admin/med-errors/new" className={btnPrimary}><Plus size={15} /> Report an Error</Link>
           )}
         </header>
 
@@ -131,7 +132,7 @@ function Inner() {
           {reports === null ? (
             <div style={mutedStyle}>Loading…</div>
           ) : error ? (
-            <div style={errRowStyle}><AlertTriangle size={14} /> Reports couldn&apos;t be loaded. <button type="button" style={retryBtnStyle} onClick={reload}>Retry</button></div>
+            <div style={errRowStyle}><AlertTriangle size={14} /> Reports couldn&apos;t be loaded. <button type="button" className={`${btn} ${btnSm}`} style={{ marginLeft: 'auto' }} onClick={reload}>Retry</button></div>
           ) : visible.length === 0 ? (
             <div style={mutedStyle}>{filter === 'open' ? 'Every report has been reviewed.' : 'No medication error reports on file.'}</div>
           ) : (
@@ -146,8 +147,8 @@ function Inner() {
                   </div>
                   <div style={textStyle}>{r.description.length > 240 ? `${r.description.slice(0, 240)}…` : r.description}</div>
                   <div style={actionsRowStyle}>
-                    <button type="button" style={smallBtnStyle} onClick={() => setOpenReport(r)}>Open</button>
-                    <button type="button" style={smallBtnStyle} onClick={() => void download(r)}><Download size={13} /> Download PDF</button>
+                    <button type="button" className={`${btn} ${btnSm}`} onClick={() => setOpenReport(r)}>Open</button>
+                    <button type="button" className={`${btn} ${btnSm}`} onClick={() => void download(r)}><Download size={13} /> Download PDF</button>
                   </div>
                 </li>
               ))}
@@ -243,7 +244,7 @@ function ReportDetail({ report: r, canReview, canMarkFiled, onClose, onReviewed,
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
           <div style={sheetTitleStyle}>Medication Error Report</div>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-            <button type="button" style={smallBtnStyle} onClick={onDownload} title="Opens the report as a PDF for the binder or an incident packet"><Download size={13} /> Download PDF</button>
+            <button type="button" className={`${btn} ${btnSm}`} onClick={onDownload} title="Opens the report as a PDF for the binder or an incident packet"><Download size={13} /> Download PDF</button>
             <button type="button" onClick={onClose} style={closeBtnStyle} aria-label="Close" disabled={busy}><X size={16} /></button>
           </div>
         </div>
@@ -285,7 +286,7 @@ function ReportDetail({ report: r, canReview, canMarkFiled, onClose, onReviewed,
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap', marginTop: 8 }}>
                 {err && <div style={{ ...errBoxStyle, width: '100%' }}>{err}</div>}
                 <label style={{ ...fieldStyle, marginBottom: 0 }}><span style={labelStyle}>Incident report filed on</span><input type="date" value={filedLater} onChange={(e) => setFiledLater(e.target.value)} style={{ ...inputStyle, maxWidth: 200 }} disabled={filingBusy} /></label>
-                <button type="button" style={{ ...saveBtnStyle, opacity: !filedLater || filingBusy ? 0.55 : 1 }} disabled={!filedLater || filingBusy} onClick={() => void markFiled()}>{filingBusy ? 'Saving…' : 'Record Filing Date'}</button>
+                <button type="button" className={btnPrimary} disabled={!filedLater || filingBusy} onClick={() => void markFiled()}>{filingBusy ? 'Saving…' : 'Record Filing Date'}</button>
               </div>
             )}
           </div>
@@ -301,8 +302,8 @@ function ReportDetail({ report: r, canReview, canMarkFiled, onClose, onReviewed,
               <label style={{ ...fieldStyle, marginTop: 8 }}><span style={labelStyle}>Incident report filed on (leave blank if not yet)</span><input type="date" value={filedDate} onChange={(e) => setFiledDate(e.target.value)} style={{ ...inputStyle, maxWidth: 200 }} disabled={busy} /></label>
             )}
             <div style={actionsStyle}>
-              <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={busy}>Close</button>
-              <button type="button" style={{ ...saveBtnStyle, opacity: busy ? 0.6 : 1 }} onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : 'Record Review'}</button>
+              <button type="button" className={btn} onClick={onClose} disabled={busy}>Close</button>
+              <button type="button" className={btnPrimary} onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : 'Record Review'}</button>
             </div>
           </div>
         ) : (
@@ -329,7 +330,6 @@ const clientLinkStyle: CSSProperties = { fontWeight: 700, color: NAVY, textDecor
 const metaStyle: CSSProperties = { fontSize: 12.5, color: '#5c6b7a' };
 const textStyle: CSSProperties = { fontSize: 14, color: '#1f2937', lineHeight: 1.55, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' };
 const actionsRowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 10 };
-const smallBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, background: '#f1f5f9', color: NAVY, borderWidth: 1, borderStyle: 'solid', borderColor: '#e2e8f0', padding: '6px 11px', borderRadius: 999, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
 const chip = (bg: string, fg: string): CSSProperties => ({ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 999, background: bg, color: fg, fontSize: 11.5, fontWeight: 700 });
 const chipSignedStyle = chip('#e6f6ec', '#1e7a44');
 const chipWarnStyle = chip('#fff4e0', '#9a5b00');
@@ -340,9 +340,7 @@ const filterBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'cen
 const filterActiveStyle: CSSProperties = { ...filterBtnStyle, background: '#e8eef4', color: NAVY, borderColor: NAVY };
 const mutedStyle: CSSProperties = { fontSize: 13, color: '#7f8c8d', lineHeight: 1.5 };
 const errRowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', background: '#fdeaea', color: '#b3261e', borderRadius: 8, fontSize: 13, fontWeight: 600 };
-const retryBtnStyle: CSSProperties = { background: 'white', color: '#b3261e', border: '1px solid #e5b6b1', padding: '4px 12px', borderRadius: 6, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', marginLeft: 'auto' };
 const toastStyle: CSSProperties = { background: '#1f2937', color: 'white', padding: '10px 14px', borderRadius: 8, fontSize: 13.5, marginBottom: 14 };
-const primaryLinkStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: NAVY, color: 'white', padding: '10px 16px', borderRadius: 8, fontSize: 14, fontWeight: 700, textDecoration: 'none' };
 const backdropStyle: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 3200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '6vh 16px', overflowY: 'auto' };
 const sheetStyle: CSSProperties = { width: '100%', maxWidth: 720, background: 'white', borderRadius: 12, padding: 18, boxShadow: '0 10px 40px rgba(0,0,0,0.25)' };
 const sheetTitleStyle: CSSProperties = { fontWeight: 700, fontSize: 17, color: '#1f2937' };
@@ -360,5 +358,3 @@ const textareaStyle: CSSProperties = { ...inputStyle, height: 'auto', minHeight:
 const checkRowStyle: CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#2c3e50', lineHeight: 1.45, cursor: 'pointer' };
 const errBoxStyle: CSSProperties = { background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '8px 11px', fontSize: 13, marginBottom: 10 };
 const actionsStyle: CSSProperties = { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 };
-const cancelBtnStyle: CSSProperties = { background: 'white', color: '#374151', border: '1px solid #d0d7de', padding: '9px 16px', borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const saveBtnStyle: CSSProperties = { background: NAVY, color: 'white', border: 'none', padding: '9px 16px', borderRadius: 6, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };

@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { btnPrimary } from '@/components/buttons';
 import type { Role } from '@/lib/auth';
 
 /**
@@ -112,7 +113,7 @@ export function ViewAsWriteBlock({ children }: { children: ReactNode }) {
               stopViewAs();
               window.location.reload();
             }}
-            style={{ background: '#1a3a5c', color: 'white', border: 'none', borderRadius: 8, padding: '9px 16px', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+            className={btnPrimary}
           >
             Exit View-As
           </button>

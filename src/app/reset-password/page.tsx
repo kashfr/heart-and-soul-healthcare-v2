@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useState, type FormEvent } from 'react';
+import { btnPrimary } from '@/components/buttons';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -104,7 +105,7 @@ function ResetPasswordForm() {
               This password link is invalid or has already been used. Reset links expire about an
               hour after they&apos;re sent.
             </p>
-            <Link href="/login" style={{ ...primaryBtnStyle, display: 'block', textAlign: 'center', textDecoration: 'none' }}>
+            <Link href="/login" className={btnPrimary} style={{ width: '100%' }}>
               Go to Sign In
             </Link>
             <p style={footerStyle}>
@@ -163,7 +164,8 @@ function ResetPasswordForm() {
               <button
                 type="submit"
                 disabled={status === 'saving' || status === 'done'}
-                style={primaryBtnStyle}
+                className={btnPrimary}
+                style={{ width: '100%' }}
               >
                 {status === 'saving' || status === 'done' ? 'Saving…' : 'Save Password & Sign In'}
               </button>
@@ -205,5 +207,4 @@ const formStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column
 const labelStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, fontWeight: 600, color: '#2c3e50' };
 const inputStyle: React.CSSProperties = { padding: '10px 12px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontWeight: 400 };
 const errorStyle: React.CSSProperties = { background: '#fdecea', color: '#b3261e', padding: '10px 12px', borderRadius: 6, fontSize: 13 };
-const primaryBtnStyle: React.CSSProperties = { background: '#27ae60', color: 'white', padding: '12px 16px', borderRadius: 6, border: 'none', fontSize: 15, fontWeight: 700, cursor: 'pointer' };
 const footerStyle: React.CSSProperties = { marginTop: 20, fontSize: 12.5, color: '#7f8c8d', textAlign: 'center', lineHeight: 1.5 };

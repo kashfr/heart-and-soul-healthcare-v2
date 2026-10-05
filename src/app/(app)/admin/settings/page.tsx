@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
 import Link from 'next/link';
 import { ArrowLeft, Save, RotateCcw, Plus, X, Eye, Send } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
@@ -547,7 +548,7 @@ export default function AdminSettingsPage() {
             <button
               type="button"
               onClick={handleResetToDefaults}
-              style={secondaryBtnStyle}
+              className={btn}
               disabled={saving}
               title="Replace the form below with the hard-coded defaults. You still need to click Save to apply."
             >
@@ -556,7 +557,7 @@ export default function AdminSettingsPage() {
             <button
               type="button"
               onClick={handleSave}
-              style={primaryBtnStyle}
+              className={btnPrimary}
               disabled={saving}
             >
               <Save size={14} /> {saving ? 'Saving…' : dirty ? 'Save Changes' : 'Saved'}
@@ -585,7 +586,7 @@ export default function AdminSettingsPage() {
             and RN oversight, with the claim code and modifier and effective dates. Feeds the $
             views on the Shift Notes list and each client&apos;s Hours tab. Admin only.
           </p>
-          <Link href="/admin/settings/billing-rates" style={collapseToggleStyle}>
+          <Link href="/admin/settings/billing-rates" className={btn}>
             Open Billing Rates →
           </Link>
         </section>
@@ -995,7 +996,7 @@ export default function AdminSettingsPage() {
                   <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
                     <button
                       type="button"
-                      style={secondaryBtnStyle}
+                      className={`${btnDanger} ${btnSm}`}
                       onClick={() => {
                         clearFieldErrorsUnder('supportCoordination.agencies');
                         setDirty(true);
@@ -1011,7 +1012,8 @@ export default function AdminSettingsPage() {
           </div>
           <button
             type="button"
-            style={{ ...secondaryBtnStyle, marginTop: 10 }}
+            className={btn}
+            style={{ marginTop: 10 }}
             onClick={() => {
               setDirty(true);
               setDraft((prev) => ({
@@ -1305,17 +1307,7 @@ export default function AdminSettingsPage() {
                       <button
                         type="button"
                         onClick={() => clearVitalOverridesForGroup(group)}
-                        style={{
-                          background: 'transparent',
-                          border: '1px solid #c44',
-                          color: '#c44',
-                          padding: '4px 10px',
-                          borderRadius: 4,
-                          fontSize: 12,
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          fontFamily: 'inherit',
-                        }}
+                        className={`${btnDanger} ${btnSm}`}
                       >
                         Reset {AGE_GROUP_LABELS[group]} to Defaults
                       </button>
@@ -1573,11 +1565,7 @@ export default function AdminSettingsPage() {
             <button
               type="button"
               onClick={addIntakeCounty}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 5, background: 'white',
-                color: '#1a3a5c', border: '1px solid #d1d5db', borderRadius: 8, padding: '0 12px',
-                fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-              }}
+              className={btn}
             >
               <Plus size={14} /> Add
             </button>
@@ -1694,7 +1682,7 @@ export default function AdminSettingsPage() {
             <button
               type="button"
               onClick={() => setShowEmailPreview((v) => !v)}
-              style={secondaryBtnStyle}
+              className={btn}
             >
               <Eye size={14} /> {showEmailPreview ? 'Hide Preview' : 'Preview Email'}
             </button>
@@ -1702,12 +1690,12 @@ export default function AdminSettingsPage() {
               type="button"
               onClick={sendProviderListTest}
               disabled={sendingTest}
-              style={{ ...secondaryBtnStyle, opacity: sendingTest ? 0.6 : 1 }}
+              className={btn}
               title="Sends to your own account email, never to a family"
             >
               <Send size={14} /> {sendingTest ? 'Sending…' : 'Send Test to Myself'}
             </button>
-            <button type="button" onClick={resetProviderListCopy} style={secondaryBtnStyle}>
+            <button type="button" onClick={resetProviderListCopy} className={btn}>
               <RotateCcw size={14} /> Restore Default Wording
             </button>
           </div>
@@ -1947,34 +1935,6 @@ const selectStyle: React.CSSProperties = {
     "white url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\") no-repeat right 12px center",
   backgroundSize: '14px',
   cursor: 'pointer',
-};
-const primaryBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: '#27ae60',
-  color: 'white',
-  padding: '10px 14px',
-  borderRadius: 6,
-  border: 'none',
-  fontSize: 14,
-  fontWeight: 700,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-const secondaryBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: '#eef1f4',
-  color: '#2c3e50',
-  padding: '10px 14px',
-  borderRadius: 6,
-  border: 'none',
-  fontSize: 14,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
 };
 const toastOkStyle: React.CSSProperties = {
   position: 'fixed',

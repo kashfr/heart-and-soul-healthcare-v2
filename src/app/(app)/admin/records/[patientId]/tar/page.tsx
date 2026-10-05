@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { btn, btnIcon, btnPrimary } from '@/components/buttons';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
 import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardList, FileDown } from 'lucide-react';
@@ -238,7 +239,7 @@ export default function MonthlyTarPage() {
               </div>
             </div>
             {!isNurse && (
-              <button type="button" onClick={handleExport} style={exportBtnStyle} disabled={exporting}>
+              <button type="button" onClick={handleExport} className={btnPrimary} style={{ flexShrink: 0 }} disabled={exporting}>
                 <FileDown size={15} /> {exporting ? 'Exporting…' : 'Export PDF'}
               </button>
             )}
@@ -262,7 +263,7 @@ export default function MonthlyTarPage() {
         </div>
 
         <div style={monthNavStyle}>
-          <button type="button" style={navBtnStyle} onClick={() => setMonth(shiftMonth(month, -1))} aria-label="Previous month">
+          <button type="button" className={`${btn} ${btnIcon}`} onClick={() => setMonth(shiftMonth(month, -1))} aria-label="Previous month" title="Previous month">
             <ChevronLeft size={18} />
           </button>
           <div style={{ textAlign: 'center', minWidth: 180 }}>
@@ -271,7 +272,7 @@ export default function MonthlyTarPage() {
               <button type="button" style={jumpBtnStyle} onClick={() => setMonth(currentMonth())}>Jump to This Month</button>
             )}
           </div>
-          <button type="button" style={navBtnStyle} onClick={() => setMonth(shiftMonth(month, 1))} aria-label="Next month">
+          <button type="button" className={`${btn} ${btnIcon}`} onClick={() => setMonth(shiftMonth(month, 1))} aria-label="Next month" title="Next month">
             <ChevronRight size={18} />
           </button>
         </div>
@@ -441,7 +442,6 @@ const headerGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColu
 const headerFieldLabelStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: '#9aa6b2', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 };
 const headerFieldValueStyle: React.CSSProperties = { fontSize: 14, lineHeight: 1.45 };
 const monthNavStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 18, marginBottom: 14 };
-const navBtnStyle: React.CSSProperties = { width: 38, height: 38, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'white', border: '1px solid #d0d7de', borderRadius: 8, color: '#2c3e50', cursor: 'pointer' };
 const jumpBtnStyle: React.CSSProperties = { marginTop: 2, fontSize: 12, fontWeight: 600, color: '#1a73c4', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 };
 const emptyStyle: React.CSSProperties = { textAlign: 'center', padding: '40px 20px', background: 'white', borderRadius: 10, color: '#7f8c8d', fontSize: 14, border: '1px solid #e5e7eb' };
 const gridWrapStyle: React.CSSProperties = { background: 'white', borderRadius: 10, border: '1px solid #e5e7eb', overflowX: 'auto', marginBottom: 12 };
@@ -459,6 +459,5 @@ const notDoneCellStyle: React.CSSProperties = { background: '#fdecea', color: '#
 const familyCellStyle: React.CSSProperties = { background: '#eef5ff' };
 const physicianNeededChipStyle: React.CSSProperties = { display: 'inline-block', marginTop: 4, padding: '1px 7px', borderRadius: 999, background: '#fff3e0', color: '#b45309', fontSize: 10, fontWeight: 700 };
 const legendStyle: React.CSSProperties = { background: 'white', border: '1px solid #e5e7eb', borderRadius: 10, padding: '12px 16px', fontSize: 12, color: '#5c6b7a', lineHeight: 1.55, marginBottom: 12 };
-const exportBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#1a3a5c', color: 'white', padding: '10px 16px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 };
 const toastStyle: React.CSSProperties = { position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: '#1f2937', color: 'white', padding: '10px 18px', borderRadius: 8, fontSize: 13.5, cursor: 'pointer', zIndex: 1100 };
 const noticeStyle: React.CSSProperties = { background: '#fff7ed', border: '1px solid #f59e0b', borderRadius: 8, padding: '10px 14px', fontSize: 12.5, color: '#7c2d12', marginBottom: 12 };

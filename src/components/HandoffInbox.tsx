@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type CSSProperties } from 'react';
+import { btnPrimary, btnSm } from '@/components/buttons';
 import Link from 'next/link';
 import { AlertTriangle, ArrowLeftRight, Check, ClipboardList } from 'lucide-react';
 import { acknowledgeHandoff, subscribePendingHandoffs, type Handoff } from '@/lib/handoffs';
@@ -123,7 +124,7 @@ export default function HandoffInbox({
                 ) : (
                   <button
                     type="button"
-                    style={{ ...ackBtnStyle, opacity: busyId === h.id ? 0.6 : 1 }}
+                    className={`${btnPrimary} ${btnSm}`}
                     disabled={busyId === h.id}
                     onClick={() => void ack(h)}
                   >
@@ -166,7 +167,6 @@ const metaStyle: CSSProperties = { fontSize: 12.5, color: '#5c6b7a' };
 const noteLinkStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 700, color: '#5c6b7a', textDecoration: 'none', background: '#f1f5f9', padding: '3px 8px', borderRadius: 999 };
 const textStyle: CSSProperties = { fontSize: 14, color: '#1f2937', lineHeight: 1.55, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' };
 const cardFootStyle: CSSProperties = { display: 'flex', justifyContent: 'flex-end', marginTop: 10 };
-const ackBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#27ae60', color: 'white', border: 'none', padding: '7px 14px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
 const urgentChipStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 8px', borderRadius: 999, background: '#fdeaea', color: '#b3261e', fontSize: 10.5, fontWeight: 700 };
 const countChipStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 999, background: '#b3261e', color: 'white', fontSize: 11.5, fontWeight: 700 };
 const mutedStyle: CSSProperties = { fontSize: 12.5, color: '#7f8c8d' };

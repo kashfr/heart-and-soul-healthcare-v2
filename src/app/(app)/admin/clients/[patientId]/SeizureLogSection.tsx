@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { btn } from '@/components/buttons';
 import { Activity, Printer } from 'lucide-react';
 import { formatDateUS } from '@/lib/dateFormat';
 import { getSeizureEventsForPatient, type SeizureEvent } from '@/lib/seizures';
@@ -91,7 +92,7 @@ export default function SeizureLogSection({ patientId, patientName, patientDob }
     <section style={card}>
       <div style={head}>
         <div style={title}><Activity size={16} /> Seizure Log</div>
-        <button type="button" onClick={print} style={printBtn} disabled={!events}>
+        <button type="button" onClick={print} className={btn} disabled={!events}>
           <Printer size={14} /> Print Log
         </button>
       </div>
@@ -167,7 +168,6 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
 const card: CSSProperties = { background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: 18, marginBottom: 14 };
 const head: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 };
 const title: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 700, color: NAVY };
-const printBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', border: '1px solid #d0d7de', borderRadius: 6, padding: '6px 10px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', color: NAVY };
 const statRow: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 12 };
 const stat: CSSProperties = { background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 10px' };
 const statLabel: CSSProperties = { fontSize: 11, color: '#5c6b7a', textTransform: 'uppercase', letterSpacing: 0.4 };
