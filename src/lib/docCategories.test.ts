@@ -27,4 +27,8 @@ describe('isDocCategory', () => {
     expect(isDocCategory('RN Oversight')).toBe(true);
     expect(isDocCategory('rn oversight')).toBe(false);
   });
+
+  it('includes Provider Correspondence for updates from residential providers', () => {
+    expect(isDocCategory('Provider Correspondence')).toBe(true);
+  });
 });
