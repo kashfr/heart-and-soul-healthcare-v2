@@ -17,6 +17,7 @@ import {
   REFERRAL_STAGES, STAGE_ACCENT, STAGE_DESCRIPTION, STAGE_LABEL, SOURCE_LABEL,
   type Referral, type ReferralStage,
 } from './types';
+import { compareInStage } from './types';
 import ShareBadge from './ShareBadge';
 import FitBadge from './FitBadge';
 import PartnerMatchBadge from './PartnerMatchBadge';
@@ -31,9 +32,7 @@ function buildColumns(referrals: Referral[]): Columns {
   for (const stage of REFERRAL_STAGES) cols[stage] = [];
   for (const r of referrals) (cols[r.stage] ?? cols.new).push(r);
   for (const stage of REFERRAL_STAGES) {
-    // Tiebreak on id so cards with (nearly) equal order — possible after many
-    // midpoint reorders — keep a stable, deterministic position across refetches.
-    cols[stage].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+    cols[stage].sort(compareInStage);
   }
   return cols;
 }

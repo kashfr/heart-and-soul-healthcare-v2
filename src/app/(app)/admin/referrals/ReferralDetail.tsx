@@ -4,7 +4,9 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   X, Phone, Mail, Printer, MessageSquare, ArrowRightLeft, UserCheck,
   Inbox, PhoneCall, Send, Share2, Copy, Check, Trash2, Plus, Stethoscope, FileSignature, UserPlus, ExternalLink,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
+import { btn, btnDanger, btnIcon, btnPrimary } from '@/components/buttons';
 import ReferralDocuments from './ReferralDocuments';
 import ConvertReferralModal from './ConvertReferralModal';
 import Link from 'next/link';
@@ -42,11 +44,14 @@ interface Props {
   canDelete: boolean;
   /** Refetch the board after a share that may have moved this card's stage. */
   onChanged?: () => void;
+  /** Where this card sits in its stage column, for Previous / Next. */
+  nav?: { index: number; total: number; prevId: string | null; nextId: string | null } | null;
+  onNavigate?: (id: string) => void;
 }
 
 export default function ReferralDetail({
   referral, staff, busy, onClose, onStageChange, onAssign, onServiceChange,
-  onPrint, onDelete, canDelete, onChanged,
+  onPrint, onDelete, canDelete, onChanged, nav, onNavigate,
 }: Props) {
   const { uid: viewerUid, role: viewerRole } = useEffectiveUser();
   const { settings } = useSettings();
@@ -77,6 +82,20 @@ export default function ReferralDetail({
       setActivityLoading(false);
     }
   }, [referral.id]);
+
+  // Left / Right arrows step through the stage column, unless the person is
+  // typing in a field.
+  useEffect(() => {
+    if (!nav || !onNavigate) return;
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+      if (e.key === 'ArrowLeft' && nav.prevId) onNavigate(nav.prevId);
+      if (e.key === 'ArrowRight' && nav.nextId) onNavigate(nav.nextId);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [nav, onNavigate]);
 
   // Reload on open (id change) and whenever the referral is mutated elsewhere
   // (stage move / assignment bumps updatedAt), so server-logged entries appear.
@@ -153,6 +172,35 @@ export default function ReferralDetail({
             <X size={18} />
           </button>
         </div>
+
+        {nav && onNavigate && (
+          <div style={navStripStyle}>
+            <button
+              type="button"
+              className={`${btn} ${btnIcon}`}
+              onClick={() => nav.prevId && onNavigate(nav.prevId)}
+              disabled={!nav.prevId || busy}
+              aria-label={`Previous referral in ${STAGE_LABEL[referral.stage]}`}
+              title="Previous in this stage (Left arrow)"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <span style={navTextStyle}>
+              <span style={{ ...navDotStyle, background: STAGE_ACCENT[referral.stage] }} aria-hidden />
+              {nav.index + 1} of {nav.total} in {STAGE_LABEL[referral.stage]}
+            </span>
+            <button
+              type="button"
+              className={`${btn} ${btnIcon}`}
+              onClick={() => nav.nextId && onNavigate(nav.nextId)}
+              disabled={!nav.nextId || busy}
+              aria-label={`Next referral in ${STAGE_LABEL[referral.stage]}`}
+              title="Next in this stage (Right arrow)"
+            >
+              <ChevronRight size={18} />
+            </button>
+          </div>
+        )}
 
         <div style={bodyStyle}>
           {/* Contact */}
@@ -368,18 +416,18 @@ export default function ReferralDetail({
 
         {/* Footer */}
         <div style={footerStyle}>
-          <button onClick={() => onPrint(referral)} style={ghostBtnStyle}>
+          <button type="button" onClick={() => onPrint(referral)} className={btn}>
             <Printer size={15} /> Print Call Sheet
           </button>
           {canFax && /gapp/i.test(referral.program || '') && referral.stage !== 'closed' && referral.stage !== 'referred_out' && (
             // New GAPP case: ask the child's physician for the Appendix T.
             // Opens the Fax Center with this referral already picked.
-            <Link href={`/admin/fax?ppot=referral:${referral.id}`} style={{ ...ghostBtnStyle, textDecoration: 'none' }}>
+            <Link href={`/admin/fax?ppot=referral:${referral.id}`} className={btn}>
               <FileSignature size={15} /> Request PPOT
             </Link>
           )}
           {canCreateClient && !patientId && referral.stage !== 'closed' && referral.stage !== 'referred_out' && (
-            <button onClick={() => setConverting(true)} style={{ ...ghostBtnStyle, color: '#1a3a5c', borderColor: '#1a3a5c' }} disabled={busy}>
+            <button type="button" onClick={() => setConverting(true)} className={btnPrimary} disabled={busy}>
               <UserPlus size={15} /> Create Client Record
             </button>
           )}
@@ -396,7 +444,7 @@ export default function ReferralDetail({
                     onDelete();
                   }
                 }}
-                style={deleteBtnStyle}
+                className={btnDanger}
               >
                 <Trash2 size={15} /> Delete
               </button>
@@ -1143,35 +1191,20 @@ const timelineMetaStyle: React.CSSProperties = {
 const footerStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
+  flexWrap: 'wrap',
   gap: 10,
   padding: '14px 20px',
   borderTop: '1px solid #e5e7eb',
+  background: '#fafbfc',
 };
-const ghostBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
+const navStripStyle: React.CSSProperties = {
+  display: 'flex',
   alignItems: 'center',
-  gap: 6,
-  background: 'white',
-  color: '#5c6b7a',
-  border: '1px solid #d1d5db',
-  borderRadius: 8,
-  padding: '8px 14px',
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
+  justifyContent: 'space-between',
+  gap: 10,
+  padding: '8px 20px',
+  borderBottom: '1px solid #e5e7eb',
+  background: '#f8fafc',
 };
-const deleteBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: 'white',
-  color: '#b3261e',
-  border: '1px solid #f0c2bd',
-  borderRadius: 8,
-  padding: '8px 14px',
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
+const navTextStyle: React.CSSProperties = { fontSize: 12.5, fontWeight: 600, color: '#5c6b7a', display: 'inline-flex', alignItems: 'center', gap: 6 };
+const navDotStyle: React.CSSProperties = { width: 9, height: 9, borderRadius: 999, display: 'inline-block' };
