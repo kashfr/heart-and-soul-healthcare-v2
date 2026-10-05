@@ -9,6 +9,7 @@ import { withSelectChevron } from '@/lib/selectChevron';
 import { DOC_CATEGORY_GROUPS, validateFileFaxToClient, type FileFaxToClientField } from '@/lib/docCategories';
 import { inboundFaxSender } from '@/lib/verbalOrderShared';
 import type { RoiRecord } from '@/lib/roiShared';
+import { btn, btnPrimary } from '@/components/buttons';
 
 interface Fax {
   id: string;
@@ -215,8 +216,8 @@ export default function FileToClientModal({ fax, today, onView, onClose, onFiled
             {err && <div role="alert" style={{ color: '#b3261e', fontSize: 13, fontWeight: 600 }}>{err}</div>}
           </div>
           <div style={footer}>
-            <button type="button" onClick={onClose} style={ghostBtn} disabled={busy}>Cancel</button>
-            <button type="submit" style={primaryBtn} disabled={busy}>
+            <button type="button" onClick={onClose} className={btn} disabled={busy}>Cancel</button>
+            <button type="submit" className={btnPrimary} disabled={busy}>
               <FolderInput size={14} /> {busy ? 'Filing…' : client?.kind === 'referral' ? 'File to Referral' : 'File to Client'}
             </button>
           </div>
@@ -241,6 +242,4 @@ const results: React.CSSProperties = { position: 'absolute', top: '100%', left: 
 const resultRow: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', width: '100%', gap: 10, padding: '8px 12px', background: 'white', border: 'none', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5, textAlign: 'left' };
 const chosen: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, background: '#f5f8fb', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px' };
 const suggestBtn: React.CSSProperties = { textAlign: 'left', background: '#e6f4ea', border: '1px solid #b7dfc1', borderRadius: 8, padding: '9px 12px', fontSize: 13, color: '#14532d', cursor: 'pointer', fontFamily: 'inherit' };
-const ghostBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', border: '1px solid #d1d5db', borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer', fontFamily: 'inherit' };
-const primaryBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#1a3a5c', color: 'white', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const linkBtn: React.CSSProperties = { background: 'transparent', border: 'none', padding: 0, color: '#1a3a5c', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline' };

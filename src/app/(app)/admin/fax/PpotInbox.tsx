@@ -10,6 +10,7 @@ import PdfPreviewModal from '@/components/PdfPreviewModal';
 import { formatDateUS } from '@/lib/dateFormat';
 import { formatUSFaxNumber, inboundFaxSender } from '@/lib/verbalOrderShared';
 import { daysBetween, PPOT_REQUEST_LABEL, shouldAdvanceOrderDate, validatePpotFiling, type PpotOpenRequest, type PpotOrderLine, type PpotRequestType } from '@/lib/ppotShared';
+import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
 
 // The return half of PPOT requests: faxes that arrived on the portal line,
 // the requests still waiting on a physician, and the signed copies filed.
@@ -113,7 +114,7 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
             <Inbox size={16} style={{ verticalAlign: -2, marginRight: 6 }} />
             Incoming Faxes{incoming.length > 0 ? ` (${incoming.length})` : ''}
           </h2>
-          <button onClick={() => setUploading(true)} style={ghostBtnStyle} title="A fax that came to another fax number, or on paper">
+          <button onClick={() => setUploading(true)} className={btn} title="A fax that came to another fax number, or on paper">
             <FileUp size={14} /> Add a Received Fax
           </button>
         </div>
@@ -156,19 +157,19 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
                         )}
                       </td>
                       <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        <button onClick={() => view(`Fax from ${sender.from || 'unknown sender'}, ${f.receivedAt}`, `/api/fax/inbound/${f.id}/pdf`)} style={ghostBtnStyle}>
+                        <button onClick={() => view(`Fax from ${sender.from || 'unknown sender'}, ${f.receivedAt}`, `/api/fax/inbound/${f.id}/pdf`)} className={`${btn} ${btnSm}`}>
                           <Eye size={14} /> View
                         </button>
-                        <button onClick={() => setFilingToClient(f)} style={{ ...ghostBtnStyle, marginLeft: 6 }}>
+                        <button onClick={() => setFilingToClient(f)} className={`${btn} ${btnSm}`} style={{ marginLeft: 6 }}>
                           <FolderInput size={14} /> File to Client
                         </button>
-                        <button onClick={() => setFiling(f)} style={{ ...ghostBtnStyle, marginLeft: 6 }} disabled={openRequests.length === 0} title={openRequests.length === 0 ? 'No PPOT request is waiting on a signed copy' : undefined}>
+                        <button onClick={() => setFiling(f)} className={`${btn} ${btnSm}`} style={{ marginLeft: 6 }} disabled={openRequests.length === 0} title={openRequests.length === 0 ? 'No PPOT request is waiting on a signed copy' : undefined}>
                           <FileCheck2 size={14} /> File as Signed PPOT
                         </button>
                         {canDismiss && (
                           <button
                             onClick={() => act(f.id, `/api/fax/inbound/${f.id}/dismiss`, {}, 'Dismiss this fax without filing it? It also leaves the Verbal Orders queue, so only do this if it is not a signed verbal order.')}
-                            style={{ ...ghostBtnStyle, marginLeft: 6 }}
+                            className={`${btnDanger} ${btnSm}`} style={{ marginLeft: 6 }}
                             disabled={busy === f.id}
                             title="Not anything to file (junk, duplicate, test)"
                           >
@@ -221,7 +222,7 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
                       <td style={{ ...tdStyle, textAlign: 'right' }}>
                         <button
                           onClick={() => act(r.key, `/api/fax/ppot/requests/${r.key}`, { action: 'cancel' }, `Cancel the Appendix T request for ${r.memberName}? It leaves this list and no longer counts as this cycle's request. The fax itself stays in Sent Faxes.`)}
-                          style={ghostBtnStyle}
+                          className={`${btnDanger} ${btnSm}`}
                           disabled={busy === r.key}
                           title="Withdraw it (wrong office, no longer needed, or a test)"
                         >
@@ -258,12 +259,12 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
                       <div style={metaStyle}>{[r.recipientName, r.byName ? `filed by ${r.byName}` : ''].filter(Boolean).join(' · ')}</div>
                     </td>
                     <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      <button onClick={() => view(`Signed Appendix T: ${r.memberName}`, `/api/fax/ppot/signed/${r.key}`)} style={ghostBtnStyle}>
+                      <button onClick={() => view(`Signed Appendix T: ${r.memberName}`, `/api/fax/ppot/signed/${r.key}`)} className={`${btn} ${btnSm}`}>
                         <Eye size={14} /> View
                       </button>
                       <button
                         onClick={() => act(r.key, `/api/fax/ppot/requests/${r.key}`, { action: 'hide' }, `Remove ${r.memberName}'s signed PPOT from this list? The signed copy stays filed${r.subjectKind === 'client' ? " under the client's Documents" : ''}.`)}
-                        style={{ ...ghostBtnStyle, marginLeft: 6 }}
+                        className={`${btn} ${btnSm}`} style={{ marginLeft: 6 }}
                         disabled={busy === r.key}
                       >
                         <EyeOff size={14} /> Remove from List
@@ -479,8 +480,8 @@ function FileModal({
             {err && <div role="alert" style={{ color: '#b3261e', fontSize: 13, fontWeight: 600 }}>{err}</div>}
           </div>
           <div style={modalFooterStyle}>
-            <button type="button" onClick={onClose} style={ghostBtnStyle} disabled={busy}>Cancel</button>
-            <button type="submit" style={primaryBtnStyle} disabled={busy}>
+            <button type="button" onClick={onClose} className={btn} disabled={busy}>Cancel</button>
+            <button type="submit" className={btnPrimary} disabled={busy}>
               <FileCheck2 size={14} /> {busy ? 'Filing…' : 'File Signed PPOT'}
             </button>
           </div>
@@ -500,8 +501,6 @@ const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collap
 const tdStyle: React.CSSProperties = { padding: '12px 16px', borderBottom: '1px solid #f1f5f9', color: '#374151', verticalAlign: 'top' };
 const metaStyle: React.CSSProperties = { fontSize: 12.5, color: '#7f8c8d', marginTop: 3 };
 const suggestStyle: React.CSSProperties = { display: 'inline-block', fontSize: 12.5, fontWeight: 700, color: '#1e7e34', background: '#e6f4ea', borderRadius: 999, padding: '3px 10px' };
-const ghostBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', border: '1px solid #d1d5db', borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer', fontFamily: 'inherit' };
-const primaryBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#1a3a5c', color: 'white', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const linkBtnStyle: React.CSSProperties = { background: 'transparent', border: 'none', padding: 0, color: '#1a3a5c', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline' };
 const backdropStyle: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 };
 const modalStyle: React.CSSProperties = { background: 'white', borderRadius: 12, width: '100%', maxWidth: 560, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' };
