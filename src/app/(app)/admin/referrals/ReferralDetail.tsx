@@ -414,27 +414,30 @@ export default function ReferralDetail({
           )}
         </div>
 
-        {/* Footer */}
+        {/* Footer: the one action this stage is for gets the full width on
+            top; the everyday actions share an even row below, with Delete as
+            a red icon at the end of that row so it never strands on a line
+            of its own. */}
         <div style={footerStyle}>
-          <button type="button" onClick={() => onPrint(referral)} className={btn}>
-            <Printer size={15} /> Print Call Sheet
-          </button>
-          {canFax && /gapp/i.test(referral.program || '') && referral.stage !== 'closed' && referral.stage !== 'referred_out' && (
-            // New GAPP case: ask the child's physician for the Appendix T.
-            // Opens the Fax Center with this referral already picked.
-            <Link href={`/admin/fax?ppot=referral:${referral.id}`} className={btn}>
-              <FileSignature size={15} /> Request PPOT
-            </Link>
-          )}
           {canCreateClient && !patientId && referral.stage !== 'closed' && referral.stage !== 'referred_out' && (
-            <button type="button" onClick={() => setConverting(true)} className={btnPrimary} disabled={busy}>
+            <button type="button" onClick={() => setConverting(true)} className={btnPrimary} style={{ width: '100%' }} disabled={busy}>
               <UserPlus size={15} /> Create Client Record
             </button>
           )}
-          {canDelete && (
-            <>
-              <div style={{ flex: 1 }} />
+          <div style={footerRowStyle}>
+            <button type="button" onClick={() => onPrint(referral)} className={btn} style={footerGrowStyle}>
+              <Printer size={15} /> Print Call Sheet
+            </button>
+            {canFax && /gapp/i.test(referral.program || '') && referral.stage !== 'closed' && referral.stage !== 'referred_out' && (
+              // New GAPP case: ask the child's physician for the Appendix T.
+              // Opens the Fax Center with this referral already picked.
+              <Link href={`/admin/fax?ppot=referral:${referral.id}`} className={btn} style={footerGrowStyle}>
+                <FileSignature size={15} /> Request PPOT
+              </Link>
+            )}
+            {canDelete && (
               <button
+                type="button"
                 onClick={() => {
                   if (
                     confirm(
@@ -445,11 +448,14 @@ export default function ReferralDetail({
                   }
                 }}
                 className={btnDanger}
+                style={footerIconStyle}
+                aria-label="Delete referral"
+                title="Delete referral"
               >
-                <Trash2 size={15} /> Delete
+                <Trash2 size={16} />
               </button>
-            </>
-          )}
+            )}
+          </div>
         </div>
       </aside>
       {converting && (
@@ -1190,13 +1196,21 @@ const timelineMetaStyle: React.CSSProperties = {
 };
 const footerStyle: React.CSSProperties = {
   display: 'flex',
-  alignItems: 'center',
-  flexWrap: 'wrap',
+  flexDirection: 'column',
   gap: 10,
-  padding: '14px 20px',
+  padding: '14px 20px 16px',
   borderTop: '1px solid #e5e7eb',
   background: '#fafbfc',
 };
+const footerRowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'stretch',
+  gap: 10,
+};
+// Labeled buttons in the row split the width evenly.
+const footerGrowStyle: React.CSSProperties = { flex: '1 1 0', minWidth: 0 };
+// Delete: a square the same height as its neighbors.
+const footerIconStyle: React.CSSProperties = { flex: '0 0 auto', width: 44, padding: 0 };
 const navStripStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
