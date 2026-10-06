@@ -26,14 +26,26 @@ export function FieldError({ message, id }: { message?: string | null; id?: stri
 }
 
 /** Scroll the field's container into view and focus its first input. Works
- *  inside scrolling modals as well as pages. */
+ *  inside scrolling modals as well as pages. When the target holds nothing
+ *  focusable (a notice panel, a heading above a long checklist), the target
+ *  itself takes focus, so keyboard and screen-reader users land where the
+ *  page scrolled and a phone keyboard left open over the page closes. */
 export function escortToField(id: string): void {
   if (typeof document === 'undefined') return;
   const el = document.getElementById(id);
   if (!el) return;
-  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const reduceMotion =
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Center the target, unless it is taller than most of the screen (a long
+  // notice panel on a small phone), where centering would cut off its first
+  // lines. Those align to the top instead (scroll-padding still applies).
+  const tall = el.getBoundingClientRect().height > window.innerHeight * 0.8;
+  el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: tall ? 'start' : 'center' });
   const focusable = el.querySelector<HTMLElement>('input:not([type="hidden"]), select, textarea, button, canvas');
-  window.setTimeout(() => focusable?.focus({ preventScroll: true }), 350);
+  const target = focusable ?? el;
+  if (!focusable && !el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
+  window.setTimeout(() => target.focus({ preventScroll: true }), 350);
 }
 
 /** The first error key in display order, so the escort lands on the topmost problem. */

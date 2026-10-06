@@ -25,6 +25,12 @@ import {
   RELATIONSHIP_OPTIONS,
   screenCaregiverRelationship,
   screenAgencyStaff,
+  highAcuityNeeds,
+  highAcuityPromptParagraphs,
+  shouldPromptHighAcuityNurse,
+  HIGH_ACUITY_PROMPT_TITLE,
+  HIGH_ACUITY_PROMPT_ACCEPT,
+  HIGH_ACUITY_PROMPT_KEEP,
   screenBehavioralPaidCaregiver,
   screenMixedPaidCaregiver,
   screenYoungPaidCaregiver,
@@ -453,55 +459,43 @@ describe('highBehaviorPaidFlag', () => {
   });
 });
 
-describe('screenAgencyStaff (the Williams twins)', () => {
-  const NOW = new Date('2026-09-30T12:00:00Z').getTime();
-  // Age 1, feeding tube, help with feeding and bathing. On the form the mother
-  // answered No to being paid; on the phone she wanted pay and no nurse.
-  const twin = {
-    dob: '2025-06-24',
-    equipment: ['feeding_tube', 'help_feeding', 'help_hygiene'],
-  };
-  const screen = (o: Record<string, unknown>) => screenAgencyStaff({ ...twin, ...o }, NOW);
-
-  it('does nothing when the family wants agency staff, or was never asked', () => {
-    expect(screen({ wantsAgencyStaff: 'yes', seekingPaidCaregiver: 'no' }).block).toBeNull();
-    expect(screen({ seekingPaidCaregiver: 'no' })).toEqual({ block: null, reason: null, flag: null });
+describe('screenAgencyStaff', () => {
+  it('refuses every No: GAPP requires skilled nursing for every member (§604.2, Rev. 10/2026)', () => {
+    // The Morse case (10/05): age 7, personal-care needs listed, paid Yes.
+    // Used to be let through with a note; the Q4 2026 manual closed that.
+    const r = screenAgencyStaff({ wantsAgencyStaff: 'no' });
+    expect(r).toContain('section 604.2');
+    expect(r).toContain('cannot be accepted');
+    expect(r).not.toMatch(/[—–]/);
   });
 
-  it('refuses no staff + not seeking pay: nobody is left to provide care', () => {
-    const r = screen({ wantsAgencyStaff: 'no', seekingPaidCaregiver: 'no' });
-    expect(r.reason).toBe('no-service');
-    expect(r.block).toContain('cannot be accepted');
+  it('does nothing when the family accepts staff, or was never asked (older form builds)', () => {
+    expect(screenAgencyStaff({ wantsAgencyStaff: 'yes' })).toBeNull();
+    expect(screenAgencyStaff({})).toBeNull();
+    expect(screenAgencyStaff({ wantsAgencyStaff: '' })).toBeNull();
+  });
+});
+
+describe('high-acuity nurse prompt (trach / vent)', () => {
+  it('prompts only when trach or vent is checked and the family declines a nurse', () => {
+    expect(shouldPromptHighAcuityNurse({ equipment: ['trach'], wantsAgencyStaff: 'no' })).toBe(true);
+    expect(shouldPromptHighAcuityNurse({ equipment: ['vent', 'help_feeding'], wantsAgencyStaff: 'no' })).toBe(true);
+    expect(shouldPromptHighAcuityNurse({ equipment: ['trach'], wantsAgencyStaff: 'yes' })).toBe(false);
+    expect(shouldPromptHighAcuityNurse({ equipment: ['feeding_tube', 'oxygen'], wantsAgencyStaff: 'no' })).toBe(false);
+    expect(shouldPromptHighAcuityNurse({ wantsAgencyStaff: 'no' })).toBe(false);
   });
 
-  it('refuses no staff + paid for a child under 6, even with a feeding tube', () => {
-    const r = screen({ wantsAgencyStaff: 'no', seekingPaidCaregiver: 'yes' });
-    expect(r.reason).toBe('young-child');
+  it('names what was checked in plain words', () => {
+    expect(highAcuityNeeds(['trach', 'help_feeding'])).toEqual(['a tracheostomy']);
+    const [first] = highAcuityPromptParagraphs(highAcuityNeeds(['trach', 'vent']));
+    expect(first).toContain('your child has a tracheostomy and a ventilator, BiPAP or CPAP.');
+    expect(highAcuityPromptParagraphs(['a tracheostomy'], 'the child')[2]).toMatch(/^The child can still/);
   });
 
-  it('lets a young child through on a mobility need at 18 months or older', () => {
-    const r = screen({ wantsAgencyStaff: 'no', seekingPaidCaregiver: 'yes', dob: '2022-03-01', equipment: ['wheelchair'] });
-    expect(r.block).toBeNull();
-    expect(r.flag).toContain('does NOT want a nurse or aide');
-    expect(screen({ wantsAgencyStaff: 'no', seekingPaidCaregiver: 'yes', dob: '2025-09-01', equipment: ['wheelchair'] }).reason).toBe('young-child');
-  });
-
-  it('at 6 or older, allows only when a personal-care need is listed', () => {
-    const older = { wantsAgencyStaff: 'no', seekingPaidCaregiver: 'yes', dob: '2014-01-01' };
-    expect(screen({ ...older, equipment: ['feeding_tube'] }).reason).toBe('nursing-only');
-    expect(screen({ ...older, equipment: ['equip_none'] }).reason).toBe('nursing-only');
-    const ok = screen({ ...older, equipment: ['feeding_tube', 'help_hygiene'] });
-    expect(ok.block).toBeNull();
-    expect(ok.flag).toContain('must still assess');
-  });
-
-  it('has no dashes in any copy', () => {
-    const copy = [
-      screen({ wantsAgencyStaff: 'no', seekingPaidCaregiver: 'no' }).block,
-      screen({ wantsAgencyStaff: 'no', seekingPaidCaregiver: 'yes' }).block,
-      screen({ wantsAgencyStaff: 'no', seekingPaidCaregiver: 'yes', dob: '2014-01-01', equipment: ['trach'] }).block,
-      screen({ wantsAgencyStaff: 'no', seekingPaidCaregiver: 'yes', dob: '2014-01-01', equipment: ['help_feeding'] }).flag,
-    ];
-    for (const c of copy) expect(c).not.toMatch(/[—–]/);
+  it('has no dashes and Title Case buttons', () => {
+    const all = [HIGH_ACUITY_PROMPT_TITLE, HIGH_ACUITY_PROMPT_ACCEPT, HIGH_ACUITY_PROMPT_KEEP,
+      ...highAcuityPromptParagraphs(['a tracheostomy', 'a ventilator, BiPAP or CPAP'])];
+    for (const t of all) expect(t).not.toMatch(/[—–]/);
+    expect(HIGH_ACUITY_PROMPT_ACCEPT).toBe('Yes, I Will Accept a Nurse');
   });
 });

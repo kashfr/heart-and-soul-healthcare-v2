@@ -242,9 +242,9 @@ export async function processReferralSubmission(data: any) {
   }
   // Declining agency staff (GAPP) is refused whether or not pay is sought.
   if (program?.interest === 'gapp') {
-    const staff = screenAgencyStaff({ ...details, dob: client?.dob });
-    if (staff.block) {
-      return { success: false, refused: `no-agency-staff-${staff.reason}`, error: staff.block };
+    const staff = screenAgencyStaff(details);
+    if (staff) {
+      return { success: false, refused: 'no-agency-staff', error: staff };
     }
   }
 
@@ -302,9 +302,6 @@ export async function processReferralSubmission(data: any) {
           ...(reviewFlag ? [{ label: '⚠ Review', value: reviewFlag }] : []),
           ...(ageFlag ? [{ label: '⚠ Young child', value: ageFlag }] : []),
           ...(relationship?.flag ? [{ label: '⚠ Relationship', value: relationship.flag }] : []),
-          ...(program.interest === 'gapp' && screenAgencyStaff({ ...details, dob: client.dob }).flag
-            ? [{ label: '⚠ Agency staff', value: screenAgencyStaff({ ...details, dob: client.dob }).flag as string }]
-            : []),
           ...(behaviorFlag ? [{ label: '⚠ Behavior', value: behaviorFlag }] : []),
           ...(inferred?.conflict
             ? [{ label: '⚠ Care need unclear', value: inferred.conflict }]
