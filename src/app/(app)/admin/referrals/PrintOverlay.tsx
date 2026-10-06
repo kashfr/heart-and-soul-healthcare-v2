@@ -1,9 +1,11 @@
 'use client';
 
+import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Printer } from 'lucide-react';
 import { btn, btnPrimary } from '@/components/buttons';
 import { formatDateUS } from '@/lib/dateFormat';
+import { callSheetFileName } from './callSheetFileName';
 import { fieldRows, formatDate, SOURCE_LABEL, STAGE_LABEL, type Referral } from './types';
 
 /**
@@ -27,6 +29,18 @@ export default function PrintOverlay({
   printList: Referral[];
   onClose: () => void;
 }) {
+  // Chrome names a saved PDF after the page title, which was the site title
+  // for every referral, so each save collided with the last. Title the page
+  // after the sheet(s) while the preview is open; restore it on close.
+  const fileName = callSheetFileName(printList);
+  useEffect(() => {
+    const previous = document.title;
+    document.title = fileName;
+    return () => {
+      document.title = previous;
+    };
+  }, [fileName]);
+
   if (typeof document === 'undefined') return null;
   return createPortal(
     <div className="referral-print-portal">
