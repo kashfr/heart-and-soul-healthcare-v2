@@ -13,6 +13,8 @@ import {
   PAID_CARE_BASIS_OPTIONS,
   RELATIONSHIP_OPTIONS,
   highBehaviorPaidFlag,
+  GAPP_NURSING_REQUIRED_CITATION,
+  GAPP_NURSING_REQUIRED_QUOTE,
   screenAgencyStaff,
   screenCaregiverRelationship,
   inferService,
@@ -349,18 +351,14 @@ export default function ReferralPage() {
     }) !== null;
   const otherBlock =
     isPaidBehavioralBlock || isPaidYoungChildBlock || isPaidMixedBlock || isPaidFosterBlock;
-  // Declining agency staff leaves only the paid-parent path (GAPP only).
-  // Refused when that path is closed too: not seeking pay, a young child, or
-  // only nursing needs listed. Shown only when no other stop is already
-  // explaining why.
-  const staffScreen = screenAgencyStaff({
-    wantsAgencyStaff: showGappClinical ? formData.wantsAgencyStaff : '',
-    seekingPaidCaregiver: formData.seekingPaidCaregiver,
-    dob: formData.clientDOB,
-    equipment: formData.equipment,
-  });
+  // Declining agency staff is a dead end in every case (GAPP only): every
+  // GAPP member must require skilled nursing (manual §604.2, Rev. 10/2026).
+  // Shown only when no other stop is already explaining why.
   const isStaffBlock =
-    !otherBlock && formData.seekingPaidCaregiver !== '' && staffScreen.block !== null;
+    !otherBlock &&
+    screenAgencyStaff({
+      wantsAgencyStaff: showGappClinical ? formData.wantsAgencyStaff : '',
+    }) !== null;
   const isBlocked = otherBlock || isStaffBlock;
   const memberWord = childAge && childAge.years >= 18 ? 'member' : 'child';
 
@@ -1846,19 +1844,24 @@ export default function ReferralPage() {
 
                   {/* Agency staff in the home (GAPP). Every paid-caregiver
                       stop keys on the paid answer being Yes; this makes "No"
-                      mean what it says. Declining staff with no paid-parent
-                      path left is a dead end (the Williams twins, 9/29). */}
+                      mean what it says. Since the Q4 2026 manual every GAPP
+                      member must require skilled nursing, so No is a dead end
+                      in every case. */}
                   {showGappClinical && (
                     <>
                       <div className="form-group" id={fieldId('wantsAgencyStaff')}>
                         <label htmlFor="wantsAgencyStaff" className="form-label">
-                          Do you want a nurse or aide from our agency to come to the
-                          home to care for {careSubject}? *
+                          Every child in GAPP must have a skilled nurse. Will you
+                          accept a nurse or aide from our agency in the home? *
                         </label>
                         <p style={{ margin: '0 0 8px', fontSize: 13, color: '#5c6b7a', lineHeight: 1.5 }}>
-                          GAPP care is provided in the home by a nurse or aide who
-                          works for an agency like ours. A parent can be paid only for
-                          hands-on personal care, never for nursing care.
+                          Georgia Medicaid requires every child in GAPP to have
+                          medically necessary skilled nursing, and GAPP care is
+                          provided in the home by a nurse or aide who works for an
+                          agency like ours. This applies even when a parent is the
+                          paid caregiver: a parent can be paid only for hands-on
+                          personal care, and a nurse must still be involved.
+                          Answering No ends the application.
                         </p>
                         <select
                           id="wantsAgencyStaff"
@@ -1880,29 +1883,15 @@ export default function ReferralPage() {
                           <AlertCircle size={16} />
                           <p>
                             <strong>We cannot accept this referral as answered.</strong>{' '}
-                            You told us you do not want a nurse or aide from our agency
-                            in the home.{' '}
-                            {staffScreen.reason === 'no-service' &&
-                              'You are also not applying to be the paid caregiver. That leaves no one to provide the care, so there is no GAPP service we can set up.'}
-                            {staffScreen.reason === 'young-child' &&
-                              'A parent cannot be paid for nursing care, and for an infant or young child Medicaid does not pay a parent for everyday care like feeding, bathing, and dressing. Without a nurse or aide, there is no GAPP service we can set up.'}
-                            {staffScreen.reason === 'nursing-only' &&
-                              'A parent can be paid only for hands-on personal care (feeding, bathing, dressing, toileting, getting around), never for nursing care, and no personal care needs are listed above. Without a nurse, there is no GAPP service we can set up.'}{' '}
-                            Neither we nor our partner agencies can act on this referral,
-                            so please do not submit it. If you do want a nurse or aide to
-                            help with the care, change this answer to <strong>Yes</strong>.
-                          </p>
-                        </div>
-                      )}
-
-                      {!isBlocked && staffScreen.flag && (
-                        <div className={styles.countyNotice}>
-                          <AlertCircle size={16} />
-                          <p>
-                            <strong>A nurse must still visit to assess {careSubject}.</strong>{' '}
-                            Even when a parent is the paid caregiver, Medicaid sets the
-                            paid hours from an assessment by a skilled nurse. Without
-                            that visit, no hours can be approved.
+                            You told us you will not accept a nurse or aide from our
+                            agency in the home. Georgia Medicaid&apos;s GAPP policy
+                            requires skilled nursing for every child in the program,
+                            so without a nurse there is no GAPP service we or any
+                            other agency can set up, whether or not a parent is paid.
+                            The policy reads: &ldquo;<em>{GAPP_NURSING_REQUIRED_QUOTE}</em>&rdquo;
+                            ({GAPP_NURSING_REQUIRED_CITATION}). Please do not submit
+                            this referral. If you will accept a nurse or aide to help
+                            with the care, change this answer to <strong>Yes</strong>.
                           </p>
                         </div>
                       )}
@@ -1997,7 +1986,7 @@ export default function ReferralPage() {
                     <FieldError message="This referral cannot be submitted as answered: a parent cannot be paid for care related to autism, ADHD, or developmental delay. Change the paid caregiver answer to No to send the referral for the medical condition." />
                   )}
                   {isStaffBlock && (
-                    <FieldError message="This referral cannot be submitted as answered: without a nurse or aide from an agency in the home, there is no GAPP service to set up. See the note above, or change that answer to Yes." />
+                    <FieldError message="This referral cannot be submitted as answered: GAPP requires skilled nursing for every child, so without a nurse or aide from an agency in the home there is no GAPP service to set up. See the note above, or change that answer to Yes." />
                   )}
                   {isPaidFosterBlock && (
                     <FieldError message="This referral cannot be submitted as answered: foster parents cannot be paid under the Family Caregiver Option. Change the paid caregiver answer to No to send the referral for the child's care." />

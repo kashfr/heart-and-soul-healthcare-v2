@@ -160,7 +160,6 @@ function toReferralInput(payload: IncomingPayload): ReferralInput {
   // Who is asking to be paid (guardianship / not-the-applicant notes), and a
   // paid request that reports behaviors needing help to manage.
   const relationship = screenCaregiverRelationship(r);
-  const staffFlag = screenAgencyStaff(r).flag;
   const behaviorFlag = highBehaviorPaidFlag(r);
 
   const inferred = inferService(r);
@@ -190,7 +189,6 @@ function toReferralInput(payload: IncomingPayload): ReferralInput {
       ...(reviewFlag ? [{ label: '⚠ Review', value: reviewFlag }] : []),
       ...(ageFlag ? [{ label: '⚠ Young child', value: ageFlag }] : []),
       ...(relationship.flag ? [{ label: '⚠ Relationship', value: relationship.flag }] : []),
-      ...(staffFlag ? [{ label: '⚠ Agency staff', value: staffFlag }] : []),
       ...(behaviorFlag ? [{ label: '⚠ Behavior', value: behaviorFlag }] : []),
       ...(inferred.conflict
         ? [{ label: '⚠ Care need unclear', value: inferred.conflict }]
@@ -290,7 +288,7 @@ export async function POST(req: Request) {
   const staff = screenAgencyStaff(payload.referral ?? {});
   const refusal =
     paidCaregiverRefusal(payload.referral ?? {}) ??
-    (staff.block ? { code: `no-agency-staff-${staff.reason}`, reason: staff.block } : null);
+    (staff ? { code: 'no-agency-staff', reason: staff } : null);
   if (refusal) {
     return NextResponse.json(
       { error: refusal.reason, refused: refusal.code },

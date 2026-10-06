@@ -861,97 +861,46 @@ export function highBehaviorPaidFlag(input: {
 // --- Agency-staff screen -----------------------------------------------------
 
 /**
- * "Do you want a nurse or aide from our agency to come to your home to care
- * for your child?" Asked on every GAPP referral.
+ * "Every child in GAPP must have a skilled nurse. Will you accept a nurse or
+ * aide from our agency in your home?" Asked on every GAPP referral.
  *
  * Every paid-caregiver stop keys on the paid answer being Yes, and the forms
  * tell a blocked family to switch it to No. The Williams twins (9/29, age 1,
- * feeding tube) show what that leaves open: the mother answered No, the
+ * feeding tube) showed what that left open: the mother answered No, the
  * referral came through as skilled nursing, and on the phone she wanted to be
  * paid and did not want a nurse in the home. This question makes "No" mean
  * what it says: agency staff, not the parent, provide the care.
  */
 export type WantsAgencyStaff = '' | 'yes' | 'no';
 
+/**
+ * GAPP manual §604.2 (Rev. 10/2026). Quoted to the family on the form and
+ * carried on the card, so the refusal reads as the state's rule, not ours.
+ */
+export const GAPP_NURSING_REQUIRED_QUOTE =
+  'All members in GAPP must require medically necessary skilled nursing to provide oversight and to provide any medically necessary nursing needs.';
+export const GAPP_NURSING_REQUIRED_CITATION =
+  'Georgia Pediatric Program (GAPP) In-Home Nursing policy manual, section 604.2, revised October 2026';
+
 export interface AgencyStaffScreenInput {
   wantsAgencyStaff?: WantsAgencyStaff | string;
-  seekingPaidCaregiver?: string;
-  dob?: string | null;
-  equipment?: string[];
 }
 
-export interface AgencyStaffScreen {
-  /** Why the referral is refused. Null when it may proceed. */
-  block: string | null;
-  /** Which refusal, so the forms can word the panel for the family. */
-  reason: 'no-service' | 'young-child' | 'nursing-only' | null;
-  /** Staff-facing note when a family that declined agency staff goes through. */
-  flag: string | null;
-}
-
-const NO_STAFF_SCREEN: AgencyStaffScreen = { block: null, reason: null, flag: null };
+export const NO_AGENCY_STAFF_BLOCK =
+  'The family does not want a nurse or aide from the agency in the home. Under the GAPP manual (section 604.2, revised October 2026) every member must require medically necessary skilled nursing, so without a nurse there is no GAPP service to set up, paid parent or not, and the referral cannot be accepted.';
 
 /**
- * A family that declines agency staff can only be served through the Family
- * Caregiver Option, which pays a parent for personal care and never for
- * nursing. So declining staff is refused when:
- *
- *   - they are not seeking pay (nobody is left to provide anything);
- *   - the child is under YOUNG_PAID_CAREGIVER_AGE_YEARS, unless a mobility
- *     need at MOBILITY_SCORES_FROM_MONTHS or older is reported. Skilled
- *     equipment does NOT clear it here: it clears the young-child stop only
- *     because the child needs a nurse, and the family has refused the nurse;
- *   - no personal-care (daily-tier) need is listed, so the only needs are
- *     nursing needs a parent cannot be paid for.
- *
- * Otherwise the referral goes through with a note that a nurse must still
- * assess the member (the Medical Review Team sets hours from that visit).
+ * Declining agency staff is a dead end in every case. Until October 2026 a
+ * parent-paid personal-care-only path seemed possible, so an older child with
+ * personal-care needs was let through with a note. The Q4 2026 manual closed
+ * that: every GAPP member must require skilled nursing (§604.2), every agency
+ * must staff it (§615), and providers must not request services they cannot
+ * deliver (chapter 800). The Robert Morse IV referral (10/05: age 7, seizure
+ * rescue meds, bathing help, paid Yes, staff No) is the case that proved the
+ * old carve-out wrong.
  */
-export function screenAgencyStaff(
-  input: AgencyStaffScreenInput,
-  nowMs: number = Date.now()
-): AgencyStaffScreen {
-  if (input.wantsAgencyStaff !== 'no') return NO_STAFF_SCREEN;
-
-  if (input.seekingPaidCaregiver !== 'yes') {
-    return {
-      reason: 'no-service',
-      flag: null,
-      block:
-        'The family does not want a nurse or aide from the agency in the home and is not applying to be the paid caregiver. GAPP care is delivered by agency staff in the home, so there is no service to set up and the referral cannot be accepted.',
-    };
-  }
-
-  const equipment = known(input.equipment, EQUIPMENT_OPTIONS);
-  const daily = equipment.filter((o) => o.tier === 'daily');
-  const mobility = equipment.filter((o) => MOBILITY_CODES.has(o.code));
-  const months = ageMonthsFromDob(input.dob, nowMs);
-  const young = months !== null && months < YOUNG_PAID_CAREGIVER_AGE_YEARS * 12;
-
-  if (young && !(mobility.length > 0 && months >= MOBILITY_SCORES_FROM_MONTHS)) {
-    return {
-      reason: 'young-child',
-      flag: null,
-      block:
-        'Paid-caregiver request for a young child where the family does not want a nurse or aide from the agency in the home. A parent cannot be paid for nursing care, and at this age everyday personal care is typical parenting that Medicaid does not pay a parent for. Without agency staff there is no GAPP service to set up, so the referral cannot be accepted.',
-    };
-  }
-
-  if (daily.length === 0) {
-    return {
-      reason: 'nursing-only',
-      flag: null,
-      block:
-        'Paid-caregiver request where the family does not want a nurse or aide from the agency in the home and no personal-care needs are listed. A parent can be paid only for hands-on personal care, never for nursing care, so there is no GAPP service to set up and the referral cannot be accepted.',
-    };
-  }
-
-  return {
-    block: null,
-    reason: null,
-    flag:
-      'The family does NOT want a nurse or aide from the agency in the home; they want the parent paid for personal care only. A skilled nurse must still assess the member (the Medical Review Team sets hours from that visit), and any approved nursing hours would go unused. Confirm the family accepts the assessment visit before scheduling.',
-  };
+export function screenAgencyStaff(input: AgencyStaffScreenInput): string | null {
+  return input.wantsAgencyStaff === 'no' ? NO_AGENCY_STAFF_BLOCK : null;
 }
 
 // --- Drift guard -------------------------------------------------------------
