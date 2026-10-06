@@ -1,5 +1,6 @@
 'use client';
 
+import { createPortal } from 'react-dom';
 import { Printer } from 'lucide-react';
 import { btn, btnPrimary } from '@/components/buttons';
 import { formatDateUS } from '@/lib/dateFormat';
@@ -9,6 +10,15 @@ import { fieldRows, formatDate, SOURCE_LABEL, STAGE_LABEL, type Referral } from 
  * Full-screen print preview. Each referral renders as a one-per-page call sheet
  * (contact info, all fields, and a blank outreach log the nurse fills in by
  * hand). The @media print block hides everything else on the page.
+ *
+ * Rendered into a portal on <body> so print CSS can remove the rest of the
+ * app with display:none (a direct-child selector). On screen the preview is a
+ * fixed, scrolling layer; when printing it must become ordinary flowing
+ * content. Printed as-is, Chrome repeats a position:fixed element on every
+ * page and clips it to its one-screen scroll box, which produced call sheets
+ * cut off at the bottom with the first page duplicated. Hiding the app with
+ * visibility:hidden (the old approach) also kept its full height in the
+ * layout, adding blank or repeated pages.
  */
 export default function PrintOverlay({
   printList,
@@ -17,8 +27,10 @@ export default function PrintOverlay({
   printList: Referral[];
   onClose: () => void;
 }) {
-  return (
-    <div style={printOverlayStyle}>
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div className="referral-print-portal">
+    <div className="referral-print-overlay" style={printOverlayStyle}>
       <div className="referral-print-toolbar" style={printToolbarStyle}>
         <span style={{ fontWeight: 700 }}>
           Print Preview — {printList.length} Referral{printList.length === 1 ? '' : 's'}
@@ -43,28 +55,44 @@ export default function PrintOverlay({
       <style>{`
         @media print {
           @page { margin: 0.5in; }
-          body * { visibility: hidden !important; }
-          .referral-print-root, .referral-print-root * { visibility: visible !important; }
-          .referral-print-root {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
-            padding: 0 !important;
+          html, body {
+            height: auto !important;
+            min-height: 0 !important;
+            overflow: visible !important;
             background: #fff !important;
           }
+          body > *:not(.referral-print-portal) { display: none !important; }
+          .referral-print-overlay {
+            position: static !important;
+            inset: auto !important;
+            height: auto !important;
+            overflow: visible !important;
+            background: #fff !important;
+            z-index: auto !important;
+          }
           .referral-print-toolbar { display: none !important; }
+          .referral-print-root { padding: 0 !important; background: #fff !important; }
           .referral-print-sheet {
             box-shadow: none !important;
             border: none !important;
+            border-radius: 0 !important;
             margin: 0 !important;
+            padding: 0 !important;
             max-width: none !important;
+            break-after: page;
             page-break-after: always;
           }
-          .referral-print-sheet:last-child { page-break-after: auto; }
+          .referral-print-sheet:last-child { break-after: auto; page-break-after: auto; }
+          .referral-print-sheet tr,
+          .referral-print-sheet h2,
+          .referral-print-sheet h3 { break-inside: avoid; page-break-inside: avoid; }
+          .referral-print-sheet h2,
+          .referral-print-sheet h3 { break-after: avoid; page-break-after: avoid; }
         }
       `}</style>
     </div>
+    </div>,
+    document.body
   );
 }
 
