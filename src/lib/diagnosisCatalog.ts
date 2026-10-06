@@ -903,6 +903,49 @@ export function screenAgencyStaff(input: AgencyStaffScreenInput): string | null 
   return input.wantsAgencyStaff === 'no' ? NO_AGENCY_STAFF_BLOCK : null;
 }
 
+// --- High-acuity nurse prompt ------------------------------------------------
+
+/**
+ * Trach and ventilator care is the highest-acuity care GAPP covers, and the
+ * families the agency most wants to serve. When one of them answers No to a
+ * nurse in the home, it is usually a misunderstanding, so both forms stop and
+ * explain before the No stands. The answer itself is still refused by
+ * screenAgencyStaff; this only adds the explanation and a one-tap way back.
+ */
+const HIGH_ACUITY_PHRASES: Record<string, string> = {
+  trach: 'a tracheostomy',
+  vent: 'a ventilator, BiPAP or CPAP',
+};
+
+/** The high-acuity items checked, as phrases for a sentence ("a tracheostomy"). */
+export function highAcuityNeeds(equipment: string[] | undefined): string[] {
+  return (equipment ?? []).filter((c) => c in HIGH_ACUITY_PHRASES).map((c) => HIGH_ACUITY_PHRASES[c]);
+}
+
+/** Show the prompt when a family with trach or vent needs declines a nurse. */
+export function shouldPromptHighAcuityNurse(input: {
+  equipment?: string[];
+  wantsAgencyStaff?: string;
+}): boolean {
+  return input.wantsAgencyStaff === 'no' && highAcuityNeeds(input.equipment).length > 0;
+}
+
+export const HIGH_ACUITY_PROMPT_TITLE = 'Trach and Ventilator Care Needs a Skilled Nurse';
+export const HIGH_ACUITY_PROMPT_ACCEPT = 'Yes, I Will Accept a Nurse';
+export const HIGH_ACUITY_PROMPT_KEEP = 'Keep My Answer';
+
+/** Body paragraphs. `subject` is "your child" or "the child". No dashes. */
+export function highAcuityPromptParagraphs(needs: string[], subject = 'your child'): string[] {
+  const list =
+    needs.length <= 1 ? needs.join('') : `${needs.slice(0, -1).join(', ')} and ${needs[needs.length - 1]}`;
+  const Subject = subject.charAt(0).toUpperCase() + subject.slice(1);
+  return [
+    `You told us ${subject} has ${list}. This is high-acuity care: suctioning, trach and equipment checks, and breathing emergencies need a trained skilled nurse in the home.`,
+    'Georgia Medicaid requires skilled nursing for every child in GAPP, and for trach and ventilator care it is essential. If the answer stays No, we cannot send this referral.',
+    `${Subject} can still have a parent paid for hands-on personal care alongside the nurse, if ${subject === 'your child' ? 'they qualify' : 'the child qualifies'}.`,
+  ];
+}
+
 // --- Drift guard -------------------------------------------------------------
 
 /**

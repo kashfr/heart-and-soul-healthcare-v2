@@ -165,7 +165,9 @@ describe('Referral form: blocked or incomplete attempts', () => {
   it('a staff stop with nothing missing moves focus to its panel', () => {
     render(<ReferralPage />);
     fillStep1();
-    fillGappStep2({ paid: 'no', staff: 'no', equipment: ['Tracheostomy'] });
+    // A skilled need that is not trach or vent, so the panel (not the
+    // high-acuity popup) explains the stop.
+    fillGappStep2({ paid: 'no', staff: 'no', equipment: ['Feeding tube (G-tube, NG or J-tube)'] });
     $('referrerName').focus();
     fireEvent.click(screen.getByRole('button', { name: /Submit Referral/ }));
     settle();
@@ -210,5 +212,37 @@ describe('Referral form: blocked or incomplete attempts', () => {
     fireEvent.click(screen.getByRole('button', { name: /Next Step/ }));
     expect(screen.getByText('Please enter your name.')).toBeTruthy();
     expect(screen.getByText(BANNER)).toBeTruthy();
+  });
+});
+
+describe('Referral form: trach and vent families who decline a nurse', () => {
+  it('opens the popup on No, and Yes, I Will Accept a Nurse switches the answer', () => {
+    render(<ReferralPage />);
+    fillStep1();
+    fillGappStep2({ paid: 'no', staff: 'no', equipment: ['Tracheostomy'] });
+    const dialog = screen.getByRole('dialog', { name: 'Trach and Ventilator Care Needs a Skilled Nurse' });
+    expect(within(dialog).getByText(/your child has a tracheostomy/)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Yes, I Will Accept a Nurse' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(($('wantsAgencyStaff') as HTMLSelectElement).value).toBe('yes');
+  });
+
+  it('Keep My Answer closes it, the stop stands, and Submit brings the popup back', () => {
+    render(<ReferralPage />);
+    fillStep1();
+    fillGappStep2({ paid: 'no', staff: 'no', equipment: ['Ventilator, BiPAP or CPAP'] });
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Keep My Answer' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(($('wantsAgencyStaff') as HTMLSelectElement).value).toBe('no');
+    fireEvent.click(screen.getByRole('button', { name: /Submit Referral/ }));
+    settle();
+    expect(screen.getByRole('dialog', { name: 'Trach and Ventilator Care Needs a Skilled Nurse' })).toBeTruthy();
+  });
+
+  it('does not open for other skilled needs', () => {
+    render(<ReferralPage />);
+    fillStep1();
+    fillGappStep2({ paid: 'no', staff: 'no', equipment: ['Oxygen'] });
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 });

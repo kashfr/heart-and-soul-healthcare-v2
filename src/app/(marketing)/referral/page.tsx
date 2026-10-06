@@ -25,6 +25,8 @@ import {
   type BehaviorRisk,
   type CaregiverRelationship,
   type PaidCareBasis,
+  highAcuityNeeds,
+  shouldPromptHighAcuityNurse,
 } from '@/lib/diagnosisCatalog';
 import {
   FileText,
@@ -44,6 +46,7 @@ import {
 } from 'lucide-react';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import HighAcuityNursePrompt from './HighAcuityNursePrompt';
 import { processReferralSubmission } from '@/app/actions';
 import { ScrollReveal } from '@/components/animations';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -221,6 +224,8 @@ export default function ReferralPage() {
   }, [step]);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Trach/vent family answered No to a nurse: explain in a popup first.
+  const [highAcuityPromptOpen, setHighAcuityPromptOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The steps the user has tried to leave or submit. A step's outlines,
   // messages, banner and stop emphasis show once it has been attempted and
@@ -543,6 +548,13 @@ export default function ReferralPage() {
     }
   };
 
+  const closeHighAcuityPrompt = (accept: boolean) => {
+    setHighAcuityPromptOpen(false);
+    if (accept) setFormData((prev) => ({ ...prev, wantsAgencyStaff: 'yes' }));
+    // Return focus to the question, now holding the family's answer.
+    window.setTimeout(() => document.getElementById('wantsAgencyStaff')?.focus(), 0);
+  };
+
   const handleAttemptSubmit = () => {
     if (isSubmitting) return;
     // A GAPP hard stop (paid behavioral/autism care, everyday care of a young
@@ -555,6 +567,16 @@ export default function ReferralPage() {
     // need can lift the behavioral or young-child stop; otherwise to the
     // panel that explains the stop, which takes focus so a phone keyboard
     // closes and a screen reader reads it.
+    // Trach or vent family still declining a nurse: the prompt explains the
+    // stop better than the panel and offers the one-tap way back.
+    if (
+      isStaffBlock &&
+      shouldPromptHighAcuityNurse({ equipment: formData.equipment, wantsAgencyStaff: formData.wantsAgencyStaff })
+    ) {
+      flushSync(() => markAttempted(step));
+      setHighAcuityPromptOpen(true);
+      return;
+    }
     if (isBlocked) {
       const target = blockedSubmitEscort(getFieldErrors(), activeBlockId);
       flushSync(() => markAttempted(step));
@@ -610,6 +632,12 @@ export default function ReferralPage() {
         programInterest: value,
         clientCounty: '',
       });
+    } else if (name === 'wantsAgencyStaff') {
+      setFormData({ ...formData, wantsAgencyStaff: value as '' | 'yes' | 'no' });
+      // Trach or vent plus No: explain before the No stands.
+      if (showGappClinical && shouldPromptHighAcuityNurse({ equipment: formData.equipment, wantsAgencyStaff: value })) {
+        setHighAcuityPromptOpen(true);
+      }
     } else if (name === 'seekingPaidCaregiver' && value === 'no') {
       // Switching to "No" clears the paid-only follow-ups.
       setFormData({
@@ -2110,6 +2138,15 @@ export default function ReferralPage() {
                         </div>
                       )}
                     </>
+                  )}
+
+                  {highAcuityPromptOpen && (
+                    <HighAcuityNursePrompt
+                      needs={highAcuityNeeds(formData.equipment)}
+                      subject={careSubject}
+                      onAccept={() => closeHighAcuityPrompt(true)}
+                      onKeep={() => closeHighAcuityPrompt(false)}
+                    />
                   )}
 
                   {/* CMO disclosure. Per the January 2026 GAPP Provider

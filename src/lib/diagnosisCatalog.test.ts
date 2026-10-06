@@ -25,6 +25,12 @@ import {
   RELATIONSHIP_OPTIONS,
   screenCaregiverRelationship,
   screenAgencyStaff,
+  highAcuityNeeds,
+  highAcuityPromptParagraphs,
+  shouldPromptHighAcuityNurse,
+  HIGH_ACUITY_PROMPT_TITLE,
+  HIGH_ACUITY_PROMPT_ACCEPT,
+  HIGH_ACUITY_PROMPT_KEEP,
   screenBehavioralPaidCaregiver,
   screenMixedPaidCaregiver,
   screenYoungPaidCaregiver,
@@ -467,5 +473,29 @@ describe('screenAgencyStaff', () => {
     expect(screenAgencyStaff({ wantsAgencyStaff: 'yes' })).toBeNull();
     expect(screenAgencyStaff({})).toBeNull();
     expect(screenAgencyStaff({ wantsAgencyStaff: '' })).toBeNull();
+  });
+});
+
+describe('high-acuity nurse prompt (trach / vent)', () => {
+  it('prompts only when trach or vent is checked and the family declines a nurse', () => {
+    expect(shouldPromptHighAcuityNurse({ equipment: ['trach'], wantsAgencyStaff: 'no' })).toBe(true);
+    expect(shouldPromptHighAcuityNurse({ equipment: ['vent', 'help_feeding'], wantsAgencyStaff: 'no' })).toBe(true);
+    expect(shouldPromptHighAcuityNurse({ equipment: ['trach'], wantsAgencyStaff: 'yes' })).toBe(false);
+    expect(shouldPromptHighAcuityNurse({ equipment: ['feeding_tube', 'oxygen'], wantsAgencyStaff: 'no' })).toBe(false);
+    expect(shouldPromptHighAcuityNurse({ wantsAgencyStaff: 'no' })).toBe(false);
+  });
+
+  it('names what was checked in plain words', () => {
+    expect(highAcuityNeeds(['trach', 'help_feeding'])).toEqual(['a tracheostomy']);
+    const [first] = highAcuityPromptParagraphs(highAcuityNeeds(['trach', 'vent']));
+    expect(first).toContain('your child has a tracheostomy and a ventilator, BiPAP or CPAP.');
+    expect(highAcuityPromptParagraphs(['a tracheostomy'], 'the child')[2]).toMatch(/^The child can still/);
+  });
+
+  it('has no dashes and Title Case buttons', () => {
+    const all = [HIGH_ACUITY_PROMPT_TITLE, HIGH_ACUITY_PROMPT_ACCEPT, HIGH_ACUITY_PROMPT_KEEP,
+      ...highAcuityPromptParagraphs(['a tracheostomy', 'a ventilator, BiPAP or CPAP'])];
+    for (const t of all) expect(t).not.toMatch(/[—–]/);
+    expect(HIGH_ACUITY_PROMPT_ACCEPT).toBe('Yes, I Will Accept a Nurse');
   });
 });
