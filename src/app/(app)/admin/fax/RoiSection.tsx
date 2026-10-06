@@ -11,6 +11,7 @@ import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscor
 import { formatUSFaxNumber, normalizeUSFaxNumber } from '@/lib/verbalOrderShared';
 import { validateFaxSendInput, type FaxSendField, type OutboundFax } from '@/lib/faxShared';
 import { withSelectChevron } from '@/lib/selectChevron';
+import { CHOA, CHOA_RECORD_TYPES, type ChoaRecordType } from '@/lib/choaRoi';
 import { getPhysicians } from '@/lib/physicians';
 import { getDayProgram } from '@/lib/dayProgram';
 import { getSupportCoordinator } from '@/lib/supportCoordinator';
@@ -23,6 +24,7 @@ import {
   ROI_MAX_PDF_BYTES,
   ROI_TEXT_MAX,
   validateRoiInput,
+  type RoiFormType,
   type RoiDirection,
   type RoiDuration,
   type RoiField,
@@ -149,8 +151,8 @@ export default function RoiSection({
         )}
       </div>
       <p style={noteStyle}>
-        Prepare the DBHDD authorization here, send it to the guardian for signature (download it and upload it to PandaDoc),
-        then upload the signed copy. It is filed under the client&apos;s Documents, and you can fax it to the facility with an
+        Prepare a DBHDD or CHOA authorization here, then download it and send it through PandaDoc for signature
+        and upload the signed copy. It is filed under the client&apos;s Documents, and you can fax it to the facility with an
         introduction letter.
       </p>
       {error && <div role="alert" style={{ ...noteStyle, color: '#b3261e' }}>{error}</div>}
@@ -176,7 +178,7 @@ export default function RoiSection({
                   <tr key={r.id} style={r.hidden ? { opacity: 0.6 } : undefined}>
                     <td style={tdStyle}>
                       <div style={{ fontWeight: 600 }}>{r.memberName}</div>
-                      <div style={metaStyle}>{r.facility.name} · {ROI_DIRECTION_LABEL[r.direction].toLowerCase()}</div>
+                      <div style={metaStyle}>{r.facility.name} · {r.formType === 'choa' ? 'CHOA medical records request' : ROI_DIRECTION_LABEL[r.direction].toLowerCase()}</div>
                     </td>
                     <td style={tdStyle}>
                       {r.status === 'awaiting-signature' && (
@@ -261,7 +263,10 @@ export default function RoiSection({
             // Show it right away so it can be checked before it goes out;
             // Download in the preview saves the copy for PandaDoc.
             setPreview({ title: `Release to Sign: ${roi.memberName}, ${roi.facility.name}`, url: `/api/fax/roi/${roi.id}/form` });
-            setNotice(`The release for ${roi.memberName} is ready. Check it, then use Download to save it for PandaDoc. In PandaDoc, add the guardian's initials, signature, printed name, date, and Guardian checkbox fields, and send it. When it comes back signed, use Upload signed. Form opens it again any time.`);
+            const signing = roi.formType === 'choa'
+              ? 'In PandaDoc, add the patient or authorized representative signature, date, and applicable authority fields. Leave the authority choices for the signer to complete.'
+              : 'In PandaDoc, add the signer initials, signature, printed name, date, and applicable representative fields.';
+            setNotice(`The release for ${roi.memberName} is ready. Check it, then use Download to save it for PandaDoc. ${signing} When it comes back signed, use Upload signed. Form opens it again any time.`);
           }}
         />
       )}
@@ -298,10 +303,15 @@ export default function RoiSection({
 
 // ---------------------------------------------------------------------------
 
-const PREP_ORDER: readonly RoiField[] = ['patientId', 'direction', 'facilityName', 'facilityAddress', 'facilityPhone', 'facilityFax', 'information', 'purpose', 'duration'];
+const PREP_ORDER: readonly RoiField[] = ['formType', 'patientId', 'choaLocation', 'choaDates', 'choaRecordTypes', 'direction', 'facilityName', 'facilityAddress', 'facilityPhone', 'facilityFax', 'information', 'purpose', 'duration'];
 const prepId = (k: RoiField) => `roi-${k}`;
 
 function PrepareModal({ clients, onClose, onCreated }: { clients: RoiClient[]; onClose: () => void; onCreated: (roi: RoiRecord) => void }) {
+  const [formType, setFormType] = useState<RoiFormType>('dbhdd');
+  const [choaLocation, setChoaLocation] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [recordTypes, setRecordTypes] = useState<ChoaRecordType[]>(['routine']);
   const [client, setClient] = useState<RoiClient | null>(null);
   const [q, setQ] = useState('');
   const [direction, setDirection] = useState<RoiDirection>('to-us');
@@ -368,7 +378,9 @@ function PrepareModal({ clients, onClose, onCreated }: { clients: RoiClient[]; o
     e.preventDefault();
     if (busy) return;
     setErr(null);
-    const body = { patientId: client?.id || '', direction, facility: { name, address, phone, fax }, information, purpose, duration };
+    const body = formType === 'choa'
+      ? { formType, patientId: client?.id || '', direction: 'to-us', duration: 'year', choa: { location: choaLocation, dateFrom, dateTo, recordTypes } }
+      : { formType, patientId: client?.id || '', direction, facility: { name, address, phone, fax }, information, purpose, duration };
     if (!applyFieldErrors(validateRoiInput(body).errors, PREP_ORDER, setFieldErrors, prepId)) return;
     setBusy(true);
     try {
@@ -391,11 +403,19 @@ function PrepareModal({ clients, onClose, onCreated }: { clients: RoiClient[]; o
     <Modal title="Prepare a Release of Information" onClose={onClose} busy={busy}>
       <form onSubmit={submit} noValidate style={formStyle}>
         <div style={bodyStyle}>
+          <label style={fieldStyle} id={prepId('formType')}>
+            <span style={labelStyle}>Authorization form</span>
+            <select value={formType} onChange={(e) => { setFormType(e.target.value as RoiFormType); setFieldErrors({}); setErr(null); }} style={withSelectChevron(inp)}>
+              <option value="dbhdd">DBHDD release of information</option>
+              <option value="choa">CHOA medical records request</option>
+            </select>
+            <FieldError message={fieldErrors.formType} />
+          </label>
           <p style={leadStyle}>
-            Fills in the DBHDD Authorization for Release of Information (Attachment A, IDD version). The portal prints the
-            client, who shares with whom, what, why, and for how long. The guardian initials, signs, prints their name,
-            dates it, and checks Guardian.{' '}
-            <a href="/forms/dbhdd-roi-attachment-a.pdf" target="_blank" rel="noopener" style={{ color: '#1a3a5c', fontWeight: 600 }}>See the Blank Form</a>
+            {formType === 'choa'
+              ? 'Prepares the official CHOA authorization for records sent to Heart and Soul for continuing care. The patient or authorized representative reviews and signs it. Send it for signature through PandaDoc, then upload the completed PDF here.'
+              : 'Prepares the DBHDD Authorization for Release of Information (Attachment A, IDD version). The signer reviews, initials, signs, prints their name, dates it, and indicates their authority.'}{' '}
+            <a href={formType === 'choa' ? '/forms/choa-medical-records-authorization.pdf' : '/forms/dbhdd-roi-attachment-a.pdf'} target="_blank" rel="noopener noreferrer" style={{ color: '#1a3a5c', fontWeight: 600 }}>See the Blank Form</a>
           </p>
 
           <div style={fieldStyle} id={prepId('patientId')}>
@@ -430,6 +450,42 @@ function PrepareModal({ clients, onClose, onCreated }: { clients: RoiClient[]; o
             <FieldError message={fieldErrors.patientId} />
           </div>
 
+          {formType === 'choa' && <>
+            <div style={leadStyle}>
+              <strong>{CHOA.name}</strong><br />
+              Medical Records fax: (404) 785-9060 · Phone: (404) 785-2431<br />
+              No CHOA portal account is required. Records return to our configured fax number, or our mailing address if no fax is configured.{' '}
+              <a href={CHOA.instructionsUrl} target="_blank" rel="noopener noreferrer">CHOA instructions</a>
+            </div>
+            <label style={fieldStyle} id={prepId('choaLocation')}>
+              <span style={labelStyle}>CHOA hospital, clinic, or doctor (optional)</span>
+              <input value={choaLocation} maxLength={70} onChange={(e) => { setChoaLocation(e.target.value); clear('choaLocation'); }} style={inp} placeholder="All CHOA locations" />
+              <FieldError message={fieldErrors.choaLocation} />
+            </label>
+            <div style={fieldStyle} id={prepId('choaDates')}>
+              <span style={labelStyle}>Dates of service requested</span>
+              <div style={twoColStyle}>
+                <label style={fieldStyle}>From<input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); clear('choaDates'); }} style={inp} /></label>
+                <label style={fieldStyle}>Through<input type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => { setDateTo(e.target.value); clear('choaDates'); }} style={inp} /></label>
+              </div>
+              <FieldError message={fieldErrors.choaDates} />
+            </div>
+            <fieldset style={{ ...fieldStyle, border: 0, padding: 0, margin: 0 }} id={prepId('choaRecordTypes')}>
+              <legend style={labelStyle}>Records requested</legend>
+              {(Object.keys(CHOA_RECORD_TYPES) as ChoaRecordType[]).map((type) => (
+                <label key={type} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                  <input type="checkbox" checked={recordTypes.includes(type)} onChange={(e) => {
+                    setRecordTypes((prev) => e.target.checked ? (type === 'all' ? ['all'] : [...prev.filter((t) => t !== 'all'), type]) : prev.filter((t) => t !== type));
+                    clear('choaRecordTypes');
+                  }} />{CHOA_RECORD_TYPES[type].label}
+                </label>
+              ))}
+              <FieldError message={fieldErrors.choaRecordTypes} />
+              <span style={hintStyle}>Radiology reports are included here; imaging CDs follow CHOA&apos;s separate radiology request process.</span>
+            </fieldset>
+            <p style={hintStyle}>Purpose: continuing care. Authorization: 12 months from signing. Patients 18 or older sign for themselves unless a legally authorized representative may sign. For minors, the parent or legal guardian signs as instructed on the form.</p>
+          </>}
+          {formType === 'dbhdd' && <>
           <div style={fieldStyle} id={prepId('direction')}>
             <span style={labelStyle}>Which way do the records go?</span>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -522,6 +578,7 @@ function PrepareModal({ clients, onClose, onCreated }: { clients: RoiClient[]; o
             </div>
             <span style={hintStyle}>One year is clearer for facilities, and the portal shows when it needs renewing.</span>
           </div>
+          </>}
           {err && <div role="alert" style={errStyle}>{err}</div>}
         </div>
         <div style={footerStyle}>
@@ -568,9 +625,11 @@ function UploadModal({ roi, today, onClose, onDone }: { roi: RoiRecord; today: s
       <form onSubmit={submit} noValidate style={formStyle}>
         <div style={bodyStyle}>
           <p style={leadStyle}>
-            {roi.memberName}, {roi.facility.name}. Download the completed PDF from PandaDoc (or scan the paper copy) and check
-            that every Initials line, the signature, printed name, date, and Guardian box are filled in. It is filed under the
-            client&apos;s Documents (Consent / Release).
+            {roi.memberName}, {roi.facility.name}. Download the completed PDF from PandaDoc (or scan the paper copy).{' '}
+            {roi.formType === 'choa'
+              ? 'Check the requested dates and records, signature, date, and applicable representative box. Include documentation of authority when required. Confirm the form still uses the standard 12-month term before filing it here.'
+              : 'Check every Initials line, signature, printed name, date, and applicable representative box.'}{' '}
+            It is filed under the client&apos;s Documents (Consent / Release).
           </p>
           <label style={fieldStyle}>
             <span style={labelStyle}>Signed PDF</span>

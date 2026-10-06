@@ -11,6 +11,8 @@ import { sendOutboundFax, type SendFaxResult } from './faxCenterServer';
 import { agencyTodayISO, returnFaxNumber } from './verbalOrderServer';
 import { formatDateUS, formatDateUSFile } from './dateFormat';
 import { fillRoiForm } from './pdf/roiStamp';
+import { ChoaFormError, fillChoaForm } from './pdf/choaStamp';
+import { validateChoaRequest } from './choaRoi';
 import RoiLetterPDF from './pdf/RoiLetterPDF';
 import {
   defaultRoiFaxNote,
@@ -58,6 +60,8 @@ function serialize(id: string, x: FirebaseFirestore.DocumentData): RoiRecord {
   const faxes = Array.isArray(x.faxes) ? (x.faxes as Array<Record<string, unknown>>) : [];
   return {
     id,
+    formType: x.formType === 'choa' ? 'choa' : 'dbhdd',
+    ...(x.formType === 'choa' && x.choa ? { choa: x.choa } : {}),
     patientId: String(x.patientId || ''),
     memberName: String(x.memberName || ''),
     direction: (['to-us', 'from-us', 'both'].includes(x.direction) ? x.direction : 'to-us') as RoiDirection,
@@ -112,8 +116,13 @@ export async function createRoi(input: RoiInput, caller: AuthedCaller): Promise<
   const patient = await db.collection('patients').doc(input.patientId).get();
   if (!patient.exists) return { ok: false, status: 404, error: 'That client was not found.' };
   const p = patient.data() || {};
+  if (input.formType === 'choa' && (!String(p.name || '').trim() || !String(p.dob || '').trim())) {
+    return { ok: false, status: 400, error: "Add the client's name and date of birth to their profile before preparing a CHOA request." };
+  }
   const ref = db.collection(COL).doc();
   await ref.set({
+    formType: input.formType || 'dbhdd',
+    ...(input.choa ? { choa: input.choa } : {}),
     patientId: input.patientId,
     memberName: String(p.name || ''),
     dob: String(p.dob || ''),
@@ -144,6 +153,16 @@ export async function buildRoiForm(id: string): Promise<{ bytes: Buffer; fileNam
   if (!snap.exists) return null;
   const x = snap.data() || {};
   const r = serialize(id, x);
+  if (r.formType === 'choa') {
+    const checked = validateChoaRequest(r.choa);
+    if (!checked.value) throw new ChoaFormError('The CHOA request details are incomplete. Prepare a new request.');
+    const blank = await readFile(path.join(process.cwd(), 'public', 'forms', 'choa-medical-records-authorization.pdf'));
+    const bytes = await fillChoaForm(blank, {
+      memberName: r.memberName, dob: formatDateUS(String(x.dob || '')),
+      request: checked.value, returnFax: await returnFaxNumber(),
+    });
+    return { bytes, fileName: `CHOA_Release_${fileStem(r.memberName)}.pdf` };
+  }
   const blank = await readFile(FORM_PATH);
   const bytes = await fillRoiForm(blank, {
     memberName: r.memberName,
@@ -255,7 +274,7 @@ export async function faxRoi(p: {
     facilityAddress: r.facility.address,
     memberName: r.memberName,
     dob: formatDateUS(String(x.dob || '')),
-    paragraphs: roiIntroParagraphs({ memberName: r.memberName, program: String(x.program || ''), facilityName: r.facility.name, direction: r.direction }),
+    paragraphs: roiIntroParagraphs({ memberName: r.memberName, program: String(x.program || ''), facilityName: r.facility.name, direction: r.direction, formType: r.formType }),
     senderName,
     returnFax,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- react-pdf's renderToBuffer wants its own element type
