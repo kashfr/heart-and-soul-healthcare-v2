@@ -34,7 +34,10 @@ open PPOT requests (`ppotCandidateKeys`) and open verbal orders
   record is created.
 - **File as Signed PPOT** files against the open PPOT request. A client's copy
   goes to Documents (ISP / Plan of Treatment); a referral's copy stays with
-  the request under `ppot/signed/` until the record is created.
+  the request under `ppot/signed/` until the record is created. The referral
+  card's Documents list still shows it, first, with a Signed PPOT badge
+  (`signedPpotRow` in `referralDocumentsServer.ts`, served at document id
+  `signed-ppot`), so everything filed for a referral is visible in one place.
 
 ## Creating the client record from a referral
 

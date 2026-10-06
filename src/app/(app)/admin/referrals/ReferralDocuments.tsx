@@ -10,8 +10,9 @@ import type { ReferralDocument } from '@/lib/referralDocumentsServer';
 
 /**
  * Papers filed against a referral from the Fax Center before it has a client
- * record. Once the record is created they are copied to the client's
- * Documents, and each row says so.
+ * record, with the signed Appendix T (kept with the PPOT request) listed first.
+ * Once the record is created they are copied to the client's Documents, and
+ * each row says so.
  */
 export default function ReferralDocuments({ referralId, patientId, refreshKey }: { referralId: string; patientId: string | null | undefined; refreshKey: string | null | undefined }) {
   const [docs, setDocs] = useState<ReferralDocument[] | null>(null);
@@ -50,6 +51,7 @@ export default function ReferralDocuments({ referralId, patientId, refreshKey }:
           <div key={d.id} style={rowStyle}>
             <FileText size={16} style={{ color: '#5c6b7a', flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
+              {d.kind === 'ppot' && <span style={ppotBadgeStyle}>Signed PPOT</span>}
               <div style={{ fontSize: 13.5, fontWeight: 600, color: '#1f2937' }}>{d.title}</div>
               <div style={metaStyle}>
                 {d.category}{d.docDate ? ` · ${formatDateUS(d.docDate)}` : ''}{d.uploadedByName ? ` · filed by ${d.uploadedByName}` : ''}
@@ -71,4 +73,5 @@ const titleStyle: React.CSSProperties = { fontSize: 12, fontWeight: 700, textTra
 const listStyle: React.CSSProperties = { border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden' };
 const rowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderBottom: '1px solid #f1f5f9', background: 'white' };
 const metaStyle: React.CSSProperties = { fontSize: 12, color: '#7f8c8d', marginTop: 2 };
+const ppotBadgeStyle: React.CSSProperties = { display: 'inline-block', fontSize: 11, fontWeight: 700, color: '#1a3a5c', background: '#e8f0f8', borderRadius: 999, padding: '1px 8px', marginBottom: 3 };
 const emptyStyle: React.CSSProperties = { fontSize: 13, color: '#7f8c8d', padding: '8px 0' };
