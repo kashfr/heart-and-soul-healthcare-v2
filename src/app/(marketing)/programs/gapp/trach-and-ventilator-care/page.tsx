@@ -1,13 +1,15 @@
 import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
-import { ArrowRight, CheckCircle, Phone, Stethoscope } from 'lucide-react';
+import { ArrowRight, BookOpen, CheckCircle, Phone, Stethoscope } from 'lucide-react';
 import { ScrollReveal, StaggerContainer, StaggerItem } from '@/components/animations';
+import { getPostBySlug } from '@/lib/blog';
 import { CORE_COUNTIES, EXTENDED_COUNTIES } from '@/lib/serviceArea';
 import t from '@/components/ProgramPageTemplate.module.css';
 import s from './page.module.css';
 import {
   FAQS,
+  GUIDE_SLUGS,
   HOME_STEPS,
   META_DESCRIPTION,
   META_TITLE,
@@ -77,6 +79,10 @@ const breadcrumbJsonLd = {
 };
 
 const REFERRAL_HREF = '/referral?program=gapp';
+
+const guides = GUIDE_SLUGS.map(getPostBySlug).filter(
+  (post): post is NonNullable<typeof post> => post !== null && post.published,
+);
 
 export default function TrachVentCarePage() {
   return (
@@ -296,6 +302,41 @@ export default function TrachVentCarePage() {
           </p>
         </div>
       </section>
+
+      {/* Guides for families */}
+      {guides.length > 0 && (
+        <section className="section">
+          <div className="container">
+            <ScrollReveal direction="up">
+              <div className="section-header">
+                <span className={`${t.sectionLabel} ${t.teal}`}>Guides for Families</span>
+                <h2>Learn More Before Your Child Comes Home</h2>
+                <p>Plain-language guides from our team on the questions trach and vent families ask us most.</p>
+              </div>
+            </ScrollReveal>
+            <StaggerContainer className={s.guideGrid} staggerDelay={0.06}>
+              {guides.map((g) => (
+                <StaggerItem key={g.slug}>
+                  <Link href={`/blog/${g.slug}`} className={s.guideCard}>
+                    {g.featuredImage && (
+                      <div className={s.guideImage}>
+                        <Image src={g.featuredImage} alt="" fill style={{ objectFit: 'cover' }} sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw" />
+                      </div>
+                    )}
+                    <div className={s.guideBody}>
+                      <h3>{g.title}</h3>
+                      <p>{g.excerpt}</p>
+                      <span className={s.guideMore}>
+                        <BookOpen size={16} aria-hidden="true" /> Read the Guide
+                      </span>
+                    </div>
+                  </Link>
+                </StaggerItem>
+              ))}
+            </StaggerContainer>
+          </div>
+        </section>
+      )}
 
       {/* FAQ */}
       <section className={`section ${t.faqSection}`}>

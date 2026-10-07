@@ -79,6 +79,18 @@ export const HOME_STEPS: { title: string; description: string }[] = [
   },
 ];
 
+/**
+ * Blog guides shown in the "Guides for Families" section, in reading order.
+ * Titles, excerpts, and images come from each post's frontmatter so the
+ * cards never drift from the articles.
+ */
+export const GUIDE_SLUGS = [
+  'bringing-your-child-home-with-a-trach-georgia',
+  'gapp-nursing-hours-trach-ventilator-child',
+  'night-nursing-child-trach-ventilator-georgia',
+  'trach-ventilator-emergency-plan-at-home',
+];
+
 export const FAQS: { question: string; answer: string }[] = [
   {
     question: 'Does GAPP cover in-home nursing for a child with a tracheostomy or ventilator?',
