@@ -283,6 +283,20 @@ export default function ReferralPage() {
   // user types the date (the native date input fires a change per digit). Recompute
   // 800ms after the user pauses, and never show an implausible age.
   const [debouncedClientDOB, setDebouncedClientDOB] = useState('');
+  // A link like /referral?program=gapp (from a program or service page)
+  // arrives with that program already chosen. Only known programs are
+  // honored; anything else is ignored.
+  useEffect(() => {
+    try {
+      const wanted = new URLSearchParams(window.location.search).get('program');
+      if (wanted && programs.some((p) => p.value === wanted)) {
+        setFormData((prev) => (prev.programInterest ? prev : { ...prev, programInterest: wanted }));
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   useEffect(() => {
     const id = setTimeout(() => setDebouncedClientDOB(formData.clientDOB), 800);
     return () => clearTimeout(id);

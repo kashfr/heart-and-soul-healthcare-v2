@@ -3,7 +3,9 @@ import { Baby } from 'lucide-react';
 import ProgramPageTemplate from '@/components/ProgramPageTemplate';
 
 export const metadata: Metadata = {
-  title: 'GAPP - Georgia Pediatric Program | Heart and Soul Healthcare',
+  // Absolute: the root layout's title template would otherwise append the
+  // brand a second time ("... | Heart and Soul Healthcare | Heart and Soul Healthcare").
+  title: { absolute: 'GAPP - Georgia Pediatric Program | Heart and Soul Healthcare' },
   description: 'The Georgia Pediatric Program (GAPP) provides in-home skilled nursing for medically fragile children under 21 in Georgia. Learn about GAPP eligibility, covered services, and how to apply. Heart and Soul Healthcare accepts GAPP referrals statewide.',
   alternates: { canonical: 'https://www.heartandsoulhc.org/programs/gapp' },
   openGraph: {
@@ -83,7 +85,7 @@ const breadcrumbJsonLd = {
 const services = [
   {
     title: 'In-Home Skilled Nursing Services',
-    description: 'Continuous skilled nursing care or skilled nursing care in shifts for medically fragile children requiring complex medical attention in their home.',
+    description: 'Continuous skilled nursing care or skilled nursing care in shifts for medically fragile children requiring complex medical attention in their home, including tracheostomy and ventilator care.',
   },
   {
     title: 'Personal Care Support Services',
@@ -163,6 +165,12 @@ export default function GAPPPage() {
         goalImage="/images/gapp-goal.png"
         goalImageAlt="Child thriving at home with family thanks to GAPP in-home nursing services in Georgia"
         imageAspectRatio="1/1"
+        highlight={{
+          title: 'Caring for a Child With a Trach or Ventilator?',
+          text: 'Our trach and vent trained nurses care for children at home through GAPP, with RN oversight and help with the move home from the NICU or PICU.',
+          href: '/programs/gapp/trach-and-ventilator-care',
+          label: 'Trach and Ventilator Care',
+        }}
       />
     </>
   );

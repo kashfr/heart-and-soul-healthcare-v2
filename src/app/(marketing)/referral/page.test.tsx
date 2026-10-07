@@ -246,3 +246,19 @@ describe('Referral form: trach and vent families who decline a nurse', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 });
+
+describe('Referral form: program preselected from the link', () => {
+  afterEach(() => window.history.replaceState({}, '', '/'));
+
+  it('arrives with GAPP chosen from ?program=gapp', () => {
+    window.history.replaceState({}, '', '/referral?program=gapp');
+    render(<ReferralPage />);
+    expect(($('programInterest') as HTMLSelectElement).value).toBe('gapp');
+  });
+
+  it('ignores an unknown program', () => {
+    window.history.replaceState({}, '', '/referral?program=bogus');
+    render(<ReferralPage />);
+    expect(($('programInterest') as HTMLSelectElement).value).toBe('');
+  });
+});

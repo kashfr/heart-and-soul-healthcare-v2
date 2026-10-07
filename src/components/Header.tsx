@@ -8,6 +8,7 @@ import styles from './Header.module.css';
 
 const programLinks = [
   { href: '/programs/gapp', label: 'GAPP - Georgia Pediatric Program' },
+  { href: '/programs/gapp/trach-and-ventilator-care', label: 'Pediatric Trach & Ventilator Care' },
   { href: '/programs/now-comp', label: 'NOW/COMP Waiver' },
   { href: '/programs/icwp', label: 'ICWP - Independent Care' },
   { href: '/programs/edwp', label: 'EDWP (CCSP & SOURCE)' },
