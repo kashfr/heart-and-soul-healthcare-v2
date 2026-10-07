@@ -7,6 +7,12 @@ before pushing; CI runs the same three. To see what is live, open
 https://www.heartandsoulhc.org/api/version (deployed commit, build id, build
 time).
 
+Before any reply that mentions a PR's status (open, merged, live), check it:
+`gh pr view <n> --json state,mergedAt,mergeCommit`, then compare the merge
+commit with /api/version. PRs here often merge within minutes, and nothing
+notifies the session when one merges (the CI monitor only fires on failures,
+conflicts and review comments).
+
 ## Feature notes
 
 Read the matching note before changing one of these features.
