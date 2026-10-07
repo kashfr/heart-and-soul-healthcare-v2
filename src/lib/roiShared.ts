@@ -16,13 +16,20 @@
  */
 import { normalizeUSFaxNumber } from './verbalOrderShared';
 import { getProgram } from './programs';
+import { CHOA, choaInformation, validateChoaRequest, type ChoaField, type ChoaRequest } from './choaRoi';
+
+export const ROI_FORMS = [
+  { id: 'dbhdd', label: 'DBHDD release of information', blankPath: '/forms/dbhdd-roi-attachment-a.pdf' },
+  { id: 'choa', label: 'CHOA medical records request', blankPath: '/forms/choa-medical-records-authorization.pdf' },
+] as const;
+export type RoiFormType = typeof ROI_FORMS[number]['id'];
 
 /** Heart and Soul as a party on the form and the letterhead. */
 export const AGENCY = {
   name: 'Heart and Soul Healthcare',
   street: '1372 Peachtree St NE',
   cityStateZip: 'Atlanta, GA 30309',
-  phone: '6786440337',
+  phone: '4706355774',
 } as const;
 
 export interface RoiParty {
@@ -50,7 +57,11 @@ export const ROI_DIRECTION_LABEL: Record<RoiDirection, string> = {
 export const ROI_TEXT_MAX = { name: 90, address: 120, information: 360, purpose: 300 } as const;
 
 export interface RoiInput {
+  formType?: RoiFormType;
+  choa?: ChoaRequest;
   patientId: string;
+  referralId?: string;
+  referralDob?: string;
   direction: RoiDirection;
   facility: RoiParty;
   information: string;
@@ -58,7 +69,7 @@ export interface RoiInput {
   duration: RoiDuration;
 }
 
-export type RoiField = 'patientId' | 'direction' | 'facilityName' | 'facilityAddress' | 'facilityPhone' | 'facilityFax' | 'information' | 'purpose' | 'duration';
+export type RoiField = ChoaField | 'referralDob' | 'formType' | 'patientId' | 'direction' | 'facilityName' | 'facilityAddress' | 'facilityPhone' | 'facilityFax' | 'information' | 'purpose' | 'duration';
 export type RoiErrors = Partial<Record<RoiField, string>>;
 
 export const DEFAULT_ROI_INFORMATION =
@@ -78,8 +89,25 @@ function phoneDigits(raw: string): string {
 /** Validate and tidy a Release of Information request from the browser. */
 export function validateRoiInput(raw: Record<string, unknown>): { errors: RoiErrors; value: RoiInput | null } {
   const e: RoiErrors = {};
+  const formType = raw.formType ?? 'dbhdd';
+  if (formType !== 'dbhdd' && formType !== 'choa') e.formType = 'Choose a supported authorization form.';
+  let choa: ChoaRequest | undefined;
+  if (formType === 'choa') {
+    const checked = validateChoaRequest(raw.choa);
+    Object.assign(e, checked.errors);
+    choa = checked.value || undefined;
+    if (raw.direction !== 'to-us') e.direction = 'CHOA requests release records to Heart and Soul.';
+    if (raw.duration !== 'year') e.duration = 'The CHOA authorization uses its standard 12-month term.';
+    raw = { ...raw, facility: CHOA, information: choa ? choaInformation(choa) : 'Medical records', purpose: 'Continuing care.' };
+  }
   const patientId = String(raw.patientId || '').trim();
-  if (!/^[A-Za-z0-9_-]{1,128}$/.test(patientId)) e.patientId = 'Choose the client.';
+  const referralId = String(raw.referralId || '').trim();
+  const referralDob = String(raw.referralDob || '').trim();
+  const validId = (id: string) => /^[A-Za-z0-9_-]{1,128}$/.test(id);
+  if (referralId) {
+    if (!validId(referralId) || patientId) e.patientId = 'Choose either a referral or a client, not both.';
+    if (referralDob && (!/^\d{4}-\d{2}-\d{2}$/.test(referralDob) || !Number.isFinite(Date.parse(referralDob)) || new Date(referralDob).toISOString().slice(0, 10) !== referralDob || referralDob > new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()))) e.referralDob = 'Enter a valid date of birth.';
+  } else if (!validId(patientId)) e.patientId = 'Choose the client.';
   const direction = raw.direction;
   if (direction !== 'to-us' && direction !== 'from-us' && direction !== 'both') e.direction = 'Choose which way the records go.';
   const f = (raw.facility && typeof raw.facility === 'object' ? raw.facility : {}) as Partial<Record<keyof RoiParty, unknown>>;
@@ -105,7 +133,7 @@ export function validateRoiInput(raw: Record<string, unknown>): { errors: RoiErr
   if (Object.keys(e).length > 0) return { errors: e, value: null };
   return {
     errors: e,
-    value: { patientId, direction: direction as RoiDirection, facility: { name, address, phone, fax }, information, purpose, duration: duration as RoiDuration },
+    value: { formType: formType as RoiFormType, ...(choa ? { choa } : {}), patientId, ...(referralId ? { referralId, referralDob } : {}), direction: direction as RoiDirection, facility: { name, address, phone, fax }, information, purpose, duration: duration as RoiDuration },
   };
 }
 
@@ -144,7 +172,7 @@ export function roiExpiresOn(signedYmd: string, duration: RoiDuration): string {
  * faxed: who we are, what we do for this member, and why the facility is
  * getting the release. No em or en dashes (printed deliverable).
  */
-export function roiIntroParagraphs(p: { memberName: string; program: string | undefined; facilityName: string; direction: RoiDirection }): string[] {
+export function roiIntroParagraphs(p: { memberName: string; program: string | undefined; facilityName: string; direction: RoiDirection; formType?: RoiFormType; isReferral?: boolean }): string[] {
   const prog = getProgram(p.program)?.label;
   const under = prog ? ` under the ${prog} program` : '';
   const flow =
@@ -153,9 +181,14 @@ export function roiIntroParagraphs(p: { memberName: string; program: string | un
       : p.direction === 'from-us'
         ? `allows Heart and Soul Healthcare to share ${p.memberName}'s health information with ${p.facilityName}`
         : `allows ${p.facilityName} and Heart and Soul Healthcare to share ${p.memberName}'s health information with each other`;
+  const authorization = p.formType === 'choa'
+    ? "Children's Healthcare of Atlanta Authorization to Release/Obtain Protected Health Information"
+    : 'Authorization for Release of Information (DBHDD Policy 23-110, Attachment A)';
   return [
-    `Heart and Soul Healthcare is a Georgia home care agency that provides skilled nursing services${under}. We provide skilled nursing care to ${p.memberName} and are part of the care team.`,
-    `Enclosed is an Authorization for Release of Information (DBHDD Policy 23-110, Attachment A), signed by ${p.memberName} or a legally authorized representative. It ${flow}, so that we can coordinate care and keep everyone on the care team informed.`,
+    p.isReferral
+      ? `Heart and Soul Healthcare is a Georgia home care agency that provides skilled nursing services${under}. We received a referral for ${p.memberName} and are requesting information to coordinate their care and evaluate the referral.`
+      : `Heart and Soul Healthcare is a Georgia home care agency that provides skilled nursing services${under}. We provide skilled nursing care to ${p.memberName} and are part of the care team.`,
+    `Enclosed is the ${authorization}, signed by ${p.memberName} or a legally authorized representative. It ${flow}, so that we can coordinate care and keep everyone on the care team informed.`,
     `Please keep this authorization on file with ${p.memberName}'s record and add Heart and Soul Healthcare as a care team contact. If you have questions, or need anything else from us, please call us at the number below.`,
   ];
 }
@@ -164,8 +197,11 @@ export type RoiStatus = 'awaiting-signature' | 'signed' | 'cancelled';
 
 /** A Release of Information as the Fax Center lists it. */
 export interface RoiRecord {
+  formType?: RoiFormType;
+  choa?: ChoaRequest;
   id: string;
   patientId: string;
+  referralId?: string;
   memberName: string;
   direction: RoiDirection;
   facility: RoiParty;

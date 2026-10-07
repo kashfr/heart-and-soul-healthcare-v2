@@ -11,11 +11,13 @@ import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscor
 import { formatUSFaxNumber, normalizeUSFaxNumber } from '@/lib/verbalOrderShared';
 import { validateFaxSendInput, type FaxSendField, type OutboundFax } from '@/lib/faxShared';
 import { withSelectChevron } from '@/lib/selectChevron';
+import { CHOA, CHOA_RECORD_TYPES, type ChoaRecordType } from '@/lib/choaRoi';
 import { getPhysicians } from '@/lib/physicians';
 import { getDayProgram } from '@/lib/dayProgram';
 import { getSupportCoordinator } from '@/lib/supportCoordinator';
 import { roiFacilityOptions, type RoiFacilityOption } from '@/lib/roiFacilityOptions';
 import {
+  ROI_FORMS,
   DEFAULT_ROI_INFORMATION,
   defaultRoiFaxNote,
   defaultRoiPurpose,
@@ -23,6 +25,7 @@ import {
   ROI_MAX_PDF_BYTES,
   ROI_TEXT_MAX,
   validateRoiInput,
+  type RoiFormType,
   type RoiDirection,
   type RoiDuration,
   type RoiField,
@@ -64,14 +67,18 @@ export default function RoiSection({
   openRequest,
   faxConfigured,
   onFaxSent,
+  referralId,
 }: {
   /** Bumped by the page's Refresh button. */
   refreshKey: number;
   /** Bumped by the page's "Release of Information" button. */
   openRequest: number;
   faxConfigured: boolean;
+  referralId?: string;
   onFaxSent: (fax: OutboundFax) => void;
 }) {
+  const [subject, setSubject] = useState<RoiClient | null>(null);
+  const [referralFaxConfigured, setReferralFaxConfigured] = useState(false);
   const [rois, setRois] = useState<RoiRecord[]>([]);
   const [clients, setClients] = useState<RoiClient[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -85,16 +92,18 @@ export default function RoiSection({
 
   const load = useCallback(async () => {
     try {
-      const res = await authedFetch('/api/fax/roi');
+      const res = await authedFetch(referralId ? `/api/fax/roi?referralId=${encodeURIComponent(referralId)}` : '/api/fax/roi');
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
       setRois(data.rois ?? []);
       setClients(data.clients ?? []);
+      setSubject(data.subject || null);
+      setReferralFaxConfigured(data.faxConfigured === true);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load releases of information.');
     }
-  }, []);
+  }, [referralId]);
 
   useEffect(() => {
     void load();
@@ -130,6 +139,7 @@ export default function RoiSection({
     });
   };
 
+  const canSend = referralId ? referralFaxConfigured : faxConfigured;
   const today = todayET();
   const hiddenCount = rois.filter((r) => r.hidden).length;
   const shown = rois.filter((r) => showHidden || !r.hidden);
@@ -149,10 +159,12 @@ export default function RoiSection({
         )}
       </div>
       <p style={noteStyle}>
-        Prepare the DBHDD authorization here, send it to the guardian for signature (download it and upload it to PandaDoc),
-        then upload the signed copy. It is filed under the client&apos;s Documents, and you can fax it to the facility with an
+        Prepare a DBHDD or CHOA authorization here, then download it and send it through PandaDoc for signature
+        and upload the signed copy. It is filed under the {referralId ? 'referral’s Documents' : 'client’s Documents'}, and you can fax it to the facility with an
         introduction letter.
       </p>
+      {referralId && <button type="button" className={btnPrimary} onClick={() => setPreparing(true)} disabled={!subject || !!error} style={{ marginBottom: 12 }}><FileSignature size={14} /> Prepare a Release</button>}
+      {referralId && subject && !canSend && <p style={noteStyle}>Fax sending is unavailable on this server. You can still prepare releases and upload signed copies.</p>}
       {error && <div role="alert" style={{ ...noteStyle, color: '#b3261e' }}>{error}</div>}
       {notice && (
         <div role="status" style={noticeStyle}>
@@ -163,7 +175,7 @@ export default function RoiSection({
 
       {shown.length === 0 ? (
         <div style={{ ...tableWrapStyle, padding: '14px 16px', fontSize: 13.5, color: '#7f8c8d' }}>
-          No releases yet. Use <strong>Release of Information</strong> at the top of the page to prepare one.
+          No releases yet. {referralId ? 'Use Prepare a Release above.' : 'Use Release of Information at the top of the page to prepare one.'}
         </div>
       ) : (
         <div style={tableWrapStyle}>
@@ -176,7 +188,7 @@ export default function RoiSection({
                   <tr key={r.id} style={r.hidden ? { opacity: 0.6 } : undefined}>
                     <td style={tdStyle}>
                       <div style={{ fontWeight: 600 }}>{r.memberName}</div>
-                      <div style={metaStyle}>{r.facility.name} · {ROI_DIRECTION_LABEL[r.direction].toLowerCase()}</div>
+                      <div style={metaStyle}>{r.facility.name} · {r.formType === 'choa' ? 'CHOA medical records request' : ROI_DIRECTION_LABEL[r.direction].toLowerCase()}</div>
                     </td>
                     <td style={tdStyle}>
                       {r.status === 'awaiting-signature' && (
@@ -224,7 +236,7 @@ export default function RoiSection({
                           <button onClick={() => setPreview({ title: `Signed Release: ${r.memberName}, ${r.facility.name}`, url: `/api/fax/roi/${r.id}/signed` })} className={`${btn} ${btnSm}`}>
                             <Eye size={14} /> View
                           </button>
-                          <button onClick={() => setFaxing(r)} className={`${btnPrimary} ${btnSm}`} style={{ marginLeft: 6 }} disabled={!faxConfigured}>
+                          <button onClick={() => setFaxing(r)} className={`${btnPrimary} ${btnSm}`} style={{ marginLeft: 6 }} disabled={!canSend}>
                             <Send size={14} /> Fax to Facility
                           </button>
                           <button onClick={() => setUploading(r)} className={`${btn} ${btnSm}`} style={{ marginLeft: 6 }} title="Upload a corrected signed copy">
@@ -254,6 +266,8 @@ export default function RoiSection({
       {preparing && (
         <PrepareModal
           clients={clients}
+          referralId={referralId}
+          subject={subject}
           onClose={() => setPreparing(false)}
           onCreated={async (roi) => {
             setPreparing(false);
@@ -261,7 +275,10 @@ export default function RoiSection({
             // Show it right away so it can be checked before it goes out;
             // Download in the preview saves the copy for PandaDoc.
             setPreview({ title: `Release to Sign: ${roi.memberName}, ${roi.facility.name}`, url: `/api/fax/roi/${roi.id}/form` });
-            setNotice(`The release for ${roi.memberName} is ready. Check it, then use Download to save it for PandaDoc. In PandaDoc, add the guardian's initials, signature, printed name, date, and Guardian checkbox fields, and send it. When it comes back signed, use Upload signed. Form opens it again any time.`);
+            const signing = roi.formType === 'choa'
+              ? 'In PandaDoc, add the patient or authorized representative signature, date, and applicable authority fields. Leave the authority choices for the signer to complete.'
+              : 'In PandaDoc, add the signer initials, signature, printed name, date, and applicable representative fields.';
+            setNotice(`The release for ${roi.memberName} is ready. Check it, then use Download to save it for PandaDoc. ${signing} When it comes back signed, use Upload signed. Form opens it again any time.`);
           }}
         />
       )}
@@ -273,7 +290,7 @@ export default function RoiSection({
           onDone={async (roi) => {
             setUploading(null);
             await load();
-            setNotice(`The signed release for ${roi.memberName} is filed under the client's Documents (Consent / Release). Use Fax to facility to send it with the introduction letter.`);
+            setNotice(`The signed release for ${roi.memberName} is filed under the ${referralId ? 'referral' : 'client'}'s Documents (Consent / Release). Use Fax to facility to send it with the introduction letter.`);
           }}
         />
       )}
@@ -298,11 +315,17 @@ export default function RoiSection({
 
 // ---------------------------------------------------------------------------
 
-const PREP_ORDER: readonly RoiField[] = ['patientId', 'direction', 'facilityName', 'facilityAddress', 'facilityPhone', 'facilityFax', 'information', 'purpose', 'duration'];
+const PREP_ORDER: readonly RoiField[] = ['formType', 'patientId', 'referralDob', 'choaLocation', 'choaDates', 'choaRecordTypes', 'direction', 'facilityName', 'facilityAddress', 'facilityPhone', 'facilityFax', 'information', 'purpose', 'duration'];
 const prepId = (k: RoiField) => `roi-${k}`;
 
-function PrepareModal({ clients, onClose, onCreated }: { clients: RoiClient[]; onClose: () => void; onCreated: (roi: RoiRecord) => void }) {
-  const [client, setClient] = useState<RoiClient | null>(null);
+function PrepareModal({ clients, onClose, onCreated, referralId, subject }: { clients: RoiClient[]; onClose: () => void; onCreated: (roi: RoiRecord) => void; referralId?: string; subject?: RoiClient | null }) {
+  const [formType, setFormType] = useState<RoiFormType>(referralId ? 'choa' : 'dbhdd');
+  const [choaLocation, setChoaLocation] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [recordTypes, setRecordTypes] = useState<ChoaRecordType[]>(['routine']);
+  const [client, setClient] = useState<RoiClient | null>(subject || null);
+  const [referralDob, setReferralDob] = useState('');
   const [q, setQ] = useState('');
   const [direction, setDirection] = useState<RoiDirection>('to-us');
   const [name, setName] = useState('');
@@ -329,7 +352,7 @@ function PrepareModal({ clients, onClose, onCreated }: { clients: RoiClient[]; o
     setFacilityOptions(null);
     setFacilityPick('');
     setFacilityDenied(false);
-    if (!client) return;
+    if (!client || referralId) return;
     let cancelled = false;
     // Each card is read on its own so one missing (or unreadable) record
     // doesn't hide the others.
@@ -341,7 +364,7 @@ function PrepareModal({ clients, onClose, onCreated }: { clients: RoiClient[]; o
       setFacilityOptions(roiFacilityOptions(ph, dp, sc));
     });
     return () => { cancelled = true; };
-  }, [client]);
+  }, [client, referralId]);
 
   const pickFacility = (key: string) => {
     setFacilityPick(key);
@@ -368,8 +391,13 @@ function PrepareModal({ clients, onClose, onCreated }: { clients: RoiClient[]; o
     e.preventDefault();
     if (busy) return;
     setErr(null);
-    const body = { patientId: client?.id || '', direction, facility: { name, address, phone, fax }, information, purpose, duration };
-    if (!applyFieldErrors(validateRoiInput(body).errors, PREP_ORDER, setFieldErrors, prepId)) return;
+    const target = referralId ? { referralId, referralDob } : { patientId: client?.id || '' };
+    const body = formType === 'choa'
+      ? { formType, ...target, direction: 'to-us', duration: 'year', choa: { location: choaLocation, dateFrom, dateTo, recordTypes } }
+      : { formType, ...target, direction, facility: { name, address, phone, fax }, information, purpose, duration };
+    const errors = validateRoiInput(body).errors;
+    if (referralId && !client?.dob && !referralDob) errors.referralDob = 'Enter the date of birth for this release.';
+    if (!applyFieldErrors(errors, PREP_ORDER, setFieldErrors, prepId)) return;
     setBusy(true);
     try {
       const res = await authedFetch('/api/fax/roi', { method: 'POST', body: JSON.stringify(body) });
@@ -391,22 +419,29 @@ function PrepareModal({ clients, onClose, onCreated }: { clients: RoiClient[]; o
     <Modal title="Prepare a Release of Information" onClose={onClose} busy={busy}>
       <form onSubmit={submit} noValidate style={formStyle}>
         <div style={bodyStyle}>
+          <label style={fieldStyle} id={prepId('formType')}>
+            <span style={labelStyle}>Authorization form</span>
+            <select value={formType} onChange={(e) => { setFormType(e.target.value as RoiFormType); setFieldErrors({}); setErr(null); }} style={withSelectChevron(inp)}>
+              {ROI_FORMS.map((form) => <option key={form.id} value={form.id}>{form.label}</option>)}
+            </select>
+            <FieldError message={fieldErrors.formType} />
+          </label>
           <p style={leadStyle}>
-            Fills in the DBHDD Authorization for Release of Information (Attachment A, IDD version). The portal prints the
-            client, who shares with whom, what, why, and for how long. The guardian initials, signs, prints their name,
-            dates it, and checks Guardian.{' '}
-            <a href="/forms/dbhdd-roi-attachment-a.pdf" target="_blank" rel="noopener" style={{ color: '#1a3a5c', fontWeight: 600 }}>See the Blank Form</a>
+            {formType === 'choa'
+              ? 'Prepares the official CHOA authorization for records sent to Heart and Soul for continuing care. The patient or authorized representative reviews and signs it. Send it for signature through PandaDoc, then upload the completed PDF here.'
+              : 'Prepares the DBHDD Authorization for Release of Information (Attachment A, IDD version). The signer reviews, initials, signs, prints their name, dates it, and indicates their authority.'}{' '}
+            <a href={ROI_FORMS.find((form) => form.id === formType)?.blankPath} target="_blank" rel="noopener noreferrer" style={{ color: '#1a3a5c', fontWeight: 600 }}>See the Blank Form</a>
           </p>
 
           <div style={fieldStyle} id={prepId('patientId')}>
-            <span style={labelStyle}>Client</span>
+            <span style={labelStyle}>{referralId ? 'Referral' : 'Client'}</span>
             {client ? (
               <div style={cardStyle}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 700 }}>{client.name}</div>
-                  <div style={metaStyle}>{client.dob ? `DOB ${client.dob}` : 'No DOB on file'}</div>
+                  <div style={metaStyle}>{client.dob ? `DOB ${formatDateUS(client.dob)}` : 'No DOB on file'}</div>
                 </div>
-                <button type="button" onClick={() => setClient(null)} style={linkBtnStyle}>Change</button>
+                {!referralId && <button type="button" onClick={() => setClient(null)} style={linkBtnStyle}>Change</button>}
               </div>
             ) : (
               <div style={{ position: 'relative' }}>
@@ -430,6 +465,57 @@ function PrepareModal({ clients, onClose, onCreated }: { clients: RoiClient[]; o
             <FieldError message={fieldErrors.patientId} />
           </div>
 
+          {referralId && !client?.dob && <label style={fieldStyle} id={prepId('referralDob')}>
+            <span style={labelStyle}>Date of birth</span>
+            <input type="date" value={referralDob} max={todayET()} onChange={(e) => { setReferralDob(e.target.value); clear('referralDob'); }} style={inp} />
+            <span style={hintStyle}>Missing from the referral. This date is saved on this release only.</span>
+            <FieldError message={fieldErrors.referralDob} />
+          </label>}
+          {formType === 'choa' && <>
+            <div style={leadStyle}>
+              <strong>{CHOA.name}</strong><br />
+              Medical Records fax: (404) 785-9060 · Phone: (404) 785-2431<br />
+              No CHOA portal account is required. Records return to our configured fax number, or our mailing address if no fax is configured.{' '}
+              <a href={CHOA.instructionsUrl} target="_blank" rel="noopener noreferrer">CHOA instructions</a>
+            </div>
+            <label style={fieldStyle} id={prepId('choaLocation')}>
+              <span style={labelStyle}>CHOA hospital, clinic, or doctor (optional)</span>
+              <input value={choaLocation} maxLength={70} onChange={(e) => { setChoaLocation(e.target.value); clear('choaLocation'); }} style={inp} placeholder="All CHOA locations" />
+              <FieldError message={fieldErrors.choaLocation} />
+            </label>
+            <div style={fieldStyle} id={prepId('choaDates')}>
+              <span style={labelStyle}>Dates of service requested</span>
+              <button type="button" className={`${btn} ${btnSm}`} style={{ alignSelf: 'flex-start' }} onClick={() => {
+                const through = todayET();
+                const from = new Date(`${through}T12:00:00Z`);
+                from.setUTCDate(from.getUTCDate() - 89);
+                setDateFrom(from.toISOString().slice(0, 10));
+                setDateTo(through);
+                clear('choaDates');
+              }}>Past 90 days</button>
+              <span style={hintStyle}>Includes today. The form prints exact dates; you can adjust them below.</span>
+              <div style={twoColStyle}>
+                <label style={fieldStyle}>From<input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); clear('choaDates'); }} style={inp} /></label>
+                <label style={fieldStyle}>Through<input type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => { setDateTo(e.target.value); clear('choaDates'); }} style={inp} /></label>
+              </div>
+              <FieldError message={fieldErrors.choaDates} />
+            </div>
+            <fieldset style={{ ...fieldStyle, border: 0, padding: 0, margin: 0 }} id={prepId('choaRecordTypes')}>
+              <legend style={labelStyle}>Records requested</legend>
+              {(Object.keys(CHOA_RECORD_TYPES) as ChoaRecordType[]).map((type) => (
+                <label key={type} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                  <input type="checkbox" checked={recordTypes.includes(type)} onChange={(e) => {
+                    setRecordTypes((prev) => e.target.checked ? (type === 'all' ? ['all'] : [...prev.filter((t) => t !== 'all'), type]) : prev.filter((t) => t !== type));
+                    clear('choaRecordTypes');
+                  }} />{CHOA_RECORD_TYPES[type].label}
+                </label>
+              ))}
+              <FieldError message={fieldErrors.choaRecordTypes} />
+              <span style={hintStyle}>Radiology reports are included here; imaging CDs follow CHOA&apos;s separate radiology request process.</span>
+            </fieldset>
+            <p style={hintStyle}>Purpose: continuing care. Authorization: 12 months from signing. Patients 18 or older sign for themselves unless a legally authorized representative may sign. For minors, the parent or legal guardian signs as instructed on the form.</p>
+          </>}
+          {formType === 'dbhdd' && <>
           <div style={fieldStyle} id={prepId('direction')}>
             <span style={labelStyle}>Which way do the records go?</span>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -449,7 +535,7 @@ function PrepareModal({ clients, onClose, onCreated }: { clients: RoiClient[]; o
             </span>
           </div>
 
-          {client && (
+          {client && !referralId && (
             <label style={fieldStyle}>
               <span style={labelStyle}>Choose from {client.name.split(/\s+/)[0]}&apos;s profile</span>
               {facilityOptions === null ? (
@@ -522,6 +608,7 @@ function PrepareModal({ clients, onClose, onCreated }: { clients: RoiClient[]; o
             </div>
             <span style={hintStyle}>One year is clearer for facilities, and the portal shows when it needs renewing.</span>
           </div>
+          </>}
           {err && <div role="alert" style={errStyle}>{err}</div>}
         </div>
         <div style={footerStyle}>
@@ -568,9 +655,11 @@ function UploadModal({ roi, today, onClose, onDone }: { roi: RoiRecord; today: s
       <form onSubmit={submit} noValidate style={formStyle}>
         <div style={bodyStyle}>
           <p style={leadStyle}>
-            {roi.memberName}, {roi.facility.name}. Download the completed PDF from PandaDoc (or scan the paper copy) and check
-            that every Initials line, the signature, printed name, date, and Guardian box are filled in. It is filed under the
-            client&apos;s Documents (Consent / Release).
+            {roi.memberName}, {roi.facility.name}. Download the completed PDF from PandaDoc (or scan the paper copy).{' '}
+            {roi.formType === 'choa'
+              ? 'Check the requested dates and records, signature, date, and applicable representative box. Include documentation of authority when required. Confirm the form still uses the standard 12-month term before filing it here.'
+              : 'Check every Initials line, signature, printed name, date, and applicable representative box.'}{' '}
+            It is filed under the {roi.referralId ? 'referral’s' : 'client’s'} Documents (Consent / Release).
           </p>
           <label style={fieldStyle}>
             <span style={labelStyle}>Signed PDF</span>
@@ -636,7 +725,7 @@ function FaxModal({ roi, onClose, onSent }: { roi: RoiRecord; onClose: () => voi
         <div style={bodyStyle}>
           <p style={leadStyle}>
             Sends three things to {roi.facility.name}: the cover sheet, a letter on our letterhead introducing Heart and Soul as{' '}
-            {roi.memberName}&apos;s skilled nursing provider and explaining the release, and the signed form.
+            {roi.referralId ? 'the agency reviewing the referral' : `${roi.memberName}’s skilled nursing provider`} and explaining the release, and the signed form.
           </p>
           <label style={fieldStyle} id={faxId('recipientName')}>
             <span style={labelStyle}>Attention</span>
@@ -675,7 +764,7 @@ function FaxModal({ roi, onClose, onSent }: { roi: RoiRecord; onClose: () => voi
 
 function Modal({ title, onClose, busy, children }: { title: string; onClose: () => void; busy: boolean; children: React.ReactNode }) {
   return (
-    <div style={backdropStyle} onClick={busy ? undefined : onClose}>
+    <div style={backdropStyle} onClick={(e) => { e.stopPropagation(); if (!busy) onClose(); }}>
       <div style={modalStyle} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={title}>
         <div style={modalHeaderStyle}>
           <strong style={{ fontSize: 16, color: '#1a3a5c' }}>{title}</strong>

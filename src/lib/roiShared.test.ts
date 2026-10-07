@@ -109,3 +109,18 @@ describe('defaultRoiFaxNote', () => {
     expect(defaultRoiFaxNote({ ...base, returnFax: undefined, direction: 'to-us' })).toContain('at the fax number on the release:');
   });
 });
+
+it('accepts a referral target and rejects ambiguous or invalid targets', () => {
+  const referral = { ...good, patientId: '', referralId: 'ref_1', referralDob: '2015-03-14' };
+  expect(validateRoiInput(referral).value).toMatchObject({ referralId: 'ref_1', patientId: '', referralDob: '2015-03-14' });
+  expect(validateRoiInput({ ...referral, patientId: 'p1' }).value).toBeNull();
+  expect(validateRoiInput({ ...referral, referralId: '../bad' }).value).toBeNull();
+  expect(validateRoiInput({ ...referral, referralDob: '2015-02-30' }).errors.referralDob).toBeTruthy();
+  expect(validateRoiInput({ ...referral, referralDob: '2999-01-01' }).errors.referralDob).toBeTruthy();
+});
+
+it('describes referral coordination without claiming an existing care relationship', () => {
+  const text = roiIntroParagraphs({ memberName: 'Test Referral', facilityName: 'CHOA', program: 'gapp', direction: 'to-us', formType: 'choa', isReferral: true }).join(' ');
+  expect(text).toContain('received a referral for Test Referral');
+  expect(text).not.toContain('We provide skilled nursing care to');
+});

@@ -7,6 +7,7 @@ import {
   ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { btn, btnDanger, btnIcon, btnPrimary } from '@/components/buttons';
+import RoiSection from '../fax/RoiSection';
 import ReferralDocuments from './ReferralDocuments';
 import ConvertReferralModal from './ConvertReferralModal';
 import Link from 'next/link';
@@ -63,6 +64,8 @@ export default function ReferralDetail({
   const [savingNote, setSavingNote] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
   const [activityError, setActivityError] = useState<string | null>(null);
+  const [documentsRefresh, setDocumentsRefresh] = useState(0);
+  const [showReleases, setShowReleases] = useState(false);
   const [converting, setConverting] = useState(false);
   const [created, setCreated] = useState<{ patientId: string; mrn: string; documentsMoved: number } | null>(null);
   const canCreateClient = viewerRole === 'admin' || viewerRole === 'supervisor';
@@ -90,12 +93,13 @@ export default function ReferralDetail({
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+      if (showReleases) return;
       if (e.key === 'ArrowLeft' && nav.prevId) onNavigate(nav.prevId);
       if (e.key === 'ArrowRight' && nav.nextId) onNavigate(nav.nextId);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [nav, onNavigate]);
+  }, [nav, onNavigate, showReleases]);
 
   // Reload on open (id change) and whenever the referral is mutated elsewhere
   // (stage move / assignment bumps updatedAt), so server-logged entries appear.
@@ -324,7 +328,7 @@ export default function ReferralDetail({
             </div>
           )}
 
-          <ReferralDocuments referralId={referral.id} patientId={patientId} refreshKey={referral.updatedAt} />
+          <ReferralDocuments referralId={referral.id} patientId={patientId} refreshKey={`${referral.updatedAt || ""}:${documentsRefresh}`} />
 
           {/* Share with a partner agency */}
           <div style={sectionTitleStyle}>Share with Agency</div>
@@ -424,6 +428,11 @@ export default function ReferralDetail({
               <UserPlus size={15} /> Create Client Record
             </button>
           )}
+          {canFax && referral.stage !== 'closed' && referral.stage !== 'referred_out' && (
+            <button type="button" onClick={() => setShowReleases(true)} className={btn} style={{ width: '100%' }}>
+              <FileSignature size={15} /> Release of Information
+            </button>
+          )}
           <div style={footerRowStyle}>
             <button type="button" onClick={() => onPrint(referral)} className={btn} style={footerGrowStyle}>
               <Printer size={15} /> Print Call Sheet
@@ -458,6 +467,15 @@ export default function ReferralDetail({
           </div>
         </div>
       </aside>
+      {showReleases && canFax && <div style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={(e) => e.stopPropagation()}>
+        <div role="dialog" aria-modal="true" aria-label="Referral releases of information" style={{ width: '100%', maxWidth: 1000, maxHeight: '90vh', overflowY: 'auto', background: 'white', borderRadius: 12, padding: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <strong>{referral.clientName}: Release of Information</strong>
+            <button type="button" className={btn} onClick={() => { setShowReleases(false); setDocumentsRefresh((n) => n + 1); void loadActivity(); onChanged?.(); }} aria-label="Close releases"><X size={18} /></button>
+          </div>
+          <RoiSection key={referral.id} referralId={referral.id} refreshKey={0} openRequest={0} faxConfigured={false} onFaxSent={() => { void loadActivity(); }} />
+        </div>
+      </div>}
       {converting && (
         <ConvertReferralModal
           referralId={referral.id}
