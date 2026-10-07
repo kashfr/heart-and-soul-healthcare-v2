@@ -38,6 +38,8 @@ interface ProgramPageTemplateProps {
   goalImage?: string;
   /** Optional third CTA button, e.g. a program-specific form to complete online. */
   extraCta?: { href: string; label: string };
+  /** Optional callout under the services, linking to a deeper service page. */
+  highlight?: { title: string; text: string; href: string; label: string };
 }
 
 export default function ProgramPageTemplate({
@@ -51,6 +53,7 @@ export default function ProgramPageTemplate({
   faqs,
   officialResources,
   extraCta,
+  highlight,
   accentColor = 'teal',
   populationImage,
   populationImageAlt,
@@ -159,6 +162,19 @@ export default function ProgramPageTemplate({
               </StaggerItem>
             ))}
           </StaggerContainer>
+          {highlight && (
+            <ScrollReveal direction="up">
+              <Link href={highlight.href} className={`${styles.highlight} ${styles[accentColor]}`}>
+                <div>
+                  <h3>{highlight.title}</h3>
+                  <p>{highlight.text}</p>
+                </div>
+                <span className={styles.highlightCta}>
+                  {highlight.label} <ArrowRight size={18} />
+                </span>
+              </Link>
+            </ScrollReveal>
+          )}
         </div>
       </section>
 
