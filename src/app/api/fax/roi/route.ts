@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { AdminAuthError } from '@/lib/adminAuthGuard';
 import { requireFaxAccess } from '@/lib/faxCenterServer';
+import { srfaxConfig } from '@/lib/fax/srfax';
 import { createRoi, listRois } from '@/lib/roiServer';
 import { validateRoiInput } from '@/lib/roiShared';
 
@@ -19,7 +20,11 @@ export async function GET(request: Request) {
     if (err instanceof AdminAuthError) return NextResponse.json({ error: err.message }, { status: err.status });
     throw err;
   }
-  return NextResponse.json(await listRois());
+  const referralId = new URL(request.url).searchParams.get('referralId');
+  if (referralId !== null && !/^[A-Za-z0-9_-]{1,128}$/.test(referralId)) return NextResponse.json({ error: 'Invalid referral.' }, { status: 400 });
+  const data = await listRois(referralId || undefined);
+  if (referralId && !data.subject) return NextResponse.json({ error: 'Referral not found.' }, { status: 404 });
+  return NextResponse.json({ ...data, faxConfigured: !!srfaxConfig() });
 }
 
 export async function POST(request: Request) {

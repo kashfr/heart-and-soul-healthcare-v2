@@ -30,6 +30,31 @@ Radiology reports are supported; imaging/CD requests use CHOA's separate
 radiology process. This workflow does not confirm that CHOA accepted a request
 or that records have been received.
 
+## Referral drawer
+
+Referrals > open a referral > Release of Information uses the same preparation,
+signed-copy upload, preview, and fax workflow. A client record is not required.
+The referral is preselected; its name and DOB are resolved on the server. If
+DOB is missing, staff must supply it for the release (the referral itself is
+not edited). Closed or referred-out referrals must be reopened to prepare a
+new release.
+
+Signed copies are filed in referral Documents as Consent / Release. Existing
+client conversion copies these documents into the client record; uploading
+after conversion also copies them. Preparation, signed filing, and fax
+submission appear in referral activity. Fax submission is not proof of delivery.
+The introduction letter describes evaluating the referral rather than claiming
+that nursing care has already started.
+
+The button uses the same Fax Center access as Request PPOT. VAs and supervisors
+need their existing explicit fax-access grant; API authorization remains in
+place for every operation. The local preview can prepare and file releases
+while outbound fax is disabled.
+
+`ROI_FORMS` supplies the available form choices. CHOA and the existing DBHDD
+form are available now. The user's additional Georgia and Emory forms still
+need their source PDFs, field mappings, validation, and tests before being added.
+
 ## Source and maintenance
 
 Verified 2026-10-06:

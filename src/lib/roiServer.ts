@@ -13,6 +13,9 @@ import { formatDateUS, formatDateUSFile } from './dateFormat';
 import { fillRoiForm } from './pdf/roiStamp';
 import { ChoaFormError, fillChoaForm } from './pdf/choaStamp';
 import { validateChoaRequest } from './choaRoi';
+import { getReferral, logReferralActivity } from './referrals';
+import { planFromReferral } from './referralConvertShared';
+import { addReferralDocument, moveReferralDocumentsToPatient } from './referralDocumentsServer';
 import RoiLetterPDF from './pdf/RoiLetterPDF';
 import {
   defaultRoiFaxNote,
@@ -63,6 +66,7 @@ function serialize(id: string, x: FirebaseFirestore.DocumentData): RoiRecord {
     formType: x.formType === 'choa' ? 'choa' : 'dbhdd',
     ...(x.formType === 'choa' && x.choa ? { choa: x.choa } : {}),
     patientId: String(x.patientId || ''),
+    ...(x.referralId ? { referralId: String(x.referralId) } : {}),
     memberName: String(x.memberName || ''),
     direction: (['to-us', 'from-us', 'both'].includes(x.direction) ? x.direction : 'to-us') as RoiDirection,
     facility: party(x.facility),
@@ -94,8 +98,15 @@ export interface RoiClient {
 }
 
 /** Everything the Fax Center's Release of Information list and dialog need. */
-export async function listRois(): Promise<{ rois: RoiRecord[]; clients: RoiClient[] }> {
+export async function listRois(referralId?: string): Promise<{ rois: RoiRecord[]; clients: RoiClient[]; subject?: RoiClient | null }> {
   const db = adminDb();
+  if (referralId) {
+    const referral = await getReferral(referralId);
+    if (!referral) return { rois: [], clients: [], subject: null };
+    const plan = planFromReferral(referral);
+    const snap = await db.collection(COL).where('referralId', '==', referralId).get();
+    return { rois: snap.docs.map((d) => serialize(d.id, d.data())).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))), clients: [], subject: { id: referralId, name: plan.name, dob: plan.dob, program: plan.program } };
+  }
   const [snap, patients] = await Promise.all([db.collection(COL).get(), db.collection('patients').get()]);
   const rois = snap.docs
     .map((d) => serialize(d.id, d.data()))
@@ -113,9 +124,21 @@ export async function listRois(): Promise<{ rois: RoiRecord[]; clients: RoiClien
 /** Record a new release, ready to download for signature. */
 export async function createRoi(input: RoiInput, caller: AuthedCaller): Promise<{ ok: true; roi: RoiRecord } | { ok: false; status: number; error: string }> {
   const db = adminDb();
-  const patient = await db.collection('patients').doc(input.patientId).get();
-  if (!patient.exists) return { ok: false, status: 404, error: 'That client was not found.' };
-  const p = patient.data() || {};
+  let p: { name?: string; dob?: string; program?: string };
+  let patientId = input.patientId;
+  if (input.referralId) {
+    const referral = await getReferral(input.referralId);
+    if (!referral) return { ok: false, status: 404, error: 'That referral was not found.' };
+    if (referral.stage === 'closed' || referral.stage === 'referred_out') return { ok: false, status: 409, error: 'Reopen this referral before preparing a release.' };
+    const plan = planFromReferral(referral);
+    p = { name: plan.name, dob: plan.dob || input.referralDob, program: plan.program };
+    patientId = referral.patientId || '';
+    if (!p.name || !p.dob) return { ok: false, status: 400, error: 'The referral needs a name and date of birth to prepare a release.' };
+  } else {
+    const patient = await db.collection('patients').doc(input.patientId).get();
+    if (!patient.exists) return { ok: false, status: 404, error: 'That client was not found.' };
+    p = patient.data() || {};
+  }
   if (input.formType === 'choa' && (!String(p.name || '').trim() || !String(p.dob || '').trim())) {
     return { ok: false, status: 400, error: "Add the client's name and date of birth to their profile before preparing a CHOA request." };
   }
@@ -123,7 +146,8 @@ export async function createRoi(input: RoiInput, caller: AuthedCaller): Promise<
   await ref.set({
     formType: input.formType || 'dbhdd',
     ...(input.choa ? { choa: input.choa } : {}),
-    patientId: input.patientId,
+    patientId,
+    ...(input.referralId ? { referralId: input.referralId } : {}),
     memberName: String(p.name || ''),
     dob: String(p.dob || ''),
     program: String(p.program || ''),
@@ -140,6 +164,7 @@ export async function createRoi(input: RoiInput, caller: AuthedCaller): Promise<
     createdBy: caller.uid,
     createdByName: caller.profile.displayName || caller.email || '',
   });
+  if (input.referralId) await logRoiActivity(input.referralId, `Prepared a release of information for ${input.facility.name}.`, caller);
   return { ok: true, roi: serialize(ref.id, (await ref.get()).data() || {}) };
 }
 
@@ -199,6 +224,23 @@ export async function fileSignedRoi(p: { id: string; pdf: Buffer; signedDate: st
   if (!(await loadPdf(p.pdf))) return { ok: false, status: 400, error: 'The signed copy must be a PDF that opens (not password protected).' };
 
   const byName = p.caller.profile.displayName || p.caller.email || '';
+  if (r.referralId) {
+    const referral = await getReferral(r.referralId);
+    if (!referral) return { ok: false, status: 404, error: 'That referral was not found.' };
+    const fileName = `Release_of_Information_Signed_${formatDateUSFile(p.signedDate)}.pdf`;
+    const by = { uid: p.caller.uid, name: byName, role: p.caller.role };
+    const documentId = await addReferralDocument({ referralId: r.referralId, pdf: p.pdf, category: DOC_CATEGORY,
+      title: `Release of Information: ${r.facility.name}, signed ${formatDateUS(p.signedDate)}`, fileName, docDate: p.signedDate, by });
+    const storagePath = `referrals/${r.referralId}/documents/${documentId}/${fileName}`;
+    await ref.update({ status: 'signed', patientId: referral.patientId || '', signed: {
+      documentId, storagePath, signedDate: p.signedDate, expiresOn: roiExpiresOn(p.signedDate, r.duration), byUid: p.caller.uid, byName, at: new Date().toISOString(),
+    } });
+    // Re-read after filing so conversion during upload also receives the copy.
+    const latest = await getReferral(r.referralId);
+    if (latest?.patientId) await moveReferralDocumentsToPatient(r.referralId, latest.patientId, by);
+    await logRoiActivity(r.referralId, `Filed a signed release of information for ${r.facility.name}.`, p.caller);
+    return { ok: true, roi: serialize(p.id, (await ref.get()).data() || {}) };
+  }
   const docRef = db.collection('patientDocuments').doc();
   const fileName = `Release_of_Information_Signed_${formatDateUSFile(p.signedDate)}.pdf`;
   const storagePath = `patients/${r.patientId}/documents/${docRef.id}/${fileName}`;
@@ -274,7 +316,7 @@ export async function faxRoi(p: {
     facilityAddress: r.facility.address,
     memberName: r.memberName,
     dob: formatDateUS(String(x.dob || '')),
-    paragraphs: roiIntroParagraphs({ memberName: r.memberName, program: String(x.program || ''), facilityName: r.facility.name, direction: r.direction, formType: r.formType }),
+    paragraphs: roiIntroParagraphs({ memberName: r.memberName, program: String(x.program || ''), facilityName: r.facility.name, direction: r.direction, formType: r.formType, isReferral: !!r.referralId }),
     senderName,
     returnFax,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- react-pdf's renderToBuffer wants its own element type
@@ -312,6 +354,7 @@ export async function faxRoi(p: {
       }),
     });
   }
+  if (result.ok && r.referralId) await logRoiActivity(r.referralId, `Submitted the signed release to ${r.facility.name} by fax. Check Sent Faxes for delivery.`, p.caller);
   return result;
 }
 
@@ -328,4 +371,10 @@ export async function updateRoi(id: string, action: 'cancel' | 'hide' | 'unhide'
   }
   await ref.update({ hidden: action === 'hide', hiddenBy: action === 'hide' ? caller.uid : FieldValue.delete() });
   return { ok: true };
+}
+
+async function logRoiActivity(referralId: string, text: string, caller: AuthedCaller): Promise<void> {
+  try {
+    await logReferralActivity(referralId, { type: 'note', text, byUid: caller.uid, byName: caller.profile.displayName || caller.email || '', byRole: caller.role });
+  } catch (err) { console.error('ROI referral activity failed:', err); }
 }
