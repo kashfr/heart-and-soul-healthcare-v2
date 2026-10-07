@@ -485,6 +485,15 @@ function PrepareModal({ clients, onClose, onCreated, referralId, subject }: { cl
             </label>
             <div style={fieldStyle} id={prepId('choaDates')}>
               <span style={labelStyle}>Dates of service requested</span>
+              <button type="button" className={`${btn} ${btnSm}`} style={{ alignSelf: 'flex-start' }} onClick={() => {
+                const through = todayET();
+                const from = new Date(`${through}T12:00:00Z`);
+                from.setUTCDate(from.getUTCDate() - 89);
+                setDateFrom(from.toISOString().slice(0, 10));
+                setDateTo(through);
+                clear('choaDates');
+              }}>Past 90 days</button>
+              <span style={hintStyle}>Includes today. The form prints exact dates; you can adjust them below.</span>
               <div style={twoColStyle}>
                 <label style={fieldStyle}>From<input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); clear('choaDates'); }} style={inp} /></label>
                 <label style={fieldStyle}>Through<input type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => { setDateTo(e.target.value); clear('choaDates'); }} style={inp} /></label>

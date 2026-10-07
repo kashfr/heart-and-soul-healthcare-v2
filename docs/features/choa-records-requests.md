@@ -5,7 +5,10 @@ Children's Healthcare of Atlanta's own authorization. Existing requests
 without `formType` continue to use the DBHDD template.
 
 The office selects a client, dates of service, record types, and optionally a
-CHOA hospital, clinic, or doctor. The server fixes the facility contact details,
+CHOA hospital, clinic, or doctor. The Past 90 days shortcut fills an inclusive
+90-day range ending today in Eastern time; staff can adjust it. The PDF prints
+the exact dates so the range does not shift while awaiting signature or processing.
+The server fixes the facility contact details,
 records direction (CHOA to Heart and Soul), purpose (continuing care), and
 standard 12-month term. The client must have a name and DOB. The official
 fillable PDF includes CHOA's instructions and leaves signatures, signing date,
