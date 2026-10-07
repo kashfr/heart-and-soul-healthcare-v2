@@ -1,5 +1,5 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
-import { AGENCY } from '../roiShared';
+import { AGENCY, roiPhoneFaxLine } from '../roiShared';
 import { CHOA_RECORD_TYPES, type ChoaRequest } from '../choaRoi';
 import { formatDateUS } from '../dateFormat';
 
@@ -64,7 +64,7 @@ export async function fillChoaForm(blank: Uint8Array, input: {
   text('City_2', 'Atlanta');
   text('State_2', 'GA');
   text('Zip_2', '30309');
-  text('Day Phone_2', '(678) 644-0337');
+  text('Day Phone_2', roiPhoneFaxLine({ phone: AGENCY.phone, fax: '' }));
   text('Indicate Applicable Dates of Service', `${formatDateUS(input.request.dateFrom)} through ${formatDateUS(input.request.dateTo)}`);
   for (const type of input.request.recordTypes) form.getCheckBox(CHOA_RECORD_TYPES[type].field).check();
   form.getCheckBox('Continuing care').check();

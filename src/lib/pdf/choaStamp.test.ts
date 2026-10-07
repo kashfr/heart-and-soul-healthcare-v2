@@ -28,6 +28,7 @@ describe('official CHOA PDF', () => {
     expect(form.getTextField('Name of Facility or Person').getText()).toBe('Heart and Soul Healthcare');
     for (const field of ['CHOA sender', 'Other recipient', 'Routin record set', 'Lab reports', 'Continuing care', 'Fax2']) expect(form.getCheckBox(field).isChecked()).toBe(true);
     for (const field of ['Other sender', 'CHOA recipient', 'Parent', 'Legal guardian', 'Health care agent', 'Legal guardian or conservator', 'Any and all records', 'Radiology/EEG images', 'Mail']) expect(form.getCheckBox(field).isChecked()).toBe(false);
+    expect(form.getTextField('Day Phone_2').getText()).toBe('(470) 635-5774');
     expect(form.getTextField('Fax').getText()).toBe('(470) 555-0100');
     expect(form.getTextField('Date').getText()).toBeUndefined();
     expect(form.getSignature('PatientLegal Guardian Signature')).toBeDefined();
