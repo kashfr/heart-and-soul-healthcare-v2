@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { AdminAuthError } from '@/lib/adminAuthGuard';
 import { requireFaxAccess } from '@/lib/faxCenterServer';
-import { cancelPpotRequest, hideReceivedPpot, listPpotOrderLines } from '@/lib/ppotServer';
+import { cancelPpotRequest, sendPpotFollowup, hideReceivedPpot, listPpotOrderLines } from '@/lib/ppotServer';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -44,7 +44,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ key
   if (!KEY_RE.test(key)) return NextResponse.json({ error: 'Bad id' }, { status: 400 });
   const body = (await request.json().catch(() => ({}))) as { action?: unknown };
   const result =
-    body.action === 'cancel' ? await cancelPpotRequest(key, caller) : body.action === 'hide' ? await hideReceivedPpot(key, caller) : null;
+    body.action === 'followup' ? await sendPpotFollowup(key, caller) : body.action === 'cancel' ? await cancelPpotRequest(key, caller) : body.action === 'hide' ? await hideReceivedPpot(key, caller) : null;
   if (!result) return NextResponse.json({ error: 'Unknown action.' }, { status: 400 });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status || 500 });
   return NextResponse.json({ ok: true });

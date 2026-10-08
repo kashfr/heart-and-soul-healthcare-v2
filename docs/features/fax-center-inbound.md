@@ -52,3 +52,24 @@ creates the record also claims the referral, so it can only happen once.
 
 What the intake answers become is decided in `referralConvertShared.ts`
 (`planFromReferral`), which is where to add a new field mapping.
+
+## PPOT follow-ups
+
+Waiting on Physicians includes Send Follow-up Fax for authorized Fax Center
+users. It confirms the saved physician and fax number, sends Appendix T with a
+follow-up cover sheet, and records the staff sender and submission date. The
+original request date stays unchanged. Delivery is checked in Sent Faxes.
+Cancelled or received requests cannot be followed up. Each request allows one
+follow-up attempt per Eastern calendar day, with a transactional claim shared
+by manual and automatic sends. Failed submissions remain retryable in Sent
+Faxes. Unknown provider outcomes retain the claim for investigation; never
+clear it without checking the outbox/provider status first.
+
+Settings > Fax Center has independent PPOT follow-up and escalation days,
+with 3/7/10/14/30-day shortcuts. Legacy configurations retain their Verbal
+Orders intervals until the new settings are saved. One automatic follow-up is
+attempted at the first threshold; a successful manual follow-up replaces it.
+The second threshold notifies staff to call. This is not a recurring multi-step
+fax schedule. The existing cron runs the PPOT sweep during weekday office hours.
+Changing these settings does not send a fax immediately, but shortening the
+interval can make outstanding requests eligible on the next sweep.

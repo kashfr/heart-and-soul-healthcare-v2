@@ -314,7 +314,7 @@ describe('intake settings (org service profile)', () => {
 
 describe('fax settings (Fax Center grant)', () => {
   it('defaults to off with nobody granted', () => {
-    expect(mergeWithDefaults(null).fax).toEqual({ enabled: false, userUids: [], recertLeadDays: 45, ppotPrefillIdentity: false });
+    expect(mergeWithDefaults(null).fax).toEqual({ enabled: false, userUids: [], recertLeadDays: 45, ppotPrefillIdentity: false, ppotOverdueDays: 14, ppotEscalateDays: 30 });
   });
   it('keeps the switch and dedupes / trims the granted uids', () => {
     expect(mergeWithDefaults({ fax: { enabled: true, userUids: [' rose ', 'rose', '', 'sup1', 7] } }).fax).toEqual({
@@ -322,6 +322,7 @@ describe('fax settings (Fax Center grant)', () => {
       userUids: ['rose', 'sup1'],
       recertLeadDays: 45,
       ppotPrefillIdentity: false,
+      ppotOverdueDays: 14, ppotEscalateDays: 30,
     });
   });
   it('treats anything but true as off', () => {
@@ -399,3 +400,10 @@ describe('supportCoordination settings', () => {
     expect(() => validateSettings({ supportCoordination: { agencies: [{ name: 'A' }, { name: 'a' }] } })).toThrow(/already on the list/);
   });
 });
+
+ it('preserves legacy reminder intervals until PPOT intervals are saved independently', () => {
+   expect(mergeWithDefaults({ verbalOrders: { overdueDays: 10, escalateDays: 20 } }).fax).toMatchObject({ ppotOverdueDays: 10, ppotEscalateDays: 20 });
+   expect(mergeWithDefaults({ verbalOrders: { overdueDays: 14, escalateDays: 30 }, fax: { ppotOverdueDays: 3, ppotEscalateDays: 7 } }).fax).toMatchObject({ ppotOverdueDays: 3, ppotEscalateDays: 7 });
+   for (const value of [0, 366, 1.5]) expect(() => validateSettings({ fax: { ppotOverdueDays: value } })).toThrow(SettingsValidationError);
+   expect(() => validateSettings({ fax: { ppotOverdueDays: 10, ppotEscalateDays: 3 } })).toThrow(SettingsValidationError);
+ });

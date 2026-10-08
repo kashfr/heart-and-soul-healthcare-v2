@@ -1,3 +1,4 @@
+import { srfaxConfig } from '@/lib/fax/srfax';
 import { NextResponse } from 'next/server';
 import { AdminAuthError } from '@/lib/adminAuthGuard';
 import { requireFaxAccess } from '@/lib/faxCenterServer';
@@ -21,5 +22,5 @@ export async function GET(request: Request) {
   }
   const [incoming, openRequests, received] = await Promise.all([listIncomingFaxes(), listOpenPpotRequests(), listReceivedPpots()]);
   openRequests.sort((a, b) => a.date.localeCompare(b.date));
-  return NextResponse.json({ incoming, openRequests, received, canDismissIncoming: caller.role === 'admin' || caller.role === 'supervisor' });
+  return NextResponse.json({ faxConfigured: !!srfaxConfig(), incoming, openRequests, received, canDismissIncoming: caller.role === 'admin' || caller.role === 'supervisor' });
 }

@@ -183,10 +183,14 @@ export interface PpotOpenRequest {
   date: string;
   /** YYYY-MM-DD the automatic reminder was re-faxed, or '' if not yet. */
   remindedDate: string;
+  followupDate?: string;
+  followupAttemptDate?: string;
+  followupPending?: boolean;
+  followupError?: string;
 }
 
 /**
- * Where a PPOT request stands against the Verbal Orders thresholds in
+ * Where a PPOT request stands against its follow-up thresholds in
  * Settings: 'overdue' re-faxes the request once, 'escalated' rings the Fax
  * Center users one more time so someone calls the office.
  */
@@ -204,9 +208,9 @@ export function ppotRequestUrgency(
   return 'open';
 }
 
-/** Cover-sheet note on the automatic second request. */
+/** Cover-sheet note for manual and scheduled follow-ups. */
 export function ppotReminderNote(requestType: PpotRequestType, firstSentUS: string, hasMedicaidId: boolean): string {
-  return `Second request. We faxed this Appendix T request on ${firstSentUS} and have not received the signed form yet. ${defaultPpotNote(requestType, hasMedicaidId)}`;
+  return `Follow-up request. We faxed this Appendix T request on ${firstSentUS} and have not received the signed form yet. ${defaultPpotNote(requestType, hasMedicaidId)}`;
 }
 
 /**
