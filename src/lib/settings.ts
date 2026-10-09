@@ -309,6 +309,9 @@ export interface FaxSettings {
    *  PPOT request sent yet this cycle, are flagged for recertification and
    *  everyone with Fax Center access is notified. */
   recertLeadDays: number;
+  /** Independent PPOT follow-up thresholds. Legacy settings inherit Verbal Orders until saved. */
+  ppotOverdueDays?: number;
+  ppotEscalateDays?: number;
   /** Print the member's name and Medicaid ID (when on file) on the Appendix T
    *  identity line. Off by default: the GAPP manual (913.3) says providers
    *  cannot complete the PPOT, so turn this on only once DCH / the GAPP
@@ -400,7 +403,7 @@ export interface AppSettings {
 export const DEFAULT_SETTINGS: AppSettings = {
   supportCoordination: { agencies: [] },
   verbalOrders: { overdueDays: 14, escalateDays: 30, returnFax: '' },
-  fax: { enabled: false, userUids: [], recertLeadDays: 45, ppotPrefillIdentity: false },
+  fax: { enabled: false, userUids: [], recertLeadDays: 45, ppotPrefillIdentity: false, ppotOverdueDays: 14, ppotEscalateDays: 30 },
   edwp: { userUids: null },
   esign: { trackKeywords: ['onboarding'] },
   submissions: {
@@ -528,7 +531,7 @@ export function mergeWithDefaults(partial: unknown): AppSettings {
     corrections: mergeCorrections(p.corrections),
     shiftChangeAlerts: mergeShiftChangeAlerts(p.shiftChangeAlerts),
     verbalOrders: mergeVerbalOrders(p.verbalOrders),
-    fax: mergeFax(p.fax),
+    fax: mergeFax(p.fax, mergeVerbalOrders(p.verbalOrders)),
     edwp: mergeEdwp(p.edwp),
     esign: mergeEsign(p.esign),
     supportCoordination: mergeSupportCoordination(p.supportCoordination),
@@ -608,7 +611,7 @@ function mergeEdwp(input: unknown): EdwpSettings {
   return { userUids: Array.from(new Set(uids)) };
 }
 
-function mergeFax(input: unknown): FaxSettings {
+function mergeFax(input: unknown, legacy: VerbalOrdersSettings): FaxSettings {
   const src = (input ?? {}) as Partial<FaxSettings>;
   const uids = Array.isArray(src.userUids)
     ? src.userUids.filter((u): u is string => typeof u === 'string').map((u) => u.trim()).filter(Boolean)
@@ -619,6 +622,8 @@ function mergeFax(input: unknown): FaxSettings {
     userUids: Array.from(new Set(uids)),
     recertLeadDays: Number.isFinite(lead) && lead >= 7 && lead <= 180 ? lead : DEFAULT_SETTINGS.fax.recertLeadDays,
     ppotPrefillIdentity: src.ppotPrefillIdentity === true,
+    ppotOverdueDays: Number.isInteger(src.ppotOverdueDays) && src.ppotOverdueDays! >= 1 && src.ppotOverdueDays! <= 365 ? src.ppotOverdueDays : legacy.overdueDays,
+    ppotEscalateDays: Number.isInteger(src.ppotEscalateDays) && src.ppotEscalateDays! >= 1 && src.ppotEscalateDays! <= 365 ? src.ppotEscalateDays : legacy.escalateDays,
   };
 }
 
@@ -801,6 +806,11 @@ export function validateSettings(payload: unknown): AppSettings {
     throw new SettingsValidationError('edwp.userUids', 'edwp.userUids must be a list of staff uids.');
   }
 
+  for (const field of ['ppotOverdueDays', 'ppotEscalateDays'] as const) {
+    const value = fax[field];
+    if (value !== undefined && (!Number.isInteger(value) || value < 1 || value > 365)) throw new SettingsValidationError(`fax.${field}`, 'Enter a whole number of days from 1 to 365.');
+  }
+  if (fax.ppotOverdueDays !== undefined && fax.ppotEscalateDays !== undefined && fax.ppotEscalateDays < fax.ppotOverdueDays) throw new SettingsValidationError('fax.ppotEscalateDays', 'Escalation must come at or after the PPOT follow-up.');
   if (fax.ppotPrefillIdentity !== undefined && typeof fax.ppotPrefillIdentity !== 'boolean') {
     throw new SettingsValidationError('fax.ppotPrefillIdentity', 'fax.ppotPrefillIdentity must be true or false.');
   }

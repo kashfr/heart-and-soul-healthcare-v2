@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Ban, CheckCircle2, EyeOff, Eye, FileCheck2, FileUp, FolderInput, Hourglass, Inbox, X } from 'lucide-react';
+import { Ban, Send, CheckCircle2, EyeOff, Eye, FileCheck2, FileUp, FolderInput, Hourglass, Inbox, X } from 'lucide-react';
 import FileToClientModal from './FileToClientModal';
 import UploadFaxModal from './UploadFaxModal';
 import { withSelectChevron } from '@/lib/selectChevron';
@@ -45,6 +45,7 @@ function todayET(): string {
 }
 
 export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
+  const [faxConfigured, setFaxConfigured] = useState(false);
   const [incoming, setIncoming] = useState<IncomingFax[]>([]);
   const [openRequests, setOpenRequests] = useState<PpotOpenRequest[]>([]);
   const [received, setReceived] = useState<ReceivedPpot[]>([]);
@@ -61,6 +62,7 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
       const res = await authedFetch('/api/fax/inbound');
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
+      setFaxConfigured(data.faxConfigured === true);
       setIncoming(data.incoming ?? []);
       setOpenRequests(data.openRequests ?? []);
       setReceived(data.received ?? []);
@@ -87,6 +89,7 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
       await load();
+      if ('action' in body && body.action === 'followup') setNotice('Follow-up fax submitted. Check Sent Faxes for delivery.');
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Could not update the list.');
     } finally {
@@ -194,8 +197,7 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
           </h2>
           <p style={noteStyle}>
             Requests sent and not yet answered. A request stays here until someone files the returned fax from Incoming Faxes
-            with File as Signed PPOT; nothing is filed automatically. If one isn&apos;t back by the Verbal Orders overdue days in
-            Settings, the portal faxes it once more as a second request, and rings you again at the escalation days.
+            with File as Signed PPOT; nothing is filed automatically. Settings → Fax Center controls the automatic follow-up and escalation timing. You can also send a follow-up here. One follow-up attempt per day prevents duplicates; a successful manual follow-up replaces the automatic reminder.
           </p>
           <div style={tableWrapStyle}>
             <table style={tableStyle}>
@@ -214,12 +216,20 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
                       </td>
                       <td style={tdStyle}>
                         Sent {formatDateUS(r.date)}
-                        <div style={{ ...metaStyle, color: waited >= 14 ? '#b3261e' : '#7f8c8d', fontWeight: waited >= 14 ? 700 : 400 }}>
+                        <div style={metaStyle}>
                           {waited <= 0 ? 'today' : `${waited} day${waited === 1 ? '' : 's'} waiting`}
                         </div>
-                        {r.remindedDate && <div style={metaStyle}>Second request faxed {formatDateUS(r.remindedDate)}</div>}
+                        {(r.followupDate || r.remindedDate) && <div style={metaStyle}>Last follow-up submitted {formatDateUS(r.followupDate || r.remindedDate)}</div>}
+                        {r.followupPending && <div style={metaStyle}>Follow-up processing or awaiting confirmation; check Sent Faxes.</div>}
+                        {r.followupError && <div style={metaStyle}>Last follow-up failed. Check Sent Faxes to retry.</div>}
                       </td>
                       <td style={{ ...tdStyle, textAlign: 'right' }}>
+                        <button type="button" className={`${btnPrimary} ${btnSm}`} style={{ marginBottom: 6 }}
+                          disabled={busy === r.key || !faxConfigured || r.followupPending || r.followupAttemptDate === today || r.remindedDate === today}
+                          title={!faxConfigured ? 'Fax sending is unavailable on this server' : 'Send another Appendix T request to this physician'}
+                          onClick={() => act(r.key, `/api/fax/ppot/requests/${r.key}`, { action: 'followup' }, `Send a follow-up Appendix T fax for ${r.memberName} to ${r.recipientName} at ${formatUSFaxNumber(r.toNumber)}?`)}>
+                          <Send size={14} /> Send Follow-up Fax
+                        </button>{' '}
                         <button
                           onClick={() => act(r.key, `/api/fax/ppot/requests/${r.key}`, { action: 'cancel' }, `Cancel the Appendix T request for ${r.memberName}? It leaves this list and no longer counts as this cycle's request. The fax itself stays in Sent Faxes.`)}
                           className={`${btnDanger} ${btnSm}`}

@@ -56,6 +56,10 @@ function validateSettingsDraft(d: AppSettings): Record<string, string> {
   if (!isWholeNumberBetween(d.submissions.pageSize, 5, 100)) {
     errs['submissions.pageSize'] = 'Enter a whole number of rows between 5 and 100.';
   }
+  for (const key of ['ppotOverdueDays', 'ppotEscalateDays'] as const) {
+    if (!isWholeNumberBetween(d.fax[key] ?? d.verbalOrders[key === 'ppotOverdueDays' ? 'overdueDays' : 'escalateDays'], 1, 365)) errs[`fax.${key}`] = 'Enter a whole number of days from 1 to 365.';
+  }
+  if ((d.fax.ppotEscalateDays ?? d.verbalOrders.escalateDays) < (d.fax.ppotOverdueDays ?? d.verbalOrders.overdueDays)) errs['fax.ppotEscalateDays'] = 'Escalation must come at or after the PPOT follow-up.';
   const vo = d.verbalOrders;
   if (!isWholeNumberBetween(vo.overdueDays, 1, 365)) {
     errs['verbalOrders.overdueDays'] = 'Enter a whole number of days from 1 to 365.';
@@ -1142,6 +1146,16 @@ export default function AdminSettingsPage() {
               />
             </Field>
           </div>
+          <p style={sectionSubStyle}>PPOT follow-up: fax one automatic reminder after the first interval; notify staff to call the office after the second. These are calendar days from the original request. A successful manual follow-up replaces the automatic reminder. These settings are separate from Verbal Orders.</p>
+          {(['ppotOverdueDays', 'ppotEscalateDays'] as const).map((key) => (
+            <Field key={key} label={key === 'ppotOverdueDays' ? 'PPOT follow-up after (days)' : 'PPOT escalation after (days)'} id={settingsFieldId(`fax.${key}`)} error={fieldErrors[`fax.${key}`]}>
+              <input type="number" min={1} max={365} step={1} value={draft.fax[key] ?? draft.verbalOrders[key === 'ppotOverdueDays' ? 'overdueDays' : 'escalateDays']} style={inputStyle} onChange={(e) => {
+                clearFieldError(`fax.${key}`); setDirty(true);
+                setDraft((prev) => ({ ...prev, fax: { ...prev.fax, [key]: Number(e.target.value) } }));
+              }} />
+              <div style={{ display: 'flex', gap: 8, margin: '6px 0 12px' }}>{[3, 7, 10, 14, 30].map((days) => <button key={days} type="button" className={btn} onClick={() => { clearFieldError(`fax.${key}`); setDirty(true); setDraft((prev) => ({ ...prev, fax: { ...prev.fax, [key]: days } })); }}>{days === 7 ? '1 week' : `${days} days`}</button>)}</div>
+            </Field>
+          ))}
           {faxOptions.length > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, opacity: draft.fax.enabled ? 1 : 0.6 }}>
               {faxOptions.map((o) => {

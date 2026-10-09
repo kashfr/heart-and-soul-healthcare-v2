@@ -15,6 +15,7 @@ import { readInboundFaxBytes } from './inboundFaxPdf';
 import { addReferralDocument } from './referralDocumentsServer';
 import { formatDateUS, formatDateUSFile } from './dateFormat';
 import { stampAppendixTIdentity } from './pdf/appendixTStamp';
+import { srfaxConfig } from './fax/srfax';
 import { canUseFax } from './faxShared';
 import { validateFileFaxToClient, type FileFaxToClientInput } from './docCategories';
 import {
@@ -328,14 +329,9 @@ export async function runPpotRecertSweep(): Promise<{ reminded: number; errors: 
   return { reminded, errors };
 }
 
-/**
- * Follow-ups on requests still waiting on the signed form, on the Verbal
- * Orders thresholds in Settings (the plan's "reuse the verbal-order
- * settings"). At overdueDays the request is re-faxed once, marked "Second
- * request" and sent in the name of whoever sent the first one (their bell
- * rings if it fails), and Fax Center users are told. At escalateDays their
- * bell rings once more so someone calls the office. Each step is stamped
- * before it runs, so an overlapping tick can't repeat it.
+/** Follow up once at the PPOT threshold and notify staff at escalation.
+ * Legacy installations inherit Verbal Orders thresholds until PPOT settings are saved.
+ * Manual and scheduled sends share a transactional duplicate-send guard.
  */
 export async function runPpotReminderSweep(
   thresholds: { overdueDays: number; escalateDays: number },
@@ -354,28 +350,19 @@ export async function runPpotReminderSweep(
   };
   for (const d of snap.docs) {
     const x = d.data();
-    const urgency = ppotRequestUrgency(String(x.date || ''), today, thresholds);
+    const urgency = ppotRequestUrgency(String(x.date || ''), today, { overdueDays: settings.fax.ppotOverdueDays ?? thresholds.overdueDays, escalateDays: settings.fax.ppotEscalateDays ?? thresholds.escalateDays });
     if (urgency === 'open') continue;
     const memberName = String(x.memberName || 'a member');
     const sentUS = formatDateUS(String(x.date || ''));
     try {
-      if (!x.reminderSentAt && canFax) {
-        // Claim the reminder first; a lost race means another tick has it.
-        const claimed = await db.runTransaction(async (tx) => {
-          const cur = await tx.get(d.ref);
-          if (cur.data()?.status !== 'sent' || cur.data()?.reminderSentAt) return false;
-          tx.update(d.ref, { reminderSentAt: FieldValue.serverTimestamp(), reminderDate: today });
-          return true;
-        });
-        if (claimed) {
-          const faxId = await refaxPpotRequest(x);
-          if (faxId) await d.ref.update({ reminderFaxId: faxId });
-          await ring(
-            faxId
-              ? `The Appendix T request for ${memberName} (sent ${sentUS}) hasn't come back, so the portal faxed it to ${x.recipientName || 'the physician'} again as a second request.`
-              : `The Appendix T request for ${memberName} (sent ${sentUS}) hasn't come back, and the automatic second request could not be faxed. Resend it from the Fax Center or call the office.`,
-          );
+      if (!x.reminderSentAt && canFax && !x.followupDate) {
+        const result = await sendPpotFollowup(d.id, undefined, true);
+        if (result.ok) {
+          await ring(`The Appendix T request for ${memberName} (sent ${sentUS}) is still outstanding. A follow-up fax was submitted to ${x.recipientName || 'the physician'}. Check Sent Faxes for delivery.`);
           out.refaxed++;
+        } else if (result.status !== 409) {
+          out.errors.push(`ppot reminder ${d.id}: ${result.error}`);
+          await ring(`The automatic Appendix T follow-up for ${memberName} could not be submitted. Check Sent Faxes before trying again.`);
         }
       }
       if (urgency === 'escalated' && !x.escalatedAt) {
@@ -397,10 +384,43 @@ function daysSinceText(fromYmd: string, today: string): string {
 
 /** Fax the same request again. Returns the new outbound fax id, or '' when
  *  the member is gone or the fax could not be built. */
-async function refaxPpotRequest(req: FirebaseFirestore.DocumentData): Promise<string> {
+/** One follow-up attempt per calendar day, shared by staff and scheduled sends.
+ * Persist the claim before the provider call: an unknown outcome must not cause duplicate faxes.
+ */
+export async function sendPpotFollowup(key: string, caller?: AuthedCaller, automatic = false): Promise<{ ok: boolean; status?: number; error?: string }> {
+  if (!srfaxConfig()) return { ok: false, status: 503, error: 'Fax sending is unavailable on this server.' };
+  const settings = await getServerSettings();
+  if (!settings.fax.enabled) return { ok: false, status: 403, error: 'Fax Center is disabled.' };
+  const db = adminDb();
+  const ref = db.collection(REQUESTS).doc(key);
+  const today = agencyTodayISO();
+  const claimed = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const req = snap.data();
+    if (!req || req.status !== 'sent') return null;
+    if (req.followupPending || req.followupAttemptDate === today || req.reminderDate === today || (automatic && (req.reminderSentAt || req.followupDate))) return null;
+    tx.update(ref, { followupPending: true, followupAttemptDate: today, ...(automatic ? { reminderSentAt: FieldValue.serverTimestamp() } : {}) });
+    return req;
+  });
+  if (!claimed) return { ok: false, status: 409, error: 'This request is no longer waiting, or a follow-up was already attempted today or is still being processed. Check Sent Faxes before sending again.' };
+  try {
+    const result = await refaxPpotRequest(claimed, caller);
+    await ref.update({ followupPending: false, followupError: result.ok ? '' : (result.error || 'Fax could not be submitted.'),
+      ...(result.fax ? { followupFaxId: result.fax.id } : {}),
+      ...(result.ok ? { followupDate: today, followupCount: FieldValue.increment(1), followupByName: caller?.profile.displayName || caller?.email || 'Portal (scheduled follow-up)', ...(automatic ? { reminderDate: today, reminderFaxId: result.fax?.id || '' } : {}) } : {}),
+    });
+    return result.ok ? { ok: true } : { ok: false, status: result.status || 502, error: `${result.error || 'Fax could not be submitted.'} Check Sent Faxes; failed faxes can be retried there.` };
+  } catch (err) {
+    // Leave the claim held when the provider outcome is unknown. Do not resend blindly.
+    console.error('PPOT follow-up outcome unknown:', err);
+    return { ok: false, status: 502, error: 'The follow-up outcome could not be confirmed. Check Sent Faxes before any further attempt; this request is locked to prevent duplicates.' };
+  }
+}
+
+async function refaxPpotRequest(req: FirebaseFirestore.DocumentData, caller?: AuthedCaller): Promise<SendFaxResult> {
   const kind: PpotSubjectKind = req.subjectKind === 'client' ? 'client' : 'referral';
   const subject = await loadPpotSubject(kind, String(req.subjectId || ''));
-  if (!subject) return '';
+  if (!subject) return { ok: false, status: 404, error: 'The referral or client was not found.' };
   const firstFax = req.faxId ? await adminDb().collection('outboundFaxes').doc(String(req.faxId)).get() : null;
   const first = firstFax?.data() || {};
   const firstPpot = (first.ppot || {}) as { medicaidId?: string };
@@ -408,14 +428,14 @@ async function refaxPpotRequest(req: FirebaseFirestore.DocumentData): Promise<st
   const requestType: PpotRequestType = req.requestType === 'recert' ? 'recert' : 'new';
   const { pdf, fileName } = await appendixTForFax(subject.name, medicaidId);
   const toNumber = String(req.toNumber || '');
-  const sender: FaxSender = { uid: String(req.byUid || ''), email: null, profile: { displayName: String(req.byName || 'Heart and Soul Healthcare') } };
+  const sender: FaxSender = caller || { uid: String(req.byUid || ''), email: null, profile: { displayName: String(req.byName || 'Heart and Soul Healthcare') } };
   const result = await sendOutboundFax({
     input: {
       recipientName: String(req.recipientName || first.recipientName || 'Physician'),
       recipientOrg: String(first.recipientOrg || ''),
       toNumber,
       confirmNumber: toNumber,
-      regarding: `Second request, Appendix T, ${PPOT_REQUEST_LABEL[requestType].toLowerCase()}: ${subject.name}`,
+      regarding: `Follow-up request, Appendix T, ${PPOT_REQUEST_LABEL[requestType].toLowerCase()}: ${subject.name}`,
       note: ppotReminderNote(requestType, formatDateUS(String(req.date || '')), !!medicaidId),
       includeCover: true,
     },
@@ -425,7 +445,7 @@ async function refaxPpotRequest(req: FirebaseFirestore.DocumentData): Promise<st
     ppot: { requestType, subjectKind: subject.kind, subjectId: subject.id, memberName: subject.name, dob: subject.dob, medicaidId },
   });
   // A fax that SRFax refused still has an outbox row (with Resend).
-  return result.fax?.id || '';
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -515,6 +535,10 @@ export async function listOpenPpotRequests(): Promise<PpotOpenRequest[]> {
       toNumber: String(x.toNumber || ''),
       date: String(x.date || ''),
       remindedDate: String(x.reminderDate || ''),
+      followupDate: String(x.followupDate || x.reminderDate || ''),
+      followupAttemptDate: String(x.followupAttemptDate || ''),
+      followupPending: x.followupPending === true,
+      followupError: String(x.followupError || ''),
     };
   });
 }

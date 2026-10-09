@@ -146,9 +146,9 @@ describe('ppotRequestUrgency', () => {
 });
 
 describe('ppotReminderNote', () => {
-  it('says it is a second request with the first date, and never uses a dash', () => {
+  it('says it is a follow-up request with the first date, and never uses a dash', () => {
     const n = ppotReminderNote('recert', '09/01/2026', true);
-    expect(n).toMatch(/^Second request\. We faxed this Appendix T request on 09\/01\/2026/);
+    expect(n).toMatch(/^Follow-up request\. We faxed this Appendix T request on 09\/01\/2026/);
     expect(n).toMatch(/recertification/);
     expect(n).not.toMatch(/[–—]/);
   });
