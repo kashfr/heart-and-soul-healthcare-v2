@@ -407,3 +407,10 @@ describe('supportCoordination settings', () => {
    for (const value of [0, 366, 1.5]) expect(() => validateSettings({ fax: { ppotOverdueDays: value } })).toThrow(SettingsValidationError);
    expect(() => validateSettings({ fax: { ppotOverdueDays: 10, ppotEscalateDays: 3 } })).toThrow(SettingsValidationError);
  });
+
+it('validates and preserves a multi-step PPOT schedule independently of staff escalation', () => {
+  expect(validateSettings({ fax: { ppotFollowupDays: [3, 7, 10], ppotEscalateDays: 7 } }).fax.ppotFollowupDays).toEqual([3, 7, 10]);
+  expect(mergeWithDefaults({ fax: { ppotFollowupDays: [] } }).fax.ppotFollowupDays).toEqual([]);
+  for (const days of [[7, 3], [3, 3], [0], [366], [1.5], ['3'], null]) expect(() => validateSettings({ fax: { ppotFollowupDays: days } })).toThrow(SettingsValidationError);
+  expect(mergeWithDefaults({ fax: { ppotOverdueDays: 3 } }).fax.ppotFollowupDays).toBeUndefined();
+});

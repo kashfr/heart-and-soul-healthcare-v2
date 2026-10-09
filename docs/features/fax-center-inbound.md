@@ -65,11 +65,19 @@ by manual and automatic sends. Failed submissions remain retryable in Sent
 Faxes. Unknown provider outcomes retain the claim for investigation; never
 clear it without checking the outbox/provider status first.
 
-Settings > Fax Center has independent PPOT follow-up and escalation days,
-with 3/7/10/14/30-day shortcuts. Legacy configurations retain their Verbal
-Orders intervals until the new settings are saved. One automatic follow-up is
-attempted at the first threshold; a successful manual follow-up replaces it.
-The second threshold notifies staff to call. This is not a recurring multi-step
-fax schedule. The existing cron runs the PPOT sweep during weekday office hours.
-Changing these settings does not send a fax immediately, but shortening the
-interval can make outstanding requests eligible on the next sweep.
+Settings > Fax Center accepts a list of increasing calendar-day offsets from
+the original request, such as 3, 7, 10. The preset button fills these values;
+an empty list disables automatic follow-up faxes. Staff escalation remains a
+separate one-time notification and does not stop later scheduled faxes.
+Existing settings without the list retain the old single follow-up interval.
+The existing cron runs during weekday office hours in Eastern time.
+
+A transaction selects only the latest outstanding milestone and records the
+request age covered by the attempt. Earlier missed milestones are skipped,
+not sent in a burst or on subsequent days. Manual attempts cover all milestones
+through that day; later ones remain eligible. Known failed submissions consume
+the milestone (retry through Sent Faxes); unknown outcomes keep the pending
+claim, blocking further automatic or manual follow-ups until investigated.
+Original request dates are never reset. Filing/cancellation blocks future claims.
+Schedule edits apply to existing requests on the next scheduled check and never
+send anything directly from the settings screen. No SMS is sent.

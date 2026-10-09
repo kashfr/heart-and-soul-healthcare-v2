@@ -2,19 +2,20 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import type { AuthedCaller } from './adminAuthGuard';
 vi.mock('server-only', () => ({}));
-const m = vi.hoisted(() => ({ db: vi.fn(), send: vi.fn(), config: vi.fn(), settings: vi.fn(), referral: vi.fn() }));
+const m = vi.hoisted(() => ({ db: vi.fn(), send: vi.fn(), config: vi.fn(), settings: vi.fn(), referral: vi.fn(), today: '2026-10-08' }));
 vi.mock('./firebaseAdmin', () => ({ adminDb: m.db, adminBucket: vi.fn() }));
 vi.mock('./faxCenterServer', () => ({ sendOutboundFax: m.send }));
 vi.mock('./fax/srfax', () => ({ srfaxConfig: m.config }));
 vi.mock('./settingsServer', () => ({ getServerSettings: m.settings }));
 vi.mock('./referrals', () => ({ getReferral: m.referral }));
-vi.mock('./verbalOrderServer', () => ({ agencyTodayISO: () => '2026-10-08' }));
+vi.mock('./verbalOrderServer', () => ({ agencyTodayISO: () => m.today }));
 vi.mock('./notificationsServer', () => ({ createPortalNotification: vi.fn() }));
 import { sendPpotFollowup } from './ppotServer';
 let row: Record<string, unknown>;
 const caller = { uid: 'va1', email: 'va@example.test', role: 'va', profile: { displayName: 'Test VA' } } as AuthedCaller;
 beforeEach(() => {
   vi.clearAllMocks();
+  m.today = '2026-10-08';
   row = { status: 'sent', subjectKind: 'referral', subjectId: 'r1', memberName: 'Test Referral', toNumber: '7705550100', recipientName: 'Test Physician', date: '2026-09-28' };
   const ref = { get: async () => ({ exists: true, data: () => ({ ...row }) }), update: async (patch: object) => { Object.assign(row, patch); } };
   let queue = Promise.resolve();
@@ -58,4 +59,44 @@ it('retains the claim when the outcome is unknown', async () => {
   expect(row.followupPending).toBe(true);
   expect(row.followupDate).toBeUndefined();
   log.mockRestore();
+});
+
+it('sends at each configured milestone and stops after the last', async () => {
+  m.settings.mockResolvedValue({ fax: { enabled: true, ppotFollowupDays: [3, 7, 10] } });
+  row.date = '2026-10-01';
+  for (const date of ['2026-10-04', '2026-10-08', '2026-10-11']) {
+    m.today = date;
+    expect((await sendPpotFollowup('referral_r1', undefined, true)).ok).toBe(true);
+    expect((await sendPpotFollowup('referral_r1', undefined, true)).ok).toBe(false);
+  }
+  m.today = '2026-10-20';
+  expect((await sendPpotFollowup('referral_r1', undefined, true)).ok).toBe(false);
+  expect(m.send).toHaveBeenCalledTimes(3);
+});
+it('coalesces a late first sweep and never sends backlogged reminders the next day', async () => {
+  m.settings.mockResolvedValue({ fax: { enabled: true, ppotFollowupDays: [3, 7, 10] } });
+  m.today = '2026-10-20';
+  const outcomes = await Promise.all([sendPpotFollowup('referral_r1', undefined, true), sendPpotFollowup('referral_r1', undefined, true)]);
+  expect(outcomes.filter(x => x.ok)).toHaveLength(1);
+  m.today = '2026-10-21';
+  expect((await sendPpotFollowup('referral_r1', undefined, true)).ok).toBe(false);
+  expect(m.send).toHaveBeenCalledOnce();
+});
+it('a manual reminder preserves later automatic milestones and filing stops them', async () => {
+  m.settings.mockResolvedValue({ fax: { enabled: true, ppotFollowupDays: [3, 7, 10] } });
+  row.date = '2026-10-01'; m.today = '2026-10-06';
+  expect((await sendPpotFollowup('referral_r1', caller)).ok).toBe(true);
+  m.today = '2026-10-07'; expect((await sendPpotFollowup('referral_r1', undefined, true)).ok).toBe(false);
+  m.today = '2026-10-08'; expect((await sendPpotFollowup('referral_r1', undefined, true)).ok).toBe(true);
+  row.status = 'received'; m.today = '2026-10-11'; expect((await sendPpotFollowup('referral_r1', undefined, true)).ok).toBe(false);
+  expect(m.send).toHaveBeenCalledTimes(2);
+});
+it('a failed milestone is not repeated by each scheduler tick, but later milestones remain', async () => {
+  m.settings.mockResolvedValue({ fax: { enabled: true, ppotFollowupDays: [3, 7, 10] } });
+  row.date = '2026-10-01'; m.today = '2026-10-04';
+  m.send.mockResolvedValueOnce({ ok: false, status: 502, error: 'Refused' });
+  expect((await sendPpotFollowup('referral_r1', undefined, true)).ok).toBe(false);
+  m.today = '2026-10-05'; expect((await sendPpotFollowup('referral_r1', undefined, true)).ok).toBe(false);
+  m.today = '2026-10-08'; expect((await sendPpotFollowup('referral_r1', undefined, true)).ok).toBe(true);
+  expect(m.send).toHaveBeenCalledTimes(2);
 });

@@ -15,6 +15,7 @@ import { readInboundFaxBytes } from './inboundFaxPdf';
 import { addReferralDocument } from './referralDocumentsServer';
 import { formatDateUS, formatDateUSFile } from './dateFormat';
 import { stampAppendixTIdentity } from './pdf/appendixTStamp';
+import { ppotDueMilestone, ppotAge } from './ppotSchedule';
 import { srfaxConfig } from './fax/srfax';
 import { canUseFax } from './faxShared';
 import { validateFileFaxToClient, type FileFaxToClientInput } from './docCategories';
@@ -329,7 +330,7 @@ export async function runPpotRecertSweep(): Promise<{ reminded: number; errors: 
   return { reminded, errors };
 }
 
-/** Follow up once at the PPOT threshold and notify staff at escalation.
+/** Follow up at configured PPOT milestones and notify staff at escalation.
  * Legacy installations inherit Verbal Orders thresholds until PPOT settings are saved.
  * Manual and scheduled sends share a transactional duplicate-send guard.
  */
@@ -343,6 +344,7 @@ export async function runPpotReminderSweep(
   const db = adminDb();
   const today = agencyTodayISO();
   const snap = await db.collection(REQUESTS).where('status', '==', 'sent').get();
+  const schedule = settings.fax.ppotFollowupDays ?? [settings.fax.ppotOverdueDays ?? thresholds.overdueDays];
   let recipients: string[] | null = null;
   const ring = async (text: string) => {
     recipients ??= await faxRecipientUids();
@@ -351,11 +353,12 @@ export async function runPpotReminderSweep(
   for (const d of snap.docs) {
     const x = d.data();
     const urgency = ppotRequestUrgency(String(x.date || ''), today, { overdueDays: settings.fax.ppotOverdueDays ?? thresholds.overdueDays, escalateDays: settings.fax.ppotEscalateDays ?? thresholds.escalateDays });
-    if (urgency === 'open') continue;
+    const due = ppotDueMilestone(String(x.date || ''), today, schedule, x);
+    if (due === null && urgency !== 'escalated') continue;
     const memberName = String(x.memberName || 'a member');
     const sentUS = formatDateUS(String(x.date || ''));
     try {
-      if (!x.reminderSentAt && canFax && !x.followupDate) {
+      if (due !== null && canFax) {
         const result = await sendPpotFollowup(d.id, undefined, true);
         if (result.ok) {
           await ring(`The Appendix T request for ${memberName} (sent ${sentUS}) is still outstanding. A follow-up fax was submitted to ${x.recipientName || 'the physician'}. Check Sent Faxes for delivery.`);
@@ -382,8 +385,6 @@ function daysSinceText(fromYmd: string, today: string): string {
   return `${n} day${n === 1 ? '' : 's'}`;
 }
 
-/** Fax the same request again. Returns the new outbound fax id, or '' when
- *  the member is gone or the fax could not be built. */
 /** One follow-up attempt per calendar day, shared by staff and scheduled sends.
  * Persist the claim before the provider call: an unknown outcome must not cause duplicate faxes.
  */
@@ -398,8 +399,11 @@ export async function sendPpotFollowup(key: string, caller?: AuthedCaller, autom
     const snap = await tx.get(ref);
     const req = snap.data();
     if (!req || req.status !== 'sent') return null;
-    if (req.followupPending || req.followupAttemptDate === today || req.reminderDate === today || (automatic && (req.reminderSentAt || req.followupDate))) return null;
-    tx.update(ref, { followupPending: true, followupAttemptDate: today, ...(automatic ? { reminderSentAt: FieldValue.serverTimestamp() } : {}) });
+    if (req.followupPending || req.followupAttemptDate === today || req.reminderDate === today) return null;
+    const schedule = settings.fax.ppotFollowupDays ?? [settings.fax.ppotOverdueDays ?? 14];
+    const due = ppotDueMilestone(String(req.date || ''), today, schedule, req);
+    if (automatic && due === null) return null;
+    tx.update(ref, { followupPending: true, followupAttemptDate: today, followupCoveredThroughDay: Math.max(0, ppotAge(String(req.date || ''), today)), ...(automatic ? { reminderSentAt: FieldValue.serverTimestamp(), followupMilestoneDay: due } : {}) });
     return req;
   });
   if (!claimed) return { ok: false, status: 409, error: 'This request is no longer waiting, or a follow-up was already attempted today or is still being processed. Check Sent Faxes before sending again.' };

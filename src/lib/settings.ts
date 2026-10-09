@@ -25,6 +25,7 @@ export const RN_COSIGN_SESSION_KEY = 'rn-cosign-default-applied';
 
 // georgia.ts is pure data (no Firebase), so importing it preserves this
 // module's unit-testability.
+import { validPpotSchedule } from './ppotSchedule';
 import { normalizeCounty, SERVICE_KEYS, type GappServiceKey } from './georgia';
 
 /**
@@ -311,6 +312,8 @@ export interface FaxSettings {
   recertLeadDays: number;
   /** Independent PPOT follow-up thresholds. Legacy settings inherit Verbal Orders until saved. */
   ppotOverdueDays?: number;
+  /** Sorted calendar-day offsets. Empty disables automatic follow-up faxes. */
+  ppotFollowupDays?: number[];
   ppotEscalateDays?: number;
   /** Print the member's name and Medicaid ID (when on file) on the Appendix T
    *  identity line. Off by default: the GAPP manual (913.3) says providers
@@ -622,6 +625,7 @@ function mergeFax(input: unknown, legacy: VerbalOrdersSettings): FaxSettings {
     userUids: Array.from(new Set(uids)),
     recertLeadDays: Number.isFinite(lead) && lead >= 7 && lead <= 180 ? lead : DEFAULT_SETTINGS.fax.recertLeadDays,
     ppotPrefillIdentity: src.ppotPrefillIdentity === true,
+    ...(validPpotSchedule(src.ppotFollowupDays) ? { ppotFollowupDays: src.ppotFollowupDays } : {}),
     ppotOverdueDays: Number.isInteger(src.ppotOverdueDays) && src.ppotOverdueDays! >= 1 && src.ppotOverdueDays! <= 365 ? src.ppotOverdueDays : legacy.overdueDays,
     ppotEscalateDays: Number.isInteger(src.ppotEscalateDays) && src.ppotEscalateDays! >= 1 && src.ppotEscalateDays! <= 365 ? src.ppotEscalateDays : legacy.escalateDays,
   };
@@ -806,11 +810,12 @@ export function validateSettings(payload: unknown): AppSettings {
     throw new SettingsValidationError('edwp.userUids', 'edwp.userUids must be a list of staff uids.');
   }
 
+  if (fax.ppotFollowupDays !== undefined && !validPpotSchedule(fax.ppotFollowupDays)) throw new SettingsValidationError('fax.ppotFollowupDays', 'Enter up to 12 unique days in increasing order, from 1 to 365.');
   for (const field of ['ppotOverdueDays', 'ppotEscalateDays'] as const) {
     const value = fax[field];
     if (value !== undefined && (!Number.isInteger(value) || value < 1 || value > 365)) throw new SettingsValidationError(`fax.${field}`, 'Enter a whole number of days from 1 to 365.');
   }
-  if (fax.ppotOverdueDays !== undefined && fax.ppotEscalateDays !== undefined && fax.ppotEscalateDays < fax.ppotOverdueDays) throw new SettingsValidationError('fax.ppotEscalateDays', 'Escalation must come at or after the PPOT follow-up.');
+  if (fax.ppotFollowupDays === undefined && fax.ppotOverdueDays !== undefined && fax.ppotEscalateDays !== undefined && fax.ppotEscalateDays < fax.ppotOverdueDays) throw new SettingsValidationError('fax.ppotEscalateDays', 'Escalation must come at or after the PPOT follow-up.');
   if (fax.ppotPrefillIdentity !== undefined && typeof fax.ppotPrefillIdentity !== 'boolean') {
     throw new SettingsValidationError('fax.ppotPrefillIdentity', 'fax.ppotPrefillIdentity must be true or false.');
   }

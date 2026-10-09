@@ -1,5 +1,6 @@
 'use client';
 
+import { validPpotSchedule } from '@/lib/ppotSchedule';
 import { useEffect, useState } from 'react';
 import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
 import Link from 'next/link';
@@ -59,7 +60,8 @@ function validateSettingsDraft(d: AppSettings): Record<string, string> {
   for (const key of ['ppotOverdueDays', 'ppotEscalateDays'] as const) {
     if (!isWholeNumberBetween(d.fax[key] ?? d.verbalOrders[key === 'ppotOverdueDays' ? 'overdueDays' : 'escalateDays'], 1, 365)) errs[`fax.${key}`] = 'Enter a whole number of days from 1 to 365.';
   }
-  if ((d.fax.ppotEscalateDays ?? d.verbalOrders.escalateDays) < (d.fax.ppotOverdueDays ?? d.verbalOrders.overdueDays)) errs['fax.ppotEscalateDays'] = 'Escalation must come at or after the PPOT follow-up.';
+  if (d.fax.ppotFollowupDays !== undefined && !validPpotSchedule(d.fax.ppotFollowupDays)) errs['fax.ppotFollowupDays'] = 'Enter up to 12 unique days in increasing order, from 1 to 365.';
+  if (d.fax.ppotFollowupDays === undefined && (d.fax.ppotEscalateDays ?? d.verbalOrders.escalateDays) < (d.fax.ppotOverdueDays ?? d.verbalOrders.overdueDays)) errs['fax.ppotEscalateDays'] = 'Escalation must come at or after the PPOT follow-up.';
   const vo = d.verbalOrders;
   if (!isWholeNumberBetween(vo.overdueDays, 1, 365)) {
     errs['verbalOrders.overdueDays'] = 'Enter a whole number of days from 1 to 365.';
@@ -125,6 +127,7 @@ export default function AdminSettingsPage() {
   const { settings, ready, refresh } = useSettings();
 
   const [draft, setDraft] = useState<AppSettings>(settings);
+  const [ppotScheduleText, setPpotScheduleText] = useState((settings.fax.ppotFollowupDays ?? [settings.fax.ppotOverdueDays ?? 14]).join(', '));
   const [saving, setSaving] = useState(false);
   // Staff list for the corrections-reviewer picker (a dropdown, deliberately
   // NOT a raw uid input — a mistyped uid would silently break notifications).
@@ -191,7 +194,7 @@ export default function AdminSettingsPage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saveError, setSaveError] = useState<string | null>(null);
   useEffect(() => {
-    if (!dirty) setDraft(settings);
+    if (!dirty) { setDraft(settings); setPpotScheduleText((settings.fax.ppotFollowupDays ?? [settings.fax.ppotOverdueDays ?? 14]).join(', ')); }
   }, [settings, dirty]);
 
   if (authLoading) return null;
@@ -1146,16 +1149,23 @@ export default function AdminSettingsPage() {
               />
             </Field>
           </div>
-          <p style={sectionSubStyle}>PPOT follow-up: fax one automatic reminder after the first interval; notify staff to call the office after the second. These are calendar days from the original request. A successful manual follow-up replaces the automatic reminder. These settings are separate from Verbal Orders.</p>
-          {(['ppotOverdueDays', 'ppotEscalateDays'] as const).map((key) => (
-            <Field key={key} label={key === 'ppotOverdueDays' ? 'PPOT follow-up after (days)' : 'PPOT escalation after (days)'} id={settingsFieldId(`fax.${key}`)} error={fieldErrors[`fax.${key}`]}>
-              <input type="number" min={1} max={365} step={1} value={draft.fax[key] ?? draft.verbalOrders[key === 'ppotOverdueDays' ? 'overdueDays' : 'escalateDays']} style={inputStyle} onChange={(e) => {
-                clearFieldError(`fax.${key}`); setDirty(true);
-                setDraft((prev) => ({ ...prev, fax: { ...prev.fax, [key]: Number(e.target.value) } }));
-              }} />
-              <div style={{ display: 'flex', gap: 8, margin: '6px 0 12px' }}>{[3, 7, 10, 14, 30].map((days) => <button key={days} type="button" className={btn} onClick={() => { clearFieldError(`fax.${key}`); setDirty(true); setDraft((prev) => ({ ...prev, fax: { ...prev.fax, [key]: days } })); }}>{days === 7 ? '1 week' : `${days} days`}</button>)}</div>
-            </Field>
-          ))}
+          <p style={sectionSubStyle}>Automatic PPOT faxes go out on the selected calendar days after the original request, during weekday office hours. Signed or cancelled requests stop. Missed milestones produce only one catch-up fax. A manual follow-up covers milestones through that day; later reminders stay scheduled. Changes also apply to outstanding requests.</p>
+          <Field label="PPOT automatic follow-up days" id={settingsFieldId('fax.ppotFollowupDays')} error={fieldErrors['fax.ppotFollowupDays']}>
+            <input value={ppotScheduleText} placeholder="3, 7, 10" style={inputStyle} onChange={(e) => {
+              const text = e.target.value; setPpotScheduleText(text); clearFieldError('fax.ppotFollowupDays'); setDirty(true);
+              const days = text.trim() ? text.split(',').map((part) => part.trim() ? Number(part.trim()) : Number.NaN) : [];
+              setDraft((prev) => ({ ...prev, fax: { ...prev.fax, ppotFollowupDays: days } }));
+            }} />
+            <p style={sectionSubStyle}>Enter increasing days separated by commas, for example 3, 7, 10. Leave blank to disable automatic follow-up faxes. Manual sends and staff escalation remain available.</p>
+            <button type="button" className={btn} onClick={() => { setPpotScheduleText('3, 7, 10'); clearFieldError('fax.ppotFollowupDays'); setDirty(true); setDraft((prev) => ({ ...prev, fax: { ...prev.fax, ppotFollowupDays: [3, 7, 10] } })); }}>Use days 3, 7, 10</button>
+          </Field>
+          <Field label="PPOT staff escalation after (days)" id={settingsFieldId('fax.ppotEscalateDays')} error={fieldErrors['fax.ppotEscalateDays']}>
+            <input type="number" min={1} max={365} step={1} value={draft.fax.ppotEscalateDays ?? draft.verbalOrders.escalateDays} style={inputStyle} onChange={(e) => {
+              clearFieldError('fax.ppotEscalateDays'); setDirty(true);
+              setDraft((prev) => ({ ...prev, fax: { ...prev.fax, ppotEscalateDays: Number(e.target.value) } }));
+            }} />
+            <p style={sectionSubStyle}>Notify staff once to call the office. This does not stop later scheduled faxes.</p>
+          </Field>
           {faxOptions.length > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, opacity: draft.fax.enabled ? 1 : 0.6 }}>
               {faxOptions.map((o) => {
