@@ -52,7 +52,7 @@ function ymd(d: Date): string {
  *     rings everyone with Fax Center access (once per authorization period;
  *     checked hourly during weekday office hours).
  *  7. PPOT follow-up: a request still unsigned at the PPOT follow-up
- *     threshold is re-faxed once as a follow-up; at the escalation
+ *     milestones is re-faxed once per due milestone (missed milestones are combined); at the escalation
  *     threshold Fax Center users are rung to call the office. Same hourly,
  *     office-hours slot as step 6, so the re-fax lands while the office is
  *     open.

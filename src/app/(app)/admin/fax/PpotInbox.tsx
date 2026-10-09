@@ -197,7 +197,7 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
           </h2>
           <p style={noteStyle}>
             Requests sent and not yet answered. A request stays here until someone files the returned fax from Incoming Faxes
-            with File as Signed PPOT; nothing is filed automatically. Settings → Fax Center controls the automatic follow-up and escalation timing. You can also send a follow-up here. One follow-up attempt per day prevents duplicates; a successful manual follow-up replaces the automatic reminder.
+            with File as Signed PPOT; nothing is filed automatically. Settings → Fax Center controls the automatic follow-up and escalation timing. You can also send a follow-up here. One follow-up attempt per day prevents duplicates. A manual follow-up covers milestones through that day; later automatic reminders remain scheduled.
           </p>
           <div style={tableWrapStyle}>
             <table style={tableStyle}>
