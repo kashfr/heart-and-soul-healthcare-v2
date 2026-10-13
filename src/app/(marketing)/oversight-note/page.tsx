@@ -3,7 +3,9 @@
 /**
  * RN Oversight Visit Note — the in-app "one consistent oversight template"
  * from the QEPR 18119 exit report. A single scrolling form (an oversight
- * visit is visit-shaped, not shift-shaped: no vitals pages, no handoff).
+ * visit is visit-shaped, not shift-shaped: no handoff). Rev 3 (10/2026)
+ * added the shift note's vitals block, the same as the supervisory visit,
+ * and a location dropdown.
  *
  * Storage: same `progressNotes` collection as shift notes, discriminated by
  * noteType (see src/lib/oversightNote.ts for the key scheme and rules).
@@ -16,7 +18,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ViewAsWriteBlock } from '@/components/ImpersonationProvider';
 import { useForm } from 'react-hook-form';
-import { getPatients, type Patient } from '@/lib/patients';
+import { getPatients, getPatientClinical, type Patient } from '@/lib/patients';
+import { baselinesToNoteFields } from '@/lib/vitalsBaselines';
+import { isBpRoutinelyRequired } from '@/lib/vitalRanges';
 import { computeAgeString } from '@/lib/age';
 import { formatDateUS } from '@/lib/dateFormat';
 import {
@@ -36,7 +40,12 @@ import {
   OVERSIGHT_NOTE_TYPE,
   OVERSIGHT_APPT_ROWS,
   OVERSIGHT_RADIO_KEYS,
+  OVERSIGHT_FORM_REV,
+  OVERSIGHT_LOCATIONS,
+  OVERSIGHT_LOCATION_OTHER,
   getOversightIncomplete,
+  locationChoiceFor,
+  locationFromChoice,
 } from '@/lib/oversightNote';
 import { useAuth } from '@/components/AuthProvider';
 import { authedFetch } from '@/lib/authedFetch';
@@ -49,6 +58,8 @@ import DeselectableRadio, {
   setRadio,
   clearRadioStorage,
 } from '../progress-note/components/DeselectableRadio';
+import VitalSignsFields from '../progress-note/components/VitalSignsFields';
+import VitalsRecheckSection from '../progress-note/components/VitalsRecheckSection';
 import type { FormValues } from '../progress-note/types';
 import styles from '../progress-note/page.module.css';
 
@@ -145,11 +156,19 @@ const OVERSIGHT_FIELD_MESSAGES: Record<string, string> = {
   q6_dateofService: 'Enter the date of the visit.',
   ov_timeIn: 'Enter the time you arrived.',
   ov_timeOut: 'Enter the time you left.',
-  ov_location: 'Enter where the visit took place.',
+  ov_locationChoice: 'Choose where the visit took place.',
+  ov_locationOther: 'Describe where the visit took place.',
   ov_visitType: 'Choose the visit type.',
   q11_nurseName: 'Your staff profile has no display name. Ask the administrator to set it under Staff & Roles.',
   ov_generalCondition: 'Describe the general condition and any changes since the last visit.',
   ov_interactions: "Describe the conversations and the individual's responses during this visit.",
+  q16_temperature: 'Enter the temperature, or choose why vitals could not be obtained.',
+  q16_temperatureRoute: 'Choose how the temperature was taken.',
+  q17_bloodPressure: 'Enter both blood pressure numbers, or choose why it could not be obtained.',
+  q18_pulse: 'Enter the pulse, or choose why vitals could not be obtained.',
+  q19_respiration: 'Enter the respirations, or choose why vitals could not be obtained.',
+  q20_oxygenSaturation: 'Enter the O2 saturation, or choose why vitals could not be obtained.',
+  q21_oxygenSource: 'Choose the oxygen source for the recorded SpO2.',
   ov_hcpStatus: 'Choose whether the HCP is current or needs updates.',
   ov_hcpStaffTrained: 'Choose whether staff were trained on the HCP.',
   ov_ordersVerified: 'Choose whether every medication has a current physician order.',
@@ -184,7 +203,7 @@ function OversightNotePageInner() {
   if (!submissionIdRef.current && typeof crypto !== 'undefined') {
     submissionIdRef.current = crypto.randomUUID();
   }
-  const { register, watch, setValue, getValues } = useForm<FormValues>();
+  const { register, watch, setValue, getValues, trigger, formState: { errors: rhfErrors } } = useForm<FormValues>();
 
   const [patients, setPatients] = useState<Patient[]>([]);
   const [showAllClients, setShowAllClients] = useState(false);
@@ -241,6 +260,17 @@ function OversightNotePageInner() {
       setValue('q10_primaryDiagnosis', p?.diagnosis || '');
       setValue('q2_program', p?.program || '');
       setValue('q2_serviceLevel', p?.serviceLevel || '');
+      // Baseline snapshot (q16b_*): the client's own vitals ranges, if any,
+      // so the vitals here are judged the same way as on a shift note.
+      const applyBaselines = (fields: Record<string, string>) => {
+        for (const [k, v] of Object.entries(fields)) setValue(k, v);
+      };
+      applyBaselines(baselinesToNoteFields());
+      if (id) {
+        getPatientClinical(id)
+          .then((c) => applyBaselines(baselinesToNoteFields(c?.vitalsBaselines, c?.vitalsBaselinesNote)))
+          .catch(() => {});
+      }
     },
     [patients, setValue],
   );
@@ -259,6 +289,20 @@ function OversightNotePageInner() {
       }
       if (typeof flat.q61_signature === 'string' && flat.q61_signature) {
         setInitialSignature(flat.q61_signature);
+      }
+      // A note written before the location dropdown holds free text: pick
+      // the matching choice, or "Other" with the text kept.
+      if (!flat.ov_locationChoice && typeof flat.ov_location === 'string') {
+        const { choice, other } = locationChoiceFor(flat.ov_location);
+        setValue('ov_locationChoice', choice);
+        setValue('ov_locationOther', other);
+      }
+      // A stored "S/D" string without its two parts still fills both BP inputs.
+      const bp = typeof flat.q17_bloodPressure === 'string' ? flat.q17_bloodPressure : '';
+      if (bp && !flat.q17_systolic && !flat.q17_diastolic) {
+        const [sys, dia] = bp.split('/');
+        setValue('q17_systolic', (sys || '').trim());
+        setValue('q17_diastolic', (dia || '').trim());
       }
       clearRadioStorage();
       const radioSource =
@@ -570,7 +614,13 @@ function OversightNotePageInner() {
     }
 
     values.noteType = OVERSIGHT_NOTE_TYPE;
-    values.q1_formRev = '2';
+    // Rev 3 (10/2026): vitals + location dropdown. An amendment keeps the
+    // note's own revision, so a visit filed before vitals existed is never
+    // made to invent them.
+    values.q1_formRev = isEditMode && values.q1_formRev ? String(values.q1_formRev) : OVERSIGHT_FORM_REV;
+    // The printed location is the dropdown answer, or the typed place for "Other".
+    if (values.ov_locationChoice !== OVERSIGHT_LOCATION_OTHER) values.ov_locationOther = '';
+    values.ov_location = locationFromChoice(String(values.ov_locationChoice || ''), String(values.ov_locationOther || ''));
     // The signature is applied at the end of the visit; stamp the signed date
     // from the visit date so the signature block never renders "Date Signed: --".
     values.q62_shiftEndDate = String(values.q6_dateofService || '');
@@ -585,6 +635,15 @@ function OversightNotePageInner() {
       return;
     }
     setMissing([]);
+
+    // Typo guard on the vitals (the same bounds as the shift note).
+    const VITAL_INPUTS = ['q16_temperature', 'q17_systolic', 'q17_diastolic', 'q18_pulse', 'q19_respiration', 'q20_oxygenSaturation'] as const;
+    const vitalsOk = await trigger([...VITAL_INPUTS]);
+    if (!vitalsOk) {
+      const firstBad = VITAL_INPUTS.find((k) => rhfErrors[k]);
+      escortToField(firstBad === 'q17_systolic' || firstBad === 'q17_diastolic' ? 'q17_bloodPressure' : firstBad || 'q16_temperature');
+      return;
+    }
 
     // A 12h/24h time-picker slip is the usual cause of an out-before-in
     // window; oversight visits never span midnight, so hard-stop it.
@@ -715,7 +774,13 @@ function OversightNotePageInner() {
     }
   };
 
-  const fe = (k: string) => fieldErrors[k];
+  const fe = (k: string) => fieldErrors[k] || (rhfErrors[k]?.message ? String(rhfErrors[k]?.message) : undefined);
+  const bpRequired = isBpRoutinelyRequired(String(watch('q5_ageYears') || ''), String(watch('q4_dateofBirth') || ''));
+  // Vitals are required on rev 3 notes; an amendment of an older visit shows
+  // the block but does not demand readings that were never taken.
+  const storedRev = String(watch('q1_formRev') || '');
+  const vitalsRequired = !isEditMode || Number(storedRev || OVERSIGHT_FORM_REV) >= 3;
+  const locationChoice = String(watch('ov_locationChoice') || '');
   const hi = (k: string) => (fieldErrors[k] ? FIELD_ERROR_STYLE : undefined);
 
   if (rnGateBlocked) {
@@ -916,18 +981,36 @@ function OversightNotePageInner() {
 
             <div className={styles.row}>
               <div className={styles.f} style={{ flex: '1 1 55%' }}>
-                <label className={styles.label} htmlFor="ov_location">
+                <label className={styles.label} htmlFor="ov_locationChoice">
                   Location *
                 </label>
-                <input
-                  className={styles.input}
-                  id="ov_location"
-                  placeholder="e.g. individual's home"
-                  style={hi('ov_location')}
-                  aria-invalid={!!fe('ov_location')}
-                  {...register('ov_location')}
-                />
-                <FieldError message={fe('ov_location')} />
+                <select
+                  className={styles.select}
+                  id="ov_locationChoice"
+                  style={hi('ov_locationChoice')}
+                  aria-invalid={!!fe('ov_locationChoice')}
+                  {...register('ov_locationChoice')}
+                >
+                  <option value="">Select&hellip;</option>
+                  {OVERSIGHT_LOCATIONS.map((o) => (
+                    <option key={o} value={o}>{o}</option>
+                  ))}
+                </select>
+                <FieldError message={fe('ov_locationChoice')} />
+                {locationChoice === OVERSIGHT_LOCATION_OTHER && (
+                  <>
+                    <input
+                      className={styles.input}
+                      id="ov_locationOther"
+                      aria-label="Where the visit took place"
+                      placeholder="Where the visit took place"
+                      style={{ marginTop: 6, ...hi('ov_locationOther') }}
+                      aria-invalid={!!fe('ov_locationOther')}
+                      {...register('ov_locationOther')}
+                    />
+                    <FieldError message={fe('ov_locationOther')} />
+                  </>
+                )}
               </div>
               <div className={styles.f} style={{ flex: '1 1 40%' }}>
                 <label className={styles.label}>Visit type *</label>
@@ -971,6 +1054,24 @@ function OversightNotePageInner() {
               required
               rows={3}
             />
+            {/* Vital signs: the shift note's block, unchanged (the owner's rule:
+                every form captures vitals the same way). DBHDD 02-808 A.1.a.ii
+                requires a monthly face-to-face physical assessment with
+                objective data. */}
+            <VitalSignsFields
+              register={register}
+              watch={watch}
+              setValue={setValue}
+              ageStr={String(watch('q5_ageYears') || '')}
+              dob={String(watch('q4_dateofBirth') || '')}
+              required={vitalsRequired}
+              notObtainedReason
+              bpNotObtainedReason={bpRequired}
+              bpOptional={!bpRequired}
+              details
+              errorFor={fe}
+            />
+            <VitalsRecheckSection register={register} watch={watch} setValue={setValue} />
             <Area
               id="ov_interactions"
               error={fe('ov_interactions')}

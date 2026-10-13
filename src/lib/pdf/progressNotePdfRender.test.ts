@@ -97,4 +97,38 @@ describe('ProgressNotePDF inline amendments', () => {
     // Optional visual check: PDF_OUT=/path/to/file.pdf npx vitest run src/lib/pdf/progressNotePdfRender.test.ts
     if (process.env.PDF_OUT) writeFileSync(process.env.PDF_OUT, buf);
   }, 30000);
+
+  it('prints an RN oversight visit with its vitals and location (rev 3)', async () => {
+    const data: Record<string, string> = {
+      noteType: 'rn-oversight-visit',
+      q1_formRev: '3',
+      q3_clientName: 'ZZ Test Client',
+      q4_dateofBirth: '1985-06-07',
+      q5_ageYears: '41',
+      q6_dateofService: '2026-10-13',
+      q11_nurseName: 'Jane Doe',
+      q12_credential: 'RN',
+      ov_visitType: 'Routine oversight',
+      ov_timeIn: '17:04',
+      ov_timeOut: '18:04',
+      ov_locationChoice: "Client's Home",
+      ov_location: "Client's Home",
+      ov_generalCondition: 'At baseline.',
+      q16_temperature: '98.1',
+      q16_temperatureRoute: 'Oral',
+      q17_systolic: '114',
+      q17_diastolic: '82',
+      q17_bloodPressure: '114/82',
+      q18_pulse: '60',
+      q19_respiration: '16',
+      q20_oxygenSaturation: '98',
+      q21_oxygenSource: 'Room Air',
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const el = React.createElement(ProgressNotePDF as any, { data });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const buf = await renderToBuffer(el as any);
+    expect(buf.length).toBeGreaterThan(1000);
+    if (process.env.PDF_OUT_OVERSIGHT) writeFileSync(process.env.PDF_OUT_OVERSIGHT, buf);
+  }, 30000);
 });

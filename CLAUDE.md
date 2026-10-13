@@ -29,6 +29,8 @@ Read the matching note before changing one of these features.
   docs/features/communications-log.md
 - RN oversight hours (real visit times, billing capped at the monthly
   authorization, non-billable follow-up visits): docs/features/oversight-hours.md
+- RN oversight note vitals (rev 3) and the location dropdown:
+  docs/features/oversight-note.md
 - Sliding scale insulin and meal-anchored medication times (MAR orders,
   dose charting, printed MAR): docs/features/sliding-scale.md
 - Fax Center incoming faxes (portal line and added by hand), filing to a
