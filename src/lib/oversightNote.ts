@@ -70,6 +70,22 @@ export function locationFromChoice(choice: string, other: string): string {
   return choice === OVERSIGHT_LOCATION_OTHER ? (other || '').trim() : choice;
 }
 
+/**
+ * Orders and MAR answers (rev 3). A bare "No" could mean the RN skipped the
+ * review or that she reviewed and found problems, and a QEPR reviewer reads
+ * it the first way. Rev 3 splits it; either answer requires the medication
+ * notes. Notes filed before rev 3 keep their stored "No".
+ */
+export const MED_REVIEW_DISCREPANCIES = 'Reviewed, discrepancies found (list in notes)';
+export const MED_REVIEW_NOT_REVIEWED = 'Not reviewed (explain in notes)';
+export const MED_REVIEW_LEGACY_NO = 'No';
+export const ORDERS_VERIFIED_OPTIONS = ['Yes', MED_REVIEW_DISCREPANCIES, MED_REVIEW_NOT_REVIEWED, 'N/A (no medications)'];
+export const MAR_REVIEWED_OPTIONS = ['Yes', MED_REVIEW_DISCREPANCIES, MED_REVIEW_NOT_REVIEWED, 'N/A (no MAR)'];
+
+/** An orders or MAR answer that calls for an explanation in the medication notes. */
+export const medReviewNeedsNotes = (v: string | undefined): boolean =>
+  v === MED_REVIEW_DISCREPANCIES || v === MED_REVIEW_NOT_REVIEWED || v === MED_REVIEW_LEGACY_NO;
+
 interface OvRule {
   key: string;
   label: string;
@@ -139,6 +155,11 @@ const OVERSIGHT_RULES: OvRule[] = [
   { key: 'ov_ordersVerified', label: 'Physician orders verified for every medication' },
   { key: 'ov_marReviewed', label: 'MAR review' },
   { key: 'ov_equipOrders', label: 'Adaptive equipment orders review' },
+  {
+    key: 'ov_medsNotes',
+    label: 'Medication and order notes (what was found, or why the review was not done)',
+    applies: (d) => rev3(d) && (medReviewNeedsNotes(d.ov_ordersVerified) || medReviewNeedsNotes(d.ov_marReviewed)),
+  },
 
   // 4. Appointments & follow-up
   { key: 'ov_preventiveReviewed', label: 'Preventive care review' },

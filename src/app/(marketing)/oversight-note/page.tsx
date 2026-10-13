@@ -14,7 +14,7 @@
  * shift-note form.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ViewAsWriteBlock } from '@/components/ImpersonationProvider';
 import { useForm } from 'react-hook-form';
@@ -43,7 +43,11 @@ import {
   OVERSIGHT_FORM_REV,
   OVERSIGHT_LOCATIONS,
   OVERSIGHT_LOCATION_OTHER,
+  MAR_REVIEWED_OPTIONS,
+  MED_REVIEW_LEGACY_NO,
+  ORDERS_VERIFIED_OPTIONS,
   getOversightIncomplete,
+  medReviewNeedsNotes,
   locationChoiceFor,
   locationFromChoice,
 } from '@/lib/oversightNote';
@@ -57,6 +61,8 @@ import DeselectableRadio, {
   radioState,
   setRadio,
   clearRadioStorage,
+  radioSubscribe,
+  radioGetSnapshot,
 } from '../progress-note/components/DeselectableRadio';
 import VitalSignsFields from '../progress-note/components/VitalSignsFields';
 import VitalsRecheckSection from '../progress-note/components/VitalsRecheckSection';
@@ -173,6 +179,7 @@ const OVERSIGHT_FIELD_MESSAGES: Record<string, string> = {
   ov_hcpStaffTrained: 'Choose whether staff were trained on the HCP.',
   ov_ordersVerified: 'Choose whether every medication has a current physician order.',
   ov_marReviewed: 'Choose whether the MAR was reviewed.',
+  ov_medsNotes: 'Describe the discrepancies found, or why the review was not done.',
   ov_equipOrders: 'Choose whether adaptive equipment orders are current.',
   ov_preventiveReviewed: 'Choose whether preventive care was reviewed.',
   ov_aims: 'Choose the AIMS assessment status.',
@@ -215,6 +222,9 @@ function OversightNotePageInner() {
   const [initialSignature, setInitialSignature] = useState('');
   const editReasonRef = useRef('');
   const hydratedRef = useRef(false);
+  // Re-render on radio changes: the orders / MAR answers decide the options
+  // shown for a legacy "No".
+  useSyncExternalStore(radioSubscribe, radioGetSnapshot, radioGetSnapshot);
   const isNurse = role === 'nurse';
 
   // Fresh form: the radio store is a module-level singleton shared with the
@@ -776,11 +786,16 @@ function OversightNotePageInner() {
 
   const fe = (k: string) => fieldErrors[k] || (rhfErrors[k]?.message ? String(rhfErrors[k]?.message) : undefined);
   const bpRequired = isBpRoutinelyRequired(String(watch('q5_ageYears') || ''), String(watch('q4_dateofBirth') || ''));
-  // Vitals are required on rev 3 notes; an amendment of an older visit shows
-  // the block but does not demand readings that were never taken.
+  // Rev 3 rules (vitals, notes for a discrepancy answer) bind new notes; an
+  // amendment of an older visit shows the fields but does not demand them.
   const storedRev = String(watch('q1_formRev') || '');
-  const vitalsRequired = !isEditMode || Number(storedRev || OVERSIGHT_FORM_REV) >= 3;
+  const isRev3 = !isEditMode || Number(storedRev || OVERSIGHT_FORM_REV) >= 3;
+  const vitalsRequired = isRev3;
   const locationChoice = String(watch('ov_locationChoice') || '');
+  // A note filed before rev 3 may hold a bare "No"; keep it on screen when
+  // amending so the stored answer is visible and can be changed.
+  const withLegacyNo = (options: string[], key: string) =>
+    radioState[key] === MED_REVIEW_LEGACY_NO ? [options[0], MED_REVIEW_LEGACY_NO, ...options.slice(1)] : options;
   const hi = (k: string) => (fieldErrors[k] ? FIELD_ERROR_STYLE : undefined);
 
   if (rnGateBlocked) {
@@ -1134,7 +1149,7 @@ function OversightNotePageInner() {
                   Current physician order or prescription verified for EVERY medication (each dated
                   within the last 12 months) *
                 </label>
-                <RadioRow name="ov_ordersVerified" error={fe('ov_ordersVerified')} onPick={() => clearFieldError('ov_ordersVerified')} options={['Yes', 'No', 'N/A (no medications)']} />
+                <RadioRow name="ov_ordersVerified" error={fe('ov_ordersVerified')} onPick={() => clearFieldError('ov_ordersVerified')} options={withLegacyNo(ORDERS_VERIFIED_OPTIONS, 'ov_ordersVerified')} />
               </div>
             </div>
             <div className={styles.row}>
@@ -1153,7 +1168,7 @@ function OversightNotePageInner() {
                 <label className={styles.label}>
                   MAR reviewed for accuracy and completion against each physician order *
                 </label>
-                <RadioRow name="ov_marReviewed" error={fe('ov_marReviewed')} onPick={() => clearFieldError('ov_marReviewed')} options={['Yes', 'No', 'N/A (no MAR)']} />
+                <RadioRow name="ov_marReviewed" error={fe('ov_marReviewed')} onPick={() => clearFieldError('ov_marReviewed')} options={withLegacyNo(MAR_REVIEWED_OPTIONS, 'ov_marReviewed')} />
               </div>
             </div>
             <div className={styles.row}>
@@ -1185,8 +1200,9 @@ function OversightNotePageInner() {
             <Area
               id="ov_medsNotes"
               error={fe('ov_medsNotes')}
-              label="Medication and order notes (renewals requested, gaps found, physician contacts):"
+              label="Medication and order notes (renewals requested, discrepancies found and what was requested from whom, physician contacts):"
               register={register}
+              required={isRev3 && (medReviewNeedsNotes(radioState.ov_ordersVerified) || medReviewNeedsNotes(radioState.ov_marReviewed))}
             />
           </div>
 

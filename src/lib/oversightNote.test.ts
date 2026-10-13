@@ -4,6 +4,8 @@ import {
   isOversightNote,
   locationChoiceFor,
   locationFromChoice,
+  MED_REVIEW_DISCREPANCIES,
+  MED_REVIEW_NOT_REVIEWED,
   OVERSIGHT_NOTE_TYPE,
 } from './oversightNote';
 
@@ -141,6 +143,36 @@ describe('getOversightIncomplete: vitals (rev 3)', () => {
     d.q5_ageYears = '2';
     d.q4_dateofBirth = '';
     expect(getOversightIncomplete(d)).toEqual([]);
+  });
+});
+
+describe('orders and MAR answers (rev 3)', () => {
+  it('a discrepancy or not-reviewed answer requires the medication notes', () => {
+    for (const [key, value] of [
+      ['ov_ordersVerified', MED_REVIEW_DISCREPANCIES],
+      ['ov_ordersVerified', MED_REVIEW_NOT_REVIEWED],
+      ['ov_marReviewed', MED_REVIEW_DISCREPANCIES],
+      ['ov_marReviewed', MED_REVIEW_NOT_REVIEWED],
+    ]) {
+      const d = completeNote();
+      d[key] = value;
+      expect(getOversightIncomplete(d).map((i) => i.key)).toEqual(['ov_medsNotes']);
+      d.ov_medsNotes = 'Requested the hydroxyzine prescriber from the home manager on 10/08.';
+      expect(getOversightIncomplete(d)).toEqual([]);
+    }
+  });
+
+  it('a pre-rev-3 note with a bare "No" and no notes is not blocked on amend', () => {
+    const d = completeNote();
+    d.q1_formRev = '2';
+    d.ov_ordersVerified = 'No';
+    expect(getOversightIncomplete(d)).toEqual([]);
+  });
+
+  it('a "No" carried into a rev 3 note still requires the notes', () => {
+    const d = completeNote();
+    d.ov_marReviewed = 'No';
+    expect(getOversightIncomplete(d).map((i) => i.key)).toEqual(['ov_medsNotes']);
   });
 });
 

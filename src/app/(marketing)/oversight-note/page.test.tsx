@@ -102,6 +102,15 @@ describe('OversightNotePage', () => {
     }
   });
 
+  it('orders and MAR answers split "No" into discrepancies found and not reviewed', () => {
+    render(<OversightNotePage />);
+    expect(screen.getAllByLabelText('Reviewed, discrepancies found (list in notes)')).toHaveLength(2);
+    expect(screen.getAllByLabelText('Not reviewed (explain in notes)')).toHaveLength(2);
+    for (const name of ['ov_ordersVerified', 'ov_marReviewed']) {
+      expect(document.querySelector(`input[name="${name}"][value="No"]`)).toBeNull();
+    }
+  });
+
   it('location is a dropdown; "Other" asks where', () => {
     render(<OversightNotePage />);
     const loc = screen.getByLabelText(/^Location/);
@@ -178,6 +187,8 @@ describe('OversightNotePage — edit mode', () => {
       ov_location: "Individual's home",
       ov_generalCondition: 'Stable since last visit.',
       ov_visitType: 'Routine oversight',
+      q1_formRev: '2',
+      ov_ordersVerified: 'No',
     });
     mockSearchParams.set('edit', 'note-123');
     render(<OversightNotePage />);
@@ -186,6 +197,11 @@ describe('OversightNotePage — edit mode', () => {
     });
     // A free-text location from before the dropdown lands on its choice.
     expect(screen.getByLabelText(/^Location/)).toHaveValue("Client's Home");
+    // A stored bare "No" from before the split stays visible and selected.
+    await waitFor(() => {
+      expect(document.querySelector('input[name="ov_ordersVerified"][value="No"]')).toBeChecked();
+    });
+    expect(document.querySelector('input[name="ov_marReviewed"][value="No"]')).toBeNull();
     expect(screen.getByRole('button', { name: /Update Oversight Note/i })).toBeInTheDocument();
     // Amending must never autosave over the nurse's draft.
     expect(mockDrafts.saveOversightDraft).not.toHaveBeenCalled();

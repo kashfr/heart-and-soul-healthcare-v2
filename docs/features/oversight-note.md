@@ -36,3 +36,16 @@ The form is `/oversight-note` (amend: `?edit=<noteId>`), stored in
 - Older free-text notes map onto the dropdown when amended
   (`locationChoiceFor`: any "home" wording to Client's Home, "day program"
   to Day Program, anything else to Other with the text kept).
+
+## Orders and MAR answers (rev 3)
+
+- "Orders verified for every medication" and "MAR reviewed against each
+  order" no longer offer a bare "No". The choices are Yes, "Reviewed,
+  discrepancies found (list in notes)", "Not reviewed (explain in notes)",
+  and N/A. Either of the middle two makes the medication notes required.
+- Origin (10/13/2026): an RN's notes showed she did the reviews and found
+  real gaps, but answered "No", which reads as "did not review" to a QEPR
+  reviewer. Six of her seven October visits answered "No" on orders.
+- A stored "No" (pre-rev-3 note) still shows as a selected option when the
+  note is amended, and the notes requirement does not apply to rev 2. No
+  other code reads these values; the PDF and admin view print them as text.
