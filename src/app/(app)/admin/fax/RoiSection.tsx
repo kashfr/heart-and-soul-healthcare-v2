@@ -454,7 +454,7 @@ function PrepareModal({ clients, onClose, onCreated, referralId, subject }: { cl
                     {matches.map((c) => (
                       <button type="button" key={c.id} onClick={() => choose(c)} style={resultStyle}>
                         <span style={{ fontWeight: 600 }}>{c.name}</span>
-                        <span style={metaStyle}>{c.dob ? `DOB ${c.dob}` : ''}</span>
+                        <span style={metaStyle}>{c.dob ? `DOB ${formatDateUS(c.dob)}` : ''}</span>
                       </button>
                     ))}
                   </div>

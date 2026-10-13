@@ -9,7 +9,7 @@ import type { AuthedCaller } from './adminAuthGuard';
 import { getServerSettings } from './settingsServer';
 import { srfaxConfig, srfaxQueueFax } from './fax/srfax';
 import { SHARE_SITE_URL } from './shareLink';
-import { formatDateUSFile } from './dateFormat';
+import { formatDateUS, formatDateUSFile } from './dateFormat';
 import VerbalOrderPDF from './pdf/VerbalOrderPDF';
 import {
   normalizeUSFaxNumber,
@@ -413,7 +413,7 @@ export async function recordVerbalOrderSigned(p: RecordSignedParams): Promise<{ 
     await docRef.set({
       patientId: order.patientId,
       category: 'Physician Orders',
-      title: `Signed verbal order: ${order.orderType === 'medication' && order.marMedName ? order.marMedName : order.physicianName} (${p.signedDate})`,
+      title: `Signed verbal order: ${order.orderType === 'medication' && order.marMedName ? order.marMedName : order.physicianName} (${formatDateUS(p.signedDate)})`,
       fileName,
       storagePath,
       contentType: 'application/pdf',

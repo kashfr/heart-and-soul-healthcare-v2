@@ -1,5 +1,7 @@
 'use client';
 
+import MonthPicker from '@/components/MonthPicker';
+
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { btn, btnDanger, btnIcon, btnPrimary, btnSm } from '@/components/buttons';
 import Link from 'next/link';
@@ -335,7 +337,7 @@ export default function HoursSection({ patientId, patientName, program, notes, u
           <div style={title}><Clock size={16} /> Hours for {monthLabel(month)}</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <button type="button" onClick={() => shiftMonth(-1)} className={`${btn} ${btnIcon} ${btnSm}`} aria-label="Previous month" title="Previous month"><ChevronLeft size={15} /></button>
-            <input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} style={input} aria-label="Month" />
+            <MonthPicker value={month} onChange={setMonth} style={input} />
             <button type="button" onClick={() => shiftMonth(1)} className={`${btn} ${btnIcon} ${btnSm}`} aria-label="Next month" title="Next month"><ChevronRight size={15} /></button>
             {!isCurrent && (
               <button type="button" onClick={() => setMonth(todayISO.slice(0, 7))} className={`${btn} ${btnSm}`}>This Month</button>

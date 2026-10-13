@@ -7,7 +7,7 @@ import UploadFaxModal from './UploadFaxModal';
 import { withSelectChevron } from '@/lib/selectChevron';
 import { authedFetch } from '@/lib/authedFetch';
 import PdfPreviewModal from '@/components/PdfPreviewModal';
-import { formatDateUS } from '@/lib/dateFormat';
+import { formatDateUS, formatDateTimeUS } from '@/lib/dateFormat';
 import { formatUSFaxNumber, inboundFaxSender } from '@/lib/verbalOrderShared';
 import { daysBetween, PPOT_REQUEST_LABEL, shouldAdvanceOrderDate, validatePpotFiling, type PpotOpenRequest, type PpotOrderLine, type PpotRequestType } from '@/lib/ppotShared';
 import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
@@ -145,7 +145,7 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
                             Dialed from {sender.line}
                           </div>
                         )}
-                        <div style={metaStyle}>{f.receivedAt} · {f.pages} page{f.pages === 1 ? '' : 's'}{f.source === 'upload' ? ' · added by hand' : ''}</div>
+                        <div style={metaStyle}>{formatDateTimeUS(f.receivedAt)} · {f.pages} page{f.pages === 1 ? '' : 's'}{f.source === 'upload' ? ' · added by hand' : ''}</div>
                         {f.note && <div style={metaStyle}>{f.note}</div>}
                       </td>
                       <td style={tdStyle}>
@@ -160,7 +160,7 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
                         )}
                       </td>
                       <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        <button onClick={() => view(`Fax from ${sender.from || 'unknown sender'}, ${f.receivedAt}`, `/api/fax/inbound/${f.id}/pdf`)} className={`${btn} ${btnSm}`}>
+                        <button onClick={() => view(`Fax from ${sender.from || 'unknown sender'}, ${formatDateTimeUS(f.receivedAt)}`, `/api/fax/inbound/${f.id}/pdf`)} className={`${btn} ${btnSm}`}>
                           <Eye size={14} /> View
                         </button>
                         <button onClick={() => setFilingToClient(f)} className={`${btn} ${btnSm}`} style={{ marginLeft: 6 }}>
@@ -293,7 +293,7 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
           fax={filing}
           openRequests={openRequests}
           today={today}
-          onView={() => view(`Fax from ${inboundFaxSender(filing.callerId, filing.remoteId).from || 'unknown sender'}, ${filing.receivedAt}`, `/api/fax/inbound/${filing.id}/pdf`)}
+          onView={() => view(`Fax from ${inboundFaxSender(filing.callerId, filing.remoteId).from || 'unknown sender'}, ${formatDateTimeUS(filing.receivedAt)}`, `/api/fax/inbound/${filing.id}/pdf`)}
           onClose={() => setFiling(null)}
           onFiled={(msg) => {
             setFiling(null);

@@ -1,5 +1,7 @@
 'use client';
 
+import { formatDateUS } from '@/lib/dateFormat';
+
 import { Suspense, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { AlertCircle, CheckCircle, FileSignature, ShieldCheck } from 'lucide-react';
@@ -124,7 +126,7 @@ function Inner() {
         )}
         {(state === 'used' || state === 'done') && order && (
           <div style={{ ...noticeStyle, background: '#e6f6ec', color: '#1e7a44', borderColor: '#bfe3cc' }}>
-            <CheckCircle size={18} /> {state === 'done' ? 'Thank you. Your signature has been recorded and the order is on file. Nothing needs to be faxed back.' : `This order was already signed${order.signedDate ? ` on ${order.signedDate}` : ''}. Nothing further is needed.`}
+            <CheckCircle size={18} /> {state === 'done' ? 'Thank you. Your signature has been recorded and the order is on file. Nothing needs to be faxed back.' : `This order was already signed${order.signedDate ? ` on ${formatDateUS(order.signedDate)}` : ''}. Nothing further is needed.`}
           </div>
         )}
 
@@ -133,7 +135,7 @@ function Inner() {
             <div style={gridStyle}>
               <Cell label="Client" value={order.patientName} />
               <Cell label="Date of birth" value={order.patientDob} />
-              <Cell label="Order taken" value={order.takenDate} />
+              <Cell label="Order taken" value={formatDateUS(order.takenDate)} />
               <Cell label="Taken by" value={`${order.nurseName}${order.nurseCredential ? `, ${order.nurseCredential}` : ''}`} />
               <Cell label="Physician" value={order.physicianName} />
               <Cell label="Type" value={order.orderType === 'medication' ? 'Medication order' : 'Treatment or care order'} />

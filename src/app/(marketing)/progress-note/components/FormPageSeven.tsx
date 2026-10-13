@@ -1,5 +1,7 @@
 'use client';
 
+import { formatDateUS } from '@/lib/dateFormat';
+
 import { useRef, useEffect, useState } from 'react';
 import type { FormPageProps } from '../types';
 import styles from '../page.module.css';
@@ -290,7 +292,7 @@ export default function FormPageSeven({ formRef, register, watch, setValue, cont
         </div>
         {timeWarning === 'invalid' && (
           <div style={{ background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '10px 12px', fontSize: 13.5, lineHeight: 1.5, marginTop: 8, fontWeight: 600 }}>
-            The shift end ({shiftEndDate} {shiftEndTime}) is not after the shift start ({dateOfService} {shiftStartTime}),
+            The shift end ({formatDateUS(shiftEndDate || '')} {shiftEndTime}) is not after the shift start ({formatDateUS(dateOfService || '')} {shiftStartTime}),
             so total hours cannot be calculated. If this was an overnight shift, set the Shift End Date to the
             next day. Otherwise, correct the Shift Start Time (Page 1) or the end time above. The note cannot be
             submitted until this is fixed.
@@ -298,7 +300,7 @@ export default function FormPageSeven({ formRef, register, watch, setValue, cont
         )}
         {timeWarning === 'long' && (
           <div style={{ background: '#fff3e0', color: '#b45309', borderRadius: 6, padding: '10px 12px', fontSize: 13.5, lineHeight: 1.5, marginTop: 8, fontWeight: 600 }}>
-            This shift totals {totalHours} hours ({dateOfService} {shiftStartTime} to {shiftEndDate} {shiftEndTime}).
+            This shift totals {totalHours} hours ({formatDateUS(dateOfService || '')} {shiftStartTime} to {formatDateUS(shiftEndDate || '')} {shiftEndTime}).
             That may be correct for an extended stay, but a wrong AM/PM on the start time looks exactly like
             this — please double-check before submitting.
           </div>

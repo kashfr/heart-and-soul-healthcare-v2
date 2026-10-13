@@ -1437,7 +1437,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
                   <FieldRow>
                     <Field label="Printed Name" value={data.cosignedByName || ''} />
                     <Field label="Credential" value={data.cosignedCredential || 'RN'} />
-                    <Field label="Date Signed" value={cosignedAt.toDate().toLocaleString()} />
+                    <Field label="Date Signed" value={cosignedAt.toDate().toLocaleString('en-US')} />
                   </FieldRow>
                   {hasValue(data.cosignedSignature) && (
                     <div style={{ marginTop: '12px' }}>

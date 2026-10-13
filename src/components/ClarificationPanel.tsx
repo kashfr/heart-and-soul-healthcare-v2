@@ -13,7 +13,7 @@ type TS = { toDate?: () => Date } | Date | null | undefined;
 function fmt(ts: TS): string {
   if (!ts) return '';
   const d = ts instanceof Date ? ts : ts.toDate?.();
-  return d ? d.toLocaleString() : '';
+  return d ? d.toLocaleString('en-US') : '';
 }
 
 interface Props {

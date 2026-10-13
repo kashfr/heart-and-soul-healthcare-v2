@@ -209,8 +209,8 @@ export function stageFromStatus(status: string | undefined): ReferralStage {
 
 export function formatDate(iso: string | null): string {
   if (!iso) return '—';
-  const d = new Date(iso);
-  return d.toLocaleDateString(undefined, {
+  const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T12:00:00` : iso);
+  return d.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -219,7 +219,7 @@ export function formatDate(iso: string | null): string {
 
 export function formatDateTime(iso: string | null): string {
   if (!iso) return '';
-  return new Date(iso).toLocaleString(undefined, {
+  return new Date(iso).toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -302,7 +302,7 @@ export function downloadCsv(list: Referral[], context: CsvMatchContext) {
       SOURCE_LABEL[r.source] ?? r.source,
       STAGE_LABEL[r.stage],
       r.assigneeName ?? '',
-      r.submittedAt ? new Date(r.submittedAt).toLocaleString() : '',
+      r.submittedAt ? new Date(r.submittedAt).toLocaleString('en-US') : '',
       r.referrerName ?? '',
       r.details.map((d) => `${d.label}: ${formatDateUS(d.value)}`).join(' | '),
       fit?.label ?? '',

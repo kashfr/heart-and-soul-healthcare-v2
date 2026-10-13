@@ -1,3 +1,4 @@
+import { formatDateUS } from '../dateFormat';
 /**
  * Alerts the RN supervisor (and anyone else picked under Settings → Shift-change
  * alerts) when a nurse answers Yes to a "since your last shift" question:
@@ -82,7 +83,7 @@ export async function sendShiftChangeAlert(params: ShiftChangeAlertParams): Prom
             <p style="margin:0 0 12px;">Hi ${escapeHtml(firstName)},</p>
             <p style="margin:0 0 12px;">${escapeHtml(copy.intro)}</p>
             <p style="margin:0 0 12px;background:#fff7ed;border:1px solid #f59e0b;padding:10px 12px;border-radius:6px;">
-              <strong>${escapeHtml(params.clientName)}</strong> &middot; ${escapeHtml(params.dateOfService)}
+              <strong>${escapeHtml(params.clientName)}</strong> &middot; ${escapeHtml(formatDateUS(params.dateOfService))}
             </p>
             <ul style="margin:0 0 16px;padding-left:20px;">${answersHtml}</ul>
             ${detailsHtml}
@@ -104,7 +105,7 @@ export async function sendShiftChangeAlert(params: ShiftChangeAlertParams): Prom
 
 ${copy.intro}
 
-${params.clientName} · ${params.dateOfService}
+${params.clientName} · ${formatDateUS(params.dateOfService)}
 
 ${copy.answers.map((a) => `- ${a}`).join('\n')}
 ${details ? `\nDetails from the nurse:\n"${details}"\n` : ''}

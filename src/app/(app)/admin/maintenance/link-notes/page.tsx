@@ -470,7 +470,7 @@ export default function LinkNotesPage() {
                       Open Note ↗
                     </a>
                     <span style={{ color: '#5c6b7a' }}>
-                      {n.submittedAt ? `Submitted ${new Date(n.submittedAt).toLocaleString()}` : 'Submit time unknown'}
+                      {n.submittedAt ? `Submitted ${new Date(n.submittedAt).toLocaleString('en-US')}` : 'Submit time unknown'}
                     </span>
                     {ni === 0 && <span style={{ marginLeft: 'auto', ...reasonChipStyle, background: '#e8f4e8', color: '#166534' }}>Most Recent</span>}
                   </div>

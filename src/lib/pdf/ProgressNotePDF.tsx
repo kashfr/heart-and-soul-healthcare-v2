@@ -1744,7 +1744,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
                   <View style={{ flex: 1 }}>
                     <Field label="Printed Name" value={data.cosignedByName || ''} />
                     <Field label="Credential" value={data.cosignedCredential || 'RN'} />
-                    <Field label="Date Signed" value={cosignedDate.toLocaleDateString()} />
+                    <Field label="Date Signed" value={cosignedDate.toLocaleDateString('en-US')} />
                   </View>
                   <View style={{ flex: 1 }}>
                     {hasValue(data.cosignedSignature) ? (
