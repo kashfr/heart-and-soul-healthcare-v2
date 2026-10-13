@@ -94,3 +94,11 @@ describe('shift-change alert copy', () => {
     expect(long.endsWith('…')).toBe(true);
   });
 });
+
+describe('US dates in shift-change notifications', () => {
+  it('formats ISO service dates in bell text and email subjects', () => {
+    const input = ctx({ dateOfService: '2026-10-13' });
+    expect(shiftChangeBellText(input)).toContain('10/13/2026');
+    expect(shiftChangeEmailCopy(input).subject).toContain('10/13/2026');
+  });
+});

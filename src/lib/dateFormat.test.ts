@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDateUS, formatDateUSFile, formatMonthUSFile } from './dateFormat';
+import { formatDateUS, formatDateTimeUS, formatDateUSFile, formatMonthUSFile } from './dateFormat';
 
 describe('formatDateUS', () => {
   it('converts ISO date-only strings to MM/DD/YYYY', () => {
@@ -41,5 +41,19 @@ describe('formatMonthUSFile', () => {
     expect(formatMonthUSFile('')).toBe('');
     expect(formatMonthUSFile('2026-08-15')).toBe('2026-08-15');
     expect(formatMonthUSFile('August 2026')).toBe('August 2026');
+  });
+});
+
+describe('formatDateTimeUS', () => {
+  it('formats fax dates without shifting unzoned values', () => {
+    expect(formatDateTimeUS('2026-10-13 14:45:50')).toBe('10/13/2026 14:45:50');
+    expect(formatDateTimeUS('2026-10-13T14:45')).toBe('10/13/2026 14:45');
+    expect(formatDateTimeUS('2026-10-13')).toBe('10/13/2026');
+  });
+  it('uses US agency time for zoned instants, including the previous day', () => {
+    expect(formatDateTimeUS('2026-10-13T01:00:00Z')).toBe('10/12/2026, 9:00 PM');
+  });
+  it('preserves empty, legacy US, and unknown vendor labels', () => {
+    for (const value of ['', '10/13/2026 14:45', 'Unknown']) expect(formatDateTimeUS(value)).toBe(value);
   });
 });

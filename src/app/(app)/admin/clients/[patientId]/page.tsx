@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { btn, btnPrimary } from '@/components/buttons';
+import { btn, btnPrimary, btnSm } from '@/components/buttons';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -12,6 +12,7 @@ import {
   Pill,
   FileText,
   ClipboardList,
+  Copy,
   Activity,
   AlertTriangle,
   CalendarClock,
@@ -47,6 +48,7 @@ import SupportCoordinatorSection from './SupportCoordinatorSection';
 import ServicePlanSection from './ServicePlanSection';
 import CommunicationsLog from '@/components/CommunicationsLog';
 import { SERVICE_PLAN_DOC_CATEGORY, SERVICE_PLAN_MAX_DAYS } from '@/lib/servicePlanShared';
+import { monthLabel } from '@/lib/shiftHours';
 import { physicianAttributionPending, physicianOrderStale } from '@/lib/marShared';
 import {
   adverseEvents,
@@ -546,6 +548,34 @@ function ClientDashboardInner() {
                   {patient.mrn ? ` · Record #${patient.mrn}` : ''}
                   {clinical?.sex ? ` · ${clinical.sex}` : ''}
                 </div>
+                {/* Read from the existing protected clinical profile, never the
+                    broadly readable client directory. Hide in VA previews too. */}
+                {clinical && role !== 'va' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 8, fontSize: 14 }}>
+                    <span style={{ color: '#64748b' }}>Medicaid ID:</span>
+                    <strong style={{ color: NAVY, fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere' }}>
+                      {clinical.medicaidId?.trim() || 'Not on file'}
+                    </strong>
+                    {clinical.medicaidId?.trim() && (
+                      <button
+                        type="button"
+                        aria-label="Copy Medicaid ID"
+                        title="Copy Medicaid ID"
+                        className={`${btn} ${btnSm}`}
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(clinical.medicaidId!.trim());
+                            showToast('Medicaid ID copied');
+                          } catch {
+                            showToast('Could not copy. Select the Medicaid ID and copy it manually.');
+                          }
+                        }}
+                      >
+                        <Copy size={13} aria-hidden="true" /> Copy
+                      </button>
+                    )}
+                  </div>
+                )}
                 {address && (
                   <div style={addressLineStyle}>
                     <MapPin size={13} style={{ flexShrink: 0, marginTop: 2 }} /> {address}
@@ -641,7 +671,7 @@ function ClientDashboardInner() {
               value={lastVisit ? (daysSinceVisit === 0 ? 'Today' : `${daysSinceVisit}d ago`) : 'None yet'}
               sub={lastVisit ? fmtDate(lastVisit) : 'No notes documented'}
             />
-            <StatTile label="Visits This Month" value={String(visitsThisMonth)} sub={today.slice(0, 7)} />
+            <StatTile label="Visits This Month" value={String(visitsThisMonth)} sub={monthLabel(today.slice(0, 7))} />
             <StatTile
               label="Active Medications"
               value={String(activeOrders.length)}

@@ -158,3 +158,11 @@ describe('clarificationAwaitsReviewer', () => {
     expect(clarificationAwaitsReviewer(undefined, 'nurse-1')).toBe(false);
   });
 });
+
+describe('US dates in flag activity notifications', () => {
+  it('formats ISO service dates in bell text and email subjects', () => {
+    const input = ctx({ dateOfService: '2026-10-13' });
+    expect(flagActivityBellText(input)).toContain('10/13/2026');
+    expect(flagActivityEmailCopy(input).subject).toContain('10/13/2026');
+  });
+});

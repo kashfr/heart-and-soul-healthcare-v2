@@ -1,3 +1,4 @@
+import { formatDateUS } from '../dateFormat';
 /**
  * Notifies reviewers when the AUTHOR of a flagged progress note acts on it:
  * amends the note, or replies in the flag's thread. Recipients are whoever
@@ -71,7 +72,7 @@ export async function sendFlagActivityNotice(params: FlagActivityNoticeParams): 
             <p style="margin:0 0 12px;">Hi ${escapeHtml(firstName)},</p>
             <p style="margin:0 0 12px;">${escapeHtml(copy.intro)}</p>
             <p style="margin:0 0 16px;background:#ecfdf5;border:1px solid #a7f3d0;padding:10px 12px;border-radius:6px;">
-              <strong>${escapeHtml(params.clientName)}</strong> &middot; ${escapeHtml(params.dateOfService)}
+              <strong>${escapeHtml(params.clientName)}</strong> &middot; ${escapeHtml(formatDateUS(params.dateOfService))}
             </p>
             ${replyHtml}
             <p style="margin:0 0 12px;">${escapeHtml(copy.body)}</p>
@@ -92,7 +93,7 @@ export async function sendFlagActivityNotice(params: FlagActivityNoticeParams): 
 
 ${copy.intro}
 
-${params.clientName} · ${params.dateOfService}
+${params.clientName} · ${formatDateUS(params.dateOfService)}
 ${reply ? `\n"${reply}"\n` : ''}
 ${copy.body}
 

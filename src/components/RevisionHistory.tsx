@@ -56,7 +56,7 @@ export default function RevisionHistory({ entries }: { entries: EditHistoryEntry
                           <span style={roleBadgeStyle(e.editedByRole as Role)}>{e.editedByRole}</span>
                         )}
                         <span style={{ color: '#7f8c8d', fontSize: 12 }}>
-                          · {e.editedAt ? e.editedAt.toLocaleString() : '—'}
+                          · {e.editedAt ? e.editedAt.toLocaleString('en-US') : '—'}
                         </span>
                       </div>
                       <div style={reasonStyle}>{e.reason}</div>

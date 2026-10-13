@@ -867,7 +867,7 @@ function OversightNotePageInner() {
           <span style={{ fontSize: 14, color: '#7c3a00', flex: '1 1 260px' }}>
             You have an unfinished oversight note
             {pendingDraft.clientName ? ` for ${pendingDraft.clientName}` : ''}
-            {pendingDraft.updatedAt ? `, last saved ${pendingDraft.updatedAt.toLocaleString()}` : ''}.
+            {pendingDraft.updatedAt ? `, last saved ${pendingDraft.updatedAt.toLocaleString('en-US')}` : ''}.
           </span>
           <button type="button" className={styles.navBtn} onClick={resumeDraft}>
             Resume Draft
@@ -880,7 +880,7 @@ function OversightNotePageInner() {
 
       {!isEditMode && draftSavedAt && !pendingDraft && (
         <p style={{ textAlign: 'center', color: '#7f8c8d', fontSize: 12, marginTop: 0 }}>
-          Draft saved {draftSavedAt.toLocaleTimeString()}
+          Draft saved {draftSavedAt.toLocaleTimeString('en-US')}
         </p>
       )}
 

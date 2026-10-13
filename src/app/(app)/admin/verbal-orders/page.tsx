@@ -22,7 +22,7 @@ import {
 } from '@/lib/verbalOrders';
 import { formatUSFaxNumber, inboundFaxSender, isVerbalOrderOpen, VERBAL_ORDER_CANCEL_REASON_MAX, verbalOrderAgeDays, verbalOrderStatusLabel, verbalOrderUrgency, type VerbalOrderUrgency } from '@/lib/verbalOrderShared';
 import { canUseFax } from '@/lib/faxShared';
-import { formatDateUS } from '@/lib/dateFormat';
+import { formatDateUS, formatDateTimeUS } from '@/lib/dateFormat';
 import { escortToField, FieldError, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
 
 /**
@@ -196,7 +196,7 @@ function VerbalOrdersInner() {
                 <li key={f.id} style={rowStyle}>
                   <div style={rowHeadStyle}>
                     <span style={{ fontWeight: 700, color: '#2c3e50' }}>From {inboundFaxSender(f.callerId, f.remoteId).from || 'unknown sender'}</span>
-                    <span style={metaStyle}>{f.receivedAt} · {f.pages} page{f.pages === 1 ? '' : 's'}{f.candidateOrderIds.length ? ' · sender matches an open order' : ''}</span>
+                    <span style={metaStyle}>{formatDateTimeUS(f.receivedAt)} · {f.pages} page{f.pages === 1 ? '' : 's'}{f.candidateOrderIds.length ? ' · sender matches an open order' : ''}</span>
                     <span style={{ display: 'inline-flex', gap: 6, marginLeft: 'auto', flexWrap: 'wrap' }}>
                       <button type="button" className={`${btn} ${btnSm}`} onClick={() => void previewFax(f)}><Eye size={13} /> Preview</button>
                       <button type="button" className={`${btnPrimary} ${btnSm}`} onClick={() => setMatchFax(f)}><FileSignature size={13} /> Match to an Order</button>
@@ -549,7 +549,7 @@ function MatchFaxModal({ fax, openOrders, onClose, onPick, onPreview }: { fax: U
         ) : (
         <>
         <div style={{ ...sheetHintStyle, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <span>From {inboundFaxSender(fax.callerId, fax.remoteId).from || 'unknown'} · {fax.receivedAt} · {fax.pages} page{fax.pages === 1 ? '' : 's'}</span>
+          <span>From {inboundFaxSender(fax.callerId, fax.remoteId).from || 'unknown'} · {formatDateTimeUS(fax.receivedAt)} · {fax.pages} page{fax.pages === 1 ? '' : 's'}</span>
           <button type="button" className={`${btn} ${btnSm}`} onClick={onPreview}><Eye size={13} /> Preview the Fax</button>
         </div>
         <div style={{ ...mutedStyle, marginBottom: 10 }}>Open the preview and check the client name and order on the page before choosing.</div>

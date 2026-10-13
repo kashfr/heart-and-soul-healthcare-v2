@@ -1,5 +1,7 @@
 'use client';
 
+import MonthPicker from '@/components/MonthPicker';
+
 import { useCallback, useMemo, useState, useEffect } from 'react';
 import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
 import Link from 'next/link';
@@ -899,7 +901,7 @@ export default function SubmissionsPage() {
         h == null || !rn ? '' : fmtH(h),
         h == null ? '' : fmtUnits(rowUnits(s)),
         (() => { const d = rowDollars(s); return d == null ? '' : d.toFixed(2); })(),
-        s.submittedAt ? s.submittedAt.toLocaleString() : '',
+        s.submittedAt ? s.submittedAt.toLocaleString('en-US') : '',
         s.id,
       ].map(csvCell).join(','));
     }
@@ -1412,12 +1414,10 @@ export default function SubmissionsPage() {
             ))}
           </select>
           {rangePreset === 'm' && (
-            <input
-              type="month"
+            <MonthPicker
               value={monthParam}
-              onChange={(e) => updateParams({ m: e.target.value || null, p: null })}
+              onChange={(month) => updateParams({ m: month || null, p: null })}
               style={dateInputStyle}
-              aria-label="Month"
             />
           )}
           {rangePreset === 'c' && (
@@ -2002,8 +2002,8 @@ export default function SubmissionsPage() {
                       </td>
                       <td style={tdStyle} className={styles.cSubmitted}>
                         {myDraft.updatedAt ? (
-                          <span title={myDraft.updatedAt.toLocaleString()}>
-                            Saved {myDraft.updatedAt.toLocaleString([], {
+                          <span title={myDraft.updatedAt.toLocaleString('en-US')}>
+                            Saved {myDraft.updatedAt.toLocaleString('en-US', {
                               month: 'short', day: 'numeric',
                               hour: 'numeric', minute: '2-digit',
                             })}
@@ -2234,7 +2234,7 @@ export default function SubmissionsPage() {
                           </div>
                         </td>
                         <td style={tdStyle} className={styles.cSubmitted}>
-                          {s.submittedAt ? s.submittedAt.toLocaleString() : '--'}
+                          {s.submittedAt ? s.submittedAt.toLocaleString('en-US') : '--'}
                         </td>
                         {/* Actions cell stops click-propagation so the buttons
                             don't also trigger the row's open-note navigation.

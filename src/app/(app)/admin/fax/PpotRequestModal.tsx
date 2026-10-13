@@ -148,7 +148,7 @@ export default function PpotRequestModal({
                     <div style={{ fontWeight: 700 }}>{subject.name}</div>
                     <div style={metaStyle}>
                       {subjectLabel(subject)}
-                      {subject.dob ? ` · DOB ${subject.dob}` : ''}
+                      {subject.dob ? ` · DOB ${formatDateUS(subject.dob)}` : ''}
                       {subject.medicaidId ? ` · Medicaid ${subject.medicaidId}` : ' · no Medicaid ID on file'}
                     </div>
                   </div>
@@ -168,7 +168,7 @@ export default function PpotRequestModal({
                         <button type="button" key={`${s.kind}:${s.id}`} onClick={() => choose(s)} style={resultStyle}>
                           <span style={{ fontWeight: 600 }}>{s.name}</span>
                           <span style={metaStyle}>
-                            {subjectLabel(s)}{s.dob ? ` · DOB ${s.dob}` : ''}{s.medicaidId ? ` · Medicaid ${s.medicaidId}` : ''}
+                            {subjectLabel(s)}{s.dob ? ` · DOB ${formatDateUS(s.dob)}` : ''}{s.medicaidId ? ` · Medicaid ${s.medicaidId}` : ''}
                           </span>
                         </button>
                       ))}

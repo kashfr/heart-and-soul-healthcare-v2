@@ -1,3 +1,4 @@
+import { formatDateUS } from './dateFormat';
 /**
  * Pure helpers for "the author did something on a flagged note" notifications:
  * who to tell, and what each channel says. No Firebase and no Resend, so the
@@ -93,7 +94,7 @@ export function flagActivityThreadLine(event: FlagActivityEvent, blocking: boole
  */
 export function flagActivityBellText(ctx: FlagActivityContext): string {
   const who = ctx.nurseName || 'A nurse';
-  const note = `${ctx.clientName}'s note (${ctx.dateOfService})`;
+  const note = `${ctx.clientName}'s note (${formatDateUS(ctx.dateOfService)})`;
   if (ctx.event === 'replied') {
     const q = excerpt(ctx.replyText, BELL_EXCERPT_MAX);
     return `${who} replied to the ${ctx.kind} on ${note}${q ? `: "${q}"` : '.'}`;
@@ -139,7 +140,7 @@ export interface FlagActivityEmailCopy {
  */
 export function flagActivityEmailCopy(ctx: FlagActivityContext): FlagActivityEmailCopy {
   const who = ctx.nurseName || 'A nurse';
-  const where = `${ctx.clientName} (${ctx.dateOfService})`;
+  const where = `${ctx.clientName} (${formatDateUS(ctx.dateOfService)})`;
   if (ctx.event === 'replied') {
     return {
       subject: `Reply on a Flagged Note: ${where}`,

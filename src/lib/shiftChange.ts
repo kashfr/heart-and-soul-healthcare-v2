@@ -1,3 +1,4 @@
+import { formatDateUS } from './dateFormat';
 /**
  * "Since your last shift" screening on the shift progress note (Page 2, every
  * program and credential, form revision 3+): three required Yes/No questions —
@@ -97,7 +98,7 @@ export function excerptDetails(details: string, max = DETAILS_EXCERPT_MAX): stri
 export function shiftChangeBellText(ctx: ShiftChangeAlertContext): string {
   const who = ctx.nurseName ? `${ctx.nurseName}${ctx.credential ? ` (${ctx.credential})` : ''}` : 'A nurse';
   const items = shiftChangeLabels(ctx.report).join(' · ');
-  return `${who} reports since the last shift for ${ctx.clientName} (${ctx.dateOfService}): ${items}.${ctx.report.medChange ? ' Verify the MAR.' : ''}`;
+  return `${who} reports since the last shift for ${ctx.clientName} (${formatDateUS(ctx.dateOfService)}): ${items}.${ctx.report.medChange ? ' Verify the MAR.' : ''}`;
 }
 
 /**
@@ -127,7 +128,7 @@ export function shiftChangeEmailCopy(ctx: ShiftChangeAlertContext): ShiftChangeE
   const items = shiftChangeLabels(ctx.report);
   const yn = (b: boolean) => (b ? 'Yes' : 'No');
   return {
-    subject: `${ctx.report.medChange ? 'Med Change Reported' : 'Hospital / ER Visit Reported'}: ${ctx.clientName} (${ctx.dateOfService})`,
+    subject: `${ctx.report.medChange ? 'Med Change Reported' : 'Hospital / ER Visit Reported'}: ${ctx.clientName} (${formatDateUS(ctx.dateOfService)})`,
     headline: 'Change Reported Since the Last Shift',
     intro: `${who} answered Yes to ${items.length === 1 ? 'a' : `${items.length}`} "since your last shift" question${items.length === 1 ? '' : 's'} on a progress note:`,
     answers: [

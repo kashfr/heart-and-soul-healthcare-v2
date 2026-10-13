@@ -2427,7 +2427,7 @@ function ProgressNotePageInner() {
             {pendingDraft.clientName && <> Client: <strong>{pendingDraft.clientName}</strong>.</>}
             {pendingDraft.updatedAt && (
               <> Last saved{' '}
-                {pendingDraft.updatedAt.toLocaleString([], {
+                {pendingDraft.updatedAt.toLocaleString('en-US', {
                   month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
                 })}
                 .
@@ -2529,7 +2529,7 @@ function ProgressNotePageInner() {
             {saveStatus === 'saved' && lastSavedAt && (
               <>
                 <Check size={13} aria-hidden />
-                Saved {lastSavedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                Saved {lastSavedAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
               </>
             )}
             {saveStatus === 'error' && (
@@ -3124,7 +3124,7 @@ function ProgressNotePageInner() {
                 <strong>{formatDateUS(dupBlock.dateOfService)}</strong>
                 {dupBlock.submittedAt && (
                   <span style={{ color: '#5c6b7a', fontSize: 12, display: 'block', marginTop: 4 }}>
-                    Submitted {dupBlock.submittedAt.toLocaleString()}
+                    Submitted {dupBlock.submittedAt.toLocaleString('en-US')}
                   </span>
                 )}
                 {dupBlock.id && (
