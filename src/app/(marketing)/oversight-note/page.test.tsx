@@ -23,6 +23,7 @@ vi.mock('@/lib/patients', () => ({
     { id: 'p2', name: 'Ann Torres', dob: '1980-08-03', program: 'now-comp', serviceLevel: 'rn-lpn-daily' },
     { id: 'p3', name: 'Tora Vinson', dob: '2015-01-01', program: 'gapp', serviceLevel: 'skilled-nursing-shifts' },
   ]),
+  getPatientClinical: vi.fn().mockResolvedValue(null),
 }));
 
 const mockSubmissions = vi.hoisted(() => ({
@@ -94,6 +95,31 @@ describe('OversightNotePage', () => {
     });
   });
 
+  it('asks for vitals, the same block as the shift note', () => {
+    render(<OversightNotePage />);
+    for (const id of ['q16_temperature', 'q17_systolic', 'q17_diastolic', 'q18_pulse', 'q19_respiration', 'q20_oxygenSaturation', 'q16_vitalsNotObtainedReason']) {
+      expect(document.getElementById(id)).not.toBeNull();
+    }
+  });
+
+  it('orders and MAR answers split "No" into discrepancies found and not reviewed', () => {
+    render(<OversightNotePage />);
+    expect(screen.getAllByLabelText('Reviewed, discrepancies found (list in notes)')).toHaveLength(2);
+    expect(screen.getAllByLabelText('Not reviewed (explain in notes)')).toHaveLength(2);
+    for (const name of ['ov_ordersVerified', 'ov_marReviewed']) {
+      expect(document.querySelector(`input[name="${name}"][value="No"]`)).toBeNull();
+    }
+  });
+
+  it('location is a dropdown; "Other" asks where', () => {
+    render(<OversightNotePage />);
+    const loc = screen.getByLabelText(/^Location/);
+    expect(loc.tagName).toBe('SELECT');
+    expect(screen.queryByLabelText('Where the visit took place')).toBeNull();
+    fireEvent.change(loc, { target: { value: 'Other' } });
+    expect(screen.getByLabelText('Where the visit took place')).toBeInTheDocument();
+  });
+
   it('defaults the client list to every NOW/COMP client regardless of staffing model', async () => {
     render(<OversightNotePage />);
     await waitFor(() => {
@@ -146,7 +172,7 @@ describe('OversightNotePage — client details', () => {
       expect(screen.getByRole('option', { name: /Neal Kelly/ })).toBeInTheDocument();
     });
     // Select by role — "Individual" also labels an education-recipient checkbox.
-    await user.selectOptions(screen.getByRole('combobox'), 'p1');
+    await user.selectOptions(document.getElementById('q3_clientName')!, 'p1');
     // Roster stores ISO (1985-06-07); nurses read US format.
     expect(screen.getByDisplayValue('06/07/1985')).toBeInTheDocument();
   });
@@ -161,12 +187,21 @@ describe('OversightNotePage — edit mode', () => {
       ov_location: "Individual's home",
       ov_generalCondition: 'Stable since last visit.',
       ov_visitType: 'Routine oversight',
+      q1_formRev: '2',
+      ov_ordersVerified: 'No',
     });
     mockSearchParams.set('edit', 'note-123');
     render(<OversightNotePage />);
     await waitFor(() => {
       expect(screen.getByDisplayValue('Stable since last visit.')).toBeInTheDocument();
     });
+    // A free-text location from before the dropdown lands on its choice.
+    expect(screen.getByLabelText(/^Location/)).toHaveValue("Client's Home");
+    // A stored bare "No" from before the split stays visible and selected.
+    await waitFor(() => {
+      expect(document.querySelector('input[name="ov_ordersVerified"][value="No"]')).toBeChecked();
+    });
+    expect(document.querySelector('input[name="ov_marReviewed"][value="No"]')).toBeNull();
     expect(screen.getByRole('button', { name: /Update Oversight Note/i })).toBeInTheDocument();
     // Amending must never autosave over the nurse's draft.
     expect(mockDrafts.saveOversightDraft).not.toHaveBeenCalled();
@@ -266,7 +301,7 @@ describe('OversightNotePage — documented vs. billable time', () => {
     const user = (await import('@testing-library/user-event')).default.setup();
     render(<OversightNotePage />);
     await waitFor(() => expect(screen.getByRole('option', { name: /Neal Kelly/ })).toBeInTheDocument());
-    await user.selectOptions(screen.getByRole('combobox'), 'p1');
+    await user.selectOptions(document.getElementById('q3_clientName')!, 'p1');
     fireEvent.change(document.getElementById('q6_dateofService')!, { target: { value: '2026-09-28' } });
     return user;
   };
