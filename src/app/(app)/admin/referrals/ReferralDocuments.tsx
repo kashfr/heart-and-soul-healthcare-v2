@@ -5,6 +5,7 @@ import { btn, btnSm } from '@/components/buttons';
 import { Eye, FileText } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { formatDateUS } from '@/lib/dateFormat';
+import ReplaceReferralDocumentModal from './ReplaceReferralDocumentModal';
 import PdfPreviewModal from '@/components/PdfPreviewModal';
 import type { ReferralDocument } from '@/lib/referralDocumentsServer';
 
@@ -19,8 +20,13 @@ export default function ReferralDocuments({ referralId, patientId, refreshKey }:
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<ReferralDocument | null>(null);
 
+  const [replacement, setReplacement] = useState<ReferralDocument | null>(null);
+  const [reload, setReload] = useState(0);
+  const [notice, setNotice] = useState('');
+
   useEffect(() => {
     let live = true;
+    setReplacement(null); setPreview(null); setDocs(null); setError(null);
     const load = async () => {
       try {
         const res = await authedFetch(`/api/admin/referrals/${referralId}/documents`);
@@ -37,7 +43,7 @@ export default function ReferralDocuments({ referralId, patientId, refreshKey }:
     return () => {
       live = false;
     };
-  }, [referralId, refreshKey]);
+  }, [referralId, refreshKey, reload]);
 
   if (docs === null && !error) return null;
   if (error) return <div style={{ ...emptyStyle, color: '#b3261e' }}>{error}</div>;
@@ -46,6 +52,7 @@ export default function ReferralDocuments({ referralId, patientId, refreshKey }:
   return (
     <>
       <div style={titleStyle}>Documents</div>
+      {notice && <p role="status" style={metaStyle}>{notice}</p>}
       <div style={listStyle}>
         {docs.map((d) => (
           <div key={d.id} style={rowStyle}>
@@ -58,12 +65,16 @@ export default function ReferralDocuments({ referralId, patientId, refreshKey }:
                 {d.patientDocumentId ? ' · now in the client’s Documents' : patientId ? '' : ' · moves to the client’s Documents when the record is created'}
               </div>
             </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <button type="button" onClick={() => setPreview(d)} className={`${btn} ${btnSm}`} style={{ flexShrink: 0 }}>
               <Eye size={14} /> View
             </button>
+            {!patientId && !d.patientDocumentId && <button type="button" className={`${btn} ${btnSm}`} onClick={() => { setNotice(''); setReplacement(d); }}>Replace PDF</button>}
+            </div>
           </div>
         ))}
       </div>
+      {replacement && <ReplaceReferralDocumentModal key={`${replacement.referralId}/${replacement.id}`} document={replacement} onClose={() => setReplacement(null)} onSaved={() => { setReplacement(null); setPreview(null); setNotice('PDF replaced. The corrected copy is ready to view.'); setReload((n) => n + 1); }} />}
       {preview && <PdfPreviewModal title={preview.title} url={`/api/admin/referrals/${referralId}/documents/${preview.id}/pdf`} onClose={() => setPreview(null)} />}
     </>
   );
