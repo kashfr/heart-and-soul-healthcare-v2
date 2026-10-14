@@ -1,8 +1,7 @@
 import 'server-only';
 import { FieldValue } from 'firebase-admin/firestore';
-import { createHash } from 'node:crypto';
 import { adminDb } from './firebaseAdmin';
-import { ReferralDocumentError } from './referralDocumentsServer';
+import { documentRevision, ReferralDocumentError } from './referralDocumentsServer';
 
 /** Atomically correct a mistaken PPOT receipt while retaining the latest PDF. */
 export async function undoReferralPpot(p: {
@@ -25,7 +24,7 @@ export async function undoReferralPpot(p: {
       throw new ReferralDocumentError('This referral no longer has a signed PPOT to undo. Refresh the documents.', 409);
     }
     const received = req.received;
-    if (createHash('sha256').update(String(received.storagePath)).digest('hex') !== p.revision) {
+    if (documentRevision(String(received.storagePath), String(received.revisionId || '')) !== p.revision) {
       throw new ReferralDocumentError('The PDF changed. Refresh and review the latest copy before undoing its filing.', 409);
     }
     const faxId = String(received.inboundFaxId || '');

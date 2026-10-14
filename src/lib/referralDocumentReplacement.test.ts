@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 vi.mock('server-only', () => ({}));
 vi.mock('./firebaseAdmin', () => ({ adminDb: vi.fn(), adminBucket: vi.fn() }));
 import { adminDb, adminBucket } from './firebaseAdmin';
-import { replaceReferralDocument } from './referralDocumentsServer';
+import { replaceReferralDocument, editReferralDocumentDetails, documentRevision } from './referralDocumentsServer';
 
 const original = { storagePath: 'ppot/signed/original.pdf', signedDate: '2026-10-01', inboundFaxId: '123', byName: 'Original staff' };
 const revision = createHash('sha256').update(original.storagePath).digest('hex');
@@ -66,4 +66,31 @@ describe('referral PDF replacement', () => {
     await expect(replaceReferralDocument(args)).rejects.toThrow('storage unavailable');
     expect(update).not.toHaveBeenCalled();
   });
+});
+
+const detailArgs = { ...args, title: 'Corrected title', category: 'Other', docDate: '2026-09-30' };
+it('corrects a PPOT signed date while preserving receipt status, PDF, and original filing metadata', async () => {
+  await editReferralDocumentDetails(detailArgs);
+  expect(update.mock.calls[0][1].received).toMatchObject({ ...original, signedDate: '2026-09-30', revisionId: expect.any(String) });
+  expect(update.mock.calls[0][1]).not.toHaveProperty('status');
+  expect(set.mock.calls[0][1]).toMatchObject({ previous: original, change: 'details', editedBy: 'u1' });
+  expect(save).not.toHaveBeenCalled();
+});
+it('edits ordinary document metadata without replacing its PDF', async () => {
+  document = { ...original, referralId: 'r1', title: 'Old title', category: 'Other', docDate: '2026-10-01' };
+  await editReferralDocumentDetails({ ...detailArgs, docId: 'd1' });
+  expect(update.mock.calls[0][1]).toMatchObject({ title: 'Corrected title', category: 'Other', docDate: '2026-09-30' });
+  expect(update.mock.calls[0][1]).not.toHaveProperty('storagePath');
+});
+it('rejects stale metadata edits and replacement uploads after another edit', async () => {
+  document = { status: 'received', received: { ...original, revisionId: 'new-version' } };
+  await expect(editReferralDocumentDetails(detailArgs)).rejects.toMatchObject({ status: 409 });
+  await expect(replaceReferralDocument(args)).rejects.toMatchObject({ status: 409 });
+  expect(update).not.toHaveBeenCalled(); expect(save).not.toHaveBeenCalled();
+  expect(documentRevision(original.storagePath, 'new-version')).not.toBe(revision);
+});
+it('rejects edits after conversion without writing history or metadata', async () => {
+  referral = { patientId: 'p1' };
+  await expect(editReferralDocumentDetails(detailArgs)).rejects.toMatchObject({ status: 409 });
+  expect(update).not.toHaveBeenCalled(); expect(set).not.toHaveBeenCalled();
 });
