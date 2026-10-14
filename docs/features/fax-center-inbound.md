@@ -81,3 +81,19 @@ claim, blocking further automatic or manual follow-ups until investigated.
 Original request dates are never reset. Filing/cancellation blocks future claims.
 Schedule edits apply to existing requests on the next scheduled check and never
 send anything directly from the settings screen. No SMS is sent.
+
+## Correcting a referral PDF before conversion
+
+The referral drawer offers Replace PDF on ordinary documents and the signed
+PPOT. Admin, supervisor, and VA staff can preview and upload a corrected,
+unencrypted PDF (up to 20 MB). This replaces the file only: signed date,
+receipt status, category, and original inbound fax link remain unchanged.
+It does not undo an erroneous PPOT receipt classification.
+
+Replacement files have unique storage paths. The old metadata and path are
+retained in the document/request's `revisions` subcollection and a referral
+activity entry records the staff member. A version token rejects concurrent
+replacement. The transaction reads and writes the referral alongside the
+document, serializing against conversion's patientId claim; after conversion,
+corrections must use the client's Documents. Conversion copies the latest
+replacement. The original inbound fax is never modified.

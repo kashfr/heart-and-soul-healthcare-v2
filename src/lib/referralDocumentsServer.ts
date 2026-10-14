@@ -1,4 +1,5 @@
 import 'server-only';
+import { createHash, randomUUID } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminBucket, adminDb } from './firebaseAdmin';
 import { formatDateUS } from './dateFormat';
@@ -32,6 +33,7 @@ export interface ReferralDocument {
   patientDocumentId: string;
   /** 'ppot' for the signed Appendix T kept with the PPOT request. */
   kind?: 'ppot';
+  revision: string;
 }
 
 /** The card's id for the signed Appendix T row (not a referralDocuments id). */
@@ -61,6 +63,7 @@ export function signedPpotRow(referralId: string, req: FirebaseFirestore.Documen
     uploadedByName: String(received.byName || ''),
     patientDocumentId: clientDocumentId,
     kind: 'ppot',
+    revision: documentRevision(storagePath),
   };
 }
 
@@ -87,6 +90,7 @@ function toIso(ts: unknown): string | null {
 export function serializeReferralDocument(id: string, x: FirebaseFirestore.DocumentData): ReferralDocument {
   return {
     id,
+    revision: documentRevision(String(x.storagePath || '')),
     referralId: String(x.referralId || ''),
     category: String(x.category || ''),
     title: String(x.title || ''),
@@ -196,4 +200,62 @@ export async function moveReferralDocumentsToPatient(referralId: string, patient
     moved++;
   }
   return moved;
+}
+
+/** Opaque version token: prevents overwriting another staff member's correction. */
+function documentRevision(path: string): string {
+  return createHash('sha256').update(path).digest('hex');
+}
+
+export class ReferralDocumentError extends Error {
+  constructor(message: string, public status: number) { super(message); }
+}
+
+/** Replace bytes, preserving clinical metadata and the original file in revision history. */
+export async function replaceReferralDocument(p: {
+  referralId: string; docId: string; revision: string; pdf: Buffer;
+  by: { uid: string; name: string; role: string };
+}): Promise<void> {
+  const db = adminDb();
+  const referralRef = db.collection('referrals').doc(p.referralId);
+  const isPpot = p.docId === SIGNED_PPOT_DOC_ID;
+  const documentRef = isPpot ? db.collection('ppotRequests').doc(`referral_${p.referralId}`) : db.collection(COL).doc(p.docId);
+  const check = (referral: FirebaseFirestore.DocumentSnapshot, document: FirebaseFirestore.DocumentSnapshot) => {
+    if (!referral.exists || !document.exists) throw new ReferralDocumentError('Document not found.', 404);
+    const x = document.data()!;
+    if (referral.data()?.patientId || x.patientDocumentId || x.movedToPatientId) {
+      throw new ReferralDocumentError('A client record already exists. Update the file in the client’s Documents.', 409);
+    }
+    if (!isPpot && x.referralId !== p.referralId) throw new ReferralDocumentError('Document not found.', 404);
+    const current = isPpot ? x.received : x;
+    if ((isPpot && x.status !== 'received') || !current?.storagePath) throw new ReferralDocumentError('No filed document is available to replace.', 409);
+    if (documentRevision(current.storagePath) !== p.revision) throw new ReferralDocumentError('This document changed. Refresh and review the latest copy before replacing it.', 409);
+    return current;
+  };
+  check(await referralRef.get(), await documentRef.get());
+  const version = randomUUID();
+  const path = `referrals/${p.referralId}/documents/replacements/${version}/document.pdf`;
+  const file = adminBucket().file(path);
+  await file.save(p.pdf, { contentType: 'application/pdf', resumable: false });
+  // Transaction reads the referral claim used by conversion, so either conversion
+  // sees this replacement or the replacement is rejected after conversion wins.
+  await db.runTransaction(async (tx) => {
+    const [referral, document] = await Promise.all([tx.get(referralRef), tx.get(documentRef)]);
+    const current = check(referral, document);
+    const at = FieldValue.serverTimestamp();
+    tx.set(documentRef.collection('revisions').doc(version), {
+      previous: current, replacementStoragePath: path, replacedAt: at,
+      replacedBy: p.by.uid, replacedByName: p.by.name, replacedByRole: p.by.role,
+    });
+    const replacement = { storagePath: path, size: p.pdf.length, replacedAt: at, replacedBy: p.by.uid, replacedByName: p.by.name };
+    if (isPpot) tx.update(documentRef, { received: { ...current, ...replacement } });
+    else tx.update(documentRef, { ...replacement, fileName: 'document.pdf' });
+    tx.update(referralRef, { updatedAt: at });
+    tx.set(referralRef.collection('activity').doc(version), {
+      type: 'note', text: `${isPpot ? 'Signed PPOT' : 'Referral document'} PDF replaced. Previous copy retained in document history.`,
+      byUid: p.by.uid, byName: p.by.name, byRole: p.by.role, at,
+    });
+  });
+  // Keep uploaded bytes on uncertain commit outcomes; never delete a file that a
+  // successfully committed transaction may already reference.
 }
