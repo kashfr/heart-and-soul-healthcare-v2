@@ -5,6 +5,7 @@ import { btn, btnSm } from '@/components/buttons';
 import { Eye, FileText } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { formatDateUS } from '@/lib/dateFormat';
+import EditReferralDocumentModal from './EditReferralDocumentModal';
 import UndoReferralPpotModal from './UndoReferralPpotModal';
 import ReplaceReferralDocumentModal from './ReplaceReferralDocumentModal';
 import PdfPreviewModal from '@/components/PdfPreviewModal';
@@ -21,6 +22,7 @@ export default function ReferralDocuments({ referralId, patientId, refreshKey }:
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<ReferralDocument | null>(null);
 
+  const [edit, setEdit] = useState<ReferralDocument | null>(null);
   const [undo, setUndo] = useState<ReferralDocument | null>(null);
   const [replacement, setReplacement] = useState<ReferralDocument | null>(null);
   const [reload, setReload] = useState(0);
@@ -28,7 +30,7 @@ export default function ReferralDocuments({ referralId, patientId, refreshKey }:
 
   useEffect(() => {
     let live = true;
-    setUndo(null); setReplacement(null); setPreview(null); setDocs(null); setError(null);
+    setEdit(null); setUndo(null); setReplacement(null); setPreview(null); setDocs(null); setError(null);
     const load = async () => {
       try {
         const res = await authedFetch(`/api/admin/referrals/${referralId}/documents`);
@@ -72,11 +74,13 @@ export default function ReferralDocuments({ referralId, patientId, refreshKey }:
               <Eye size={14} /> View
             </button>
             {!patientId && !d.patientDocumentId && <button type="button" className={`${btn} ${btnSm}`} onClick={() => { setNotice(''); setReplacement(d); }}>Replace PDF</button>}
+            {!patientId && !d.patientDocumentId && <button type="button" className={`${btn} ${btnSm}`} onClick={() => { setNotice(''); setEdit(d); }}>Edit details</button>}
             {!patientId && !d.patientDocumentId && d.kind === 'ppot' && <button type="button" className={`${btn} ${btnSm}`} onClick={() => { setNotice(''); setUndo(d); }}>Undo PPOT filing</button>}
             </div>
           </div>
         ))}
       </div>
+      {edit && <EditReferralDocumentModal key={`${edit.referralId}/${edit.id}`} document={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); setPreview(null); setNotice('Document details updated.'); setReload((n) => n + 1); }} />}
       {undo && <UndoReferralPpotModal key={undo.referralId} document={undo} onClose={() => setUndo(null)} onSaved={() => { setUndo(null); setPreview(null); setNotice('PPOT filing undone. The PDF is now a regular document, and the request is waiting on the physician again.'); setReload((n) => n + 1); }} />}
       {replacement && <ReplaceReferralDocumentModal key={`${replacement.referralId}/${replacement.id}`} document={replacement} onClose={() => setReplacement(null)} onSaved={() => { setReplacement(null); setPreview(null); setNotice('PDF replaced. The corrected copy is ready to view.'); setReload((n) => n + 1); }} />}
       {preview && <PdfPreviewModal title={preview.title} url={`/api/admin/referrals/${referralId}/documents/${preview.id}/pdf`} onClose={() => setPreview(null)} />}

@@ -63,7 +63,7 @@ export function signedPpotRow(referralId: string, req: FirebaseFirestore.Documen
     uploadedByName: String(received.byName || ''),
     patientDocumentId: clientDocumentId,
     kind: 'ppot',
-    revision: documentRevision(storagePath),
+    revision: documentRevision(storagePath, String(received.revisionId || '')),
   };
 }
 
@@ -90,7 +90,7 @@ function toIso(ts: unknown): string | null {
 export function serializeReferralDocument(id: string, x: FirebaseFirestore.DocumentData): ReferralDocument {
   return {
     id,
-    revision: documentRevision(String(x.storagePath || '')),
+    revision: documentRevision(String(x.storagePath || ''), String(x.revisionId || '')),
     referralId: String(x.referralId || ''),
     category: String(x.category || ''),
     title: String(x.title || ''),
@@ -203,8 +203,8 @@ export async function moveReferralDocumentsToPatient(referralId: string, patient
 }
 
 /** Opaque version token: prevents overwriting another staff member's correction. */
-function documentRevision(path: string): string {
-  return createHash('sha256').update(path).digest('hex');
+export function documentRevision(path: string, revisionId = ''): string {
+  return createHash('sha256').update(path + revisionId).digest('hex');
 }
 
 export class ReferralDocumentError extends Error {
@@ -229,7 +229,7 @@ export async function replaceReferralDocument(p: {
     if (!isPpot && x.referralId !== p.referralId) throw new ReferralDocumentError('Document not found.', 404);
     const current = isPpot ? x.received : x;
     if ((isPpot && x.status !== 'received') || !current?.storagePath) throw new ReferralDocumentError('No filed document is available to replace.', 409);
-    if (documentRevision(current.storagePath) !== p.revision) throw new ReferralDocumentError('This document changed. Refresh and review the latest copy before replacing it.', 409);
+    if (documentRevision(current.storagePath, String(current.revisionId || '')) !== p.revision) throw new ReferralDocumentError('This document changed. Refresh and review the latest copy before replacing it.', 409);
     return current;
   };
   check(await referralRef.get(), await documentRef.get());
@@ -247,7 +247,7 @@ export async function replaceReferralDocument(p: {
       previous: current, replacementStoragePath: path, replacedAt: at,
       replacedBy: p.by.uid, replacedByName: p.by.name, replacedByRole: p.by.role,
     });
-    const replacement = { storagePath: path, size: p.pdf.length, replacedAt: at, replacedBy: p.by.uid, replacedByName: p.by.name };
+    const replacement = { revisionId: version, storagePath: path, size: p.pdf.length, replacedAt: at, replacedBy: p.by.uid, replacedByName: p.by.name };
     if (isPpot) tx.update(documentRef, { received: { ...current, ...replacement } });
     else tx.update(documentRef, { ...replacement, fileName: 'document.pdf' });
     tx.update(referralRef, { updatedAt: at });
@@ -258,4 +258,36 @@ export async function replaceReferralDocument(p: {
   });
   // Keep uploaded bytes on uncertain commit outcomes; never delete a file that a
   // successfully committed transaction may already reference.
+}
+
+/** Correct filing metadata without modifying the signed PDF or reopening a request. */
+export async function editReferralDocumentDetails(p: {
+  referralId: string; docId: string; revision: string; title: string; category: string; docDate: string;
+  by: { uid: string; name: string; role: string };
+}): Promise<void> {
+  const db = adminDb();
+  const referralRef = db.collection('referrals').doc(p.referralId);
+  const isPpot = p.docId === SIGNED_PPOT_DOC_ID;
+  const docRef = isPpot ? db.collection('ppotRequests').doc(`referral_${p.referralId}`) : db.collection(COL).doc(p.docId);
+  const version = randomUUID();
+  await db.runTransaction(async (tx) => {
+    const [referral, document] = await Promise.all([tx.get(referralRef), tx.get(docRef)]);
+    if (!referral.exists || !document.exists) throw new ReferralDocumentError('Document not found.', 404);
+    const x = document.data()!;
+    if (referral.data()?.patientId || x.patientDocumentId || x.movedToPatientId || (isPpot && x.received?.documentId)) throw new ReferralDocumentError('A client record already exists. Edit the client’s Documents instead.', 409);
+    if (!isPpot && x.referralId !== p.referralId) throw new ReferralDocumentError('Document not found.', 404);
+    const current = isPpot ? x.received : x;
+    if ((isPpot && x.status !== 'received') || !current?.storagePath) throw new ReferralDocumentError('The filing has changed. Refresh the documents.', 409);
+    if (documentRevision(current.storagePath, String(current.revisionId || '')) !== p.revision) throw new ReferralDocumentError('This document changed. Refresh and review the latest details.', 409);
+    const at = FieldValue.serverTimestamp();
+    tx.set(docRef.collection('revisions').doc(version), { previous: current, change: 'details', editedAt: at, editedBy: p.by.uid, editedByName: p.by.name, editedByRole: p.by.role });
+    const audit = { revisionId: version, editedAt: at, editedBy: p.by.uid, editedByName: p.by.name };
+    if (isPpot) tx.update(docRef, { received: { ...current, ...audit, signedDate: p.docDate } });
+    else tx.update(docRef, { ...audit, title: p.title.trim(), category: p.category, docDate: p.docDate });
+    tx.update(referralRef, { updatedAt: at });
+    tx.set(referralRef.collection('activity').doc(version), {
+      type: 'note', text: isPpot ? `PPOT physician signed date corrected from ${formatDateUS(String(current.signedDate || ''))} to ${formatDateUS(p.docDate)}.` : `Document details corrected: "${p.title.trim()}" (${p.category}), dated ${formatDateUS(p.docDate)}.`,
+      at, byUid: p.by.uid, byName: p.by.name, byRole: p.by.role,
+    });
+  });
 }

@@ -31,6 +31,7 @@ it.each([
   ['conversion', () => { records['referrals/r1'].patientId = 'p1'; }],
   ['moved request', () => { records['ppotRequests/referral_r1'].movedToPatientId = 'p1'; }],
   ['duplicate undo', () => { records['ppotRequests/referral_r1'].status = 'sent'; }],
+  ['metadata changed', () => { records['ppotRequests/referral_r1'].received = { ...received, revisionId: 'changed' }; }],
   ['another replacement', () => { records['ppotRequests/referral_r1'].received = { ...received, storagePath: 'new.pdf' }; }],
   ['fax refiled elsewhere', () => { records['verbalOrderInbound/123'].filedDocumentId = 'another'; }],
   ['fax no longer filed', () => { records['verbalOrderInbound/123'].status = 'filing'; }],

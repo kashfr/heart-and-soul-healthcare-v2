@@ -114,3 +114,16 @@ PDF version and inbound filing link, rejects duplicate/concurrent corrections,
 and serializes against client conversion. Old receipt metadata/files are kept.
 This action is limited to referrals without a client record; it does not undo
 clinical order dates on existing clients.
+
+## Correcting document details
+
+Edit details on an unconverted referral corrects the physician signed date
+for signed PPOTs, or the title/category/document date for ordinary documents.
+It leaves PDF bytes, PPOT receipt status, original filing attribution, and
+follow-up history unchanged. Dates must be real calendar dates, no later than
+today in Eastern time. A transaction stores the previous metadata in revisions,
+logs the correction to referral activity, and blocks edits after conversion.
+
+The opaque revision token includes both the file path and the latest revision
+id. Detail edits and PDF replacements advance that id; replace, edit, and undo
+all reject stale versions. Existing records without a revision id remain valid.
