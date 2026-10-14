@@ -97,3 +97,20 @@ replacement. The transaction reads and writes the referral alongside the
 document, serializing against conversion's patientId claim; after conversion,
 corrections must use the client's Documents. Conversion copies the latest
 replacement. The original inbound fax is never modified.
+
+## Undoing mistaken PPOT filing on a referral
+
+Before client conversion, Undo PPOT filing on the signed-PPOT document row
+refiles the current PDF as an ordinary referral document with a staff-selected
+title, category, and date. This keeps any cleaned-up/replaced copy. The inbound
+fax stays filed and points to the ordinary document, preventing double filing.
+The PPOT receipt is cleared and the request returns to sent/Waiting on Physicians.
+Its original date and follow-up/escalation history remain; scheduled follow-ups
+may resume. The confirmation explicitly states this, and undo sends no fax.
+
+The correction is one transaction across the referral, request, inbound fax,
+new document, activity, and request filingCorrections history. It checks the
+PDF version and inbound filing link, rejects duplicate/concurrent corrections,
+and serializes against client conversion. Old receipt metadata/files are kept.
+This action is limited to referrals without a client record; it does not undo
+clinical order dates on existing clients.
