@@ -41,7 +41,7 @@ open PPOT requests (`ppotCandidateKeys`) and open verbal orders
 
 ## Creating the client record from a referral
 
-"Create Client Record" on the referral card (admins, supervisors, and individually authorized VAs) calls
+"Create Client Record" on the referral card (permitted admins, supervisors, and individually authorized VAs) calls
 `convertReferralToClient()` in `src/lib/referralConvertServer.ts`. It does what
 the Clients page does by hand: the directory doc with the next record number
 from `counters/patients`, the clinical profile (physician, Medicaid ID), then
@@ -133,3 +133,11 @@ Admins grant individual VAs access under Settings > Create Client Records from R
 endpoints check the current server settings on every request. Revocation takes
 effect server-side immediately. This grant does not expand Firestore clinical
 read permissions or general client-edit permissions.
+
+The referral creation picker lists active admins, supervisors, and VAs together.
+Admins and supervisors start checked with a default-access note. Unchecking any
+individual stores their UID in `referralConversion.excludedUserUids`, which overrides
+role-based access and VA grants on both preview and conversion. Checking them again
+removes that exclusion (and grants VA access where needed). Missing exclusions
+preserve existing permissions. Only admins can edit these settings; an admin whose
+conversion access is removed can still manage settings and restore that access.

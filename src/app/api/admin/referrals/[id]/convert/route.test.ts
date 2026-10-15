@@ -40,3 +40,13 @@ it('still rejects inactive or unauthenticated users through the shared guard', a
   expect(getServerSettings).not.toHaveBeenCalled();
   expect(convertReferralToClient).not.toHaveBeenCalled();
 });
+
+it.each(['admin', 'supervisor'] as const)('enforces %s revocation on preview and submission', async (role) => {
+  vi.mocked(requireRole).mockResolvedValue({ uid: 'staff', role, profile: { displayName: 'Staff' } } as AuthedCaller);
+  vi.mocked(getServerSettings).mockResolvedValueOnce({ ...DEFAULT_SETTINGS, referralConversion: { userUids: [] } });
+  expect((await GET(request(), { params })).status).toBe(200);
+  vi.mocked(getServerSettings).mockResolvedValue({ ...DEFAULT_SETTINGS, referralConversion: { userUids: [], excludedUserUids: ['staff'] } });
+  expect((await GET(request(), { params })).status).toBe(403);
+  expect((await POST(request(), { params })).status).toBe(403);
+  expect(convertReferralToClient).not.toHaveBeenCalled();
+});

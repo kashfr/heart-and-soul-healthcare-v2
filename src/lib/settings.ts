@@ -381,6 +381,8 @@ export interface SupportCoordinationSettings {
 export interface ReferralConversionSettings {
   /** Individual VAs permitted to create client records from referrals. */
   userUids: string[];
+  /** Explicit revocations override role-based access and VA grants. */
+  excludedUserUids?: string[];
 }
 
 export interface AppSettings {
@@ -410,7 +412,7 @@ export interface AppSettings {
  * refactor for anyone who hasn't customized.
  */
 export const DEFAULT_SETTINGS: AppSettings = {
-  referralConversion: { userUids: [] },
+  referralConversion: { userUids: [], excludedUserUids: [] },
   supportCoordination: { agencies: [] },
   verbalOrders: { overdueDays: 14, escalateDays: 30, returnFax: '' },
   fax: { enabled: false, userUids: [], recertLeadDays: 45, ppotPrefillIdentity: false, ppotOverdueDays: 14, ppotEscalateDays: 30 },
@@ -543,7 +545,10 @@ export function mergeWithDefaults(partial: unknown): AppSettings {
     verbalOrders: mergeVerbalOrders(p.verbalOrders),
     fax: mergeFax(p.fax, mergeVerbalOrders(p.verbalOrders)),
     edwp: mergeEdwp(p.edwp),
-    referralConversion: { userUids: mergeEdwp(p.referralConversion).userUids ?? [] },
+    referralConversion: {
+      userUids: mergeEdwp(p.referralConversion).userUids ?? [],
+      excludedUserUids: mergeEdwp({ userUids: (p.referralConversion as Partial<ReferralConversionSettings> | undefined)?.excludedUserUids }).userUids ?? [],
+    },
     esign: mergeEsign(p.esign),
     supportCoordination: mergeSupportCoordination(p.supportCoordination),
     branding: mergeBranding(p.branding),
@@ -810,6 +815,10 @@ export function validateSettings(payload: unknown): AppSettings {
   }
 
   const referralConversion = (p.referralConversion ?? {}) as Partial<ReferralConversionSettings>;
+  if (referralConversion.excludedUserUids !== undefined &&
+      (!Array.isArray(referralConversion.excludedUserUids) || referralConversion.excludedUserUids.some((u) => typeof u !== 'string'))) {
+    throw new SettingsValidationError('referralConversion.excludedUserUids', 'Choose staff members for referral client creation.');
+  }
   if (referralConversion.userUids !== undefined &&
       (!Array.isArray(referralConversion.userUids) || referralConversion.userUids.some((u) => typeof u !== 'string'))) {
     throw new SettingsValidationError('referralConversion.userUids', 'Choose staff members for referral client creation.');
