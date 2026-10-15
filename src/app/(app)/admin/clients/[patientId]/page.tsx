@@ -23,6 +23,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { AuthGuard } from '@/components/AuthGuard';
+import { AssistantClientDetails } from '@/components/AssistantClients';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
 import { getPatient, getPatientClinical, type Patient, type PatientClinical } from '@/lib/patients';
@@ -1146,9 +1147,11 @@ function ClientDashboardInner() {
 }
 
 export default function ClientDashboardPage() {
+  const { role } = useEffectiveUser();
+  const params = useParams();
   return (
-    <AuthGuard allow={['admin', 'supervisor', 'nurse']}>
-      <ClientDashboardInner />
+    <AuthGuard allow={['admin', 'supervisor', 'nurse', 'va']}>
+      {role === 'va' ? <AssistantClientDetails patientId={String(params.patientId)} /> : <ClientDashboardInner />}
     </AuthGuard>
   );
 }

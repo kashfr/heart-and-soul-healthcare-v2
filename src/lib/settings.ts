@@ -1,3 +1,4 @@
+import { isAssistantClientGrant, mergeAssistantClients, type AssistantClientsSettings } from './assistantClientAccess';
 /**
  * Org-wide settings stored in a single Firestore document at
  * `settings/global`. Edited via /admin/settings (admin-only) and read
@@ -386,6 +387,7 @@ export interface ReferralConversionSettings {
 }
 
 export interface AppSettings {
+  assistantClients: AssistantClientsSettings;
   referralConversion: ReferralConversionSettings;
   supportCoordination: SupportCoordinationSettings;
   verbalOrders: VerbalOrdersSettings;
@@ -412,6 +414,7 @@ export interface AppSettings {
  * refactor for anyone who hasn't customized.
  */
 export const DEFAULT_SETTINGS: AppSettings = {
+  assistantClients: { grants: [] },
   referralConversion: { userUids: [], excludedUserUids: [] },
   supportCoordination: { agencies: [] },
   verbalOrders: { overdueDays: 14, escalateDays: 30, returnFax: '' },
@@ -545,6 +548,7 @@ export function mergeWithDefaults(partial: unknown): AppSettings {
     verbalOrders: mergeVerbalOrders(p.verbalOrders),
     fax: mergeFax(p.fax, mergeVerbalOrders(p.verbalOrders)),
     edwp: mergeEdwp(p.edwp),
+    assistantClients: mergeAssistantClients(p.assistantClients),
     referralConversion: {
       userUids: mergeEdwp(p.referralConversion).userUids ?? [],
       excludedUserUids: mergeEdwp({ userUids: (p.referralConversion as Partial<ReferralConversionSettings> | undefined)?.excludedUserUids }).userUids ?? [],
@@ -812,6 +816,14 @@ export function validateSettings(payload: unknown): AppSettings {
     (!Array.isArray(esign.trackKeywords) || esign.trackKeywords.some((w) => typeof w !== 'string'))
   ) {
     throw new SettingsValidationError('esign.trackKeywords', 'trackKeywords must be a list of words.');
+  }
+
+  if (p.assistantClients !== undefined) {
+    const grants = (p.assistantClients as Partial<AssistantClientsSettings> | null)?.grants;
+    if (!Array.isArray(grants) || !grants.every(isAssistantClientGrant)
+        || new Set(grants.map((g) => g.uid.trim())).size !== grants.length) {
+      throw new SettingsValidationError('assistantClients.grants', 'Choose a valid, unique assistant and client scope for each grant.');
+    }
   }
 
   const referralConversion = (p.referralConversion ?? {}) as Partial<ReferralConversionSettings>;

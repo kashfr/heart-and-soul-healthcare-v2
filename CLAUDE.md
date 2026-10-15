@@ -17,6 +17,8 @@ conflicts and review comments).
 
 Read the matching note before changing one of these features.
 
+- Assistant client access (individual VA grants, GAPP scope, administrative edits, documents):
+  docs/features/assistant-client-access.md
 - Home Supervisory Visit form, shared vitals component, abnormal-vitals
   follow-up: docs/features/supervisory-visit.md
 - Supervisory visit scheduling (next visit on filing, open visits offered to
