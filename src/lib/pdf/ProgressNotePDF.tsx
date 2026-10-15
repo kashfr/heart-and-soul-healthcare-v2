@@ -705,13 +705,33 @@ function AmendedVersions({ fieldKey }: { fieldKey?: string }) {
   );
 }
 
+/**
+ * Multi-paragraph text, one <Text> per line. react-pdf under-measures blank
+ * lines inside a single <Text> (each one leaves the box about a line short),
+ * so a long answer with paragraph breaks spilled its last paragraph over the
+ * next field (Ricky Y.'s 10/08/2026 oversight note: six blank lines in
+ * Actions, the last line printed on top of Communication). Each blank line
+ * becomes a fixed-height spacer instead.
+ */
+function Paragraphs({ value, style, blankHeight }: { value: string; style: (typeof s)[keyof typeof s]; blankHeight: number }) {
+  const lines = value.replace(/\r\n?/g, '\n').split('\n');
+  if (lines.length === 1) return <Text style={style}>{value}</Text>;
+  return (
+    <>
+      {lines.map((line, i) =>
+        line.trim() === '' ? <View key={i} style={{ height: blankHeight }} /> : <Text key={i} style={style}>{line}</Text>,
+      )}
+    </>
+  );
+}
+
 function Field({ label, value, fieldKey }: { label: string; value: string | undefined; fieldKey?: string }) {
   return (
     <View style={s.fieldRow}>
       <Text style={s.fieldLabel}>{label}:</Text>
       <View style={s.fieldValueWrap}>
         <AmendedVersions fieldKey={fieldKey} />
-        <Text style={s.fieldValue}>{hasValue(value) ? value : '--'}</Text>
+        <Paragraphs style={s.fieldValue} blankHeight={12} value={hasValue(value) ? String(value) : '--'} />
       </View>
     </View>
   );
@@ -730,7 +750,7 @@ function TextBlock({ label, value, fieldKey }: { label: string; value: string | 
     <View style={s.textBlock}>
       <Text style={s.textBlockLabel}>{label}:</Text>
       <AmendedVersions fieldKey={fieldKey} />
-      <Text style={s.textBlockValue}>{hasValue(value) ? value : '--'}</Text>
+      <Paragraphs style={s.textBlockValue} blankHeight={14} value={hasValue(value) ? String(value) : '--'} />
     </View>
   );
 }
