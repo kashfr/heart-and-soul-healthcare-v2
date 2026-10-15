@@ -1,5 +1,7 @@
 'use client';
 
+import { canCreateClientFromReferral } from '@/lib/referralPermissions';
+import type { Role } from '@/lib/auth';
 import { validPpotSchedule } from '@/lib/ppotSchedule';
 import { useEffect, useState } from 'react';
 import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
@@ -137,8 +139,8 @@ export default function AdminSettingsPage() {
   // The long per-age-group vitals grid is collapsed by default so the page
   // stays scannable; expanding it is one click.
   const [vitalsOpen, setVitalsOpen] = useState(false);
-  // Fax Center grant picker: supervisors and the VA (admins always have
-  // access once the feature is on, so they aren't listed).
+  const [referralOptions, setReferralOptions] = useState<Array<{ uid: string; displayName: string; role: Role }>>([]);
+  // Fax Center has its own role policy; keep its picker separate.
   const [faxOptions, setFaxOptions] = useState<Array<{ uid: string; displayName: string; role: string }>>([]);
 
   useEffect(() => {
@@ -165,6 +167,12 @@ export default function AdminSettingsPage() {
           }))
           .sort((a, b) => a.displayName.localeCompare(b.displayName));
         setReviewerOptions(opts);
+        setReferralOptions(
+          data.users
+            .filter((u) => u.active !== false && ['admin', 'supervisor', 'va'].includes(u.role || ''))
+            .map((u) => ({ uid: u.uid, displayName: u.displayName || '(no name)', role: u.role as Role }))
+            .sort((a, b) => a.displayName.localeCompare(b.displayName)),
+        );
         setFaxOptions(
           data.users
             .filter((u) => u.active !== false && (u.role === 'supervisor' || u.role === 'va'))
@@ -1196,30 +1204,39 @@ export default function AdminSettingsPage() {
         <section style={sectionStyle}>
           <h2 style={sectionTitleStyle}>Create Client Records from Referrals</h2>
           <p style={sectionSubStyle}>
-            Admins and supervisors always have access. Select individual virtual assistants who may
-            preview and create client records from referral cards. This copies referral details and
+            Admins and supervisors have access by default. Checked people can preview and create client
+            records from referrals. Uncheck anyone to remove this permission, then save. Creating a record copies referral details and
             documents into the client record and moves the referral to Active. It does not grant
             access to clinical profiles or permission to manage existing client records.
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {faxOptions.filter((o) => o.role === 'va').map((o) => (
+            {referralOptions.map((o) => (
               <label key={o.uid} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', border: '1px solid #e5e7eb', borderRadius: 6, cursor: 'pointer' }}>
                 <input
                   type="checkbox"
-                  checked={draft.referralConversion.userUids.includes(o.uid)}
+                  checked={canCreateClientFromReferral(draft.referralConversion, o.uid, o.role)}
                   onChange={(e) => {
                     const checked = e.target.checked;
                     setDirty(true);
-                    setDraft((prev) => ({ ...prev, referralConversion: { userUids: checked
-                      ? Array.from(new Set([...prev.referralConversion.userUids, o.uid]))
-                      : prev.referralConversion.userUids.filter((uid) => uid !== o.uid) } }));
+                    setDraft((prev) => ({ ...prev, referralConversion: {
+                      userUids: checked && o.role === 'va'
+                        ? Array.from(new Set([...prev.referralConversion.userUids, o.uid]))
+                        : prev.referralConversion.userUids.filter((uid) => uid !== o.uid),
+                      excludedUserUids: checked
+                        ? (prev.referralConversion.excludedUserUids ?? []).filter((uid) => uid !== o.uid)
+                        : Array.from(new Set([...(prev.referralConversion.excludedUserUids ?? []), o.uid])),
+                    } }));
                   }}
                 />
                 <span>{o.displayName}</span>
-                <span style={{ color: '#5c6b7a', fontSize: 12.5 }}>Virtual Assistant</span>
+                <span style={{ color: '#5c6b7a', fontSize: 12.5 }}>
+                  {o.role === 'admin' ? 'Admin' : o.role === 'supervisor' ? 'Supervisor' : 'Virtual Assistant'}
+                  {o.role !== 'va' && (canCreateClientFromReferral(draft.referralConversion, o.uid, o.role)
+                    ? ' — Has access by default' : ' — Access removed')}
+                </span>
               </label>
             ))}
-            {!faxOptions.some((o) => o.role === 'va') && <p style={sectionSubStyle}>No active virtual assistants available.</p>}
+            {referralOptions.length === 0 && <p style={sectionSubStyle}>No active staff available, or the staff list could not be loaded.</p>}
           </div>
         </section>
 

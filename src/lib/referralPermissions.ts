@@ -7,7 +7,7 @@ export function canCreateClientFromReferral(
   uid: string | null | undefined,
   role: Role | null | undefined,
 ): boolean {
-  if (!uid) return false;
+  if (!uid || settings?.excludedUserUids?.includes(uid)) return false;
   if (role === 'admin' || role === 'supervisor') return true;
   return role === 'va' && (settings?.userUids.includes(uid) ?? false);
 }

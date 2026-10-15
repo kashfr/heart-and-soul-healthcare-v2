@@ -16,6 +16,13 @@ describe('referral client creation permission', () => {
     expect(canCreateClientFromReferral({ userUids: ['v'] }, 'v', 'nurse')).toBe(false);
     expect(canCreateClientFromReferral({ userUids: ['v'] }, null, 'admin')).toBe(false);
   });
+  it('allows individual revocation and restoration for admins and supervisors', () => {
+    for (const role of ['admin', 'supervisor'] as const) {
+      expect(canCreateClientFromReferral({ userUids: ['staff'], excludedUserUids: ['staff'] }, 'staff', role)).toBe(false);
+      expect(canCreateClientFromReferral({ userUids: [], excludedUserUids: [] }, 'staff', role)).toBe(true);
+    }
+    expect(canCreateClientFromReferral({ userUids: ['v'], excludedUserUids: ['v'] }, 'v', 'va')).toBe(false);
+  });
   it('fails closed for old or malformed persisted settings', () => {
     expect(mergeWithDefaults({ referralConversion: { userUids: null } }).referralConversion.userUids).toEqual([]);
     expect(mergeWithDefaults({ referralConversion: { userUids: [' v ', 'v', 123] } }).referralConversion.userUids).toEqual(['v']);
