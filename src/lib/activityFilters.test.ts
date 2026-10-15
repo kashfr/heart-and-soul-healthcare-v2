@@ -16,3 +16,13 @@ it('includes entire Eastern days across daylight-saving transitions', () => {
   expect(fall.end?.toISOString()).toBe('2026-11-02T05:00:00.000Z');
   expect(activityDateBounds()).toEqual({ start: undefined, end: undefined });
 });
+
+it('classifies change types independently of staff role and undo eligibility',async()=>{
+ const {matchesActivityType,activityTypeActions}=await import('./activityFilters');
+ expect(matchesActivityType({action:'record-created',sourcePath:'patientDocuments/doc'},'uploads')).toBe(true);
+ expect(matchesActivityType({action:'record-created',sourcePath:'patients/client'},'uploads')).toBe(false);
+ expect(matchesActivityType({action:'record-updated',sourcePath:'patients/client/clinical/profile'},'information')).toBe(true);
+ expect(matchesActivityType({action:'record-updated',sourcePath:'progressNotes/note'},'information')).toBe(false);
+ expect(matchesActivityType({action:'admin-undo'},'undo')).toBe(true);
+ expect(()=>activityTypeActions('bad')).toThrow();
+});

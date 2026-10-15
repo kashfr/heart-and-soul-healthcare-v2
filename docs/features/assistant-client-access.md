@@ -162,3 +162,19 @@ document creations are eligible; older null/absent captures remain review-only
 because their exact prior presence is unknown. Truncated information captures
 remain review-only. Guardian reversals preserve notes and must satisfy the
 current decision-maker requirements. Deploy both app and capture function.
+
+## Activity change-type filter
+
+The overview supports All changes, Document uploads, Client information updates,
+and Undo actions. The type parameter combines with staff/client/date filters.
+Uploads include assistant uploads and captured patientDocuments creations.
+Information includes assistant updates and captured updates to the directory,
+clinical profile, and guardian record; this category does not imply undo eligibility.
+Undo actions include every admin-undo entry, including document archival reversals.
+
+Legacy events are classified from their original action/sourcePath without a
+migration. Action predicates run in Firestore; path matching runs server-side.
+Pagination advances by scanned records, retaining up to 50 matches and scanning
+at most 510 candidates per request. Sparse pages can offer Load older activity
+to continue searching. Deploy action/at and actorUid/action/at composite indexes
+for both COLLECTION and COLLECTION_GROUP scopes. No capture-function change.

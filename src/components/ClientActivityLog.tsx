@@ -20,7 +20,7 @@ function display(value: unknown, field: string): string {
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
   return typeof value === 'string' ? value || 'Not on file' : String(value ?? 'Not on file');
 }
-export function ClientActivityLog({ patientId, actorUid, filterClient, from, through, onClientsLoaded, onStaffLoaded, onUndone }: { patientId?: string; actorUid?: string; filterClient?: string; from?: string; through?: string; onClientsLoaded?: (clients: ActivityClient[]) => void; onStaffLoaded?: (staff: ActivityStaff[]) => void; onUndone?: () => void }) {
+export function ClientActivityLog({ patientId, actorUid, changeType, filterClient, from, through, onClientsLoaded, onStaffLoaded, onUndone }: { patientId?: string; actorUid?: string; changeType?: string; filterClient?: string; from?: string; through?: string; onClientsLoaded?: (clients: ActivityClient[]) => void; onStaffLoaded?: (staff: ActivityStaff[]) => void; onUndone?: () => void }) {
   const [entries, setEntries] = useState<ClientActivity[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -28,7 +28,7 @@ export function ClientActivityLog({ patientId, actorUid, filterClient, from, thr
   const [notice, setNotice] = useState('');
   const [selected, setSelected] = useState<ClientActivity | null>(null);
   const [saving, setSaving] = useState(false);
-  const base = patientId ? `/api/admin/clients/${encodeURIComponent(patientId)}/activity` : `/api/admin/client-activity?staff=${encodeURIComponent(actorUid || '')}&client=${encodeURIComponent(filterClient || '')}&from=${encodeURIComponent(from || '')}&through=${encodeURIComponent(through || '')}`;
+  const base = patientId ? `/api/admin/clients/${encodeURIComponent(patientId)}/activity` : `/api/admin/client-activity?staff=${encodeURIComponent(actorUid || '')}&client=${encodeURIComponent(filterClient || '')}&from=${encodeURIComponent(from || '')}&through=${encodeURIComponent(through || '')}&type=${encodeURIComponent(changeType || '')}`;
   const load = useCallback(async (after?: string) => {
     setLoading(true); setError('');
     try {
@@ -101,7 +101,7 @@ export function ClientActivityLog({ patientId, actorUid, filterClient, from, thr
       </article>;
     })}
     {loading && <p role="status">Loading activity…</p>}
-    {!loading && !error && entries.length === 0 && <p>No activity {actorUid || filterClient || from || through ? 'matches these filters.' : patientId ? 'recorded for this client yet.' : 'recorded yet.'}</p>}
+    {!loading && !error && entries.length === 0 && <p>No activity {cursor ? 'matches on this page. Load older activity to continue searching.' : actorUid || filterClient || from || through || changeType ? 'matches these filters.' : patientId ? 'recorded for this client yet.' : 'recorded yet.'}</p>}
     {cursor && <button className={`${btn} ${btnPrimary}`} disabled={loading || saving} onClick={() => void load(cursor)}>Load older activity</button>}
   </section>;
 }
