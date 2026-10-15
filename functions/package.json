@@ -1,0 +1,1 @@
+{"name":"client-audit-functions","private":true,"main":"index.js","engines":{"node":"22"},"scripts":{"test":"node --test audit.test.js"},"dependencies":{"firebase-admin":"^13.8.0","firebase-functions":"^7.0.0"}}

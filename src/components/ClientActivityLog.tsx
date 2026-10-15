@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { authedFetch } from '@/lib/authedFetch';
-import { ACTIVITY_FIELD_LABELS, activityChangedFields, type ClientActivity } from '@/lib/clientActivity';
+import { ACTIVITY_FIELD_LABELS, activityChangedFields, activityDisplayFields, activityFieldLabel, type ClientActivity } from '@/lib/clientActivity';
 import { formatDateTimeUS, formatDateUS } from '@/lib/dateFormat';
 import { btn, btnDanger, btnPrimary } from './buttons';
 
@@ -13,6 +13,10 @@ function display(value: unknown, field: string): string {
   if (field === 'guardianContacts' && Array.isArray(value)) return value.map(c =>
     [c.name, c.role, c.relationship, c.phone, c.email, c.address].filter(Boolean).join(' · ')).join('\n') || 'None';
   if (field === 'dob') return formatDateUS(String(value || '')) || 'Not on file';
+  if (value && typeof value === 'object') return JSON.stringify(value, (_key, v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? formatDateUS(v) : v, 2);
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return formatDateUS(value);
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:/.test(value)) return formatDateTimeUS(value);
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
   return typeof value === 'string' ? value || 'Not on file' : String(value ?? 'Not on file');
 }
 export function ClientActivityLog({ patientId, actorUid, onStaffLoaded, onUndone }: { patientId?: string; actorUid?: string; onStaffLoaded?: (staff: ActivityStaff[]) => void; onUndone?: () => void }) {
@@ -54,7 +58,7 @@ export function ClientActivityLog({ patientId, actorUid, onStaffLoaded, onUndone
       <h2 style={{ fontSize: 20, fontWeight: 700 }}>Activity Log</h2>
       <button className={btn} disabled={loading || saving} onClick={() => void load()}>Refresh activity</button>
     </div>
-    <p style={{ color: '#64748b', margin: '10px 0 20px' }}>Review assistant information changes and document uploads, including who made them and their previous values. Only admins can undo changes. Older activity from before assistant access was enabled is not available.</p>
+    <p style={{ color: '#64748b', margin: '10px 0 20px' }}>Review recorded changes by staff across client information, documents, and linked chart records. New activity may take a moment to appear. Historical edits from before tracking was enabled are not available. Only eligible administrative changes offer Undo; clinical entries are review-only.</p>
     {error && <p role="alert" style={{ color: '#b91c1c', marginBottom: 14 }}>{error}</p>}
     {notice && <p role="status" style={{ color: '#166534', marginBottom: 14 }}>{notice}</p>}
     {selected && <div role="region" aria-label="Confirm undo" style={{ border: '1px solid #f59e0b', background: '#fffbeb', padding: 16, borderRadius: 8, marginBottom: 18 }}>
@@ -71,30 +75,31 @@ export function ClientActivityLog({ patientId, actorUid, onStaffLoaded, onUndone
       <button className={btn} disabled={saving} onClick={() => setSelected(null)}>Cancel</button>
     </div>}
     {entries.map(entry => {
-      const keys = activityChangedFields(entry);
+      const keys = activityDisplayFields(entry);
       const upload = entry.action === 'assistant-document-upload';
-      const canUndo = entry.patientExists !== false && !entry.revertedAt && (upload || (entry.action === 'assistant-information-update' && keys.length > 0));
+      const canUndo = entry.patientExists !== false && !entry.revertedAt && (upload || (entry.action === 'assistant-information-update' && activityChangedFields(entry).length > 0));
       return <article key={`${entry.patientId || patientId}:${entry.id}`} style={{ borderTop: '1px solid #e2e8f0', padding: '18px 0' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-          <div>{entry.patientName && <p style={{ marginBottom: 6, fontWeight: 700 }}>{entry.patientExists ? <Link href={`/admin/clients/${encodeURIComponent(entry.patientId!)}?tab=activity`}>{entry.patientName}</Link> : entry.patientName}</p>}<strong>{entry.actorName}</strong> <span style={{ color: '#64748b' }}>· {formatDateTimeUS(entry.at || '')}</span>
-            <p>{upload ? 'Uploaded a document' : entry.action === 'admin-undo' ? 'Undid a previous change' : 'Updated client information'}</p></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+          <div>{entry.patientName && <p style={{ marginBottom: 6, fontWeight: 700 }}>{entry.patientExists ? <Link href={`/admin/clients/${encodeURIComponent(entry.patientId!)}?tab=activity`}>{entry.patientName}</Link> : entry.patientName}</p>}<strong>{entry.actorName}</strong>{entry.actorRole && <span style={{ color: '#64748b' }}> ({entry.actorRole === 'va' ? 'Assistant' : entry.actorRole})</span>} <span style={{ color: '#64748b' }}>· {formatDateTimeUS(entry.at || '')}</span>
+            <p>{entry.action.startsWith('record-') ? `${entry.action === 'record-created' ? 'Created' : entry.action === 'record-deleted' ? 'Deleted' : 'Updated'} ${entry.recordLabel || 'client record'}` : upload ? 'Uploaded a document' : entry.action === 'admin-undo' ? 'Undid a previous change' : 'Updated client information'}</p></div>
           {canUndo && <button className={btn} disabled={saving} onClick={() => { setSelected(entry); setError(''); }}>Undo change</button>}
         </div>
         {upload && <p style={{ marginTop: 8 }}>{String(entry.after.title || entry.after.fileName || 'Document')} · {String(entry.after.category || '')} · {formatDateUS(String(entry.after.docDate || ''))}</p>}
         {entry.action === 'admin-undo' && entry.documentId && <p>Archived: {String(entry.after.title || 'Document')}</p>}
         {keys.map(key => <div key={key} style={{ marginTop: 12 }}>
-          <strong>{ACTIVITY_FIELD_LABELS[key]}</strong>
+          <strong>{activityFieldLabel(key)}</strong>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: 10, marginTop: 6 }}>
             <div style={{ background: '#f8fafc', padding: 10, borderRadius: 6, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}><span style={{ color: '#64748b' }}>Before</span><div>{display(entry.before[key], key)}</div></div>
             <div style={{ background: '#eff6ff', padding: 10, borderRadius: 6, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}><span style={{ color: '#64748b' }}>After</span><div>{display(entry.after[key], key)}</div></div>
           </div>
         </div>)}
+        {entry.truncated && <p style={{ color: '#92400e' }}>Some large or protected values were shortened or omitted in this log. Review the source record for full details.</p>}
         {!upload && !keys.length && entry.action !== 'admin-undo' && <p style={{ color: '#64748b' }}>Saved without changing any information.</p>}
         {entry.revertedAt && <p style={{ color: '#166534', marginTop: 12 }}>Undone by {entry.revertedByName || 'Administrator'} · {formatDateTimeUS(entry.revertedAt)}</p>}
       </article>;
     })}
     {loading && <p role="status">Loading activity…</p>}
-    {!loading && !error && entries.length === 0 && <p>No assistant activity recorded{patientId ? ' for this client' : actorUid ? ' for this staff member' : ''} yet.</p>}
+    {!loading && !error && entries.length === 0 && <p>No activity recorded{patientId ? ' for this client' : actorUid ? ' for this staff member' : ''} yet.</p>}
     {cursor && <button className={`${btn} ${btnPrimary}`} disabled={loading || saving} onClick={() => void load(cursor)}>Load older activity</button>}
   </section>;
 }

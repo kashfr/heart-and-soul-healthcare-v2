@@ -1,3 +1,4 @@
+import { clientAuditActor } from './clientAuditActor';
 import 'server-only';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -256,7 +257,7 @@ export async function sendPpotRequest(input: PpotSendInput, caller: AuthedCaller
   // Save what we learned back to the record so the next request fills itself.
   try {
     if (subject.kind === 'client') {
-      const patch: Record<string, unknown> = { physicianFax: toNumber, updatedAt: FieldValue.serverTimestamp() };
+      const patch: Record<string, unknown> = { ...clientAuditActor(caller), physicianFax: toNumber, updatedAt: FieldValue.serverTimestamp() };
       if (!subject.physicianName) patch.physicianName = input.recipientName.trim();
       if (!subject.medicaidId && medicaidId) patch.medicaidId = medicaidId;
       await db.collection('patients').doc(subject.id).collection('clinical').doc('profile').set(patch, { merge: true });

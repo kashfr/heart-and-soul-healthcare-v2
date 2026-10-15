@@ -1,3 +1,4 @@
+import { clientAuditActor } from './clientAuditActor';
 import 'server-only';
 import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
@@ -127,6 +128,7 @@ export async function offerVisitToSupervisors(
   if (v.status !== 'scheduled') return { ok: false, notified: 0, message: 'Only a scheduled visit can be offered.' };
 
   await ref.update({
+    ...clientAuditActor(by),
     nurseId: '',
     nurseName: '',
     offeredToAll: true,
@@ -180,7 +182,7 @@ export async function acceptOfferedVisit(visitId: string, caller: AuthedCaller):
     if (v.type !== 'supervisory' || v.status !== 'scheduled') return { ok: false, message: 'This visit is no longer open.' };
     if (v.nurseId) return { ok: false, message: `${v.nurseName || 'Another supervisor'} already took this visit.` };
     if (v.offeredToAll !== true) return { ok: false, message: 'This visit was not offered to the supervisors.' };
-    tx.update(ref, {
+    tx.update(ref, { ...clientAuditActor(caller),
       nurseId: caller.uid,
       nurseName: label,
       offeredToAll: false,
@@ -263,7 +265,7 @@ export async function releaseVisit(
   if (!to || toRole !== 'supervisor') return { ok: false, notified: 0, message: 'Choose an active supervisor to hand the visit to.' };
   if (to.uid === String(v.nurseId || '')) return { ok: false, notified: 0, message: 'That supervisor already has this visit.' };
   const credential = String((await db.collection('users').doc(opts.toUid).get()).data()?.credential || '');
-  await ref.update({
+  await ref.update({ ...clientAuditActor(caller),
     nurseId: to.uid,
     nurseName: `${to.name}${credential ? `, ${credential}` : ''}`,
     offeredToAll: false,

@@ -46,3 +46,6 @@ next-env.d.ts
 
 # Internal incident/compliance records — contain staff names, never commit
 GROOMING-DEFECT-INCIDENT-*.md
+
+/functions/node_modules/
+firebase-debug.log

@@ -58,3 +58,13 @@ it('preserves the actor filter when loading older entries and disables undo for 
  fireEvent.click(screen.getByRole('button',{name:'Load older activity'}));
  await waitFor(()=>expect(authedFetch).toHaveBeenCalledWith('/api/admin/client-activity?staff=rosita&cursor=deleted%3Achange',{cache:'no-store'}));
 });
+
+it('displays non-administrative field changes by supervisors without offering unsafe undo',async()=>{
+ vi.mocked(authedFetch).mockResolvedValueOnce(response({entries:[{...entry,action:'record-updated',actorName:'Example Supervisor',actorRole:'supervisor',recordLabel:'Clinical profile',before:{allergies:'None',vitalsBaselines:{pulse:60}},after:{allergies:'Penicillin',vitalsBaselines:{pulse:70}}}],nextCursor:null}));
+ render(<ClientActivityLog patientId="client"/>);
+ expect(await screen.findByText('Example Supervisor')).toBeInTheDocument();
+ expect(screen.getByText('Updated Clinical profile')).toBeInTheDocument();
+ expect(screen.getByText('Penicillin')).toBeInTheDocument();
+ expect(screen.getByText(/"pulse": 70/)).toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:'Undo change'})).not.toBeInTheDocument();
+});

@@ -92,3 +92,14 @@ it('combines clients, filters by actor, paginates tied timestamps, and rejects m
   expect(deleted.entries.find(e=>e.patientId===other.id)).toMatchObject({patientExists:false,patientName:'Unavailable client'});
  } finally { await db.recursiveDelete(other); }
 });
+
+it('captures database events with verified staff identity and serializes all changed fields',async()=>{
+ const {capture}=req('../functions/audit.js');
+ const {Timestamp}=req('firebase-admin/firestore');
+ const before=await patient.get();await patient.update({diagnosis:'Synthetic revised diagnosis'});const after=await patient.get();
+ const event={id:fixture+'-capture',document:patient.path,authType:'unknown',authId:admin.uid,time:new Date().toISOString(),data:{before,after}};
+ await capture(event,db,Timestamp);await capture(event,db,Timestamp);
+ const entries=(await listAllClientActivity(admin.uid)).entries.filter(e=>e.action==='record-updated'&&e.patientId===fixture);
+ expect(entries).toHaveLength(1);expect(entries[0]).toMatchObject({actorName:'Emulator Owner',recordLabel:'Client information',before:{diagnosis:'Keep'},after:{diagnosis:'Synthetic revised diagnosis'}});
+ await expect(undoClientActivity(fixture,entries[0].id,admin)).rejects.toMatchObject({status:400});
+});

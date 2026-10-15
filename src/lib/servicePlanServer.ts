@@ -1,3 +1,4 @@
+import { clientAuditActor } from './clientAuditActor';
 import 'server-only';
 import React from 'react';
 import { renderToBuffer } from '@react-pdf/renderer';
@@ -129,6 +130,7 @@ export async function createServicePlan(input: ServicePlanInput, caller: AuthedC
   const signedDate = agencyTodayISO();
   const ref = db.collection(COL).doc();
   await ref.set({
+    ...clientAuditActor(caller),
     ...input,
     clientName: String(p.name || ''),
     dob: String(p.dob || ''),
@@ -148,6 +150,7 @@ export async function createServicePlan(input: ServicePlanInput, caller: AuthedC
     const storagePath = `patients/${plan.patientId}/documents/${docRef.id}/${fileName}`;
     await adminBucket().file(storagePath).save(pdf, { contentType: 'application/pdf', resumable: false });
     await docRef.set({
+      ...clientAuditActor(caller),
       patientId: plan.patientId,
       category: SERVICE_PLAN_DOC_CATEGORY,
       title: `Service Plan, signed ${formatDateUS(signedDate)} by ${byName}`,
@@ -210,6 +213,7 @@ export async function createServicePlanReview(planId: string, input: ServicePlan
   const reviewedDate = agencyTodayISO();
   const ref = db.collection(COL).doc(planId).collection(REVIEWS).doc();
   await ref.set({
+    ...clientAuditActor(caller),
     planId,
     patientId: plan.patientId,
     reviewedDate,
@@ -233,6 +237,7 @@ export async function createServicePlanReview(planId: string, input: ServicePlan
     await adminBucket().file(storagePath).save(pdf, { contentType: 'application/pdf', resumable: false });
     const byName = caller.profile.displayName || caller.email || '';
     await docRef.set({
+      ...clientAuditActor(caller),
       patientId: plan.patientId,
       category: SERVICE_PLAN_DOC_CATEGORY,
       title: `Service Plan Review, ${formatDateUS(reviewedDate)} (plan signed ${formatDateUS(plan.signedDate)}), no changes`,

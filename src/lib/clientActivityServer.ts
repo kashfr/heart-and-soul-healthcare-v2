@@ -39,7 +39,7 @@ export async function listClientActivity(patientId: string, cursor?: string | nu
 }
 function serializeActivity(s: DocumentSnapshot): ClientActivity {
     const d = s.data()!;
-    return { id: s.id, actorUid: String(d.actorUid || ''), action: String(d.action || ''), actorName: String(d.actorName || 'Unknown staff'),
+    return { id: s.id, recordLabel: typeof d.recordLabel === 'string' ? d.recordLabel : undefined, sourcePath: typeof d.sourcePath === 'string' ? d.sourcePath : undefined, patientName: typeof d.patientName === 'string' ? d.patientName : undefined, truncated: d.truncated === true, actorUid: String(d.actorUid || ''), action: String(d.action || ''), actorName: String(d.actorName || 'Unknown staff'),
       actorRole: String(d.actorRole || ''), at: iso(d.at), before: data(d.before), after: data(d.after),
       documentId: typeof d.documentId === 'string' ? d.documentId : undefined,
       revertedAt: iso(d.revertedAt), revertedByName: typeof d.revertedByName === 'string' ? d.revertedByName : undefined,
@@ -67,7 +67,7 @@ export async function listAllClientActivity(actorUid?: string | null, cursor?: s
   const byId = new Map(patients.map(p => [p.id, p]));
   const entries = valid.map(s => {
     const patientId = s.ref.parent.parent!.id, patient = byId.get(patientId);
-    return { ...serializeActivity(s), patientId, patientName: String(patient?.data()?.name || 'Unavailable client'), patientExists: patient?.exists === true };
+    return { ...serializeActivity(s), patientId, patientName: String(patient?.data()?.name || s.data().patientName || 'Unavailable client'), patientExists: patient?.exists === true };
   });
   const last = page.at(-1);
   const staff = await db.collection('users').select('displayName', 'role', 'active').get();
@@ -103,7 +103,7 @@ export async function undoClientActivity(patientId: string, activityId: string, 
     if (original.revertedAt) throw new AssistantClientError(409, 'This activity has already been undone.');
     const before = data(original.before), after = data(original.after);
     const actorName = String(user.data()?.displayName || caller.email || 'Administrator');
-    const stamp = { updatedAt: FieldValue.serverTimestamp(), updatedBy: caller.uid, updatedByName: actorName };
+    const stamp = { auditEventId: reversalRef.id, updatedAt: FieldValue.serverTimestamp(), updatedBy: caller.uid, updatedByName: actorName };
     let reversal: Data;
     if (original.action === 'assistant-information-update') {
       const keys = activityChangedFields({ before, after });
@@ -141,7 +141,7 @@ export async function undoClientActivity(patientId: string, activityId: string, 
       const d = document.data()!;
       if (d.patientId !== patientId || d.uploadedBy !== original.actorUid || d.archived === true
         || Object.entries(after).some(([k, v]) => !sameActivityValue(d[k], v))) conflict();
-      tx.update(documentRef, { archived: true, archivedAt: FieldValue.serverTimestamp(), archivedBy: caller.uid, archivedByName: actorName });
+      tx.update(documentRef, { auditEventId: reversalRef.id, archived: true, archivedAt: FieldValue.serverTimestamp(), archivedBy: caller.uid, archivedByName: actorName });
       reversal = { documentId, before: { archived: false }, after: { archived: true, title: d.title || d.fileName || 'Document' } };
     } else throw new AssistantClientError(400, 'This activity cannot be undone.');
     tx.update(activityRef, { revertedAt: FieldValue.serverTimestamp(), revertedBy: caller.uid, revertedByName: actorName, reversalId: reversalRef.id });

@@ -1,3 +1,4 @@
+import { clientAuditActor } from './clientAuditActor';
 import 'server-only';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -143,7 +144,7 @@ export async function createRoi(input: RoiInput, caller: AuthedCaller): Promise<
     return { ok: false, status: 400, error: "Add the client's name and date of birth to their profile before preparing a CHOA request." };
   }
   const ref = db.collection(COL).doc();
-  await ref.set({
+  await ref.set({ ...clientAuditActor(caller),
     formType: input.formType || 'dbhdd',
     ...(input.choa ? { choa: input.choa } : {}),
     patientId,
@@ -366,10 +367,10 @@ export async function updateRoi(id: string, action: 'cancel' | 'hide' | 'unhide'
   const by = caller.profile.displayName || caller.email || '';
   if (action === 'cancel') {
     if (snap.data()?.status !== 'awaiting-signature') return { ok: false, status: 409, error: 'Only a release still waiting on a signature can be cancelled.' };
-    await ref.update({ status: 'cancelled', cancelledAt: FieldValue.serverTimestamp(), cancelledBy: caller.uid, cancelledByName: by });
+    await ref.update({ ...clientAuditActor(caller), status: 'cancelled', cancelledAt: FieldValue.serverTimestamp(), cancelledBy: caller.uid, cancelledByName: by });
     return { ok: true };
   }
-  await ref.update({ hidden: action === 'hide', hiddenBy: action === 'hide' ? caller.uid : FieldValue.delete() });
+  await ref.update({ ...clientAuditActor(caller), hidden: action === 'hide', hiddenBy: action === 'hide' ? caller.uid : FieldValue.delete() });
   return { ok: true };
 }
 

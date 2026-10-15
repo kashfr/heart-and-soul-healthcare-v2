@@ -1,3 +1,4 @@
+import { clientAuditActor } from '@/lib/clientAuditActor';
 import { NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebaseAdmin';
@@ -62,7 +63,7 @@ export async function POST(request: Request) {
 
   // Skip path: mark reviewed, change nothing else.
   if (!body.patientId) {
-    await noteRef.update({ linkReviewed: true });
+    await noteRef.update({ ...clientAuditActor(caller), linkReviewed: true });
     return NextResponse.json({ ok: true, action: 'skipped', noteId });
   }
 
@@ -100,7 +101,7 @@ export async function POST(request: Request) {
   // either all succeed or all fail. Keeps the audit trail tightly
   // coupled to the data change.
   const batch = db.batch();
-  batch.update(noteRef, noteUpdate);
+  batch.update(noteRef, { ...noteUpdate, ...clientAuditActor(caller) });
 
   if (Object.keys(changes).length > 0) {
     const historyRef = db.collection('progressNotes').doc(noteId).collection('editHistory').doc();
@@ -116,7 +117,7 @@ export async function POST(request: Request) {
 
   const authorUid = (noteData.nurseId as string) || '';
   if (authorUid) {
-    batch.update(patientRef, {
+    batch.update(patientRef, { ...clientAuditActor(caller),
       assignedNurseIds: FieldValue.arrayUnion(authorUid),
     });
   }
