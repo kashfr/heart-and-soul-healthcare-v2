@@ -1193,6 +1193,36 @@ export default function AdminSettingsPage() {
           )}
         </section>
 
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Create Client Records from Referrals</h2>
+          <p style={sectionSubStyle}>
+            Admins and supervisors always have access. Select individual virtual assistants who may
+            preview and create client records from referral cards. This copies referral details and
+            documents into the client record and moves the referral to Active. It does not grant
+            access to clinical profiles or permission to manage existing client records.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {faxOptions.filter((o) => o.role === 'va').map((o) => (
+              <label key={o.uid} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', border: '1px solid #e5e7eb', borderRadius: 6, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={draft.referralConversion.userUids.includes(o.uid)}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setDirty(true);
+                    setDraft((prev) => ({ ...prev, referralConversion: { userUids: checked
+                      ? Array.from(new Set([...prev.referralConversion.userUids, o.uid]))
+                      : prev.referralConversion.userUids.filter((uid) => uid !== o.uid) } }));
+                  }}
+                />
+                <span>{o.displayName}</span>
+                <span style={{ color: '#5c6b7a', fontSize: 12.5 }}>Virtual Assistant</span>
+              </label>
+            ))}
+            {!faxOptions.some((o) => o.role === 'va') && <p style={sectionSubStyle}>No active virtual assistants available.</p>}
+          </div>
+        </section>
+
         {/* --- EDWP Consents access --- */}
         <section style={sectionStyle}>
           <h2 style={sectionTitleStyle}>EDWP Consents Access</h2>

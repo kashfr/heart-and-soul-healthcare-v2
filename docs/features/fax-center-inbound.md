@@ -41,7 +41,7 @@ open PPOT requests (`ppotCandidateKeys`) and open verbal orders
 
 ## Creating the client record from a referral
 
-"Create Client Record" on the referral card (admin, supervisor) calls
+"Create Client Record" on the referral card (admins, supervisors, and individually authorized VAs) calls
 `convertReferralToClient()` in `src/lib/referralConvertServer.ts`. It does what
 the Clients page does by hand: the directory doc with the next record number
 from `counters/patients`, the clinical profile (physician, Medicaid ID), then
@@ -127,3 +127,9 @@ logs the correction to referral activity, and blocks edits after conversion.
 The opaque revision token includes both the file path and the latest revision
 id. Detail edits and PDF replacements advance that id; replace, edit, and undo
 all reject stale versions. Existing records without a revision id remain valid.
+
+Admins grant individual VAs access under Settings > Create Client Records from Referrals.
+`referralConversion.userUids` defaults to an empty list; both preview and conversion
+endpoints check the current server settings on every request. Revocation takes
+effect server-side immediately. This grant does not expand Firestore clinical
+read permissions or general client-edit permissions.
