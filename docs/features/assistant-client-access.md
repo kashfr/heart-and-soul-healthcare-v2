@@ -116,3 +116,8 @@ deploy --only functions:client-audit:captureClientActivity --project heart-and-s
 --non-interactive --force`. The force flag acknowledges retry billing for this
 idempotent function. Verify ACTIVE status and an event from a synthetic client;
 never mutate an actual chart for a smoke test. Source tests also run in PR CI.
+
+The runtime uses `client-activity-audit@heart-and-soul-hc.iam.gserviceaccount.com`
+with custom role `clientActivityCapture`: datastore.databases.get,
+datastore.entities.get, and datastore.entities.create. It cannot update or delete
+records. Event delivery uses the separately configured trigger identity.
