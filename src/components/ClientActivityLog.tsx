@@ -7,8 +7,9 @@ import { ACTIVITY_FIELD_LABELS, activityChangedFields, activityDisplayFields, ac
 import { formatDateTimeUS, formatDateUS } from '@/lib/dateFormat';
 import { btn, btnDanger, btnPrimary } from './buttons';
 
+export interface ActivityClient { id: string; name: string }
 export interface ActivityStaff { uid: string; name: string; active: boolean }
-interface Page { staff?: ActivityStaff[]; entries: ClientActivity[]; nextCursor: string | null }
+interface Page { clients?: ActivityClient[]; staff?: ActivityStaff[]; entries: ClientActivity[]; nextCursor: string | null }
 function display(value: unknown, field: string): string {
   if (field === 'guardianContacts' && Array.isArray(value)) return value.map(c =>
     [c.name, c.role, c.relationship, c.phone, c.email, c.address].filter(Boolean).join(' · ')).join('\n') || 'None';
@@ -19,7 +20,7 @@ function display(value: unknown, field: string): string {
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
   return typeof value === 'string' ? value || 'Not on file' : String(value ?? 'Not on file');
 }
-export function ClientActivityLog({ patientId, actorUid, onStaffLoaded, onUndone }: { patientId?: string; actorUid?: string; onStaffLoaded?: (staff: ActivityStaff[]) => void; onUndone?: () => void }) {
+export function ClientActivityLog({ patientId, actorUid, filterClient, from, through, onClientsLoaded, onStaffLoaded, onUndone }: { patientId?: string; actorUid?: string; filterClient?: string; from?: string; through?: string; onClientsLoaded?: (clients: ActivityClient[]) => void; onStaffLoaded?: (staff: ActivityStaff[]) => void; onUndone?: () => void }) {
   const [entries, setEntries] = useState<ClientActivity[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -27,7 +28,7 @@ export function ClientActivityLog({ patientId, actorUid, onStaffLoaded, onUndone
   const [notice, setNotice] = useState('');
   const [selected, setSelected] = useState<ClientActivity | null>(null);
   const [saving, setSaving] = useState(false);
-  const base = patientId ? `/api/admin/clients/${encodeURIComponent(patientId)}/activity` : `/api/admin/client-activity?staff=${encodeURIComponent(actorUid || '')}`;
+  const base = patientId ? `/api/admin/clients/${encodeURIComponent(patientId)}/activity` : `/api/admin/client-activity?staff=${encodeURIComponent(actorUid || '')}&client=${encodeURIComponent(filterClient || '')}&from=${encodeURIComponent(from || '')}&through=${encodeURIComponent(through || '')}`;
   const load = useCallback(async (after?: string) => {
     setLoading(true); setError('');
     try {
@@ -35,11 +36,12 @@ export function ClientActivityLog({ patientId, actorUid, onStaffLoaded, onUndone
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || 'Could not load activity.');
       const page = body as Page;
+      if (page.clients) onClientsLoaded?.(page.clients);
       if (page.staff) onStaffLoaded?.(page.staff);
       setEntries(old => after ? [...old, ...page.entries] : page.entries); setCursor(page.nextCursor);
     } catch (err) { setError(err instanceof Error ? err.message : 'Could not load activity.'); }
     finally { setLoading(false); }
-  }, [base, patientId, onStaffLoaded]);
+  }, [base, patientId, onStaffLoaded, onClientsLoaded]);
   useEffect(() => { void load(); }, [load]);
   async function undo() {
     if (!selected) return;
@@ -99,7 +101,7 @@ export function ClientActivityLog({ patientId, actorUid, onStaffLoaded, onUndone
       </article>;
     })}
     {loading && <p role="status">Loading activity…</p>}
-    {!loading && !error && entries.length === 0 && <p>No activity recorded{patientId ? ' for this client' : actorUid ? ' for this staff member' : ''} yet.</p>}
+    {!loading && !error && entries.length === 0 && <p>No activity {actorUid || filterClient || from || through ? 'matches these filters.' : patientId ? 'recorded for this client yet.' : 'recorded yet.'}</p>}
     {cursor && <button className={`${btn} ${btnPrimary}`} disabled={loading || saving} onClick={() => void load(cursor)}>Load older activity</button>}
   </section>;
 }

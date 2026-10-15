@@ -1,4 +1,5 @@
 import 'server-only';
+import { activityDateBounds, type ActivityFilters } from './activityFilters';
 import { FieldValue, type DocumentSnapshot } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
 import { AdminAuthError, requireRole, type AuthedCaller } from './adminAuthGuard';
@@ -46,10 +47,15 @@ function serializeActivity(s: DocumentSnapshot): ClientActivity {
       originalActivityId: typeof d.originalActivityId === 'string' ? d.originalActivityId : undefined };
 }
 /** Global history remains admin-only and reads the original immutable audit paths. */
-export async function listAllClientActivity(actorUid?: string | null, cursor?: string | null) {
+export async function listAllClientActivity(actorUid?: string | null, cursor?: string | null, filters: ActivityFilters = {}) {
+  if (filters.client) assertAssistantId(filters.client);
+  let bounds: ReturnType<typeof activityDateBounds>;
+  try { bounds = activityDateBounds(filters.from, filters.through); } catch (error) { throw new AssistantClientError(400, (error as Error).message); }
   if (actorUid) assertAssistantId(actorUid);
   const db = adminDb();
-  let query = db.collectionGroup('administrativeAudit').orderBy('at', 'desc').limit(51);
+  let query = (filters.client ? db.collection(`patients/${filters.client}/administrativeAudit`) : db.collectionGroup('administrativeAudit')).orderBy('at', 'desc').limit(51);
+  if (bounds.start) query = query.where('at', '>=', bounds.start);
+  if (bounds.end) query = query.where('at', '<', bounds.end);
   if (actorUid) query = query.where('actorUid', '==', actorUid);
   if (cursor) {
     const parts = cursor.split(':');
@@ -57,6 +63,8 @@ export async function listAllClientActivity(actorUid?: string | null, cursor?: s
     parts.forEach(assertAssistantId);
     const last = await db.doc(`patients/${parts[0]}/administrativeAudit/${parts[1]}`).get();
     if (!last.exists || !last.data()?.at || (actorUid && last.data()?.actorUid !== actorUid)) throw new AssistantClientError(400, 'Invalid activity cursor.');
+    const at = last.data()!.at.toDate();
+    if ((filters.client && parts[0] !== filters.client) || (bounds.start && at < bounds.start) || (bounds.end && at >= bounds.end)) throw new AssistantClientError(400, 'Invalid activity cursor.');
     query = query.startAfter(last);
   }
   const snapshot = await query.get();
@@ -71,7 +79,8 @@ export async function listAllClientActivity(actorUid?: string | null, cursor?: s
   });
   const last = page.at(-1);
   const staff = await db.collection('users').select('displayName', 'role', 'active').get();
-  return { entries, nextCursor: snapshot.docs.length > 50 && last ? `${last.ref.parent.parent!.id}:${last.id}` : null,
+  const clients = await db.collection('patients').select('name').get();
+  return { clients: clients.docs.map(s => ({ id: s.id, name: String(s.data().name || 'Unnamed client') })).sort((a, b) => a.name.localeCompare(b.name)), entries, nextCursor: snapshot.docs.length > 50 && last ? `${last.ref.parent.parent!.id}:${last.id}` : null,
     staff: staff.docs.map(s => ({ uid: s.id, name: String(s.data().displayName || 'Unnamed staff'), active: s.data().active === true }))
       .sort((a, b) => a.name.localeCompare(b.name)) };
 }

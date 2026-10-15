@@ -103,3 +103,32 @@ it('captures database events with verified staff identity and serializes all cha
  expect(entries).toHaveLength(1);expect(entries[0]).toMatchObject({actorName:'Emulator Owner',recordLabel:'Client information',before:{diagnosis:'Keep'},after:{diagnosis:'Synthetic revised diagnosis'}});
  await expect(undoClientActivity(fixture,entries[0].id,admin)).rejects.toMatchObject({status:400});
 });
+
+it('combines client, actor and inclusive Eastern dates across all pages', async () => {
+ const ref=db.doc('patients/'+fixture+'-filtered');
+ const other=db.doc('patients/'+fixture+'-other');
+ const actor=fixture+'-filter-actor';
+ try {
+  await ref.set({name:'Filter client'}); await other.set({name:'Other client'});
+  const batch=db.batch();
+  for(let i=0;i<55;i++)batch.set(ref.collection('administrativeAudit').doc('filter'+i),{actorUid:actor,at:new Date('2026-11-01T04:00:00Z')});
+  batch.set(ref.collection('administrativeAudit').doc('before'),{actorUid:actor,at:new Date('2026-11-01T03:59:59Z')});
+  batch.set(ref.collection('administrativeAudit').doc('after'),{actorUid:actor,at:new Date('2026-11-02T05:00:00Z')});
+  batch.set(ref.collection('administrativeAudit').doc('last'),{actorUid:actor,at:new Date('2026-11-02T04:59:59.999Z')});
+  batch.set(ref.collection('administrativeAudit').doc('wrong-actor'),{actorUid:'someone-else',at:new Date('2026-11-01T12:00:00Z')});
+  batch.set(other.collection('administrativeAudit').doc('wrong-client'),{actorUid:actor,at:new Date('2026-11-01T12:00:00Z')});
+  await batch.commit();
+  const filters={client:ref.id,from:'2026-11-01',through:'2026-11-01'};
+  const first=await listAllClientActivity(actor,null,filters);
+  const second=await listAllClientActivity(actor,first.nextCursor,filters);
+  expect(first.entries).toHaveLength(50);
+  expect(second.entries).toHaveLength(6);
+  expect(new Set([...first.entries,...second.entries].map(e=>e.id)).size).toBe(56);
+  expect(first.clients).toContainEqual({id:ref.id,name:'Filter client'});
+  await expect(listAllClientActivity(actor,first.nextCursor,{...filters,client:other.id})).rejects.toMatchObject({status:400});
+  await expect(listAllClientActivity(actor,first.nextCursor,{...filters,from:'2026-11-02',through:'2026-11-02'})).rejects.toMatchObject({status:400});
+  await expect(listAllClientActivity(actor,null,{from:'bad'})).rejects.toMatchObject({status:400});
+  const global=await listAllClientActivity(actor,null,{from:'2026-11-01',through:'2026-11-01'});
+  expect(global.entries.some(e=>e.id==='wrong-client')).toBe(true);
+ } finally {await db.recursiveDelete(ref);await db.recursiveDelete(other);}
+});

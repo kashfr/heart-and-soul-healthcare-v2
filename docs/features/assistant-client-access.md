@@ -123,3 +123,20 @@ datastore.entities.get, and datastore.entities.create. It cannot update or delet
 records. The same identity has Eventarc Event Receiver permission and Run Invoker only
 on the capture service. Service-account email principals reported as unknown
 by auth-context events are recognized as server principals.
+
+## Client and date filters
+
+The cross-client Activity Log combines Staff, Client, From, and Through filters.
+The client selector includes the full current directory, independent of loaded
+activity pages. Deleted-client events remain visible under All clients.
+Date input is MM/DD/YYYY; Apply dates validates and applies the range. Each
+boundary uses midnight in America/New_York with daylight-saving transitions;
+Through includes the entire selected day. Either bound may be omitted.
+
+The API also accepts client, from, and through (ISO date-only) parameters.
+Client filtering queries the original patient audit subcollection, so older
+events without a stored patientId remain searchable. Date and actor predicates
+run in Firestore before pagination. Cursors must belong to the selected client,
+actor and date range. Filter changes reset pagination and pending undo.
+Deploy the COLLECTION actorUid/at index in addition to the existing
+COLLECTION_GROUP indexes; no rules changes or data migration are required.
