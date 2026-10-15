@@ -19,6 +19,7 @@ import {
 import { formatUSPhone } from '@/lib/phone';
 import { arrayUnion, arrayRemove, doc, updateDoc } from 'firebase/firestore';
 import { AuthGuard } from '@/components/AuthGuard';
+import { AssistantClientsRoster } from '@/components/AssistantClients';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import {
   Patient,
@@ -1249,9 +1250,10 @@ function cappedDayHours(auths: HoursAuthorization[], days: BucketDayHours | unde
 }
 
 export default function ClientsRosterPage() {
+  const { role } = useEffectiveUser();
   return (
-    <AuthGuard allow={['admin', 'supervisor', 'nurse']}>
-      <ClientsRosterInner />
+    <AuthGuard allow={['admin', 'supervisor', 'nurse', 'va']}>
+      {role === 'va' ? <AssistantClientsRoster /> : <ClientsRosterInner />}
     </AuthGuard>
   );
 }

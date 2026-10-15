@@ -92,15 +92,15 @@ service cloud.firestore {
 
     // Patient Roster (directory fields: name, dob, diagnosis, address,
     // record #, requiresMar flag).
-    // The /progress-note form is authenticated (AuthGuard), so reads only need
-    // to be open to signed-in users — never the public. Nurses load the full
-    // roster for the form's autofill picker, so read stays at isSignedIn()
-    // rather than isStaff(); a whole-collection query would otherwise fail for
-    // a nurse the moment one doc is unreadable. Writes are staff-only.
+    // Active care staff can read the full roster, including nurses using the
+    // progress-note autofill picker. VAs use the server's program-scoped client
+    // workspace instead: a direct SDK read must not bypass its individual
+    // grants or expose clients outside their assigned programs. Inactive and
+    // missing profiles cannot read the roster. Writes stay staff-only.
     // Sensitive clinical PHI (sex, allergies, attending physician, diet) does
     // NOT live here — it's in the care-team-gated /clinical sub-record below.
     match /patients/{patientId} {
-      allow read: if isSignedIn();
+      allow read: if isActiveCareStaff();
       allow create: if isStaff() &&
         incomingData().name is string && incomingData().name.size() > 0 &&
         incomingData().dob is string && incomingData().dob.size() > 0 &&
@@ -124,6 +124,13 @@ service cloud.firestore {
               && get(/databases/$(database)/documents/patients/$(patientId))
                    .data.get('assignedNurseIds', []).hasAny([request.auth.uid]));
         allow write: if isStaff();
+      }
+
+      // Delegated administrative changes: append-only history written by the
+      // assistant API. Owners can review it; no browser may alter the audit.
+      match /administrativeAudit/{entryId} {
+        allow read: if isAdmin();
+        allow write: if false;
       }
     }
 

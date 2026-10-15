@@ -1,5 +1,6 @@
 'use client';
 
+import { AssistantClientAccessSettings } from '@/components/AssistantClientAccessSettings';
 import { canCreateClientFromReferral } from '@/lib/referralPermissions';
 import type { Role } from '@/lib/auth';
 import { validPpotSchedule } from '@/lib/ppotSchedule';
@@ -1239,6 +1240,11 @@ export default function AdminSettingsPage() {
             {referralOptions.length === 0 && <p style={sectionSubStyle}>No active staff available, or the staff list could not be loaded.</p>}
           </div>
         </section>
+
+        <AssistantClientAccessSettings value={draft.assistantClients} staff={referralOptions} onChange={(assistantClients) => {
+          setDirty(true);
+          setDraft((prev) => ({ ...prev, assistantClients }));
+        }} />
 
         {/* --- EDWP Consents access --- */}
         <section style={sectionStyle}>

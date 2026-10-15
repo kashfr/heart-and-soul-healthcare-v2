@@ -37,6 +37,7 @@ import AnnouncementGate from './AnnouncementGate';
 import type { Role } from '@/lib/auth';
 import { canUseFax } from '@/lib/faxShared';
 import { canUseEdwp } from '@/lib/edwpAccess';
+import { getAssistantClientGrant } from '@/lib/assistantClientAccess';
 import { subscribePendingDupCount } from '@/lib/drafts';
 import { subscribeMyOpenClarifications, subscribeOpenFlagsAwaitingReviewer } from '@/lib/clarifications';
 import { subscribePendingHandoffs } from '@/lib/handoffs';
@@ -65,7 +66,7 @@ const NAV: NavItem[] = [
   // med order book is the dashboard's "Manage record". The old Medications /
   // Treatments / Patients / Care Plans tabs redirect here (their per-patient
   // grid routes survive for nurse access + old bookmarks).
-  { href: '/admin/clients', label: 'Clients', icon: <HeartPulse size={18} />, allow: ['admin', 'supervisor', 'nurse'] },
+  { href: '/admin/clients', label: 'Clients', icon: <HeartPulse size={18} />, allow: ['admin', 'supervisor', 'nurse', 'va'] },
   // Notes are PHI and the VA role has no business need, so Submissions is
   // gated to the clinical roles (and enforced by the route's own AuthGuard,
   // not just hidden here). Revisit if a VA ever needs note access.
@@ -246,6 +247,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const visibleNav = NAV.filter(
     (item) =>
       (!item.allow || (role && item.allow.includes(role))) &&
+      (item.href !== '/admin/clients' || role !== 'va' || !!getAssistantClientGrant(appSettings.assistantClients, effectiveUid, role)) &&
       (!item.requiresFax || canUseFax(appSettings.fax, effectiveUid, role)) &&
       (!item.requiresEdwp || canUseEdwp(appSettings.edwp, effectiveUid, role)),
   );
