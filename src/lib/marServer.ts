@@ -1,3 +1,4 @@
+import { clientAuditActor } from './clientAuditActor';
 import 'server-only';
 import { FieldValue, type DocumentData, type DocumentReference } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
@@ -189,7 +190,7 @@ async function applyChangeInBatch(
   today: string,
 ): Promise<false | { changeKind: ChangeKind }> {
   let outcome: ChangeKind;
-  const reviewStamp = { status: 'applied', appliedAt: FieldValue.serverTimestamp() };
+  const reviewStamp = { ...clientAuditActor(caller), status: 'applied', appliedAt: FieldValue.serverTimestamp() };
   const patientId = String(data.patientId || '');
   const patientRef = patientId ? adminDb().collection('patients').doc(patientId) : null;
   const batch = adminDb().batch();
@@ -201,8 +202,8 @@ async function applyChangeInBatch(
       orderRef,
       orderFromProposed(patientId, p, isoOr(p.startDate, today), caller, { fromChangeRequestId: reqRef.id }),
     );
-    if (patientRef) batch.set(patientRef, { requiresMar: true }, { merge: true });
-    batch.update(reqRef, { ...reviewStamp, createdOrderId: orderRef.id });
+    if (patientRef) batch.set(patientRef, { ...clientAuditActor(caller), requiresMar: true }, { merge: true });
+    batch.update(reqRef, { ...clientAuditActor(caller), ...reviewStamp, createdOrderId: orderRef.id });
     outcome = 'add';
   } else if (data.type === 'change') {
     const oldId = String(data.targetOrderId || '');
@@ -229,13 +230,13 @@ async function applyChangeInBatch(
       // updated in place. No discontinue, no replacement, one unbroken MAR row
       // — a med whose ordering physician was finally filled in must not read as
       // though it was stopped.
-      batch.update(oldRef, {
+      batch.update(oldRef, { ...clientAuditActor(caller),
         ...correctionFields(p),
         lastEditedAt: FieldValue.serverTimestamp(),
         lastEditedBy: caller.uid,
         lastEditedByName: caller.profile.displayName || '',
       });
-      batch.update(reqRef, {
+      batch.update(reqRef, { ...clientAuditActor(caller),
         ...reviewStamp,
         changeKind: 'correction',
         updatedOrderId: oldId,
@@ -257,14 +258,14 @@ async function applyChangeInBatch(
       // The request still records exactly which regimen fields moved and what
       // they were before. See isSameDayAmendable for why both conditions are
       // required.
-      batch.update(oldRef, {
+      batch.update(oldRef, { ...clientAuditActor(caller),
         ...regimenFields(regimenOf(p)),
         ...correctionFields(p),
         lastEditedAt: FieldValue.serverTimestamp(),
         lastEditedBy: caller.uid,
         lastEditedByName: caller.profile.displayName || '',
       });
-      batch.update(reqRef, {
+      batch.update(reqRef, { ...clientAuditActor(caller),
         ...reviewStamp,
         changeKind: 'amendment',
         regimenFieldsChanged: regimenChanges,
@@ -290,7 +291,7 @@ async function applyChangeInBatch(
           supersedesOrderId: oldId,
         }),
       );
-      batch.update(oldRef, {
+      batch.update(oldRef, { ...clientAuditActor(caller),
         status: 'discontinued',
         endDate: effective,
         discontinuedAt: FieldValue.serverTimestamp(),
@@ -299,8 +300,8 @@ async function applyChangeInBatch(
         discontinueReason: `Changed per physician order: ${String(data.reason || '').trim()}`.trim(),
         supersededByOrderId: newRef.id,
       });
-      if (patientRef) batch.set(patientRef, { requiresMar: true }, { merge: true });
-      batch.update(reqRef, {
+      if (patientRef) batch.set(patientRef, { ...clientAuditActor(caller), requiresMar: true }, { merge: true });
+      batch.update(reqRef, { ...clientAuditActor(caller),
         ...reviewStamp,
         changeKind: 'regimen',
         regimenFieldsChanged: regimenChanges,
@@ -319,7 +320,7 @@ async function applyChangeInBatch(
     if (!orderSnap.exists || String(ord.patientId || '') !== patientId || String(ord.status || '') !== 'active') {
       return false;
     }
-    batch.update(orderRef, {
+    batch.update(orderRef, { ...clientAuditActor(caller),
       status: 'discontinued',
       endDate: isoOr(data.effectiveDate, today),
       discontinuedAt: FieldValue.serverTimestamp(),
@@ -462,6 +463,7 @@ export async function applyStandaloneChange(
   // network retry can't mint two orders. Falls back to an auto id otherwise.
   const reqRef = input.clientRequestId ? col.doc(input.clientRequestId) : col.doc();
   const payload: Record<string, unknown> = {
+    ...clientAuditActor(caller),
     patientId: input.patientId,
     patientName: String(input.patientName || ''),
     type: input.type,
@@ -793,7 +795,7 @@ export async function amendMarAdministration(
           }
         : { outcomeBy: caller.uid, outcomeByName: amenderName, outcomeAt: FieldValue.serverTimestamp() };
 
-    tx.set(newRef, {
+    tx.set(newRef, { ...clientAuditActor(caller),
       ...base,
       outcome: kept,
       ...attribution,
@@ -891,7 +893,7 @@ export async function voidMarAdministration(
     // A superseded entry is already not the record; removing it would leave the
     // superseding correction standing on a voided base. Void the current entry.
     if (!successor.empty) return 'superseded';
-    tx.update(col.doc(adminId), {
+    tx.update(col.doc(adminId), { ...clientAuditActor(caller),
       voided: true,
       voidedAt: FieldValue.serverTimestamp(),
       voidedBy: caller.uid,
@@ -996,7 +998,7 @@ export async function recordPrnOutcome(
     if ((fresh.data() || {}).voided === true) return 'voided';
     if (!amended.empty) return 'superseded';
     if (String((fresh.data() || {}).outcome || '').trim()) return 'already-recorded';
-    tx.update(ref, {
+    tx.update(ref, { ...clientAuditActor(caller),
       outcome,
       outcomeBy: caller.uid,
       outcomeByName: caller.profile.displayName || caller.email || '',

@@ -1,3 +1,4 @@
+import { clientAuditActor } from './clientAuditActor';
 import 'server-only';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
@@ -426,7 +427,7 @@ export async function recordFlaggedNoteAmended(
   });
   // Deliberately NOT touching blocksNotes and NOT recomputing the mirror:
   // the block survives the amendment until a reviewer removes it.
-  await docRef.update({
+  await docRef.update({ ...clientAuditActor(caller),
     'clarification.thread': thread,
     'clarification.response': 'Amended the note.',
     'clarification.respondedBy': caller.uid,
@@ -502,7 +503,7 @@ export async function applyClarification(
       );
     }
     const blocks = isCorrectionFlag && blocksNotes === true;
-    await docRef.update({
+    await docRef.update({ ...clientAuditActor(caller),
       clarification: {
         status: 'open',
         kind: isCorrectionFlag ? 'correction' : 'clarification',
@@ -552,7 +553,7 @@ export async function applyClarification(
       text: trimmed,
       at: Timestamp.now(),
     });
-    await docRef.update({
+    await docRef.update({ ...clientAuditActor(caller),
       'clarification.thread': thread,
       // Keep the legacy single-response fields pointing at the LATEST message so
       // any old reader still shows something sensible.
@@ -612,7 +613,7 @@ export async function applyClarification(
         'This note has no linked author account, so it cannot block anyone. Link the note to its nurse first (Maintenance).',
       );
     }
-    await docRef.update({
+    await docRef.update({ ...clientAuditActor(caller),
       'clarification.blocksNotes': blocksNotes === true,
       'clarification.blockSetBy': caller.uid,
       'clarification.blockSetByName': name,
@@ -632,7 +633,7 @@ export async function applyClarification(
     await recomputeCorrectionsBlockSafe(authorId);
     return fail(noteId, 'no-open-flag', 'There is no open clarification to resolve.');
   }
-  await docRef.update({
+  await docRef.update({ ...clientAuditActor(caller),
     'clarification.status': 'resolved',
     'clarification.blocksNotes': false,
     'clarification.resolvedBy': caller.uid,

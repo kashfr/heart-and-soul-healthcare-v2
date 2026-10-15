@@ -173,11 +173,12 @@ export async function updateAssistantClient(context: AssistantContext, id: strin
       before.guardianContacts = existing.map(c => Object.fromEntries(CONTACT_FIELDS.map(k => [k, text(c[k])])));
       after.guardianContacts = patch.contacts;
     }
-    const stamp = { updatedAt: FieldValue.serverTimestamp(), updatedBy: context.caller.uid, updatedByName: context.caller.profile.displayName || context.caller.email || '' };
+    const auditRef = patientRef.collection('administrativeAudit').doc();
+    const stamp = { auditEventId: auditRef.id, updatedAt: FieldValue.serverTimestamp(), updatedBy: context.caller.uid, updatedByName: context.caller.profile.displayName || context.caller.email || '' };
     if (Object.keys(patch.directory).length) tx.update(patientRef, { ...patch.directory, ...stamp });
     if (Object.keys(patch.clinical).length) tx.set(clinicalRef, { ...patch.clinical, ...stamp }, { merge: true });
     if (contacts) tx.set(guardianRef, { contacts, ...stamp }, { merge: true });
-    tx.set(patientRef.collection('administrativeAudit').doc(), {
+    tx.set(auditRef, {
       action: 'assistant-information-update', before, after, actorUid: context.caller.uid,
       actorName: context.caller.profile.displayName || context.caller.email || '', actorRole: context.caller.role, at: FieldValue.serverTimestamp(),
     });
@@ -216,8 +217,9 @@ export async function uploadAssistantDocument(context: AssistantContext, id: str
   try {
     await db.runTransaction(async tx => {
       await currentWriteGrant(tx, context, id, 'uploadDocuments');
-      tx.create(docRef, metadata);
-      tx.set(patientRef.collection('administrativeAudit').doc(), {
+      const auditRef = patientRef.collection('administrativeAudit').doc();
+      tx.create(docRef, { ...metadata, auditEventId: auditRef.id });
+      tx.set(auditRef, {
         action: 'assistant-document-upload', documentId: docRef.id,
         after: { title: details.title, category: details.category, docDate: details.docDate, fileName: details.fileName, size: file.size },
         actorUid: context.caller.uid, actorName: metadata.uploadedByName, actorRole: context.caller.role, at: FieldValue.serverTimestamp(),

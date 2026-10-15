@@ -1,3 +1,4 @@
+import { clientAuditActor } from './clientAuditActor';
 import 'server-only';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminBucket, adminDb } from './firebaseAdmin';
@@ -64,6 +65,7 @@ export async function convertReferralToClient(
     const next = counter.exists ? Number(counter.data()?.nextRecordNumber || 1) : 1;
     const mrn = String(next).padStart(6, '0');
     tx.set(patientRef, {
+      ...clientAuditActor(caller),
       name: plan.name,
       dob,
       diagnosis,
@@ -86,7 +88,7 @@ export async function convertReferralToClient(
   if ('existing' in claim) return { ok: false, status: 409, error: 'This referral already has a client record.', patientId: claim.existing };
 
   const c = plan.clinical;
-  const clinical: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
+  const clinical: Record<string, unknown> = { ...clientAuditActor(caller), updatedAt: FieldValue.serverTimestamp() };
   if (c.physicianName) clinical.physicianName = c.physicianName;
   if (c.physicianPhone) clinical.physicianPhone = c.physicianPhone;
   if (c.physicianFax) clinical.physicianFax = c.physicianFax;

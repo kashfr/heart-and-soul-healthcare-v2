@@ -82,3 +82,37 @@ GET `/api/admin/client-activity` requires an active admin and accepts `staff`
 group, resolves client names, and returns 50 events per page. Deploy the new
 collection-group `at` and `actorUid/at` indexes separately and verify READY before
 shipping. No permission/rule changes or audit migration are needed.
+
+## All-staff capture (October 2026)
+
+The overview now also displays database-captured creations, edits, and deletions
+for admins, supervisors, nurses, and assistants. `functions/` contains the
+second-generation Firestore auth-context trigger `captureClientActivity`.
+Its allowlist covers patients and clinical subrecords, documents, hours,
+progress notes, MAR orders/administrations/change requests, care tasks and their
+administrations, visits, quick notes, handoffs, verbal orders, medication error
+reports, seizures, service plans/reviews, PPOT, and ROI records with a patientId.
+Unrelated organization data and the audit collection itself are excluded.
+The event ID deterministically keys the entry, so delivery retries do not
+produce duplicate history. Capture is asynchronous; refresh after a moment.
+
+Browser identity comes from the database event's authentication context, never
+editable document fields. Server writes carry a fresh `_auditActor` nonce and
+verified caller UID through `clientAuditActor`. The trigger does not attribute
+later automated writes to an old author. Unattributed/automated events are
+explicitly labeled System / unidentified actor. Same-commit existing assistant
+and undo events are recognized via auditEventId to avoid duplicate entries.
+Hard-deletion identity is recovered from the same-operation deletion snapshot.
+
+These new captured entries are review-only; existing administrative undo remains
+unchanged. Before/after values show changed fields, including nested structures.
+Large values are bounded; credentials, signed URLs, binary/signature content are
+omitted. Deleted clients retain their captured names in the global log.
+No historic before/after values are invented or backfilled.
+
+Deployment: app merge alone does NOT deploy the capture function. Run `npm ci
+--prefix functions`, `npm test --prefix functions`, then `npx firebase-tools@latest
+deploy --only functions:client-audit:captureClientActivity --project heart-and-soul-hc
+--non-interactive --force`. The force flag acknowledges retry billing for this
+idempotent function. Verify ACTIVE status and an event from a synthetic client;
+never mutate an actual chart for a smoke test. Source tests also run in PR CI.

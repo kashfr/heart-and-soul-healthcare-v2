@@ -5,6 +5,9 @@ export const ACTIVITY_FIELD_LABELS: Record<string, string> = {
 };
 export interface ClientActivity {
   id: string;
+  recordLabel?: string;
+  sourcePath?: string;
+  truncated?: boolean;
   actorUid?: string;
   patientId?: string;
   patientName?: string;
@@ -32,4 +35,12 @@ export function sameActivityValue(a: unknown, b: unknown): boolean {
 export function activityChangedFields(entry: Pick<ClientActivity, 'before' | 'after'>): string[] {
   return Object.keys(ACTIVITY_FIELD_LABELS).filter(k => Object.hasOwn(entry.before, k)
     && Object.hasOwn(entry.after, k) && !sameActivityValue(entry.before[k], entry.after[k]));
+}
+
+/** Captured records include changed fields beyond the administrative undo allowlist. */
+export function activityDisplayFields(entry: ClientActivity): string[] {
+  return entry.action.startsWith('record-') ? [...new Set([...Object.keys(entry.before), ...Object.keys(entry.after)])] : activityChangedFields(entry);
+}
+export function activityFieldLabel(key: string): string {
+  return ACTIVITY_FIELD_LABELS[key] || key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase());
 }

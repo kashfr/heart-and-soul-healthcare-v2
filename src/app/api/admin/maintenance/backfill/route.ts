@@ -1,3 +1,4 @@
+import { clientAuditActor } from '@/lib/clientAuditActor';
 import { NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebaseAdmin';
@@ -93,7 +94,7 @@ export async function POST(request: Request) {
       continue;
     }
 
-    batch.update(noteDoc.ref, { patientId: match });
+    batch.update(noteDoc.ref, { ...clientAuditActor(caller), patientId: match });
     pendingWrites++;
     notesLinked++;
 
@@ -123,7 +124,7 @@ export async function POST(request: Request) {
     const authorUids = Array.from(authorSet);
     if (authorUids.length === 0) continue;
     const ref = db.collection('patients').doc(patientId);
-    batch.update(ref, {
+    batch.update(ref, { ...clientAuditActor(caller),
       assignedNurseIds: FieldValue.arrayUnion(...authorUids),
     });
     pendingWrites++;

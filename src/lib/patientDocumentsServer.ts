@@ -1,3 +1,4 @@
+import { clientAuditActor } from './clientAuditActor';
 import { DOC_CATEGORIES } from './docCategories';
 import { noteDocDetails } from './noteDocLinks';
 import 'server-only';
@@ -105,6 +106,7 @@ export async function fileNoteAsDocument(noteId: string, caller: AuthedCaller): 
     docDate: /^\d{4}-\d{2}-\d{2}$/.test(docDate) ? docDate : '',
   });
   const base = {
+    ...clientAuditActor(caller),
     patientId,
     ...details,
     fileName,
@@ -253,6 +255,7 @@ export async function moveDocumentToPatient(
   for (const k of ['archived', 'archivedBy', 'archivedByName', 'archivedAt']) delete rest[k];
   await newRef.set({
     ...rest,
+    ...clientAuditActor(caller),
     patientId: toPatientId,
     storagePath: newPath,
     ...(opts.title?.trim() ? { title: opts.title.trim() } : {}),
@@ -326,6 +329,7 @@ export async function updateDocumentDetailsServer(
   const snap = await ref.get();
   if (!snap.exists) return { ok: false, status: 404, error: 'Document not found.' };
   await ref.update({
+    ...clientAuditActor(caller),
     title,
     category: patch.category,
     docDate: patch.docDate,
