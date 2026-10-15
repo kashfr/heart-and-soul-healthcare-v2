@@ -67,6 +67,7 @@ const NAV: NavItem[] = [
   // Treatments / Patients / Care Plans tabs redirect here (their per-patient
   // grid routes survive for nurse access + old bookmarks).
   { href: '/admin/clients', label: 'Clients', icon: <HeartPulse size={18} />, allow: ['admin', 'supervisor', 'nurse', 'va'] },
+  { href: '/admin/activity', label: 'Activity Log', icon: <FileClock size={18} />, allow: ['admin'] },
   // Notes are PHI and the VA role has no business need, so Submissions is
   // gated to the clinical roles (and enforced by the route's own AuthGuard,
   // not just hidden here). Revisit if a VA ever needs note access.

@@ -10,7 +10,7 @@ const mocks=vi.hoisted(()=>({db:null as unknown}));
 vi.mock('server-only',()=>({}));
 vi.mock('@/lib/firebaseAdmin',()=>({adminDb:()=>mocks.db,adminBucket:()=>{throw new Error('No Storage access');}}));
 import {getAssistantClient,updateAssistantClient,type AssistantContext} from '@/lib/assistantClientsServer';
-import {listClientActivity,undoClientActivity} from '@/lib/clientActivityServer';
+import {listClientActivity,listAllClientActivity,undoClientActivity} from '@/lib/clientActivityServer';
 import type {AuthedCaller} from '@/lib/adminAuthGuard';
 mocks.db=db;
 const admin={uid:fixture+'-owner',email:'owner@example.invalid',role:'admin',profile:{active:true,role:'admin',displayName:'Emulator Owner'}} as AuthedCaller;
@@ -60,4 +60,35 @@ it('paginates history without skipping entries sharing a timestamp',async()=>{
  const second=await listClientActivity(fixture,first.nextCursor);expect(second.entries.length).toBeGreaterThan(0);
  const all=[...first.entries,...second.entries].map(e=>e.id);expect(new Set(all).size).toBe(all.length);
  expect((await patient.collection('administrativeAudit').get()).size).toBe(all.length);
+});
+
+
+it('combines clients, filters by actor, paginates tied timestamps, and rejects mismatched cursors', async () => {
+ const other = db.doc('patients/' + fixture + '-other');
+ const actor = fixture + '-global';
+ try {
+  await other.set({name:'Second client'});
+  const batch = db.batch();
+  for (let i=0;i<55;i++) batch.set((i%2 ? patient : other).collection('administrativeAudit').doc(actor + i), {
+   actorUid:actor,actorName:'Global assistant',action:'assistant-information-update',at:FieldValue.serverTimestamp(),before:{city:'Old'},after:{city:'New'},
+  });
+  await batch.commit();
+  const first = await listAllClientActivity(actor);
+  expect(first.entries).toHaveLength(50);
+  expect(new Set(first.entries.map(e=>e.patientId)).size).toBe(2);
+  expect(first.entries.find(e=>e.patientId===other.id)).toMatchObject({patientName:'Second client',patientExists:true});
+  const second = await listAllClientActivity(actor,first.nextCursor);
+  expect(second.entries).toHaveLength(5);expect(second.nextCursor).toBeNull();
+  expect(new Set([...first.entries,...second.entries].map(e=>e.patientId+':'+e.id)).size).toBe(55);
+  expect([...first.entries,...second.entries].every(e=>e.actorUid===actor)).toBe(true);
+  await expect(listAllClientActivity(fixture,first.nextCursor)).rejects.toMatchObject({status:400});
+  await expect(listAllClientActivity(actor,'bad')).rejects.toMatchObject({status:400});
+  await expect(listAllClientActivity(actor,'bad:missing')).rejects.toMatchObject({status:400});
+  const all = await listAllClientActivity();
+  expect(all.entries.length).toBeGreaterThan(0);
+  expect(all.staff.find(s=>s.uid===fixture)).toMatchObject({name:'Emulator VA',active:true});
+  await other.delete();
+  const deleted = await listAllClientActivity(actor);
+  expect(deleted.entries.find(e=>e.patientId===other.id)).toMatchObject({patientExists:false,patientName:'Unavailable client'});
+ } finally { await db.recursiveDelete(other); }
 });

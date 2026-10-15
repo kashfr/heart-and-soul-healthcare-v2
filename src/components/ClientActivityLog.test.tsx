@@ -38,3 +38,23 @@ it('explains that undoing an upload preserves the file',async()=>{
  fireEvent.click(screen.getByRole('button',{name:'Cancel'}));
  expect(authedFetch).toHaveBeenCalledTimes(1);
 });
+
+it('shows client names globally and sends undo to the selected client',async()=>{
+ vi.mocked(authedFetch).mockResolvedValueOnce(response({entries:[{...entry,patientId:'second-client',patientName:'Second Client',patientExists:true}],nextCursor:'second-client:change',staff:[]}));
+ render(<ClientActivityLog actorUid="rosita"/>);
+ expect(await screen.findByRole('link',{name:'Second Client'})).toHaveAttribute('href','/admin/clients/second-client?tab=activity');
+ expect(authedFetch).toHaveBeenCalledWith('/api/admin/client-activity?staff=rosita',{cache:'no-store'});
+ fireEvent.click(screen.getByRole('button',{name:'Undo change'}));
+ expect(screen.getByRole('region',{name:'Confirm undo'})).toHaveTextContent('Client: Second Client');
+ vi.mocked(authedFetch).mockResolvedValueOnce(response({ok:true})).mockResolvedValueOnce(response({entries:[],nextCursor:null}));
+ fireEvent.click(screen.getByRole('button',{name:'Confirm undo'}));
+ await waitFor(()=>expect(authedFetch).toHaveBeenCalledWith('/api/admin/clients/second-client/activity/change/undo',{method:'POST'}));
+});
+it('preserves the actor filter when loading older entries and disables undo for missing clients',async()=>{
+ vi.mocked(authedFetch).mockResolvedValueOnce(response({entries:[{...entry,patientId:'deleted',patientName:'Unavailable client',patientExists:false}],nextCursor:'deleted:change'}));
+ render(<ClientActivityLog actorUid="rosita"/>);await screen.findByText('Rosita Lee');
+ expect(screen.queryByRole('button',{name:'Undo change'})).not.toBeInTheDocument();
+ vi.mocked(authedFetch).mockResolvedValueOnce(response({entries:[],nextCursor:null}));
+ fireEvent.click(screen.getByRole('button',{name:'Load older activity'}));
+ await waitFor(()=>expect(authedFetch).toHaveBeenCalledWith('/api/admin/client-activity?staff=rosita&cursor=deleted%3Achange',{cache:'no-store'}));
+});
