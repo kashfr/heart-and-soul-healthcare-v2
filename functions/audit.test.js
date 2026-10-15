@@ -41,3 +41,8 @@ test('skips same-commit assistant audit but not stale browser markers',async()=>
 test('unattributed service actions are labeled explicitly without inventing a person',async()=>{
  const f=fixture({authType:'service_account'});await capture(f.event,f.db,Timestamp);assert.equal([...f.writes.values()][0].actorName,'System / unidentified actor');
 });
+
+test('recognizes authenticated service-account email principals reported as unknown',async()=>{
+ const f=fixture({authType:'unknown',authId:'backend@project.iam.gserviceaccount.com',after:{name:'New',_auditActor:{uid:'supervisor',nonce:'new'}}});
+ await capture(f.event,f.db,Timestamp);const entry=[...f.writes.values()][0];assert.equal(entry.actorUid,'supervisor');assert.equal(entry.actorRole,'supervisor');assert.equal(entry.actorSource,'server');
+});

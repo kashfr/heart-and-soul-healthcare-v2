@@ -42,9 +42,12 @@ function targets(path,before={},after={}) {
  return [...new Set([before.patientId,after.patientId].filter(id=>typeof id==='string'&&/^[\w-]{1,128}$/.test(id)))];
 }
 // Never reuse a record's historical author as the actor for a later edit.
+function serverPrincipal(event) {
+ return event.authType==='service_account'||event.authType==='system'||(typeof event.authId==='string'&&/^[^/\s]+@[^/\s]+\.gserviceaccount\.com$/.test(event.authId));
+}
 function actorCandidate(event,before={},after={}) {
- if(event.authType!=='service_account'&&event.authId)return {uid:event.authId,source:'authentication'};
- if(event.authType!=='service_account')return null;
+ if(!serverPrincipal(event)&&event.authId)return {uid:event.authId,source:'authentication'};
+ if(!serverPrincipal(event))return null;
  if(after._auditActor?.uid && after._auditActor?.nonce && before._auditActor?.nonce!==after._auditActor.nonce)return {uid:after._auditActor.uid,source:'server'};
  for(const [stamp,uid] of [['lastOfferedAt','offeredBy'],['detailsEditedAt','detailsEditedBy'],['archivedAt','archivedBy'],['replacedAt','replacedBy'],['movedAt','movedBy'],['signedAt','signedBy'],['reviewedAt','reviewedBy'],['cancelledAt','cancelledBy'],['sentAt','byUid']]) {
   if(after[stamp]&&!same(before[stamp],after[stamp])&&typeof after[uid]==='string')return {uid:after[uid],source:'server'};
@@ -67,12 +70,12 @@ async function capture(event,db,Timestamp) {
   if(user.exists)actor={actorUid:candidate.uid,actorName:String(user.data().displayName||'Staff member'),actorRole:String(user.data().role||'staff'),actorSource:candidate.source};
  }
  // An existing assistant/undo event already records this exact atomic write.
- if(event.authType==='service_account' && after.auditEventId && before.auditEventId!==after.auditEventId && /^[\w-]{1,128}$/.test(after.auditEventId)) {
+ if(serverPrincipal(event) && after.auditEventId && before.auditEventId!==after.auditEventId && /^[\w-]{1,128}$/.test(after.auditEventId)) {
   const existing=await db.doc(`patients/${ids[0]}/administrativeAudit/${after.auditEventId}`).get();
   if(existing.exists && existing.updateTime.isEqual(event.data.after.updateTime))return;
  }
  // Server document deletions carry their verified actor in the same-commit tombstone.
- if(event.authType==='service_account' && !event.data.after.exists && (path.startsWith('patientDocuments/')||path.startsWith('progressNotes/')||path.startsWith('marAdministrations/'))) {
+ if(serverPrincipal(event) && !event.data.after.exists && (path.startsWith('patientDocuments/')||path.startsWith('progressNotes/')||path.startsWith('marAdministrations/'))) {
   const tombstone=path.startsWith('patientDocuments/')?'deletedDocuments/'+path.split('/')[1]:path.startsWith('progressNotes/')?'deletedNotes/'+path.split('/')[1]:before.sourceNoteId?'deletedNotes/'+before.sourceNoteId:null;
   const deleted=tombstone?await db.doc(tombstone).get():{exists:false};
   if(deleted.exists && deleted.data().deletedAt?.toMillis && Math.abs(deleted.data().deletedAt.toMillis()-Date.parse(event.time))<1000) {
@@ -86,7 +89,7 @@ async function capture(event,db,Timestamp) {
  const at=event.data.after.updateTime||Timestamp.fromDate(new Date(event.time));
  for(const patientId of ids) {
   const patient=parts[0]==='patients'&&parts.length===2?(event.data.after.exists?after:before):(await db.doc('patients/'+patientId).get()).data();
-  try {await db.doc(`patients/${patientId}/administrativeAudit/${eventId}`).create({action,...actor,at,...diff,sourcePath:path,recordLabel,patientName:String(patient?.name||'Unavailable client'),capturedAt:Timestamp.now(),sourceEventId:event.id});}
+  try {await db.doc(`patients/${patientId}/administrativeAudit/${eventId}`).create({action,...actor,at,...diff,sourcePath:path,recordLabel,patientName:String(patient?.name||'Unavailable client'),capturedAt:Timestamp.now(),sourceEventId:event.id,principalType:event.authType||'unknown',serverPrincipal:serverPrincipal(event)});}
   catch(e){if(e.code!==6&&e.code!=='already-exists')throw e;}
  }
 }

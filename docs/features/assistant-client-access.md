@@ -120,4 +120,6 @@ never mutate an actual chart for a smoke test. Source tests also run in PR CI.
 The runtime uses `client-activity-audit@heart-and-soul-hc.iam.gserviceaccount.com`
 with custom role `clientActivityCapture`: datastore.databases.get,
 datastore.entities.get, and datastore.entities.create. It cannot update or delete
-records. Event delivery uses the separately configured trigger identity.
+records. The same identity has Eventarc Event Receiver permission and Run Invoker only
+on the capture service. Service-account email principals reported as unknown
+by auth-context events are recognized as server principals.
