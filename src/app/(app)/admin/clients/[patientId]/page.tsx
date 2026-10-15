@@ -23,6 +23,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { AuthGuard } from '@/components/AuthGuard';
+import { ClientActivityLog } from '@/components/ClientActivityLog';
 import { AssistantClientDetails } from '@/components/AssistantClients';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
@@ -92,6 +93,7 @@ const TABS = [
   // parent's "how many hours are left"). Hidden from every other role and
   // while an admin previews a nurse's view; guarded in the resolver below.
   { key: 'hours', label: 'Hours' },
+  { key: 'activity', label: 'Activity Log' },
 ] as const;
 type TabKey = (typeof TABS)[number]['key'];
 
@@ -189,7 +191,7 @@ function ClientDashboardInner() {
   // Care plan is a staff surface; a nurse deep-linking ?tab=careplan lands on
   // Overview instead of an editor she isn't meant to drive.
   const tab: TabKey =
-    isTabKey(tabParam) && !((tabParam === 'careplan' || tabParam === 'communications') && isNurse) && !(tabParam === 'hours' && !showHoursTab)
+    isTabKey(tabParam) && !((tabParam === 'careplan' || tabParam === 'communications') && isNurse) && !((tabParam === 'hours' || tabParam === 'activity') && !showHoursTab)
       ? tabParam
       : 'overview';
   const setTab = (next: TabKey) => {
@@ -634,7 +636,7 @@ function ClientDashboardInner() {
 
           {/* Tab bar */}
           <div style={tabBarStyle} role="tablist" aria-label="Dashboard sections">
-            {TABS.filter((t) => ((t.key !== 'careplan' && t.key !== 'communications') || !isNurse) && (t.key !== 'hours' || showHoursTab)).map((t) => (
+            {TABS.filter((t) => ((t.key !== 'careplan' && t.key !== 'communications') || !isNurse) && ((t.key !== 'hours' && t.key !== 'activity') || showHoursTab)).map((t) => (
               <button
                 key={t.key}
                 type="button"
@@ -793,6 +795,12 @@ function ClientDashboardInner() {
               )}
             </>
           )}
+
+          {tab === 'activity' && showHoursTab && <ClientActivityLog key={patientId} patientId={patientId} onUndone={() => {
+            void Promise.all([getPatient(patientId), getPatientClinical(patientId), getPatientDocuments(patientId)]).then(([nextPatient, nextClinical, nextDocuments]) => {
+              setPatient(nextPatient); setClinical(nextClinical); setDocuments(nextDocuments);
+            });
+          }} />}
 
           {tab === 'schedule' && (
           <section style={sectionCardStyle}>

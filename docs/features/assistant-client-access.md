@@ -42,3 +42,27 @@ Deploy `firestore.rules` separately after the application, as documented in
 `DEPLOY-CHECKLIST.md`. No index or Storage rule change is needed. Use a synthetic
 client for any write/upload smoke tests; never alter a real clinical chart just
 to test access. Enable real staff grants only for the user-requested scope.
+
+## Admin activity log and undo
+
+The admin-only Activity Log tab on each client lists assistant changes and
+uploads, newest first (50 per page). It shows actor, Eastern US date/time, and
+before/after values. Existing assistant audit records are included. This is not
+a full historical log of every staff edit predating this feature.
+
+Admin undo runs in one transaction. It checks the administrator is still active,
+that the original event has not been reversed, and that each affected document
+still has the original commit timestamp and expected values. Later writes to a
+related document block undo, even when its current values happen to match again.
+Only changed administrative fields are restored; protected clinical values and
+guardian contact notes are preserved. Undoing an upload archives its metadata
+and keeps its bytes. The existing Documents archive controls can restore it.
+Every undo marks the original entry and appends a reversal event with the admin
+identity. A reversal cannot itself be undone through this log.
+
+Routes: GET /api/admin/clients/[id]/activity and POST
+/api/admin/clients/[id]/activity/[activityId]/undo. No new rules or indexes.
+
+Run the undo transaction integration checks against the local demo emulator:
+`FIRESTORE_EMULATOR_HOST=127.0.0.1:8184 GCLOUD_PROJECT=demo-client-access npx vitest run --config scripts/activity-emulator.config.mjs`.
+The harness refuses any other host/project and uses only synthetic records.

@@ -1,0 +1,40 @@
+import React from 'react';
+import { beforeEach, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+vi.mock('@/lib/authedFetch', () => ({ authedFetch: vi.fn() }));
+import { authedFetch } from '@/lib/authedFetch';
+import { ClientActivityLog } from './ClientActivityLog';
+const entry = { id: 'change', action: 'assistant-information-update', actorName: 'Rosita Lee', actorRole: 'va', at: '2026-10-15T18:00:00Z', before: { name: 'Previous Name' }, after: { name: 'Corrected Name' }, revertedAt: null };
+const response=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status});
+beforeEach(()=>{vi.clearAllMocks();vi.mocked(authedFetch).mockResolvedValue(response({entries:[entry],nextCursor:null}));});
+it('shows actor, US date, and old/new values and requires confirmation before undo',async()=>{
+ const onUndone=vi.fn(); render(<ClientActivityLog patientId="client" onUndone={onUndone}/>);
+ expect(await screen.findByText('Rosita Lee')).toBeInTheDocument();
+ expect(screen.getByText(/10\/15\/2026/)).toBeInTheDocument();
+ expect(screen.getByText('Previous Name')).toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Undo change'}));
+ expect(authedFetch).toHaveBeenCalledTimes(1);
+ expect(screen.getByRole('region',{name:'Confirm undo'})).toHaveTextContent('Previous Name');
+ vi.mocked(authedFetch).mockResolvedValueOnce(response({ok:true})).mockResolvedValueOnce(response({entries:[{...entry,revertedAt:'2026-10-15T19:00:00Z',revertedByName:'Owner'}],nextCursor:null}));
+ fireEvent.click(screen.getByRole('button',{name:'Confirm undo'}));
+ await waitFor(()=>expect(onUndone).toHaveBeenCalledOnce());
+ expect(authedFetch).toHaveBeenCalledWith('/api/admin/clients/client/activity/change/undo',{method:'POST'});
+ expect(await screen.findByText(/Undone by Owner/)).toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:'Undo change'})).not.toBeInTheDocument();
+});
+it('shows conflict and does not report a successful reversal',async()=>{
+ render(<ClientActivityLog patientId="client"/>);await screen.findByText('Rosita Lee');
+ fireEvent.click(screen.getByRole('button',{name:'Undo change'}));
+ vi.mocked(authedFetch).mockResolvedValueOnce(response({error:'Newer changes exist; nothing was undone.'},409));
+ fireEvent.click(screen.getByRole('button',{name:'Confirm undo'}));
+ expect(await screen.findByRole('alert')).toHaveTextContent('nothing was undone');
+ expect(screen.queryByText('Change undone. The previous information has been restored.')).not.toBeInTheDocument();
+});
+it('explains that undoing an upload preserves the file',async()=>{
+ vi.mocked(authedFetch).mockResolvedValueOnce(response({entries:[{...entry,action:'assistant-document-upload',before:{},after:{title:'Letter'}}],nextCursor:null}));
+ render(<ClientActivityLog patientId="client"/>);await screen.findByText('Rosita Lee');
+ fireEvent.click(screen.getByRole('button',{name:'Undo change'}));
+ expect(screen.getByRole('region',{name:'Confirm undo'})).toHaveTextContent('file will be kept');
+ fireEvent.click(screen.getByRole('button',{name:'Cancel'}));
+ expect(authedFetch).toHaveBeenCalledTimes(1);
+});
