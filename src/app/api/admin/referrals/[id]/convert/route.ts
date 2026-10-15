@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
 import { convertReferralToClient, previewReferralConversion } from '@/lib/referralConvertServer';
+import { getServerSettings } from '@/lib/settingsServer';
+import { canCreateClientFromReferral } from '@/lib/referralPermissions';
 import { PROGRAMS } from '@/lib/programs';
 
 export const runtime = 'nodejs';
@@ -11,11 +13,16 @@ const ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 /**
  * GET  /api/admin/referrals/[id]/convert   what creating the client record would carry over.
  * POST /api/admin/referrals/[id]/convert   { dob?, program?, diagnosis? }  create it.
- * Staff who can create clients on the Clients page (admin, supervisor).
+ * Admins, supervisors, and individually authorized VAs.
  */
 async function guard(request: Request) {
   try {
-    return { caller: await requireRole(request, ['admin', 'supervisor']) };
+    const caller = await requireRole(request, ['admin', 'supervisor', 'va']);
+    const settings = await getServerSettings();
+    if (!canCreateClientFromReferral(settings.referralConversion, caller.uid, caller.role)) {
+      throw new AdminAuthError(403, 'You do not have permission to create client records from referrals.');
+    }
+    return { caller };
   } catch (err) {
     if (err instanceof AdminAuthError) return { res: NextResponse.json({ error: err.message }, { status: err.status }) };
     throw err;

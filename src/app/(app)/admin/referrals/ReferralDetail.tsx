@@ -13,6 +13,7 @@ import ConvertReferralModal from './ConvertReferralModal';
 import Link from 'next/link';
 import { useEffectiveUser } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
+import { canCreateClientFromReferral } from '@/lib/referralPermissions';
 import { canUseFax } from '@/lib/faxShared';
 import { authedFetch } from '@/lib/authedFetch';
 import { formatDateUS } from '@/lib/dateFormat';
@@ -68,7 +69,7 @@ export default function ReferralDetail({
   const [showReleases, setShowReleases] = useState(false);
   const [converting, setConverting] = useState(false);
   const [created, setCreated] = useState<{ patientId: string; mrn: string; documentsMoved: number } | null>(null);
-  const canCreateClient = viewerRole === 'admin' || viewerRole === 'supervisor';
+  const canCreateClient = canCreateClientFromReferral(settings.referralConversion, viewerUid, viewerRole);
   const patientId = created?.patientId || referral.patientId || null;
 
   const loadActivity = useCallback(async () => {

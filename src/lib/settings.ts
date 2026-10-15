@@ -378,7 +378,13 @@ export interface SupportCoordinationSettings {
   agencies: SupportCoordinationAgency[];
 }
 
+export interface ReferralConversionSettings {
+  /** Individual VAs permitted to create client records from referrals. */
+  userUids: string[];
+}
+
 export interface AppSettings {
+  referralConversion: ReferralConversionSettings;
   supportCoordination: SupportCoordinationSettings;
   verbalOrders: VerbalOrdersSettings;
   fax: FaxSettings;
@@ -404,6 +410,7 @@ export interface AppSettings {
  * refactor for anyone who hasn't customized.
  */
 export const DEFAULT_SETTINGS: AppSettings = {
+  referralConversion: { userUids: [] },
   supportCoordination: { agencies: [] },
   verbalOrders: { overdueDays: 14, escalateDays: 30, returnFax: '' },
   fax: { enabled: false, userUids: [], recertLeadDays: 45, ppotPrefillIdentity: false, ppotOverdueDays: 14, ppotEscalateDays: 30 },
@@ -536,6 +543,7 @@ export function mergeWithDefaults(partial: unknown): AppSettings {
     verbalOrders: mergeVerbalOrders(p.verbalOrders),
     fax: mergeFax(p.fax, mergeVerbalOrders(p.verbalOrders)),
     edwp: mergeEdwp(p.edwp),
+    referralConversion: { userUids: mergeEdwp(p.referralConversion).userUids ?? [] },
     esign: mergeEsign(p.esign),
     supportCoordination: mergeSupportCoordination(p.supportCoordination),
     branding: mergeBranding(p.branding),
@@ -799,6 +807,12 @@ export function validateSettings(payload: unknown): AppSettings {
     (!Array.isArray(esign.trackKeywords) || esign.trackKeywords.some((w) => typeof w !== 'string'))
   ) {
     throw new SettingsValidationError('esign.trackKeywords', 'trackKeywords must be a list of words.');
+  }
+
+  const referralConversion = (p.referralConversion ?? {}) as Partial<ReferralConversionSettings>;
+  if (referralConversion.userUids !== undefined &&
+      (!Array.isArray(referralConversion.userUids) || referralConversion.userUids.some((u) => typeof u !== 'string'))) {
+    throw new SettingsValidationError('referralConversion.userUids', 'Choose staff members for referral client creation.');
   }
 
   const edwp = (p.edwp ?? {}) as Partial<EdwpSettings>;
