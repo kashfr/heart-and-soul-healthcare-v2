@@ -46,3 +46,11 @@ test('recognizes authenticated service-account email principals reported as unkn
  const f=fixture({authType:'unknown',authId:'backend@project.iam.gserviceaccount.com',after:{name:'New',_auditActor:{uid:'supervisor',nonce:'new'}}});
  await capture(f.event,f.db,Timestamp);const entry=[...f.writes.values()][0];assert.equal(entry.actorUid,'supervisor');assert.equal(entry.actorRole,'supervisor');assert.equal(entry.actorSource,'server');
 });
+
+test('retains exact missing versus null field presence without exposing excluded keys',async()=>{
+ const f=fixture({before:{city:null,secret:'old'},after:{name:'Added',secret:'new'}});
+ await capture(f.event,f.db,Timestamp);
+ const entry=[...f.writes.values()][0];
+ assert.deepEqual(entry.fieldPresence,{before:['city'],after:['name']});
+ assert.equal(entry.before.city,null);assert.equal(entry.after.city,null);
+});

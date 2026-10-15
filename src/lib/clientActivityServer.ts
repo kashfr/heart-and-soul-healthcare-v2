@@ -4,7 +4,7 @@ import { FieldValue, type DocumentSnapshot } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
 import { AdminAuthError, requireRole, type AuthedCaller } from './adminAuthGuard';
 import { assertAssistantId, AssistantClientError } from './assistantClientsServer';
-import { activityChangedFields, sameActivityValue, type ClientActivity } from './clientActivity';
+import { capturedUndoFields, isCapturedUpload, activityChangedFields, sameActivityValue, type ClientActivity } from './clientActivity';
 import { hasGuardianErrors, validateGuardian, type GuardianContact, type GuardianRecord } from './guardianShared';
 
 const DIRECTORY = ['name', 'dob', 'street', 'city', 'state', 'zip'];
@@ -40,7 +40,7 @@ export async function listClientActivity(patientId: string, cursor?: string | nu
 }
 function serializeActivity(s: DocumentSnapshot): ClientActivity {
     const d = s.data()!;
-    return { id: s.id, recordLabel: typeof d.recordLabel === 'string' ? d.recordLabel : undefined, sourcePath: typeof d.sourcePath === 'string' ? d.sourcePath : undefined, patientName: typeof d.patientName === 'string' ? d.patientName : undefined, truncated: d.truncated === true, actorUid: String(d.actorUid || ''), action: String(d.action || ''), actorName: String(d.actorName || 'Unknown staff'),
+    return { id: s.id, fieldPresence: d.fieldPresence, recordLabel: typeof d.recordLabel === 'string' ? d.recordLabel : undefined, sourcePath: typeof d.sourcePath === 'string' ? d.sourcePath : undefined, patientName: typeof d.patientName === 'string' ? d.patientName : undefined, truncated: d.truncated === true, actorUid: String(d.actorUid || ''), action: String(d.action || ''), actorName: String(d.actorName || 'Unknown staff'),
       actorRole: String(d.actorRole || ''), at: iso(d.at), before: data(d.before), after: data(d.after),
       documentId: typeof d.documentId === 'string' ? d.documentId : undefined,
       revertedAt: iso(d.revertedAt), revertedByName: typeof d.revertedByName === 'string' ? d.revertedByName : undefined,
@@ -152,6 +152,33 @@ export async function undoClientActivity(patientId: string, activityId: string, 
         || Object.entries(after).some(([k, v]) => !sameActivityValue(d[k], v))) conflict();
       tx.update(documentRef, { auditEventId: reversalRef.id, archived: true, archivedAt: FieldValue.serverTimestamp(), archivedBy: caller.uid, archivedByName: actorName });
       reversal = { documentId, before: { archived: false }, after: { archived: true, title: d.title || d.fileName || 'Document' } };
+    } else if (original.action === 'record-updated' || original.action === 'record-created') {
+      const entry = serializeActivity(activity);
+      const keys = capturedUndoFields(entry);
+      if (isCapturedUpload(entry)) {
+        const documentId = original.sourcePath.split('/')[1];
+        const documentRef = db.collection('patientDocuments').doc(documentId);
+        const document = await tx.get(documentRef);
+        assertUnchanged(document, original.at);
+        const d = document.data()!;
+        if (d.patientId !== patientId || after.patientId !== patientId || d.archived === true) conflict();
+        tx.update(documentRef, { ...stamp, archived: true, archivedAt: FieldValue.serverTimestamp(), archivedBy: caller.uid, archivedByName: actorName });
+        reversal = { documentId, before: { archived: false }, after: { archived: true, title: d.title || d.fileName || 'Document' } };
+      } else if (keys.length && [patientRef.path, patientRef.path + '/clinical/profile', patientRef.path + '/clinical/guardian'].includes(original.sourcePath)) {
+        const targetRef = db.doc(original.sourcePath), target = await tx.get(targetRef);
+        assertUnchanged(target, original.at);
+        const current = target.data()!;
+        const patch: Data = {};
+        for (const key of keys) {
+          const afterMissing = original.fieldPresence && !original.fieldPresence.after.includes(key);
+          if (afterMissing ? Object.hasOwn(current, key) : !sameActivityValue(current[key], after[key])) conflict();
+          if (key === 'contacts' && current.decisionMaker &&
+            hasGuardianErrors(validateGuardian({ decisionMaker: current.decisionMaker, contacts: before[key] } as GuardianRecord))) conflict();
+          patch[key] = original.fieldPresence && !original.fieldPresence.before.includes(key) ? FieldValue.delete() : before[key];
+        }
+        tx.update(targetRef, { ...patch, ...stamp });
+        reversal = { before: Object.fromEntries(keys.map(k => [k, after[k]])), after: Object.fromEntries(keys.map(k => [k, before[k]])) };
+      } else throw new AssistantClientError(400, 'This activity has no basic information changes or upload that can be undone.');
     } else throw new AssistantClientError(400, 'This activity cannot be undone.');
     tx.update(activityRef, { revertedAt: FieldValue.serverTimestamp(), revertedBy: caller.uid, revertedByName: actorName, reversalId: reversalRef.id });
     tx.create(reversalRef, { action: 'admin-undo', originalActivityId: activityId, ...reversal,
