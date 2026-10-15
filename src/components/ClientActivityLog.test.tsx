@@ -68,3 +68,19 @@ it('displays non-administrative field changes by supervisors without offering un
  expect(screen.getByText(/"pulse": 70/)).toBeInTheDocument();
  expect(screen.queryByRole('button',{name:'Undo change'})).not.toBeInTheDocument();
 });
+
+it('confirms only basic fields for mixed supervisor edits',async()=>{
+ vi.mocked(authedFetch).mockResolvedValueOnce(response({entries:[{...entry,action:'record-updated',actorRole:'supervisor',sourcePath:'patients/client/clinical/profile',before:{physicianName:'Old doctor',allergies:'None'},after:{physicianName:'New doctor',allergies:'New allergy'}}],nextCursor:null}));
+ render(<ClientActivityLog patientId="client"/>);
+ fireEvent.click(await screen.findByRole('button',{name:'Undo change'}));
+ const confirmation=screen.getByRole('region',{name:'Confirm undo'});
+ expect(confirmation).toHaveTextContent('Old doctor');
+ expect(confirmation).not.toHaveTextContent('New allergy');
+ expect(confirmation).toHaveTextContent('Only the basic information fields');
+});
+it('offers archive confirmation for captured admin uploads',async()=>{
+ vi.mocked(authedFetch).mockResolvedValueOnce(response({entries:[{...entry,action:'record-created',actorRole:'admin',sourcePath:'patientDocuments/doc',before:{},after:{patientId:'client',title:'Authorization'}}],nextCursor:null}));
+ render(<ClientActivityLog patientId="client"/>);
+ fireEvent.click(await screen.findByRole('button',{name:'Undo change'}));
+ expect(screen.getByRole('region',{name:'Confirm undo'})).toHaveTextContent('Archive this uploaded document?');
+});

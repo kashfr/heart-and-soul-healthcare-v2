@@ -104,8 +104,8 @@ explicitly labeled System / unidentified actor. Same-commit existing assistant
 and undo events are recognized via auditEventId to avoid duplicate entries.
 Hard-deletion identity is recovered from the same-operation deletion snapshot.
 
-These new captured entries are review-only; existing administrative undo remains
-unchanged. Before/after values show changed fields, including nested structures.
+Captured clinical entries remain review-only. Basic admin/supervisor edits and
+uploads can now be undone under the safeguards described below. Before/after values show changed fields, including nested structures.
 Large values are bounded; credentials, signed URLs, binary/signature content are
 omitted. Deleted clients retain their captured names in the global log.
 No historic before/after values are invented or backfilled.
@@ -140,3 +140,25 @@ run in Firestore before pagination. Cursors must belong to the selected client,
 actor and date range. Filter changes reset pagination and pending undo.
 Deploy the COLLECTION actorUid/at index in addition to the existing
 COLLECTION_GROUP indexes; no rules changes or data migration are required.
+
+## Undo for admin and supervisor activity
+
+Captured admin/supervisor edits now allow undo of basic directory fields (name,
+DOB, address), Medicaid ID, physician contact fields, and eligible guardian
+contact-detail edits. Clinical changes, legal decision-maker changes, contact
+notes, client creation/deletion, and document edits/replacements remain
+review-only. A mixed save reverses only the basic fields listed in confirmation.
+
+Captured patientDocuments creations offer Archive through Undo. Bytes remain
+preserved. The transaction verifies patient ownership and exact source update
+time against the captured event's at timestamp, not the later audit-write time.
+Later edits, including changes reverted back to the same values, block undo.
+Each reversal is admin-only, checked against the current active account, and
+appends an admin-undo audit entry while marking the original reversed.
+
+The capture function now records changed fields' before/after presence to
+distinguish missing from null. Existing complete string-to-string captures and
+document creations are eligible; older null/absent captures remain review-only
+because their exact prior presence is unknown. Truncated information captures
+remain review-only. Guardian reversals preserve notes and must satisfy the
+current decision-maker requirements. Deploy both app and capture function.

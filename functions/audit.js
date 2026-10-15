@@ -26,7 +26,7 @@ function safe(value,depth=0) {
 function changes(before={},after={}) {
  const old={},next={}; let bytes=0,truncated=false;
  for(const key of [...new Set([...Object.keys(before),...Object.keys(after)])].sort()) {
-  if(IGNORE.test(key)||PRIVATE.test(key)||same(before[key],after[key]))continue;
+  if(IGNORE.test(key)||PRIVATE.test(key)||(same(before[key],after[key])&&Object.hasOwn(before,key)===Object.hasOwn(after,key)))continue;
   let a=safe(before[key]),b=safe(after[key]);
   if(!same(before[key],a)||!same(after[key],b))truncated=true;
   const size=Buffer.byteLength(JSON.stringify([key,a,b]));
@@ -62,7 +62,8 @@ async function capture(event,db,Timestamp) {
  let ids=targets(path,before,after);
  if(/^servicePlans\/[^/]+\/reviews\/[^/]+$/.test(path)) { const parent=await db.doc(path.split('/').slice(0,2).join('/')).get(); const pid=parent.data()?.patientId;if(typeof pid==='string'&&/^[\w-]{1,128}$/.test(pid))ids=[pid]; }
  if(!ids.length)return;
- const diff=changes(before,after);if(!Object.keys(diff.before).length && event.data.before.exists===event.data.after.exists)return;
+ const diff=changes(before,after);
+ const fieldPresence={before:Object.keys(diff.before).filter(k=>Object.hasOwn(before,k)),after:Object.keys(diff.after).filter(k=>Object.hasOwn(after,k))};if(!Object.keys(diff.before).length && event.data.before.exists===event.data.after.exists)return;
  const candidate=actorCandidate(event,before,after);
  let actor={actorUid:'',actorName:'System / unidentified actor',actorRole:'system',actorSource:'unidentified'};
  if(candidate && /^[\w-]{1,128}$/.test(candidate.uid)) {
@@ -89,7 +90,7 @@ async function capture(event,db,Timestamp) {
  const at=event.data.after.updateTime||Timestamp.fromDate(new Date(event.time));
  for(const patientId of ids) {
   const patient=parts[0]==='patients'&&parts.length===2?(event.data.after.exists?after:before):(await db.doc('patients/'+patientId).get()).data();
-  try {await db.doc(`patients/${patientId}/administrativeAudit/${eventId}`).create({action,...actor,at,...diff,sourcePath:path,recordLabel,patientName:String(patient?.name||'Unavailable client'),capturedAt:Timestamp.now(),sourceEventId:event.id,principalType:event.authType||'unknown',serverPrincipal:serverPrincipal(event)});}
+  try {await db.doc(`patients/${patientId}/administrativeAudit/${eventId}`).create({action,...actor,at,...diff,fieldPresence,sourcePath:path,recordLabel,patientName:String(patient?.name||'Unavailable client'),capturedAt:Timestamp.now(),sourceEventId:event.id,principalType:event.authType||'unknown',serverPrincipal:serverPrincipal(event)});}
   catch(e){if(e.code!==6&&e.code!=='already-exists')throw e;}
  }
 }

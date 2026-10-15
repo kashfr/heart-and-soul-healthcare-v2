@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { authedFetch } from '@/lib/authedFetch';
-import { ACTIVITY_FIELD_LABELS, activityChangedFields, activityDisplayFields, activityFieldLabel, type ClientActivity } from '@/lib/clientActivity';
+import { isActivityUpload, undoInformationFields, activityDisplayFields, activityFieldLabel, type ClientActivity } from '@/lib/clientActivity';
 import { formatDateTimeUS, formatDateUS } from '@/lib/dateFormat';
 import { btn, btnDanger, btnPrimary } from './buttons';
 
@@ -50,7 +50,7 @@ export function ClientActivityLog({ patientId, actorUid, filterClient, from, thr
       const response = await authedFetch(`/api/admin/clients/${encodeURIComponent(selected.patientId || patientId!)}/activity/${encodeURIComponent(selected.id)}/undo`, { method: 'POST' });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Could not undo this change.');
-      setNotice(selected.action === 'assistant-document-upload' ? 'Upload archived. The original file is preserved in Documents → Archived.' : 'Change undone. The previous information has been restored.');
+      setNotice(isActivityUpload(selected) ? 'Upload archived. The original file is preserved in Documents → Archived.' : 'Change undone. The previous information has been restored.');
       setSelected(null); onUndone?.(); await load();
     } catch (err) { setError(err instanceof Error ? err.message : 'Could not undo this change.'); }
     finally { setSaving(false); }
@@ -60,26 +60,26 @@ export function ClientActivityLog({ patientId, actorUid, filterClient, from, thr
       <h2 style={{ fontSize: 20, fontWeight: 700 }}>Activity Log</h2>
       <button className={btn} disabled={loading || saving} onClick={() => void load()}>Refresh activity</button>
     </div>
-    <p style={{ color: '#64748b', margin: '10px 0 20px' }}>Review recorded changes by staff across client information, documents, and linked chart records. New activity may take a moment to appear. Historical edits from before tracking was enabled are not available. Only eligible administrative changes offer Undo; clinical entries are review-only.</p>
+    <p style={{ color: '#64748b', margin: '10px 0 20px' }}>Review recorded changes by staff across client information, documents, and linked chart records. New activity may take a moment to appear. Historical edits from before tracking was enabled are not available. Only eligible administrative changes offer Undo; clinical changes remain review-only, even when saved alongside basic information.</p>
     {error && <p role="alert" style={{ color: '#b91c1c', marginBottom: 14 }}>{error}</p>}
     {notice && <p role="status" style={{ color: '#166534', marginBottom: 14 }}>{notice}</p>}
     {selected && <div role="region" aria-label="Confirm undo" style={{ border: '1px solid #f59e0b', background: '#fffbeb', padding: 16, borderRadius: 8, marginBottom: 18 }}>
       {selected.patientName && <p style={{ fontWeight: 700, marginBottom: 8 }}>Client: {selected.patientName}</p>}
-      <strong>{selected.action === 'assistant-document-upload' ? 'Archive this uploaded document?' : 'Undo this information change?'}</strong>
+      <strong>{isActivityUpload(selected) ? 'Archive this uploaded document?' : 'Undo this information change?'}</strong>
       <p style={{ margin: '8px 0' }}>{selected.actorName} · {formatDateTimeUS(selected.at || '')}</p>
-      <p style={{ marginBottom: 12 }}>{selected.action === 'assistant-document-upload'
+      <p style={{ marginBottom: 12 }}>{isActivityUpload(selected)
         ? `“${String(selected.after.title || 'Document')}” will move to Archived. Its file will be kept and can be restored from Documents.`
-        : 'The changed fields shown below will return to their previous values. If a related record has been edited since, undo will be blocked. The reversal will be recorded in this log.'}</p>
-      {selected.action === 'assistant-information-update' && <ul style={{ margin: '12px 0', paddingLeft: 20 }}>
-        {activityChangedFields(selected).map(key => <li key={key} style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}><strong>{ACTIVITY_FIELD_LABELS[key]}:</strong> restore to {display(selected.before[key], key)}</li>)}
+        : 'Only the basic information fields listed below will return to their previous values. If a related record has been edited since, undo will be blocked. The reversal will be recorded in this log.'}</p>
+      {undoInformationFields(selected).length > 0 && <ul style={{ margin: '12px 0', paddingLeft: 20 }}>
+        {undoInformationFields(selected).map(key => <li key={key} style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}><strong>{activityFieldLabel(key)}:</strong> restore to {display(selected.before[key], key)}</li>)}
       </ul>}
       <button className={`${btn} ${btnDanger}`} disabled={saving} onClick={() => void undo()}>{saving ? 'Undoing…' : 'Confirm undo'}</button>{' '}
       <button className={btn} disabled={saving} onClick={() => setSelected(null)}>Cancel</button>
     </div>}
     {entries.map(entry => {
       const keys = activityDisplayFields(entry);
-      const upload = entry.action === 'assistant-document-upload';
-      const canUndo = entry.patientExists !== false && !entry.revertedAt && (upload || (entry.action === 'assistant-information-update' && activityChangedFields(entry).length > 0));
+      const upload = isActivityUpload(entry);
+      const canUndo = entry.patientExists !== false && !entry.revertedAt && (upload || undoInformationFields(entry).length > 0);
       return <article key={`${entry.patientId || patientId}:${entry.id}`} style={{ borderTop: '1px solid #e2e8f0', padding: '18px 0' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
           <div>{entry.patientName && <p style={{ marginBottom: 6, fontWeight: 700 }}>{entry.patientExists ? <Link href={`/admin/clients/${encodeURIComponent(entry.patientId!)}?tab=activity`}>{entry.patientName}</Link> : entry.patientName}</p>}<strong>{entry.actorName}</strong>{entry.actorRole && <span style={{ color: '#64748b' }}> ({entry.actorRole === 'va' ? 'Assistant' : entry.actorRole})</span>} <span style={{ color: '#64748b' }}>· {formatDateTimeUS(entry.at || '')}</span>

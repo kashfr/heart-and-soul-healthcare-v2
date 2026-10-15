@@ -132,3 +132,65 @@ it('combines client, actor and inclusive Eastern dates across all pages', async 
   expect(global.entries.some(e=>e.id==='wrong-client')).toBe(true);
  } finally {await db.recursiveDelete(ref);await db.recursiveDelete(other);}
 });
+
+it('undoes captured admin and supervisor basic edits without touching clinical fields; blocks later writes', async()=>{
+ const {capture}=req('../functions/audit.js');const {Timestamp}=req('firebase-admin/firestore');
+ const ref=db.doc('patients/'+fixture+'-staff-undo');
+ const supervisor=fixture+'-supervisor';await db.doc('users/'+supervisor).set({role:'supervisor',displayName:'Supervisor',active:true});
+ let seq=0;
+ async function change(target: typeof ref, patch: Record<string,unknown>, uid=admin.uid) {
+  const before=await target.get();await target.set(patch,{merge:true});const after=await target.get();
+  await capture({id:fixture+'-undo-'+(++seq),document:target.path,authType:'unknown',authId:uid,time:new Date().toISOString(),data:{before,after}},db,Timestamp);
+  const log=await listClientActivity(ref.id);
+  return log.entries.find(e=>e.action==='record-updated'&&!e.revertedAt)!;
+ }
+ try {
+  await ref.set({name:'Before',program:'gapp',diagnosis:'Original'});
+  let entry=await change(ref,{name:'After',diagnosis:'New clinical value'},supervisor);
+  await undoClientActivity(ref.id,entry.id,admin);
+  expect((await ref.get()).data()).toMatchObject({name:'Before',diagnosis:'New clinical value'});
+  await expect(undoClientActivity(ref.id,entry.id,admin)).rejects.toMatchObject({status:409});
+  entry=await change(ref,{city:'New city'});
+  await undoClientActivity(ref.id,entry.id,admin);
+  expect((await ref.get()).data()).not.toHaveProperty('city');
+  await ref.update({city:null});
+  entry=await change(ref,{city:'City from null'});
+  await undoClientActivity(ref.id,entry.id,admin);
+  expect((await ref.get()).data()?.city).toBeNull();
+  entry=await change(ref,{city:FieldValue.delete()});
+  await undoClientActivity(ref.id,entry.id,admin);
+  expect((await ref.get()).data()).toHaveProperty('city',null);
+  entry=await change(ref,{name:'Later'});
+  await ref.update({name:'Other'});await ref.update({name:'Later'});
+  await expect(undoClientActivity(ref.id,entry.id,admin)).rejects.toMatchObject({status:409});
+  const profile=ref.collection('clinical').doc('profile');await profile.set({medicaidId:'111',allergies:'None'});
+  entry=await change(profile,{medicaidId:'222',allergies:'Keep this allergy'});
+  await undoClientActivity(ref.id,entry.id,admin);
+  expect((await profile.get()).data()).toMatchObject({medicaidId:'111',allergies:'Keep this allergy'});
+  const guardian=ref.collection('clinical').doc('guardian');
+  const contact={id:'parent',role:'Parent',name:'Parent',phone:'555-555-0100',notes:'Keep notes'};
+  await guardian.set({decisionMaker:'parent',contacts:[contact]});
+  entry=await change(guardian,{contacts:[{...contact,phone:'555-555-0200'}]},supervisor);
+  await undoClientActivity(ref.id,entry.id,admin);
+  expect((await guardian.get()).data()?.contacts).toEqual([contact]);
+ } finally {await db.recursiveDelete(ref);await db.doc('users/'+supervisor).delete();}
+});
+
+it('archives captured staff uploads and rejects changed, moved and clinical records',async()=>{
+ const {capture}=req('../functions/audit.js');const {Timestamp}=req('firebase-admin/firestore');
+ const ref=db.doc('patientDocuments/'+fixture+'-staff-upload');
+ try {
+  const before=await ref.get();await ref.set({patientId:fixture,title:'Synthetic upload',storagePath:'preserved/test.pdf',uploadedBy:admin.uid,archived:false});
+  const after=await ref.get();
+  await capture({id:fixture+'-upload',document:ref.path,authType:'unknown',authId:admin.uid,time:new Date().toISOString(),data:{before,after}},db,Timestamp);
+  const entry=(await listClientActivity(fixture)).entries.find(e=>e.sourcePath===ref.path)!;
+  await expect(undoClientActivity(fixture+'-wrong',entry.id,admin)).rejects.toMatchObject({status:404});
+  await undoClientActivity(fixture,entry.id,admin);
+  expect((await ref.get()).data()).toMatchObject({archived:true,storagePath:'preserved/test.pdf'});
+  await expect(undoClientActivity(fixture,entry.id,admin)).rejects.toMatchObject({status:409});
+  // A later metadata edit must block the exact original creation event.
+  const audit=patient.collection('administrativeAudit').doc('stale-upload');
+  await audit.set({action:'record-created',actorRole:'supervisor',sourcePath:ref.path,at:after.updateTime,before:{},after:after.data()});
+  await expect(undoClientActivity(fixture,audit.id,admin)).rejects.toMatchObject({status:409});
+ } finally {await ref.delete();}
+});
