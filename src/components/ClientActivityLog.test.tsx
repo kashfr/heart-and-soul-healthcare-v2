@@ -43,7 +43,7 @@ it('shows client names globally and sends undo to the selected client',async()=>
  vi.mocked(authedFetch).mockResolvedValueOnce(response({entries:[{...entry,patientId:'second-client',patientName:'Second Client',patientExists:true}],nextCursor:'second-client:change',staff:[]}));
  render(<ClientActivityLog actorUid="rosita"/>);
  expect(await screen.findByRole('link',{name:'Second Client'})).toHaveAttribute('href','/admin/clients/second-client?tab=activity');
- expect(authedFetch).toHaveBeenCalledWith('/api/admin/client-activity?staff=rosita&client=&from=&through=',{cache:'no-store'});
+ expect(authedFetch).toHaveBeenCalledWith('/api/admin/client-activity?staff=rosita&client=&from=&through=&type=',{cache:'no-store'});
  fireEvent.click(screen.getByRole('button',{name:'Undo change'}));
  expect(screen.getByRole('region',{name:'Confirm undo'})).toHaveTextContent('Client: Second Client');
  vi.mocked(authedFetch).mockResolvedValueOnce(response({ok:true})).mockResolvedValueOnce(response({entries:[],nextCursor:null}));
@@ -52,11 +52,11 @@ it('shows client names globally and sends undo to the selected client',async()=>
 });
 it('preserves the actor filter when loading older entries and disables undo for missing clients',async()=>{
  vi.mocked(authedFetch).mockResolvedValueOnce(response({entries:[{...entry,patientId:'deleted',patientName:'Unavailable client',patientExists:false}],nextCursor:'deleted:change'}));
- render(<ClientActivityLog actorUid="rosita" filterClient="deleted" from="2026-10-01" through="2026-10-31"/>);await screen.findByText('Rosita Lee');
+ render(<ClientActivityLog actorUid="rosita" filterClient="deleted" from="2026-10-01" through="2026-10-31" changeType="information"/>);await screen.findByText('Rosita Lee');
  expect(screen.queryByRole('button',{name:'Undo change'})).not.toBeInTheDocument();
  vi.mocked(authedFetch).mockResolvedValueOnce(response({entries:[],nextCursor:null}));
  fireEvent.click(screen.getByRole('button',{name:'Load older activity'}));
- await waitFor(()=>expect(authedFetch).toHaveBeenCalledWith('/api/admin/client-activity?staff=rosita&client=deleted&from=2026-10-01&through=2026-10-31&cursor=deleted%3Achange',{cache:'no-store'}));
+ await waitFor(()=>expect(authedFetch).toHaveBeenCalledWith('/api/admin/client-activity?staff=rosita&client=deleted&from=2026-10-01&through=2026-10-31&type=information&cursor=deleted%3Achange',{cache:'no-store'}));
 });
 
 it('displays non-administrative field changes by supervisors without offering unsafe undo',async()=>{

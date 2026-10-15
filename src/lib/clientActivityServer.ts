@@ -1,5 +1,5 @@
 import 'server-only';
-import { activityDateBounds, type ActivityFilters } from './activityFilters';
+import { activityTypeActions, matchesActivityType, activityDateBounds, type ActivityFilters } from './activityFilters';
 import { FieldValue, type DocumentSnapshot } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
 import { AdminAuthError, requireRole, type AuthedCaller } from './adminAuthGuard';
@@ -49,11 +49,14 @@ function serializeActivity(s: DocumentSnapshot): ClientActivity {
 /** Global history remains admin-only and reads the original immutable audit paths. */
 export async function listAllClientActivity(actorUid?: string | null, cursor?: string | null, filters: ActivityFilters = {}) {
   if (filters.client) assertAssistantId(filters.client);
+  let actions: string[] | undefined;
+  try { actions = activityTypeActions(filters.type); } catch (error) { throw new AssistantClientError(400, (error as Error).message); }
   let bounds: ReturnType<typeof activityDateBounds>;
   try { bounds = activityDateBounds(filters.from, filters.through); } catch (error) { throw new AssistantClientError(400, (error as Error).message); }
   if (actorUid) assertAssistantId(actorUid);
   const db = adminDb();
   let query = (filters.client ? db.collection(`patients/${filters.client}/administrativeAudit`) : db.collectionGroup('administrativeAudit')).orderBy('at', 'desc').limit(51);
+  if (actions) query = query.where('action', 'in', actions);
   if (bounds.start) query = query.where('at', '>=', bounds.start);
   if (bounds.end) query = query.where('at', '<', bounds.end);
   if (actorUid) query = query.where('actorUid', '==', actorUid);
@@ -67,20 +70,35 @@ export async function listAllClientActivity(actorUid?: string | null, cursor?: s
     if ((filters.client && parts[0] !== filters.client) || (bounds.start && at < bounds.start) || (bounds.end && at >= bounds.end)) throw new AssistantClientError(400, 'Invalid activity cursor.');
     query = query.startAfter(last);
   }
-  const snapshot = await query.get();
-  const page = snapshot.docs.slice(0, 50);
+  // Older events have no stored category. Match their original action/path on the
+  // server, advancing by scanned records so sparse pages never skip matching events.
+  const page: DocumentSnapshot[] = [];
+  let lastScanned: DocumentSnapshot | undefined;
+  let hasMore = false;
+  for (let batch = 0; batch < 10; batch++) {
+    const snapshot = await query.get();
+    hasMore = snapshot.docs.length === 51;
+    for (let i = 0; i < snapshot.docs.length; i++) {
+      const item = snapshot.docs[i];
+      lastScanned = item;
+      if (/^patients\/[^/]+\/administrativeAudit\/[^/]+$/.test(item.ref.path) && matchesActivityType(item.data(), filters.type)) page.push(item);
+      if (page.length === 50) { hasMore = i < snapshot.docs.length - 1 || hasMore; break; }
+    }
+    if (page.length === 50 || !hasMore || !lastScanned) break;
+    query = query.startAfter(lastScanned);
+  }
   const valid = page.filter(s => /^patients\/[^/]+\/administrativeAudit\/[^/]+$/.test(s.ref.path));
   const ids = [...new Set(valid.map(s => s.ref.parent.parent!.id))];
   const patients = ids.length ? await db.getAll(...ids.map(id => db.doc(`patients/${id}`))) : [];
   const byId = new Map(patients.map(p => [p.id, p]));
   const entries = valid.map(s => {
     const patientId = s.ref.parent.parent!.id, patient = byId.get(patientId);
-    return { ...serializeActivity(s), patientId, patientName: String(patient?.data()?.name || s.data().patientName || 'Unavailable client'), patientExists: patient?.exists === true };
+    return { ...serializeActivity(s), patientId, patientName: String(patient?.data()?.name || s.data()!.patientName || 'Unavailable client'), patientExists: patient?.exists === true };
   });
-  const last = page.at(-1);
+  const last = lastScanned;
   const staff = await db.collection('users').select('displayName', 'role', 'active').get();
   const clients = await db.collection('patients').select('name').get();
-  return { clients: clients.docs.map(s => ({ id: s.id, name: String(s.data().name || 'Unnamed client') })).sort((a, b) => a.name.localeCompare(b.name)), entries, nextCursor: snapshot.docs.length > 50 && last ? `${last.ref.parent.parent!.id}:${last.id}` : null,
+  return { clients: clients.docs.map(s => ({ id: s.id, name: String(s.data().name || 'Unnamed client') })).sort((a, b) => a.name.localeCompare(b.name)), entries, nextCursor: hasMore && last ? `${last.ref.parent.parent!.id}:${last.id}` : null,
     staff: staff.docs.map(s => ({ uid: s.id, name: String(s.data().displayName || 'Unnamed staff'), active: s.data().active === true }))
       .sort((a, b) => a.name.localeCompare(b.name)) };
 }

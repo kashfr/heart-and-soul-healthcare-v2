@@ -35,3 +35,13 @@ it('combines filters, validates dates, and clears filters and pending undo',asyn
  fireEvent.click(screen.getByRole('button',{name:'Clear filters'}));
  expect(screen.getByText('Range: //')).toBeInTheDocument();
 });
+
+it('resets pending undo on change type and clears the selected type',async()=>{
+ render(<ActivityPage/>);
+ fireEvent.click(screen.getByRole('button',{name:'Select undo'}));
+ fireEvent.change(screen.getByRole('combobox',{name:'Change type'}),{target:{value:'uploads'}});
+ expect(screen.queryByText('Pending confirmation')).not.toBeInTheDocument();
+ expect(screen.getByRole('combobox',{name:'Change type'})).toHaveValue('uploads');
+ fireEvent.click(screen.getByRole('button',{name:'Clear filters'}));
+ expect(screen.getByRole('combobox',{name:'Change type'})).toHaveValue('');
+});

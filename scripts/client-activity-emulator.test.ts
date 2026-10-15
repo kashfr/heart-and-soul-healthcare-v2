@@ -194,3 +194,41 @@ it('archives captured staff uploads and rejects changed, moved and clinical reco
   await expect(undoClientActivity(fixture,audit.id,admin)).rejects.toMatchObject({status:409});
  } finally {await ref.delete();}
 });
+
+it('filters legacy and captured change types with sparse pagination and combined filters',async()=>{
+ const ref=db.doc('patients/'+fixture+'-types');const actor=fixture+'-types';
+ try {
+  await ref.set({name:'Types client'});
+  const batch=db.batch();
+  for(let i=0;i<120;i++)batch.set(ref.collection('administrativeAudit').doc('event'+String(i).padStart(3,'0')),{actorUid:actor,action:i%2?'record-created':'assistant-document-upload',sourcePath:i%2?'progressNotes/clinical':'',at:new Date('2026-10-15T12:00:00Z')});
+  batch.set(ref.collection('administrativeAudit').doc('captured-upload'),{actorUid:actor,action:'record-created',sourcePath:'patientDocuments/file',at:new Date('2026-10-15T12:00:00Z')});
+  batch.set(ref.collection('administrativeAudit').doc('info'),{actorUid:actor,action:'record-updated',sourcePath:ref.path,at:new Date('2026-10-15T12:00:00Z')});
+  batch.set(ref.collection('administrativeAudit').doc('undo'),{actorUid:actor,action:'admin-undo',at:new Date('2026-10-15T12:00:00Z')});
+  await batch.commit();
+  const filters={client:ref.id,from:'2026-10-15',through:'2026-10-15',type:'uploads'};
+  const first=await listAllClientActivity(actor,null,filters);const second=await listAllClientActivity(actor,first.nextCursor,filters);
+  expect(first.entries).toHaveLength(50);expect(second.entries).toHaveLength(11);
+  expect(new Set([...first.entries,...second.entries].map(e=>e.id)).size).toBe(61);
+  expect((await listAllClientActivity(actor,null,{...filters,type:'information'})).entries.map(e=>e.id)).toEqual(['info']);
+  expect((await listAllClientActivity(actor,null,{type:'undo'})).entries.map(e=>e.id)).toEqual(['undo']);
+  await expect(listAllClientActivity(actor,null,{type:'unknown'})).rejects.toMatchObject({status:400});
+ } finally {await db.recursiveDelete(ref);}
+});
+
+it('returns a continuation when a sparse type search reaches its scan budget',async()=>{
+ const ref=db.doc('patients/'+fixture+'-sparse');
+ try {
+  await ref.set({name:'Sparse test'});
+  for(let offset=0;offset<520;offset+=260){
+   const batch=db.batch();
+   for(let i=offset;i<offset+260;i++)batch.set(ref.collection('administrativeAudit').doc('noise'+i),{action:'record-created',sourcePath:'progressNotes/note',at:new Date('2026-10-15T12:00:00Z')});
+   await batch.commit();
+  }
+  await ref.collection('administrativeAudit').doc('match').set({action:'record-created',sourcePath:'patientDocuments/doc',at:new Date('2026-10-14T12:00:00Z')});
+  const filters={client:ref.id,type:'uploads'};
+  const first=await listAllClientActivity(null,null,filters);
+  expect(first.entries).toHaveLength(0);expect(first.nextCursor).toBeTruthy();
+  const second=await listAllClientActivity(null,first.nextCursor,filters);
+  expect(second.entries.map(e=>e.id)).toEqual(['match']);expect(second.nextCursor).toBeNull();
+ } finally {await db.recursiveDelete(ref);}
+});
