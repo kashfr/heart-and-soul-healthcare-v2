@@ -5,6 +5,10 @@ export const ACTIVITY_FIELD_LABELS: Record<string, string> = {
 };
 export interface ClientActivity {
   id: string;
+  actorUid?: string;
+  patientId?: string;
+  patientName?: string;
+  patientExists?: boolean;
   action: string;
   actorName: string;
   actorRole: string;

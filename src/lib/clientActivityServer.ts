@@ -33,14 +33,47 @@ export async function listClientActivity(patientId: string, cursor?: string | nu
   }
   const snapshot = await query.get();
   const entries: ClientActivity[] = snapshot.docs.slice(0, 50).map(s => {
-    const d = s.data();
-    return { id: s.id, action: String(d.action || ''), actorName: String(d.actorName || 'Unknown staff'),
+    return serializeActivity(s);
+  });
+  return { entries, nextCursor: snapshot.docs.length > 50 ? entries.at(-1)!.id : null };
+}
+function serializeActivity(s: DocumentSnapshot): ClientActivity {
+    const d = s.data()!;
+    return { id: s.id, actorUid: String(d.actorUid || ''), action: String(d.action || ''), actorName: String(d.actorName || 'Unknown staff'),
       actorRole: String(d.actorRole || ''), at: iso(d.at), before: data(d.before), after: data(d.after),
       documentId: typeof d.documentId === 'string' ? d.documentId : undefined,
       revertedAt: iso(d.revertedAt), revertedByName: typeof d.revertedByName === 'string' ? d.revertedByName : undefined,
       originalActivityId: typeof d.originalActivityId === 'string' ? d.originalActivityId : undefined };
+}
+/** Global history remains admin-only and reads the original immutable audit paths. */
+export async function listAllClientActivity(actorUid?: string | null, cursor?: string | null) {
+  if (actorUid) assertAssistantId(actorUid);
+  const db = adminDb();
+  let query = db.collectionGroup('administrativeAudit').orderBy('at', 'desc').limit(51);
+  if (actorUid) query = query.where('actorUid', '==', actorUid);
+  if (cursor) {
+    const parts = cursor.split(':');
+    if (parts.length !== 2) throw new AssistantClientError(400, 'Invalid activity cursor.');
+    parts.forEach(assertAssistantId);
+    const last = await db.doc(`patients/${parts[0]}/administrativeAudit/${parts[1]}`).get();
+    if (!last.exists || !last.data()?.at || (actorUid && last.data()?.actorUid !== actorUid)) throw new AssistantClientError(400, 'Invalid activity cursor.');
+    query = query.startAfter(last);
+  }
+  const snapshot = await query.get();
+  const page = snapshot.docs.slice(0, 50);
+  const valid = page.filter(s => /^patients\/[^/]+\/administrativeAudit\/[^/]+$/.test(s.ref.path));
+  const ids = [...new Set(valid.map(s => s.ref.parent.parent!.id))];
+  const patients = ids.length ? await db.getAll(...ids.map(id => db.doc(`patients/${id}`))) : [];
+  const byId = new Map(patients.map(p => [p.id, p]));
+  const entries = valid.map(s => {
+    const patientId = s.ref.parent.parent!.id, patient = byId.get(patientId);
+    return { ...serializeActivity(s), patientId, patientName: String(patient?.data()?.name || 'Unavailable client'), patientExists: patient?.exists === true };
   });
-  return { entries, nextCursor: snapshot.docs.length > 50 ? entries.at(-1)!.id : null };
+  const last = page.at(-1);
+  const staff = await db.collection('users').select('displayName', 'role', 'active').get();
+  return { entries, nextCursor: snapshot.docs.length > 50 && last ? `${last.ref.parent.parent!.id}:${last.id}` : null,
+    staff: staff.docs.map(s => ({ uid: s.id, name: String(s.data().displayName || 'Unnamed staff'), active: s.data().active === true }))
+      .sort((a, b) => a.name.localeCompare(b.name)) };
 }
 function conflict(): never {
   throw new AssistantClientError(409, 'This record has been edited since that change. Review the latest information and correct it manually; nothing was undone.');

@@ -1,19 +1,21 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { authedFetch } from '@/lib/authedFetch';
 import { ACTIVITY_FIELD_LABELS, activityChangedFields, type ClientActivity } from '@/lib/clientActivity';
 import { formatDateTimeUS, formatDateUS } from '@/lib/dateFormat';
 import { btn, btnDanger, btnPrimary } from './buttons';
 
-interface Page { entries: ClientActivity[]; nextCursor: string | null }
+export interface ActivityStaff { uid: string; name: string; active: boolean }
+interface Page { staff?: ActivityStaff[]; entries: ClientActivity[]; nextCursor: string | null }
 function display(value: unknown, field: string): string {
   if (field === 'guardianContacts' && Array.isArray(value)) return value.map(c =>
     [c.name, c.role, c.relationship, c.phone, c.email, c.address].filter(Boolean).join(' · ')).join('\n') || 'None';
   if (field === 'dob') return formatDateUS(String(value || '')) || 'Not on file';
   return typeof value === 'string' ? value || 'Not on file' : String(value ?? 'Not on file');
 }
-export function ClientActivityLog({ patientId, onUndone }: { patientId: string; onUndone?: () => void }) {
+export function ClientActivityLog({ patientId, actorUid, onStaffLoaded, onUndone }: { patientId?: string; actorUid?: string; onStaffLoaded?: (staff: ActivityStaff[]) => void; onUndone?: () => void }) {
   const [entries, setEntries] = useState<ClientActivity[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -21,24 +23,25 @@ export function ClientActivityLog({ patientId, onUndone }: { patientId: string; 
   const [notice, setNotice] = useState('');
   const [selected, setSelected] = useState<ClientActivity | null>(null);
   const [saving, setSaving] = useState(false);
-  const base = `/api/admin/clients/${encodeURIComponent(patientId)}/activity`;
+  const base = patientId ? `/api/admin/clients/${encodeURIComponent(patientId)}/activity` : `/api/admin/client-activity?staff=${encodeURIComponent(actorUid || '')}`;
   const load = useCallback(async (after?: string) => {
     setLoading(true); setError('');
     try {
-      const response = await authedFetch(`${base}${after ? `?cursor=${encodeURIComponent(after)}` : ''}`, { cache: 'no-store' });
+      const response = await authedFetch(`${base}${after ? `${patientId ? '?' : '&'}cursor=${encodeURIComponent(after)}` : ''}`, { cache: 'no-store' });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || 'Could not load activity.');
       const page = body as Page;
+      if (page.staff) onStaffLoaded?.(page.staff);
       setEntries(old => after ? [...old, ...page.entries] : page.entries); setCursor(page.nextCursor);
     } catch (err) { setError(err instanceof Error ? err.message : 'Could not load activity.'); }
     finally { setLoading(false); }
-  }, [base]);
+  }, [base, patientId, onStaffLoaded]);
   useEffect(() => { void load(); }, [load]);
   async function undo() {
     if (!selected) return;
     setSaving(true); setError(''); setNotice('');
     try {
-      const response = await authedFetch(`${base}/${encodeURIComponent(selected.id)}/undo`, { method: 'POST' });
+      const response = await authedFetch(`/api/admin/clients/${encodeURIComponent(selected.patientId || patientId!)}/activity/${encodeURIComponent(selected.id)}/undo`, { method: 'POST' });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Could not undo this change.');
       setNotice(selected.action === 'assistant-document-upload' ? 'Upload archived. The original file is preserved in Documents → Archived.' : 'Change undone. The previous information has been restored.');
@@ -55,6 +58,7 @@ export function ClientActivityLog({ patientId, onUndone }: { patientId: string; 
     {error && <p role="alert" style={{ color: '#b91c1c', marginBottom: 14 }}>{error}</p>}
     {notice && <p role="status" style={{ color: '#166534', marginBottom: 14 }}>{notice}</p>}
     {selected && <div role="region" aria-label="Confirm undo" style={{ border: '1px solid #f59e0b', background: '#fffbeb', padding: 16, borderRadius: 8, marginBottom: 18 }}>
+      {selected.patientName && <p style={{ fontWeight: 700, marginBottom: 8 }}>Client: {selected.patientName}</p>}
       <strong>{selected.action === 'assistant-document-upload' ? 'Archive this uploaded document?' : 'Undo this information change?'}</strong>
       <p style={{ margin: '8px 0' }}>{selected.actorName} · {formatDateTimeUS(selected.at || '')}</p>
       <p style={{ marginBottom: 12 }}>{selected.action === 'assistant-document-upload'
@@ -69,10 +73,10 @@ export function ClientActivityLog({ patientId, onUndone }: { patientId: string; 
     {entries.map(entry => {
       const keys = activityChangedFields(entry);
       const upload = entry.action === 'assistant-document-upload';
-      const canUndo = !entry.revertedAt && (upload || (entry.action === 'assistant-information-update' && keys.length > 0));
-      return <article key={entry.id} style={{ borderTop: '1px solid #e2e8f0', padding: '18px 0' }}>
+      const canUndo = entry.patientExists !== false && !entry.revertedAt && (upload || (entry.action === 'assistant-information-update' && keys.length > 0));
+      return <article key={`${entry.patientId || patientId}:${entry.id}`} style={{ borderTop: '1px solid #e2e8f0', padding: '18px 0' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-          <div><strong>{entry.actorName}</strong> <span style={{ color: '#64748b' }}>· {formatDateTimeUS(entry.at || '')}</span>
+          <div>{entry.patientName && <p style={{ marginBottom: 6, fontWeight: 700 }}>{entry.patientExists ? <Link href={`/admin/clients/${encodeURIComponent(entry.patientId!)}?tab=activity`}>{entry.patientName}</Link> : entry.patientName}</p>}<strong>{entry.actorName}</strong> <span style={{ color: '#64748b' }}>· {formatDateTimeUS(entry.at || '')}</span>
             <p>{upload ? 'Uploaded a document' : entry.action === 'admin-undo' ? 'Undid a previous change' : 'Updated client information'}</p></div>
           {canUndo && <button className={btn} disabled={saving} onClick={() => { setSelected(entry); setError(''); }}>Undo change</button>}
         </div>
@@ -90,7 +94,7 @@ export function ClientActivityLog({ patientId, onUndone }: { patientId: string; 
       </article>;
     })}
     {loading && <p role="status">Loading activity…</p>}
-    {!loading && !error && entries.length === 0 && <p>No assistant activity recorded for this client yet.</p>}
+    {!loading && !error && entries.length === 0 && <p>No assistant activity recorded{patientId ? ' for this client' : actorUid ? ' for this staff member' : ''} yet.</p>}
     {cursor && <button className={`${btn} ${btnPrimary}`} disabled={loading || saving} onClick={() => void load(cursor)}>Load older activity</button>}
   </section>;
 }

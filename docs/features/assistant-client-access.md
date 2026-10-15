@@ -66,3 +66,19 @@ Routes: GET /api/admin/clients/[id]/activity and POST
 Run the undo transaction integration checks against the local demo emulator:
 `FIRESTORE_EMULATOR_HOST=127.0.0.1:8184 GCLOUD_PROJECT=demo-client-access npx vitest run --config scripts/activity-emulator.config.mjs`.
 The harness refuses any other host/project and uses only synthetic records.
+
+## Cross-client activity overview
+
+Admins can open Activity Log in the sidebar (`/admin/activity`) to review the
+same assistant audit history across clients, filter by staff member (including
+inactive accounts), and undo eligible changes without opening a client first.
+Each entry and undo confirmation identifies its client. Missing clients have no
+undo control. Changing staff resets pagination and any pending confirmation.
+This includes existing audit records and admin reversals, not unrelated clinical
+or referral edits. The per-client Activity Log remains available.
+
+GET `/api/admin/client-activity` requires an active admin and accepts `staff`
+(actor UID) and an opaque `cursor`. It queries the administrativeAudit collection
+group, resolves client names, and returns 50 events per page. Deploy the new
+collection-group `at` and `actorUid/at` indexes separately and verify READY before
+shipping. No permission/rule changes or audit migration are needed.
