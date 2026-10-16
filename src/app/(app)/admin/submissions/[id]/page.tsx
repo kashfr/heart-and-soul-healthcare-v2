@@ -619,8 +619,8 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             <ConditionalSection title="Visit Details" keys={['ov_visitType', 'ov_timeIn', 'ov_timeOut', 'ov_location']} data={data}>
               <FieldRow>
                 {hasValue(data.ov_visitType) && <Field fieldKey="ov_visitType" label="Visit Type" value={data.ov_visitType} />}
-                {hasValue(data.ov_timeIn) && <Field fieldKey="ov_timeIn" label="Time In" value={data.ov_timeIn} />}
-                {hasValue(data.ov_timeOut) && <Field fieldKey="ov_timeOut" label="Time Out" value={data.ov_timeOut} />}
+                {hasValue(data.ov_timeIn) && <Field fieldKey="ov_timeIn" label="Start Time" value={data.ov_timeIn} />}
+                {hasValue(data.ov_timeOut) && <Field fieldKey="ov_timeOut" label="End Time" value={data.ov_timeOut} />}
               </FieldRow>
               {hasValue(data.ov_location) && <Field fieldKey="ov_location" label="Location" value={data.ov_location} />}
             </ConditionalSection>

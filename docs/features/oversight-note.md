@@ -49,3 +49,10 @@ The form is `/oversight-note` (amend: `?edit=<noteId>`), stored in
 - A stored "No" (pre-rev-3 note) still shows as a selected option when the
   note is amended, and the notes requirement does not apply to rev 2. No
   other code reads these values; the PDF and admin view print them as text.
+
+## Time labels (10/16/2026)
+
+RN oversight uses “Start time” and “End time” in the form, validation,
+submission details, and generated PDF. These labels describe the work period
+without implying arrival at or departure from a home. Stored `ov_timeIn` and
+`ov_timeOut` keys, time validation, and billing calculations are unchanged.

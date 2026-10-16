@@ -1733,7 +1733,7 @@ export default function SubmissionsPage() {
                 <span style={{ color: '#64748b' }}> · {hoursStats.shifts} {hoursStats.shifts === 1 ? 'shift' : 'shifts'}</span>
               </span>
               {(hoursStats.visits > 0 || hoursStats.rnHours > 0) && (
-                <span style={{ ...hoursStatStyle, color: '#1d4ed8' }} title="RN oversight visit hours (time in to time out); never added to shift hours">
+                <span style={{ ...hoursStatStyle, color: '#1d4ed8' }} title="RN oversight visit hours (start time to end time); never added to shift hours">
                   <strong style={{ ...hoursStatNumStyle, color: '#1d4ed8' }}>{pq(hoursStats.rnHours, hoursStats.rnUnits)}</strong>
                   {qtyView === 'hours' ? ' RN oversight hours' : ' RN oversight units'}
                   {showDollars && <strong style={{ ...hoursStatNumStyle, marginLeft: 8, color: '#166534' }}>{money(hoursStats.rnDollars)}</strong>}

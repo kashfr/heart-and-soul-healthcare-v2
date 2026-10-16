@@ -1112,8 +1112,8 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
             {anyHasValue(data, ['ov_visitType', 'ov_timeIn', 'ov_timeOut', 'ov_location']) && (
               <Section title="Visit Details">
                 {hasValue(data.ov_visitType) && <Field fieldKey="ov_visitType" label="Visit Type" value={data.ov_visitType} />}
-                {hasValue(data.ov_timeIn) && <Field fieldKey="ov_timeIn" label="Time In" value={data.ov_timeIn} />}
-                {hasValue(data.ov_timeOut) && <Field fieldKey="ov_timeOut" label="Time Out" value={data.ov_timeOut} />}
+                {hasValue(data.ov_timeIn) && <Field fieldKey="ov_timeIn" label="Start Time" value={data.ov_timeIn} />}
+                {hasValue(data.ov_timeOut) && <Field fieldKey="ov_timeOut" label="End Time" value={data.ov_timeOut} />}
                 {(data as unknown as Record<string, unknown>).ov_nonBillable === 'Yes' && (
                   <Field label="Billing" value="Non-billable visit (the month's authorized RN hours bill with an earlier visit)" />
                 )}

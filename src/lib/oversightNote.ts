@@ -102,8 +102,8 @@ interface OvRule {
 const OVERSIGHT_RULES: OvRule[] = [
   { key: 'q3_clientName', label: 'Individual (select from the roster)' },
   { key: 'q6_dateofService', label: 'Date of visit' },
-  { key: 'ov_timeIn', label: 'Time in' },
-  { key: 'ov_timeOut', label: 'Time out' },
+  { key: 'ov_timeIn', label: 'Start time' },
+  { key: 'ov_timeOut', label: 'End time' },
   { key: 'ov_locationChoice', label: 'Visit location' },
   {
     key: 'ov_locationOther',

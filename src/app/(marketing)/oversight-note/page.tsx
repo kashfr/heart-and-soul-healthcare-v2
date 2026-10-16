@@ -404,7 +404,7 @@ function OversightNotePageInner() {
   }, [user?.uid]);
 
   // --- Documented time vs. billed time --------------------------------------
-  // The nurse records the visit's real Time in and Time out; the portal never
+  // The nurse records the visit's real Start time and End time; the portal never
   // fills or adjusts them. Billing is separate: the month's first visit bills
   // the RN authorization, and a later visit that month is non-billable, which
   // the form says up front (shiftHours.oversightVisitBilling).
@@ -658,7 +658,7 @@ function OversightNotePageInner() {
     // A 12h/24h time-picker slip is the usual cause of an out-before-in
     // window; oversight visits never span midnight, so hard-stop it.
     if (String(values.ov_timeOut) <= String(values.ov_timeIn)) {
-      setFieldErrors({ ov_timeOut: 'Time out must be after time in. Check the visit times.' });
+      setFieldErrors({ ov_timeOut: 'End time must be after start time. Check the visit times.' });
       escortToField('ov_timeOut');
       return;
     }
@@ -965,14 +965,14 @@ function OversightNotePageInner() {
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="ov_timeIn">
-                  Time in *
+                  Start time *
                 </label>
                 <input className={styles.input} type="time" id="ov_timeIn" style={hi('ov_timeIn')} aria-invalid={!!fe('ov_timeIn')} {...register('ov_timeIn')} />
                 <FieldError message={fe('ov_timeIn')} />
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="ov_timeOut">
-                  Time out *
+                  End time *
                 </label>
                 <input className={styles.input} type="time" id="ov_timeOut" style={hi('ov_timeOut')} aria-invalid={!!fe('ov_timeOut')} {...register('ov_timeOut')} />
                 <FieldError message={fe('ov_timeOut')} />
