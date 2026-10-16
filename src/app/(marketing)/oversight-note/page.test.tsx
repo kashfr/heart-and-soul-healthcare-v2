@@ -310,7 +310,7 @@ describe('OversightNotePage — documented vs. billable time', () => {
     mockAuthedFetch.authedFetch.mockResolvedValue({ ok: true });
   });
 
-  it('never locks Time out: the nurse records the real times, and the month bills at the authorization', async () => {
+  it('never locks End time: the nurse records the real times, and the month bills at the authorization', async () => {
     allotment({ monthlyHours: 3, usedUnits: 0, remainingHours: 3, otherVisits: [] });
     await pickClientAndDate();
     expect(await screen.findByText(/September: this visit bills the month's 3 authorized RN hours\. Enter the actual times\./)).toBeInTheDocument();
@@ -319,7 +319,7 @@ describe('OversightNotePage — documented vs. billable time', () => {
     fireEvent.change(document.getElementById('ov_timeIn')!, { target: { value: '17:00' } });
     fireEvent.change(out, { target: { value: '19:30' } });
     expect(await screen.findByText(/September's 3 authorized RN hours bill with this visit\. The visit itself is documented as 2\.5 h\./)).toBeInTheDocument();
-    // Typing a time out is never overwritten.
+    // Typing a end time is never overwritten.
     expect(out.value).toBe('19:30');
   });
 
