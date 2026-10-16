@@ -24,7 +24,7 @@ export const ROI_LAYOUT = {
   /** The To address row has less headroom under its caption. */
   toAddr: 7.5,
   min: 6.5,
-  name: { x: 306, y: 765, w: 262 },
+  name: { x: 306, y: 766.8, w: 262 },
   dob: { x: 306, y: 733.5, w: 262 },
   fromName: { x: 84, y: 651.5, w: 420 },
   fromAddress: { x: 84, y: 629.8, w: 284 },
