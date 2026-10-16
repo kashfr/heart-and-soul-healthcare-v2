@@ -1,4 +1,5 @@
 'use client';
+import { withSelectChevron } from '@/lib/selectChevron';
 
 import { Fragment, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import Link from 'next/link';
@@ -290,7 +291,7 @@ function InfoForm({ client, patientId, onCancel, onSaved, onError }: {
           <legend>Contact {index + 1}</legend>
           <div style={grid}>
             {contactField(index, 'name', `Contact ${index + 1} name`, { required: true })}
-            <Field label={`Contact ${index + 1} role`}><select style={input} value={c.role} onChange={(e) => setDraft((d) => ({ ...d, guardianContacts: d.guardianContacts.map((entry, i) => i === index ? { ...entry, role: e.target.value } : entry) }))}>
+            <Field label={`Contact ${index + 1} role`}><select style={select} value={c.role} onChange={(e) => setDraft((d) => ({ ...d, guardianContacts: d.guardianContacts.map((entry, i) => i === index ? { ...entry, role: e.target.value } : entry) }))}>
               {GUARDIAN_ROLES.map((role) => <option key={role}>{role}</option>)}
             </select></Field>
             {contactField(index, 'relationship', `Contact ${index + 1} relationship`)}
@@ -337,7 +338,7 @@ function UploadForm({ patientId, onUploaded, onError }: { patientId: string; onU
       <div style={grid}>
         <Field label="Document file (PDF, image, or Word; under 20 MB)"><input type="file" required accept=".pdf,.jpg,.jpeg,.png,.heic,.doc,.docx" onChange={(e) => { const chosen = e.target.files?.[0] || null; setFile(chosen); if (chosen && !title) setTitle(chosen.name); }} style={input} /></Field>
         <Field label="Document title"><input required maxLength={200} style={input} value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
-        <Field label="Document category"><select style={input} value={category} onChange={(e) => setCategory(e.target.value)}>{DOC_CATEGORY_GROUPS.map((g) => <optgroup key={g.label} label={g.label}>{g.categories.map((c) => <option key={c}>{c}</option>)}</optgroup>)}</select></Field>
+        <Field label="Document category"><select style={select} value={category} onChange={(e) => setCategory(e.target.value)}>{DOC_CATEGORY_GROUPS.map((g) => <optgroup key={g.label} label={g.label}>{g.categories.map((c) => <option key={c}>{c}</option>)}</optgroup>)}</select></Field>
         <Field label="Document date (MM/DD/YYYY)"><input required placeholder="MM/DD/YYYY" maxLength={10} style={input} value={date} onChange={(e) => setDate(e.target.value)} /></Field>
       </div>
       {error && <div role="alert" style={errorBox}>{error}</div>}
@@ -374,3 +375,5 @@ const contactCard: CSSProperties = { border: '1px solid #e2e8f0', borderRadius: 
 const fieldset: CSSProperties = { border: 0, padding: 0, margin: 0, minWidth: 0 };
 const errorBox: CSSProperties = { margin: '16px 0', padding: 14, borderRadius: 8, background: '#fef2f2', color: '#991b1b' };
 const noticeBox: CSSProperties = { margin: '0 0 16px', padding: 14, borderRadius: 8, background: '#eff6ff', color: NAVY };
+
+const select: CSSProperties = withSelectChevron(input);

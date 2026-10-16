@@ -1,4 +1,5 @@
 'use client';
+import { withSelectChevron } from '@/lib/selectChevron';
 
 import type { AssistantClientGrant, AssistantClientsSettings } from '@/lib/assistantClientAccess';
 
@@ -31,7 +32,7 @@ export function AssistantClientAccessSettings({ value, staff, onChange }: {
           <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>Clients
             <select aria-label={`Client scope for ${person.displayName}`} value={grant.scope}
               onChange={(e) => update(person.uid, { ...grant, scope: e.target.value as AssistantClientGrant['scope'] })}
-              style={{ padding: 8, border: '1px solid #cbd5e1', borderRadius: 6 }}>
+              style={withSelectChevron({ padding: 8, border: '1px solid #cbd5e1', borderRadius: 6 })}>
               <option value="gapp">GAPP clients</option><option value="all">All clients</option>
             </select>
           </label>

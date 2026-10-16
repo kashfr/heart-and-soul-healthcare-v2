@@ -1,4 +1,5 @@
 'use client';
+import { withSelectChevron } from '@/lib/selectChevron';
 import { useState } from 'react';
 import { AuthGuard } from '@/components/AuthGuard';
 import { ClientActivityLog, type ActivityClient, type ActivityStaff } from '@/components/ClientActivityLog';
@@ -15,6 +16,7 @@ function ActivityOverview() {
   const [range, setRange] = useState({ from: '', through: '' });
   const [error, setError] = useState('');
   const inputStyle = { padding: 10, border: '1px solid #cbd5e1', borderRadius: 8, background: 'white', maxWidth: '100%' };
+  const selectStyle = withSelectChevron(inputStyle);
   function applyDates(event: React.FormEvent) {
     event.preventDefault();
     const from = fromText.trim() ? parseActivityUSDate(fromText) : '';
@@ -28,19 +30,19 @@ function ActivityOverview() {
     <p style={{ margin: '10px 0 20px', color: '#64748b' }}>Review recorded changes across all clients, including changes by admins, supervisors, nurses, and assistants. Filter by staff member, client, change type, and date range to find a specific change.</p>
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
     <label style={{ display: 'flex', alignItems: 'center', gap: 12 }}>Staff
-      <select value={actorUid} onChange={e => setActorUid(e.target.value)} style={{ padding: 10, border: '1px solid #cbd5e1', borderRadius: 8, background: 'white' }}>
+      <select value={actorUid} onChange={e => setActorUid(e.target.value)} style={selectStyle}>
         <option value="">All staff</option>
         {staff.map(person => <option key={person.uid} value={person.uid}>{person.name}{person.active ? '' : ' (inactive)'}</option>)}
       </select>
     </label>
     <label style={{ display: 'flex', alignItems: 'center', gap: 12 }}>Client
-      <select value={client} onChange={e => setClient(e.target.value)} style={inputStyle}>
+      <select value={client} onChange={e => setClient(e.target.value)} style={selectStyle}>
         <option value="">All clients</option>
         {clients.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}
       </select>
     </label>
     <label style={{ display: 'flex', alignItems: 'center', gap: 12 }}>Change type
-      <select value={changeType} onChange={e => setChangeType(e.target.value)} style={inputStyle}>
+      <select value={changeType} onChange={e => setChangeType(e.target.value)} style={selectStyle}>
         <option value="">All changes</option>
         {ACTIVITY_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}
       </select>
