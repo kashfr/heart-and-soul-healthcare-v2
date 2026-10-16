@@ -25,6 +25,7 @@ import {
   X,
   PanelLeftClose,
   PanelLeftOpen,
+  ChevronDown,
 } from 'lucide-react';
 import { useEffectiveUser } from './AuthProvider';
 import { useViewAs } from './ImpersonationProvider';
@@ -106,6 +107,48 @@ const NAV: NavItem[] = [
   { href: '/admin/esign', label: 'E-Signatures', icon: <PenLine size={18} />, allow: ['admin', 'supervisor', 'va'], requiresFax: true },
 ];
 
+// Group the existing links after their individual permission checks. A group
+// never grants access, and disappears when none of its links are available.
+const NAV_GROUPS = [
+  {
+    id: 'clinical', label: 'Clinical Work', icon: <ClipboardList size={18} />,
+    hrefs: ['/admin/submissions', '/admin/in-progress', '/admin/handoffs', '/admin/verbal-orders', '/admin/med-errors'],
+  },
+  {
+    id: 'intake', label: 'Referrals & Intake', icon: <FileText size={18} />,
+    hrefs: ['/admin/referrals', '/admin/agencies', '/admin/edwp-consents'],
+  },
+  {
+    id: 'office', label: 'Office Tools', icon: <MessagesSquare size={18} />,
+    hrefs: ['/admin/communications', '/admin/fax', '/admin/esign', '/admin/announcements'],
+  },
+  {
+    id: 'administration', label: 'Administration', icon: <Settings size={18} />,
+    hrefs: ['/admin/activity', '/admin/users', '/admin/settings', '/admin/maintenance/link-notes'],
+  },
+];
+
+function readOpenGroups(key: string | null): string[] {
+  if (!key) return [];
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(key) ?? '[]');
+    return Array.isArray(value)
+      ? value.filter((id): id is string => typeof id === 'string' && NAV_GROUPS.some((group) => group.id === id))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveOpenGroups(key: string | null, groups: string[]) {
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify(groups));
+  } catch {
+    // Navigation remains usable when browser storage is unavailable.
+  }
+}
+
 const VIEW_AS_ROLE_LABELS: Record<Role, string> = {
   admin: 'Admin',
   supervisor: 'Supervisor',
@@ -152,30 +195,24 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
-  // Desktop sidebar collapse, persisted to localStorage so it survives
-  // refreshes. Read lazily on first render; SSR has no window so it defaults
-  // to expanded, and the <aside> uses suppressHydrationWarning so the
-  // client's persisted value can differ from the server markup without a
-  // hydration warning.
-  const [collapsed, setCollapsed] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
+  // Read preferences after hydration so server and client markup agree.
+  const [collapsed, setCollapsed] = useState(false);
+  const [openGroups, setOpenGroups] = useState<string[]>([]);
+  useEffect(() => {
     try {
-      return localStorage.getItem(COLLAPSE_KEY) === '1';
+      setCollapsed(localStorage.getItem(COLLAPSE_KEY) === '1');
     } catch {
-      return false;
+      // Browser storage may be unavailable.
     }
-  });
+  }, []);
 
-  const toggleCollapsed = () => {
-    setCollapsed((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0');
-      } catch {
-        /* ignore persistence failure */
-      }
-      return next;
-    });
+  const changeCollapsed = (next: boolean) => {
+    setCollapsed(next);
+    try {
+      localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0');
+    } catch {
+      // Navigation remains usable without persistence.
+    }
   };
 
   // Live count of pending duplicate-note approval requests, shown as a badge
@@ -186,7 +223,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     // count stays at its initial 0.
     if (role !== 'admin' && role !== 'supervisor') return;
     const unsub = subscribePendingDupCount(setPendingDup);
-    return () => unsub();
+    return () => {
+      unsub();
+      setPendingDup(0);
+    };
   }, [role]);
 
   // Live count of the signed-in nurse's OPEN clarification requests, shown as a
@@ -277,6 +317,120 @@ export function AppShell({ children }: { children: ReactNode }) {
   const currentTitle =
     [...visibleNav].reverse().find((item) => isActive(item.href))?.label ?? 'Admin';
 
+  const visibleGroups = NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.hrefs.flatMap((href) => visibleNav.filter((item) => item.href === href)),
+  })).filter((group) => group.items.length > 0);
+  const activeGroupId = visibleGroups.find((group) => group.items.some((item) => isActive(item.href)))?.id;
+  // View-as previews have separate preferences, so they cannot overwrite a
+  // staff member's own saved navigation choices on a shared browser.
+  const groupsStorageKey = effectiveUid && role
+    ? `app-shell-open-groups:${isViewingAs ? 'preview' : 'user'}:${effectiveUid}:${role}`
+    : null;
+  useEffect(() => {
+    const saved = readOpenGroups(groupsStorageKey);
+    const next = activeGroupId && !saved.includes(activeGroupId) ? [...saved, activeGroupId] : saved;
+    setOpenGroups(next);
+    saveOpenGroups(groupsStorageKey, next);
+    // Only navigation/identity changes open a group automatically. Badge and
+    // settings rerenders must not override a person's manual collapse.
+  }, [groupsStorageKey, pathname, activeGroupId]);
+
+  const toggleGroup = (id: string) => {
+    // Clicking an icon in the narrow desktop rail reveals its links. Mobile
+    // uses the full drawer even when a desktop collapse preference is saved.
+    const revealRail = collapsed && !mobileOpen;
+    if (revealRail) changeCollapsed(false);
+    const next = revealRail
+      ? Array.from(new Set([...openGroups, id]))
+      : openGroups.includes(id) ? openGroups.filter((group) => group !== id) : [...openGroups, id];
+    setOpenGroups(next);
+    saveOpenGroups(groupsStorageKey, next);
+  };
+
+  const badgeCountFor = (item: NavItem) =>
+      item.href === '/admin/handoffs'
+        ? pendingHandoffs
+        : item.href === '/admin/in-progress'
+        ? pendingDup
+        : item.href === '/admin/submissions'
+          ? role === 'nurse'
+            ? openClarifications
+            : awaitingReview
+          : 0;
+
+  const renderNavItem = (item: NavItem) => {
+    const active = isActive(item.href);
+    const classes = [
+      'app-shell-nav-item',
+      active ? 'app-shell-nav-item--active' : '',
+      item.disabled ? 'app-shell-nav-item--disabled' : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const badgeCount = badgeCountFor(item);
+    const badgeTitle =
+      item.href === '/admin/handoffs'
+        ? `${badgeCount} handoff${badgeCount === 1 ? '' : 's'} waiting for your acknowledgment`
+        : item.href === '/admin/in-progress'
+        ? `${badgeCount} duplicate-note request${badgeCount === 1 ? '' : 's'} awaiting approval`
+        : role === 'nurse'
+          ? `${badgeCount} note${badgeCount === 1 ? '' : 's'} needing your clarification`
+          : `${badgeCount} flagged note${badgeCount === 1 ? '' : 's'} with a nurse reply or amendment awaiting review`;
+    // Where a click on the count itself lands: the Submissions list with
+    // the Flagged filter on, which shows every open flag (both sides of
+    // the thread) with a per-row hint of whose turn it is.
+    const badgeHref = item.href === '/admin/submissions' ? '/admin/submissions?flag=1' : '';
+    const inner = (
+      <>
+        <span className="app-shell-nav-icon" aria-hidden="true">{item.icon}</span>
+        <span className="app-shell-nav-label">{item.label}</span>
+        {item.disabled && <span className="app-shell-coming-soon">Soon</span>}
+        {badgeCount > 0 && (
+          <span
+            className={badgeHref ? 'app-shell-nav-badge app-shell-nav-badge--link' : 'app-shell-nav-badge'}
+            title={badgeHref ? `${badgeTitle}. Click to list them.` : badgeTitle}
+            onClick={
+              badgeHref
+                ? (e) => {
+                    // The badge sits inside the nav Link. Swallow the click
+                    // so the Link doesn't also navigate to the bare list,
+                    // then go straight to the pre-filtered view the count
+                    // refers to.
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setMobileOpen(false);
+                    router.push(badgeHref);
+                  }
+                : undefined
+            }
+          >
+            {badgeCount}
+          </span>
+        )}
+      </>
+    );
+    if (item.disabled) {
+      return (
+        <div key={item.href} className={classes} title={collapsed ? item.label : undefined}>
+          {inner}
+        </div>
+      );
+    }
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        aria-current={active ? 'page' : undefined}
+        onClick={() => setMobileOpen(false)}
+        className={classes}
+        title={collapsed ? item.label : undefined}
+      >
+        {inner}
+      </Link>
+    );
+  };
+
   return (
     <div className="app-shell">
       {/* View-as banner: pinned when an admin is impersonating a nurse (read-only). */}
@@ -317,7 +471,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       <AnnouncementGate />
       <div className="app-shell-body">
       <aside
-        suppressHydrationWarning
         className={`app-shell-sidebar${mobileOpen ? ' app-shell-sidebar--open' : ''}${
           collapsed ? ' app-shell-sidebar--collapsed' : ''
         }`}
@@ -334,7 +487,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           </Link>
           <button
-            onClick={toggleCollapsed}
+            onClick={() => changeCollapsed(!collapsed)}
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             className="app-shell-icon-btn app-shell-collapse-btn"
@@ -350,84 +503,38 @@ export function AppShell({ children }: { children: ReactNode }) {
           </button>
         </div>
 
-        <nav className="app-shell-nav">
-          {visibleNav.map((item) => {
-            const active = isActive(item.href);
-            const classes = [
-              'app-shell-nav-item',
-              active ? 'app-shell-nav-item--active' : '',
-              item.disabled ? 'app-shell-nav-item--disabled' : '',
-            ]
-              .filter(Boolean)
-              .join(' ');
-            const badgeCount =
-              item.href === '/admin/handoffs'
-                ? pendingHandoffs
-                : item.href === '/admin/in-progress'
-                ? pendingDup
-                : item.href === '/admin/submissions'
-                  ? role === 'nurse'
-                    ? openClarifications
-                    : awaitingReview
-                  : 0;
-            const badgeTitle =
-              item.href === '/admin/handoffs'
-                ? `${badgeCount} handoff${badgeCount === 1 ? '' : 's'} waiting for your acknowledgment`
-                : item.href === '/admin/in-progress'
-                ? `${badgeCount} duplicate-note request${badgeCount === 1 ? '' : 's'} awaiting approval`
-                : role === 'nurse'
-                  ? `${badgeCount} note${badgeCount === 1 ? '' : 's'} needing your clarification`
-                  : `${badgeCount} flagged note${badgeCount === 1 ? '' : 's'} with a nurse reply or amendment awaiting review`;
-            // Where a click on the count itself lands: the Submissions list with
-            // the Flagged filter on, which shows every open flag (both sides of
-            // the thread) with a per-row hint of whose turn it is.
-            const badgeHref = item.href === '/admin/submissions' ? '/admin/submissions?flag=1' : '';
-            const inner = (
-              <>
-                <span className="app-shell-nav-icon">{item.icon}</span>
-                <span className="app-shell-nav-label">{item.label}</span>
-                {item.disabled && <span className="app-shell-coming-soon">Soon</span>}
-                {badgeCount > 0 && (
-                  <span
-                    className={badgeHref ? 'app-shell-nav-badge app-shell-nav-badge--link' : 'app-shell-nav-badge'}
-                    title={badgeHref ? `${badgeTitle}. Click to list them.` : badgeTitle}
-                    onClick={
-                      badgeHref
-                        ? (e) => {
-                            // The badge sits inside the nav Link. Swallow the click
-                            // so the Link doesn't also navigate to the bare list,
-                            // then go straight to the pre-filtered view the count
-                            // refers to.
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setMobileOpen(false);
-                            router.push(badgeHref);
-                          }
-                        : undefined
-                    }
-                  >
-                    {badgeCount}
-                  </span>
-                )}
-              </>
-            );
-            if (item.disabled) {
-              return (
-                <div key={item.href} className={classes} title={collapsed ? item.label : undefined}>
-                  {inner}
-                </div>
-              );
-            }
+        <nav className="app-shell-nav" aria-label="Main navigation">
+          {visibleNav.filter((item) => item.href === '/admin' || item.href === '/admin/clients').map(renderNavItem)}
+          {visibleGroups.map((group) => {
+            const open = openGroups.includes(group.id);
+            const active = group.items.some((item) => isActive(item.href));
+            const badgeCount = group.items.reduce((sum, item) => sum + badgeCountFor(item), 0);
+            const pendingSummary = group.items
+              .filter((item) => badgeCountFor(item) > 0)
+              .map((item) => `${item.label}: ${badgeCountFor(item)}`)
+              .join('; ');
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setMobileOpen(false)}
-                className={classes}
-                title={collapsed ? item.label : undefined}
-              >
-                {inner}
-              </Link>
+              <div className="app-shell-nav-group" key={group.id}>
+                <button
+                  type="button"
+                  className={`app-shell-nav-item app-shell-nav-group-toggle${active ? ' app-shell-nav-item--active' : ''}`}
+                  onClick={() => toggleGroup(group.id)}
+                  aria-expanded={open && (!collapsed || mobileOpen)}
+                  aria-controls={`sidebar-group-${group.id}`}
+                  aria-label={`${group.label}${badgeCount > 0 ? `, ${badgeCount} pending items` : ''}`}
+                  title={pendingSummary ? `${group.label} — ${pendingSummary}` : group.label}
+                >
+                  <span className="app-shell-nav-icon" aria-hidden="true">{group.icon}</span>
+                  <span className="app-shell-nav-label">{group.label}</span>
+                  {badgeCount > 0 && (
+                    <span className="app-shell-nav-badge" title={pendingSummary} aria-hidden="true">{badgeCount}</span>
+                  )}
+                  <ChevronDown size={16} aria-hidden="true" className={`app-shell-group-chevron${open ? ' app-shell-group-chevron--open' : ''}`} />
+                </button>
+                <div id={`sidebar-group-${group.id}`} className="app-shell-nav-children" hidden={!open}>
+                  {group.items.map(renderNavItem)}
+                </div>
+              </div>
             );
           })}
         </nav>
@@ -531,6 +638,42 @@ export function AppShell({ children }: { children: ReactNode }) {
           text-decoration: none;
           font-weight: 500;
         }
+        .app-shell-nav-group-toggle {
+          width: 100%;
+          border: 0;
+          background: transparent;
+          font-family: inherit;
+          text-align: left;
+          cursor: pointer;
+        }
+        .app-shell-nav-group-toggle.app-shell-nav-item--active {
+          background: #374151;
+        }
+        .app-shell-nav-item:focus-visible {
+          outline: 2px solid #93c5fd;
+          outline-offset: -2px;
+        }
+        .app-shell-nav-label {
+          flex: 1;
+        }
+        .app-shell-group-chevron {
+          flex-shrink: 0;
+          transform: rotate(-90deg);
+          transition: transform 0.18s ease;
+        }
+        .app-shell-group-chevron--open {
+          transform: rotate(0);
+        }
+        .app-shell-nav-children {
+          margin: 3px 0 7px 20px;
+          padding-left: 5px;
+          border-left: 1px solid #475569;
+        }
+        .app-shell-nav-children .app-shell-nav-item {
+          font-size: 13px;
+          padding: 8px;
+          gap: 8px;
+        }
         .app-shell-nav-item:hover:not(.app-shell-nav-item--disabled) {
           background: rgba(255,255,255,0.04);
           color: white;
@@ -547,6 +690,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         .app-shell-nav-icon {
           display: inline-flex;
           align-items: center;
+          flex-shrink: 0;
         }
         .app-shell-coming-soon {
           margin-left: auto;
@@ -579,17 +723,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         }
         .app-shell-nav-badge--link:hover {
           background: #fbbf24;
-        }
-        /* In the collapsed rail the label is hidden; pin the badge to the
-           icon's corner so the count still shows. */
-        .app-shell-sidebar--collapsed .app-shell-nav-badge {
-          position: absolute;
-          top: 4px;
-          right: 10px;
-          margin-left: 0;
-        }
-        .app-shell-sidebar--collapsed .app-shell-nav-item {
-          position: relative;
         }
         .app-shell-sidebar-footer {
           padding: 12px 16px;
@@ -659,6 +792,21 @@ export function AppShell({ children }: { children: ReactNode }) {
             display: inline-flex;
           }
 
+        /* In the collapsed rail the label is hidden; pin the badge to the
+           icon's corner so the count still shows. */
+        .app-shell-sidebar--collapsed .app-shell-nav-badge {
+          position: absolute;
+          top: 4px;
+          right: 10px;
+          margin-left: 0;
+        }
+        .app-shell-sidebar--collapsed .app-shell-nav-item {
+          position: relative;
+        }
+          .app-shell-sidebar--collapsed .app-shell-nav-children,
+          .app-shell-sidebar--collapsed .app-shell-group-chevron {
+            display: none;
+          }
           /* Collapsed rail: icon-only, labels + brand text hidden.
              Compound selector (two classes) outranks the base
              .app-shell-sidebar width; min/max pin it so the flex row
