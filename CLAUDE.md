@@ -37,4 +37,6 @@ Read the matching note before changing one of these features.
   dose charting, printed MAR): docs/features/sliding-scale.md
 - Fax Center incoming faxes (portal line and added by hand), filing to a
   referral, creating a client record from a referral: docs/features/fax-center-inbound.md
+- Phone referrals ("Log Phone Referral" quick capture on the Referrals page):
+  docs/features/phone-referrals.md
 - Declared test account and test client: TEST-ACCOUNT.md

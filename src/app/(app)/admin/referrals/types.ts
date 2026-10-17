@@ -12,7 +12,7 @@ import {
 import { assessReferralFit } from '@/lib/referralFit';
 import type { IntakeSettings } from '@/lib/settings';
 
-export type ReferralSource = 'gapp-website' | 'hs-website';
+export type ReferralSource = 'gapp-website' | 'hs-website' | 'phone';
 export type ReferralStatus = 'new' | 'contacted' | 'archived';
 export type ReferralStage =
   | 'new'
@@ -192,6 +192,7 @@ export const STAGE_ACCENT: Record<ReferralStage, string> = {
 export const SOURCE_LABEL: Record<ReferralSource, string> = {
   'gapp-website': 'GAPP Site',
   'hs-website': 'Heart & Soul Site',
+  phone: 'Phone Call',
 };
 
 export function statusFromStage(stage: ReferralStage): ReferralStatus {

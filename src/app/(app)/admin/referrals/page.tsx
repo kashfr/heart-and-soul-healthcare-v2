@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { btn } from '@/components/buttons';
-import { Search, X, RefreshCw, LayoutGrid, List } from 'lucide-react';
+import { btn, btnPrimary } from '@/components/buttons';
+import { Search, X, RefreshCw, LayoutGrid, List, PhoneCall } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { useEffectiveUser } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
@@ -16,6 +16,7 @@ import ReferralTable from './ReferralTable';
 import ReferralDetail from './ReferralDetail';
 import PrintOverlay from './PrintOverlay';
 import ReferOutModal from './ReferOutModal';
+import PhoneReferralModal from './PhoneReferralModal';
 import {
   matchInputFor,
   serviceForReferral,
@@ -38,6 +39,7 @@ export default function ReferralsPage() {
   const canDelete = role === 'admin';
   const [referrals, setReferrals] = useState<Referral[]>([]);
   const [staff, setStaff] = useState<StaffOption[]>([]);
+  const [loggingCall, setLoggingCall] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<View>('board');
@@ -383,13 +385,18 @@ export default function ReferralsPage() {
             <p style={kickerStyle}>Admin</p>
             <h1 style={titleStyle}>Referrals</h1>
             <p style={subtitleStyle}>
-              Track incoming referrals from the GAPP and Heart &amp; Soul websites through your
-              intake pipeline.
+              Track incoming referrals from the GAPP and Heart &amp; Soul websites, and calls you
+              log here, through your intake pipeline.
             </p>
           </div>
-          <button onClick={load} className={btn} style={{ flexShrink: 0 }} title="Refresh">
-            <RefreshCw size={15} /> Refresh
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+            <button onClick={() => setLoggingCall(true)} className={btnPrimary}>
+              <PhoneCall size={15} /> Log Phone Referral
+            </button>
+            <button onClick={load} className={btn} title="Refresh">
+              <RefreshCw size={15} /> Refresh
+            </button>
+          </div>
         </header>
 
         <div style={toolbarStyle}>
@@ -532,6 +539,18 @@ export default function ReferralsPage() {
           onChanged={load}
           nav={stageNav}
           onNavigate={(id) => setSelectedId(id)}
+        />
+      )}
+
+      {loggingCall && (
+        <PhoneReferralModal
+          staff={staff}
+          onClose={() => setLoggingCall(false)}
+          onCreated={async (id) => {
+            setLoggingCall(false);
+            await load();
+            setSelectedId(id);
+          }}
         />
       )}
 
