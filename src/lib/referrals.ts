@@ -12,12 +12,13 @@ export { REFERRED_OUT_AUTO_CLOSE_DAYS } from './referralAutoClose';
 //   - 'gapp-website'  -> the Georgia Pediatric Program site's referral form
 //                         (forwarded to /api/referrals/intake)
 //   - 'hs-website'    -> this site's own /referral marketing form
+//   - 'phone'         -> a call staff logged with "Log Phone Referral"
 // The admin Referrals tab reads from this collection and renders it as a
 // Trello/ClickUp-style pipeline board.
 
 const COLLECTION = 'referrals';
 
-export type ReferralSource = 'gapp-website' | 'hs-website';
+export type ReferralSource = 'gapp-website' | 'hs-website' | 'phone';
 
 /**
  * Legacy three-value status, kept in sync from `stage` on every write so any
@@ -213,7 +214,9 @@ function toMillis(ts: unknown): number | null {
  * duplicate document or a second notification email.
  */
 export async function createReferral(
-  input: ReferralInput
+  input: ReferralInput,
+  /** Who entered it by hand (a phone referral); the timeline says so. */
+  createdBy?: { caller: AuthedCaller; text: string }
 ): Promise<{ id: string; deduped: boolean }> {
   const data = {
     source: input.source,
@@ -244,7 +247,7 @@ export async function createReferral(
     const ref = adminDb().collection(COLLECTION).doc(docIdForExternal(input.externalId));
     try {
       await ref.create(data);
-      await logCreated(ref.id);
+      await logCreated(ref.id, createdBy);
       return { id: ref.id, deduped: false };
     } catch (err) {
       if (isAlreadyExists(err)) return { id: ref.id, deduped: true };
@@ -255,7 +258,7 @@ export async function createReferral(
   // No externalId (e.g. the on-site marketing form): plain auto-id document.
   const ref = adminDb().collection(COLLECTION).doc();
   await ref.set(data);
-  await logCreated(ref.id);
+  await logCreated(ref.id, createdBy);
   return { id: ref.id, deduped: false };
 }
 
@@ -353,13 +356,17 @@ export async function logReferralActivity(referralId: string, entry: ActivityWri
 }
 
 /** Best-effort "created" timeline entry; never blocks the intake write. */
-async function logCreated(referralId: string): Promise<void> {
+async function logCreated(referralId: string, createdBy?: { caller: AuthedCaller; text: string }): Promise<void> {
   try {
-    await logReferralActivity(referralId, {
-      type: 'created',
-      text: 'Referral received',
-      byName: 'System',
-    });
+    await logReferralActivity(referralId, createdBy
+      ? {
+          type: 'created',
+          text: createdBy.text,
+          byUid: createdBy.caller.uid,
+          byName: createdBy.caller.profile.displayName || '',
+          byRole: createdBy.caller.role,
+        }
+      : { type: 'created', text: 'Referral received', byName: 'System' });
   } catch (err) {
     console.error('Referral activity (created) log failed (non-fatal):', err);
   }
