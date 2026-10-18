@@ -85,6 +85,11 @@ export interface GappAnswers {
   seekingPaidCaregiver?: '' | 'yes' | 'no';
   /** Mixed diagnosis + seeking pay: what the hands-on care is mainly for. */
   paidCareBasis?: PaidCareBasis;
+  /** Optional: the child's doctor, who signs the plan of treatment. */
+  physicianName?: string;
+  physicianOffice?: string;
+  physicianPhone?: string;
+  physicianFax?: string;
 }
 
 const CARE_LABEL: Record<string, string> = {
@@ -192,6 +197,12 @@ export function buildGappReferral(r: GappAnswers): BuiltReferral {
       { label: 'Age', value: ageLabel(r.dob) },
       { label: 'Address', value: address },
       { label: "Member's Medicaid ID", value: medicaid },
+      // Same labels as the Heart & Soul form: Create Client Record and PPOT
+      // requests read them (referralConvertShared, ppotShared).
+      { label: "Child's physician", value: r.physicianName ?? '' },
+      { label: 'Physician office', value: r.physicianOffice ?? '' },
+      { label: 'Physician phone', value: r.physicianPhone ?? '' },
+      { label: 'Physician fax', value: r.physicianFax ?? '' },
       { label: 'Diagnosis', value: r.diagnosis ?? '' },
       { label: 'Equipment & daily care', value: equipmentLabels(r.equipment).join(', ') },
       { label: 'Behavior risk', value: behaviorRiskLabel(r.behaviorRisk) },
