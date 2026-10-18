@@ -39,3 +39,12 @@ it.each([
 ])('rejects %s without partial changes', async (_name, change) => {
   change(); await expect(undoReferralPpot(args)).rejects.toMatchObject({ status: 409 }); expect(writes).not.toHaveBeenCalled();
 });
+it('undoes an Appendix T uploaded on the card, which has no fax behind it', async () => {
+  records['ppotRequests/referral_r1'].received = { ...received, inboundFaxId: '', source: 'upload' };
+  delete records['verbalOrderInbound/123'];
+  expect(await undoReferralPpot(args)).toBe('newdoc');
+  const byPath = Object.fromEntries(writes.mock.calls.map(([r, data]) => [r.path, data]));
+  expect(byPath['ppotRequests/referral_r1']).toEqual({ status: 'sent', received: null, listHidden: false });
+  expect(Object.keys(byPath).some((p) => p.startsWith('verbalOrderInbound/'))).toBe(false);
+  expect(byPath['referrals/r1/activity/newdoc'].text).toContain('upload refiled as');
+});

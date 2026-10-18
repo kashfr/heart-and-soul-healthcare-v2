@@ -18,6 +18,9 @@ import { getSupportCoordinator } from '@/lib/supportCoordinator';
 import { roiFacilityOptions, type RoiFacilityOption } from '@/lib/roiFacilityOptions';
 import {
   ROI_FORMS,
+  ROI_FORM_SHORT,
+  isOutsideRoi,
+  twoYearsFrom,
   DEFAULT_ROI_INFORMATION,
   defaultRoiFaxNote,
   defaultRoiPurpose,
@@ -188,7 +191,7 @@ export default function RoiSection({
                   <tr key={r.id} style={r.hidden ? { opacity: 0.6 } : undefined}>
                     <td style={tdStyle}>
                       <div style={{ fontWeight: 600 }}>{r.memberName}</div>
-                      <div style={metaStyle}>{r.facility.name} · {r.formType === 'choa' ? 'CHOA medical records request' : ROI_DIRECTION_LABEL[r.direction].toLowerCase()}</div>
+                      <div style={metaStyle}>{r.facility.name} · {r.formType === 'choa' ? 'CHOA medical records request' : isOutsideRoi(r.formType) ? `${ROI_FORM_SHORT[r.formType ?? 'dbhdd']}, ${ROI_DIRECTION_LABEL[r.direction].toLowerCase()}` : ROI_DIRECTION_LABEL[r.direction].toLowerCase()}</div>
                     </td>
                     <td style={tdStyle}>
                       {r.status === 'awaiting-signature' && (
@@ -272,6 +275,11 @@ export default function RoiSection({
           onCreated={async (roi) => {
             setPreparing(false);
             await load();
+            if (isOutsideRoi(roi.formType)) {
+              setPreview({ title: `Signed Release: ${roi.memberName}, ${roi.facility.name}`, url: `/api/fax/roi/${roi.id}/signed` });
+              setNotice(`The signed release for ${roi.memberName} is recorded and filed under the ${referralId ? 'referral' : 'client'}'s Documents (Consent / Release).${roi.signed?.expiresOn ? ` It is good through ${formatDateUS(roi.signed.expiresOn)}.` : ''} Use Fax to Facility to send it with the introduction letter.`);
+              return;
+            }
             // Show it right away so it can be checked before it goes out;
             // Download in the preview saves the copy for PandaDoc.
             setPreview({ title: `Release to Sign: ${roi.memberName}, ${roi.facility.name}`, url: `/api/fax/roi/${roi.id}/form` });
@@ -315,7 +323,7 @@ export default function RoiSection({
 
 // ---------------------------------------------------------------------------
 
-const PREP_ORDER: readonly RoiField[] = ['formType', 'patientId', 'referralDob', 'choaLocation', 'choaDates', 'choaRecordTypes', 'direction', 'facilityName', 'facilityAddress', 'facilityPhone', 'facilityFax', 'information', 'purpose', 'duration'];
+const PREP_ORDER: readonly RoiField[] = ['formType', 'patientId', 'referralDob', 'choaLocation', 'choaDates', 'choaRecordTypes', 'direction', 'facilityName', 'facilityAddress', 'facilityPhone', 'facilityFax', 'information', 'purpose', 'duration', 'signedPdf', 'signedDate', 'outsideExpiresOn'];
 const prepId = (k: RoiField) => `roi-${k}`;
 
 function PrepareModal({ clients, onClose, onCreated, referralId, subject }: { clients: RoiClient[]; onClose: () => void; onCreated: (roi: RoiRecord) => void; referralId?: string; subject?: RoiClient | null }) {
@@ -336,6 +344,11 @@ function PrepareModal({ clients, onClose, onCreated, referralId, subject }: { cl
   const [purpose, setPurpose] = useState(defaultRoiPurpose(undefined));
   const [purposeEdited, setPurposeEdited] = useState(false);
   const [duration, setDuration] = useState<RoiDuration>('year');
+  // Signed elsewhere: the copy, when it was signed, and (other forms) when it expires.
+  const outside = isOutsideRoi(formType);
+  const [signedFile, setSignedFile] = useState<File | null>(null);
+  const [signedDate, setSignedDate] = useState('');
+  const [outsideExpiresOn, setOutsideExpiresOn] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<RoiField, string>>>({});
@@ -392,14 +405,27 @@ function PrepareModal({ clients, onClose, onCreated, referralId, subject }: { cl
     if (busy) return;
     setErr(null);
     const target = referralId ? { referralId, referralDob } : { patientId: client?.id || '' };
-    const body = formType === 'choa'
+    const body: Record<string, unknown> = formType === 'choa'
       ? { formType, ...target, direction: 'to-us', duration: 'year', choa: { location: choaLocation, dateFrom, dateTo, recordTypes } }
-      : { formType, ...target, direction, facility: { name, address, phone, fax }, information, purpose, duration };
+      : { formType, ...target, direction, facility: { name, address, phone, fax }, information, purpose, duration, ...(formType === 'outside' ? { outsideExpiresOn } : {}) };
     const errors = validateRoiInput(body).errors;
     if (referralId && !client?.dob && !referralDob) errors.referralDob = 'Enter the date of birth for this release.';
+    if (outside) {
+      const today = todayET();
+      if (!signedFile) errors.signedPdf = 'Choose the signed PDF.';
+      else if (signedFile.type && signedFile.type !== 'application/pdf') errors.signedPdf = 'The signed copy must be a PDF.';
+      else if (signedFile.size > ROI_MAX_PDF_BYTES) errors.signedPdf = 'That file is too large. Keep it under 10 MB.';
+      if (!signedDate) errors.signedDate = 'Enter the date it was signed.';
+      else if (signedDate > today) errors.signedDate = 'The signed date cannot be in the future.';
+      if (formType === 'outside' && outsideExpiresOn && signedDate && outsideExpiresOn <= signedDate) errors.outsideExpiresOn = 'The expiration date must be after the date it was signed.';
+    }
     if (!applyFieldErrors(errors, PREP_ORDER, setFieldErrors, prepId)) return;
     setBusy(true);
     try {
+      if (outside && signedFile) {
+        body.signedDate = signedDate;
+        body.pdfBase64 = await readAsBase64(signedFile);
+      }
       const res = await authedFetch('/api/fax/roi', { method: 'POST', body: JSON.stringify(body) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -409,19 +435,33 @@ function PrepareModal({ clients, onClose, onCreated, referralId, subject }: { cl
       }
       onCreated(data.roi);
     } catch (e2) {
-      setErr(e2 instanceof Error && e2.message ? e2.message : 'Could not prepare the release.');
+      setErr(e2 instanceof Error && e2.message ? e2.message : outside ? 'Could not record the release.' : 'Could not prepare the release.');
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Modal title="Prepare a Release of Information" onClose={onClose} busy={busy}>
+    <Modal title={outside ? 'Record a Signed Release' : 'Prepare a Release of Information'} onClose={onClose} busy={busy}>
       <form onSubmit={submit} noValidate style={formStyle}>
         <div style={bodyStyle}>
           <label style={fieldStyle} id={prepId('formType')}>
             <span style={labelStyle}>Authorization form</span>
-            <select value={formType} onChange={(e) => { setFormType(e.target.value as RoiFormType); setFieldErrors({}); setErr(null); }} style={withSelectChevron(inp)}>
+            <select value={formType} onChange={(e) => {
+              const next = e.target.value as RoiFormType;
+              setFormType(next);
+              // A release signed elsewhere already says what it covers; the
+              // portal's own wording would not match it.
+              if (isOutsideRoi(next)) {
+                if (information === DEFAULT_ROI_INFORMATION) setInformation('');
+                if (!purposeEdited) setPurpose('');
+                setDirection('to-us');
+              } else {
+                if (!information) setInformation(DEFAULT_ROI_INFORMATION);
+                if (!purposeEdited) setPurpose(defaultRoiPurpose(client?.program));
+              }
+              setFieldErrors({}); setErr(null);
+            }} style={withSelectChevron(inp)}>
               {ROI_FORMS.map((form) => <option key={form.id} value={form.id}>{form.label}</option>)}
             </select>
             <FieldError message={fieldErrors.formType} />
@@ -429,8 +469,12 @@ function PrepareModal({ clients, onClose, onCreated, referralId, subject }: { cl
           <p style={leadStyle}>
             {formType === 'choa'
               ? 'Prepares the official CHOA authorization for records sent to Heart and Soul for continuing care. The patient or authorized representative reviews and signs it. Send it for signature through PandaDoc, then upload the completed PDF here.'
-              : 'Prepares the DBHDD Authorization for Release of Information (Attachment A, IDD version). The signer reviews, initials, signs, prints their name, dates it, and indicates their authority.'}{' '}
-            <a href={ROI_FORMS.find((form) => form.id === formType)?.blankPath} target="_blank" rel="noopener noreferrer" style={{ color: '#1a3a5c', fontWeight: 600 }}>See the Blank Form</a>
+              : formType === 'ga-hipaa'
+                ? 'For a Georgia HIPAA authorization that was already signed (through PandaDoc, on paper, or from another office). Upload the signed copy and say who it releases records from. It is good for two years from the date it was signed, and it is tracked here like any other release.'
+                : formType === 'outside'
+                  ? 'For any other release that was already signed elsewhere. Upload the signed copy, say who it covers, and enter the expiration date written on it, if any. It is tracked here like any other release.'
+                  : 'Prepares the DBHDD Authorization for Release of Information (Attachment A, IDD version). The signer reviews, initials, signs, prints their name, dates it, and indicates their authority.'}{' '}
+            {!outside && <a href={ROI_FORMS.find((form) => form.id === formType)?.blankPath} target="_blank" rel="noopener noreferrer" style={{ color: '#1a3a5c', fontWeight: 600 }}>See the Blank Form</a>}
           </p>
 
           <div style={fieldStyle} id={prepId('patientId')}>
@@ -515,11 +559,11 @@ function PrepareModal({ clients, onClose, onCreated, referralId, subject }: { cl
             </fieldset>
             <p style={hintStyle}>Purpose: continuing care. Authorization: 12 months from signing. Patients 18 or older sign for themselves unless a legally authorized representative may sign. For minors, the parent or legal guardian signs as instructed on the form.</p>
           </>}
-          {formType === 'dbhdd' && <>
+          {(formType === 'dbhdd' || outside) && <>
           <div style={fieldStyle} id={prepId('direction')}>
             <span style={labelStyle}>Which way do the records go?</span>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {(['to-us', 'from-us', 'both'] as const).map((d) => (
+              {(outside ? (['to-us', 'from-us'] as const) : (['to-us', 'from-us', 'both'] as const)).map((d) => (
                 <label key={d} style={{ ...chipStyle, ...(direction === d ? chipOnStyle : null) }}>
                   <input type="radio" name="roi-direction" checked={direction === d} onChange={() => setDirection(d)} style={{ margin: 0 }} />
                   {ROI_DIRECTION_LABEL[d]}
@@ -587,34 +631,61 @@ function PrepareModal({ clients, onClose, onCreated, referralId, subject }: { cl
           </div>
 
           <label style={fieldStyle} id={prepId('information')}>
-            <span style={labelStyle}>Information that may be shared</span>
-            <textarea value={information} maxLength={ROI_TEXT_MAX.information} onChange={(e) => { setInformation(e.target.value); clear('information'); }} style={{ ...inp, minHeight: 64, resize: 'vertical', ...(fieldErrors.information ? FIELD_ERROR_STYLE : null) }} />
+            <span style={labelStyle}>Information that may be shared{outside && <span style={{ fontWeight: 400 }}> (optional)</span>}</span>
+            <textarea placeholder={outside ? 'As listed on the signed form, e.g. All medical records' : undefined} value={information} maxLength={ROI_TEXT_MAX.information} onChange={(e) => { setInformation(e.target.value); clear('information'); }} style={{ ...inp, minHeight: 64, resize: 'vertical', ...(fieldErrors.information ? FIELD_ERROR_STYLE : null) }} />
             <FieldError message={fieldErrors.information} />
           </label>
           <label style={fieldStyle} id={prepId('purpose')}>
-            <span style={labelStyle}>Purpose</span>
-            <textarea value={purpose} maxLength={ROI_TEXT_MAX.purpose} onChange={(e) => { setPurpose(e.target.value); setPurposeEdited(true); clear('purpose'); }} style={{ ...inp, minHeight: 48, resize: 'vertical', ...(fieldErrors.purpose ? FIELD_ERROR_STYLE : null) }} />
+            <span style={labelStyle}>Purpose{outside && <span style={{ fontWeight: 400 }}> (optional)</span>}</span>
+            <textarea placeholder={outside ? 'As listed on the signed form, e.g. GAPP care coordination' : undefined} value={purpose} maxLength={ROI_TEXT_MAX.purpose} onChange={(e) => { setPurpose(e.target.value); setPurposeEdited(true); clear('purpose'); }} style={{ ...inp, minHeight: 48, resize: 'vertical', ...(fieldErrors.purpose ? FIELD_ERROR_STYLE : null) }} />
             <FieldError message={fieldErrors.purpose} />
           </label>
-          <div style={fieldStyle} id={prepId('duration')}>
-            <span style={labelStyle}>Good for</span>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {([['year', 'One (1) year'], ['transactions', 'Until services are complete']] as const).map(([d, label]) => (
-                <label key={d} style={{ ...chipStyle, ...(duration === d ? chipOnStyle : null) }}>
-                  <input type="radio" name="roi-duration" checked={duration === d} onChange={() => setDuration(d)} style={{ margin: 0 }} />
-                  {label}
+          {outside ? (
+            <>
+              <label style={fieldStyle} id={prepId('signedPdf')}>
+                <span style={labelStyle}>Signed PDF</span>
+                <input type="file" accept="application/pdf,.pdf" onChange={(e) => { setSignedFile(e.target.files?.[0] || null); clear('signedPdf'); setErr(null); }} style={fieldErrors.signedPdf ? { ...FIELD_ERROR_STYLE, borderRadius: 6, padding: 4 } : undefined} />
+                <span style={hintStyle}>Download the completed PDF from PandaDoc, or scan the paper copy.</span>
+                <FieldError message={fieldErrors.signedPdf} />
+              </label>
+              <div style={twoColStyle}>
+                <label style={fieldStyle} id={prepId('signedDate')}>
+                  <span style={labelStyle}>Date signed</span>
+                  <input type="date" value={signedDate} max={todayET()} onChange={(e) => { setSignedDate(e.target.value); clear('signedDate'); }} style={{ ...inp, ...(fieldErrors.signedDate ? FIELD_ERROR_STYLE : null) }} />
+                  {formType === 'ga-hipaa' && <span style={hintStyle}>{signedDate ? `Good through ${formatDateUS(twoYearsFrom(signedDate))} (two years, as the form states).` : 'Good for two years from this date, as the form states.'}</span>}
+                  <FieldError message={fieldErrors.signedDate} />
                 </label>
-              ))}
+                {formType === 'outside' && (
+                  <label style={fieldStyle} id={prepId('outsideExpiresOn')}>
+                    <span style={labelStyle}>Expires on <span style={{ fontWeight: 400 }}>(optional)</span></span>
+                    <input type="date" value={outsideExpiresOn} min={signedDate || undefined} onChange={(e) => { setOutsideExpiresOn(e.target.value); clear('outsideExpiresOn'); }} style={{ ...inp, ...(fieldErrors.outsideExpiresOn ? FIELD_ERROR_STYLE : null) }} />
+                    <span style={hintStyle}>As written on the form. Leave blank if it has no end date.</span>
+                    <FieldError message={fieldErrors.outsideExpiresOn} />
+                  </label>
+                )}
+              </div>
+            </>
+          ) : (
+          <div style={fieldStyle} id={prepId('duration')}>
+              <span style={labelStyle}>Good for</span>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {([['year', 'One (1) year'], ['transactions', 'Until services are complete']] as const).map(([d, label]) => (
+                  <label key={d} style={{ ...chipStyle, ...(duration === d ? chipOnStyle : null) }}>
+                    <input type="radio" name="roi-duration" checked={duration === d} onChange={() => setDuration(d)} style={{ margin: 0 }} />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              <span style={hintStyle}>One year is clearer for facilities, and the portal shows when it needs renewing.</span>
             </div>
-            <span style={hintStyle}>One year is clearer for facilities, and the portal shows when it needs renewing.</span>
-          </div>
+          )}
           </>}
           {err && <div role="alert" style={errStyle}>{err}</div>}
         </div>
         <div style={footerStyle}>
           <button type="button" onClick={onClose} className={btn} disabled={busy}>Cancel</button>
           <button type="submit" className={btnPrimary} disabled={busy}>
-            <FileSignature size={14} /> {busy ? 'Preparing…' : 'Prepare and Preview'}
+            {outside ? <FileUp size={14} /> : <FileSignature size={14} />} {busy ? (outside ? 'Saving…' : 'Preparing…') : outside ? 'Save Signed Release' : 'Prepare and Preview'}
           </button>
         </div>
       </form>
@@ -668,7 +739,9 @@ function UploadModal({ roi, today, onClose, onDone }: { roi: RoiRecord; today: s
           <label style={fieldStyle}>
             <span style={labelStyle}>Date signed</span>
             <input type="date" value={signedDate} max={today} onChange={(e) => { setSignedDate(e.target.value); setErr(null); }} style={{ ...inp, maxWidth: 200 }} />
-            {roi.duration === 'year' && <span style={hintStyle}>It is good for one year from this date.</span>}
+            {roi.formType === 'ga-hipaa'
+              ? <span style={hintStyle}>It is good for two years from this date.</span>
+              : roi.duration === 'year' && !isOutsideRoi(roi.formType) && <span style={hintStyle}>It is good for one year from this date.</span>}
           </label>
           {err && <div role="alert" style={errStyle}>{err}</div>}
         </div>

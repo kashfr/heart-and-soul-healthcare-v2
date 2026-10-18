@@ -141,3 +141,26 @@ role-based access and VA grants on both preview and conversion. Checking them ag
 removes that exclusion (and grants VA access where needed). Missing exclusions
 preserve existing permissions. Only admins can edit these settings; an admin whose
 conversion access is removed can still manage settings and restore that access.
+
+## Uploading to a referral (no fax involved)
+
+"Upload Document" in a referral card's Documents section takes any PDF,
+however it arrived (PandaDoc, email, the family, a scan), with a category,
+date, and title, and files it like a fax filed to the referral
+(`uploadReferralDocument` in `src/lib/referralUploadServer.ts`). When the
+referral has a PPOT request still waiting, the upload can instead be filed as
+the signed Appendix T (`uploadSignedPpotForReferral`): it marks the request
+received exactly as File as Signed PPOT does, with `received.source: 'upload'`
+and no inbound fax. Undo PPOT filing handles that case (no fax to unlink).
+Once the referral has a client record, uploads go on the client's Documents.
+
+## Releases signed elsewhere
+
+Release of Information has two more form types besides DBHDD and CHOA:
+"Georgia HIPAA authorization (signed elsewhere)" (`ga-hipaa`, good two years
+from signing, as the form states) and "Other release (signed elsewhere)"
+(`outside`, with the expiration written on it, or none). Nothing is prepared:
+`POST /api/fax/roi` with `{ signedDate, pdfBase64 }` records the release and
+files its signed copy in one step (`recordOutsideRoi`), so it is tracked,
+expires, can be faxed with the introduction letter, and feeds File to Client
+suggestions like any other release.

@@ -20,12 +20,16 @@ import { addReferralDocument, moveReferralDocumentsToPatient } from './referralD
 import RoiLetterPDF from './pdf/RoiLetterPDF';
 import {
   defaultRoiFaxNote,
+  isOutsideRoi,
   ROI_DIRECTION_LABEL,
+  ROI_FORMS,
+  ROI_FORM_SHORT,
   roiCopies,
-  roiExpiresOn,
+  roiExpiryFor,
   roiIntroParagraphs,
   type RoiDirection,
   type RoiDuration,
+  type RoiFormType,
   type RoiInput,
   type RoiParty,
   type RoiRecord,
@@ -64,7 +68,7 @@ function serialize(id: string, x: FirebaseFirestore.DocumentData): RoiRecord {
   const faxes = Array.isArray(x.faxes) ? (x.faxes as Array<Record<string, unknown>>) : [];
   return {
     id,
-    formType: x.formType === 'choa' ? 'choa' : 'dbhdd',
+    formType: (ROI_FORMS.some((f) => f.id === x.formType) ? x.formType : 'dbhdd') as RoiFormType,
     ...(x.formType === 'choa' && x.choa ? { choa: x.choa } : {}),
     patientId: String(x.patientId || ''),
     ...(x.referralId ? { referralId: String(x.referralId) } : {}),
@@ -157,6 +161,7 @@ export async function createRoi(input: RoiInput, caller: AuthedCaller): Promise<
     information: input.information,
     purpose: input.purpose,
     duration: input.duration,
+    ...(input.formType === 'outside' ? { outsideExpiresOn: input.outsideExpiresOn || '' } : {}),
     status: 'awaiting-signature',
     signed: null,
     faxes: [],
@@ -165,7 +170,8 @@ export async function createRoi(input: RoiInput, caller: AuthedCaller): Promise<
     createdBy: caller.uid,
     createdByName: caller.profile.displayName || caller.email || '',
   });
-  if (input.referralId) await logRoiActivity(input.referralId, `Prepared a release of information for ${input.facility.name}.`, caller);
+  // A release signed elsewhere is logged when its signed copy is filed.
+  if (input.referralId && !isOutsideRoi(input.formType)) await logRoiActivity(input.referralId, `Prepared a release of information for ${input.facility.name}.`, caller);
   return { ok: true, roi: serialize(ref.id, (await ref.get()).data() || {}) };
 }
 
@@ -179,6 +185,7 @@ export async function buildRoiForm(id: string): Promise<{ bytes: Buffer; fileNam
   if (!snap.exists) return null;
   const x = snap.data() || {};
   const r = serialize(id, x);
+  if (isOutsideRoi(r.formType)) return null;
   if (r.formType === 'choa') {
     const checked = validateChoaRequest(r.choa);
     if (!checked.value) throw new ChoaFormError('The CHOA request details are incomplete. Prepare a new request.');
@@ -225,16 +232,18 @@ export async function fileSignedRoi(p: { id: string; pdf: Buffer; signedDate: st
   if (!(await loadPdf(p.pdf))) return { ok: false, status: 400, error: 'The signed copy must be a PDF that opens (not password protected).' };
 
   const byName = p.caller.profile.displayName || p.caller.email || '';
+  const expiresOn = roiExpiryFor({ formType: r.formType, duration: r.duration, outsideExpiresOn: String(snap.data()?.outsideExpiresOn || '') }, p.signedDate);
+  const kind = isOutsideRoi(r.formType) ? ` (${ROI_FORM_SHORT[r.formType ?? 'dbhdd']})` : '';
   if (r.referralId) {
     const referral = await getReferral(r.referralId);
     if (!referral) return { ok: false, status: 404, error: 'That referral was not found.' };
     const fileName = `Release_of_Information_Signed_${formatDateUSFile(p.signedDate)}.pdf`;
     const by = { uid: p.caller.uid, name: byName, role: p.caller.role };
     const documentId = await addReferralDocument({ referralId: r.referralId, pdf: p.pdf, category: DOC_CATEGORY,
-      title: `Release of Information: ${r.facility.name}, signed ${formatDateUS(p.signedDate)}`, fileName, docDate: p.signedDate, by });
+      title: `Release of Information${kind}: ${r.facility.name}, signed ${formatDateUS(p.signedDate)}`, fileName, docDate: p.signedDate, by });
     const storagePath = `referrals/${r.referralId}/documents/${documentId}/${fileName}`;
     await ref.update({ status: 'signed', patientId: referral.patientId || '', signed: {
-      documentId, storagePath, signedDate: p.signedDate, expiresOn: roiExpiresOn(p.signedDate, r.duration), byUid: p.caller.uid, byName, at: new Date().toISOString(),
+      documentId, storagePath, signedDate: p.signedDate, expiresOn, byUid: p.caller.uid, byName, at: new Date().toISOString(),
     } });
     // Re-read after filing so conversion during upload also receives the copy.
     const latest = await getReferral(r.referralId);
@@ -250,7 +259,7 @@ export async function fileSignedRoi(p: { id: string; pdf: Buffer; signedDate: st
   await docRef.set({
     patientId: r.patientId,
     category: DOC_CATEGORY,
-    title: `Release of Information: ${r.facility.name} (${dir}), signed ${formatDateUS(p.signedDate)}`,
+    title: `Release of Information${kind}: ${r.facility.name} (${dir}), signed ${formatDateUS(p.signedDate)}`,
     fileName,
     storagePath,
     contentType: 'application/pdf',
@@ -269,7 +278,7 @@ export async function fileSignedRoi(p: { id: string; pdf: Buffer; signedDate: st
       documentId: docRef.id,
       storagePath,
       signedDate: p.signedDate,
-      expiresOn: roiExpiresOn(p.signedDate, r.duration),
+      expiresOn,
       byUid: p.caller.uid,
       byName,
       at: new Date().toISOString(),
@@ -378,4 +387,26 @@ async function logRoiActivity(referralId: string, text: string, caller: AuthedCa
   try {
     await logReferralActivity(referralId, { type: 'note', text, byUid: caller.uid, byName: caller.profile.displayName || caller.email || '', byRole: caller.role });
   } catch (err) { console.error('ROI referral activity failed:', err); }
+}
+
+/**
+ * Record a release that was signed outside the portal (a Georgia HIPAA form
+ * sent through PandaDoc from our own template, or one from another agency):
+ * create the record and file its signed copy in one step, so it lands
+ * signed, with its expiry, and never sits as "waiting on signature".
+ */
+export async function recordOutsideRoi(p: { input: RoiInput; pdf: Buffer; signedDate: string; caller: AuthedCaller }): Promise<{ ok: true; roi: RoiRecord } | { ok: false; status: number; error: string }> {
+  if (!isOutsideRoi(p.input.formType)) return { ok: false, status: 400, error: 'Only a release signed elsewhere is recorded this way.' };
+  if (!(await loadPdf(p.pdf))) return { ok: false, status: 400, error: 'The signed copy must be a PDF that opens (not password protected).' };
+  if (p.input.formType === 'outside' && p.input.outsideExpiresOn && p.input.outsideExpiresOn <= p.signedDate) {
+    return { ok: false, status: 400, error: 'The expiration date must be after the date it was signed.' };
+  }
+  const created = await createRoi(p.input, p.caller);
+  if (!created.ok) return created;
+  const filed = await fileSignedRoi({ id: created.roi.id, pdf: p.pdf, signedDate: p.signedDate, caller: p.caller });
+  if (!filed.ok) {
+    // Never leave a half-recorded release on the list.
+    await adminDb().collection(COL).doc(created.roi.id).update({ status: 'cancelled', hidden: true, cancelledAt: FieldValue.serverTimestamp(), cancelledReason: 'signed copy failed to file' });
+  }
+  return filed;
 }
