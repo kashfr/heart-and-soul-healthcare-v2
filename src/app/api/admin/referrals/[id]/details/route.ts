@@ -6,8 +6,12 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * PUT /api/admin/referrals/[id]/details  { values: { [fieldKey]: string } }
- * Correct a website referral's editable details (see referralEditShared).
+ * PUT /api/admin/referrals/[id]/details
+ *   { values: { [fieldKey]: string }, screened?: { [answer]: string } }
+ * Correct a website referral's editable details (referralEditShared) and,
+ * on referrals that kept their answers, the screened answers
+ * (screenedAnswers.ts): those are re-screened first and refused (422, with
+ * the website's message) exactly when the website would refuse them.
  */
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   let caller;
@@ -28,7 +32,12 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   const raw = (body.values && typeof body.values === 'object' ? body.values : {}) as Record<string, unknown>;
   const values: Record<string, string> = {};
   for (const [k, v] of Object.entries(raw)) if (typeof v === 'string') values[k] = v.slice(0, 5000);
-  const result = await updateWebsiteReferralDetails(id, values, caller);
-  if (!result.ok) return NextResponse.json({ error: result.error, fieldErrors: result.fieldErrors }, { status: result.status });
+  const rawScreened = (body.screened && typeof body.screened === 'object' ? body.screened : {}) as Record<string, unknown>;
+  const screened: Record<string, string> = {};
+  for (const [k, v] of Object.entries(rawScreened)) if (typeof v === 'string') screened[k] = v.slice(0, 200);
+  const result = await updateWebsiteReferralDetails(id, values, caller, screened);
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error, fieldErrors: result.fieldErrors, refused: result.refused }, { status: result.status });
+  }
   return NextResponse.json({ ok: true, changed: result.changed });
 }

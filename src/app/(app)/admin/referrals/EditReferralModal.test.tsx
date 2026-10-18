@@ -44,3 +44,37 @@ it('formats phones as typed and blocks clearing a required field', () => {
   expect(phone.value).toBe('(404) 555-1212');
   expect(authedFetch).not.toHaveBeenCalled();
 });
+
+const withAnswers = {
+  ...referral,
+  intakeAnswers: {
+    relationship: 'parent', fullName: 'Jazz King', dob: '2015-03-01', diagnosis: 'Asthma', diagnoses: [], equipment: ['trach'],
+    careNeeds: 'nursing', seekingPaidCaregiver: 'no', wantsAgencyStaff: 'yes',
+  },
+} as unknown as Referral & { source: 'gapp-website' };
+
+it('shows the website’s refusal as soon as an answer it would refuse is picked, and does not save', () => {
+  render(<EditReferralModal referral={withAnswers} onClose={vi.fn()} onSaved={vi.fn()} />);
+  fireEvent.change(screen.getByLabelText('Wants agency staff in the home'), { target: { value: 'no' } });
+  expect(screen.getByText(/The website would refuse these answers/)).toBeInTheDocument();
+  expect(screen.getByText(/section 604.2/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /Save Changes/ }));
+  expect(authedFetch).not.toHaveBeenCalled();
+});
+
+it('sends an accepted screened change', async () => {
+  vi.mocked(authedFetch).mockResolvedValue(new Response(JSON.stringify({ ok: true, changed: 1 })));
+  const saved = vi.fn();
+  render(<EditReferralModal referral={withAnswers} onClose={vi.fn()} onSaved={saved} />);
+  fireEvent.change(screen.getByLabelText('Seeking paid caregiver'), { target: { value: 'yes' } });
+  expect(screen.queryByText(/The website would refuse/)).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: /Save Changes/ }));
+  await waitFor(() => expect(saved).toHaveBeenCalledOnce());
+  expect(JSON.parse(vi.mocked(authedFetch).mock.calls[0][1]!.body as string).screened).toEqual({ seekingPaidCaregiver: 'yes' });
+});
+
+it('explains why older referrals can’t change screened answers', () => {
+  render(<EditReferralModal referral={referral} onClose={vi.fn()} onSaved={vi.fn()} />);
+  expect(screen.getByText(/came in before the website saved its answers/)).toBeInTheDocument();
+  expect(screen.queryByLabelText('Seeking paid caregiver')).toBeNull();
+});

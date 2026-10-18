@@ -7,30 +7,9 @@ import { createClickUpTask } from '@/lib/clickup';
 import { createReferral } from '@/lib/referrals';
 import { referralPortalButtonHtml } from '@/lib/emails/referralPortalLink';
 import { sendReferralConfirmation } from '@/lib/emails/referralConfirmation';
-import { paidCaregiverDiagnosisFlag, screenYoungPaidCaregiver } from '@/lib/diagnosisScreening';
 import { formatDateUS } from '@/lib/dateFormat';
-import {
-  behaviorRiskLabel,
-  composeDiagnosisText,
-  currentServiceLabels,
-  equipmentLabels,
-  inferService,
-  highBehaviorPaidFlag,
-  paidCareBasisLabel,
-  relationshipLabel,
-  screenCaregiverRelationship,
-  screenAgencyStaff,
-  screenBehavioralPaidCaregiver,
-  screenMixedPaidCaregiver,
-  type ServiceKey,
-} from '@/lib/diagnosisCatalog';
+import { buildHsReferral, hsRefusal, type HsAnswers } from '@/lib/websiteIntake';
 import { emailLogoBlock } from '@/lib/emails/logo';
-
-const GAPP_SERVICE_LABELS: Record<ServiceKey, string> = {
-  nursing: 'Skilled Nursing',
-  pss: 'Personal Support Services (PSS)',
-  behavioral: 'Behavioral Support Aide Services (BSS)',
-};
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -57,31 +36,6 @@ const REFERRAL_SOURCE_OPTIONS: Record<string, string> = {
   'other': '95b9966f-50f3-436d-826e-821a2bab4014',           // Other
 };
 
-// Friendly labels for the values the marketing form stores as codes, so the
-// referrals tab shows readable text instead of "gapp" / "physician" / "urgent".
-const PROGRAM_LABELS: Record<string, string> = {
-  'gapp': 'GAPP - Georgia Pediatric Program',
-  'now-comp': 'NOW/COMP Waiver',
-  'icwp': 'ICWP - Independent Care Waiver',
-  'edwp': 'EDWP (CCSP & SOURCE)',
-  'private-pay': 'Private Pay',
-  'other': 'Other / Not Sure',
-};
-const SOURCE_LABELS: Record<string, string> = {
-  'hospital': 'Hospital / Medical Facility',
-  'physician': 'Physician / Healthcare Provider',
-  'case-manager': 'Case Manager / Support Coordinator',
-  'family': 'Family Member',
-  'self': 'Self-Referral',
-  'other': 'Other',
-};
-const URGENCY_LABELS: Record<string, string> = {
-  'standard': 'Standard (1-2 weeks)',
-  'urgent': 'Urgent (within 1 week)',
-  'immediate': 'Immediate (ASAP)',
-};
-const labelFor = (map: Record<string, string>, code: string) =>
-  map[code] ?? code;
 
 // Format phone number for ClickUp (requires +1 XXX-XXX-XXXX format for US numbers)
 function formatPhoneForClickUp(phone: string): string {
@@ -210,42 +164,15 @@ export async function processReferralSubmission(data: any) {
   const physician = (data.physician ?? {}) as { name?: string; office?: string; phone?: string; fax?: string };
 
   // Hard stops (GAPP only), same rules as the GAPP site and the portal intake:
-  // the paid-caregiver dead ends are refused before any email, CRM, or
-  // referral record is created. The form blocks these client-side; this is
-  // the backstop for anything that bypasses it. Returned, not thrown, so the
-  // page can show the reason.
-  if (program?.interest === 'gapp' && details?.seekingPaidCaregiver === 'yes') {
-    const prose = `${details.serviceNeeds ?? ''} ${details.additionalNotes ?? ''}`;
-    // Paid + behavioral picture (structured answers, or the prose describing
-    // autism, with no medical condition or skilled care): the FCO never
-    // covers it.
-    const behavioral = screenBehavioralPaidCaregiver({ ...details, freeText: prose });
-    if (behavioral) {
-      return { success: false, refused: 'behavioral-paid-caregiver', error: behavioral };
-    }
-    const youngChild = screenYoungPaidCaregiver({
-      dob: client?.dob,
-      seekingPaidCaregiver: 'yes',
-      equipment: details.equipment,
-    });
-    if (youngChild.block) {
-      return { success: false, refused: 'young-child-paid-caregiver', error: youngChild.block };
-    }
-    const mixed = screenMixedPaidCaregiver({ ...details, freeText: prose });
-    if (mixed.block) {
-      return { success: false, refused: 'mixed-paid-caregiver', error: mixed.block };
-    }
-    const relationship = screenCaregiverRelationship({ ...details, dob: client?.dob });
-    if (relationship.block) {
-      return { success: false, refused: 'foster-paid-caregiver', error: relationship.block };
-    }
-  }
-  // Declining agency staff (GAPP) is refused whether or not pay is sought.
-  if (program?.interest === 'gapp') {
-    const staff = screenAgencyStaff(details);
-    if (staff) {
-      return { success: false, refused: 'no-agency-staff', error: staff };
-    }
+  // the paid-caregiver dead ends, and declining agency staff, are refused
+  // before any email, CRM, or referral record is created. The form blocks
+  // these client-side; this is the backstop for anything that bypasses it.
+  // Returned, not thrown, so the page can show the reason. The rules live in
+  // src/lib/websiteIntake.ts, shared with staff edits of the screened answers.
+  const answers: HsAnswers = { client, program, referrer, details, physician: data.physician ?? {} };
+  const refusal = hsRefusal(answers);
+  if (refusal) {
+    return { success: false, refused: refusal.code, error: refusal.reason };
   }
 
   try {
@@ -256,135 +183,13 @@ export async function processReferralSubmission(data: any) {
     // email then just goes out without the link).
     let storedId: string | null = null;
     try {
-      // Mixed diagnosis + paid request: what the family said the hands-on
-      // care is for. Falls back to the free-text screen (mirrors the GAPP
-      // intake) for anything else that reaches us.
-      const prose = `${details.serviceNeeds ?? ''} ${details.additionalNotes ?? ''}`;
-      const reviewFlag =
-        program.interest === 'gapp'
-          ? screenMixedPaidCaregiver({ ...details, freeText: prose }).flag ??
-            paidCaregiverDiagnosisFlag(prose, details.seekingPaidCaregiver)
-          : null;
-      // Young child + paid request that cleared the hard stop above (skilled
-      // equipment or a scoring mobility need): say why, for the assessment.
-      const ageFlag =
-        program.interest === 'gapp'
-          ? screenYoungPaidCaregiver({
-              dob: client.dob,
-              seekingPaidCaregiver: details.seekingPaidCaregiver,
-              equipment: details.equipment,
-            }).cleared
-          : null;
-      // Which GAPP service line the answers point to. Scoped to GAPP: the other
-      // programs on this form (NOW/COMP, ICWP, EDWP, private pay) don't have
-      // GAPP service lines and never see the clinical questions.
-      const inferred =
-        program.interest === 'gapp' ? inferService(details) : null;
-      // Who is asking to be paid, and a paid request reporting behaviors that
-      // need help to manage (GAPP only).
-      const relationship =
-        program.interest === 'gapp'
-          ? screenCaregiverRelationship({ ...details, dob: client.dob })
-          : null;
-      const behaviorFlag =
-        program.interest === 'gapp' ? highBehaviorPaidFlag(details) : null;
-
+      // The card is built by the shared builder (src/lib/websiteIntake.ts),
+      // and the answers are kept on the referral so staff edits of the
+      // screened answers can be re-screened and rebuilt the same way.
       const stored = await createReferral({
         source: 'hs-website',
-        clientName: `${client.firstName ?? ''} ${client.lastName ?? ''}`.trim(),
-        clientEmail: client.email ?? '',
-        clientPhone: client.phone ?? '',
-        county: client.county ?? '',
-        program: labelFor(PROGRAM_LABELS, program.interest ?? ''),
-        referrerName: referrer.name ?? '',
-        service: inferred?.service ?? null,
-        details: [
-          ...(reviewFlag ? [{ label: '⚠ Review', value: reviewFlag }] : []),
-          ...(ageFlag ? [{ label: '⚠ Young child', value: ageFlag }] : []),
-          ...(relationship?.flag ? [{ label: '⚠ Relationship', value: relationship.flag }] : []),
-          ...(behaviorFlag ? [{ label: '⚠ Behavior', value: behaviorFlag }] : []),
-          ...(inferred?.conflict
-            ? [{ label: '⚠ Care need unclear', value: inferred.conflict }]
-            : []),
-          ...(program.interest === 'gapp'
-            ? [{ label: 'Relationship to child', value: relationshipLabel(details.relationship) }]
-            : []),
-          { label: 'Date of birth', value: formatDateUS(client.dob ?? '') },
-          { label: 'Secondary phone', value: client.secondaryPhone ?? '' },
-          {
-            label: 'Address',
-            value: [client.address, client.city, client.state, client.zip]
-              .filter(Boolean)
-              .join(', '),
-          },
-          { label: 'Medicaid #', value: program.medicaidNumber ?? '' },
-          { label: 'Insurance provider', value: program.insuranceProvider ?? '' },
-          { label: 'Insurance policy #', value: program.insuranceNumber ?? '' },
-          // Labels are read back by ppotSubjectFromReferral (src/lib/ppotShared.ts).
-          { label: "Child's physician", value: physician.name ?? '' },
-          { label: 'Physician office', value: physician.office ?? '' },
-          { label: 'Physician phone', value: physician.phone ?? '' },
-          { label: 'Physician fax', value: physician.fax ?? '' },
-          { label: 'Referral source', value: labelFor(SOURCE_LABELS, referrer.source ?? '') },
-          { label: 'Referrer phone', value: referrer.phone ?? '' },
-          { label: 'Referrer email', value: referrer.email ?? '' },
-          { label: 'Referrer organization', value: referrer.organization ?? '' },
-          { label: 'Urgency', value: labelFor(URGENCY_LABELS, details.urgency ?? '') },
-          { label: 'Diagnosis', value: composeDiagnosisText(details.diagnoses, details.diagnosisOther) },
-          { label: 'Equipment & daily care', value: equipmentLabels(details.equipment).join(', ') },
-          { label: 'Behavior risk', value: behaviorRiskLabel(details.behaviorRisk) },
-          { label: 'Current services', value: currentServiceLabels(details.currentServices).join(', ') },
-          { label: 'Service needs', value: details.serviceNeeds ?? '' },
-          { label: 'Additional notes', value: details.additionalNotes ?? '' },
-          {
-            label: 'Seeking paid caregiver',
-            value:
-              details.seekingPaidCaregiver === 'yes'
-                ? 'Yes'
-                : details.seekingPaidCaregiver === 'no'
-                ? 'No'
-                : '',
-          },
-          {
-            label: 'Inferred service need',
-            value: inferred?.service
-              ? `${GAPP_SERVICE_LABELS[inferred.service]} (${inferred.reason})`
-              : '',
-          },
-          ...(details.seekingPaidCaregiver === 'yes'
-            ? [
-                {
-                  label: 'Primary care need',
-                  value: labelFor(
-                    {
-                      personal: 'Hands-on personal care',
-                      nursing: 'Skilled medical / nursing care',
-                      behavioral: 'Behavioral / autism support',
-                      unsure: 'Not sure',
-                    },
-                    details.careNeeds ?? ''
-                  ),
-                },
-              ]
-            : []),
-          ...(program.interest === 'gapp' && details.wantsAgencyStaff
-            ? [{ label: 'Wants agency staff in the home', value: details.wantsAgencyStaff === 'yes' ? 'Yes' : 'No' }]
-            : []),
-          ...(relationship?.asksGuardianship
-            ? [{
-                label: 'Legal guardianship',
-                value: details.hasGuardianship === 'yes' ? 'Yes' : details.hasGuardianship === 'no' ? 'No' : '',
-              }]
-            : []),
-          ...(details.seekingPaidCaregiver === 'yes' && details.paidCareBasis
-            ? [
-                {
-                  label: 'Hands-on care mainly due to',
-                  value: paidCareBasisLabel(details.paidCareBasis),
-                },
-              ]
-            : []),
-        ],
+        ...buildHsReferral(answers),
+        intakeAnswers: answers,
       });
       storedId = stored.id;
     } catch (storeErr) {

@@ -78,3 +78,44 @@ describe('updateWebsiteReferralDetails', () => {
     expect(store.updates).toHaveLength(0);
   });
 });
+
+describe('updateWebsiteReferralDetails: screened answers', () => {
+  const kid = (over: Record<string, unknown> = {}) => ({
+    relationship: 'parent', fullName: 'Kid Example', phoneNumber: '(404) 555-1212', emailAddress: 'p@example.com', county: 'Fulton',
+    dob: '2015-03-01', diagnosis: 'Asthma', diagnoses: [], equipment: ['trach'], careNeeds: 'nursing', seekingPaidCaregiver: 'no', wantsAgencyStaff: 'yes',
+    ...over,
+  });
+  const doc = (answers: Record<string, unknown> | null) => ({
+    source: 'gapp-website', clientName: 'Kid Example', referrerName: '', clientPhone: '(404) 555-1212', clientEmail: 'p@example.com', county: 'Fulton',
+    service: 'nursing',
+    details: [{ label: 'Seeking paid caregiver', value: 'No' }, { label: "Member's Medicaid ID", value: '222120339644' }],
+    ...(answers ? { intakeAnswers: answers } : {}),
+  });
+
+  it('refuses an answer the website would refuse, and writes nothing', async () => {
+    store.doc = doc(kid());
+    const r = await updateWebsiteReferralDetails('r1', {}, caller, { wantsAgencyStaff: 'no' });
+    expect(r).toMatchObject({ ok: false, status: 422, refused: 'no-agency-staff' });
+    expect(store.updates).toHaveLength(0);
+  });
+
+  it('saves an accepted change, rebuilds the rows, keeps corrections, and logs old and new', async () => {
+    store.doc = doc(kid());
+    const r = await updateWebsiteReferralDetails('r1', {}, caller, { seekingPaidCaregiver: 'yes' });
+    expect(r).toEqual({ ok: true, changed: 1 });
+    const u = store.updates[0] as { details: { label: string; value: string }[]; intakeAnswers: Record<string, unknown> };
+    expect(u.details.find((d) => d.label === 'Seeking paid caregiver')?.value).toBe('Yes');
+    expect(u.details.find((d) => d.label === "Member's Medicaid ID")?.value).toBe('222120339644');
+    expect(u.intakeAnswers.seekingPaidCaregiver).toBe('yes');
+    expect(store.activity[0].text).toBe('Details edited: Seeking paid caregiver "No" → "Yes".');
+  });
+
+  it('needs the saved answers, and a complete set of follow-ups', async () => {
+    store.doc = doc(null);
+    expect(await updateWebsiteReferralDetails('r1', {}, caller, { seekingPaidCaregiver: 'yes' })).toMatchObject({ ok: false, status: 409 });
+    store.doc = doc(kid());
+    expect(await updateWebsiteReferralDetails('r1', {}, caller, { seekingPaidCaregiver: 'yes', relationship: 'grandparent' }))
+      .toMatchObject({ ok: false, status: 400, fieldErrors: { 'screened:hasGuardianship': 'Choose an answer.' } });
+    expect(store.updates).toHaveLength(0);
+  });
+});

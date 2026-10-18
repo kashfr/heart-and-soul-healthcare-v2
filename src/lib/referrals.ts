@@ -10,6 +10,10 @@ import {
   type PhoneIntake, type PhoneReferralInput,
 } from './phoneReferralShared';
 import { applyEdits, currentEditValues, describeEdits, editFieldsFor, isEditableSource, validateEdits } from './referralEditShared';
+import {
+  SCREENED_ORDER, buildFor, mergeScreenedRows, readScreened, refusalFor, screenedChanges, screenedValidation,
+  serviceAfterEdit, writeScreened, type ScreenedAnswers,
+} from './screenedAnswers';
 
 export { REFERRED_OUT_AUTO_CLOSE_DAYS } from './referralAutoClose';
 
@@ -133,13 +137,17 @@ export interface ReferralInput {
   service?: ServiceKey | null;
   /** Full submission, rendered as-is in the detail view. */
   details: ReferralDetail[];
+  /** Website referrals: the family's answers as the form sent them, so a staff
+   *  edit of a screened answer can be re-screened and the card rebuilt
+   *  (src/lib/websiteIntake.ts). Absent on referrals from before 10/2026. */
+  intakeAnswers?: unknown;
   /** Phone referrals only: the form answers (for editing) and who took the call. */
   phoneIntake?: PhoneIntake;
   takenByName?: string;
 }
 
 /** A referral as returned to the admin UI (timestamps serialized to ISO). */
-export interface Referral extends Omit<ReferralInput, 'phoneIntake' | 'takenByName'> {
+export interface Referral extends Omit<ReferralInput, 'phoneIntake' | 'takenByName' | 'intakeAnswers'> {
   id: string;
   /** Pipeline stage — the board column this card sits in. */
   stage: ReferralStage;
@@ -163,6 +171,8 @@ export interface Referral extends Omit<ReferralInput, 'phoneIntake' | 'takenByNa
   convertedAt: string | null;
   /** A phone referral's form answers, so it can be reopened for editing. */
   phoneIntake: PhoneIntake | null;
+  /** A website referral's answers as sent (from 10/2026), for screened edits. */
+  intakeAnswers: unknown;
 }
 
 // Upper bounds on stored text, so a single referral can never bloat a Firestore
@@ -182,6 +192,11 @@ const MAX = {
 function clamp(value: string, max: number): string {
   const s = String(value ?? '');
   return s.length > max ? s.slice(0, max) : s;
+}
+
+/** A plain-JSON copy: Firestore rejects `undefined`, which form payloads carry. */
+function firestoreSafe(value: unknown): unknown {
+  return JSON.parse(JSON.stringify(value ?? null));
 }
 
 function normalizeDetails(details: ReferralDetail[]): ReferralDetail[] {
@@ -247,6 +262,7 @@ export async function createReferral(
     service: input.service ?? null,
     details: normalizeDetails(input.details),
     ...(input.phoneIntake ? { phoneIntake: input.phoneIntake, takenByName: clamp(input.takenByName ?? '', MAX.name) } : {}),
+    ...(input.intakeAnswers ? { intakeAnswers: firestoreSafe(input.intakeAnswers) } : {}),
     submittedAt: FieldValue.serverTimestamp(),
     createdAt: FieldValue.serverTimestamp(),
   };
@@ -305,6 +321,7 @@ function toReferral(id: string, data: FirebaseFirestore.DocumentData): Referral 
     patientId: data.patientId ? String(data.patientId) : null,
     convertedAt: toIso(data.convertedAt),
     phoneIntake: data.source === 'phone' && data.phoneIntake ? (data.phoneIntake as PhoneIntake) : null,
+    intakeAnswers: data.source !== 'phone' && data.intakeAnswers ? data.intakeAnswers : null,
   };
 }
 
@@ -781,7 +798,7 @@ export async function updatePhoneReferral(
 
 export type DetailsEditResult =
   | { ok: true; changed: number }
-  | { ok: false; status: number; error: string; fieldErrors?: Record<string, string> };
+  | { ok: false; status: number; error: string; fieldErrors?: Record<string, string>; refused?: string };
 
 /**
  * Correct a website referral's contact details, Medicaid ID, address,
@@ -792,7 +809,9 @@ export type DetailsEditResult =
 export async function updateWebsiteReferralDetails(
   id: string,
   values: Record<string, string>,
-  caller: AuthedCaller
+  caller: AuthedCaller,
+  /** Screened answers to change (see screenedAnswers.ts); re-screened first. */
+  screened: Partial<ScreenedAnswers> = {}
 ): Promise<DetailsEditResult> {
   const ref = adminDb().collection(COLLECTION).doc(id);
   const snap = await ref.get();
@@ -820,7 +839,41 @@ export async function updateWebsiteReferralDetails(
   if (Object.keys(fieldErrors).length) {
     return { ok: false, status: 400, error: Object.values(fieldErrors)[0], fieldErrors };
   }
-  const { top, details, changes } = applyEdits(current, specs, allowed);
+  // Screened answers: only on a referral that kept the family's answers, and
+  // only if the website would accept the edited answers. Refused exactly as
+  // the website refuses, with its message; nothing is written.
+  const screenedEdits: Partial<ScreenedAnswers> = {};
+  for (const k of SCREENED_ORDER) if (typeof screened[k] === 'string') screenedEdits[k] = String(screened[k]).trim();
+  let screenedResult: { answers: unknown; changes: { label: string; from: string; to: string }[]; service: ServiceKey | null } | null = null;
+  if (Object.keys(screenedEdits).length) {
+    const answers = prev.intakeAnswers as Parameters<typeof readScreened>[1] | undefined;
+    if (!answers) {
+      return { ok: false, status: 409, error: 'This referral came in before the website saved its answers, so these answers can’t be changed here. Have the family submit the form again.' };
+    }
+    const before = readScreened(prev.source, answers);
+    const nextAnswers = writeScreened(prev.source, answers, screenedEdits);
+    const after = readScreened(prev.source, nextAnswers);
+    const changes = screenedChanges(before, after);
+    if (changes.length) {
+      const invalid = screenedValidation(prev.source, nextAnswers);
+      if (Object.keys(invalid).length) {
+        const fe = Object.fromEntries(Object.entries(invalid).map(([k, v]) => [`screened:${k}`, String(v)]));
+        return { ok: false, status: 400, error: Object.values(fe)[0], fieldErrors: fe };
+      }
+      const refusal = refusalFor(prev.source, nextAnswers);
+      if (refusal) return { ok: false, status: 422, error: refusal.reason, refused: refusal.code };
+      const rebuilt = buildFor(prev.source, nextAnswers);
+      current.details = mergeScreenedRows(current.details, rebuilt.details);
+      screenedResult = {
+        answers: nextAnswers,
+        changes,
+        service: serviceAfterEdit((prev.service as ServiceKey | null) ?? null, buildFor(prev.source, answers), rebuilt),
+      };
+    }
+  }
+
+  const { top, details, changes: detailChanges } = applyEdits(current, specs, allowed);
+  const changes = [...(screenedResult?.changes ?? []), ...detailChanges];
   if (changes.length === 0) return { ok: true, changed: 0 };
   await ref.update({
     ...(top.clientName !== undefined ? { clientName: clamp(top.clientName, MAX.name) } : {}),
@@ -829,6 +882,7 @@ export async function updateWebsiteReferralDetails(
     ...(top.clientEmail !== undefined ? { clientEmail: clamp(top.clientEmail, MAX.email) } : {}),
     ...(top.county !== undefined ? { county: clamp(top.county, MAX.county) } : {}),
     details: normalizeDetails(details),
+    ...(screenedResult ? { intakeAnswers: firestoreSafe(screenedResult.answers), service: screenedResult.service } : {}),
     updatedAt: FieldValue.serverTimestamp(),
     statusUpdatedBy: caller.uid,
     statusUpdatedByName: caller.profile.displayName || '',
