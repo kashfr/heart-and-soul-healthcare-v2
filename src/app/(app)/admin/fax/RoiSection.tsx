@@ -861,8 +861,9 @@ function FaxModal({ roi, onClose, onSent }: { roi: RoiRecord; onClose: () => voi
 const EDIT_ORDER: readonly RoiEditField[] = ['facilityName', 'facilityAddress', 'facilityPhone', 'facilityFax', 'information', 'purpose', 'signedDate', 'outsideExpiresOn'];
 const editId = (k: RoiEditField) => `roi-edit-${k}`;
 
-/** Edit a release: only what roiEditableFields allows for this one. */
-function EditRoiModal({ roi, today, onClose, onSaved }: { roi: RoiRecord; today: string; onClose: () => void; onSaved: (roi: RoiRecord, changed: number) => void }) {
+/** Edit a release: only what roiEditableFields allows for this one. Also
+ *  opened from a release's row in a referral card's Documents. */
+export function EditRoiModal({ roi, today, onClose, onSaved }: { roi: RoiRecord; today: string; onClose: () => void; onSaved: (roi: RoiRecord, changed: number) => void }) {
   const allowed = roiEditableFields(roi);
   const start = roiEditValues(roi);
   const [values, setValues] = useState<Record<RoiEditField, string>>({

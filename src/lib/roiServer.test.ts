@@ -15,6 +15,7 @@ import { createRoi, editRoi, fileSignedRoi, listRois } from './roiServer';
 
 const caller = { uid: 'va1', email: 'va@example.test', role: 'va', profile: { displayName: 'Test VA' } } as AuthedCaller;
 let rows: Map<string, Record<string, unknown>>;
+let docRows: Map<string, Record<string, unknown>>;
 let where: ReturnType<typeof vi.fn>;
 const referral = { id: 'ref1', clientName: 'Test Referral', program: 'GAPP', stage: 'new', details: [{ label: 'Date of birth', value: '03/14/2015' }], patientId: '' };
 const input = () => validateRoiInput({ referralId: 'ref1', formType: 'choa', direction: 'to-us', duration: 'year', choa: { location: '', dateFrom: '2026-01-01', dateTo: '2026-10-07', recordTypes: ['routine'] } }).value!;
@@ -23,7 +24,14 @@ beforeEach(() => {
   vi.clearAllMocks();
   rows = new Map();
   where = vi.fn((_field: string, _op: string, id: string) => ({ get: async () => ({ docs: [...rows].filter(([, x]) => x.referralId === id).map(([id, x]) => ({ id, data: () => x })) }) }));
+  docRows = new Map();
   mocks.db.mockReturnValue({ collection: (name: string) => {
+    if (name === 'referralDocuments' || name === 'patientDocuments') {
+      return { doc: (id: string) => ({
+        get: async () => ({ exists: docRows.has(`${name}/${id}`), data: () => docRows.get(`${name}/${id}`) }),
+        update: async (data: Record<string, unknown>) => { docRows.set(`${name}/${id}`, { ...docRows.get(`${name}/${id}`), ...data }); },
+      }) };
+    }
     if (name !== 'roiRequests') throw new Error(`Unexpected collection: ${name}`);
     return { where, doc: (id = 'roi1') => ({ id,
       get: async () => ({ exists: rows.has(id), data: () => rows.get(id) }),
@@ -102,4 +110,18 @@ it('keeps a signed DBHDD release’s name as signed, and refuses a cancelled one
   expect(rows.get('roi8')!.facility).toMatchObject({ name: 'Magnolia Manor', fax: '7705550000' });
   rows.set('roi7', { ...rows.get('roi8'), status: 'cancelled' });
   expect(await editRoi('roi7', { facilityFax: '7705551111' }, caller)).toMatchObject({ ok: false, status: 409 });
+});
+
+it('brings the filed copy’s title and date along, but leaves a title renamed by hand', async () => {
+  const release = {
+    formType: 'ga-hipaa', referralId: 'ref1', patientId: '', memberName: 'Bronx Spry', direction: 'to-us', duration: 'transactions', status: 'signed',
+    facility: { name: 'Peachtree Peds', address: '', phone: '', fax: '' }, information: 'i', purpose: 'p',
+    signed: { documentId: 'doc1', signedDate: '2026-10-07', expiresOn: '2028-10-07', byName: '' }, faxes: [],
+  };
+  rows.set('roi6', release);
+  docRows.set('referralDocuments/doc1', { title: 'Release of Information (Georgia HIPAA authorization): Peachtree Peds, signed 10/07/2026', docDate: '2026-10-07', patientDocumentId: 'pd1' });
+  docRows.set('patientDocuments/pd1', { title: 'Renamed by staff', docDate: '2026-10-07' });
+  await editRoi('roi6', { facilityName: 'Peachtree Pediatrics', signedDate: '2026-10-06' }, caller);
+  expect(docRows.get('referralDocuments/doc1')).toMatchObject({ title: 'Release of Information (Georgia HIPAA authorization): Peachtree Pediatrics, signed 10/06/2026', docDate: '2026-10-06' });
+  expect(docRows.get('patientDocuments/pd1')).toMatchObject({ title: 'Renamed by staff', docDate: '2026-10-06' });
 });
