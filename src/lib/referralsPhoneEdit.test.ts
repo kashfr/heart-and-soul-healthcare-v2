@@ -53,3 +53,28 @@ describe('updatePhoneReferral', () => {
     expect(store.updates).toHaveLength(0);
   });
 });
+
+import { updateWebsiteReferralDetails } from './referrals';
+
+describe('updateWebsiteReferralDetails', () => {
+  const website = () => ({
+    source: 'gapp-website', clientName: 'Jazz King', referrerName: 'Ariel King', clientPhone: '(828) 508-8228', clientEmail: '', county: 'Gwinnett',
+    details: [{ label: 'Seeking paid caregiver', value: 'No' }, { label: "Member's Medicaid ID", value: 'Will provide later' }],
+  });
+  it('saves an allowed field, ignores a locked one, and logs old and new', async () => {
+    store.doc = website();
+    const r = await updateWebsiteReferralDetails('r1', { "row:Member's Medicaid ID": '222120339644', 'row:Seeking paid caregiver': 'Yes' }, caller);
+    expect(r).toEqual({ ok: true, changed: 1 });
+    expect(store.updates[0].details).toEqual([{ label: 'Seeking paid caregiver', value: 'No' }, { label: "Member's Medicaid ID", value: '222120339644' }]);
+    expect(store.activity[0].text).toBe('Details edited: Medicaid ID "Will provide later" → "222120339644".');
+  });
+  it('rejects bad input and phone or converted referrals', async () => {
+    store.doc = website();
+    expect(await updateWebsiteReferralDetails('r1', { 'top:clientPhone': '555' }, caller)).toMatchObject({ ok: false, status: 400, fieldErrors: { 'top:clientPhone': 'Enter a 10-digit phone number.' } });
+    store.doc = { ...website(), source: 'phone' };
+    expect(await updateWebsiteReferralDetails('r1', {}, caller)).toMatchObject({ ok: false, status: 400 });
+    store.doc = { ...website(), patientId: 'p1' };
+    expect(await updateWebsiteReferralDetails('r1', {}, caller)).toMatchObject({ ok: false, status: 409 });
+    expect(store.updates).toHaveLength(0);
+  });
+});
