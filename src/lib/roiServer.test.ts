@@ -11,7 +11,7 @@ vi.mock('./referrals', () => ({ getReferral: mocks.referral, logReferralActivity
 vi.mock('./referralDocumentsServer', () => ({ addReferralDocument: mocks.addDoc, moveReferralDocumentsToPatient: mocks.moveDocs }));
 vi.mock('./faxCenterServer', () => ({ sendOutboundFax: vi.fn() }));
 vi.mock('./verbalOrderServer', () => ({ agencyTodayISO: () => '2026-10-07', returnFaxNumber: async () => '6785550100' }));
-import { createRoi, fileSignedRoi, listRois } from './roiServer';
+import { createRoi, editRoi, fileSignedRoi, listRois } from './roiServer';
 
 const caller = { uid: 'va1', email: 'va@example.test', role: 'va', profile: { displayName: 'Test VA' } } as AuthedCaller;
 let rows: Map<string, Record<string, unknown>>;
@@ -73,4 +73,33 @@ it('copies the signed release into the client record when conversion happened af
   await fileSignedRoi({ id: 'roi1', pdf: Buffer.from(await pdf.save()), signedDate: '2026-10-07', caller });
   expect(mocks.moveDocs).toHaveBeenCalledWith('ref1', 'patient1', expect.objectContaining({ uid: 'va1' }));
   expect(rows.get('roi1')).toMatchObject({ patientId: 'patient1', status: 'signed' });
+});
+
+it('edits a release signed elsewhere: adds the fax, re-dates it, and notes it on the referral', async () => {
+  rows.set('roi9', {
+    formType: 'ga-hipaa', referralId: 'ref1', patientId: '', memberName: 'Bronx Spry', direction: 'to-us', duration: 'transactions', status: 'signed',
+    facility: { name: 'Peachtree Pediatrics', address: '12 Eastbrook Bend', phone: '7704873330', fax: '' },
+    information: 'As listed on the signed authorization.', purpose: 'As listed on the signed authorization.',
+    signed: { documentId: 'd1', signedDate: '2026-10-07', expiresOn: '2028-10-07', byName: 'Test VA' }, faxes: [],
+  });
+  const result = await editRoi('roi9', { facilityFax: '(770) 487-7736', signedDate: '2026-10-06' }, caller);
+  expect(result).toMatchObject({ ok: true, changed: 2 });
+  const row = rows.get('roi9')!;
+  expect(row.facility).toMatchObject({ fax: '7704877736', phone: '7704873330', name: 'Peachtree Pediatrics' });
+  expect(row['signed.signedDate']).toBe('2026-10-06');
+  expect(row['signed.expiresOn']).toBe('2028-10-06');
+  expect(mocks.activity).toHaveBeenCalledWith('ref1', expect.objectContaining({ text: expect.stringContaining('Fax (blank) → (770) 487-7736') }));
+});
+
+it('keeps a signed DBHDD release’s name as signed, and refuses a cancelled one', async () => {
+  rows.set('roi8', {
+    formType: 'dbhdd', referralId: 'ref1', memberName: 'X', direction: 'to-us', duration: 'year', status: 'signed',
+    facility: { name: 'Magnolia Manor', address: '', phone: '', fax: '' }, information: 'i', purpose: 'p',
+    signed: { documentId: 'd', signedDate: '2026-10-01', expiresOn: '2027-10-01', byName: '' }, faxes: [],
+  });
+  const result = await editRoi('roi8', { facilityName: 'Renamed', facilityFax: '7705550000' }, caller);
+  expect(result).toMatchObject({ ok: true, changed: 1 });
+  expect(rows.get('roi8')!.facility).toMatchObject({ name: 'Magnolia Manor', fax: '7705550000' });
+  rows.set('roi7', { ...rows.get('roi8'), status: 'cancelled' });
+  expect(await editRoi('roi7', { facilityFax: '7705551111' }, caller)).toMatchObject({ ok: false, status: 409 });
 });
