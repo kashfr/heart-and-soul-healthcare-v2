@@ -20,7 +20,7 @@ describe('which fields are editable', () => {
   it('never offers an answer the GAPP screening reads', () => {
     for (const source of ['gapp-website', 'hs-website'] as const) {
       const rows = editFieldsFor(source).map((s) => s.row).filter(Boolean);
-      for (const locked of ['Seeking paid caregiver', 'Wants agency staff in the home', 'Date of birth', 'Relationship to child', 'Diagnosis', 'Equipment & daily care', 'Behavior risk', 'Current services', 'Legal guardianship', 'Hands-on care mainly due to', 'Primary care need']) {
+      for (const locked of ['Seeking paid caregiver', 'Wants agency staff in the home', 'Date of birth', 'Relationship to child', 'Diagnosis', 'Equipment & daily care', 'Behavior risk', 'Current services', 'Legal guardianship', 'Hands-on care mainly due to', 'Primary care need', 'Service needs', 'Additional notes']) {
         expect(rows).not.toContain(locked);
       }
       expect(rows.some((r) => r!.startsWith('⚠'))).toBe(false);

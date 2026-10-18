@@ -14,7 +14,9 @@ Staff's own notes, so every field is editable. See phone-referrals.md.
 Only the fields the GAPP screening never reads are editable, listed per
 source in `src/lib/referralEditShared.ts`: contact name, phone, email,
 county, address, Medicaid ID, physician (name, office, phone, fax),
-insurance, referrer details, and comments or notes. A detail row that was
+insurance, referrer details, and (GAPP site) comments. The Heart & Soul
+form's service needs and additional notes are not editable: that form screens
+their text for an autism or behavioral picture. A detail row that was
 blank is added at the end of the card; one that is cleared is removed. Every
 other row, including the family's screened answers and every ⚠ flag, is kept
 exactly as submitted, so an edit can never turn the card into one the website

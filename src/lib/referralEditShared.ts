@@ -63,12 +63,13 @@ const FIELDS: Record<EditableSource, EditFieldSpec[]> = {
     row('Referrer phone', 'phone'),
     row('Referrer email', 'email'),
     row('Referrer organization', 'text'),
-    row('Additional notes', 'textarea'),
+    // Not 'Service needs' or 'Additional notes': the form screens that text
+    // for an autism / behavioral picture (actions.ts processReferralSubmission).
   ],
 };
 
 /** The labels the screening reads; listed for the form's explanation. */
-export const LOCKED_ANSWERS = 'paid caregiver, agency staff in the home, date of birth, relationship, diagnosis, equipment, behavior, and current services';
+export const LOCKED_ANSWERS = 'paid caregiver, agency staff in the home, date of birth, relationship, diagnosis, equipment, behavior, current services, and (on the Heart & Soul form) service needs and additional notes';
 
 export function isEditableSource(source: string): source is EditableSource {
   return source === 'gapp-website' || source === 'hs-website';
