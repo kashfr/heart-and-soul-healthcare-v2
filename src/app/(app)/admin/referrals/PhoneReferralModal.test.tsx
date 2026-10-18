@@ -2,6 +2,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import PhoneReferralModal from './PhoneReferralModal';
 import { authedFetch } from '@/lib/authedFetch';
+import { emptyPhoneReferral, toPhoneIntake } from '@/lib/phoneReferralShared';
+const emptyIntake = () => toPhoneIntake(emptyPhoneReferral());
 vi.mock('@/lib/authedFetch', () => ({ authedFetch: vi.fn() }));
 
 const staff = [
@@ -46,4 +48,31 @@ it('Enter in a text box does not save', () => {
   fireEvent.keyDown(input, { key: 'Enter' });
   expect(authedFetch).not.toHaveBeenCalled();
   expect(screen.queryByText('Enter a callback number.')).toBeNull();
+});
+
+it('formats phone numbers as they are typed', () => {
+  render(<PhoneReferralModal staff={staff} onClose={vi.fn()} onCreated={vi.fn()} />);
+  const phone = screen.getByLabelText(/Callback number/) as HTMLInputElement;
+  fireEvent.change(phone, { target: { value: '4707834812' } });
+  expect(phone.value).toBe('(470) 783-4812');
+  const doc = screen.getByLabelText('Physician phone') as HTMLInputElement;
+  fireEvent.change(doc, { target: { value: '7705551234145' } });
+  expect(doc.value).toBe('(770) 555-1234 ext. 145');
+});
+
+it('edits a saved phone referral in place', async () => {
+  vi.mocked(authedFetch).mockResolvedValue(new Response(JSON.stringify({ ok: true, changed: ['county'] })));
+  const saved = vi.fn();
+  const intake = { ...emptyIntake(), callerName: 'Marcus Reed', callerPhone: '(404) 555-1212', clientName: 'Jayden Reed', county: 'Gwinnett' };
+  render(<PhoneReferralModal staff={staff} editing={{ referralId: 'r9', intake }} onClose={vi.fn()} onCreated={saved} />);
+  expect(screen.getByText('Edit Phone Referral')).toBeInTheDocument();
+  expect(screen.queryByLabelText(/^Assign to/)).toBeNull();
+  expect((screen.getByLabelText(/Client's name/) as HTMLInputElement).value).toBe('Jayden Reed');
+  fireEvent.change(screen.getByLabelText('County'), { target: { value: 'Fulton' } });
+  fireEvent.click(screen.getByRole('button', { name: /Save Changes/ }));
+  await waitFor(() => expect(saved).toHaveBeenCalledWith('r9'));
+  const [url, init] = vi.mocked(authedFetch).mock.calls[0];
+  expect(url).toBe('/api/admin/referrals/r9/phone');
+  expect(init!.method).toBe('PUT');
+  expect(JSON.parse(init!.body as string)).toMatchObject({ clientName: 'Jayden Reed', county: 'Fulton' });
 });

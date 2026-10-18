@@ -8,10 +8,11 @@ import { withSelectChevron } from '@/lib/selectChevron';
 import { PROGRAMS } from '@/lib/programs';
 import { GA_COUNTIES } from '@/lib/georgia';
 import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
+import { formatUSPhone, formatUSPhoneExt } from '@/lib/phone';
 import {
   CALLER_RELATIONSHIPS, HOSPITAL_STATUSES, PHONE_REFERRAL_FIELD_ORDER, SERVICE_NEED_OPTIONS,
-  emptyPhoneReferral, validatePhoneReferral,
-  type PhoneReferralField, type PhoneReferralInput,
+  emptyPhoneReferral, phoneReferralFromIntake, validatePhoneReferral,
+  type PhoneIntake, type PhoneReferralField, type PhoneReferralInput,
 } from '@/lib/phoneReferralShared';
 import type { StaffOption } from './types';
 
@@ -32,13 +33,17 @@ export default function PhoneReferralModal({
   staff,
   onClose,
   onCreated,
+  editing,
 }: {
   /** Everyone on staff; only admins and VAs (who work the board) are offered. */
   staff: StaffOption[];
   onClose: () => void;
+  /** Called with the referral's id after a create or a saved edit. */
   onCreated: (id: string) => void;
+  /** Edit Details: the referral to correct and its saved answers. */
+  editing?: { referralId: string; intake: PhoneIntake | null };
 }) {
-  const [f, setF] = useState<PhoneReferralInput>(emptyPhoneReferral);
+  const [f, setF] = useState<PhoneReferralInput>(() => (editing ? phoneReferralFromIntake(editing.intake) : emptyPhoneReferral()));
   const [errors, setErrors] = useState<Partial<Record<PhoneReferralField, string>>>({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -57,13 +62,15 @@ export default function PhoneReferralModal({
     if (!applyFieldErrors(validatePhoneReferral(f, agencyToday()), PHONE_REFERRAL_FIELD_ORDER, setErrors, fieldId)) return;
     setBusy(true);
     try {
-      const res = await authedFetch('/api/admin/referrals', { method: 'POST', body: JSON.stringify(f) });
+      const res = editing
+        ? await authedFetch(`/api/admin/referrals/${editing.referralId}/phone`, { method: 'PUT', body: JSON.stringify(f) })
+        : await authedFetch('/api/admin/referrals', { method: 'POST', body: JSON.stringify(f) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (data.fieldErrors) applyFieldErrors(data.fieldErrors, PHONE_REFERRAL_FIELD_ORDER, setErrors, fieldId);
         throw new Error(data.error || `Request failed (${res.status}).`);
       }
-      onCreated(String(data.id));
+      onCreated(editing ? editing.referralId : String(data.id));
     } catch (e2) {
       setErr(e2 instanceof Error ? e2.message : 'Could not save the referral.');
     } finally {
@@ -85,15 +92,16 @@ export default function PhoneReferralModal({
       <div style={modal} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="phone-referral-title">
         <div style={header}>
           <strong id="phone-referral-title" style={{ fontSize: 16, color: '#1a3a5c', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-            <PhoneCall size={17} /> Log Phone Referral
+            <PhoneCall size={17} /> {editing ? 'Edit Phone Referral' : 'Log Phone Referral'}
           </strong>
           <button type="button" onClick={onClose} style={closeBtn} aria-label="Close" disabled={busy}><X size={18} /></button>
         </div>
         <form onSubmit={submit} onKeyDown={blockEnter} noValidate style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           <div style={{ padding: 20, display: 'grid', gap: 18, overflowY: 'auto' }}>
             <p style={lead}>
-              Enter what you took down on the call. Only the caller&apos;s name, a callback number, and the client&apos;s
-              name are required. The referral goes in New as a Phone Call card.
+              {editing
+                ? 'Correct anything that was taken down wrong. The card updates, and its activity notes which fields changed.'
+                : 'Enter what you took down on the call. Only the caller’s name, a callback number, and the client’s name are required. The referral goes in New as a Phone Call card.'}
             </p>
 
             <section style={section}>
@@ -113,7 +121,7 @@ export default function PhoneReferralModal({
                 </label>
                 <label style={field} id={fieldId('callerPhone')}>
                   <span style={label}>Callback number *</span>
-                  <input type="tel" value={f.callerPhone} maxLength={40} onChange={(e) => set('callerPhone', e.target.value)} style={{ ...inp, ...errStyle('callerPhone') }} placeholder="(404) 555-1212" />
+                  <input type="tel" value={f.callerPhone} maxLength={40} onChange={(e) => set('callerPhone', formatUSPhone(e.target.value))} style={{ ...inp, ...errStyle('callerPhone') }} placeholder="(404) 555-1212" />
                   <FieldError message={errors.callerPhone} />
                 </label>
                 <label style={field} id={fieldId('callerEmail')}>
@@ -211,17 +219,18 @@ export default function PhoneReferralModal({
                 </label>
                 <label style={field}>
                   <span style={label}>Physician phone</span>
-                  <input type="tel" value={f.physicianPhone} maxLength={40} onChange={(e) => set('physicianPhone', e.target.value)} style={inp} />
+                  <input type="tel" value={f.physicianPhone} maxLength={40} onChange={(e) => set('physicianPhone', formatUSPhoneExt(e.target.value))} style={inp} />
                 </label>
               </div>
             </section>
 
             <section style={section}>
-              <div style={sectionTitle}>Notes and Follow-Up</div>
+              <div style={sectionTitle}>{editing ? 'Notes' : 'Notes and Follow-Up'}</div>
               <label style={field}>
                 <span style={label}>Call notes</span>
                 <textarea value={f.callNotes} maxLength={5000} rows={5} onChange={(e) => set('callNotes', e.target.value)} style={{ ...inp, resize: 'vertical' }} placeholder="Anything else from the call: equipment, current services, best time to call back, what you told them…" />
               </label>
+              {!editing && (
               <label style={field}>
                 <span style={label}>Assign to</span>
                 <select value={f.assigneeUid} onChange={(e) => set('assigneeUid', e.target.value)} style={withSelectChevron({ ...inp, maxWidth: 320 })}>
@@ -230,6 +239,7 @@ export default function PhoneReferralModal({
                 </select>
                 <span style={hint}>They get a notification with a link to the card.</span>
               </label>
+              )}
             </section>
 
             {err && <div role="alert" style={{ color: '#b3261e', fontSize: 13, fontWeight: 600 }}>{err}</div>}
@@ -237,7 +247,7 @@ export default function PhoneReferralModal({
           <div style={footer}>
             <button type="button" onClick={onClose} className={btn} disabled={busy}>Cancel</button>
             <button type="submit" className={btnPrimary} disabled={busy}>
-              <PhoneCall size={14} /> {busy ? 'Saving…' : 'Save Referral'}
+              <PhoneCall size={14} /> {busy ? 'Saving…' : editing ? 'Save Changes' : 'Save Referral'}
             </button>
           </div>
         </form>

@@ -4,12 +4,13 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   X, Phone, Mail, Printer, MessageSquare, ArrowRightLeft, UserCheck,
   Inbox, PhoneCall, Send, Share2, Copy, Check, Trash2, Plus, Stethoscope, FileSignature, UserPlus, ExternalLink,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, Pencil,
 } from 'lucide-react';
 import { btn, btnDanger, btnIcon, btnPrimary } from '@/components/buttons';
 import RoiSection from '../fax/RoiSection';
 import ReferralDocuments from './ReferralDocuments';
 import ConvertReferralModal from './ConvertReferralModal';
+import PhoneReferralModal from './PhoneReferralModal';
 import Link from 'next/link';
 import { useEffectiveUser } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
@@ -68,6 +69,10 @@ export default function ReferralDetail({
   const [documentsRefresh, setDocumentsRefresh] = useState(0);
   const [showReleases, setShowReleases] = useState(false);
   const [converting, setConverting] = useState(false);
+  const [editingPhone, setEditingPhone] = useState(false);
+  // A phone referral is staff's own notes, so staff can correct it, until a
+  // client record has been built from it.
+  const canEditPhone = referral.source === 'phone' && !referral.patientId && (viewerRole === 'admin' || viewerRole === 'va');
   const [created, setCreated] = useState<{ patientId: string; mrn: string; documentsMoved: number } | null>(null);
   const canCreateClient = canCreateClientFromReferral(settings.referralConversion, viewerUid, viewerRole);
   const patientId = created?.patientId || referral.patientId || null;
@@ -438,6 +443,11 @@ export default function ReferralDetail({
             <button type="button" onClick={() => onPrint(referral)} className={btn} style={footerGrowStyle}>
               <Printer size={15} /> Print Call Sheet
             </button>
+            {canEditPhone && (
+              <button type="button" onClick={() => setEditingPhone(true)} className={btn} style={footerGrowStyle} disabled={busy}>
+                <Pencil size={15} /> Edit Details
+              </button>
+            )}
             {canFax && /gapp/i.test(referral.program || '') && referral.stage !== 'closed' && referral.stage !== 'referred_out' && (
               // New GAPP case: ask the child's physician for the Appendix T.
               // Opens the Fax Center with this referral already picked.
@@ -477,6 +487,17 @@ export default function ReferralDetail({
           <RoiSection key={referral.id} referralId={referral.id} refreshKey={0} openRequest={0} faxConfigured={false} onFaxSent={() => { void loadActivity(); }} />
         </div>
       </div>}
+      {editingPhone && (
+        <PhoneReferralModal
+          staff={staff}
+          editing={{ referralId: referral.id, intake: referral.phoneIntake ?? null }}
+          onClose={() => setEditingPhone(false)}
+          onCreated={() => {
+            setEditingPhone(false);
+            onChanged?.();
+          }}
+        />
+      )}
       {converting && (
         <ConvertReferralModal
           referralId={referral.id}
