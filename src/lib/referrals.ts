@@ -9,6 +9,7 @@ import {
   changedPhoneIntakeFields, formatPhone, phoneReferralDetails, programLabel, toPhoneIntake,
   type PhoneIntake, type PhoneReferralInput,
 } from './phoneReferralShared';
+import { applyEdits, currentEditValues, describeEdits, editFieldsFor, isEditableSource, validateEdits } from './referralEditShared';
 
 export { REFERRED_OUT_AUTO_CLOSE_DAYS } from './referralAutoClose';
 
@@ -774,4 +775,70 @@ export async function updatePhoneReferral(
     byRole: caller.role,
   });
   return { ok: true, changed };
+}
+
+// --- Website referrals: correcting details the screening never reads ---
+
+export type DetailsEditResult =
+  | { ok: true; changed: number }
+  | { ok: false; status: number; error: string; fieldErrors?: Record<string, string> };
+
+/**
+ * Correct a website referral's contact details, Medicaid ID, address,
+ * physician, insurance, or notes (the fields in referralEditShared). Every
+ * other answer and every ⚠ flag is kept as the family submitted it, so the
+ * GAPP screening's result can't change. Old and new values go on the timeline.
+ */
+export async function updateWebsiteReferralDetails(
+  id: string,
+  values: Record<string, string>,
+  caller: AuthedCaller
+): Promise<DetailsEditResult> {
+  const ref = adminDb().collection(COLLECTION).doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) return { ok: false, status: 404, error: 'Referral not found.' };
+  const prev = snap.data() as FirebaseFirestore.DocumentData;
+  if (!isEditableSource(String(prev.source))) {
+    return { ok: false, status: 400, error: 'Only website referrals are edited here.' };
+  }
+  if (prev.patientId) {
+    return { ok: false, status: 409, error: 'This referral already has a client record. Make corrections on the client’s record instead.' };
+  }
+  const specs = editFieldsFor(prev.source);
+  const current = {
+    clientName: String(prev.clientName ?? ''),
+    referrerName: String(prev.referrerName ?? ''),
+    clientPhone: String(prev.clientPhone ?? ''),
+    clientEmail: String(prev.clientEmail ?? ''),
+    county: String(prev.county ?? ''),
+    details: Array.isArray(prev.details) ? (prev.details as ReferralDetail[]) : [],
+  };
+  // Only keys this source allows; anything else in the body is ignored.
+  const allowed: Record<string, string> = {};
+  for (const sp of specs) if (typeof values[sp.key] === 'string') allowed[sp.key] = values[sp.key];
+  const fieldErrors = validateEdits(specs.filter((sp) => sp.key in allowed), allowed, currentEditValues(current, specs));
+  if (Object.keys(fieldErrors).length) {
+    return { ok: false, status: 400, error: Object.values(fieldErrors)[0], fieldErrors };
+  }
+  const { top, details, changes } = applyEdits(current, specs, allowed);
+  if (changes.length === 0) return { ok: true, changed: 0 };
+  await ref.update({
+    ...(top.clientName !== undefined ? { clientName: clamp(top.clientName, MAX.name) } : {}),
+    ...(top.referrerName !== undefined ? { referrerName: clamp(top.referrerName, MAX.referrer) } : {}),
+    ...(top.clientPhone !== undefined ? { clientPhone: clamp(top.clientPhone, MAX.phone) } : {}),
+    ...(top.clientEmail !== undefined ? { clientEmail: clamp(top.clientEmail, MAX.email) } : {}),
+    ...(top.county !== undefined ? { county: clamp(top.county, MAX.county) } : {}),
+    details: normalizeDetails(details),
+    updatedAt: FieldValue.serverTimestamp(),
+    statusUpdatedBy: caller.uid,
+    statusUpdatedByName: caller.profile.displayName || '',
+  });
+  await logReferralActivity(id, {
+    type: 'note',
+    text: describeEdits(changes),
+    byUid: caller.uid,
+    byName: caller.profile.displayName || '',
+    byRole: caller.role,
+  });
+  return { ok: true, changed: changes.length };
 }

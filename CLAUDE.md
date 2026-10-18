@@ -39,4 +39,6 @@ Read the matching note before changing one of these features.
   referral, creating a client record from a referral: docs/features/fax-center-inbound.md
 - Phone referrals ("Log Phone Referral" quick capture on the Referrals page):
   docs/features/phone-referrals.md
+- Editing referrals (Edit Details: phone referrals fully, website referrals
+  only in fields the GAPP screening never reads): docs/features/referral-editing.md
 - Declared test account and test client: TEST-ACCOUNT.md

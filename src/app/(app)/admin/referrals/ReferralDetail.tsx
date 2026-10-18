@@ -11,6 +11,8 @@ import RoiSection from '../fax/RoiSection';
 import ReferralDocuments from './ReferralDocuments';
 import ConvertReferralModal from './ConvertReferralModal';
 import PhoneReferralModal from './PhoneReferralModal';
+import EditReferralModal from './EditReferralModal';
+import { isEditableSource } from '@/lib/referralEditShared';
 import Link from 'next/link';
 import { useEffectiveUser } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
@@ -69,10 +71,14 @@ export default function ReferralDetail({
   const [documentsRefresh, setDocumentsRefresh] = useState(0);
   const [showReleases, setShowReleases] = useState(false);
   const [converting, setConverting] = useState(false);
-  const [editingPhone, setEditingPhone] = useState(false);
-  // A phone referral is staff's own notes, so staff can correct it, until a
-  // client record has been built from it.
-  const canEditPhone = referral.source === 'phone' && !referral.patientId && (viewerRole === 'admin' || viewerRole === 'va');
+  const [editing, setEditing] = useState(false);
+  // Staff can correct a referral until a client record has been built from
+  // it: a phone referral fully (it is staff's own notes), a website referral
+  // only in the fields the GAPP screening never reads (referralEditShared).
+  const canEdit =
+    (referral.source === 'phone' || isEditableSource(referral.source)) &&
+    !referral.patientId &&
+    (viewerRole === 'admin' || viewerRole === 'va');
   const [created, setCreated] = useState<{ patientId: string; mrn: string; documentsMoved: number } | null>(null);
   const canCreateClient = canCreateClientFromReferral(settings.referralConversion, viewerUid, viewerRole);
   const patientId = created?.patientId || referral.patientId || null;
@@ -443,8 +449,8 @@ export default function ReferralDetail({
             <button type="button" onClick={() => onPrint(referral)} className={btn} style={footerGrowStyle}>
               <Printer size={15} /> Print Call Sheet
             </button>
-            {canEditPhone && (
-              <button type="button" onClick={() => setEditingPhone(true)} className={btn} style={footerGrowStyle} disabled={busy}>
+            {canEdit && (
+              <button type="button" onClick={() => setEditing(true)} className={btn} style={footerGrowStyle} disabled={busy}>
                 <Pencil size={15} /> Edit Details
               </button>
             )}
@@ -487,13 +493,23 @@ export default function ReferralDetail({
           <RoiSection key={referral.id} referralId={referral.id} refreshKey={0} openRequest={0} faxConfigured={false} onFaxSent={() => { void loadActivity(); }} />
         </div>
       </div>}
-      {editingPhone && (
+      {editing && referral.source === 'phone' && (
         <PhoneReferralModal
           staff={staff}
           editing={{ referralId: referral.id, intake: referral.phoneIntake ?? null }}
-          onClose={() => setEditingPhone(false)}
+          onClose={() => setEditing(false)}
           onCreated={() => {
-            setEditingPhone(false);
+            setEditing(false);
+            onChanged?.();
+          }}
+        />
+      )}
+      {editing && isEditableSource(referral.source) && (
+        <EditReferralModal
+          referral={{ ...referral, source: referral.source }}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
             onChanged?.();
           }}
         />
