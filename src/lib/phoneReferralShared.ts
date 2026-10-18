@@ -6,6 +6,7 @@
  * Pure module (no Firebase) so validation and the row mapping are unit-tested.
  */
 import { formatDateUS } from './dateFormat';
+import { formatUSPhone, formatUSPhoneExt } from './phone';
 import { GA_COUNTIES } from './georgia';
 import { PROGRAMS } from './programs';
 import type { ServiceKey } from './diagnosisCatalog';
@@ -93,8 +94,11 @@ export function emptyPhoneReferral(): PhoneReferralInput {
   };
 }
 
-function digits(v: string): string {
-  return String(v || '').replace(/\D/g, '');
+/** The local 10 digits, dropping a leading US 1; '' digits stay ''. Unlike
+ *  phoneDigits this does not truncate, so a mistyped extra digit is caught. */
+function localDigits(v: string): string {
+  const d = String(v || '').replace(/\D/g, '');
+  return d.length === 11 && d.startsWith('1') ? d.slice(1) : d;
 }
 
 /**
@@ -106,9 +110,9 @@ function digits(v: string): string {
 export function validatePhoneReferral(r: PhoneReferralInput, today: string): Partial<Record<PhoneReferralField, string>> {
   const e: Partial<Record<PhoneReferralField, string>> = {};
   if (!r.callerName.trim()) e.callerName = 'Enter the caller’s name.';
-  const phone = digits(r.callerPhone);
+  const phone = localDigits(r.callerPhone);
   if (!phone) e.callerPhone = 'Enter a callback number.';
-  else if (!(phone.length === 10 || (phone.length === 11 && phone.startsWith('1')))) e.callerPhone = 'Enter a 10-digit phone number.';
+  else if (phone.length !== 10) e.callerPhone = 'Enter a 10-digit phone number.';
   if (r.callerEmail.trim() && !EMAIL_RE.test(r.callerEmail.trim())) e.callerEmail = 'Enter a valid email address, or leave it blank.';
   if (!r.clientName.trim()) e.clientName = 'Enter the name of the person the referral is for.';
   if (r.dob) {
@@ -121,11 +125,9 @@ export function validatePhoneReferral(r: PhoneReferralInput, today: string): Par
   return e;
 }
 
-/** (404) 555-1212 from any 10-digit entry; left as typed otherwise. */
+/** The caller's number as stored: the portal's standard (XXX) XXX-XXXX. */
 export function formatPhone(v: string): string {
-  let d = digits(v);
-  if (d.length === 11 && d.startsWith('1')) d = d.slice(1);
-  return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : String(v || '').trim();
+  return formatUSPhone(v);
 }
 
 /** "2 years" / "8 months" at `today` (YYYY-MM-DD); '' when it can't be read. */
@@ -175,7 +177,64 @@ export function phoneReferralDetails(r: PhoneReferralInput, today: string, taken
     { label: 'Hospital', value: inHospital ? t(r.hospitalName) : '' },
     { label: 'Expected discharge', value: inHospital && r.expectedDischarge ? formatDateUS(r.expectedDischarge) : '' },
     { label: "Child's physician", value: t(r.physicianName) },
-    { label: 'Physician phone', value: t(r.physicianPhone) ? formatPhone(r.physicianPhone) : '' },
+    { label: 'Physician phone', value: t(r.physicianPhone) ? formatUSPhoneExt(r.physicianPhone) : '' },
     { label: 'Call notes', value: t(r.callNotes) },
   ];
+}
+
+/** What is kept on the referral so the form can be reopened for editing. */
+export type PhoneIntake = Omit<PhoneReferralInput, 'assigneeUid'>;
+
+export const PHONE_INTAKE_LABELS: Record<keyof PhoneIntake, string> = {
+  callerName: 'caller’s name',
+  callerRelationship: 'relationship',
+  callerPhone: 'callback number',
+  callerEmail: 'email',
+  clientName: 'client’s name',
+  dob: 'date of birth',
+  program: 'program',
+  county: 'county',
+  street: 'street address',
+  city: 'city',
+  zip: 'ZIP code',
+  medicaidId: 'Medicaid ID',
+  diagnosis: 'diagnosis',
+  service: 'service needed',
+  hospitalStatus: 'where the client is now',
+  hospitalName: 'hospital',
+  expectedDischarge: 'expected discharge',
+  physicianName: 'physician',
+  physicianPhone: 'physician phone',
+  callNotes: 'call notes',
+};
+
+export function toPhoneIntake(r: PhoneReferralInput): PhoneIntake {
+  const out = {} as Record<string, string>;
+  for (const k of Object.keys(PHONE_INTAKE_LABELS)) out[k] = String((r as unknown as Record<string, string>)[k] ?? '').trim();
+  return out as unknown as PhoneIntake;
+}
+
+/** The form's fields from a stored intake (missing keys come back blank). */
+export function phoneReferralFromIntake(intake: Partial<PhoneIntake> | null | undefined): PhoneReferralInput {
+  return { ...emptyPhoneReferral(), ...(intake || {}), assigneeUid: '' } as PhoneReferralInput;
+}
+
+/** Which fields an edit changed, in form order, for the timeline. */
+export function changedPhoneIntakeFields(before: Partial<PhoneIntake> | null | undefined, after: PhoneIntake): string[] {
+  const b = (before || {}) as Record<string, string>;
+  const a = after as unknown as Record<string, string>;
+  return (Object.keys(PHONE_INTAKE_LABELS) as (keyof PhoneIntake)[])
+    .filter((k) => String(b[k] ?? '').trim() !== String(a[k] ?? '').trim())
+    .map((k) => PHONE_INTAKE_LABELS[k]);
+}
+
+/** The form fields from a JSON body: strings only, clipped, service checked. */
+export function phoneReferralFromBody(body: Record<string, unknown>): PhoneReferralInput {
+  const input = emptyPhoneReferral();
+  const rec = input as unknown as Record<string, string>;
+  for (const k of Object.keys(input)) {
+    if (typeof body[k] === 'string') rec[k] = String(body[k]).slice(0, 5000);
+  }
+  if (!['', 'nursing', 'pss', 'behavioral'].includes(input.service)) input.service = '';
+  return input;
 }

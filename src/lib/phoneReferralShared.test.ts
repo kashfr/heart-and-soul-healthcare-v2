@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ageAt, emptyPhoneReferral, formatPhone, phoneReferralDetails, programLabel, validatePhoneReferral,
+  ageAt, changedPhoneIntakeFields, emptyPhoneReferral, formatPhone, phoneReferralDetails, phoneReferralFromBody,
+  phoneReferralFromIntake, programLabel, toPhoneIntake, validatePhoneReferral,
   type PhoneReferralInput,
 } from './phoneReferralShared';
 import { planFromReferral } from './referralConvertShared';
@@ -24,8 +25,9 @@ describe('validatePhoneReferral', () => {
     const e = validatePhoneReferral(base({ callerPhone: '555-1212', callerEmail: 'nope', dob: '2027-01-01', county: 'Atlantis', zip: '3004' }), TODAY);
     expect(Object.keys(e).sort()).toEqual(['callerEmail', 'callerPhone', 'county', 'dob', 'zip']);
   });
-  it('takes an 11-digit number with a leading 1', () => {
+  it('takes an 11-digit number with a leading 1, and rejects an extra digit', () => {
     expect(validatePhoneReferral(base({ callerPhone: '1 (404) 555-1212' }), TODAY)).toEqual({});
+    expect(validatePhoneReferral(base({ callerPhone: '40455512129' }), TODAY).callerPhone).toBe('Enter a 10-digit phone number.');
   });
 });
 
@@ -88,12 +90,37 @@ describe('phoneReferralDetails', () => {
 describe('helpers', () => {
   it('formats phones and ages', () => {
     expect(formatPhone('14045551212')).toBe('(404) 555-1212');
-    expect(formatPhone('ext 12')).toBe('ext 12');
+    expect(formatPhone('470-783-4812')).toBe('(470) 783-4812');
     expect(ageAt('2026-04-20', TODAY)).toBe('5 months');
     expect(ageAt('2027-01-01', TODAY)).toBe('');
   });
   it('labels programs like the website forms', () => {
     expect(programLabel('gapp')).toBe('GAPP - Georgia Pediatric Program');
     expect(programLabel('')).toBe('');
+  });
+});
+
+describe('editing', () => {
+  it('keeps the answers without the assignee, and reopens them', () => {
+    const intake = toPhoneIntake(base({ assigneeUid: 'va1', county: 'Gwinnett ' }));
+    expect(intake).not.toHaveProperty('assigneeUid');
+    expect(intake.county).toBe('Gwinnett');
+    expect(phoneReferralFromIntake(intake)).toMatchObject({ callerName: 'Marcus Reed', county: 'Gwinnett', assigneeUid: '' });
+    expect(phoneReferralFromIntake(null)).toEqual(emptyPhoneReferral());
+  });
+  it('names the fields an edit changed, in form order', () => {
+    const before = toPhoneIntake(base({ county: 'Gwinnett' }));
+    const after = toPhoneIntake(base({ county: 'Fulton', callerName: 'Marcus T. Reed', callNotes: 'x' }));
+    expect(changedPhoneIntakeFields(before, after)).toEqual(['caller’s name', 'county', 'call notes']);
+    expect(changedPhoneIntakeFields(before, before)).toEqual([]);
+  });
+  it('reads only strings from a request body and checks the service', () => {
+    const r = phoneReferralFromBody({ callerName: 'A', county: 7, service: 'surgery' });
+    expect(r.callerName).toBe('A');
+    expect(r.county).toBe('');
+    expect(r.service).toBe('');
+  });
+  it('keeps a physician extension', () => {
+    expect(row(phoneReferralDetails(base({ physicianPhone: '7705551234145' }), TODAY, ''), 'Physician phone')).toBe('(770) 555-1234 ext. 145');
   });
 });

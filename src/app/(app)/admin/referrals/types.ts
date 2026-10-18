@@ -11,6 +11,7 @@ import {
 } from '@/lib/agencyMatch';
 import { assessReferralFit } from '@/lib/referralFit';
 import type { IntakeSettings } from '@/lib/settings';
+import type { PhoneIntake } from '@/lib/phoneReferralShared';
 
 export type ReferralSource = 'gapp-website' | 'hs-website' | 'phone';
 export type ReferralStatus = 'new' | 'contacted' | 'archived';
@@ -100,6 +101,8 @@ export interface Referral {
   /** The client record created from this referral, once there is one. */
   patientId?: string | null;
   convertedAt?: string | null;
+  /** A phone referral's form answers, for Edit Details. */
+  phoneIntake?: PhoneIntake | null;
 }
 
 /**

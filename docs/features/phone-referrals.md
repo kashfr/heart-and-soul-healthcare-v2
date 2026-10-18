@@ -30,6 +30,18 @@ The timeline's first entry says who logged the call. Assigning on save
 assigns the card and, when it goes to someone else, rings their bell with a
 link to the card. No email goes to the family or the office.
 
+## Editing
+
+"Edit Details" on a phone referral's card (admins and VAs) reopens the same
+form filled in from `phoneIntake`, the answers saved on the referral.
+`PUT /api/admin/referrals/[id]/phone` re-derives every field from the edited
+answers (`phoneReferralRecord` in `src/lib/referrals.ts`, shared with create),
+keeps who took the call (`takenByName`), and notes on the timeline which
+fields changed. Assignment is changed on the card, not in the form. Website
+referrals can't be edited (they are the family's own words), and neither can
+a phone referral once a client record exists: correct the client record.
+Delete is the card's existing admin-only trash button.
+
 ## Not done (on purpose, for now)
 
 The website forms' GAPP screening (paid-caregiver hard stops, relationship

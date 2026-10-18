@@ -5,6 +5,10 @@ import { adminDb } from './firebaseAdmin';
 import { isStaleReferredOut, REFERRED_OUT_AUTO_CLOSE_DAYS } from './referralAutoClose';
 import type { AuthedCaller } from './adminAuthGuard';
 import type { ServiceKey } from './diagnosisCatalog';
+import {
+  changedPhoneIntakeFields, formatPhone, phoneReferralDetails, programLabel, toPhoneIntake,
+  type PhoneIntake, type PhoneReferralInput,
+} from './phoneReferralShared';
 
 export { REFERRED_OUT_AUTO_CLOSE_DAYS } from './referralAutoClose';
 
@@ -128,10 +132,13 @@ export interface ReferralInput {
   service?: ServiceKey | null;
   /** Full submission, rendered as-is in the detail view. */
   details: ReferralDetail[];
+  /** Phone referrals only: the form answers (for editing) and who took the call. */
+  phoneIntake?: PhoneIntake;
+  takenByName?: string;
 }
 
 /** A referral as returned to the admin UI (timestamps serialized to ISO). */
-export interface Referral extends ReferralInput {
+export interface Referral extends Omit<ReferralInput, 'phoneIntake' | 'takenByName'> {
   id: string;
   /** Pipeline stage — the board column this card sits in. */
   stage: ReferralStage;
@@ -153,6 +160,8 @@ export interface Referral extends ReferralInput {
   /** The client record created from this referral, once there is one. */
   patientId: string | null;
   convertedAt: string | null;
+  /** A phone referral's form answers, so it can be reopened for editing. */
+  phoneIntake: PhoneIntake | null;
 }
 
 // Upper bounds on stored text, so a single referral can never bloat a Firestore
@@ -236,6 +245,7 @@ export async function createReferral(
     referrerName: clamp(input.referrerName ?? '', MAX.referrer),
     service: input.service ?? null,
     details: normalizeDetails(input.details),
+    ...(input.phoneIntake ? { phoneIntake: input.phoneIntake, takenByName: clamp(input.takenByName ?? '', MAX.name) } : {}),
     submittedAt: FieldValue.serverTimestamp(),
     createdAt: FieldValue.serverTimestamp(),
   };
@@ -293,6 +303,7 @@ function toReferral(id: string, data: FirebaseFirestore.DocumentData): Referral 
     updatedAt: toIso(data.updatedAt),
     patientId: data.patientId ? String(data.patientId) : null,
     convertedAt: toIso(data.convertedAt),
+    phoneIntake: data.source === 'phone' && data.phoneIntake ? (data.phoneIntake as PhoneIntake) : null,
   };
 }
 
@@ -703,4 +714,64 @@ export async function assignReferral(
     });
   }
   return true;
+}
+
+// --- Phone referrals (logged by staff from a call) ---
+
+/** The referral fields a phone referral's answers become (create and edit). */
+export function phoneReferralRecord(input: PhoneReferralInput, today: string, takenByName: string) {
+  return {
+    clientName: clamp(input.clientName.trim(), MAX.name),
+    clientEmail: clamp(input.callerEmail.trim(), MAX.email),
+    clientPhone: clamp(formatPhone(input.callerPhone), MAX.phone),
+    county: clamp(input.county, MAX.county),
+    program: clamp(programLabel(input.program), MAX.program),
+    referrerName: clamp(input.callerName.trim(), MAX.referrer),
+    service: (input.service || null) as ServiceKey | null,
+    details: normalizeDetails(phoneReferralDetails(input, today, takenByName)),
+    phoneIntake: toPhoneIntake(input),
+  };
+}
+
+export type PhoneEditResult =
+  | { ok: true; changed: string[] }
+  | { ok: false; status: number; error: string };
+
+/**
+ * Correct a phone referral: re-derive every field from the edited answers and
+ * note on the timeline which ones changed. Only phone referrals (the website
+ * ones carry the family's own words), and not once a client record exists,
+ * since the record was built from these answers and would silently diverge.
+ */
+export async function updatePhoneReferral(
+  id: string,
+  input: PhoneReferralInput,
+  today: string,
+  caller: AuthedCaller
+): Promise<PhoneEditResult> {
+  const ref = adminDb().collection(COLLECTION).doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) return { ok: false, status: 404, error: 'Referral not found.' };
+  const prev = snap.data() as FirebaseFirestore.DocumentData;
+  if (prev.source !== 'phone') return { ok: false, status: 400, error: 'Only phone referrals can be edited.' };
+  if (prev.patientId) {
+    return { ok: false, status: 409, error: 'This referral already has a client record. Make corrections on the client’s record instead.' };
+  }
+  const record = phoneReferralRecord(input, today, String(prev.takenByName || ''));
+  const changed = changedPhoneIntakeFields(prev.phoneIntake, record.phoneIntake);
+  if (changed.length === 0) return { ok: true, changed };
+  await ref.update({
+    ...record,
+    updatedAt: FieldValue.serverTimestamp(),
+    statusUpdatedBy: caller.uid,
+    statusUpdatedByName: caller.profile.displayName || '',
+  });
+  await logReferralActivity(id, {
+    type: 'note',
+    text: `Phone referral edited: ${changed.join(', ')}.`,
+    byUid: caller.uid,
+    byName: caller.profile.displayName || '',
+    byRole: caller.role,
+  });
+  return { ok: true, changed };
 }
