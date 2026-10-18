@@ -28,7 +28,33 @@ would have refused. The timeline records old and new values
 not on the source's list and validates only the fields being changed, so an
 old value the website let through never blocks fixing something else.
 
-Locked on purpose: paid caregiver, agency staff in the home, date of birth,
+## Screened answers (website referrals from 10/2026 on)
+
+Both websites now keep the family's answers on the referral (`intakeAnswers`).
+The card builders and the refusal checks live in `src/lib/websiteIntake.ts`,
+shared by the GAPP intake route, the Heart & Soul form's server action, and
+staff edits, so all three run identical code.
+
+On a referral with `intakeAnswers`, Edit Details shows **Screened Answers**:
+paid caregiver, agency staff in the home, relationship, guardianship and what
+the hands-on care is for (only when the website would ask them), date of
+birth, and care need (`src/lib/screenedAnswers.ts`). The form runs the
+website's refusal checks as staff change an answer and shows the website's
+own message; the server runs them again on save and refuses (422) with
+nothing written. When accepted, the screened rows and every ⚠ flag are
+rebuilt as the website would build them (`mergeScreenedRows`), every other
+row keeps its current value (so earlier corrections survive), the service
+line is re-inferred unless staff had overridden it, and the timeline records
+old and new answers.
+
+Never goes around the blocks (owner's decision, 10/18/2026). Diagnosis,
+equipment, behavior, and current services stay locked even here (large
+checklists; a later step if needed). Referrals from before the answers were
+saved can't change screened answers at all: the family resubmits the form.
+
+## Locked on referrals without saved answers
+
+Paid caregiver, agency staff in the home, date of birth,
 relationship, diagnosis, equipment, behavior, current services, guardianship,
 and what the hands-on care is for. Changing those has to re-run the website's
 screening (see the owner's decision, 10/18/2026: never go around the blocks).

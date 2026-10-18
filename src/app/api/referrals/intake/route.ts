@@ -2,26 +2,8 @@ import { NextResponse } from 'next/server';
 import { timingSafeEqual } from 'node:crypto';
 import { createReferral, type ReferralInput } from '@/lib/referrals';
 import { sendReferralNotification } from '@/lib/emails/referralNotification';
-import { formatDateUS } from '@/lib/dateFormat';
 import { sendReferralConfirmation } from '@/lib/emails/referralConfirmation';
-import { paidCaregiverDiagnosisFlag, screenYoungPaidCaregiver } from '@/lib/diagnosisScreening';
-import {
-  CATALOG_VERSION,
-  behaviorRiskLabel,
-  currentServiceLabels,
-  equipmentLabels,
-  inferService,
-  highBehaviorPaidFlag,
-  paidCareBasisLabel,
-  relationshipLabel,
-  screenCaregiverRelationship,
-  screenAgencyStaff,
-  screenBehavioralPaidCaregiver,
-  screenMixedPaidCaregiver,
-  type BehaviorRisk,
-  type CaregiverRelationship,
-  type PaidCareBasis,
-} from '@/lib/diagnosisCatalog';
+import { buildGappReferral, gappRefusal, type GappAnswers } from '@/lib/websiteIntake';
 
 // Public intake for referrals submitted from external sites (the GAPP website).
 // Authenticated with a shared secret (not a user session), since the caller is
@@ -52,203 +34,21 @@ interface IncomingPayload {
   source?: string;
   id?: string;
   submittedAt?: string;
-  referral?: {
-    submitterName?: string;
-    /** The submitter's relationship to the child. */
-    relationship?: CaregiverRelationship;
-    /** Asked only when the relationship screen needs it. */
-    hasGuardianship?: '' | 'yes' | 'no';
-    /** Does the family want a nurse or aide from the agency in the home? */
-    wantsAgencyStaff?: '' | 'yes' | 'no';
-    fullName?: string;
-    phoneNumber?: string;
-    emailAddress?: string;
-    streetAddress?: string;
-    city?: string;
-    zip?: string;
-    county?: string;
-    childsMedicaidID?: string;
-    /** Readable diagnosis text. Composed by the form from the structured
-     *  answers below (or typed free-hand by older form builds), and stored
-     *  verbatim as the Diagnosis row so nothing downstream had to change. */
-    diagnosis?: string;
-    /** Structured intake (src/lib/diagnosisCatalog.ts). Absent on submissions
-     *  from a form build that predates the checkboxes — every consumer below
-     *  degrades to the free-text diagnosis in that case. */
-    diagnoses?: string[];
-    diagnosisOther?: string;
-    equipment?: string[];
-    behaviorRisk?: BehaviorRisk;
-    currentServices?: string[];
-    /** The catalog the submitting form was built against. */
-    catalogVersion?: string;
-    comments?: string;
-    provideLater?: boolean;
-    dob?: string;
-    careNeeds?: '' | 'personal' | 'nursing' | 'behavioral' | 'unsure';
-    seekingPaidCaregiver?: '' | 'yes' | 'no';
-    /** Mixed diagnosis + seeking pay: what the hands-on care is mainly for. */
-    paidCareBasis?: PaidCareBasis;
-  };
+  referral?: GappAnswers;
 }
 
-const CARE_LABEL: Record<string, string> = {
-  personal: 'Hands-on personal care',
-  nursing: 'Skilled medical / nursing care',
-  behavioral: 'Behavioral / autism support',
-  unsure: 'Not sure',
-};
-
-const SERVICE_LABEL: Record<string, string> = {
-  nursing: 'Skilled Nursing',
-  pss: 'Personal Support Services (PSS)',
-  behavioral: 'Behavioral Support Aide Services (BSS)',
-};
-
-// Age label for the staff view, e.g. "2 years" or "8 months". Empty if the date
-// of birth is missing or unparseable.
-function ageLabel(dob?: string): string {
-  if (!dob) return '';
-  const birth = new Date(`${dob}T00:00:00`);
-  if (Number.isNaN(birth.getTime())) return '';
-  const now = new Date();
-  if (birth > now) return '';
-  let months =
-    (now.getFullYear() - birth.getFullYear()) * 12 +
-    (now.getMonth() - birth.getMonth());
-  if (now.getDate() < birth.getDate()) months -= 1;
-  if (months < 0) return '';
-  const years = Math.floor(months / 12);
-  return years < 1
-    ? `${months} month${months === 1 ? '' : 's'}`
-    : `${years} year${years === 1 ? '' : 's'}`;
-}
-
-// Map the GAPP website's payload into a unified referral.
+// Map the GAPP website's payload into a unified referral. The card is built
+// by the shared builder (src/lib/websiteIntake.ts), which also rebuilds it
+// when staff edit the screened answers, and the answers themselves are kept
+// on the referral for that.
 function toReferralInput(payload: IncomingPayload): ReferralInput {
-  const r = payload.referral ?? {};
-  const address = [r.streetAddress, r.city, r.zip ? `GA ${r.zip}` : '']
-    .filter(Boolean)
-    .join(', ');
-  const medicaid = r.childsMedicaidID
-    ? r.childsMedicaidID
-    : r.provideLater
-    ? 'Will provide later'
-    : '';
-
-  const seekingValue =
-    r.seekingPaidCaregiver === 'yes'
-      ? 'Yes'
-      : r.seekingPaidCaregiver === 'no'
-      ? 'No'
-      : '';
-  // Mixed diagnosis + paid request: what the family said the hands-on care is
-  // for (or that the form never asked). Falls back to the free-text diagnosis
-  // screen for anything else that reaches us, so staff can triage at a glance.
-  const reviewFlag =
-    screenMixedPaidCaregiver({ ...r, freeText: r.diagnosis }).flag ??
-    paidCaregiverDiagnosisFlag(r.diagnosis, r.seekingPaidCaregiver);
-  // Young child + paid request that was allowed through (skilled equipment or
-  // a scoring mobility need): say why, so staff confirm it at the assessment.
-  // A request that fails the same screen is refused in POST before we get here.
-  const ageFlag = screenYoungPaidCaregiver(r).cleared;
-
-  // Which GAPP service line the family's answers point to, and whether that
-  // disagrees with the care need they selected. Advisory: it drives the board's
-  // partner matching and flags the card, it never decides eligibility (which
-  // Alliant determines on medical necessity, GAPP manual §702.1.1).
-  // Who is asking to be paid (guardianship / not-the-applicant notes), and a
-  // paid request that reports behaviors needing help to manage.
-  const relationship = screenCaregiverRelationship(r);
-  const behaviorFlag = highBehaviorPaidFlag(r);
-
-  const inferred = inferService(r);
-  const inferredValue = inferred.service
-    ? `${SERVICE_LABEL[inferred.service]} (${inferred.reason})`
-    : '';
-
-  // A form built against a different catalog than this one is speaking a
-  // vocabulary we may not fully understand, so say so on the card rather than
-  // silently dropping codes we don't recognize.
-  const catalogDrift =
-    r.catalogVersion && r.catalogVersion !== CATALOG_VERSION
-      ? `Submitted by a form using catalog ${r.catalogVersion}; this portal expects ${CATALOG_VERSION}. Some answers may be missing.`
-      : null;
-
+  const answers = payload.referral ?? {};
   return {
     source: 'gapp-website',
     externalId: payload.id,
-    clientName: r.fullName ?? '',
-    clientEmail: r.emailAddress ?? '',
-    clientPhone: r.phoneNumber ?? '',
-    county: r.county ?? '',
-    program: 'GAPP - Georgia Pediatric Program',
-    referrerName: r.submitterName || undefined,
-    service: inferred.service,
-    details: [
-      ...(reviewFlag ? [{ label: '⚠ Review', value: reviewFlag }] : []),
-      ...(ageFlag ? [{ label: '⚠ Young child', value: ageFlag }] : []),
-      ...(relationship.flag ? [{ label: '⚠ Relationship', value: relationship.flag }] : []),
-      ...(behaviorFlag ? [{ label: '⚠ Behavior', value: behaviorFlag }] : []),
-      ...(inferred.conflict
-        ? [{ label: '⚠ Care need unclear', value: inferred.conflict }]
-        : []),
-      ...(catalogDrift ? [{ label: '⚠ Form version', value: catalogDrift }] : []),
-      { label: 'Relationship to child', value: relationshipLabel(r.relationship) },
-      { label: 'Date of birth', value: formatDateUS(r.dob ?? '') },
-      { label: 'Age', value: ageLabel(r.dob) },
-      { label: 'Address', value: address },
-      { label: "Member's Medicaid ID", value: medicaid },
-      { label: 'Diagnosis', value: r.diagnosis ?? '' },
-      { label: 'Equipment & daily care', value: equipmentLabels(r.equipment).join(', ') },
-      { label: 'Behavior risk', value: behaviorRiskLabel(r.behaviorRisk) },
-      { label: 'Current services', value: currentServiceLabels(r.currentServices).join(', ') },
-      { label: 'Comments', value: r.comments ?? '' },
-      {
-        label: 'Primary care need',
-        value: CARE_LABEL[r.careNeeds ?? ''] ?? '',
-      },
-      { label: 'Inferred service need', value: inferredValue },
-      { label: 'Seeking paid caregiver', value: seekingValue },
-      ...(r.wantsAgencyStaff
-        ? [{ label: 'Wants agency staff in the home', value: r.wantsAgencyStaff === 'yes' ? 'Yes' : 'No' }]
-        : []),
-      ...(relationship.asksGuardianship
-        ? [{
-            label: 'Legal guardianship',
-            value: r.hasGuardianship === 'yes' ? 'Yes' : r.hasGuardianship === 'no' ? 'No' : '',
-          }]
-        : []),
-      ...(r.seekingPaidCaregiver === 'yes' && r.paidCareBasis
-        ? [{ label: 'Hands-on care mainly due to', value: paidCareBasisLabel(r.paidCareBasis) }]
-        : []),
-    ],
+    ...buildGappReferral(answers),
+    intakeAnswers: answers,
   };
-}
-
-// Same rules, same shared functions, same order as the GAPP site's form and
-// route (src/app/api/referral/route.ts there).
-function paidCaregiverRefusal(
-  r: NonNullable<IncomingPayload['referral']>
-): { code: string; reason: string } | null {
-  if (r.seekingPaidCaregiver !== 'yes') return null;
-  const behavioral = screenBehavioralPaidCaregiver({ ...r, freeText: r.diagnosis });
-  if (behavioral) {
-    return { code: 'behavioral-paid-caregiver', reason: behavioral };
-  }
-  const youngChild = screenYoungPaidCaregiver(r);
-  if (youngChild.block) {
-    return { code: 'young-child-paid-caregiver', reason: youngChild.block };
-  }
-  const mixed = screenMixedPaidCaregiver(r);
-  if (mixed.block) {
-    return { code: 'mixed-paid-caregiver', reason: mixed.block };
-  }
-  const relationship = screenCaregiverRelationship(r);
-  if (relationship.block) {
-    return { code: 'foster-paid-caregiver', reason: relationship.block };
-  }
-  return null;
 }
 
 export async function POST(req: Request) {
@@ -285,10 +85,7 @@ export async function POST(req: Request) {
   // rather than an outage and does not fire its portal-down fallback email.
   // Declining agency staff is refused whether or not pay is sought, so it
   // runs after (and outside) the paid-only checks, matching the forms.
-  const staff = screenAgencyStaff(payload.referral ?? {});
-  const refusal =
-    paidCaregiverRefusal(payload.referral ?? {}) ??
-    (staff ? { code: 'no-agency-staff', reason: staff } : null);
+  const refusal = gappRefusal(payload.referral ?? {});
   if (refusal) {
     return NextResponse.json(
       { error: refusal.reason, refused: refusal.code },

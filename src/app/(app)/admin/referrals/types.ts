@@ -103,6 +103,8 @@ export interface Referral {
   convertedAt?: string | null;
   /** A phone referral's form answers, for Edit Details. */
   phoneIntake?: PhoneIntake | null;
+  /** A website referral's answers as sent (from 10/2026), for screened edits. */
+  intakeAnswers?: unknown;
 }
 
 /**
