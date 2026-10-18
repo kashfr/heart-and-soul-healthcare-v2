@@ -27,12 +27,17 @@ export async function undoReferralPpot(p: {
     if (documentRevision(String(received.storagePath), String(received.revisionId || '')) !== p.revision) {
       throw new ReferralDocumentError('The PDF changed. Refresh and review the latest copy before undoing its filing.', 409);
     }
+    // An Appendix T uploaded on the card has no fax behind it; one filed from
+    // the Fax Center must still be linked to the fax it came from.
+    const uploaded = received.source === 'upload';
     const faxId = String(received.inboundFaxId || '');
-    if (!/^(up_)?[A-Za-z0-9_-]{1,40}$/.test(faxId)) throw new ReferralDocumentError('The original fax link is missing. No changes were made.', 409);
-    const inboundRef = db.collection('verbalOrderInbound').doc(faxId);
-    const inbound = await tx.get(inboundRef);
-    if (!inbound.exists || inbound.data()?.status !== 'filed' || inbound.data()?.matchedPpotKey !== key || inbound.data()?.filedDocumentId) {
-      throw new ReferralDocumentError('The fax filing has changed. Refresh before trying again.', 409);
+    const inboundRef = uploaded ? null : db.collection('verbalOrderInbound').doc(faxId);
+    if (!uploaded) {
+      if (!/^(up_)?[A-Za-z0-9_-]{1,40}$/.test(faxId)) throw new ReferralDocumentError('The original fax link is missing. No changes were made.', 409);
+      const inbound = await tx.get(inboundRef!);
+      if (!inbound.exists || inbound.data()?.status !== 'filed' || inbound.data()?.matchedPpotKey !== key || inbound.data()?.filedDocumentId) {
+        throw new ReferralDocumentError('The fax filing has changed. Refresh before trying again.', 409);
+      }
     }
     const at = FieldValue.serverTimestamp();
     // Reuse immutable bytes, including any replacement/trimmed copy. All future
@@ -51,14 +56,16 @@ export async function undoReferralPpot(p: {
     // Preserve original sent date and reminder/escalation history. Future cron
     // checks may resume follow-ups; this action never sends a fax itself.
     tx.update(requestRef, { status: 'sent', received: null, listHidden: false });
-    tx.update(inboundRef, {
-      matchedPpotKey: FieldValue.delete(), filedReferralId: p.referralId, filedDocumentId: documentRef.id,
-      filedAt: at, filedBy: p.by.uid, filedByName: p.by.name,
-      filingBy: FieldValue.delete(), filingAt: FieldValue.delete(),
-    });
+    if (inboundRef) {
+      tx.update(inboundRef, {
+        matchedPpotKey: FieldValue.delete(), filedReferralId: p.referralId, filedDocumentId: documentRef.id,
+        filedAt: at, filedBy: p.by.uid, filedByName: p.by.name,
+        filingBy: FieldValue.delete(), filingAt: FieldValue.delete(),
+      });
+    }
     tx.update(referralRef, { updatedAt: at });
     tx.set(referralRef.collection('activity').doc(documentRef.id), {
-      type: 'note', text: `Signed PPOT filing undone; fax refiled as "${p.title.trim()}" (${p.category}). PPOT request returned to Waiting on Physicians.`,
+      type: 'note', text: `Signed PPOT filing undone; ${uploaded ? 'upload' : 'fax'} refiled as "${p.title.trim()}" (${p.category}). PPOT request returned to Waiting on Physicians.`,
       at, byUid: p.by.uid, byName: p.by.name, byRole: p.by.role,
     });
     return documentRef.id;

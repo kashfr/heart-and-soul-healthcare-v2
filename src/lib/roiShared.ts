@@ -19,10 +19,36 @@ import { getProgram } from './programs';
 import { CHOA, choaInformation, validateChoaRequest, type ChoaField, type ChoaRequest } from './choaRoi';
 
 export const ROI_FORMS = [
-  { id: 'dbhdd', label: 'DBHDD release of information', blankPath: '/forms/dbhdd-roi-attachment-a.pdf' },
-  { id: 'choa', label: 'CHOA medical records request', blankPath: '/forms/choa-medical-records-authorization.pdf' },
+  { id: 'dbhdd', label: 'DBHDD release of information', blankPath: '/forms/dbhdd-roi-attachment-a.pdf', outside: false },
+  { id: 'choa', label: 'CHOA medical records request', blankPath: '/forms/choa-medical-records-authorization.pdf', outside: false },
+  // Signed elsewhere (PandaDoc from our own template, the family, another
+  // agency): nothing to prepare, so the signed copy is recorded directly and
+  // tracked like any other release.
+  { id: 'ga-hipaa', label: 'Georgia HIPAA authorization (signed elsewhere)', blankPath: '', outside: true },
+  { id: 'outside', label: 'Other release (signed elsewhere)', blankPath: '', outside: true },
 ] as const;
 export type RoiFormType = typeof ROI_FORMS[number]['id'];
+
+/** A release signed outside the portal: recorded with its signed copy, never prepared here. */
+export function isOutsideRoi(formType: string | undefined): boolean {
+  return formType === 'ga-hipaa' || formType === 'outside';
+}
+
+/** How each form names itself in the fax introduction letter. */
+export const ROI_AUTHORIZATION_NAME: Record<RoiFormType, string> = {
+  dbhdd: 'Authorization for Release of Information (DBHDD Policy 23-110, Attachment A)',
+  choa: "Children's Healthcare of Atlanta Authorization to Release/Obtain Protected Health Information",
+  'ga-hipaa': 'Georgia HIPAA Compliant Authorization for the Release of Patient Information (45 CFR 164.508)',
+  outside: 'Authorization for Release of Information',
+};
+
+/** Short label for the release list. */
+export const ROI_FORM_SHORT: Record<RoiFormType, string> = {
+  dbhdd: 'DBHDD release',
+  choa: 'CHOA medical records request',
+  'ga-hipaa': 'Georgia HIPAA authorization',
+  outside: 'outside release',
+};
 
 /** Heart and Soul as a party on the form and the letterhead. */
 export const AGENCY = {
@@ -67,9 +93,11 @@ export interface RoiInput {
   information: string;
   purpose: string;
   duration: RoiDuration;
+  /** 'outside' releases only: when it expires as written on it ('' = no end date). */
+  outsideExpiresOn?: string;
 }
 
-export type RoiField = ChoaField | 'referralDob' | 'formType' | 'patientId' | 'direction' | 'facilityName' | 'facilityAddress' | 'facilityPhone' | 'facilityFax' | 'information' | 'purpose' | 'duration';
+export type RoiField = ChoaField | 'referralDob' | 'formType' | 'signedDate' | 'signedPdf' | 'outsideExpiresOn' | 'patientId' | 'direction' | 'facilityName' | 'facilityAddress' | 'facilityPhone' | 'facilityFax' | 'information' | 'purpose' | 'duration';
 export type RoiErrors = Partial<Record<RoiField, string>>;
 
 export const DEFAULT_ROI_INFORMATION =
@@ -90,7 +118,24 @@ function phoneDigits(raw: string): string {
 export function validateRoiInput(raw: Record<string, unknown>): { errors: RoiErrors; value: RoiInput | null } {
   const e: RoiErrors = {};
   const formType = raw.formType ?? 'dbhdd';
-  if (formType !== 'dbhdd' && formType !== 'choa') e.formType = 'Choose a supported authorization form.';
+  if (!ROI_FORMS.some((f) => f.id === formType)) e.formType = 'Choose a supported authorization form.';
+  const outside = isOutsideRoi(String(formType));
+  let outsideExpiresOn = '';
+  if (outside) {
+    // Nothing is printed, so the defaults just describe what the signed form
+    // says; its own wording governs. Duration is not a choice here: the
+    // Georgia HIPAA form runs two years, an outside one has its own date.
+    raw = {
+      ...raw,
+      information: String(raw.information || '').trim() || 'As listed on the signed authorization.',
+      purpose: String(raw.purpose || '').trim() || 'As listed on the signed authorization.',
+      duration: 'transactions',
+    };
+    if (formType === 'outside') {
+      outsideExpiresOn = String(raw.outsideExpiresOn || '').trim();
+      if (outsideExpiresOn && !/^\d{4}-\d{2}-\d{2}$/.test(outsideExpiresOn)) e.outsideExpiresOn = 'Enter a valid date, or leave it blank if it has no end date.';
+    }
+  }
   let choa: ChoaRequest | undefined;
   if (formType === 'choa') {
     const checked = validateChoaRequest(raw.choa);
@@ -133,7 +178,7 @@ export function validateRoiInput(raw: Record<string, unknown>): { errors: RoiErr
   if (Object.keys(e).length > 0) return { errors: e, value: null };
   return {
     errors: e,
-    value: { formType: formType as RoiFormType, ...(choa ? { choa } : {}), patientId, ...(referralId ? { referralId, referralDob } : {}), direction: direction as RoiDirection, facility: { name, address, phone, fax }, information, purpose, duration: duration as RoiDuration },
+    value: { formType: formType as RoiFormType, ...(choa ? { choa } : {}), ...(formType === 'outside' ? { outsideExpiresOn } : {}), patientId, ...(referralId ? { referralId, referralDob } : {}), direction: direction as RoiDirection, facility: { name, address, phone, fax }, information, purpose, duration: duration as RoiDuration },
   };
 }
 
@@ -167,6 +212,21 @@ export function roiExpiresOn(signedYmd: string, duration: RoiDuration): string {
   return `${y + 1}-${String(m).padStart(2, '0')}-${String(Math.min(d, last)).padStart(2, '0')}`;
 }
 
+/** Georgia HIPAA authorization: "in force and effect until two years from date of execution". */
+export function twoYearsFrom(signedYmd: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(signedYmd)) return '';
+  const [y, m, d] = signedYmd.split('-').map(Number);
+  const last = new Date(Date.UTC(y + 2, m, 0)).getUTCDate();
+  return `${y + 2}-${String(m).padStart(2, '0')}-${String(Math.min(d, last)).padStart(2, '0')}`;
+}
+
+/** When a signed release stops being good, for any form ('' = no fixed date). */
+export function roiExpiryFor(p: { formType?: RoiFormType; duration: RoiDuration; outsideExpiresOn?: string }, signedYmd: string): string {
+  if (p.formType === 'ga-hipaa') return twoYearsFrom(signedYmd);
+  if (p.formType === 'outside') return p.outsideExpiresOn || '';
+  return roiExpiresOn(signedYmd, p.duration);
+}
+
 /**
  * The introduction letter that goes in front of the signed form when it is
  * faxed: who we are, what we do for this member, and why the facility is
@@ -181,9 +241,7 @@ export function roiIntroParagraphs(p: { memberName: string; program: string | un
       : p.direction === 'from-us'
         ? `allows Heart and Soul Healthcare to share ${p.memberName}'s health information with ${p.facilityName}`
         : `allows ${p.facilityName} and Heart and Soul Healthcare to share ${p.memberName}'s health information with each other`;
-  const authorization = p.formType === 'choa'
-    ? "Children's Healthcare of Atlanta Authorization to Release/Obtain Protected Health Information"
-    : 'Authorization for Release of Information (DBHDD Policy 23-110, Attachment A)';
+  const authorization = ROI_AUTHORIZATION_NAME[p.formType ?? 'dbhdd'];
   return [
     p.isReferral
       ? `Heart and Soul Healthcare is a Georgia home care agency that provides skilled nursing services${under}. We received a referral for ${p.memberName} and are requesting information to coordinate their care and evaluate the referral.`
