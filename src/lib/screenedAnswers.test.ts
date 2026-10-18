@@ -80,7 +80,8 @@ describe('editing screened answers', () => {
     const row = (l: string) => merged.find((d) => d.label === l)?.value;
     expect(row('Seeking paid caregiver')).toBe('Yes');
     expect(row("Member's Medicaid ID")).toBe('222120339644');
-    expect(merged.at(-1)).toEqual({ label: "Child's physician", value: 'Dr. Lin' });
+    expect(row("Child's physician")).toBe('Dr. Lin');
+    expect(merged.filter((d) => d.label === "Child's physician")).toHaveLength(1);
   });
 
   it('re-infers the service line unless staff had overridden it', () => {
@@ -96,5 +97,17 @@ describe('editing screened answers', () => {
       { label: 'Seeking paid caregiver', from: 'No', to: 'Yes' },
       { label: 'Relationship to child', from: 'Parent', to: 'Grandparent' },
     ]);
+  });
+});
+
+describe('GAPP site physician (optional)', () => {
+  it('lands on the card under the labels Create Client Record reads', async () => {
+    const { planFromReferral } = await import('./referralConvertShared');
+    const built = buildGappReferral({ ...gapp, physicianName: 'Anna M. Lawson, MD', physicianOffice: 'Pediatric Associates', physicianPhone: '(770) 277-6725', physicianFax: '(770) 277-9169' });
+    const plan = planFromReferral({ clientName: built.clientName, program: built.program, details: built.details });
+    expect(plan.clinical).toMatchObject({ physicianName: 'Anna M. Lawson, MD', physicianPhone: '7702776725', physicianFax: '7702779169' });
+  });
+  it('adds nothing when left blank', () => {
+    expect(buildGappReferral(gapp).details.filter((d) => /physician/i.test(d.label) && d.value)).toEqual([]);
   });
 });
