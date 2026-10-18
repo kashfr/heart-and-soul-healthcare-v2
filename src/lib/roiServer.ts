@@ -20,7 +20,10 @@ import { addReferralDocument, moveReferralDocumentsToPatient } from './referralD
 import RoiLetterPDF from './pdf/RoiLetterPDF';
 import {
   defaultRoiFaxNote,
+  describeRoiEdit,
   isOutsideRoi,
+  validateRoiEdit,
+  type RoiEditField,
   ROI_DIRECTION_LABEL,
   ROI_FORMS,
   ROI_FORM_SHORT,
@@ -92,6 +95,7 @@ function serialize(id: string, x: FirebaseFirestore.DocumentData): RoiRecord {
       byName: String(f.byName || ''),
     })),
     hidden: x.hidden === true,
+    ...(x.formType === 'outside' ? { outsideExpiresOn: String(x.outsideExpiresOn || '') } : {}),
   };
 }
 
@@ -409,4 +413,51 @@ export async function recordOutsideRoi(p: { input: RoiInput; pdf: Buffer; signed
     await adminDb().collection(COL).doc(created.roi.id).update({ status: 'cancelled', hidden: true, cancelledAt: FieldValue.serverTimestamp(), cancelledReason: 'signed copy failed to file' });
   }
   return filed;
+}
+
+/**
+ * Correct a release (see roiEditableFields for what may change). Fields the
+ * release doesn't allow are ignored. A new signed date (or, for an outside
+ * release, a new expiration) recomputes when it expires. Every edit is kept
+ * on the record (`edits`) and noted on the referral's timeline; client
+ * releases carry the audit actor, so the client's activity history shows it.
+ */
+export async function editRoi(
+  id: string,
+  raw: Partial<Record<RoiEditField, unknown>>,
+  caller: AuthedCaller,
+): Promise<{ ok: true; roi: RoiRecord; changed: number } | { ok: false; status: number; error: string; fields?: Partial<Record<RoiEditField, string>> }> {
+  const ref = adminDb().collection(COL).doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) return { ok: false, status: 404, error: 'That release was not found.' };
+  const x = snap.data() || {};
+  const r = serialize(id, x);
+  if (r.status === 'cancelled') return { ok: false, status: 409, error: 'A cancelled release can’t be edited.' };
+  const { errors, changes } = validateRoiEdit(r, raw, agencyTodayISO());
+  if (Object.keys(errors).length) return { ok: false, status: 400, error: Object.values(errors)[0] as string, fields: errors };
+  const keys = Object.keys(changes) as RoiEditField[];
+  if (keys.length === 0) return { ok: true, roi: r, changed: 0 };
+
+  const byName = caller.profile.displayName || caller.email || '';
+  const facility = {
+    ...r.facility,
+    ...(changes.facilityName !== undefined ? { name: changes.facilityName } : {}),
+    ...(changes.facilityAddress !== undefined ? { address: changes.facilityAddress } : {}),
+    ...(changes.facilityPhone !== undefined ? { phone: changes.facilityPhone } : {}),
+    ...(changes.facilityFax !== undefined ? { fax: changes.facilityFax } : {}),
+  };
+  const update: Record<string, unknown> = { ...clientAuditActor(caller), facility };
+  if (changes.information !== undefined) update.information = changes.information;
+  if (changes.purpose !== undefined) update.purpose = changes.purpose;
+  if (changes.outsideExpiresOn !== undefined) update.outsideExpiresOn = changes.outsideExpiresOn;
+  if ((changes.signedDate !== undefined || changes.outsideExpiresOn !== undefined) && r.signed) {
+    const signedDate = changes.signedDate ?? r.signed.signedDate;
+    update['signed.signedDate'] = signedDate;
+    update['signed.expiresOn'] = roiExpiryFor({ formType: r.formType, duration: r.duration, outsideExpiresOn: changes.outsideExpiresOn ?? String(x.outsideExpiresOn || '') }, signedDate);
+  }
+  const text = describeRoiEdit(r, changes);
+  update.edits = FieldValue.arrayUnion({ at: new Date().toISOString(), byUid: caller.uid, byName, text });
+  await ref.update(update);
+  if (r.referralId) await logRoiActivity(r.referralId, text, caller);
+  return { ok: true, roi: serialize(id, (await ref.get()).data() || {}), changed: keys.length };
 }

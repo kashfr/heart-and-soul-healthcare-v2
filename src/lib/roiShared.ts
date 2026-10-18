@@ -271,6 +271,8 @@ export interface RoiRecord {
   createdByName: string;
   /** Filled once the signed copy is uploaded. */
   signed: { documentId: string; signedDate: string; expiresOn: string; byName: string } | null;
+  /** 'outside' releases: the expiration written on the form ('' = none). */
+  outsideExpiresOn?: string;
   faxes: Array<{ faxId: string; toNumber: string; recipientName: string; at: string; byName: string }>;
   hidden: boolean;
 }
@@ -298,4 +300,119 @@ export function defaultRoiFaxNote(p: { memberName: string; direction: RoiDirecti
     : `Please fax the records listed on the release to Heart and Soul Healthcare ${where}.`;
   const also = p.direction === 'both' ? ` ${keepOnFile}` : '';
   return `${intro} ${ask}${also} Questions: please call us at (678) 644-0337.`;
+}
+
+// --- Editing a release -------------------------------------------------------
+
+export type RoiEditField = 'facilityName' | 'facilityAddress' | 'facilityPhone' | 'facilityFax' | 'information' | 'purpose' | 'signedDate' | 'outsideExpiresOn';
+
+export const ROI_EDIT_LABEL: Record<RoiEditField, string> = {
+  facilityName: 'Facility',
+  facilityAddress: 'Address',
+  facilityPhone: 'Phone',
+  facilityFax: 'Fax',
+  information: 'Information that may be shared',
+  purpose: 'Purpose',
+  signedDate: 'Date signed',
+  outsideExpiresOn: 'Expires on',
+};
+
+/**
+ * What can be changed on a release without changing what someone signed.
+ *   - Phone and fax, always: how we reach the facility, not what was
+ *     authorized. (A DBHDD form prints them; the signed copy keeps what it
+ *     said, and the record gets the corrected number for faxing.)
+ *   - A release signed elsewhere: everything we recorded about it, since the
+ *     record is our transcription of a form we never printed.
+ *   - A DBHDD release still waiting on a signature: the facility and wording,
+ *     since the form is reprinted from the record. CHOA's facility is fixed.
+ * Once a prepared form is signed, its name, address, and wording are on the
+ * signed copy: cancel and prepare a new release to change those.
+ */
+export function roiEditableFields(r: Pick<RoiRecord, 'formType' | 'status'>): RoiEditField[] {
+  if (r.status === 'cancelled') return [];
+  if (isOutsideRoi(r.formType)) {
+    return ['facilityName', 'facilityAddress', 'facilityPhone', 'facilityFax', 'information', 'purpose', 'signedDate', ...(r.formType === 'outside' ? ['outsideExpiresOn' as const] : [])];
+  }
+  if (r.formType !== 'choa' && r.status === 'awaiting-signature') {
+    return ['facilityName', 'facilityAddress', 'facilityPhone', 'facilityFax', 'information', 'purpose'];
+  }
+  return ['facilityPhone', 'facilityFax'];
+}
+
+/** The release's current values for the edit form (phones as 10 digits). */
+export function roiEditValues(r: RoiRecord): Record<RoiEditField, string> {
+  return {
+    facilityName: r.facility.name,
+    facilityAddress: r.facility.address,
+    facilityPhone: r.facility.phone,
+    facilityFax: r.facility.fax,
+    information: r.information,
+    purpose: r.purpose,
+    signedDate: r.signed?.signedDate || '',
+    outsideExpiresOn: r.outsideExpiresOn || '',
+  };
+}
+
+/**
+ * Check an edit against what this release allows. Fields it doesn't allow are
+ * ignored; the clean values come back normalized (phones as 10 digits).
+ */
+export function validateRoiEdit(
+  r: RoiRecord,
+  raw: Partial<Record<RoiEditField, unknown>>,
+  today: string,
+): { errors: Partial<Record<RoiEditField, string>>; changes: Partial<Record<RoiEditField, string>> } {
+  const allowed = roiEditableFields(r);
+  const current = roiEditValues(r);
+  const errors: Partial<Record<RoiEditField, string>> = {};
+  const changes: Partial<Record<RoiEditField, string>> = {};
+  const next = { ...current } as Record<RoiEditField, string>;
+  for (const k of allowed) {
+    if (raw[k] === undefined) continue;
+    const v = String(raw[k] ?? '').trim();
+    next[k] = k === 'facilityPhone' || k === 'facilityFax' ? (v ? phoneDigits(v) || `!${v}` : '') : v;
+  }
+  if (allowed.includes('facilityName')) {
+    if (!next.facilityName) errors.facilityName = 'Enter the facility or agency name.';
+    else if (next.facilityName.length > ROI_TEXT_MAX.name) errors.facilityName = `Keep the name under ${ROI_TEXT_MAX.name} characters.`;
+    if (next.facilityAddress.length > ROI_TEXT_MAX.address) errors.facilityAddress = `Keep the address under ${ROI_TEXT_MAX.address} characters.`;
+  }
+  if (next.facilityPhone.startsWith('!')) errors.facilityPhone = 'Enter a 10-digit phone number, or leave it blank.';
+  if (next.facilityFax.startsWith('!')) errors.facilityFax = 'Enter a 10-digit fax number, or leave it blank.';
+  const outside = isOutsideRoi(r.formType);
+  if (allowed.includes('information')) {
+    if (!next.information && !outside) errors.information = 'Say what information may be shared.';
+    else if (next.information.length > ROI_TEXT_MAX.information) errors.information = `Keep this under ${ROI_TEXT_MAX.information} characters.`;
+    if (!next.purpose && !outside) errors.purpose = 'Say why the information is being shared.';
+    else if (next.purpose.length > ROI_TEXT_MAX.purpose) errors.purpose = `Keep this under ${ROI_TEXT_MAX.purpose} characters.`;
+  }
+  if (allowed.includes('signedDate')) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(next.signedDate)) errors.signedDate = 'Enter the date it was signed.';
+    else if (next.signedDate > today) errors.signedDate = 'The signed date cannot be in the future.';
+  }
+  if (allowed.includes('outsideExpiresOn') && next.outsideExpiresOn) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(next.outsideExpiresOn)) errors.outsideExpiresOn = 'Enter a valid date, or leave it blank if it has no end date.';
+    else if (next.signedDate && next.outsideExpiresOn <= next.signedDate) errors.outsideExpiresOn = 'The expiration date must be after the date it was signed.';
+  }
+  for (const k of allowed) if (next[k] !== current[k]) changes[k] = next[k];
+  if (outside) {
+    // Blank wording on a release signed elsewhere reads as "see the form".
+    if (changes.information === '') changes.information = 'As listed on the signed authorization.';
+    if (changes.purpose === '') changes.purpose = 'As listed on the signed authorization.';
+  }
+  return { errors, changes };
+}
+
+/** Old → new for the activity log, phones and dates formatted. */
+export function describeRoiEdit(r: RoiRecord, changes: Partial<Record<RoiEditField, string>>): string {
+  const before = roiEditValues(r);
+  const show = (k: RoiEditField, v: string) => {
+    if (!v) return '(blank)';
+    if (k === 'facilityPhone' || k === 'facilityFax') return v.length === 10 ? `(${v.slice(0, 3)}) ${v.slice(3, 6)}-${v.slice(6)}` : v;
+    if (k === 'signedDate' || k === 'outsideExpiresOn') { const [y, m, d] = v.split('-'); return `${m}/${d}/${y}`; }
+    return `"${v.length > 80 ? `${v.slice(0, 77)}…` : v}"`;
+  };
+  const parts = (Object.keys(changes) as RoiEditField[]).map((k) => `${ROI_EDIT_LABEL[k]} ${show(k, before[k])} → ${show(k, changes[k] ?? '')}`);
+  return `Release of information for ${r.facility.name} edited: ${parts.join('; ')}.`;
 }

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
-import { Ban, Eye, EyeOff, FileSignature, FileUp, Search, Send, ShieldCheck, Undo2, X } from 'lucide-react';
+import { Ban, Eye, EyeOff, FileSignature, FileUp, Pencil, Search, Send, ShieldCheck, Undo2, X } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import PdfPreviewModal from '@/components/PdfPreviewModal';
 import { formatDateUS } from '@/lib/dateFormat';
@@ -19,6 +19,11 @@ import { roiFacilityOptions, type RoiFacilityOption } from '@/lib/roiFacilityOpt
 import {
   ROI_FORMS,
   ROI_FORM_SHORT,
+  ROI_EDIT_LABEL,
+  roiEditableFields,
+  roiEditValues,
+  validateRoiEdit,
+  type RoiEditField,
   isOutsideRoi,
   twoYearsFrom,
   DEFAULT_ROI_INFORMATION,
@@ -90,6 +95,7 @@ export default function RoiSection({
   const [showHidden, setShowHidden] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [uploading, setUploading] = useState<RoiRecord | null>(null);
+  const [editing, setEditing] = useState<RoiRecord | null>(null);
   const [faxing, setFaxing] = useState<RoiRecord | null>(null);
   const [preview, setPreview] = useState<{ title: string; url: string } | null>(null);
 
@@ -247,6 +253,11 @@ export default function RoiSection({
                           </button>
                         </>
                       )}
+                      {roiEditableFields(r).length > 0 && (
+                        <button onClick={() => setEditing(r)} className={`${btn} ${btnSm}`} style={{ marginLeft: 6 }} title="Correct the facility's details">
+                          <Pencil size={14} /> Edit
+                        </button>
+                      )}
                       {r.status !== 'awaiting-signature' &&
                         (r.hidden ? (
                           <button onClick={() => act(r, 'unhide')} className={`${btn} ${btnSm}`} style={{ marginLeft: 6 }} disabled={busy === r.id}>
@@ -299,6 +310,18 @@ export default function RoiSection({
             setUploading(null);
             await load();
             setNotice(`The signed release for ${roi.memberName} is filed under the ${referralId ? 'referral' : 'client'}'s Documents (Consent / Release). Use Fax to facility to send it with the introduction letter.`);
+          }}
+        />
+      )}
+      {editing && (
+        <EditRoiModal
+          roi={editing}
+          today={today}
+          onClose={() => setEditing(null)}
+          onSaved={async (roi, changed) => {
+            setEditing(null);
+            await load();
+            setNotice(changed ? `The release for ${roi.memberName} with ${roi.facility.name} is updated.` : 'Nothing changed.');
           }}
         />
       )}
@@ -828,6 +851,137 @@ function FaxModal({ roi, onClose, onSent }: { roi: RoiRecord; onClose: () => voi
           <button type="button" onClick={onClose} className={btn} disabled={busy}>Cancel</button>
           <button type="submit" className={btnPrimary} disabled={busy}>
             <Send size={14} /> {busy ? 'Sending…' : 'Fax It'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+const EDIT_ORDER: readonly RoiEditField[] = ['facilityName', 'facilityAddress', 'facilityPhone', 'facilityFax', 'information', 'purpose', 'signedDate', 'outsideExpiresOn'];
+const editId = (k: RoiEditField) => `roi-edit-${k}`;
+
+/** Edit a release: only what roiEditableFields allows for this one. */
+function EditRoiModal({ roi, today, onClose, onSaved }: { roi: RoiRecord; today: string; onClose: () => void; onSaved: (roi: RoiRecord, changed: number) => void }) {
+  const allowed = roiEditableFields(roi);
+  const start = roiEditValues(roi);
+  const [values, setValues] = useState<Record<RoiEditField, string>>({
+    ...start,
+    facilityPhone: start.facilityPhone ? formatUSPhone(start.facilityPhone) : '',
+    facilityFax: start.facilityFax ? formatUSPhone(start.facilityFax) : '',
+  });
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<RoiEditField, string>>>({});
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const set = (k: RoiEditField, v: string) => {
+    setValues((p) => ({ ...p, [k]: k === 'facilityPhone' || k === 'facilityFax' ? formatUSPhone(v) : v }));
+    if (fieldErrors[k]) setFieldErrors((p) => ({ ...p, [k]: undefined }));
+  };
+  const has = (k: RoiEditField) => allowed.includes(k);
+  const fieldErr = (k: RoiEditField) => (fieldErrors[k] ? FIELD_ERROR_STYLE : null);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (busy) return;
+    setErr(null);
+    const body = Object.fromEntries(allowed.map((k) => [k, values[k]]));
+    if (!applyFieldErrors(validateRoiEdit(roi, body, today).errors, EDIT_ORDER, setFieldErrors, editId)) return;
+    setBusy(true);
+    try {
+      const res = await authedFetch(`/api/fax/roi/${roi.id}`, { method: 'PATCH', body: JSON.stringify(body) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (data.fields && Object.keys(data.fields).length) applyFieldErrors(data.fields, EDIT_ORDER, setFieldErrors, editId);
+        throw new Error(data.error || `Request failed (${res.status}).`);
+      }
+      onSaved(data.roi, Number(data.changed || 0));
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : 'Could not save the changes.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const signedPrepared = !isOutsideRoi(roi.formType) && roi.status === 'signed';
+  return (
+    <Modal title="Edit Release of Information" onClose={onClose} busy={busy}>
+      <form onSubmit={submit} noValidate style={formStyle}>
+        <div style={bodyStyle}>
+          <p style={leadStyle}>
+            {roi.memberName}, {roi.facility.name}.{' '}
+            {isOutsideRoi(roi.formType)
+              ? 'This release was signed elsewhere, so everything recorded here can be corrected. The signed PDF itself does not change.'
+              : signedPrepared || roi.formType === 'choa'
+                ? 'Only the phone and fax can be changed: the rest is on the signed form. To change the facility or wording, cancel this one and prepare a new release.'
+                : 'Not signed yet, so the form is reprinted with these changes. Download it again before sending it for signature.'}{' '}
+            Changes are noted on the activity history.
+          </p>
+          {has('facilityName') && (
+            <label style={fieldStyle} id={editId('facilityName')}>
+              <span style={labelStyle}>{ROI_EDIT_LABEL.facilityName}</span>
+              <input value={values.facilityName} maxLength={ROI_TEXT_MAX.name} onChange={(e) => set('facilityName', e.target.value)} style={{ ...inp, ...fieldErr('facilityName') }} />
+              <FieldError message={fieldErrors.facilityName} />
+            </label>
+          )}
+          {has('facilityAddress') && (
+            <label style={fieldStyle} id={editId('facilityAddress')}>
+              <span style={labelStyle}>{ROI_EDIT_LABEL.facilityAddress} <span style={{ fontWeight: 400 }}>(optional)</span></span>
+              <input value={values.facilityAddress} maxLength={ROI_TEXT_MAX.address} onChange={(e) => set('facilityAddress', e.target.value)} style={{ ...inp, ...fieldErr('facilityAddress') }} />
+              <FieldError message={fieldErrors.facilityAddress} />
+            </label>
+          )}
+          <div style={twoColStyle}>
+            <label style={fieldStyle} id={editId('facilityPhone')}>
+              <span style={labelStyle}>{ROI_EDIT_LABEL.facilityPhone} <span style={{ fontWeight: 400 }}>(optional)</span></span>
+              <input type="tel" inputMode="tel" value={values.facilityPhone} onChange={(e) => set('facilityPhone', e.target.value)} style={{ ...inp, ...fieldErr('facilityPhone') }} placeholder="(404) 555-0101" />
+              <FieldError message={fieldErrors.facilityPhone} />
+            </label>
+            <label style={fieldStyle} id={editId('facilityFax')}>
+              <span style={labelStyle}>{ROI_EDIT_LABEL.facilityFax} <span style={{ fontWeight: 400 }}>(optional)</span></span>
+              <input type="tel" inputMode="tel" value={values.facilityFax} onChange={(e) => set('facilityFax', e.target.value)} style={{ ...inp, ...fieldErr('facilityFax') }} placeholder="(404) 555-0102" />
+              <FieldError message={fieldErrors.facilityFax} />
+            </label>
+          </div>
+          {has('information') && (
+            <label style={fieldStyle} id={editId('information')}>
+              <span style={labelStyle}>{ROI_EDIT_LABEL.information}</span>
+              <textarea value={values.information} maxLength={ROI_TEXT_MAX.information} onChange={(e) => set('information', e.target.value)} style={{ ...inp, minHeight: 56, resize: 'vertical', ...fieldErr('information') }} />
+              <FieldError message={fieldErrors.information} />
+            </label>
+          )}
+          {has('purpose') && (
+            <label style={fieldStyle} id={editId('purpose')}>
+              <span style={labelStyle}>{ROI_EDIT_LABEL.purpose}</span>
+              <textarea value={values.purpose} maxLength={ROI_TEXT_MAX.purpose} onChange={(e) => set('purpose', e.target.value)} style={{ ...inp, minHeight: 44, resize: 'vertical', ...fieldErr('purpose') }} />
+              <FieldError message={fieldErrors.purpose} />
+            </label>
+          )}
+          {(has('signedDate') || has('outsideExpiresOn')) && (
+            <div style={twoColStyle}>
+              {has('signedDate') && (
+                <label style={fieldStyle} id={editId('signedDate')}>
+                  <span style={labelStyle}>{ROI_EDIT_LABEL.signedDate}</span>
+                  <input type="date" value={values.signedDate} max={today} onChange={(e) => set('signedDate', e.target.value)} style={{ ...inp, ...fieldErr('signedDate') }} />
+                  {roi.formType === 'ga-hipaa' && values.signedDate && <span style={hintStyle}>Good through {formatDateUS(twoYearsFrom(values.signedDate))}.</span>}
+                  <FieldError message={fieldErrors.signedDate} />
+                </label>
+              )}
+              {has('outsideExpiresOn') && (
+                <label style={fieldStyle} id={editId('outsideExpiresOn')}>
+                  <span style={labelStyle}>{ROI_EDIT_LABEL.outsideExpiresOn} <span style={{ fontWeight: 400 }}>(optional)</span></span>
+                  <input type="date" value={values.outsideExpiresOn} min={values.signedDate || undefined} onChange={(e) => set('outsideExpiresOn', e.target.value)} style={{ ...inp, ...fieldErr('outsideExpiresOn') }} />
+                  <span style={hintStyle}>Leave blank if it has no end date.</span>
+                  <FieldError message={fieldErrors.outsideExpiresOn} />
+                </label>
+              )}
+            </div>
+          )}
+          {err && <div role="alert" style={errStyle}>{err}</div>}
+        </div>
+        <div style={footerStyle}>
+          <button type="button" onClick={onClose} className={btn} disabled={busy}>Cancel</button>
+          <button type="submit" className={btnPrimary} disabled={busy}>
+            <Pencil size={14} /> {busy ? 'Saving…' : 'Save Changes'}
           </button>
         </div>
       </form>

@@ -164,3 +164,17 @@ from signing, as the form states) and "Other release (signed elsewhere)"
 files its signed copy in one step (`recordOutsideRoi`), so it is tracked,
 expires, can be faxed with the introduction letter, and feeds File to Client
 suggestions like any other release.
+
+## Editing a release
+
+Every release that isn't cancelled has **Edit** in the list.
+`roiEditableFields` (src/lib/roiShared.ts) decides what can change without
+changing what someone signed: phone and fax always; everything recorded on a
+release signed elsewhere (including the signed date, and the expiration on an
+"Other" release, which recompute when it expires); the facility and wording
+of a DBHDD release still waiting on a signature (it is reprinted). A signed
+DBHDD or CHOA release keeps its name, address, and wording: cancel and prepare
+a new one to change those. `PATCH /api/fax/roi/[id]` (`editRoi`) ignores
+anything not allowed, keeps an `edits` history on the record, notes old and
+new values on the referral's timeline, and carries the audit actor so a
+client's activity history shows it. The filed PDF is never changed.
