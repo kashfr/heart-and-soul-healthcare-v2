@@ -221,6 +221,13 @@ async function loadPdf(bytes: Buffer): Promise<PDFDocument | null> {
   }
 }
 
+/** The filed copy's title, as fileSignedRoi writes it (and editRoi keeps in step). */
+function roiDocTitle(r: Pick<RoiRecord, 'formType' | 'direction'>, facilityName: string, signedDate: string, forClient: boolean): string {
+  const kind = isOutsideRoi(r.formType) ? ` (${ROI_FORM_SHORT[r.formType ?? 'dbhdd']})` : '';
+  const dir = forClient ? ` (${ROI_DIRECTION_LABEL[r.direction].toLowerCase()})` : '';
+  return `Release of Information${kind}: ${facilityName}${dir}, signed ${formatDateUS(signedDate)}`;
+}
+
 /**
  * File the signed copy (the PDF downloaded from PandaDoc, or a scan) under the
  * client's Documents and mark the release signed. Uploading again replaces
@@ -237,14 +244,13 @@ export async function fileSignedRoi(p: { id: string; pdf: Buffer; signedDate: st
 
   const byName = p.caller.profile.displayName || p.caller.email || '';
   const expiresOn = roiExpiryFor({ formType: r.formType, duration: r.duration, outsideExpiresOn: String(snap.data()?.outsideExpiresOn || '') }, p.signedDate);
-  const kind = isOutsideRoi(r.formType) ? ` (${ROI_FORM_SHORT[r.formType ?? 'dbhdd']})` : '';
   if (r.referralId) {
     const referral = await getReferral(r.referralId);
     if (!referral) return { ok: false, status: 404, error: 'That referral was not found.' };
     const fileName = `Release_of_Information_Signed_${formatDateUSFile(p.signedDate)}.pdf`;
     const by = { uid: p.caller.uid, name: byName, role: p.caller.role };
     const documentId = await addReferralDocument({ referralId: r.referralId, pdf: p.pdf, category: DOC_CATEGORY,
-      title: `Release of Information${kind}: ${r.facility.name}, signed ${formatDateUS(p.signedDate)}`, fileName, docDate: p.signedDate, by });
+      title: roiDocTitle(r, r.facility.name, p.signedDate, false), fileName, docDate: p.signedDate, by });
     const storagePath = `referrals/${r.referralId}/documents/${documentId}/${fileName}`;
     await ref.update({ status: 'signed', patientId: referral.patientId || '', signed: {
       documentId, storagePath, signedDate: p.signedDate, expiresOn, byUid: p.caller.uid, byName, at: new Date().toISOString(),
@@ -259,11 +265,10 @@ export async function fileSignedRoi(p: { id: string; pdf: Buffer; signedDate: st
   const fileName = `Release_of_Information_Signed_${formatDateUSFile(p.signedDate)}.pdf`;
   const storagePath = `patients/${r.patientId}/documents/${docRef.id}/${fileName}`;
   await adminBucket().file(storagePath).save(p.pdf, { contentType: 'application/pdf', resumable: false });
-  const dir = ROI_DIRECTION_LABEL[r.direction].toLowerCase();
   await docRef.set({
     patientId: r.patientId,
     category: DOC_CATEGORY,
-    title: `Release of Information${kind}: ${r.facility.name} (${dir}), signed ${formatDateUS(p.signedDate)}`,
+    title: roiDocTitle(r, r.facility.name, p.signedDate, true),
     fileName,
     storagePath,
     contentType: 'application/pdf',
@@ -458,6 +463,37 @@ export async function editRoi(
   const text = describeRoiEdit(r, changes);
   update.edits = FieldValue.arrayUnion({ at: new Date().toISOString(), byUid: caller.uid, byName, text });
   await ref.update(update);
+  if ((changes.facilityName !== undefined || changes.signedDate !== undefined) && r.signed?.documentId) {
+    await syncRoiDocument(r, changes.facilityName ?? r.facility.name, changes.signedDate ?? r.signed.signedDate).catch((err) => console.error('ROI edit: document title sync failed (non-fatal):', err));
+  }
   if (r.referralId) await logRoiActivity(r.referralId, text, caller);
   return { ok: true, roi: serialize(id, (await ref.get()).data() || {}), changed: keys.length };
+}
+
+/**
+ * After a release's facility or signed date is corrected, bring its filed
+ * copy's title and date along (on the referral, and the client's copy once
+ * converted). Only where they still read as the portal wrote them, so a title
+ * staff renamed by hand is left alone.
+ */
+async function syncRoiDocument(r: RoiRecord, facilityName: string, signedDate: string): Promise<void> {
+  const db = adminDb();
+  const oldDate = r.signed?.signedDate || '';
+  const apply = async (refPath: FirebaseFirestore.DocumentReference, forClient: boolean) => {
+    const snap = await refPath.get();
+    if (!snap.exists) return;
+    const d = snap.data() || {};
+    const patch: Record<string, unknown> = {};
+    if (String(d.title || '') === roiDocTitle(r, r.facility.name, oldDate, forClient)) patch.title = roiDocTitle(r, facilityName, signedDate, forClient);
+    if (String(d.docDate || '') === oldDate) patch.docDate = signedDate;
+    if (Object.keys(patch).length) await refPath.update(patch);
+  };
+  if (r.referralId) {
+    const refDoc = db.collection('referralDocuments').doc(r.signed!.documentId);
+    await apply(refDoc, false);
+    const moved = String((await refDoc.get()).data()?.patientDocumentId || '');
+    if (moved) await apply(db.collection('patientDocuments').doc(moved), false);
+  } else {
+    await apply(db.collection('patientDocuments').doc(r.signed!.documentId), true);
+  }
 }

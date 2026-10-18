@@ -9,6 +9,8 @@ import EditReferralDocumentModal from './EditReferralDocumentModal';
 import UndoReferralPpotModal from './UndoReferralPpotModal';
 import ReplaceReferralDocumentModal from './ReplaceReferralDocumentModal';
 import UploadReferralDocumentModal from './UploadReferralDocumentModal';
+import { EditRoiModal } from '../fax/RoiSection';
+import type { RoiRecord } from '@/lib/roiShared';
 import PdfPreviewModal from '@/components/PdfPreviewModal';
 import type { ReferralDocument } from '@/lib/referralDocumentsServer';
 
@@ -30,6 +32,29 @@ export default function ReferralDocuments({ referralId, patientId, refreshKey }:
   const [reload, setReload] = useState(0);
   const [notice, setNotice] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [editingRoi, setEditingRoi] = useState<RoiRecord | null>(null);
+  const [roiLoading, setRoiLoading] = useState<string | null>(null);
+  const [roiError, setRoiError] = useState('');
+
+  // A release's signed copy is edited through the release itself (facility,
+  // phone, fax, dates), which also keeps this row's title in step.
+  const openRelease = async (roiId: string) => {
+    setNotice('');
+    setRoiError('');
+    setRoiLoading(roiId);
+    try {
+      const res = await authedFetch(`/api/fax/roi?referralId=${encodeURIComponent(referralId)}`);
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || 'Could not open the release.');
+      const roi = ((d.rois || []) as RoiRecord[]).find((r) => r.id === roiId);
+      if (!roi) throw new Error('That release could not be found. Refresh and try again.');
+      setEditingRoi(roi);
+    } catch (e) {
+      setRoiError(e instanceof Error ? e.message : 'Could not open the release.');
+    } finally {
+      setRoiLoading(null);
+    }
+  };
   const [openPpot, setOpenPpot] = useState<{ recipientName: string } | null>(null);
 
   useEffect(() => {
@@ -72,6 +97,7 @@ export default function ReferralDocuments({ referralId, patientId, refreshKey }:
         )}
       </div>
       {notice && <div role="status" style={noticeStyle}>{notice}</div>}
+      {roiError && <div role="alert" style={{ ...noticeStyle, color: '#b3261e', background: '#fdecea', borderColor: '#f5c2c0' }}>{roiError}</div>}
       {(!docs || docs.length === 0) && <div style={emptyStyle}>Nothing filed yet. Upload releases, records, or a signed Appendix T here.</div>}
       {docs && docs.length > 0 && <div style={listStyle}>
         {docs.map((d) => (
@@ -90,7 +116,9 @@ export default function ReferralDocuments({ referralId, patientId, refreshKey }:
               <Eye size={14} /> View
             </button>
             {!patientId && !d.patientDocumentId && <button type="button" className={`${btn} ${btnSm}`} onClick={() => { setNotice(''); setReplacement(d); }}>Replace PDF</button>}
-            {!patientId && !d.patientDocumentId && <button type="button" className={`${btn} ${btnSm}`} onClick={() => { setNotice(''); setEdit(d); }}>Edit details</button>}
+            {!patientId && !d.patientDocumentId && (d.roiId
+              ? <button type="button" className={`${btn} ${btnSm}`} disabled={roiLoading === d.roiId} onClick={() => void openRelease(d.roiId!)}>{roiLoading === d.roiId ? 'Opening…' : 'Edit Release'}</button>
+              : <button type="button" className={`${btn} ${btnSm}`} onClick={() => { setNotice(''); setEdit(d); }}>Edit details</button>)}
             {!patientId && !d.patientDocumentId && d.kind === 'ppot' && <button type="button" className={`${btn} ${btnSm}`} onClick={() => { setNotice(''); setUndo(d); }}>Undo PPOT filing</button>}
             </div>
           </div>
@@ -99,6 +127,18 @@ export default function ReferralDocuments({ referralId, patientId, refreshKey }:
       {edit && <EditReferralDocumentModal key={`${edit.referralId}/${edit.id}`} document={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); setPreview(null); setNotice('Document details updated.'); setReload((n) => n + 1); }} />}
       {undo && <UndoReferralPpotModal key={undo.referralId} document={undo} onClose={() => setUndo(null)} onSaved={() => { setUndo(null); setPreview(null); setNotice('PPOT filing undone. The PDF is now a regular document, and the request is waiting on the physician again.'); setReload((n) => n + 1); }} />}
       {replacement && <ReplaceReferralDocumentModal key={`${replacement.referralId}/${replacement.id}`} document={replacement} onClose={() => setReplacement(null)} onSaved={() => { setReplacement(null); setPreview(null); setNotice('PDF replaced. The corrected copy is ready to view.'); setReload((n) => n + 1); }} />}
+      {editingRoi && (
+        <EditRoiModal
+          roi={editingRoi}
+          today={new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())}
+          onClose={() => setEditingRoi(null)}
+          onSaved={(roi, changed) => {
+            setEditingRoi(null);
+            setNotice(changed ? `The release with ${roi.facility.name} is updated.` : 'Nothing changed.');
+            setReload((n) => n + 1);
+          }}
+        />
+      )}
       {uploading && (
         <UploadReferralDocumentModal
           referralId={referralId}

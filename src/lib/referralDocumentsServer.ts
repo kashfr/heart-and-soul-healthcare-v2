@@ -33,6 +33,9 @@ export interface ReferralDocument {
   patientDocumentId: string;
   /** 'ppot' for the signed Appendix T kept with the PPOT request. */
   kind?: 'ppot';
+  /** The release of information this is the signed copy of, so the card can
+   *  open the release editor (facility, phone, fax, dates) from the row. */
+  roiId?: string;
   revision: string;
 }
 
@@ -105,8 +108,22 @@ export function serializeReferralDocument(id: string, x: FirebaseFirestore.Docum
 
 /** Everything filed for a referral: the signed Appendix T first, then the rest newest first. */
 export async function listReferralDocuments(referralId: string): Promise<ReferralDocument[]> {
-  const [snap, ppot] = await Promise.all([adminDb().collection(COL).where('referralId', '==', referralId).get(), loadSignedPpotRow(referralId)]);
-  const docs = snap.docs.map((d) => serializeReferralDocument(d.id, d.data())).sort((a, b) => b.docDate.localeCompare(a.docDate) || String(b.uploadedAt).localeCompare(String(a.uploadedAt)));
+  const [snap, ppot, rois] = await Promise.all([
+    adminDb().collection(COL).where('referralId', '==', referralId).get(),
+    loadSignedPpotRow(referralId),
+    adminDb().collection('roiRequests').where('referralId', '==', referralId).get(),
+  ]);
+  // A signed release's copy is filed here; remember which release it belongs to.
+  const roiByDocument = new Map<string, string>();
+  for (const r of rois.docs) {
+    const documentId = String(((r.data() || {}).signed || {}).documentId || '');
+    if (documentId && r.data()?.status === 'signed') roiByDocument.set(documentId, r.id);
+  }
+  const docs = snap.docs.map((d) => {
+    const doc = serializeReferralDocument(d.id, d.data());
+    const roiId = roiByDocument.get(d.id);
+    return roiId ? { ...doc, roiId } : doc;
+  }).sort((a, b) => b.docDate.localeCompare(a.docDate) || String(b.uploadedAt).localeCompare(String(a.uploadedAt)));
   return ppot ? [ppot, ...docs] : docs;
 }
 

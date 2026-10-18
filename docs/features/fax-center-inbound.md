@@ -177,4 +177,8 @@ DBHDD or CHOA release keeps its name, address, and wording: cancel and prepare
 a new one to change those. `PATCH /api/fax/roi/[id]` (`editRoi`) ignores
 anything not allowed, keeps an `edits` history on the record, notes old and
 new values on the referral's timeline, and carries the audit actor so a
-client's activity history shows it. The filed PDF is never changed.
+client's activity history shows it. The filed PDF is never changed, but its
+title and date follow a corrected facility or signed date (`syncRoiDocument`),
+unless staff renamed the document by hand. On a referral card, a release's
+signed copy (`roiId` on the document row) shows **Edit Release**, which opens
+this editor, instead of the generic Edit details.

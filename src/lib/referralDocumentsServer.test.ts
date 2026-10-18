@@ -4,7 +4,8 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 vi.mock('./firebaseAdmin', () => ({ adminDb: vi.fn(), adminBucket: vi.fn() }));
 
-import { SIGNED_PPOT_DOC_ID, signedPpotRow } from './referralDocumentsServer';
+import { SIGNED_PPOT_DOC_ID, listReferralDocuments, signedPpotRow } from './referralDocumentsServer';
+import { adminDb } from './firebaseAdmin';
 
 const received = {
   status: 'received',
@@ -37,5 +38,22 @@ describe('signedPpotRow', () => {
   });
   it('names a recertification', () => {
     expect(signedPpotRow('r1', { ...received, requestType: 'recert', recipientName: '' })?.title).toBe('Signed Appendix T (PPOT), recertification (10/01/2026)');
+  });
+});
+
+describe('listReferralDocuments', () => {
+  it('marks a signed release’s copy so the card can open the release editor', async () => {
+    const q = (docs: Array<[string, Record<string, unknown>]>) => ({ get: async () => ({ docs: docs.map(([id, d]) => ({ id, data: () => d })) }) });
+    vi.mocked(adminDb).mockReturnValue({
+      collection: (name: string) => ({
+        where: () => (name === 'roiRequests'
+          ? q([['roi1', { status: 'signed', signed: { documentId: 'doc1' } }], ['roi2', { status: 'cancelled', signed: { documentId: 'doc2' } }]])
+          : q([['doc1', { referralId: 'r1', title: 'Release', docDate: '2026-10-18', storagePath: 'a' }], ['doc2', { referralId: 'r1', title: 'Labs', docDate: '2026-10-01', storagePath: 'b' }]])),
+        doc: () => ({ get: async () => ({ exists: false, data: () => undefined }) }),
+      }),
+    } as never);
+    const docs = await listReferralDocuments('r1');
+    expect(docs.find((d) => d.id === 'doc1')?.roiId).toBe('roi1');
+    expect(docs.find((d) => d.id === 'doc2')?.roiId).toBeUndefined();
   });
 });
