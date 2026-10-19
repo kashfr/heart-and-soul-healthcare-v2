@@ -182,3 +182,18 @@ title and date follow a corrected facility or signed date (`syncRoiDocument`),
 unless staff renamed the document by hand. On a referral card, a release's
 signed copy (`roiId` on the document row) shows **Edit Release**, which opens
 this editor, instead of the generic Edit details.
+
+## Sending multiple PDF attachments
+
+Send a Fax accepts up to 10 PDFs, with a 10 MB combined input limit. Staff can
+add batches, remove files, and move them up/down; the confirmation lists the
+final order. `/api/fax` accepts `attachments: [{fileName, pdfBase64}]` while
+retaining the legacy single-file payload for older browser tabs. The endpoint
+bounds the actual request body as well as the decoded total.
+
+`prepareFaxAttachments` validates every PDF before sending, flattens filled
+form fields, and copies pages in attachment order. It rejects unreadable,
+encrypted, empty, oversized, and over-page-limit packets as a whole. The limit
+is 50 pages including the optional cover. The existing outbound path adds one
+cover sheet, stores the exact combined audit PDF, and queues one fax. Sent Faxes
+and retries use that same complete packet; no documents are sent separately.
