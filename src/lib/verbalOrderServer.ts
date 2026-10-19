@@ -1,4 +1,5 @@
 import 'server-only';
+import { appendFaxPdfs } from './faxAttachments';
 import React from 'react';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { renderToBuffer } from '@react-pdf/renderer';
@@ -134,6 +135,7 @@ export async function verbalOrderThresholds(): Promise<{ overdueDays: number; es
 // ---------------------------------------------------------------------------
 
 export interface CreateVerbalOrderParams {
+  supportingPdf?: Buffer;
   input: VerbalOrderInput;
   caller: AuthedCaller;
   patient: { id: string; name: string; dob: string };
@@ -144,6 +146,8 @@ export interface CreateVerbalOrderParams {
 export async function createVerbalOrder(p: CreateVerbalOrderParams): Promise<{ id: string; signToken: string }> {
   const db = adminDb();
   const ref = db.collection(COL).doc();
+  const supportingStoragePath = p.supportingPdf ? `verbal-orders/${ref.id}/supporting.pdf` : '';
+  if (p.supportingPdf) await adminBucket().file(supportingStoragePath).save(p.supportingPdf, { contentType: 'application/pdf', resumable: false });
   const signToken = randomBytes(24).toString('base64url');
   // One transaction: the order, its e-sign token (server-only collection; the
   // token is never stored on the readable order doc), the MAR order tag, and
@@ -158,6 +162,7 @@ export async function createVerbalOrder(p: CreateVerbalOrderParams): Promise<{ i
       if (String((reqSnap.data() || {}).verbalOrderId || '')) throw new Error('That MAR change is already attached to a verbal order.');
     }
     tx.set(ref, {
+      supportingStoragePath,
       patientId: p.patient.id,
       patientName: p.patient.name,
       patientDob: p.patient.dob,
@@ -255,7 +260,7 @@ export interface FaxAttemptResult {
  * order either way. When SRFax isn't configured the order stays 'taken' with a
  * manual-fax marker so the queue tells the office to send it by hand.
  */
-export async function faxVerbalOrder(orderId: string, actor: { uid: string; name: string }): Promise<FaxAttemptResult> {
+export async function faxVerbalOrder(orderId: string, actor: { uid: string; name: string }, addedSupport?: Buffer): Promise<FaxAttemptResult> {
   const db = adminDb();
   const ref = db.collection(COL).doc(orderId);
   const order = await getVerbalOrder(orderId);
@@ -279,7 +284,20 @@ export async function faxVerbalOrder(orderId: string, actor: { uid: string; name
   }
 
   const token = await readSignToken(orderId);
-  const pdf = await renderVerbalOrderPdf(order, token);
+  const primary = await renderVerbalOrderPdf(order, token);
+  const current = (await ref.get()).data() || {};
+  const savedSupport = current.supportingStoragePath ? (await adminBucket().file(String(current.supportingStoragePath)).download())[0] : undefined;
+  const supportingPdf = savedSupport && addedSupport ? await appendFaxPdfs(savedSupport, addedSupport) : savedSupport || addedSupport;
+  const pdf = supportingPdf ? await appendFaxPdfs(primary, supportingPdf) : primary;
+  if (addedSupport && supportingPdf) {
+    const path = `verbal-orders/${orderId}/supporting-${randomBytes(12).toString('hex')}.pdf`;
+    await adminBucket().file(path).save(supportingPdf, { contentType: 'application/pdf', resumable: false });
+    await db.runTransaction(async (tx) => {
+      const latest = await tx.get(ref); const data = latest.data() || {};
+      if (data.status === 'signed' || data.status === 'cancelled' || String(data.supportingStoragePath || '') !== String(current.supportingStoragePath || '')) throw new Error('The order or its attachments changed. Refresh before sending again.');
+      tx.update(ref, { supportingStoragePath: path });
+    });
+  }
   const webhookKey = faxWebhookKey(orderId);
   const notifyUrl = webhookKey ? `${SHARE_SITE_URL}/api/verbal-orders/fax-status?key=${encodeURIComponent(webhookKey)}&id=${encodeURIComponent(orderId)}` : undefined;
   const result = await srfaxQueueFax({

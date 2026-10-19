@@ -89,7 +89,7 @@ export interface PostVerbalOrderResult {
 }
 
 export async function postVerbalOrder(
-  input: VerbalOrderInput & { mar?: { changeRequestId: string; type: string; medName: string } },
+  input: VerbalOrderInput & { attachments?: { fileName: string; pdfBase64: string }[]; mar?: { changeRequestId: string; type: string; medName: string } },
 ): Promise<PostVerbalOrderResult> {
   const res = await authedFetch('/api/verbal-orders', {
     method: 'POST',
@@ -105,8 +105,8 @@ export async function postVerbalOrder(
   return { id: String(data.id || ''), faxConfigured: !!data.faxConfigured, faxQueued: !!data.faxQueued, faxError: String(data.faxError || '') };
 }
 
-export async function resendVerbalOrderFax(id: string): Promise<{ ok: boolean; error?: string; configured?: boolean }> {
-  const res = await authedFetch(`/api/verbal-orders/${encodeURIComponent(id)}/fax`, { method: 'POST' });
+export async function resendVerbalOrderFax(id: string, attachments?: { fileName: string; pdfBase64: string }[]): Promise<{ ok: boolean; error?: string; configured?: boolean }> {
+  const res = await authedFetch(`/api/verbal-orders/${encodeURIComponent(id)}/fax`, { method: 'POST', body: attachments ? JSON.stringify({ attachments }) : undefined });
   const data = (await res.json().catch(() => ({}))) as { error?: string; configured?: boolean };
   return res.ok ? { ok: true } : { ok: false, error: data.error, configured: data.configured };
 }

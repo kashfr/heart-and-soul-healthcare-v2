@@ -1,3 +1,4 @@
+import { optionalFaxAttachments, readFaxJson, FaxAttachmentError } from '@/lib/faxAttachments';
 import { NextResponse } from 'next/server';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
 import { faxVerbalOrder, getVerbalOrder } from '@/lib/verbalOrderServer';
@@ -22,7 +23,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (caller.role === 'nurse' && order.nurseId !== caller.uid) {
     return NextResponse.json({ error: 'Only the nurse who took the order or the office can resend it.' }, { status: 403 });
   }
-  const result = await faxVerbalOrder(id, { uid: caller.uid, name: caller.profile.displayName || caller.email || '' });
+  let supportingPdf;
+  try { supportingPdf = await optionalFaxAttachments((await readFaxJson(request)).attachments); } catch (err) { return NextResponse.json({ error: err instanceof Error ? err.message : 'Invalid attachments.' }, { status: 400 }); }
+  let result;
+  try { result = await faxVerbalOrder(id, { uid: caller.uid, name: caller.profile.displayName || caller.email || '' }, supportingPdf); } catch (err) { return NextResponse.json({ error: err instanceof FaxAttachmentError ? err.message : 'The fax outcome could not be confirmed. Check its status before trying again.' }, { status: err instanceof FaxAttachmentError ? 400 : 502 }); }
   if (!result.ok) return NextResponse.json({ error: result.error || 'Fax failed.', configured: result.configured }, { status: result.configured ? 502 : 409 });
   return NextResponse.json({ ok: true });
 }

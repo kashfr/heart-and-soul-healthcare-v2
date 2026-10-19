@@ -182,3 +182,42 @@ title and date follow a corrected facility or signed date (`syncRoiDocument`),
 unless staff renamed the document by hand. On a referral card, a release's
 signed copy (`roiId` on the document row) shows **Edit Release**, which opens
 this editor, instead of the generic Edit details.
+
+## Sending multiple PDF attachments
+
+Send a Fax accepts up to 10 PDFs, with a 10 MB combined input limit. Staff can
+add batches, remove files, and move them up/down; the confirmation lists the
+final order. `/api/fax` accepts `attachments: [{fileName, pdfBase64}]` while
+retaining the legacy single-file payload for older browser tabs. The endpoint
+bounds the actual request body as well as the decoded total.
+
+`prepareFaxAttachments` validates every PDF before sending, flattens filled
+form fields, and copies pages in attachment order. It rejects unreadable,
+encrypted, empty, oversized, and over-page-limit packets as a whole. The limit
+is 50 pages including the optional cover. The existing outbound path adds one
+cover sheet, stores the exact combined audit PDF, and queues one fax. Sent Faxes
+and retries use that same complete packet; no documents are sent separately.
+
+## Supporting attachments and client batch uploads
+
+General Send a Fax accepts multiple PDFs. PPOT requests (new/recertification),
+manual PPOT follow-ups, ROI Fax to Facility, and verbal-order creation/resends
+also accept optional supporting PDFs. The picker permits up to 10 PDFs totaling
+10 MB, with reorder/remove controls. Generated forms remain first. The server
+validates and combines the complete packet, capped at 50 pages including covers
+and 10 MB. Fax attachments remain PDF-only.
+
+PPOT and verbal-order supporting packets are stored separately and retained for
+later manual and automatic follow-ups. New follow-up attachments append to the
+saved supporting packet. Sent Faxes Retry sends the exact stored packet; it does
+not change a historical fax. A known pre-send PPOT validation failure releases
+the daily claim so staff can correct their files; an uncertain provider outcome
+retains the existing duplicate-send guard.
+
+Client Documents and the permission-gated assistant workspace support batches of
+up to 20 PDFs, JPEG/PNG/HEIC photos, or Word files, each under 20 MB. Files remain
+separate originals with individual titles, categories, and MM/DD/YYYY dates.
+Defaults may be applied to pending files. Sequential progress and per-file errors
+keep confirmed successful uploads out of subsequent retries. Existing upload
+permissions, storage rules, and audit paths are unchanged. Replacement of an
+existing document remains a single-file action. No migration or rule change.

@@ -457,7 +457,7 @@ function SendModal({ onClose, onSent, onDone }: { onClose: () => void; onSent: (
   const [regarding, setRegarding] = useState('');
   const [note, setNote] = useState('');
   const [includeCover, setIncludeCover] = useState(true);
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<FaxSendField, string>>>({});
@@ -466,21 +466,21 @@ function SendModal({ onClose, onSent, onDone }: { onClose: () => void; onSent: (
     if (fieldErrors[k]) setFieldErrors((prev) => ({ ...prev, [k]: undefined }));
   };
 
-  const pickFile = (f: File | null) => {
+  const pickFiles = (added: File[]) => {
     clearFieldError('file');
-    if (!f) return setFile(null);
-    if (f.type !== 'application/pdf' && !/\.pdf$/i.test(f.name)) {
-      setFile(null);
-      setFieldErrors((prev) => ({ ...prev, file: 'Choose a PDF. Scan or print other documents to PDF first.' }));
-      return;
-    }
-    if (f.size > FAX_MAX_PDF_BYTES) {
-      setFile(null);
-      setFieldErrors((prev) => ({ ...prev, file: 'That file is too large to fax. Keep it under 10 MB.' }));
-      return;
-    }
-    setFile(f);
+    const next = [...files, ...added];
+    let error = '';
+    if (next.length > 10) error = 'Attach at most 10 PDFs per fax.';
+    else if (added.some((f) => !f.size || (f.type !== 'application/pdf' && !/\.pdf$/i.test(f.name)))) error = 'Choose PDF files. Print other documents to PDF first.';
+    else if (next.reduce((sum, f) => sum + f.size, 0) > FAX_MAX_PDF_BYTES) error = 'Keep all attachments together under 10 MB.';
+    if (error) { setFieldErrors((prev) => ({ ...prev, file: error })); return; }
+    setFiles(next);
   };
+  const moveFile = (index: number, direction: number) => setFiles((current) => {
+    const next = [...current];
+    [next[index], next[index + direction]] = [next[index + direction], next[index]];
+    return next;
+  });
 
   const to = normalizeUSFaxNumber(toNumber);
 
@@ -489,14 +489,14 @@ function SendModal({ onClose, onSent, onDone }: { onClose: () => void; onSent: (
     if (busy) return;
     setErr(null);
     const input = { recipientName, recipientOrg, toNumber, confirmNumber, regarding, note, includeCover };
-    if (!applyFieldErrors(validateFaxSendInput(input, !!file), SEND_FIELD_ORDER, setFieldErrors, sendFieldId)) return;
-    if (!confirm(`Fax "${file!.name}" to ${recipientName.trim()} at ${formatUSFaxNumber(to)}?`)) return;
+    if (!applyFieldErrors(validateFaxSendInput(input, files.length > 0), SEND_FIELD_ORDER, setFieldErrors, sendFieldId)) return;
+    if (!confirm(`Send ${files.length} PDF attachment(s) to ${recipientName.trim()} at ${formatUSFaxNumber(to)} in this order?\n${files.map((f, i) => `${i + 1}. ${f.name}`).join('\n')}`)) return;
     setBusy(true);
     try {
-      const pdfBase64 = await readAsBase64(file!);
+      const attachments = await Promise.all(files.map(async (f) => ({ fileName: f.name, pdfBase64: await readAsBase64(f) })));
       const res = await authedFetch('/api/fax', {
         method: 'POST',
-        body: JSON.stringify({ ...input, fileName: file!.name, pdfBase64 }),
+        body: JSON.stringify({ ...input, attachments }),
       });
       const data = await res.json().catch(() => ({}));
       // A failed attempt is still recorded (with a Resend button), so show it.
@@ -565,12 +565,22 @@ function SendModal({ onClose, onSent, onDone }: { onClose: () => void; onSent: (
               <FieldError message={fieldErrors.note} />
             </label>
             <div style={fieldStyle} id={sendFieldId('file')}>
-              <span style={fieldLabelStyle}>Document (PDF, up to 10 MB)</span>
-              <input ref={fileRef} type="file" accept="application/pdf,.pdf" style={{ display: 'none' }} onChange={(e) => pickFile(e.target.files?.[0] ?? null)} />
-              <button type="button" onClick={() => fileRef.current?.click()} style={{ ...dropStyle, ...(fieldErrors.file ? FIELD_ERROR_STYLE : null) }}>
-                <FileUp size={16} />
-                {file ? <span><strong>{file.name}</strong> <span style={{ color: '#7f8c8d' }}>({(file.size / 1024 / 1024).toFixed(1)} MB) · change</span></span> : 'Choose a PDF'}
+              <span style={fieldLabelStyle}>Documents (up to 10 PDFs, 10 MB combined)</span>
+              <input aria-label="Add PDF attachments" ref={fileRef} type="file" multiple accept="application/pdf,.pdf" disabled={busy} style={{ display: 'none' }} onChange={(e) => { pickFiles(Array.from(e.target.files || [])); e.target.value = ''; }} />
+              <button type="button" disabled={busy} onClick={() => fileRef.current?.click()} style={{ ...dropStyle, ...(fieldErrors.file ? FIELD_ERROR_STYLE : null) }}>
+                <FileUp size={16} /> {files.length ? 'Add more PDFs' : 'Choose PDFs'}
               </button>
+              {files.length > 0 && <>
+                <div style={{ fontSize: 12, color: '#5c6b7a' }}>Sends in the order below after the optional cover sheet. Up to 50 pages including the cover. {(files.reduce((sum, f) => sum + f.size, 0) / 1024 / 1024).toFixed(1)} MB total.</div>
+                <ol style={{ margin: '8px 0', paddingLeft: 22 }}>{files.map((f, i) => <li key={`${i}-${f.name}`} style={{ marginBottom: 8 }}>
+                  <div style={{ overflowWrap: 'anywhere' }}>{f.name}</div>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                    <button type="button" className={`${btn} ${btnSm}`} disabled={busy || i === 0} aria-label={`Move ${f.name} up`} onClick={() => moveFile(i, -1)}>Up</button>
+                    <button type="button" className={`${btn} ${btnSm}`} disabled={busy || i === files.length - 1} aria-label={`Move ${f.name} down`} onClick={() => moveFile(i, 1)}>Down</button>
+                    <button type="button" className={`${btn} ${btnSm}`} disabled={busy} aria-label={`Remove ${f.name}`} onClick={() => { setFiles((current) => current.filter((_, n) => n !== i)); clearFieldError('file'); }}>Remove</button>
+                  </div>
+                </li>)}</ol>
+              </>}
               <FieldError message={fieldErrors.file} />
             </div>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, color: '#374151', cursor: 'pointer' }}>

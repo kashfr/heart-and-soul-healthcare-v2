@@ -1,9 +1,10 @@
 // @vitest-environment node
 import { beforeEach, expect, it, vi } from 'vitest';
+import { PDFDocument } from 'pdf-lib';
 import type { AuthedCaller } from './adminAuthGuard';
 vi.mock('server-only', () => ({}));
-const m = vi.hoisted(() => ({ db: vi.fn(), send: vi.fn(), config: vi.fn(), settings: vi.fn(), referral: vi.fn(), today: '2026-10-08' }));
-vi.mock('./firebaseAdmin', () => ({ adminDb: m.db, adminBucket: vi.fn() }));
+const m = vi.hoisted(() => ({ db: vi.fn(), bucket: vi.fn(), send: vi.fn(), config: vi.fn(), settings: vi.fn(), referral: vi.fn(), today: '2026-10-08' }));
+vi.mock('./firebaseAdmin', () => ({ adminDb: m.db, adminBucket: m.bucket }));
 vi.mock('./faxCenterServer', () => ({ sendOutboundFax: m.send }));
 vi.mock('./fax/srfax', () => ({ srfaxConfig: m.config }));
 vi.mock('./settingsServer', () => ({ getServerSettings: m.settings }));
@@ -99,4 +100,28 @@ it('a failed milestone is not repeated by each scheduler tick, but later milesto
   m.today = '2026-10-05'; expect((await sendPpotFollowup('referral_r1', undefined, true)).ok).toBe(false);
   m.today = '2026-10-08'; expect((await sendPpotFollowup('referral_r1', undefined, true)).ok).toBe(true);
   expect(m.send).toHaveBeenCalledTimes(2);
+});
+
+it('retains existing and newly added PDFs for later automatic follow-ups', async () => {
+  const makePdf = async (width: number) => { const pdf = await PDFDocument.create(); pdf.addPage([width, 200]); return Buffer.from(await pdf.save()); };
+  const original = await makePdf(111); const added = await makePdf(222);
+  const stored: Record<string, Buffer> = { original };
+  row.faxId = 'original';
+  const db = m.db(); const oldCollection = db.collection;
+  db.collection = (name: string) => name === 'outboundFaxes' ? { doc: (id: string) => ({ get: async () => ({ data: () => ({ supportingStoragePath: id }) }) }) } : oldCollection(name);
+  m.bucket.mockReturnValue({ file: (path: string) => ({ download: async () => [stored[path]] }) });
+  m.send.mockImplementation(async (input) => { stored.latest = input.supportingPdf; return { ok: true, fax: { id: 'latest' } }; });
+  expect((await sendPpotFollowup('referral_r1', caller, false, added)).ok).toBe(true);
+  expect(row.supportingFaxId).toBe('latest');
+  expect((await PDFDocument.load(stored.latest)).getPages().map(p => p.getWidth())).toEqual([111, 222]);
+  m.today = '2026-10-09'; m.settings.mockResolvedValue({ fax: { enabled: true, ppotFollowupDays: [11] } });
+  expect((await sendPpotFollowup('referral_r1', undefined, true)).ok).toBe(true);
+  expect((await PDFDocument.load(m.send.mock.calls[1][0].supportingPdf)).getPages().map(p => p.getWidth())).toEqual([111, 222]);
+});
+it('releases a daily claim after a known pre-send validation failure', async () => {
+  row.followupAttemptDate = '2026-10-07'; row.followupCoveredThroughDay = 9;
+  m.send.mockResolvedValueOnce({ ok: false, status: 400, error: 'Too many pages' });
+  expect(await sendPpotFollowup('referral_r1', caller)).toMatchObject({ status: 400 });
+  expect(row).toMatchObject({ followupPending: false, followupAttemptDate: '2026-10-07', followupCoveredThroughDay: 9 });
+  expect((await sendPpotFollowup('referral_r1', caller)).ok).toBe(true);
 });

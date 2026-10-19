@@ -1,3 +1,4 @@
+import { optionalFaxAttachments, readFaxJson } from '@/lib/faxAttachments';
 import { NextResponse } from 'next/server';
 import { AdminAuthError } from '@/lib/adminAuthGuard';
 import { requireFaxAccess } from '@/lib/faxCenterServer';
@@ -24,7 +25,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!/^[A-Za-z0-9]{1,64}$/.test(id)) return NextResponse.json({ error: 'Bad id' }, { status: 400 });
   let body: Record<string, unknown>;
   try {
-    body = (await request.json()) as Record<string, unknown>;
+    body = await readFaxJson(request);
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
   }
@@ -40,7 +41,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   // The file is the signed copy on record, so there is no upload to check.
   const fields = validateFaxSendInput(input, true);
   if (Object.keys(fields).length > 0) return NextResponse.json({ error: Object.values(fields)[0], fields }, { status: 400 });
-  const result = await faxRoi({ id, recipientName: input.recipientName, toNumber: input.toNumber, confirmNumber: input.confirmNumber, note: input.note, caller });
+  let supportingPdf;
+  try { supportingPdf = await optionalFaxAttachments(body.attachments); } catch (err) { return NextResponse.json({ error: err instanceof Error ? err.message : 'Invalid attachments.' }, { status: 400 }); }
+  const result = await faxRoi({ supportingPdf, id, recipientName: input.recipientName, toNumber: input.toNumber, confirmNumber: input.confirmNumber, note: input.note, caller });
   if (!result.ok) return NextResponse.json({ error: result.error, fax: result.fax }, { status: result.status || 500 });
   return NextResponse.json({ ok: true, fax: result.fax });
 }

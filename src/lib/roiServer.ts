@@ -310,6 +310,7 @@ export async function readSignedRoi(id: string): Promise<{ bytes: Buffer; fileNa
  */
 export async function faxRoi(p: {
   id: string;
+  supportingPdf?: Buffer;
   recipientName: string;
   toNumber: string;
   confirmNumber: string;
@@ -359,6 +360,7 @@ export async function faxRoi(p: {
       includeCover: true,
     },
     pdf,
+    supportingPdf: p.supportingPdf,
     fileName: `Release_of_Information_${fileStem(r.memberName)}.pdf`,
     caller: p.caller,
   });

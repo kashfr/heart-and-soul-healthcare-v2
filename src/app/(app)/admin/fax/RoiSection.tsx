@@ -1,4 +1,5 @@
 'use client';
+import FaxAttachmentsPicker, { encodeFaxAttachments } from '@/components/FaxAttachmentsPicker';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
@@ -786,6 +787,7 @@ function FaxModal({ roi, onClose, onSent }: { roi: RoiRecord; onClose: () => voi
   const [recipientName, setRecipientName] = useState(roi.facility.name);
   const [toNumber, setToNumber] = useState(roi.facility.fax ? formatUSFaxNumber(roi.facility.fax) : '');
   const [confirmNumber, setConfirmNumber] = useState('');
+  const [attachments, setAttachments] = useState<File[]>([]);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -801,7 +803,7 @@ function FaxModal({ roi, onClose, onSent }: { roi: RoiRecord; onClose: () => voi
     if (!confirm(`Fax the signed release for ${roi.memberName} to ${recipientName.trim()} at ${formatUSFaxNumber(normalizeUSFaxNumber(toNumber))}?`)) return;
     setBusy(true);
     try {
-      const res = await authedFetch(`/api/fax/roi/${roi.id}/fax`, { method: 'POST', body: JSON.stringify({ recipientName, toNumber, confirmNumber, note }) });
+      const res = await authedFetch(`/api/fax/roi/${roi.id}/fax`, { method: 'POST', body: JSON.stringify({ recipientName, toNumber, confirmNumber, note, attachments: await encodeFaxAttachments(attachments) }) });
       const data = await res.json().catch(() => ({}));
       if (data.fax) onSent(data.fax, res.ok);
       if (!res.ok) {
@@ -840,6 +842,7 @@ function FaxModal({ roi, onClose, onSent }: { roi: RoiRecord; onClose: () => voi
               <FieldError message={fieldErrors.confirmNumber} />
             </label>
           </div>
+          <FaxAttachmentsPicker files={attachments} onChange={setAttachments} disabled={busy} />
           <label style={fieldStyle} id={faxId('note')}>
             <span style={labelStyle}>Cover sheet message <span style={{ fontWeight: 400 }}>(optional: a standard message is used when blank)</span></span>
             <textarea value={note} maxLength={1200} onChange={(e) => { setNote(e.target.value); clear('note'); }} style={{ ...inp, minHeight: 64, resize: 'vertical', ...(fieldErrors.note ? FIELD_ERROR_STYLE : null) }} placeholder={defaultRoiFaxNote({ memberName: roi.memberName, direction: roi.direction, information: roi.information })} />

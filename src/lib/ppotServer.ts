@@ -1,5 +1,6 @@
 import { clientAuditActor } from './clientAuditActor';
 import 'server-only';
+import { appendFaxPdfs, FaxAttachmentError } from './faxAttachments';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -197,7 +198,7 @@ async function appendixTForFax(memberName: string, medicaidId: string): Promise<
  * the record (never trusted from the browser); only the Medicaid ID may be
  * supplied by the sender, for a record that doesn't have one yet.
  */
-export async function sendPpotRequest(input: PpotSendInput, caller: AuthedCaller): Promise<SendFaxResult> {
+export async function sendPpotRequest(input: PpotSendInput, caller: AuthedCaller, supportingPdf?: Buffer): Promise<SendFaxResult> {
   const subject = await loadPpotSubject(input.subjectKind, input.subjectId);
   if (!subject) return { ok: false, status: 404, error: 'That referral or client was not found.' };
   const medicaidId = subject.medicaidId || cleanMedicaidId(input.medicaidId);
@@ -217,6 +218,7 @@ export async function sendPpotRequest(input: PpotSendInput, caller: AuthedCaller
       includeCover: true,
     },
     pdf,
+    supportingPdf,
     fileName,
     caller,
     ppot: {
@@ -389,7 +391,7 @@ function daysSinceText(fromYmd: string, today: string): string {
 /** One follow-up attempt per calendar day, shared by staff and scheduled sends.
  * Persist the claim before the provider call: an unknown outcome must not cause duplicate faxes.
  */
-export async function sendPpotFollowup(key: string, caller?: AuthedCaller, automatic = false): Promise<{ ok: boolean; status?: number; error?: string }> {
+export async function sendPpotFollowup(key: string, caller?: AuthedCaller, automatic = false, supportingPdf?: Buffer): Promise<{ ok: boolean; status?: number; error?: string }> {
   if (!srfaxConfig()) return { ok: false, status: 503, error: 'Fax sending is unavailable on this server.' };
   const settings = await getServerSettings();
   if (!settings.fax.enabled) return { ok: false, status: 403, error: 'Fax Center is disabled.' };
@@ -409,9 +411,23 @@ export async function sendPpotFollowup(key: string, caller?: AuthedCaller, autom
   });
   if (!claimed) return { ok: false, status: 409, error: 'This request is no longer waiting, or a follow-up was already attempted today or is still being processed. Check Sent Faxes before sending again.' };
   try {
-    const result = await refaxPpotRequest(claimed, caller);
+    let result: SendFaxResult;
+    try { result = await refaxPpotRequest(claimed, caller, supportingPdf); }
+    catch (err) { if (err instanceof FaxAttachmentError) result = { ok: false, status: 400, error: err.message }; else throw err; }
+    if (!result.fax && result.status === 400) {
+      // Validation happened before contacting SRFax. Let staff correct the files
+      // without consuming today's send or scheduled milestone.
+      await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref); const current = snap.data() || {};
+        if (current.faxId !== claimed.faxId || current.date !== claimed.date || !current.followupPending) return;
+        const restore: Record<string, unknown> = { followupPending: false };
+        for (const field of ['followupAttemptDate', 'followupCoveredThroughDay', 'followupMilestoneDay', 'reminderSentAt']) restore[field] = claimed[field] ?? FieldValue.delete();
+        tx.update(ref, restore);
+      });
+      return { ok: false, status: 400, error: result.error };
+    }
     await ref.update({ followupPending: false, followupError: result.ok ? '' : (result.error || 'Fax could not be submitted.'),
-      ...(result.fax ? { followupFaxId: result.fax.id } : {}),
+      ...(result.fax ? { followupFaxId: result.fax.id, supportingFaxId: result.fax.id } : {}),
       ...(result.ok ? { followupDate: today, followupCount: FieldValue.increment(1), followupByName: caller?.profile.displayName || caller?.email || 'Portal (scheduled follow-up)', ...(automatic ? { reminderDate: today, reminderFaxId: result.fax?.id || '' } : {}) } : {}),
     });
     return result.ok ? { ok: true } : { ok: false, status: result.status || 502, error: `${result.error || 'Fax could not be submitted.'} Check Sent Faxes; failed faxes can be retried there.` };
@@ -422,12 +438,15 @@ export async function sendPpotFollowup(key: string, caller?: AuthedCaller, autom
   }
 }
 
-async function refaxPpotRequest(req: FirebaseFirestore.DocumentData, caller?: AuthedCaller): Promise<SendFaxResult> {
+async function refaxPpotRequest(req: FirebaseFirestore.DocumentData, caller?: AuthedCaller, addedSupport?: Buffer): Promise<SendFaxResult> {
   const kind: PpotSubjectKind = req.subjectKind === 'client' ? 'client' : 'referral';
   const subject = await loadPpotSubject(kind, String(req.subjectId || ''));
   if (!subject) return { ok: false, status: 404, error: 'The referral or client was not found.' };
   const firstFax = req.faxId ? await adminDb().collection('outboundFaxes').doc(String(req.faxId)).get() : null;
   const first = firstFax?.data() || {};
+  const supportSource = req.supportingFaxId ? (await adminDb().collection('outboundFaxes').doc(String(req.supportingFaxId)).get()).data() || {} : first;
+  const savedSupport = supportSource.supportingStoragePath ? (await adminBucket().file(String(supportSource.supportingStoragePath)).download())[0] : undefined;
+  const supportingPdf = savedSupport && addedSupport ? await appendFaxPdfs(savedSupport, addedSupport) : savedSupport || addedSupport;
   const firstPpot = (first.ppot || {}) as { medicaidId?: string };
   const medicaidId = subject.medicaidId || cleanMedicaidId(String(firstPpot.medicaidId || ''));
   const requestType: PpotRequestType = req.requestType === 'recert' ? 'recert' : 'new';
@@ -445,6 +464,7 @@ async function refaxPpotRequest(req: FirebaseFirestore.DocumentData, caller?: Au
       includeCover: true,
     },
     pdf,
+    supportingPdf,
     fileName,
     caller: sender,
     ppot: { requestType, subjectKind: subject.kind, subjectId: subject.id, memberName: subject.name, dob: subject.dob, medicaidId },
