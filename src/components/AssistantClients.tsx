@@ -1,4 +1,6 @@
 'use client';
+import { parseUSDate } from '@/lib/usDateInput';
+import BulkDocumentUpload from './BulkDocumentUpload';
 import { withSelectChevron } from '@/lib/selectChevron';
 
 import { Fragment, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
@@ -311,52 +313,17 @@ function InfoForm({ client, patientId, onCancel, onSaved, onError }: {
 
 function UploadForm({ patientId, onUploaded, onError }: { patientId: string; onUploaded: (doc: DocumentInfo) => void; onError: (err: unknown) => void }) {
   const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState('');
-  const [category, setCategory] = useState('Other');
-  const [date, setDate] = useState('');
-  const [file, setFile] = useState<File | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    const docDate = parseUSDate(date);
-    if (!file) { setError('Choose a document to upload.'); return; }
-    if (!docDate) { setError('Enter a valid document date in MM/DD/YYYY format.'); return; }
-    if (file.size >= MAX_DOC_BYTES) { setError('The document must be smaller than 20 MB.'); return; }
-    setSaving(true); setError('');
+  if (!open) return <button className={btnPrimary} onClick={() => setOpen(true)}><FileUp size={15} /> Upload documents</button>;
+  return <div style={contactCard}><BulkDocumentUpload onClose={() => setOpen(false)} upload={async (item) => {
+    const body = new FormData(); body.set('file', item.file); body.set('title', item.title); body.set('category', item.category); body.set('docDate', item.docDate);
     try {
-      const body = new FormData();
-      body.set('file', file); body.set('title', title.trim()); body.set('category', category); body.set('docDate', docDate);
       const result = await readResponse<{ document: DocumentInfo }>(await authedFetch(`${clientUrl(patientId)}/documents`, { method: 'POST', body }));
-      onUploaded(result.document); setOpen(false); setTitle(''); setDate(''); setFile(null); setCategory('Other');
-    } catch (err) { setError(message(err)); onError(err); }
-    finally { setSaving(false); }
-  };
-  if (!open) return <button className={btnPrimary} onClick={() => setOpen(true)}><FileUp size={15} /> Upload document</button>;
-  return <form onSubmit={submit} style={contactCard}>
-    <fieldset disabled={saving} style={fieldset}>
-      <div style={grid}>
-        <Field label="Document file (PDF, image, or Word; under 20 MB)"><input type="file" required accept=".pdf,.jpg,.jpeg,.png,.heic,.doc,.docx" onChange={(e) => { const chosen = e.target.files?.[0] || null; setFile(chosen); if (chosen && !title) setTitle(chosen.name); }} style={input} /></Field>
-        <Field label="Document title"><input required maxLength={200} style={input} value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
-        <Field label="Document category"><select style={select} value={category} onChange={(e) => setCategory(e.target.value)}>{DOC_CATEGORY_GROUPS.map((g) => <optgroup key={g.label} label={g.label}>{g.categories.map((c) => <option key={c}>{c}</option>)}</optgroup>)}</select></Field>
-        <Field label="Document date (MM/DD/YYYY)"><input required placeholder="MM/DD/YYYY" maxLength={10} style={input} value={date} onChange={(e) => setDate(e.target.value)} /></Field>
-      </div>
-      {error && <div role="alert" style={errorBox}>{error}</div>}
-      <div style={{ ...row, marginTop: 16 }}><button className={btnPrimary} type="submit">{saving ? 'Uploading…' : 'Save document'}</button><button className={btn} type="button" onClick={() => { setOpen(false); setError(''); }}>Cancel</button></div>
-    </fieldset>
-  </form>;
+      onUploaded(result.document);
+    } catch (err) { onError(err); throw err; }
+  }} /></div>;
 }
 
-/** Text dates have a fixed US display regardless of browser locale. */
-export function parseUSDate(value: string): string | null {
-  const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(value.trim());
-  if (!match) return null;
-  const [, month, day, year] = match;
-  if (+year < 1900 || +year > 9999) return null;
-  const date = new Date(+year, +month - 1, +day);
-  if (date.getFullYear() !== +year || date.getMonth() !== +month - 1 || date.getDate() !== +day) return null;
-  return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-}
+export { parseUSDate } from '@/lib/usDateInput';
 
 function formatBytes(bytes: number) { return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`; }
 function Field({ label, children }: { label: string; children: ReactNode }) { return <label style={{ display: 'grid', gap: 6, fontSize: 13, color: '#475569' }}><span>{label}</span>{children}</label>; }

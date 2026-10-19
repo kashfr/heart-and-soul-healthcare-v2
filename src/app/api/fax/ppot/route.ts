@@ -1,3 +1,4 @@
+import { optionalFaxAttachments, readFaxJson } from '@/lib/faxAttachments';
 import { NextResponse } from 'next/server';
 import { AdminAuthError } from '@/lib/adminAuthGuard';
 import { requireFaxAccess } from '@/lib/faxCenterServer';
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
   }
   let body: Record<string, unknown>;
   try {
-    body = (await request.json()) as Record<string, unknown>;
+    body = await readFaxJson(request);
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
   }
@@ -55,7 +56,9 @@ export async function POST(request: Request) {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(input.subjectId)) input.subjectId = '';
   const fields = validatePpotSendInput(input);
   if (Object.keys(fields).length > 0) return NextResponse.json({ error: Object.values(fields)[0], fields }, { status: 400 });
-  const result = await sendPpotRequest(input, caller);
+  let supportingPdf;
+  try { supportingPdf = await optionalFaxAttachments(body.attachments); } catch (err) { return NextResponse.json({ error: err instanceof Error ? err.message : 'Invalid attachments.' }, { status: 400 }); }
+  const result = await sendPpotRequest(input, caller, supportingPdf);
   if (!result.ok) return NextResponse.json({ error: result.error, fax: result.fax }, { status: result.status || 500 });
   return NextResponse.json({ ok: true, fax: result.fax });
 }

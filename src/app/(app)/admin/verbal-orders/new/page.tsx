@@ -1,4 +1,5 @@
 'use client';
+import FaxAttachmentsPicker, { encodeFaxAttachments } from '@/components/FaxAttachmentsPicker';
 
 import { Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { btn, btnPrimary, btnSm } from '@/components/buttons';
@@ -43,6 +44,7 @@ export default function NewVerbalOrderPage() {
 }
 
 function NewVerbalOrderInner() {
+  const [attachments, setAttachments] = useState<File[]>([]);
   const { user, profile } = useAuth();
   const { role, credential, isViewingAs } = useEffectiveUser();
   const searchParams = useSearchParams();
@@ -131,7 +133,7 @@ function NewVerbalOrderInner() {
     setSubmitting(true);
     setSubmitError('');
     try {
-      const r = await postVerbalOrder({ ...currentInput, mar: marApplied || undefined });
+      const r = await postVerbalOrder({ ...currentInput, attachments: await encodeFaxAttachments(attachments), mar: marApplied || undefined });
       setDone(r);
     } catch (err) {
       const withFields = err as Error & { fields?: Record<string, string> };
@@ -324,6 +326,7 @@ function NewVerbalOrderInner() {
         </section>
 
         <section style={cardStyle}>
+          <FaxAttachmentsPicker files={attachments} onChange={setAttachments} disabled={submitting} />
           <h2 style={sectionTitleStyle}>Nurse&apos;s Signature</h2>
           <div style={{ fontSize: 13, color: '#5c6b7a', marginBottom: 8 }}>
             Signing as <strong>{profile?.displayName || user.email}</strong>{credential ? `, ${credential}` : ''}. Name, credential, date, and time are recorded automatically.

@@ -1,3 +1,4 @@
+import { optionalFaxAttachments, readFaxJson } from '@/lib/faxAttachments';
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
@@ -9,7 +10,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // The nurse's signature PNG dominates the payload.
-const MAX_BODY_BYTES = 1_500_000;
+const MAX_BODY_BYTES = 16 * 1024 * 1024;
 
 /**
  * POST /api/verbal-orders
@@ -43,7 +44,7 @@ export async function POST(request: Request) {
   }
   let body: Record<string, unknown>;
   try {
-    body = (await request.json()) as Record<string, unknown>;
+    body = await readFaxJson(request);
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
   }
@@ -107,9 +108,12 @@ export async function POST(request: Request) {
     mar = { changeRequestId: reqId, orderId, type, medName };
   }
 
+  let supportingPdf;
+  try { supportingPdf = await optionalFaxAttachments(body.attachments); } catch (err) { return NextResponse.json({ error: err instanceof Error ? err.message : 'Invalid attachments.' }, { status: 400 }); }
   let created: { id: string };
   try {
     created = await createVerbalOrder({
+      supportingPdf,
       input,
       caller,
       patient: { id: patSnap.id, name: String(pat.name || ''), dob: String(pat.dob || '') },

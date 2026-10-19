@@ -1,4 +1,5 @@
 'use client';
+import FaxAttachmentsPicker, { encodeFaxAttachments } from '@/components/FaxAttachmentsPicker';
 
 import { useMemo, useState } from 'react';
 import { btn, btnPrimary } from '@/components/buttons';
@@ -55,6 +56,7 @@ export default function PpotRequestModal({
   const [recipientOrg, setRecipientOrg] = useState(initial?.physicianOffice || '');
   const [toNumber, setToNumber] = useState(initial?.physicianFax ? formatUSFaxNumber(initial.physicianFax) : '');
   const [confirmNumber, setConfirmNumber] = useState('');
+  const [attachments, setAttachments] = useState<File[]>([]);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -105,7 +107,7 @@ export default function PpotRequestModal({
     if (!confirm(`Fax the Appendix T request for ${subject!.name} to ${recipientName.trim()} at ${formatUSFaxNumber(normalizeUSFaxNumber(toNumber))}?`)) return;
     setBusy(true);
     try {
-      const res = await authedFetch('/api/fax/ppot', { method: 'POST', body: JSON.stringify(input) });
+      const res = await authedFetch('/api/fax/ppot', { method: 'POST', body: JSON.stringify({ ...input, attachments: await encodeFaxAttachments(attachments) }) });
       const data = await res.json().catch(() => ({}));
       if (data.fax) onSent(data.fax, res.ok);
       if (!res.ok) {
@@ -225,6 +227,7 @@ export default function PpotRequestModal({
               </label>
             </div>
 
+            <FaxAttachmentsPicker files={attachments} onChange={setAttachments} disabled={busy} />
             <label style={fieldStyle} id={fieldId('note')}>
               <span style={fieldLabelStyle}>Message <span style={{ fontWeight: 400 }}>(optional: a standard request is used when blank)</span></span>
               <textarea value={note} maxLength={1200} onChange={(e) => { setNote(e.target.value); clear('note'); }} style={{ ...inp, minHeight: 72, resize: 'vertical', ...(fieldErrors.note ? FIELD_ERROR_STYLE : null) }} placeholder={requestType ? defaultPpotNote(requestType, hasMedicaid) : 'Choose the request type to see the standard message.'} />

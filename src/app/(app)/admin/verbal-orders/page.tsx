@@ -1,4 +1,5 @@
 'use client';
+import FaxSupportingSendModal from '@/components/FaxSupportingSendModal';
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
@@ -147,25 +148,17 @@ function VerbalOrdersInner() {
     }
   };
 
-  const resend = async (o: VerbalOrder) => {
-    setBusyId(o.id);
-    const r = await resendVerbalOrderFax(o.id);
-    setBusyId(null);
-    if (r.ok) {
-      showToast(`Fax to ${o.physicianName} queued.`);
-      reload();
-    } else if (r.configured === false) {
-      showToast('Faxing is not set up yet. Download the PDF and fax it by hand.');
-    } else {
-      showToast(r.error || 'The fax could not be sent.');
-    }
-  };
+  const [resending, setResending] = useState<VerbalOrder | null>(null);
 
   if (!role) return null;
   if (role === 'va') return null;
 
   return (
     <div style={containerStyle}>
+      {resending && <FaxSupportingSendModal title="Send verbal-order fax" description={`Fax the order to ${resending.physicianName} at ${resending.physicianFax}.`} onClose={() => setResending(null)} send={async (attachments) => {
+        const r = await resendVerbalOrderFax(resending.id, attachments); if (!r.ok) throw new Error(r.error || 'Could not send fax.'); showToast('Fax queued.'); reload();
+      }} />}
+
       <div style={wrapStyle}>
         <header style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
           <div>
@@ -278,7 +271,7 @@ function VerbalOrdersInner() {
                     <div style={actionsRowStyle}>
                       <button type="button" className={`${btn} ${btnSm}`} onClick={() => void download(o)}><Download size={13} /> PDF</button>
                       {canAct && (
-                        <button type="button" className={`${btn} ${btnSm}`} disabled={busyId === o.id} onClick={() => void resend(o)}>
+                        <button type="button" className={`${btn} ${btnSm}`} disabled={busyId === o.id} onClick={() => setResending(o)}>
                           <Send size={13} /> {busyId === o.id ? 'Sending…' : o.status === 'taken' ? 'Fax Now' : 'Resend Fax'}
                         </button>
                       )}

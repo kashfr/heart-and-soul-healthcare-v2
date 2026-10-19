@@ -197,3 +197,27 @@ encrypted, empty, oversized, and over-page-limit packets as a whole. The limit
 is 50 pages including the optional cover. The existing outbound path adds one
 cover sheet, stores the exact combined audit PDF, and queues one fax. Sent Faxes
 and retries use that same complete packet; no documents are sent separately.
+
+## Supporting attachments and client batch uploads
+
+General Send a Fax accepts multiple PDFs. PPOT requests (new/recertification),
+manual PPOT follow-ups, ROI Fax to Facility, and verbal-order creation/resends
+also accept optional supporting PDFs. The picker permits up to 10 PDFs totaling
+10 MB, with reorder/remove controls. Generated forms remain first. The server
+validates and combines the complete packet, capped at 50 pages including covers
+and 10 MB. Fax attachments remain PDF-only.
+
+PPOT and verbal-order supporting packets are stored separately and retained for
+later manual and automatic follow-ups. New follow-up attachments append to the
+saved supporting packet. Sent Faxes Retry sends the exact stored packet; it does
+not change a historical fax. A known pre-send PPOT validation failure releases
+the daily claim so staff can correct their files; an uncertain provider outcome
+retains the existing duplicate-send guard.
+
+Client Documents and the permission-gated assistant workspace support batches of
+up to 20 PDFs, JPEG/PNG/HEIC photos, or Word files, each under 20 MB. Files remain
+separate originals with individual titles, categories, and MM/DD/YYYY dates.
+Defaults may be applied to pending files. Sequential progress and per-file errors
+keep confirmed successful uploads out of subsequent retries. Existing upload
+permissions, storage rules, and audit paths are unchanged. Replacement of an
+existing document remains a single-file action. No migration or rule change.

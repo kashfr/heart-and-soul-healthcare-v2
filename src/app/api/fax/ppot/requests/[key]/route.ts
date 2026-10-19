@@ -1,3 +1,4 @@
+import { optionalFaxAttachments, readFaxJson } from '@/lib/faxAttachments';
 import { NextResponse } from 'next/server';
 import { AdminAuthError } from '@/lib/adminAuthGuard';
 import { requireFaxAccess } from '@/lib/faxCenterServer';
@@ -42,9 +43,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ key
   }
   const { key } = await params;
   if (!KEY_RE.test(key)) return NextResponse.json({ error: 'Bad id' }, { status: 400 });
-  const body = (await request.json().catch(() => ({}))) as { action?: unknown };
+  let body, supportingPdf;
+  try { body = await readFaxJson(request); supportingPdf = await optionalFaxAttachments(body.attachments); } catch (err) { return NextResponse.json({ error: err instanceof Error ? err.message : 'Invalid attachments.' }, { status: 400 }); }
   const result =
-    body.action === 'followup' ? await sendPpotFollowup(key, caller) : body.action === 'cancel' ? await cancelPpotRequest(key, caller) : body.action === 'hide' ? await hideReceivedPpot(key, caller) : null;
+    body.action === 'followup' ? await sendPpotFollowup(key, caller, false, supportingPdf) : body.action === 'cancel' ? await cancelPpotRequest(key, caller) : body.action === 'hide' ? await hideReceivedPpot(key, caller) : null;
   if (!result) return NextResponse.json({ error: 'Unknown action.' }, { status: 400 });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status || 500 });
   return NextResponse.json({ ok: true });

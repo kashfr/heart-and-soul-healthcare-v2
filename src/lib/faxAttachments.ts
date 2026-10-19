@@ -32,3 +32,37 @@ export async function prepareFaxAttachments(raw: unknown, includeCover: boolean)
   }
   return { pdf: Buffer.from(await out.save()), fileName: names.length === 1 ? names[0] : 'Fax_Attachments.pdf' };
 }
+
+/** Supporting attachments are optional; existing generated forms stay first. */
+export async function optionalFaxAttachments(raw: unknown): Promise<Buffer | undefined> {
+  if (raw === undefined || (Array.isArray(raw) && raw.length === 0)) return undefined;
+  return (await prepareFaxAttachments(raw, false)).pdf;
+}
+export async function appendFaxPdfs(primary: Buffer, supporting?: Buffer, coverPages = 0): Promise<Buffer> {
+  const out = await PDFDocument.create();
+  for (const bytes of [primary, supporting].filter((b): b is Buffer => !!b)) {
+    const doc = await PDFDocument.load(bytes);
+    if (out.getPageCount() + doc.getPageCount() + coverPages > FAX_MAX_PAGES) throw new FaxAttachmentError(`Fax at most ${FAX_MAX_PAGES} pages including the cover.`);
+    doc.getForm().flatten();
+    for (const page of await out.copyPages(doc, doc.getPageIndices())) out.addPage(page);
+  }
+  const result = Buffer.from(await out.save());
+  if (result.length > FAX_MAX_PDF_BYTES) throw new FaxAttachmentError('The complete fax packet must be at most 10 MB.');
+  return result;
+}
+
+/** Bound actual bytes, including clients that omit Content-Length. */
+export async function readFaxJson(request: Request): Promise<Record<string, unknown>> {
+  const reader = request.body?.getReader(); if (!reader) return {};
+  const chunks: Uint8Array[] = []; let size = 0;
+  while (true) {
+    const { value, done } = await reader.read(); if (done) break;
+    size += value.length;
+    if (size > 16 * 1024 * 1024) { await reader.cancel(); throw new FaxAttachmentError('Request too large. Keep attachments under 10 MB.'); }
+    chunks.push(value);
+  }
+  let body;
+  try { body = JSON.parse(Buffer.concat(chunks).toString()); } catch { throw new FaxAttachmentError('Invalid request.'); }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new FaxAttachmentError('Invalid request.');
+  return body;
+}

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { PDFDocument } from 'pdf-lib';
-import { prepareFaxAttachments } from './faxAttachments';
+import { prepareFaxAttachments, appendFaxPdfs, optionalFaxAttachments, readFaxJson } from './faxAttachments';
 import { FAX_MAX_PAGES, FAX_MAX_PDF_BYTES } from './faxShared';
 async function attachment(name: string, widths = [100]) {
   const doc = await PDFDocument.create(); widths.forEach((w) => doc.addPage([w, 200]));
@@ -46,4 +46,19 @@ describe('fax attachments', () => {
     const padded = Buffer.concat([Buffer.from(small.pdfBase64, 'base64'), Buffer.alloc(FAX_MAX_PDF_BYTES / 2, 32)]).toString('base64');
     await expect(prepareFaxAttachments([{ fileName: 'a.pdf', pdfBase64: padded }, { fileName: 'b.pdf', pdfBase64: padded }], false)).rejects.toThrow('together under 10 MB');
   });
+});
+
+it('keeps generated pages first and applies limits to the full packet', async () => {
+  const primary = Buffer.from((await attachment('primary.pdf', [101])).pdfBase64, 'base64');
+  const support = await optionalFaxAttachments([await attachment('support.pdf', [202, 203])]);
+  const result = await appendFaxPdfs(primary, support, 1);
+  expect((await PDFDocument.load(result)).getPages().map(p => p.getWidth())).toEqual([101, 202, 203]);
+  const full = Buffer.from((await attachment('full.pdf', Array(49).fill(100))).pdfBase64, 'base64');
+  await expect(appendFaxPdfs(primary, full, 1)).rejects.toThrow('50 pages');
+  expect(await optionalFaxAttachments([])).toBeUndefined();
+});
+it('bounds streamed JSON and rejects non-object bodies', async () => {
+  expect(await readFaxJson(new Request('http://localhost', { method: 'POST' }))).toEqual({});
+  await expect(readFaxJson(new Request('http://localhost', { method: 'POST', body: '[]' }))).rejects.toThrow('Invalid request');
+  await expect(readFaxJson(new Request('http://localhost', { method: 'POST', body: 'x'.repeat(16 * 1024 * 1024 + 1) }))).rejects.toThrow('too large');
 });

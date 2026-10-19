@@ -1,0 +1,34 @@
+import React from 'react';
+import { expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import BulkDocumentUpload from './BulkDocumentUpload';
+it('saves multiple originals with individual metadata and retries only failed uploads', async () => {
+  const upload = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('Connection lost')).mockResolvedValueOnce(undefined);
+  render(<BulkDocumentUpload upload={upload} onClose={() => {}} />);
+  const pdf = new File(['pdf'], 'orders.pdf', { type: 'application/pdf' });
+  const photo = new File(['photo'], 'photo.jpg', { type: 'image/jpeg' });
+  fireEvent.change(screen.getByLabelText(/Choose documents/), { target: { files: [pdf, photo] } });
+  fireEvent.change(screen.getByLabelText('Title for orders.pdf'), { target: { value: 'Physician orders' } });
+  fireEvent.change(screen.getByLabelText('Date for orders.pdf'), { target: { value: '10/18/2026' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Upload pending files' }));
+  await screen.findByText('Failed: Connection lost');
+  expect(upload).toHaveBeenCalledTimes(2);
+  expect(upload.mock.calls[0][0]).toMatchObject({ file: pdf, title: 'Physician orders', docDate: '2026-10-18' });
+  expect(upload.mock.calls[1][0].file).toBe(photo);
+  expect(screen.getByLabelText('Title for orders.pdf')).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Upload pending files' }));
+  await waitFor(() => expect(screen.getAllByText('Uploaded')).toHaveLength(2));
+  expect(upload).toHaveBeenCalledTimes(3);
+  expect(upload.mock.calls[2][0].file).toBe(photo);
+  expect(screen.getByRole('button', { name: 'Upload pending files' })).toBeDisabled();
+});
+it('rejects unsupported and oversized files before uploading', () => {
+  const upload = vi.fn(); render(<BulkDocumentUpload upload={upload} onClose={() => {}} />);
+  const input = screen.getByLabelText(/Choose documents/);
+  fireEvent.change(input, { target: { files: [new File(['x'], 'bad.exe')] } });
+  expect(screen.getByRole('alert')).toHaveTextContent('bad.exe');
+  const large = new File(['x'], 'large.pdf'); Object.defineProperty(large, 'size', { value: 20 * 1024 * 1024 });
+  fireEvent.change(input, { target: { files: [large] } });
+  expect(screen.getByRole('alert')).toHaveTextContent('under 20 MB');
+  expect(upload).not.toHaveBeenCalled();
+});

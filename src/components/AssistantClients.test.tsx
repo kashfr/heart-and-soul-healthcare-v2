@@ -113,12 +113,12 @@ describe('assistant client workspace', () => {
   it('uploads an additional document with an ISO transport date and displays a US date', async () => {
     state.fetch.mockResolvedValueOnce(response(detail()));
     render(<AssistantClientDetails patientId="client-1" />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Upload document' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Upload documents' }));
     const file = new File(['pdf contents'], 'Letter.pdf', { type: 'application/pdf' });
-    fireEvent.change(screen.getByLabelText(/Document file/), { target: { files: [file] } });
-    fireEvent.change(screen.getByRole('textbox', { name: 'Document date (MM/DD/YYYY)' }), { target: { value: '10/15/2026' } });
+    fireEvent.change(screen.getByLabelText(/Choose documents or photos/), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText('Date for Letter.pdf'), { target: { value: '10/15/2026' } });
     state.fetch.mockResolvedValueOnce(response({ document: { id: 'doc-1', title: 'Letter.pdf', fileName: 'Letter.pdf', category: 'Other', docDate: '2026-10-15', size: 12 } }));
-    fireEvent.submit(screen.getByRole('button', { name: 'Save document' }).closest('form')!);
+    fireEvent.click(screen.getByRole('button', { name: 'Upload pending files' }));
     await waitFor(() => expect(state.fetch).toHaveBeenCalledTimes(2));
     const [path, init] = state.fetch.mock.calls[1];
     expect(path).toBe('/api/assistant/clients/client-1/documents');

@@ -1,4 +1,5 @@
 import 'server-only';
+import { appendFaxPdfs, FaxAttachmentError } from './faxAttachments';
 import React from 'react';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { renderToBuffer } from '@react-pdf/renderer';
@@ -190,6 +191,7 @@ export interface SendFaxResult {
 export async function sendOutboundFax(p: {
   input: FaxSendInput;
   pdf: Buffer;
+  supportingPdf?: Buffer;
   fileName: string;
   caller: FaxSender;
   /** Set for a PPOT request: forces the cover sheet and adds its member block. */
@@ -201,9 +203,9 @@ export async function sendOutboundFax(p: {
 
   let upload: PDFDocument;
   try {
-    upload = await loadUpload(p.pdf);
+    upload = await loadUpload(p.supportingPdf ? await appendFaxPdfs(p.pdf, p.supportingPdf, p.input.includeCover || p.ppot ? 1 : 0) : p.pdf);
   } catch (err) {
-    if (err instanceof FaxDocumentError) return { ok: false, status: 400, error: err.message };
+    if (err instanceof FaxDocumentError || err instanceof FaxAttachmentError) return { ok: false, status: 400, error: err.message };
     throw err;
   }
 
@@ -215,7 +217,10 @@ export async function sendOutboundFax(p: {
   const storagePath = `faxes/outbound/${ref.id}/${p.fileName}`;
   await adminBucket().file(storagePath).save(built.bytes, { contentType: 'application/pdf', resumable: false });
 
+  const supportingStoragePath = p.supportingPdf ? `faxes/outbound/${ref.id}/supporting.pdf` : '';
+  if (p.supportingPdf) await adminBucket().file(supportingStoragePath).save(p.supportingPdf, { contentType: 'application/pdf', resumable: false });
   await ref.set({
+    supportingStoragePath,
     kind: p.ppot ? 'ppot' : 'general',
     ppot: p.ppot ?? null,
     recipientName: p.input.recipientName.trim(),

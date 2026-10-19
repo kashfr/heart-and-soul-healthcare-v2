@@ -1,4 +1,5 @@
 'use client';
+import BulkDocumentUpload from '@/components/BulkDocumentUpload';
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
@@ -712,157 +713,16 @@ function ReplaceDocumentModal({
   );
 }
 
-type UploadField = 'file' | 'category' | 'docDate';
-const UPLOAD_FIELD_ORDER: readonly UploadField[] = ['file', 'category', 'docDate'];
-const uploadFieldId = (k: UploadField) => `doc-upload-${k}`;
-
-function UploadDocumentModal({
-  patientId,
-  uploader,
-  onClose,
-  onUploaded,
-}: {
-  patientId: string;
-  uploader: DocUploader;
-  onClose: () => void;
-  onUploaded: (title: string) => void;
-}) {
-  const [file, setFile] = useState<File | null>(null);
-  const [category, setCategory] = useState<DocCategory | ''>('');
-  const [title, setTitle] = useState('');
-  const [docDate, setDocDate] = useState(todayISO());
-  const [pct, setPct] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<Partial<Record<UploadField, string>>>({});
-  const fileInput = useRef<HTMLInputElement>(null);
-
-  const clearFieldError = (k: UploadField) => {
-    if (fieldErrors[k]) setFieldErrors((e) => ({ ...e, [k]: undefined }));
-  };
-
-  const pickFile = (f: File | null) => {
-    setFile(f);
-    if (f && !title.trim()) setTitle(f.name.replace(/\.[^.]+$/, ''));
-    setError(null);
-    if (f) clearFieldError('file');
-  };
-
-  const save = async () => {
-    if (pct !== null) return;
-    const errs: Partial<Record<UploadField, string>> = {};
-    if (!file) errs.file = 'Choose a file to upload.';
-    if (!category) errs.category = 'Choose a document category.';
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(docDate)) errs.docDate = 'Enter the date on the document.';
-    if (!applyFieldErrors(errs, UPLOAD_FIELD_ORDER, setFieldErrors, uploadFieldId)) return;
-    if (!file || !category) return;
-    setError(null);
-    setPct(0);
-    try {
-      await uploadPatientDocument(
-        { patientId, file, category, title, docDate, uploader },
-        (p) => setPct(p),
-      );
-      onUploaded(title.trim() || file.name);
-      onClose();
-    } catch (err) {
-      setPct(null);
-      setError(err instanceof Error ? err.message : 'Upload failed. Please try again.');
-    }
-  };
-
-  const uploading = pct !== null;
-
-  return (
-    <div style={backdropStyle} role="dialog" aria-modal="true" aria-label="Upload a document">
-      <div style={sheetStyle}>
-        <div style={sheetTitleStyle}>Upload a Document</div>
-
-        <button
-          type="button"
-          id={uploadFieldId('file')}
-          style={{ ...dropZoneStyle, ...(fieldErrors.file ? FIELD_ERROR_WRAP_STYLE : null) }}
-          onClick={() => fileInput.current?.click()}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault();
-            pickFile(e.dataTransfer.files?.[0] || null);
-          }}
-        >
-          <FileUp size={20} color="#5c6b7a" />
-          {file ? (
-            <span style={{ fontWeight: 600, color: '#1f2937' }}>{file.name}</span>
-          ) : (
-            <span style={{ color: '#5c6b7a' }}>Click to choose a file (or drop one here)</span>
-          )}
-          <span style={dropHintStyle}>PDF, image, or Word document · 20 MB max</span>
-        </button>
-        <FieldError message={fieldErrors.file} />
-        <input
-          ref={fileInput}
-          type="file"
-          accept={Object.keys(ALLOWED_DOC_TYPES).join(',')}
-          style={{ display: 'none' }}
-          onChange={(e) => pickFile(e.target.files?.[0] || null)}
-        />
-
-        <label style={fieldStyle} id={uploadFieldId('category')}>
-          <span style={fieldLabelStyle}>Category *</span>
-          <select
-            value={category}
-            onChange={(e) => {
-              setCategory(e.target.value as DocCategory);
-              clearFieldError('category');
-            }}
-            style={{ ...selectStyle, ...(fieldErrors.category ? FIELD_ERROR_STYLE : null) }}
-            aria-invalid={!!fieldErrors.category}
-          >
-            <option value="">Select a Category…</option>
-            <CategoryOptions />
-          </select>
-          <FieldError message={fieldErrors.category} />
-        </label>
-
-        <div style={grid2Style}>
-          <label style={fieldStyle} id={uploadFieldId('docDate')}>
-            <span style={fieldLabelStyle}>Date on the document *</span>
-            <input
-              type="date"
-              value={docDate}
-              onChange={(e) => {
-                setDocDate(e.target.value);
-                clearFieldError('docDate');
-              }}
-              style={{ ...inputStyle, ...(fieldErrors.docDate ? FIELD_ERROR_STYLE : null) }}
-              aria-invalid={!!fieldErrors.docDate}
-            />
-            <FieldError message={fieldErrors.docDate} />
-            <span style={hintStyle}>Drives the currency tracking (e.g. the supervisory visit date, the plan-of-care start date).</span>
-          </label>
-          <label style={fieldStyle}>
-            <span style={fieldLabelStyle}>Title</span>
-            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} style={inputStyle} placeholder="Defaults to the file name" />
-          </label>
-        </div>
-
-        {uploading && (
-          <div style={progressWrapStyle}>
-            <div style={{ ...progressBarStyle, width: `${pct}%` }} />
-            <span style={progressTextStyle}>{pct}%</span>
-          </div>
-        )}
-        {error && <div style={errBoxStyle}>{error}</div>}
-
-        <div style={actionsStyle}>
-          <button type="button" className={btn} onClick={onClose} disabled={uploading}>
-            Cancel
-          </button>
-          <button type="button" className={btnPrimary} onClick={save} disabled={uploading}>
-            {uploading ? 'Uploading…' : 'Upload'}
-          </button>
-        </div>
-      </div>
+function UploadDocumentModal({ patientId, uploader, onClose, onUploaded }: { patientId: string; uploader: DocUploader; onClose: () => void; onUploaded: (title: string) => void }) {
+  return <div style={backdropStyle} role="dialog" aria-modal="true" aria-label="Upload documents">
+    <div style={{ ...sheetStyle, maxWidth: 900, maxHeight: '90vh', overflowY: 'auto' }}>
+      <div style={sheetTitleStyle}>Upload Documents</div>
+      <BulkDocumentUpload onClose={onClose} upload={async (item, progress) => {
+        await uploadPatientDocument({ patientId, file: item.file, category: item.category, title: item.title, docDate: item.docDate, uploader }, progress);
+        onUploaded(item.title);
+      }} />
     </div>
-  );
+  </div>;
 }
 
 const NAVY = '#1a3a5c';

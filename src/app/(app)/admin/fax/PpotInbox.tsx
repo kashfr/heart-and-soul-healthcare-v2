@@ -1,4 +1,5 @@
 'use client';
+import FaxSupportingSendModal from '@/components/FaxSupportingSendModal';
 
 import { useCallback, useEffect, useState } from 'react';
 import { Ban, Send, CheckCircle2, EyeOff, Eye, FileCheck2, FileUp, FolderInput, Hourglass, Inbox, X } from 'lucide-react';
@@ -77,6 +78,7 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
     void load();
   }, [load, refreshKey]);
 
+  const [followup, setFollowup] = useState<{ key: string; description: string } | null>(null);
   const [preview, setPreview] = useState<{ title: string; url: string } | null>(null);
   const view = (title: string, url: string) => setPreview({ title, url });
 
@@ -102,6 +104,12 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
 
   return (
     <>
+      {followup && <FaxSupportingSendModal title="Send PPOT follow-up" description={followup.description} onClose={() => setFollowup(null)} send={async (attachments) => {
+        const res = await authedFetch(`/api/fax/ppot/requests/${followup.key}`, { method: 'POST', body: JSON.stringify({ action: 'followup', attachments }) });
+        const data = await res.json(); if (!res.ok) throw new Error(data.error || 'Could not send follow-up.');
+        await load(); setNotice('Follow-up submitted. Check Sent Faxes for delivery.');
+      }} />}
+
       {error && <div role="alert" style={{ ...noteStyle, color: '#b3261e', marginBottom: 14 }}>{error}</div>}
       {notice && (
         <div role="status" style={noticeStyle}>
@@ -227,7 +235,7 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
                         <button type="button" className={`${btnPrimary} ${btnSm}`} style={{ marginBottom: 6 }}
                           disabled={busy === r.key || !faxConfigured || r.followupPending || r.followupAttemptDate === today || r.remindedDate === today}
                           title={!faxConfigured ? 'Fax sending is unavailable on this server' : 'Send another Appendix T request to this physician'}
-                          onClick={() => act(r.key, `/api/fax/ppot/requests/${r.key}`, { action: 'followup' }, `Send a follow-up Appendix T fax for ${r.memberName} to ${r.recipientName} at ${formatUSFaxNumber(r.toNumber)}?`)}>
+                          onClick={() => setFollowup({ key: r.key, description: `Send a follow-up Appendix T fax for ${r.memberName} to ${r.recipientName} at ${formatUSFaxNumber(r.toNumber)}.` })}>
                           <Send size={14} /> Send Follow-up Fax
                         </button>{' '}
                         <button
