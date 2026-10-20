@@ -14,6 +14,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${siteUrl}/referral`, lastModified: now, changeFrequency: "monthly", priority: 0.9 },
     { url: `${siteUrl}/programs/gapp`, lastModified: now, changeFrequency: "monthly", priority: 0.9 },
     { url: `${siteUrl}/programs/gapp/trach-and-ventilator-care`, lastModified: now, changeFrequency: "monthly", priority: 0.9 },
+    { url: `${siteUrl}/programs/gapp/trach-and-ventilator-care/childrens-healthcare-of-atlanta`, lastModified: now, changeFrequency: "monthly", priority: 0.8 },
     { url: `${siteUrl}/programs/now-comp`, lastModified: now, changeFrequency: "monthly", priority: 0.9 },
     { url: `${siteUrl}/programs/icwp`, lastModified: now, changeFrequency: "monthly", priority: 0.9 },
     { url: `${siteUrl}/programs/edwp`, lastModified: now, changeFrequency: "monthly", priority: 0.9 },
