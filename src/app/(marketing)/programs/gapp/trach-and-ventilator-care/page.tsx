@@ -15,6 +15,7 @@ import {
   META_TITLE,
   NURSING_SERVICES,
   PAGE_URL,
+  FAX_DISPLAY,
   PHONE_DISPLAY,
   PHONE_TEL,
   TITLE,
@@ -253,9 +254,21 @@ export default function TrachVentCarePage() {
             <h2>Referring a Trach or Vent Patient?</h2>
             <p>
               We accept referrals directly from NICU and PICU discharge planners, case managers, and
-              physicians. Send us the family&apos;s contact information and what you know about the
-              child&apos;s needs, and we will take it from there: physician orders, the GAPP request, and
-              staffing trach and vent trained nurses for discharge.
+              physicians, by phone at {PHONE_DISPLAY}, fax at {FAX_DISPLAY}, email, or the referral
+              form. Here is how we work with you:
+            </p>
+            <ul className={s.plannerList}>
+              <li><strong>Same-business-day response.</strong> Send a referral and you will hear from us that business day.</li>
+              <li><strong>What we need to start:</strong> the family&apos;s contact information, the child&apos;s diagnoses and equipment, the anticipated discharge date, and the ordering physician. We gather the rest.</li>
+              <li><strong>We can come to the bedside.</strong> A nurse can meet the family at the hospital and sit in on trach and ventilator teaching.</li>
+              <li><strong>We start GAPP while the child is inpatient.</strong> Plan of treatment, records, and the request to the state, so nursing is in place for discharge.</li>
+            </ul>
+            <p>
+              Families coming home from Children&apos;s Healthcare of Atlanta can read{' '}
+              <Link href="/programs/gapp/trach-and-ventilator-care/childrens-healthcare-of-atlanta">
+                what to expect after a trach or ventilator discharge
+              </Link>
+              .
             </p>
             <div className={s.heroActions}>
               <Link href={REFERRAL_HREF} className="btn btn-primary">

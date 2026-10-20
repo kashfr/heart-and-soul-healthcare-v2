@@ -12,6 +12,8 @@
 export const PAGE_URL = 'https://www.heartandsoulhc.org/programs/gapp/trach-and-ventilator-care';
 export const PHONE_DISPLAY = '(678) 644-0337';
 export const PHONE_TEL = '+16786440337';
+export const FAX_DISPLAY = '(470) 235-1891';
+export const FAX_TEL = '+14702351891';
 
 export const TITLE = 'Pediatric Trach and Ventilator Nursing at Home in Georgia';
 export const META_TITLE = 'Pediatric Trach & Ventilator Home Nursing in Georgia | Heart and Soul Healthcare';
