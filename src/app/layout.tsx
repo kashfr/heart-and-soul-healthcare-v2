@@ -41,6 +41,7 @@ const organizationJsonLd = {
   url: siteUrl,
   logo: `${siteUrl}/images/logo-2026.webp`,
   telephone: "+16786440337",
+  faxNumber: "+14702351891",
   email: "info@heartandsoulhc.org",
   address: {
     "@type": "PostalAddress",

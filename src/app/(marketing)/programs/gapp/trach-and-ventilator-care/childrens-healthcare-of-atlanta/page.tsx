@@ -5,7 +5,7 @@ import { ArrowRight, CheckCircle, Phone, Stethoscope } from 'lucide-react';
 import { ScrollReveal, StaggerContainer, StaggerItem } from '@/components/animations';
 import t from '@/components/ProgramPageTemplate.module.css';
 import s from '../page.module.css';
-import { PHONE_DISPLAY, PHONE_TEL } from '../content';
+import { FAX_DISPLAY, PHONE_DISPLAY, PHONE_TEL } from '../content';
 import {
   CHECKLIST,
   FAQS,
@@ -228,8 +228,8 @@ export default function ChoaDischargePage() {
           <ScrollReveal direction="up" className={t.ctaContent}>
             <h2>Tell Us Your Child Is Coming Home</h2>
             <p>
-              Parents, case managers, social workers, and physicians can all start a referral. We
-              respond the same business day.
+              Parents, case managers, social workers, and physicians can all start a referral by
+              phone, by fax at {FAX_DISPLAY}, by email, or with the form. We respond the same business day.
             </p>
             <div className={t.ctaActions}>
               <Link href={REFERRAL_HREF} className="btn btn-gold btn-lg">

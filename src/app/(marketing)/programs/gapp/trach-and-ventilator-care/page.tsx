@@ -15,6 +15,7 @@ import {
   META_TITLE,
   NURSING_SERVICES,
   PAGE_URL,
+  FAX_DISPLAY,
   PHONE_DISPLAY,
   PHONE_TEL,
   TITLE,
@@ -253,7 +254,8 @@ export default function TrachVentCarePage() {
             <h2>Referring a Trach or Vent Patient?</h2>
             <p>
               We accept referrals directly from NICU and PICU discharge planners, case managers, and
-              physicians, by phone, fax, email, or the referral form. Here is how we work with you:
+              physicians, by phone at {PHONE_DISPLAY}, fax at {FAX_DISPLAY}, email, or the referral
+              form. Here is how we work with you:
             </p>
             <ul className={s.plannerList}>
               <li><strong>Same-business-day response.</strong> Send a referral and you will hear from us that business day.</li>

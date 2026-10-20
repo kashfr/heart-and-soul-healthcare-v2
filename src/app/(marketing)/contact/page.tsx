@@ -7,13 +7,12 @@ import {
   Phone, 
   Mail, 
   MapPin, 
-  Clock, 
+  
   Send,
   MessageSquare,
   ArrowRight,
   CheckCircle,
-  AlertCircle
-} from 'lucide-react';
+  AlertCircle, Printer } from 'lucide-react';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { processContactSubmission } from '@/app/actions';
@@ -45,7 +44,13 @@ const contactInfo = [
     title: 'Phone',
     primary: '(678) 644-0337',
     link: 'tel:678-644-0337',
-    secondary: 'Mon to Fri: 9:00 AM to 5:00 PM',
+    secondary: 'Monday to Friday, 9:00 AM to 5:00 PM ET',
+  },
+  {
+    icon: Printer,
+    title: 'Fax',
+    primary: '(470) 235-1891',
+    secondary: 'Referrals and physician orders',
   },
   {
     icon: Mail,
@@ -59,12 +64,6 @@ const contactInfo = [
     title: 'Address',
     primary: '1372 Peachtree St NE',
     secondary: 'Atlanta, GA 30309',
-  },
-  {
-    icon: Clock,
-    title: 'Office Hours',
-    primary: 'Monday - Friday',
-    secondary: '9:00 AM to 5:00 PM ET',
   },
 ];
 
