@@ -101,7 +101,7 @@ export default function Footer() {
                   </li>
                   <li>
                     <Clock size={18} />
-                    <span>Mon - Fri: 10:00 AM - 3:00 PM</span>
+                    <span>Mon to Fri: 9:00 AM to 5:00 PM</span>
                   </li>
                 </ul>
               </address>

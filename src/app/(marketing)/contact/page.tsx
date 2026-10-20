@@ -45,7 +45,7 @@ const contactInfo = [
     title: 'Phone',
     primary: '(678) 644-0337',
     link: 'tel:678-644-0337',
-    secondary: 'Mon - Fri: 9:00 AM - 5:00 PM',
+    secondary: 'Mon to Fri: 9:00 AM to 5:00 PM',
   },
   {
     icon: Mail,
@@ -64,7 +64,7 @@ const contactInfo = [
     icon: Clock,
     title: 'Office Hours',
     primary: 'Monday - Friday',
-    secondary: '10:00 AM - 3:00 PM EST',
+    secondary: '9:00 AM to 5:00 PM ET',
   },
 ];
 
