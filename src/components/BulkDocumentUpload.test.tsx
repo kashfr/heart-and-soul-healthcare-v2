@@ -4,7 +4,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import BulkDocumentUpload from './BulkDocumentUpload';
 it('saves multiple originals with individual metadata and retries only failed uploads', async () => {
   const upload = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('Connection lost')).mockResolvedValueOnce(undefined);
-  render(<BulkDocumentUpload upload={upload} onClose={() => {}} />);
+  const onClose = vi.fn();
+  render(<BulkDocumentUpload upload={upload} onClose={onClose} />);
   const pdf = new File(['pdf'], 'orders.pdf', { type: 'application/pdf' });
   const photo = new File(['photo'], 'photo.jpg', { type: 'image/jpeg' });
   fireEvent.change(screen.getByLabelText(/Choose documents/), { target: { files: [pdf, photo] } });
@@ -12,15 +13,18 @@ it('saves multiple originals with individual metadata and retries only failed up
   fireEvent.change(screen.getByLabelText('Date for orders.pdf'), { target: { value: '10/18/2026' } });
   fireEvent.click(screen.getByRole('button', { name: 'Upload pending files' }));
   await screen.findByText('Failed: Connection lost');
+  // A failure keeps the modal open with a plain summary.
+  expect(screen.getByRole('alert')).toHaveTextContent('1 uploaded, 1 failed.');
+  expect(onClose).not.toHaveBeenCalled();
   expect(upload).toHaveBeenCalledTimes(2);
   expect(upload.mock.calls[0][0]).toMatchObject({ file: pdf, title: 'Physician orders', docDate: '2026-10-18', periodStart: '', periodEnd: '' });
   expect(upload.mock.calls[1][0].file).toBe(photo);
   expect(screen.getByLabelText('Title for orders.pdf')).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: 'Upload pending files' }));
-  await waitFor(() => expect(screen.getAllByText('Uploaded')).toHaveLength(2));
+  // The retry uploads only the failed file, and once everything saved the modal closes itself.
+  await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   expect(upload).toHaveBeenCalledTimes(3);
   expect(upload.mock.calls[2][0].file).toBe(photo);
-  expect(screen.getByRole('button', { name: 'Upload pending files' })).toBeDisabled();
 });
 it('rejects unsupported and oversized files before uploading', () => {
   const upload = vi.fn(); render(<BulkDocumentUpload upload={upload} onClose={() => {}} />);
@@ -34,7 +38,9 @@ it('rejects unsupported and oversized files before uploading', () => {
 });
 it('seeds a new file from the previous one, applies one file\'s labeling to all, and sends the period as ISO bounds', async () => {
   const upload = vi.fn().mockResolvedValue(undefined);
-  render(<BulkDocumentUpload upload={upload} onClose={() => {}} />);
+  const onClose = vi.fn();
+  const onComplete = vi.fn();
+  render(<BulkDocumentUpload upload={upload} onClose={onClose} onComplete={onComplete} />);
   // No defaults block: a single file shows no "apply to all".
   expect(screen.queryByRole('button', { name: 'Apply to all files' })).toBeNull();
   fireEvent.change(screen.getByLabelText(/Choose documents/), { target: { files: [new File(['pdf'], 'eligibility.pdf', { type: 'application/pdf' })] } });
@@ -57,7 +63,9 @@ it('seeds a new file from the previous one, applies one file\'s labeling to all,
   expect(upload).not.toHaveBeenCalled();
   for (const name of ['eligibility.pdf', 'letter.pdf']) fireEvent.change(screen.getByRole('textbox', { name: `Period end for ${name}` }), { target: { value: '12/31/2026' } });
   fireEvent.click(screen.getByRole('button', { name: 'Upload pending files' }));
-  await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  expect(upload).toHaveBeenCalledTimes(2);
+  expect(onComplete).toHaveBeenCalledTimes(1);
   expect(upload.mock.calls[0][0]).toMatchObject({ category: 'Eligibility / Medicaid', periodStart: '2026-10-01', periodEnd: '2026-12-31' });
   expect(upload.mock.calls[1][0]).toMatchObject({ periodStart: '2026-10-01', periodEnd: '2026-12-31' });
   expect(upload.mock.calls[0][0]).not.toHaveProperty('period');

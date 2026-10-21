@@ -43,6 +43,7 @@ export default function BulkDocumentUpload({ upload, onClose, onComplete }: { up
     const badPeriod = resolved.find((r) => !r.period.ok);
     if (badPeriod && !badPeriod.period.ok) { setError(`${badPeriod.row.file.name}: ${badPeriod.period.error}`); return; }
     setBusy(true); setError('');
+    let failed = 0;
     for (const { row, period: resolvedPeriod } of resolved) {
       const covers = resolvedPeriod.ok ? resolvedPeriod.period : null;
       patch(row.id, { status: 'uploading', error: '' }); setProgress(0);
@@ -50,9 +51,16 @@ export default function BulkDocumentUpload({ upload, onClose, onComplete }: { up
         await upload({ id: row.id, file: row.file, title: row.title, category: row.category, docDate: parseUSDate(row.docDate)!, periodStart: covers?.periodStart ?? '', periodEnd: covers?.periodEnd ?? '' }, setProgress);
         patch(row.id, { status: 'uploaded' });
       }
-      catch (err) { patch(row.id, { status: 'failed', error: err instanceof Error ? err.message : 'Upload failed. Check the client’s Documents before retrying.' }); }
+      catch (err) { failed++; patch(row.id, { status: 'failed', error: err instanceof Error ? err.message : 'Upload failed. Check the client’s Documents before retrying.' }); }
     }
-    setBusy(false); onComplete?.();
+    setBusy(false);
+    onComplete?.();
+    // Every file saved: close. Before this the modal stayed open on a small
+    // "Uploaded" label with the button greyed out, which reads as a hang.
+    // The caller's own confirmation (a toast or notice) reports the upload.
+    if (!failed) { onClose(); return; }
+    const saved = resolved.length - failed;
+    setError(`${saved ? `${saved} uploaded, ` : ''}${failed} failed. Check the ${failed === 1 ? 'file' : 'files'} marked Failed below, then choose Upload pending files to retry.`);
   };
   const several = rows.filter((r) => r.status !== 'uploaded').length > 1;
   return <div>
