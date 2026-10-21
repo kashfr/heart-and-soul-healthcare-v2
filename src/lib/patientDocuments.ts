@@ -60,6 +60,11 @@ export interface PatientDocument {
   contentType: string;
   size: number;
   docDate: string; // YYYY-MM-DD — the date ON the document (drives currency tracking)
+  /** The period the document COVERS (inclusive ISO dates), when it has one:
+   *  the month of an eligibility letter, the span of an authorization, a plan
+   *  of care's certification period. Both set or neither (see documentPeriod.ts). */
+  periodStart?: string;
+  periodEnd?: string;
   uploadedBy: string;
   uploadedByName: string;
   uploadedByRole: string;
@@ -136,11 +141,14 @@ export async function uploadPatientDocument(
     category: DocCategory;
     title: string;
     docDate: string;
+    /** ISO pair, both or neither; empty strings mean no period. */
+    periodStart?: string;
+    periodEnd?: string;
     uploader: DocUploader;
   },
   onProgress?: (pct: number) => void,
 ): Promise<string> {
-  const { patientId, file, category, title, docDate, uploader } = params;
+  const { patientId, file, category, title, docDate, periodStart, periodEnd, uploader } = params;
   const contentType = resolveContentType(file);
   if (!ALLOWED_DOC_TYPES[contentType]) {
     throw new Error(
@@ -174,6 +182,7 @@ export async function uploadPatientDocument(
     contentType,
     size: file.size,
     docDate,
+    ...(periodStart && periodEnd ? { periodStart, periodEnd } : {}),
     uploadedBy: uploader.uid,
     uploadedByName: uploader.name,
     uploadedByRole: uploader.role,
@@ -371,13 +380,13 @@ export async function refreshServicePlanDocumentPdf(id: string): Promise<void> {
 
 export async function updateDocumentDetails(
   id: string,
-  patch: { title: string; category: DocCategory; docDate: string },
+  patch: { title: string; category: DocCategory; docDate: string; periodStart?: string; periodEnd?: string },
 ): Promise<void> {
   // Through the server so a note-filed entry is marked as edited by hand
   // (a later re-file of the note keeps these details).
   const res = await authedFetch(`/api/documents/${encodeURIComponent(id)}`, {
     method: 'PATCH',
-    body: JSON.stringify({ title: patch.title.trim(), category: patch.category, docDate: patch.docDate }),
+    body: JSON.stringify({ title: patch.title.trim(), category: patch.category, docDate: patch.docDate, periodStart: patch.periodStart ?? '', periodEnd: patch.periodEnd ?? '' }),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));

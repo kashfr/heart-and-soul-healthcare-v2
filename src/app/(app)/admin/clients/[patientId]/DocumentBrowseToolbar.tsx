@@ -48,7 +48,7 @@ export default function DocumentBrowseToolbar({ filters, onChange, isStaff, show
           </select>
         </label>}
       </div>
-      <p style={{ fontSize: 12, color: '#64748b', margin: '10px 0 0' }}>Dates refer to the date on the document. Select multiple category buttons above to include them together.</p>
+      <p style={{ fontSize: 12, color: '#64748b', margin: '10px 0 0' }}>Dates match the date on the document or the period it covers. Select multiple category buttons above to include them together.</p>
     </div>}
     {invalid && <p role="alert" style={{ color: '#b91c1c', fontSize: 13 }}>The from date must be on or before the to date.</p>}
     <p role="status" style={{ fontSize: 12, color: '#64748b', margin: '0 0 12px' }}>Showing {shown} of {total} documents</p>

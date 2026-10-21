@@ -152,6 +152,9 @@ export async function addReferralDocument(p: {
   title: string;
   fileName: string;
   docDate: string;
+  /** The period the records cover (ISO pair), carried onto the client's document on conversion. */
+  periodStart?: string;
+  periodEnd?: string;
   by: { uid: string; name: string; role: string };
   inboundFaxId?: string;
 }): Promise<string> {
@@ -168,6 +171,7 @@ export async function addReferralDocument(p: {
     contentType: 'application/pdf',
     size: p.pdf.length,
     docDate: p.docDate,
+    ...(p.periodStart && p.periodEnd ? { periodStart: p.periodStart, periodEnd: p.periodEnd } : {}),
     uploadedBy: p.by.uid,
     uploadedByName: p.by.name,
     uploadedByRole: p.by.role,
@@ -204,6 +208,7 @@ export async function moveReferralDocumentsToPatient(referralId: string, patient
       contentType: 'application/pdf',
       size: Number(x.size || 0),
       docDate: String(x.docDate || ''),
+      ...(x.periodStart && x.periodEnd ? { periodStart: String(x.periodStart), periodEnd: String(x.periodEnd) } : {}),
       uploadedBy: by.uid,
       uploadedByName: by.name,
       uploadedByRole: by.role,

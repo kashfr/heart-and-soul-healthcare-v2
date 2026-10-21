@@ -7,6 +7,8 @@ import Link from 'next/link';
 import { Archive, ArchiveRestore, ArrowRightLeft, ExternalLink, FileText, FileUp, FilePenLine, Image as ImageIcon, Pencil, RefreshCw, Replace, Trash2 } from 'lucide-react';
 import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
 import { withSelectChevron } from '@/lib/selectChevron';
+import DocumentPeriodFields from '@/components/DocumentPeriodFields';
+import { draftFromPeriod, formatDocumentPeriod, resolvePeriodDraft, type DocumentPeriodDraft } from '@/lib/documentPeriod';
 import {
   ALLOWED_DOC_TYPES,
   CORE_DOC_CATEGORIES,
@@ -302,6 +304,7 @@ export default function DocumentsSection({
                 <div style={docMetaStyle}>
                   <span style={categoryChipStyle}>{d.category}</span>
                   {d.docDate ? ` ${fmtDate(d.docDate)}` : ''}
+                  {formatDocumentPeriod(d) && <>{' '}<span style={periodChipStyle} title="The period this document covers">Covers {formatDocumentPeriod(d)}</span></>}
                   {` · ${ALLOWED_DOC_TYPES[d.contentType] || 'File'}`}
                   {d.size ? ` · ${fmtSize(d.size)}` : ''}
                   {d.uploadedByName ? ` · ${d.autoFiled ? 'documented' : 'uploaded'} by ${d.uploadedByName}` : ''}
@@ -456,11 +459,11 @@ function CategoryOptions() {
   );
 }
 
-type EditField = 'title' | 'category' | 'docDate';
-const EDIT_FIELD_ORDER: readonly EditField[] = ['title', 'category', 'docDate'];
+type EditField = 'title' | 'category' | 'docDate' | 'period';
+const EDIT_FIELD_ORDER: readonly EditField[] = ['title', 'category', 'docDate', 'period'];
 const editFieldId = (k: EditField) => `doc-edit-${k}`;
 
-/** Staff relabel: title, category, date. The file is untouched. */
+/** Staff relabel: title, category, date, period covered. The file is untouched. */
 function EditDocumentModal({
   document: d,
   onClose,
@@ -473,6 +476,7 @@ function EditDocumentModal({
   const [title, setTitle] = useState(d.title);
   const [category, setCategory] = useState<DocCategory | ''>((DOC_CATEGORIES as readonly string[]).includes(d.category) ? (d.category as DocCategory) : '');
   const [docDate, setDocDate] = useState(d.docDate || '');
+  const [period, setPeriod] = useState<DocumentPeriodDraft>(() => draftFromPeriod(d));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<EditField, string>>>({});
@@ -483,12 +487,14 @@ function EditDocumentModal({
     if (!title.trim()) errs.title = 'Enter a title.';
     if (!category) errs.category = 'Choose a document category.';
     if (!/^\d{4}-\d{2}-\d{2}$/.test(docDate)) errs.docDate = 'Enter the date on the document.';
+    const covers = resolvePeriodDraft(period);
+    if (!covers.ok) errs.period = covers.error;
     if (!applyFieldErrors(errs, EDIT_FIELD_ORDER, setFieldErrors, editFieldId)) return;
-    if (!category) return;
+    if (!category || !covers.ok) return;
     setSaving(true);
     setError(null);
     try {
-      await updateDocumentDetails(d.id, { title, category, docDate });
+      await updateDocumentDetails(d.id, { title, category, docDate, periodStart: covers.period?.periodStart ?? '', periodEnd: covers.period?.periodEnd ?? '' });
       onSaved(title.trim());
       onClose();
     } catch (err) {
@@ -542,6 +548,11 @@ function EditDocumentModal({
           />
           <FieldError message={fieldErrors.docDate} />
         </label>
+        <div style={{ ...fieldStyle, ...(fieldErrors.period ? FIELD_ERROR_WRAP_STYLE : null) }} id={editFieldId('period')}>
+          <DocumentPeriodFields draft={period} onChange={(next) => { setPeriod(next); if (fieldErrors.period) setFieldErrors((f) => ({ ...f, period: undefined })); }} labelStyle={periodLabelStyle} inputStyle={inputStyle} selectStyle={selectStyle} />
+          <span style={hintStyle}>What the document applies to: the month of an eligibility letter, the dates of an authorization, a plan&rsquo;s certification period.</span>
+          <FieldError message={fieldErrors.period} />
+        </div>
         {error && <div style={errBoxStyle}>{error}</div>}
         <div style={actionsStyle}>
           <button type="button" className={btn} onClick={onClose} disabled={saving}>Cancel</button>
@@ -718,7 +729,7 @@ function UploadDocumentModal({ patientId, uploader, onClose, onUploaded }: { pat
     <div style={{ ...sheetStyle, maxWidth: 900, maxHeight: '90vh', overflowY: 'auto' }}>
       <div style={sheetTitleStyle}>Upload Documents</div>
       <BulkDocumentUpload onClose={onClose} upload={async (item, progress) => {
-        await uploadPatientDocument({ patientId, file: item.file, category: item.category, title: item.title, docDate: item.docDate, uploader }, progress);
+        await uploadPatientDocument({ patientId, file: item.file, category: item.category, title: item.title, docDate: item.docDate, periodStart: item.periodStart, periodEnd: item.periodEnd, uploader }, progress);
         onUploaded(item.title);
       }} />
     </div>
@@ -736,6 +747,8 @@ const docIconStyle: CSSProperties = { width: 30, height: 30, borderRadius: 8, ba
 const docTitleStyle: CSSProperties = { fontWeight: 600, fontSize: 13.5, color: '#1f2937', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
 const docMetaStyle: CSSProperties = { fontSize: 12, color: '#7f8c8d', marginTop: 2 };
 const categoryChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#e8eef4', color: NAVY, fontSize: 10.5, fontWeight: 700 };
+const periodChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontSize: 10.5, fontWeight: 700 };
+const periodLabelStyle: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, fontWeight: 600, color: '#5c6b7a', minWidth: 0 };
 const archivedChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#f1f5f9', color: '#64748b', fontSize: 10.5, fontWeight: 700 };
 const autoChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#dbeafe', color: '#1d4ed8', border: '1px solid #bfdbfe', fontSize: 10.5, fontWeight: 700 };
 const backdropStyle: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 3200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '8vh 16px', overflowY: 'auto' };

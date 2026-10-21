@@ -1,5 +1,6 @@
 import type { PatientDocument } from './patientDocuments';
 import { isNoteFiledDocument } from './noteDocLinks';
+import { periodOverlaps } from './documentPeriod';
 export interface DocumentFilters {
   search: string; categories: string[]; from: string; to: string;
   source: 'all' | 'uploaded' | 'notes' | 'generated';
@@ -13,6 +14,10 @@ function uploadTime(d: PatientDocument): number {
   const t = d.uploadedAt as { toMillis?: () => number; seconds?: number } | undefined;
   return t?.toMillis?.() ?? (t?.seconds != null ? t.seconds * 1000 : 0);
 }
+function inDateRange(d: PatientDocument, from: string, to: string): boolean {
+  const onDocument = !!d.docDate && (!from || d.docDate >= from) && (!to || d.docDate <= to);
+  return onDocument || periodOverlaps(d, from, to);
+}
 export function browseDocuments(documents: PatientDocument[], f: DocumentFilters, isStaff: boolean): PatientDocument[] {
   const terms = f.search.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
   return documents.filter((d) => {
@@ -20,8 +25,10 @@ export function browseDocuments(documents: PatientDocument[], f: DocumentFilters
     if (f.status === 'active' && d.archived) return false;
     if (f.status === 'archived' && !d.archived) return false;
     if (f.categories.length && !f.categories.includes(d.category)) return false;
-    if (f.from && (!d.docDate || d.docDate < f.from)) return false;
-    if (f.to && (!d.docDate || d.docDate > f.to)) return false;
+    // A date filter matches the date on the document OR the period it
+    // covers, so "October" finds the eligibility letter dated in September
+    // that covers October.
+    if ((f.from || f.to) && !inDateRange(d, f.from, f.to)) return false;
     if (f.source === 'uploaded' && d.autoFiled) return false;
     if (f.source === 'notes' && !isNoteFiledDocument(d)) return false;
     if (f.source === 'generated' && (!d.autoFiled || isNoteFiledDocument(d))) return false;

@@ -1,3 +1,4 @@
+import { parseDocumentPeriod } from './documentPeriod';
 /**
  * Document categories, grouped for the pickers. The original seven names are
  * load-bearing (survey-readiness currency checks, verbal-order filing, and
@@ -40,9 +41,12 @@ export interface FileFaxToClientInput {
   category: string;
   title: string;
   docDate: string; // YYYY-MM-DD
+  /** The period the records cover, both ISO dates or both empty. */
+  periodStart?: string;
+  periodEnd?: string;
 }
 
-export type FileFaxToClientField = keyof FileFaxToClientInput;
+export type FileFaxToClientField = 'patientId' | 'category' | 'title' | 'docDate' | 'period';
 
 /** Field errors for filing an incoming fax into a client's Documents. */
 export function validateFileFaxToClient(input: Partial<FileFaxToClientInput>, todayISO: string): Partial<Record<FileFaxToClientField, string>> {
@@ -57,5 +61,7 @@ export function validateFileFaxToClient(input: Partial<FileFaxToClientInput>, to
   const d = String(input.docDate || '');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) e.docDate = 'Enter the document date.';
   else if (d > todayISO) e.docDate = 'The document date cannot be in the future.';
+  const period = parseDocumentPeriod(input);
+  if (!period.ok) e.period = period.error;
   return e;
 }

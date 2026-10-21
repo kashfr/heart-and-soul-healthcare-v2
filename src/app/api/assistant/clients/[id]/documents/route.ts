@@ -14,7 +14,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const file = body.get('file');
     if (!(file instanceof File)) throw new AssistantClientError(400, 'Choose a file to upload.');
     const field = (key: string) => typeof body.get(key) === 'string' ? body.get(key) as string : '';
-    return NextResponse.json(await uploadAssistantDocument(context, (await params).id, file, { title: field('title'), category: field('category'), docDate: field('docDate') }), { status: 201, headers });
+    return NextResponse.json(await uploadAssistantDocument(context, (await params).id, file, { title: field('title'), category: field('category'), docDate: field('docDate'), periodStart: field('periodStart'), periodEnd: field('periodEnd') }), { status: 201, headers });
   } catch (err) {
     if (err instanceof AdminAuthError || err instanceof AssistantClientError) return NextResponse.json({ error: err.message }, { status: err.status, headers });
     throw err;

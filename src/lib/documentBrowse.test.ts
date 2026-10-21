@@ -41,3 +41,11 @@ describe('document browsing', () => {
     expect(ids(browseDocuments(docs, { ...defaults, sort: 'title-desc' }, true))).toEqual(['Order 10', 'order 2', 'Apple']);
   });
 });
+describe('period covered', () => {
+  it('matches a date filter against the period covered as well as the document date', () => {
+    const docs = [doc('dated-sept'), doc('covers-oct', { docDate: '2026-09-25', periodStart: '2026-10-01', periodEnd: '2026-10-31' }), doc('covers-nov', { docDate: '2026-09-25', periodStart: '2026-11-01', periodEnd: '2026-11-30' })];
+    expect(ids(browseDocuments(docs, { ...defaults, from: '2026-10-01', to: '2026-10-31' }, true))).toEqual(['covers-oct']);
+    expect(ids(browseDocuments(docs, { ...defaults, from: '2026-09-01', to: '2026-09-30' }, true))).toEqual(['covers-nov', 'covers-oct', 'dated-sept']);
+    expect(ids(browseDocuments(docs, { ...defaults, from: '2026-11-15' }, true))).toEqual(['covers-nov']);
+  });
+});

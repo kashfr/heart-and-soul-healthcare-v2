@@ -172,6 +172,14 @@ describe('document access', () => {
       expect(validateAssistantUpload(file(), 'Title', 'Other', '').docDate).toBe('');
     } finally { vi.useRealTimers(); }
   });
+  it('validates and stores the period a document covers', async () => {
+    expect(() => validateAssistantUpload(file(), 'Title', 'Other', '', { periodStart: '2026-10-01' })).toThrow('both');
+    expect(validateAssistantUpload(file(), 'Title', 'Other', '', { periodStart: '', periodEnd: '' }).period).toBeNull();
+    const result = await uploadAssistantDocument(context, 'gapp1', file(), { ...details, periodStart: '2026-10-01', periodEnd: '2026-10-31' });
+    expect(fake.writes.find(w => w.method === 'create')?.data).toMatchObject({ periodStart: '2026-10-01', periodEnd: '2026-10-31' });
+    expect(result.document).toMatchObject({ periodStart: '2026-10-01', periodEnd: '2026-10-31' });
+    expect(fake.writes.find(w => w.method === 'create')?.data).not.toHaveProperty('period');
+  });
   it('uploads immutable bytes and records caller identity in document and audit', async () => {
     const result = await uploadAssistantDocument(context, 'gapp1', file(), details);
     expect(fake.object.save).toHaveBeenCalledWith(expect.any(Buffer), expect.objectContaining({ preconditionOpts: { ifGenerationMatch: 0 } }));
