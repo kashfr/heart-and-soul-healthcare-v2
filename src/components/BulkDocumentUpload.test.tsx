@@ -32,24 +32,34 @@ it('rejects unsupported and oversized files before uploading', () => {
   expect(screen.getByRole('alert')).toHaveTextContent('under 20 MB');
   expect(upload).not.toHaveBeenCalled();
 });
-it('applies a default month to pending files and sends the period it covers as ISO bounds', async () => {
+it('seeds a new file from the previous one, applies one file\'s labeling to all, and sends the period as ISO bounds', async () => {
   const upload = vi.fn().mockResolvedValue(undefined);
   render(<BulkDocumentUpload upload={upload} onClose={() => {}} />);
-  fireEvent.change(screen.getByRole('combobox', { name: 'Period covered for pending files' }), { target: { value: 'month' } });
-  fireEvent.change(screen.getByRole('combobox', { name: 'Month covered for pending files' }), { target: { value: '10' } });
-  fireEvent.change(screen.getByRole('combobox', { name: 'Month covered for pending files year' }), { target: { value: '2026' } });
+  // No defaults block: a single file shows no "apply to all".
+  expect(screen.queryByRole('button', { name: 'Apply to all files' })).toBeNull();
   fireEvent.change(screen.getByLabelText(/Choose documents/), { target: { files: [new File(['pdf'], 'eligibility.pdf', { type: 'application/pdf' })] } });
-  // The file picked up the default; switch it to a custom range and check validation.
-  expect(screen.getByRole('combobox', { name: 'Period covered for eligibility.pdf' })).toHaveValue('month');
+  expect(screen.queryByRole('button', { name: 'Apply to all files' })).toBeNull();
+  fireEvent.change(screen.getByRole('combobox', { name: 'Category for eligibility.pdf' }), { target: { value: 'Eligibility / Medicaid' } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Period covered for eligibility.pdf' }), { target: { value: 'month' } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Month covered for eligibility.pdf' }), { target: { value: '10' } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Month covered for eligibility.pdf year' }), { target: { value: '2026' } });
+  // The next file inherits the previous file's category, date and period.
+  fireEvent.change(screen.getByLabelText(/Choose documents/), { target: { files: [new File(['pdf'], 'letter.pdf', { type: 'application/pdf' })] } });
+  expect(screen.getByRole('combobox', { name: 'Category for letter.pdf' })).toHaveValue('Eligibility / Medicaid');
+  expect(screen.getByRole('combobox', { name: 'Month covered for letter.pdf' })).toHaveDisplayValue('October');
+  // Change the first to a range and push it to the other file.
   fireEvent.change(screen.getByRole('combobox', { name: 'Period covered for eligibility.pdf' }), { target: { value: 'range' } });
   fireEvent.change(screen.getByRole('textbox', { name: 'Period start for eligibility.pdf' }), { target: { value: '10/01/2026' } });
+  fireEvent.click(screen.getAllByRole('button', { name: 'Apply to all files' })[0]);
+  expect(screen.getByRole('combobox', { name: 'Period covered for letter.pdf' })).toHaveValue('range');
   fireEvent.click(screen.getByRole('button', { name: 'Upload pending files' }));
   expect(screen.getByRole('alert')).toHaveTextContent('eligibility.pdf: Enter the start and end of the period covered');
   expect(upload).not.toHaveBeenCalled();
-  fireEvent.change(screen.getByRole('textbox', { name: 'Period end for eligibility.pdf' }), { target: { value: '12/31/2026' } });
+  for (const name of ['eligibility.pdf', 'letter.pdf']) fireEvent.change(screen.getByRole('textbox', { name: `Period end for ${name}` }), { target: { value: '12/31/2026' } });
   fireEvent.click(screen.getByRole('button', { name: 'Upload pending files' }));
-  await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
-  expect(upload.mock.calls[0][0]).toMatchObject({ periodStart: '2026-10-01', periodEnd: '2026-12-31' });
+  await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
+  expect(upload.mock.calls[0][0]).toMatchObject({ category: 'Eligibility / Medicaid', periodStart: '2026-10-01', periodEnd: '2026-12-31' });
+  expect(upload.mock.calls[1][0]).toMatchObject({ periodStart: '2026-10-01', periodEnd: '2026-12-31' });
   expect(upload.mock.calls[0][0]).not.toHaveProperty('period');
   expect(upload.mock.calls[0][0]).not.toHaveProperty('status');
 });
