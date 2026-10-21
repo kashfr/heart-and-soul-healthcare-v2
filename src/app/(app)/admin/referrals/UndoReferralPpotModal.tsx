@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { withSelectChevron } from '@/lib/selectChevron';
 import { btn } from '@/components/buttons';
 import { authedFetch } from '@/lib/authedFetch';
 import { DOC_CATEGORIES } from '@/lib/docCategories';
@@ -32,7 +33,7 @@ export default function UndoReferralPpotModal({ document, onClose, onSaved }: { 
       <p>Keep this PDF as a regular document on this referral. The current copy, including any page cleanup, will stay available.</p>
       <p>The PPOT request will return to <strong>Waiting on Physicians</strong>. Scheduled follow-up faxes may resume using the original request date. This action does not send a fax.</p>
       <label>Document title<input style={inputStyle} required maxLength={200} value={title} disabled={busy} onChange={(e) => setTitle(e.target.value)} /></label>
-      <label>Category<select style={inputStyle} value={category} disabled={busy} onChange={(e) => setCategory(e.target.value)}>{DOC_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></label>
+      <label>Category<select style={withSelectChevron(inputStyle)} value={category} disabled={busy} onChange={(e) => setCategory(e.target.value)}>{DOC_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></label>
       <label>Document date<input style={inputStyle} required type="date" value={docDate} disabled={busy} onChange={(e) => setDocDate(e.target.value)} /></label>
       <label style={{ display: 'flex', gap: 8, fontSize: 14 }}><input type="checkbox" checked={confirmed} disabled={busy} onChange={(e) => setConfirmed(e.target.checked)} />I filed this as a signed PPOT by mistake and want to reopen the request.</label>
       {error && <p role="alert" style={{ color: '#b3261e' }}>{error}</p>}

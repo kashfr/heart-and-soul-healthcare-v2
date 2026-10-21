@@ -14,8 +14,8 @@ import { authedFetch } from '@/lib/authedFetch';
 import { formatDateUS } from '@/lib/dateFormat';
 import { getProgram } from '@/lib/programs';
 import { GUARDIAN_ROLES } from '@/lib/guardianShared';
-import { DOC_CATEGORY_GROUPS } from '@/lib/docCategories';
-import { ALLOWED_DOC_TYPES, MAX_DOC_BYTES, renderDocumentInWindow } from '@/lib/patientDocuments';
+import { formatDocumentPeriod } from '@/lib/documentPeriod';
+import { ALLOWED_DOC_TYPES, renderDocumentInWindow } from '@/lib/patientDocuments';
 
 interface ClientSummary {
   id: string;
@@ -52,6 +52,8 @@ interface DocumentInfo {
   title: string;
   category: string;
   docDate: string;
+  periodStart?: string;
+  periodEnd?: string;
   fileName: string;
   contentType: string;
   size: number;
@@ -238,7 +240,7 @@ function Details({ patientId }: { patientId: string }) {
             {data.documents.length === 0 ? <p style={muted}>No documents on file.</p> : <div style={{ display: 'grid', gap: 10, marginTop: 16 }}>
               {data.documents.map((d) => <article key={d.id} style={{ ...contactCard, ...row, justifyContent: 'space-between' }}>
                 <div style={{ minWidth: 0, flex: '1 1 240px' }}><strong style={{ overflowWrap: 'anywhere' }}>{d.title || d.fileName}</strong>
-                  <div style={muted}>{d.category} · {formatDateUS(d.docDate) || 'Date not provided'}</div>
+                  <div style={muted}>{d.category} · {formatDateUS(d.docDate) || 'Date not provided'}{formatDocumentPeriod(d) ? ` · Covers ${formatDocumentPeriod(d)}` : ''}</div>
                   <div style={{ ...muted, fontSize: 12 }}>{d.uploadedByName ? `Uploaded by ${d.uploadedByName} · ` : ''}{formatBytes(d.size)}</div>
                 </div>
                 <button className={btn} onClick={() => void openDocument(d)} aria-label={`Open ${d.title || d.fileName}`}><ExternalLink size={15} /> Open / Download</button>
@@ -326,6 +328,7 @@ function UploadForm({ patientId, disabled, onUploaded, onError }: { patientId: s
   if (!open) return <button className={btnPrimary} disabled={disabled} title={disabled ? VIEW_AS_HINT : undefined} onClick={() => setOpen(true)}><FileUp size={15} /> Upload documents</button>;
   return <div style={contactCard}><BulkDocumentUpload onClose={() => setOpen(false)} upload={async (item) => {
     const body = new FormData(); body.set('file', item.file); body.set('title', item.title); body.set('category', item.category); body.set('docDate', item.docDate);
+    body.set('periodStart', item.periodStart); body.set('periodEnd', item.periodEnd);
     try {
       const result = await readResponse<{ document: DocumentInfo }>(await authedFetch(`${clientUrl(patientId)}/documents`, { method: 'POST', body }));
       onUploaded(result.document);

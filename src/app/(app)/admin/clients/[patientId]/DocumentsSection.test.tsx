@@ -27,6 +27,7 @@ vi.mock('@/lib/patientDocuments', async () => {
 vi.mock('@/lib/patients', () => ({ getPatients: vi.fn(async () => []) }));
 
 import DocumentsSection from './DocumentsSection';
+import * as docsLib from '@/lib/patientDocuments';
 import type { PatientDocument } from '@/lib/patientDocuments';
 
 const base = {
@@ -91,6 +92,18 @@ describe('DocumentsSection, entries filed from a note', () => {
     expect(screen.getByRole('button', { name: /refresh pdf/i })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
     expect(screen.getByText(/The visit note keeps its own date and wording/)).toBeInTheDocument();
+  });
+
+  it('shows the period a document covers and lets staff edit it as a month', () => {
+    const { updateDocumentDetails } = vi.mocked(docsLib);
+    renderSection([{ ...uploaded, category: 'Eligibility / Medicaid', title: 'Eligibility', periodStart: '2026-10-01', periodEnd: '2026-10-31' }]);
+    expect(screen.getByText('Covers Oct 2026')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
+    expect(screen.getByRole('combobox', { name: 'Period covered' })).toHaveValue('month');
+    expect(screen.getByRole('combobox', { name: 'Month covered' })).toHaveDisplayValue('October');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Month covered' }), { target: { value: '11' } });
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    expect(updateDocumentDetails).toHaveBeenCalledWith('doc-upload', expect.objectContaining({ periodStart: '2026-11-01', periodEnd: '2026-11-30' }));
   });
 
   it('keeps Edit (and no note buttons) on an uploaded file', () => {

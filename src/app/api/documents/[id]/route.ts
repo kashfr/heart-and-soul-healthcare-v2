@@ -25,7 +25,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
 }
 
 /**
- * PATCH /api/documents/[id]  { title, category, docDate }
+ * PATCH /api/documents/[id]  { title, category, docDate, periodStart?, periodEnd? }
  *
  * Staff edit a document's title, category, or date. Goes through the server
  * (not a rules-gated browser write) so an entry filed from a visit note can
@@ -52,6 +52,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     title: String(body.title ?? ''),
     category: String(body.category ?? ''),
     docDate: String(body.docDate ?? ''),
+    periodStart: body.periodStart,
+    periodEnd: body.periodEnd,
   }, caller);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
   return NextResponse.json({ ok: true });

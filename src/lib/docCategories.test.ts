@@ -17,6 +17,12 @@ describe('validateFileFaxToClient', () => {
     expect(validateFileFaxToClient({ ...ok, patientId: 'ext_3c55b3ac2958422a8d3b82771a74f32d1234abcd' }, '2026-09-29')).toEqual({});
   });
 
+  it('accepts a complete period covered and rejects a half or reversed one', () => {
+    expect(validateFileFaxToClient({ ...ok, periodStart: '2026-10-01', periodEnd: '2026-10-31' }, '2026-10-21')).toEqual({});
+    expect(validateFileFaxToClient({ ...ok, periodStart: '2026-10-01' }, '2026-10-21').period).toMatch(/both/);
+    expect(validateFileFaxToClient({ ...ok, periodStart: '2026-11-01', periodEnd: '2026-10-01' }, '2026-10-21').period).toMatch(/before/);
+  });
+
   it('rejects a future document date', () => {
     expect(validateFileFaxToClient({ ...ok, docDate: '2026-10-01' }, '2026-09-29').docDate).toBeTruthy();
   });

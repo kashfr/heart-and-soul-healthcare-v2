@@ -9,7 +9,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * POST /api/fax/inbound/[faxId]/client  { patientId | referralId, category, title, docDate }
+ * POST /api/fax/inbound/[faxId]/client  { patientId | referralId, category, title, docDate, periodStart?, periodEnd? }
  * File this inbound fax into a client's Documents (records sent back on a
  * release, labs, discharge papers), or against a referral that has no client
  * record yet. Anyone with Fax Center access.
@@ -30,7 +30,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ fax
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
   }
-  const common = { faxId, category: String(body.category || ''), title: String(body.title || ''), docDate: String(body.docDate || ''), caller };
+  const common = {
+    faxId, category: String(body.category || ''), title: String(body.title || ''), docDate: String(body.docDate || ''),
+    periodStart: String(body.periodStart || '').trim(), periodEnd: String(body.periodEnd || '').trim(), caller,
+  };
   const result = String(body.referralId || '')
     ? await fileInboundFaxToReferral({ ...common, referralId: String(body.referralId) })
     : await fileInboundFaxToClient({ ...common, patientId: String(body.patientId || '') });

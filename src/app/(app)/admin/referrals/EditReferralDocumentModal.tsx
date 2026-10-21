@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { withSelectChevron } from '@/lib/selectChevron';
 import { btn } from '@/components/buttons';
 import { authedFetch } from '@/lib/authedFetch';
 import { DOC_CATEGORIES } from '@/lib/docCategories';
@@ -31,7 +32,7 @@ export default function EditReferralDocumentModal({ document, onClose, onSaved }
       <h3 style={{ marginTop: 0 }}>Edit document details</h3>
       <p>{isPpot ? 'Correct the date shown beside the physician’s signature on the filed form. The PPOT stays marked received.' : 'Correct the saved title, category, or document date.'} The PDF itself will stay unchanged, and previous details will be retained in history.</p>
       {!isPpot && <><label>Document title<input style={inputStyle} required maxLength={200} value={title} disabled={busy} onChange={(e) => setTitle(e.target.value)} /></label>
-      <label>Category<select style={inputStyle} value={category} disabled={busy} onChange={(e) => setCategory(e.target.value)}>{DOC_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></label></>}
+      <label>Category<select style={withSelectChevron(inputStyle)} value={category} disabled={busy} onChange={(e) => setCategory(e.target.value)}>{DOC_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></label></>}
       <label>{isPpot ? 'Date the physician signed' : 'Document date'}<input style={inputStyle} required type="date" value={docDate} disabled={busy} onChange={(e) => setDocDate(e.target.value)} /></label>
       {error && <p role="alert" style={{ color: '#b3261e' }}>{error}</p>}
       <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>

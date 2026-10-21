@@ -4,8 +4,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { FolderInput, Search, X } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import { formatDateUS } from '@/lib/dateFormat';
-import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
+import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
 import { withSelectChevron } from '@/lib/selectChevron';
+import DocumentPeriodFields from '@/components/DocumentPeriodFields';
+import { EMPTY_PERIOD_DRAFT, resolvePeriodDraft, type DocumentPeriodDraft } from '@/lib/documentPeriod';
 import { DOC_CATEGORY_GROUPS, validateFileFaxToClient, type FileFaxToClientField } from '@/lib/docCategories';
 import { inboundFaxSender } from '@/lib/verbalOrderShared';
 import type { RoiRecord } from '@/lib/roiShared';
@@ -36,7 +38,7 @@ interface Suggestion {
   faxedOn: string; // YYYY-MM-DD
 }
 
-const ORDER: readonly FileFaxToClientField[] = ['patientId', 'category', 'title', 'docDate'];
+const ORDER: readonly FileFaxToClientField[] = ['patientId', 'category', 'title', 'docDate', 'period'];
 const fid = (k: FileFaxToClientField) => `fax-to-client-${k}`;
 // A reply to a release usually lands within days; three weeks keeps the
 // suggestion list to the releases someone is actually waiting on.
@@ -57,6 +59,7 @@ export default function FileToClientModal({ fax, today, onView, onClose, onFiled
   const [category, setCategory] = useState('');
   const [title, setTitle] = useState('');
   const [docDate, setDocDate] = useState(today);
+  const [period, setPeriod] = useState<DocumentPeriodDraft>(EMPTY_PERIOD_DRAFT);
   const [errors, setErrors] = useState<Partial<Record<FileFaxToClientField, string>>>({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -107,11 +110,16 @@ export default function FileToClientModal({ fax, today, onView, onClose, onFiled
     e.preventDefault();
     if (busy) return;
     setErr(null);
-    const body = { patientId: client?.id || '', category, title, docDate };
-    if (!applyFieldErrors(validateFileFaxToClient(body, today), ORDER, setErrors, fid)) return;
+    const covers = resolvePeriodDraft(period);
+    const body = { patientId: client?.id || '', category, title, docDate, periodStart: covers.ok ? covers.period?.periodStart ?? '' : '', periodEnd: covers.ok ? covers.period?.periodEnd ?? '' : '' };
+    const fieldErrors = validateFileFaxToClient(body, today);
+    if (!covers.ok) fieldErrors.period = covers.error;
+    if (!applyFieldErrors(fieldErrors, ORDER, setErrors, fid)) return;
     setBusy(true);
     try {
-      const payload = client!.kind === 'referral' ? { referralId: client!.id, category, title, docDate } : body;
+      // A referral has no client record yet; its documents move over on
+      // conversion, and the period travels with the rest of the metadata.
+      const payload = client!.kind === 'referral' ? { referralId: client!.id, category, title, docDate, periodStart: body.periodStart, periodEnd: body.periodEnd } : body;
       const res = await authedFetch(`/api/fax/inbound/${fax.id}/client`, { method: 'POST', body: JSON.stringify(payload) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
@@ -213,6 +221,12 @@ export default function FileToClientModal({ fax, today, onView, onClose, onFiled
               <FieldError message={errors.docDate} />
             </label>
 
+            <div style={{ ...field, ...(errors.period ? FIELD_ERROR_WRAP_STYLE : null) }} id={fid('period')}>
+              <DocumentPeriodFields draft={period} onChange={(next) => { setPeriod(next); clear('period'); }} labelStyle={periodLabel} inputStyle={{ ...inp, maxWidth: 200 }} selectStyle={{ ...withSelectChevron(inp), maxWidth: 260 }} />
+              <span style={meta}>What the records apply to, such as the month of an eligibility letter or the dates of an authorization.</span>
+              <FieldError message={errors.period} />
+            </div>
+
             {err && <div role="alert" style={{ color: '#b3261e', fontSize: 13, fontWeight: 600 }}>{err}</div>}
           </div>
           <div style={footer}>
@@ -233,6 +247,7 @@ const header: React.CSSProperties = { display: 'flex', alignItems: 'center', jus
 const footer: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, padding: '14px 20px', borderTop: '1px solid #e5e7eb' };
 const closeBtn: React.CSSProperties = { background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'inline-flex' };
 const field: React.CSSProperties = { display: 'grid', gap: 5 };
+const periodLabel: React.CSSProperties = { display: 'grid', gap: 5, fontSize: 12, color: '#5c6b7a', fontWeight: 600 };
 const label: React.CSSProperties = { fontSize: 12, color: '#5c6b7a', fontWeight: 600 };
 const meta: React.CSSProperties = { fontSize: 12.5, color: '#7f8c8d' };
 const inp: React.CSSProperties = { width: '100%', boxSizing: 'border-box', border: '1px solid #d1d5db', borderRadius: 8, padding: '8px 10px', fontSize: 14, fontFamily: 'inherit', color: '#111827' };

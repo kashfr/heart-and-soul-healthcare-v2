@@ -659,7 +659,7 @@ export async function addUploadedInboundFax(p: {
  * The copy stays with the referral (referralDocuments) and moves into the
  * client's Documents when the record is created.
  */
-export async function fileInboundFaxToReferral(p: { faxId: string; referralId: string; category: string; title: string; docDate: string; caller: AuthedCaller }): Promise<{ ok: boolean; status?: number; error?: string; documentId?: string }> {
+export async function fileInboundFaxToReferral(p: { faxId: string; referralId: string; category: string; title: string; docDate: string; periodStart?: string; periodEnd?: string; caller: AuthedCaller }): Promise<{ ok: boolean; status?: number; error?: string; documentId?: string }> {
   const invalid = validateFileFaxToClient({ ...p, patientId: p.referralId }, agencyTodayISO());
   const firstError = Object.values(invalid)[0];
   if (firstError) return { ok: false, status: 400, error: firstError };
@@ -693,6 +693,8 @@ export async function fileInboundFaxToReferral(p: { faxId: string; referralId: s
       title,
       fileName: `${safe}_${formatDateUSFile(p.docDate)}.pdf`,
       docDate: p.docDate,
+      periodStart: p.periodStart,
+      periodEnd: p.periodEnd,
       by: { uid: p.caller.uid, name: byName, role: p.caller.role },
       inboundFaxId: p.faxId,
     });
@@ -906,6 +908,7 @@ export async function fileInboundFaxToClient(p: FileFaxToClientInput & { faxId: 
       contentType: 'application/pdf',
       size: got.pdf.length,
       docDate: p.docDate,
+      ...(p.periodStart && p.periodEnd ? { periodStart: p.periodStart, periodEnd: p.periodEnd } : {}),
       uploadedBy: p.caller.uid,
       uploadedByName: byName,
       uploadedByRole: p.caller.role,

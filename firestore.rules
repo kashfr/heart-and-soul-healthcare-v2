@@ -532,6 +532,7 @@ service cloud.firestore {
       allow update: if isStaff()
         && incomingData().diff(resource.data).affectedKeys()
              .hasOnly(['archived', 'archivedBy', 'archivedByName', 'archivedAt', 'title', 'category', 'docDate',
+                       'periodStart', 'periodEnd',
                        'fileName', 'storagePath', 'contentType', 'size', 'replacedAt', 'replacedBy', 'replacedByName'])
         && (!incomingData().diff(resource.data).affectedKeys().hasAny(['fileName', 'storagePath', 'contentType', 'size'])
             || (incomingData().fileName is string && incomingData().fileName.size() > 0

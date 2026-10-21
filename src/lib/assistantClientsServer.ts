@@ -8,6 +8,7 @@ import { getServerSettings } from './settingsServer';
 import { mergeWithDefaults } from './settings';
 import { getAssistantClientGrant, type AssistantClientGrant } from './assistantClientAccess';
 import { DOC_CATEGORIES } from './docCategories';
+import { parseDocumentPeriod, type DocumentPeriod } from './documentPeriod';
 import { GUARDIAN_ROLES, hasGuardianErrors, validateGuardian, type DecisionMaker, type GuardianContact } from './guardianShared';
 
 const MAX_BYTES = 20 * 1024 * 1024;
@@ -89,6 +90,7 @@ export function documentMetadata(id: string, data: Data) {
   return {
     id, title: text(data.title), category: text(data.category), docDate: text(data.docDate),
     fileName: text(data.fileName), contentType: text(data.contentType), size: Number(data.size || 0),
+    periodStart: text(data.periodStart), periodEnd: text(data.periodEnd),
     uploadedAt: at?.toDate ? at.toDate().toISOString() : null,
     uploadedByName: text(data.uploadedByName),
   };
@@ -218,7 +220,7 @@ export async function updateAssistantClient(context: AssistantContext, id: strin
   return { client: result.client, grant: result.grant };
 }
 
-export function validateAssistantUpload(file: File, title: string, category: string, docDate: string) {
+export function validateAssistantUpload(file: File, title: string, category: string, docDate: string, period: { periodStart?: string; periodEnd?: string } = {}) {
   if (file.size <= 0 || file.size >= MAX_BYTES) throw new AssistantClientError(400, 'Upload a file smaller than 20 MB.');
   const ext = file.name.split('.').pop()?.toLowerCase();
   const contentType = file.type || Object.keys(TYPES).find(type => TYPES[type] === ext || (type === 'image/jpeg' && ext === 'jpeg')) || '';
@@ -227,14 +229,16 @@ export function validateAssistantUpload(file: File, title: string, category: str
   if (!title.trim() || title.length > 200) throw new AssistantClientError(400, 'Enter a document title under 200 characters.');
   if (docDate && !validDate(docDate)) throw new AssistantClientError(400, 'Enter a valid document date.');
   if (docDate && docDate > agencyToday()) throw new AssistantClientError(400, 'The document date cannot be in the future.');
+  const covers = parseDocumentPeriod(period);
+  if (!covers.ok) throw new AssistantClientError(400, covers.error);
   const original = file.name.replace(/[^\w.\- ]+/g, '_').replace(/\s+/g, ' ').trim().slice(0, 120);
-  return { contentType, fileName: original || `document.${TYPES[contentType]}`, title: title.trim(), category, docDate };
+  return { contentType, fileName: original || `document.${TYPES[contentType]}`, title: title.trim(), category, docDate, period: covers.period as DocumentPeriod | null };
 }
-export async function uploadAssistantDocument(context: AssistantContext, id: string, file: File, input: { title: string; category: string; docDate: string }) {
+export async function uploadAssistantDocument(context: AssistantContext, id: string, file: File, input: { title: string; category: string; docDate: string; periodStart?: string; periodEnd?: string }) {
   assertAssistantId(id);
   if (context.preview) throw new AssistantClientError(403, VIEW_AS_READ_ONLY);
   if (!context.grant.uploadDocuments) throw new AssistantClientError(403, 'Document uploads are not enabled for your account.');
-  const details = validateAssistantUpload(file, input.title, input.category, input.docDate);
+  const { period, ...details } = validateAssistantUpload(file, input.title, input.category, input.docDate, input);
   const db = adminDb(), patientRef = db.collection('patients').doc(id);
   assertScope(context.grant, (await patientRef.get()).data());
   const docRef = db.collection('patientDocuments').doc();
@@ -242,7 +246,7 @@ export async function uploadAssistantDocument(context: AssistantContext, id: str
   const object = adminBucket().file(storagePath);
   await object.save(Buffer.from(await file.arrayBuffer()), { resumable: false, contentType: details.contentType, preconditionOpts: { ifGenerationMatch: 0 } });
   const metadata = {
-    patientId: id, ...details, storagePath, size: file.size, archived: false,
+    patientId: id, ...details, ...(period ?? {}), storagePath, size: file.size, archived: false,
     uploadedBy: context.caller.uid, uploadedByRole: context.caller.role,
     uploadedByName: context.caller.profile.displayName || context.caller.email || '', uploadedAt: FieldValue.serverTimestamp(),
   };
@@ -253,7 +257,7 @@ export async function uploadAssistantDocument(context: AssistantContext, id: str
       tx.create(docRef, { ...metadata, auditEventId: auditRef.id });
       tx.set(auditRef, {
         action: 'assistant-document-upload', documentId: docRef.id,
-        after: { title: details.title, category: details.category, docDate: details.docDate, fileName: details.fileName, size: file.size },
+        after: { title: details.title, category: details.category, docDate: details.docDate, ...(period ?? {}), fileName: details.fileName, size: file.size },
         actorUid: context.caller.uid, actorName: metadata.uploadedByName, actorRole: context.caller.role, at: FieldValue.serverTimestamp(),
       });
     });

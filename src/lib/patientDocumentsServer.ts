@@ -1,5 +1,6 @@
 import { clientAuditActor } from './clientAuditActor';
 import { DOC_CATEGORIES } from './docCategories';
+import { parseDocumentPeriod } from './documentPeriod';
 import { noteDocDetails } from './noteDocLinks';
 import 'server-only';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -318,13 +319,15 @@ export async function deleteDocumentWithAudit(
  */
 export async function updateDocumentDetailsServer(
   id: string,
-  patch: { title: string; category: string; docDate: string },
+  patch: { title: string; category: string; docDate: string; periodStart?: unknown; periodEnd?: unknown },
   caller: AuthedCaller,
 ): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
   const title = patch.title.trim().slice(0, 200);
   if (!title) return { ok: false, status: 400, error: 'Enter a title.' };
   if (!(DOC_CATEGORIES as readonly string[]).includes(patch.category)) return { ok: false, status: 400, error: 'Choose a category from the list.' };
   if (patch.docDate && !/^\d{4}-\d{2}-\d{2}$/.test(patch.docDate)) return { ok: false, status: 400, error: 'The date must be YYYY-MM-DD.' };
+  const period = parseDocumentPeriod(patch);
+  if (!period.ok) return { ok: false, status: 400, error: period.error };
   const ref = adminDb().collection('patientDocuments').doc(id);
   const snap = await ref.get();
   if (!snap.exists) return { ok: false, status: 404, error: 'Document not found.' };
@@ -333,6 +336,9 @@ export async function updateDocumentDetailsServer(
     title,
     category: patch.category,
     docDate: patch.docDate,
+    // Clearing the period removes the fields so the card stops showing it.
+    periodStart: period.period?.periodStart ?? FieldValue.delete(),
+    periodEnd: period.period?.periodEnd ?? FieldValue.delete(),
     detailsEditedAt: FieldValue.serverTimestamp(),
     detailsEditedBy: caller.uid,
     detailsEditedByName: caller.profile.displayName || caller.email || '',

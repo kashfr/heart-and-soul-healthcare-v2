@@ -13,7 +13,7 @@ it('saves multiple originals with individual metadata and retries only failed up
   fireEvent.click(screen.getByRole('button', { name: 'Upload pending files' }));
   await screen.findByText('Failed: Connection lost');
   expect(upload).toHaveBeenCalledTimes(2);
-  expect(upload.mock.calls[0][0]).toMatchObject({ file: pdf, title: 'Physician orders', docDate: '2026-10-18' });
+  expect(upload.mock.calls[0][0]).toMatchObject({ file: pdf, title: 'Physician orders', docDate: '2026-10-18', periodStart: '', periodEnd: '' });
   expect(upload.mock.calls[1][0].file).toBe(photo);
   expect(screen.getByLabelText('Title for orders.pdf')).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: 'Upload pending files' }));
@@ -31,4 +31,25 @@ it('rejects unsupported and oversized files before uploading', () => {
   fireEvent.change(input, { target: { files: [large] } });
   expect(screen.getByRole('alert')).toHaveTextContent('under 20 MB');
   expect(upload).not.toHaveBeenCalled();
+});
+it('applies a default month to pending files and sends the period it covers as ISO bounds', async () => {
+  const upload = vi.fn().mockResolvedValue(undefined);
+  render(<BulkDocumentUpload upload={upload} onClose={() => {}} />);
+  fireEvent.change(screen.getByRole('combobox', { name: 'Period covered for pending files' }), { target: { value: 'month' } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Month covered for pending files' }), { target: { value: '10' } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Month covered for pending files year' }), { target: { value: '2026' } });
+  fireEvent.change(screen.getByLabelText(/Choose documents/), { target: { files: [new File(['pdf'], 'eligibility.pdf', { type: 'application/pdf' })] } });
+  // The file picked up the default; switch it to a custom range and check validation.
+  expect(screen.getByRole('combobox', { name: 'Period covered for eligibility.pdf' })).toHaveValue('month');
+  fireEvent.change(screen.getByRole('combobox', { name: 'Period covered for eligibility.pdf' }), { target: { value: 'range' } });
+  fireEvent.change(screen.getByRole('textbox', { name: 'Period start for eligibility.pdf' }), { target: { value: '10/01/2026' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Upload pending files' }));
+  expect(screen.getByRole('alert')).toHaveTextContent('eligibility.pdf: Enter the start and end of the period covered');
+  expect(upload).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByRole('textbox', { name: 'Period end for eligibility.pdf' }), { target: { value: '12/31/2026' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Upload pending files' }));
+  await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
+  expect(upload.mock.calls[0][0]).toMatchObject({ periodStart: '2026-10-01', periodEnd: '2026-12-31' });
+  expect(upload.mock.calls[0][0]).not.toHaveProperty('period');
+  expect(upload.mock.calls[0][0]).not.toHaveProperty('status');
 });
