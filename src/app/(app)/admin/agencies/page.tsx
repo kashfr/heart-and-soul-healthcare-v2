@@ -1,9 +1,16 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { btn, btnDanger, btnIcon, btnPrimary, btnSm } from '@/components/buttons';
 import { Search, X, RefreshCw, Plus, Pencil, Trash2, Mail, Phone } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
-import { formatUSPhone } from '@/lib/phone';
+import { formatUSPhone, isValidUSPhone } from '@/lib/phone';
+import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
+
+type AgencyField = 'name' | 'email' | 'phone';
+const AGENCY_FIELD_ORDER: readonly AgencyField[] = ['name', 'email', 'phone'];
+const agencyFieldId = (k: AgencyField) => `agency-form-${k}`;
+const AGENCY_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 import { GA_COUNTIES, GAPP_SERVICES, SERVICE_SHORT, normalizeCounty, type GappServiceKey } from '@/lib/georgia';
 
 interface PartnerAgency {
@@ -103,11 +110,11 @@ export default function AgenciesPage() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={load} style={ghostBtnStyle} title="Refresh">
+            <button onClick={load} className={btn} title="Refresh">
               <RefreshCw size={15} /> Refresh
             </button>
-            <button onClick={() => setEditing('new')} style={primaryBtnStyle}>
-              <Plus size={15} /> Add agency
+            <button onClick={() => setEditing('new')} className={btnPrimary}>
+              <Plus size={15} /> Add Agency
             </button>
           </div>
         </header>
@@ -135,7 +142,7 @@ export default function AgenciesPage() {
           <div style={{ ...emptyStyle, color: '#b3261e' }}>
             {error}
             <div style={{ marginTop: 12 }}>
-              <button onClick={load} style={ghostBtnStyle}>Try again</button>
+              <button onClick={load} className={btn}>Try Again</button>
             </div>
           </div>
         ) : filtered.length === 0 ? (
@@ -152,7 +159,7 @@ export default function AgenciesPage() {
                   <th style={thStyle}>Phone</th>
                   <th style={thStyle}>Contact</th>
                   <th style={{ ...thStyle, textAlign: 'right' }}>Shares</th>
-                  <th style={thStyle}>Last shared</th>
+                  <th style={thStyle}>Last Shared</th>
                   <th style={{ ...thStyle, width: 90 }} />
                 </tr>
               </thead>
@@ -174,8 +181,8 @@ export default function AgenciesPage() {
                     <td style={{ ...tdStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{a.shareCount}</td>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(a.lastSharedAt)}</td>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                      <button onClick={() => setEditing(a)} style={iconBtnStyle} title="Edit"><Pencil size={15} /></button>
-                      <button onClick={() => remove(a)} style={{ ...iconBtnStyle, color: '#b3261e' }} title="Remove"><Trash2 size={15} /></button>
+                      <button onClick={() => setEditing(a)} className={`${btn} ${btnIcon} ${btnSm}`} title="Edit" aria-label={`Edit ${a.name}`}><Pencil size={15} /></button>
+                      <button onClick={() => remove(a)} className={`${btnDanger} ${btnIcon} ${btnSm}`} style={{ marginLeft: 6 }} title="Remove" aria-label={`Remove ${a.name}`}><Trash2 size={15} /></button>
                     </td>
                   </tr>
                 ))}
@@ -224,7 +231,7 @@ function ServesLine({ agency }: { agency: PartnerAgency }) {
           constraint in the referral smart-match, so an agency without it can
           never be suggested. */}
       <span style={counties.length > 0 ? countyCountBadgeStyle : noCountyBadgeStyle}>
-        {counties.length > 0 ? countyCountLabel(counties.length) : 'No counties'}
+        {counties.length > 0 ? `${counties.length} ${counties.length === 1 ? 'County' : 'Counties'}` : 'No Counties'}
       </span>
       {sample && <span style={{ fontWeight: 400 }}>{sample}</span>}
     </div>
@@ -252,6 +259,10 @@ function AgencyForm({
   const [services, setServices] = useState<string[]>(agency?.services ?? []);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<AgencyField, string>>>({});
+  const clearFieldError = (k: AgencyField) => {
+    if (fieldErrors[k]) setFieldErrors((prev) => ({ ...prev, [k]: undefined }));
+  };
 
   const addCounty = () => {
     const c = normalizeCounty(countyInput);
@@ -268,9 +279,15 @@ function AgencyForm({
     setServices((prev) => (prev.includes(key) ? prev.filter((s) => s !== key) : [...prev, key]));
 
   const submit = async () => {
-    if (!name.trim() || !email.trim() || saving) return;
-    setSaving(true);
+    if (saving) return;
     setErr(null);
+    const errs: Partial<Record<AgencyField, string>> = {};
+    if (!name.trim()) errs.name = 'Enter the agency name.';
+    if (!email.trim()) errs.email = 'Enter the agency email.';
+    else if (!AGENCY_EMAIL_RE.test(email.trim())) errs.email = 'Enter a valid email address, like intake@agency.org.';
+    if (phone.trim() && !isValidUSPhone(phone)) errs.phone = 'Enter a 10-digit US phone number, or leave it blank.';
+    if (!applyFieldErrors(errs, AGENCY_FIELD_ORDER, setFieldErrors, agencyFieldId)) return;
+    setSaving(true);
     try {
       const body = {
         name: name.trim(), email: email.trim(), phone: phone.trim(),
@@ -285,7 +302,10 @@ function AgencyForm({
       if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
       onSaved(data.agency);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not save agency.');
+      const message = e instanceof Error && e.message ? e.message : 'Could not save the agency. Please try again.';
+      if (/email/i.test(message)) applyFieldErrors({ email: message }, AGENCY_FIELD_ORDER, setFieldErrors, agencyFieldId);
+      else if (/agency name/i.test(message)) applyFieldErrors({ name: message }, AGENCY_FIELD_ORDER, setFieldErrors, agencyFieldId);
+      else setErr(message);
     } finally {
       setSaving(false);
     }
@@ -296,15 +316,21 @@ function AgencyForm({
       <div style={modalStyle} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div style={modalHeaderStyle}>
           <div style={{ fontSize: 18, fontWeight: 700, color: '#2c3e50' }}>
-            {agency ? 'Edit agency' : 'Add agency'}
+            {agency ? 'Edit Agency' : 'Add Agency'}
           </div>
           <button onClick={onClose} style={closeBtnStyle} aria-label="Close"><X size={18} /></button>
         </div>
         <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <Field label="Agency name *"><input value={name} onChange={(e) => setName(e.target.value)} style={inp} autoFocus /></Field>
-          <Field label="Email *"><input value={email} onChange={(e) => setEmail(e.target.value)} type="email" style={inp} /></Field>
+          <Field label="Agency name *" id={agencyFieldId('name')} error={fieldErrors.name}>
+            <input value={name} onChange={(e) => { setName(e.target.value); clearFieldError('name'); }} style={{ ...inp, ...(fieldErrors.name ? FIELD_ERROR_STYLE : null) }} aria-invalid={!!fieldErrors.name} autoFocus />
+          </Field>
+          <Field label="Email *" id={agencyFieldId('email')} error={fieldErrors.email}>
+            <input value={email} onChange={(e) => { setEmail(e.target.value); clearFieldError('email'); }} type="email" style={{ ...inp, ...(fieldErrors.email ? FIELD_ERROR_STYLE : null) }} aria-invalid={!!fieldErrors.email} />
+          </Field>
           <div style={{ display: 'flex', gap: 12 }}>
-            <Field label="Phone"><input type="tel" value={phone} onChange={(e) => setPhone(formatUSPhone(e.target.value))} placeholder="(XXX) XXX-XXXX" style={inp} /></Field>
+            <Field label="Phone" id={agencyFieldId('phone')} error={fieldErrors.phone}>
+              <input type="tel" value={phone} onChange={(e) => { setPhone(formatUSPhone(e.target.value)); clearFieldError('phone'); }} placeholder="(XXX) XXX-XXXX" style={{ ...inp, ...(fieldErrors.phone ? FIELD_ERROR_STYLE : null) }} aria-invalid={!!fieldErrors.phone} />
+            </Field>
             <Field label="Contact person"><input value={contactName} onChange={(e) => setContactName(e.target.value)} style={inp} /></Field>
           </div>
 
@@ -359,23 +385,23 @@ function AgencyForm({
                   <option key={c} value={c} />
                 ))}
               </datalist>
-              <button type="button" onClick={addCounty} style={ghostBtnStyle}>
+              <button type="button" onClick={addCounty} className={btn}>
                 <Plus size={14} /> Add
               </button>
             </div>
           </Field>
 
           <Field label="Notes"><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} style={{ ...inp, resize: 'vertical' }} /></Field>
-          {err && <div style={{ color: '#b3261e', fontSize: 13 }}>{err}</div>}
+          {err && <div role="alert" style={{ color: '#b3261e', fontSize: 13, fontWeight: 600 }}>{err}</div>}
         </div>
         <div style={modalFooterStyle}>
-          <button onClick={onClose} style={ghostBtnStyle}>Cancel</button>
+          <button onClick={onClose} className={btn}>Cancel</button>
           <button
             onClick={submit}
-            disabled={saving || !name.trim() || !email.trim()}
-            style={{ ...primaryBtnStyle, opacity: saving || !name.trim() || !email.trim() ? 0.55 : 1 }}
+            disabled={saving}
+            className={btnPrimary}
           >
-            {saving ? 'Saving…' : agency ? 'Save changes' : 'Add agency'}
+            {saving ? 'Saving…' : agency ? 'Save Changes' : 'Add Agency'}
           </button>
         </div>
       </div>
@@ -387,19 +413,24 @@ function Field({
   label,
   hint,
   children,
+  id,
+  error,
 }: {
   label: string;
   /** Optional right-aligned counter/annotation, e.g. "19 counties". */
   hint?: string;
   children: React.ReactNode;
+  id?: string;
+  error?: string;
 }) {
   return (
-    <label style={{ display: 'block', flex: 1 }}>
+    <label id={id} style={{ display: 'block', flex: 1 }}>
       <span style={fieldLabelRowStyle}>
         <span>{label}</span>
         {hint && <span style={fieldHintStyle}>{hint}</span>}
       </span>
       {children}
+      <FieldError message={error} />
     </label>
   );
 }
@@ -410,8 +441,6 @@ const headerStyle: React.CSSProperties = { marginBottom: 20, display: 'flex', al
 const kickerStyle: React.CSSProperties = { fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: '#27ae60', margin: 0 };
 const titleStyle: React.CSSProperties = { fontSize: 32, color: '#2c3e50', margin: '4px 0 0' };
 const subtitleStyle: React.CSSProperties = { color: '#7f8c8d', fontSize: 15, marginTop: 6, maxWidth: 620 };
-const ghostBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'white', border: '1px solid #d1d5db', borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer', fontFamily: 'inherit' };
-const primaryBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#1a3a5c', color: 'white', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const searchWrapStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, background: 'white', border: '1px solid #d1d5db', borderRadius: 8, padding: '7px 12px', maxWidth: 360 };
 const searchInputStyle: React.CSSProperties = { border: 'none', outline: 'none', fontSize: 14, flex: 1, fontFamily: 'inherit', color: '#111827' };
 const searchClearStyle: React.CSSProperties = { background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'inline-flex' };
@@ -459,7 +488,6 @@ const chipRemoveStyle: React.CSSProperties = {
   border: 'none', color: '#5c7aa3', cursor: 'pointer', padding: 0,
 };
 const linkStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, color: '#1a3a5c', textDecoration: 'none' };
-const iconBtnStyle: React.CSSProperties = { background: 'transparent', border: 'none', color: '#5c6b7a', cursor: 'pointer', padding: 6, display: 'inline-flex' };
 const backdropStyle: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 };
 const modalStyle: React.CSSProperties = { background: 'white', borderRadius: 12, width: '100%', maxWidth: 520, maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' };
 const modalHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #e5e7eb' };

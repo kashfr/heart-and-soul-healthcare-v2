@@ -11,8 +11,18 @@ import {
   type MarOrder,
   type MarAdministration,
 } from '@/lib/mar';
-import { resolveCurrentAdministrations } from '@/lib/marShared';
+import { resolveCurrentAdministrations, describeFrequency, slotAnchor } from '@/lib/marShared';
+import { GLUCOSE_UNIT, isNoInsulinEntry, parseSlidingScale, summarizeSlidingScale } from '@/lib/slidingScale';
 import { authedFetch } from '@/lib/authedFetch';
+import { withSelectChevron } from '@/lib/selectChevron';
+import { escortToField, firstErrorKey, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
+
+/** Fields the "correct this entry" form can reject, top to bottom. */
+type AmendField = 'amendTime' | 'amendByName' | 'amendWhy';
+type AmendErrors = Partial<Record<AmendField, string>>;
+const AMEND_FIELD_ORDER: readonly AmendField[] = ['amendTime', 'amendByName', 'amendWhy'];
+const amendFieldId = (k: AmendField) => `mc-amend-${k}`;
+const VOID_REASON_ID = 'mc-void-reason';
 
 const ADMIN_BY_LABELS: Record<string, string> = {
   nurse: 'Nurse',
@@ -74,6 +84,8 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
   const [amendTime, setAmendTime] = useState('');
   const [amendReason, setAmendReason] = useState('');
   const [amendOutcome, setAmendOutcome] = useState('');
+  const [amendByType, setAmendByType] = useState('nurse');
+  const [amendByName, setAmendByName] = useState('');
   // Baseline the outcome loaded into the form, so we only SEND it when the
   // amender actually edited it — an untouched (possibly stale) value must not
   // overwrite a result recorded concurrently via /api/mar/outcome.
@@ -85,13 +97,26 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
   const [amendNotifiedOrig, setAmendNotifiedOrig] = useState(false);
   const [amendWhy, setAmendWhy] = useState('');
   const [amendBusy, setAmendBusy] = useState(false);
+  // Per-field problems sit under their fields; the server's answer (no field)
+  // stays next to the buttons.
+  const [amendFieldErrors, setAmendFieldErrors] = useState<AmendErrors>({});
   const [amendError, setAmendError] = useState<string | null>(null);
+  const clearAmendErr = (...keys: AmendField[]) =>
+    setAmendFieldErrors((cur) => {
+      if (!keys.some((k) => cur[k])) return cur;
+      const next = { ...cur };
+      for (const k of keys) delete next[k];
+      return next;
+    });
+  const amendHi = (k: AmendField): CSSProperties => (amendFieldErrors[k] ? FIELD_ERROR_STYLE : {});
   // Remove-as-entered-in-error state. A void differs from an amend: the entry
   // should never have existed (mis-clicked slot/day), so it is struck from the
   // live record and its slot reopens rather than being corrected in place.
   const [voidFor, setVoidFor] = useState<string | null>(null);
   const [voidWhy, setVoidWhy] = useState('');
   const [voidBusy, setVoidBusy] = useState(false);
+  // The reason field's own problem, and the server's answer near the buttons.
+  const [voidWhyError, setVoidWhyError] = useState<string | null>(null);
   const [voidError, setVoidError] = useState<string | null>(null);
 
   // Render into a portal on document.body: standard full-screen-overlay hygiene
@@ -198,6 +223,10 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
 
   const statusLabel = (s: string, isCheck = false) =>
     s === 'given' ? (isCheck ? 'Done' : 'Given') : s === 'held' ? 'Held' : 'Refused';
+  /** Status as it reads for one entry: a check reads "Done", and a
+   *  sliding-scale check that called for no insulin reads that way. */
+  const entryStatusLabel = (a: MarAdministration) =>
+    isNoInsulinEntry(a) ? 'No Insulin Due' : statusLabel(a.status, !!(a.valueLabelSnapshot || '').trim());
   /** The recorded reading for a check-style order, e.g. "10 mL". Empty for an
    *  ordinary dose. The number IS the record on a check, so it must show
    *  wherever the entry is summarised, not only in the month grid. */
@@ -219,12 +248,14 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
 
   const saveVoid = async (a: MarAdministration) => {
     if (!a.id) return;
+    setVoidError(null);
     if (!voidWhy.trim()) {
-      setVoidError('A reason is required (e.g., clicked the wrong time row).');
+      setVoidWhyError('A reason is required (e.g., clicked the wrong time row).');
+      escortToField(VOID_REASON_ID);
       return;
     }
     setVoidBusy(true);
-    setVoidError(null);
+    setVoidWhyError(null);
     try {
       const res = await authedFetch('/api/mar/void', {
         method: 'POST',
@@ -252,6 +283,8 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
     setAmendFor(a.id || null);
     setAmendStatus(a.status);
     setAmendTime(a.status === 'given' ? a.actualTime || '' : '');
+    setAmendByType(a.administeredByType || 'nurse');
+    setAmendByName(a.administratorName || '');
     setAmendReason(a.reason || '');
     setAmendOutcome(a.outcome || '');
     setAmendOutcomeOrig(a.outcome || '');
@@ -259,16 +292,35 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
     setAmendNotifiedOrig(a.prescriberNotified === true);
     setAmendWhy('');
     setAmendError(null);
+    setAmendFieldErrors({});
   };
 
   const saveAmend = async (a: MarAdministration) => {
     if (!a.id) return;
+    setAmendError(null);
+    // Collect every problem, outline each field, and escort to the first.
+    const e: AmendErrors = {};
     if (!amendWhy.trim()) {
-      setAmendError('A reason for the correction is required.');
+      e.amendWhy = 'A reason for the correction is required.';
+    }
+    if (amendStatus === 'given' && !amendTime) {
+      e.amendTime = 'Enter the time the dose was given.';
+    }
+    if (
+      amendStatus === 'given' &&
+      amendByType !== 'nurse' &&
+      amendByType !== 'self' &&
+      !amendByName.trim()
+    ) {
+      e.amendByName = 'Enter the name of the person who administered it.';
+    }
+    setAmendFieldErrors(e);
+    const first = firstErrorKey(AMEND_FIELD_ORDER, e);
+    if (first) {
+      escortToField(amendFieldId(first));
       return;
     }
     setAmendBusy(true);
-    setAmendError(null);
     try {
       const res = await authedFetch('/api/mar/amend', {
         method: 'POST',
@@ -278,6 +330,12 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
           status: amendStatus,
           actualTime: amendStatus === 'given' ? amendTime : '',
           reason: amendReason,
+          // Who physically gave it: the incident-remediation path — a dose
+          // wrongly attested as nurse-given is corrected to family/proxy,
+          // which stars it on the MAR.
+          ...(amendStatus === 'given'
+            ? { administeredByType: amendByType, administratorName: amendByName }
+            : {}),
           // Send the outcome only when the amender actually CHANGED it in a
           // given-PRN correction; otherwise omit it so the server carries the
           // freshest stored value forward (and blanks it for non-given). PRN-ish
@@ -320,7 +378,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
     return (
       <>
         <span style={statusPill[a.status] || statusPill.given}>
-          {statusLabel(a.status, !!(a.valueLabelSnapshot || '').trim())}
+          {entryStatusLabel(a)}
           {readingOf(a) ? ` ${readingOf(a)}` : ''}
           {a.status === 'given' && a.actualTime ? ` ${a.actualTime}` : ''}
           {a.initials ? ` · ${a.initials}` : ''}
@@ -334,7 +392,17 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
           {a.status === 'given' ? `By ${givenByLabel(a)}` : a.reason ? `Reason: ${a.reason}` : ''}
           {a.status === 'given' && a.reason ? ` · for ${a.reason}` : ''}
           {a.administeredByType !== 'nurse' && a.documentedByName ? ` · documented by ${a.documentedByName}` : ''}
+          {a.noNoteAttestation ? ' · attested (no note was on file)' : ''}
         </div>
+        {/* Sliding scale: the reading, what the scale called for, what was given. */}
+        {(a.glucoseReading || '').trim() && (
+          <div style={glucoseLine}>
+            Blood glucose {a.glucoseReading} {GLUCOSE_UNIT}
+            {a.scaleRangeSnapshot ? ` · Scale: ${a.scaleRangeSnapshot}` : ''}
+            {a.status === 'given' && !isNoInsulinEntry(a) ? ` · ${a.doseSnapshot} units given` : ''}
+            {(a.scaleDeviationReason || '').trim() ? ` · Differs from the scale: ${a.scaleDeviationReason}` : ''}
+          </div>
+        )}
         {/* Result line whenever a given dose HAS one (matches the grid + PDF);
             the pending nag stays scoped to true PRN slots. */}
         {a.status === 'given' && (a.outcome || '').trim() ? (
@@ -343,7 +411,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
             {a.outcomeByName ? ` (recorded by ${a.outcomeByName})` : ''}
           </div>
         ) : a.status === 'given' && a.scheduledTime === 'PRN' ? (
-          <span style={outcomePendingChip}>Result pending</span>
+          <span style={outcomePendingChip}>Result Pending</span>
         ) : null}
         {prev && (
           <div style={amendedNote}>
@@ -364,34 +432,36 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
                 setVoidFor(a.id || null);
                 setVoidWhy('');
                 setVoidError(null);
+                setVoidWhyError(null);
               }}
             >
-              Remove — entered in error
+              Remove — Entered in Error
             </button>
           </>
         )}
         {voidFor === a.id && (
           <div style={amendBox}>
-            <div style={amendTitle}>Remove this entry (entered in error)</div>
+            <div style={amendTitle}>Remove This Entry (Entered in Error)</div>
             <div style={{ fontSize: 12.5, color: '#5c6b7a', lineHeight: 1.45, marginBottom: 10 }}>
               Use this when the entry never should have been charted at all — wrong time row, wrong
               day, or wrong client. It is struck from the MAR (the audit trail keeps it) and the
               slot reopens so it can be charted correctly. To change what the entry says (given vs
               held, the time), use <em>Correct this entry</em> instead.
             </div>
-            <label style={amendField}>
+            <label id={VOID_REASON_ID} style={amendField}>
               <span style={amendFieldLabel}>Why is this entry being removed? *</span>
               <input
                 type="text"
                 value={voidWhy}
-                onChange={(e) => setVoidWhy(e.target.value)}
-                style={amendInput}
+                onChange={(e) => { setVoidWhy(e.target.value); setVoidWhyError(null); }}
+                style={voidWhyError ? { ...amendInput, ...FIELD_ERROR_STYLE } : amendInput}
                 placeholder="e.g., clicked the 20:00 row while charting the 08:00 dose"
               />
+              <FieldError message={voidWhyError} />
             </label>
-            {voidError && <div style={amendErr}>{voidError}</div>}
+            {voidError && <div style={amendErr} role="alert">{voidError}</div>}
             <div style={amendActions}>
-              <button type="button" style={amendCancel} onClick={() => setVoidFor(null)} disabled={voidBusy}>
+              <button type="button" style={amendCancel} onClick={() => { setVoidFor(null); setVoidWhyError(null); }} disabled={voidBusy}>
                 Cancel
               </button>
               <button
@@ -400,20 +470,26 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
                 onClick={() => saveVoid(a)}
                 disabled={voidBusy}
               >
-                {voidBusy ? 'Removing…' : 'Remove entry'}
+                {voidBusy ? 'Removing…' : 'Remove Entry'}
               </button>
             </div>
           </div>
         )}
         {amendFor === a.id && (
           <div style={amendBox}>
-            <div style={amendTitle}>Correct this entry</div>
+            <div style={amendTitle}>Correct This Entry</div>
+            {(a.glucoseReading || '').trim() && (
+              <div style={{ fontSize: 12.5, color: '#5c6b7a', lineHeight: 1.45, marginBottom: 10 }}>
+                The blood glucose reading and the units given stay as charted. If either is wrong, use{' '}
+                <em>Remove — Entered in Error</em> instead and chart the dose again.
+              </div>
+            )}
             <div style={amendStatusRow}>
               {(['given', 'held', 'refused'] as const).map((s) => (
                 <button
                   key={s}
                   type="button"
-                  onClick={() => setAmendStatus(s)}
+                  onClick={() => { setAmendStatus(s); clearAmendErr('amendTime', 'amendByName'); }}
                   style={amendStatus === s ? amendStatusActive[s] : amendStatusBtn}
                 >
                   {statusLabel(s)}
@@ -421,9 +497,40 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
               ))}
             </div>
             {amendStatus === 'given' && (
-              <label style={amendField}>
+              <label id={amendFieldId('amendTime')} style={amendField}>
                 <span style={amendFieldLabel}>Time given</span>
-                <input type="time" value={amendTime} onChange={(e) => setAmendTime(e.target.value)} style={amendInput} />
+                <input
+                  type="time"
+                  value={amendTime}
+                  onChange={(e) => { setAmendTime(e.target.value); clearAmendErr('amendTime'); }}
+                  style={{ ...amendInput, ...amendHi('amendTime') }}
+                />
+                <FieldError message={amendFieldErrors.amendTime} />
+              </label>
+            )}
+            {amendStatus === 'given' && (
+              <label style={amendField}>
+                <span style={amendFieldLabel}>Administered by</span>
+                <select value={amendByType} onChange={(e) => { setAmendByType(e.target.value); clearAmendErr('amendByName'); }} style={amendSelect}>
+                  <option value="nurse">Nurse</option>
+                  <option value="family">Family member</option>
+                  <option value="responsibleParty">Responsible party</option>
+                  <option value="self">Client (self)</option>
+                  <option value="proxy">Proxy</option>
+                </select>
+              </label>
+            )}
+            {amendStatus === 'given' && amendByType !== 'nurse' && (
+              <label id={amendFieldId('amendByName')} style={amendField}>
+                <span style={amendFieldLabel}>Administrator name</span>
+                <input
+                  type="text"
+                  value={amendByName}
+                  onChange={(e) => { setAmendByName(e.target.value); clearAmendErr('amendByName'); }}
+                  style={{ ...amendInput, ...amendHi('amendByName') }}
+                  placeholder="e.g., Jane Doe (daughter)"
+                />
+                <FieldError message={amendFieldErrors.amendByName} />
               </label>
             )}
             {showDoseReason && (
@@ -465,23 +572,24 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
                 </span>
               </label>
             )}
-            <label style={amendField}>
+            <label id={amendFieldId('amendWhy')} style={amendField}>
               <span style={amendFieldLabel}>Reason for this correction *</span>
               <input
                 type="text"
                 value={amendWhy}
-                onChange={(e) => setAmendWhy(e.target.value)}
-                style={amendInput}
+                onChange={(e) => { setAmendWhy(e.target.value); clearAmendErr('amendWhy'); }}
+                style={{ ...amendInput, ...amendHi('amendWhy') }}
                 placeholder="e.g., marked given by mistake; the dose was actually held"
               />
+              <FieldError message={amendFieldErrors.amendWhy} />
             </label>
-            {amendError && <div style={amendErr}>{amendError}</div>}
+            {amendError && <div style={amendErr} role="alert">{amendError}</div>}
             <div style={amendActions}>
               <button type="button" style={amendCancel} onClick={() => setAmendFor(null)} disabled={amendBusy}>
                 Cancel
               </button>
               <button type="button" style={amendSave} onClick={() => saveAmend(a)} disabled={amendBusy}>
-                {amendBusy ? 'Saving…' : 'Save correction'}
+                {amendBusy ? 'Saving…' : 'Save Correction'}
               </button>
             </div>
           </div>
@@ -503,7 +611,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
               <Pill size={18} color="#1a3a5c" />
               <div style={{ minWidth: 0 }}>
-                <div style={titleStyle}>Medication chart</div>
+                <div style={titleStyle}>Medication Chart</div>
                 <div style={subtitleStyle}>{patientName}{documenter ? '' : ' · read-only'}</div>
               </div>
             </div>
@@ -521,7 +629,7 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
                 <span style={todayTag}>Today</span>
               ) : (
                 <button type="button" onClick={() => setDay(today)} style={todayJump}>
-                  Jump to today
+                  Jump to Today
                 </button>
               )}
             </div>
@@ -551,8 +659,13 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
                       <div style={medMeta}>
                         {order.dose}
                         {order.units ? ` ${order.units}` : ''} · {order.route}
-                        {order.frequencyLabel ? ` · ${order.frequencyLabel}` : ''}
+                        {describeFrequency(order) ? ` · ${describeFrequency(order)}` : ''}
                       </div>
+                      {parseSlidingScale(order.slidingScale).length > 0 && (
+                        <div style={glucoseLine}>
+                          Sliding scale: {summarizeSlidingScale(parseSlidingScale(order.slidingScale))}
+                        </div>
+                      )}
                     </div>
                     <button
                       type="button"
@@ -566,11 +679,16 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
 
                   {slotRows.map(({ slot, admin }, i) => (
                     <div key={`${slot}-${i}`} style={slotRow}>
-                      <span style={slot === 'PRN' ? prnBadge : slotBadge}>{slot === 'PRN' ? 'PRN' : slot}</span>
+                      <span style={slot === 'PRN' ? prnBadge : slotBadge}>
+                        {slot === 'PRN' ? 'PRN' : slot}
+                        {slotAnchor(order, slot) && (
+                          <span style={{ display: 'block', fontSize: 10, fontWeight: 600 }}>{slotAnchor(order, slot)}</span>
+                        )}
+                      </span>
                       {admin ? (
                         <div style={{ flex: 1, minWidth: 0 }}>{renderAdminDetails(admin)}</div>
                       ) : (
-                        <span style={notDocPill}>{order.isPRN ? 'None documented' : 'Not documented'}</span>
+                        <span style={notDocPill}>{order.isPRN ? 'None Documented' : 'Not Documented'}</span>
                       )}
                     </div>
                   ))}
@@ -586,8 +704,11 @@ export default function MedChart({ patientId, patientName, initialDate, onClose,
                           <div key={a.id} style={timelineRow}>
                             <span style={timelineDate}>{dayLabel(a.date).replace(`, ${a.date.slice(0, 4)}`, '')}</span>
                             <span style={statusPill[a.status] || statusPill.given}>
-                              {statusLabel(a.status, !!(a.valueLabelSnapshot || '').trim())}
+                              {entryStatusLabel(a)}
                               {readingOf(a) ? ` ${readingOf(a)}` : ''}
+                              {(a.glucoseReading || '').trim()
+                                ? ` BG ${a.glucoseReading}${a.status === 'given' && !isNoInsulinEntry(a) ? `, ${a.doseSnapshot}u` : ''}`
+                                : ''}
                               {a.status === 'given' && a.actualTime ? ` ${a.actualTime}` : ''}
                               {a.initials ? ` · ${a.initials}` : ''}
                             </span>
@@ -663,6 +784,7 @@ const statusPill: Record<string, CSSProperties> = {
 };
 const notDocPill: CSSProperties = { ...basePill, background: '#f1f3f5', color: '#7f8c8d', fontWeight: 600 };
 const byLine: CSSProperties = { fontSize: 12, color: '#7f8c8d', marginTop: 4, lineHeight: 1.4 };
+const glucoseLine: CSSProperties = { fontSize: 12, color: '#1a3a5c', marginTop: 4, lineHeight: 1.4 };
 const timelineBox: CSSProperties = { marginTop: 8, borderTop: '1px solid #e5e7eb', paddingTop: 8 };
 const timelineRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: '1px solid #f7f8f9' };
 const timelineDate: CSSProperties = { fontSize: 12.5, color: '#5c6b7a', fontWeight: 600, minWidth: 86 };
@@ -694,6 +816,7 @@ const amendStatusActive: Record<'given' | 'held' | 'refused', CSSProperties> = {
 const amendField: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 };
 const amendFieldLabel: CSSProperties = { fontSize: 12, fontWeight: 600, color: '#5c6b7a' };
 const amendInput: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box' };
+const amendSelect: CSSProperties = withSelectChevron(amendInput);
 const amendErr: CSSProperties = { fontSize: 12.5, color: '#c0392b', marginBottom: 8 };
 const amendActions: CSSProperties = { display: 'flex', gap: 8, justifyContent: 'flex-end' };
 const amendCancel: CSSProperties = { background: 'white', color: '#374151', border: '1px solid #d0d7de', padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };

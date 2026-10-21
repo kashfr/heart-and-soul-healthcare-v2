@@ -500,6 +500,11 @@ button {
   to { transform: rotate(360deg); }
 }
 
+/* PortalLoading's ring: slow it right down for people who ask for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  .hs-portal-loading-ring { animation-duration: 2.5s !important; }
+}
+
 /* Chartable MAR / TAR grid cells.
    A blank cell in a month grid reads as inert: nurses were clicking one only
    by accident, so the affordance has to be visible, not just a cursor change.

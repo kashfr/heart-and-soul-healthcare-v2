@@ -1,3 +1,4 @@
+import { clientAuditActor } from '@/lib/clientAuditActor';
 import { NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebaseAdmin';
@@ -103,7 +104,7 @@ export async function POST(request: Request) {
       });
       const match = findExactPatientId(typedName, typedDob, roster);
       if (match) {
-        await noteRef.update({ patientId: match });
+        await noteRef.update({ ...clientAuditActor(caller), patientId: match });
         patientId = match;
         autoLinked = true;
       }
@@ -138,7 +139,7 @@ export async function POST(request: Request) {
 
   // arrayUnion is a no-op if the uid is already present, so this is
   // safe to call repeatedly (e.g. for every shift a nurse logs).
-  await patientRef.update({
+  await patientRef.update({ ...clientAuditActor(caller),
     assignedNurseIds: FieldValue.arrayUnion(caller.uid),
   });
 

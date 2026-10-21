@@ -5,6 +5,7 @@ import styles from './Footer.module.css';
 
 const programLinks = [
   { href: '/programs/gapp', label: 'GAPP - Georgia Pediatric' },
+  { href: '/programs/gapp/trach-and-ventilator-care', label: 'Pediatric Trach & Vent Care' },
   { href: '/programs/now-comp', label: 'NOW/COMP Waiver' },
   { href: '/programs/icwp', label: 'ICWP - Independent Care' },
   { href: '/programs/edwp', label: 'EDWP (CCSP & SOURCE)' },
@@ -29,10 +30,10 @@ export default function Footer() {
             <div className={styles.footerSection}>
               <div className={styles.footerLogo}>
                 <Image 
-                  src="/images/logo.webp" 
+                  src="/images/logo-2026.webp" 
                   alt="Heart & Soul Healthcare Logo" 
-                  width={130} 
-                  height={67} 
+                  width={900} 
+                  height={238} 
                   style={{ width: '100%', height: 'auto', objectFit: 'contain' }} 
                   unoptimized 
                 />
@@ -100,7 +101,7 @@ export default function Footer() {
                   </li>
                   <li>
                     <Clock size={18} />
-                    <span>Mon - Fri: 10:00 AM - 3:00 PM</span>
+                    <span>Mon to Fri: 9:00 AM to 5:00 PM</span>
                   </li>
                 </ul>
               </address>

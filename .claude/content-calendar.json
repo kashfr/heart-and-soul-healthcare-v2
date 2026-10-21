@@ -66,13 +66,49 @@
       "title": "Transitioning from Hospital to Home: A Guide for Families",
       "category": "Caregiver Resources",
       "keywords": ["hospital to home transition", "discharge planning", "home health after hospital"],
-      "status": "pending"
+      "status": "published"
     },
     {
       "title": "Understanding Support Coordination in Georgia's Waiver Programs",
       "category": "Medicaid Guide",
       "keywords": ["support coordinator Georgia", "waiver support coordination", "care coordination Medicaid"],
-      "status": "pending"
+      "status": "published"
+    },
+    {
+      "title": "The NOW/COMP Planning List: What Georgia Families Can Do While They Wait",
+      "category": "NOW/COMP",
+      "keywords": ["NOW/COMP planning list", "Georgia waiver waiting list", "DBHDD developmental disabilities", "Georgia Medicaid waivers"],
+      "status": "published"
+    },
+    {
+      "title": "Bringing Your Child Home With a Trach in Georgia: A Parent's Guide",
+      "category": "GAPP",
+      "keywords": ["trach baby home", "tracheostomy discharge Georgia", "GAPP trach nursing", "NICU discharge trach"],
+      "status": "published"
+    },
+    {
+      "title": "How Many GAPP Nursing Hours Can a Child With a Trach or Ventilator Get?",
+      "category": "GAPP",
+      "keywords": ["GAPP nursing hours", "ventilator dependent child Georgia", "pediatric private duty nursing hours", "GAPP recertification"],
+      "status": "published"
+    },
+    {
+      "title": "Night Nursing for a Child With a Trach or Ventilator in Georgia",
+      "category": "GAPP",
+      "keywords": ["night nurse for trach child", "overnight pediatric nursing Georgia", "ventilator night nursing", "GAPP night shifts"],
+      "status": "published"
+    },
+    {
+      "title": "Building a Trach and Ventilator Emergency Plan at Home",
+      "category": "GAPP",
+      "keywords": ["trach emergency plan", "home ventilator power outage", "trach go bag", "pediatric ventilator safety"],
+      "status": "published"
+    },
+    {
+      "title": "Katie Beckett Medicaid in Georgia: A Guide for Families of Children with Disabilities",
+      "category": "Medicaid Guide",
+      "keywords": ["Katie Beckett Georgia", "TEFRA Medicaid Georgia", "Medicaid for children with disabilities"],
+      "status": "published"
     }
   ]
 }

@@ -1,17 +1,25 @@
 'use client';
 
+import { AssistantClientAccessSettings } from '@/components/AssistantClientAccessSettings';
+import { canCreateClientFromReferral } from '@/lib/referralPermissions';
+import type { Role } from '@/lib/auth';
+import { validPpotSchedule } from '@/lib/ppotSchedule';
 import { useEffect, useState } from 'react';
+import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
 import Link from 'next/link';
 import { ArrowLeft, Save, RotateCcw, Plus, X, Eye, Send } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
 import { authedFetch } from '@/lib/authedFetch';
+import { formatUSPhone, formatUSPhoneExt } from '@/lib/phone';
+import { escortToField, FieldError, firstErrorKey, FIELD_ERROR_STYLE } from '@/lib/formEscort';
 import {
   DEFAULT_SETTINGS,
   ALL_COSIGNABLE_CREDENTIALS,
   ALL_VITAL_AGE_GROUPS,
   ALL_VITAL_RANGE_KEYS,
   RN_COSIGN_SESSION_KEY,
+  DBHDD_REGIONS,
   type AppSettings,
   type SubmissionsSortKey,
   type SubmissionsSortDir,
@@ -35,11 +43,94 @@ import { GA_COUNTIES, GAPP_SERVICES, normalizeCounty, type GappServiceKey } from
  * value from `draft`, render an input bound to setDraft, save the
  * whole `draft` shape via PUT /api/admin/settings.
  */
+/** Dotted settings path -> DOM id for the escort. */
+const settingsFieldId = (key: string) => `settings-${key.replace(/[^A-Za-z0-9]+/g, '-')}`;
+
+const isWholeNumberBetween = (n: unknown, lo: number, hi: number) =>
+  typeof n === 'number' && Number.isInteger(n) && n >= lo && n <= hi;
+
+/**
+ * Client-side mirror of validateSettings (src/lib/settings.ts) for the rules an
+ * admin can actually trip from this page, keyed by the same dotted field paths
+ * the server returns in its { error, field } response. Built in page order so
+ * the first key is the topmost problem.
+ */
+function validateSettingsDraft(d: AppSettings): Record<string, string> {
+  const errs: Record<string, string> = {};
+  if (!isWholeNumberBetween(d.submissions.pageSize, 5, 100)) {
+    errs['submissions.pageSize'] = 'Enter a whole number of rows between 5 and 100.';
+  }
+  for (const key of ['ppotOverdueDays', 'ppotEscalateDays'] as const) {
+    if (!isWholeNumberBetween(d.fax[key] ?? d.verbalOrders[key === 'ppotOverdueDays' ? 'overdueDays' : 'escalateDays'], 1, 365)) errs[`fax.${key}`] = 'Enter a whole number of days from 1 to 365.';
+  }
+  if (d.fax.ppotFollowupDays !== undefined && !validPpotSchedule(d.fax.ppotFollowupDays)) errs['fax.ppotFollowupDays'] = 'Enter up to 12 unique days in increasing order, from 1 to 365.';
+  if (d.fax.ppotFollowupDays === undefined && (d.fax.ppotEscalateDays ?? d.verbalOrders.escalateDays) < (d.fax.ppotOverdueDays ?? d.verbalOrders.overdueDays)) errs['fax.ppotEscalateDays'] = 'Escalation must come at or after the PPOT follow-up.';
+  const vo = d.verbalOrders;
+  if (!isWholeNumberBetween(vo.overdueDays, 1, 365)) {
+    errs['verbalOrders.overdueDays'] = 'Enter a whole number of days from 1 to 365.';
+  }
+  if (!isWholeNumberBetween(vo.escalateDays, 1, 365)) {
+    errs['verbalOrders.escalateDays'] = 'Enter a whole number of days from 1 to 365.';
+  } else if (isWholeNumberBetween(vo.overdueDays, 1, 365) && vo.escalateDays < vo.overdueDays) {
+    errs['verbalOrders.escalateDays'] = `Escalation must come at or after the overdue mark (${vo.overdueDays} days).`;
+  }
+  if (!isWholeNumberBetween(d.fax.recertLeadDays, 7, 180)) {
+    errs['fax.recertLeadDays'] = 'Enter a whole number of days from 7 to 180.';
+  }
+  if (vo.returnFax && !/^\d{10}$/.test(vo.returnFax)) {
+    errs['verbalOrders.returnFax'] = 'Enter a 10-digit fax number, or leave it blank to use the portal\'s SRFax number.';
+  }
+  for (const group of ALL_VITAL_AGE_GROUPS) {
+    const overrides = d.vitals.rangesByAgeGroup[group];
+    if (!overrides) continue;
+    for (const vital of ALL_VITAL_RANGE_KEYS) {
+      const pair = overrides[vital];
+      if (!pair) continue;
+      const key = `vitals.rangesByAgeGroup.${group}.${vital}`;
+      if (!Number.isFinite(pair.low) || !Number.isFinite(pair.high)) {
+        errs[key] = `Enter both a low and a high number for ${VITAL_LABELS[vital]}.`;
+      } else if (pair.low > pair.high) {
+        errs[key] = `The ${VITAL_LABELS[vital]} low (${pair.low}) cannot be higher than the high (${pair.high}).`;
+      }
+    }
+  }
+  if (!d.branding.orgName.trim()) errs['branding.orgName'] = 'Enter the organization name. It appears on every PDF and email.';
+  else if (d.branding.orgName.length > 80) errs['branding.orgName'] = 'Keep the organization name to 80 characters.';
+  if (d.branding.tagline.length > 120) errs['branding.tagline'] = 'Keep the tagline to 120 characters.';
+  if (d.branding.fromEmailDisplay.length > 80) errs['branding.fromEmailDisplay'] = 'Keep the from-email display name to 80 characters.';
+  const SUBJECT_LABELS: Record<keyof AppSettings['emails']['subjects'], string> = {
+    staffInviteWelcome: 'staff invite (welcome)',
+    staffInviteResend: 'staff invite (resend)',
+    emailChanged: 'email-changed notice',
+  };
+  for (const key of Object.keys(SUBJECT_LABELS) as (keyof AppSettings['emails']['subjects'])[]) {
+    const v = d.emails.subjects[key];
+    if (!v.trim()) errs[`emails.subjects.${key}`] = `Enter a subject line for the ${SUBJECT_LABELS[key]} email.`;
+    else if (v.length > 200) errs[`emails.subjects.${key}`] = 'Keep the subject line to 200 characters.';
+  }
+  const PL_LABELS: Record<keyof ProviderListEmailSettings, string> = {
+    subject: 'subject', phone: 'callback number', intro: 'opening', explainer: 'list introduction',
+    ctaLabel: 'button label', closing: 'closing', signOff: 'sign-off',
+  };
+  const PL_LIMITS: Record<keyof ProviderListEmailSettings, number> = {
+    subject: 200, phone: 40, ctaLabel: 80, signOff: 120, intro: 2000, explainer: 2000, closing: 2000,
+  };
+  for (const key of ['subject', 'phone', 'intro', 'explainer', 'ctaLabel', 'closing', 'signOff'] as (keyof ProviderListEmailSettings)[]) {
+    const v = d.emails.providerList[key];
+    const path = `emails.providerList.${key}`;
+    if (!v.trim()) errs[path] = `Enter the ${PL_LABELS[key]}. This email cannot go out with it blank.`;
+    else if (v.length > PL_LIMITS[key]) errs[path] = `Keep the ${PL_LABELS[key]} to ${PL_LIMITS[key]} characters.`;
+    else if (key === 'subject' && /\{\{\s*childName\s*\}\}/.test(v)) errs[path] = 'The subject cannot include {{childName}}. Subject lines must stay free of client names.';
+  }
+  return errs;
+}
+
 export default function AdminSettingsPage() {
   const { role, loading: authLoading } = useAuth();
   const { settings, ready, refresh } = useSettings();
 
   const [draft, setDraft] = useState<AppSettings>(settings);
+  const [ppotScheduleText, setPpotScheduleText] = useState((settings.fax.ppotFollowupDays ?? [settings.fax.ppotOverdueDays ?? 14]).join(', '));
   const [saving, setSaving] = useState(false);
   // Staff list for the corrections-reviewer picker (a dropdown, deliberately
   // NOT a raw uid input — a mistyped uid would silently break notifications).
@@ -49,6 +140,9 @@ export default function AdminSettingsPage() {
   // The long per-age-group vitals grid is collapsed by default so the page
   // stays scannable; expanding it is one click.
   const [vitalsOpen, setVitalsOpen] = useState(false);
+  const [referralOptions, setReferralOptions] = useState<Array<{ uid: string; displayName: string; role: Role }>>([]);
+  // Fax Center has its own role policy; keep its picker separate.
+  const [faxOptions, setFaxOptions] = useState<Array<{ uid: string; displayName: string; role: string }>>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,6 +168,18 @@ export default function AdminSettingsPage() {
           }))
           .sort((a, b) => a.displayName.localeCompare(b.displayName));
         setReviewerOptions(opts);
+        setReferralOptions(
+          data.users
+            .filter((u) => u.active !== false && ['admin', 'supervisor', 'va'].includes(u.role || ''))
+            .map((u) => ({ uid: u.uid, displayName: u.displayName || '(no name)', role: u.role as Role }))
+            .sort((a, b) => a.displayName.localeCompare(b.displayName)),
+        );
+        setFaxOptions(
+          data.users
+            .filter((u) => u.active !== false && (u.role === 'supervisor' || u.role === 'va'))
+            .map((u) => ({ uid: u.uid, displayName: u.displayName || '(no name)', role: u.role || '' }))
+            .sort((a, b) => a.displayName.localeCompare(b.displayName)),
+        );
       } catch {
         // Picker degrades to a read-only summary; the saved value is untouched.
       }
@@ -94,8 +200,10 @@ export default function AdminSettingsPage() {
   // starts editing. Once they make a change, the dirty draft "wins"
   // and we don't clobber their input on a background refresh.
   const [dirty, setDirty] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [saveError, setSaveError] = useState<string | null>(null);
   useEffect(() => {
-    if (!dirty) setDraft(settings);
+    if (!dirty) { setDraft(settings); setPpotScheduleText((settings.fax.ppotFollowupDays ?? [settings.fax.ppotOverdueDays ?? 14]).join(', ')); }
   }, [settings, dirty]);
 
   if (authLoading) return null;
@@ -124,11 +232,43 @@ export default function AdminSettingsPage() {
     );
   }
 
+  const clearFieldError = (key: string) => {
+    if (fieldErrors[key]) setFieldErrors((prev) => ({ ...prev, [key]: '' }));
+  };
+  const clearFieldErrorsUnder = (prefix: string) => {
+    if (Object.keys(fieldErrors).some((k) => k.startsWith(prefix) && fieldErrors[k])) {
+      setFieldErrors((prev) => Object.fromEntries(Object.entries(prev).map(([k, v]) => [k, k.startsWith(prefix) ? '' : v])));
+    }
+  };
+  /** Red outline for a field the last save rejected. */
+  const hi = (key: string): React.CSSProperties | undefined => (fieldErrors[key] ? FIELD_ERROR_STYLE : undefined);
+
+  /** Store the errors, open the collapsed section if needed, and escort to the first one. */
+  const showFieldErrors = (errs: Record<string, string>): boolean => {
+    setFieldErrors(errs);
+    const first = firstErrorKey<string>([], errs);
+    if (!first) return true;
+    // A server `field` the page has no input for (list-type settings such as
+    // intake counties) would otherwise point at nothing: show its message.
+    if (!document.getElementById(settingsFieldId(first))) {
+      setFieldErrors({});
+      setSaveError(errs[first]);
+      return false;
+    }
+    const count = Object.values(errs).filter(Boolean).length;
+    setSaveError(count === 1 ? 'Fix the highlighted field below, then save again.' : `Fix the ${count} highlighted fields below, then save again.`);
+    const needsVitals = first.startsWith('vitals.') && !vitalsOpen;
+    if (needsVitals) setVitalsOpen(true);
+    window.setTimeout(() => escortToField(settingsFieldId(first)), needsVitals ? 80 : 0);
+    return false;
+  };
+
   const updateSubmissions = <K extends keyof AppSettings['submissions']>(
     key: K,
     value: AppSettings['submissions'][K],
   ) => {
     setDirty(true);
+    clearFieldError(`submissions.${key}`);
     setDraft((prev) => ({
       ...prev,
       submissions: { ...prev.submissions, [key]: value },
@@ -165,6 +305,35 @@ export default function AdminSettingsPage() {
     setDraft((prev) => ({ ...prev, corrections: { ...prev.corrections, [field]: value } }));
   };
 
+  const toggleShiftChangeRecipient = (uid: string, on: boolean) => {
+    setDirty(true);
+    setDraft((prev) => {
+      const cur = prev.shiftChangeAlerts.recipientUids;
+      const next = on ? Array.from(new Set([...cur, uid])) : cur.filter((u) => u !== uid);
+      return { ...prev, shiftChangeAlerts: { recipientUids: next } };
+    });
+  };
+
+  // EDWP Consents grant. null = not set yet (every VA), so the first change
+  // starts from exactly who has access today.
+  const toggleEdwpUser = (uid: string, on: boolean) => {
+    setDirty(true);
+    setDraft((prev) => {
+      const cur = prev.edwp.userUids ?? faxOptions.filter((o) => o.role === 'va').map((o) => o.uid);
+      const next = on ? Array.from(new Set([...cur, uid])) : cur.filter((u) => u !== uid);
+      return { ...prev, edwp: { userUids: next } };
+    });
+  };
+
+  const toggleFaxUser = (uid: string, on: boolean) => {
+    setDirty(true);
+    setDraft((prev) => {
+      const cur = prev.fax.userUids;
+      const next = on ? Array.from(new Set([...cur, uid])) : cur.filter((u) => u !== uid);
+      return { ...prev, fax: { ...prev.fax, userUids: next } };
+    });
+  };
+
   const updateVitalRange = (
     group: VitalAgeGroupKey,
     vital: VitalRangeKey,
@@ -172,6 +341,7 @@ export default function AdminSettingsPage() {
     value: number,
   ) => {
     setDirty(true);
+    clearFieldError(`vitals.rangesByAgeGroup.${group}.${vital}`);
     setDraft((prev) => {
       const existingGroup = prev.vitals.rangesByAgeGroup[group] ?? {};
       const existingPair = existingGroup[vital] ?? { low: 0, high: 0 };
@@ -192,6 +362,7 @@ export default function AdminSettingsPage() {
 
   const clearVitalOverridesForGroup = (group: VitalAgeGroupKey) => {
     setDirty(true);
+    clearFieldErrorsUnder(`vitals.rangesByAgeGroup.${group}.`);
     setDraft((prev) => {
       const next = { ...prev.vitals.rangesByAgeGroup };
       delete next[group];
@@ -204,6 +375,7 @@ export default function AdminSettingsPage() {
     value: AppSettings['branding'][K],
   ) => {
     setDirty(true);
+    clearFieldError(`branding.${key}`);
     setDraft((prev) => ({
       ...prev,
       branding: { ...prev.branding, [key]: value },
@@ -215,6 +387,7 @@ export default function AdminSettingsPage() {
     value: string,
   ) => {
     setDirty(true);
+    clearFieldError(`emails.subjects.${key}`);
     setDraft((prev) => ({
       ...prev,
       emails: {
@@ -229,6 +402,7 @@ export default function AdminSettingsPage() {
     value: string,
   ) => {
     setDirty(true);
+    clearFieldError(`emails.providerList.${key}`);
     setDraft((prev) => ({
       ...prev,
       emails: {
@@ -321,6 +495,13 @@ export default function AdminSettingsPage() {
   };
 
   const handleSave = async () => {
+    if (saving) return;
+    setSaveError(null);
+    if (!dirty) {
+      setSaveError('Nothing has changed since the last save.');
+      return;
+    }
+    if (!showFieldErrors(validateSettingsDraft(draft))) return;
     setSaving(true);
     try {
       const res = await authedFetch('/api/admin/settings', {
@@ -329,8 +510,10 @@ export default function AdminSettingsPage() {
         body: JSON.stringify(draft),
       });
       if (!res.ok) {
-        const err = (await res.json().catch(() => ({}))) as { error?: string };
-        showToast('err', err.error || `Save failed (${res.status})`);
+        const err = (await res.json().catch(() => ({}))) as { error?: string; field?: string };
+        const message = err.error || `The server rejected the save (${res.status}).`;
+        if (err.field) showFieldErrors({ [err.field]: message });
+        else setSaveError(message);
         return;
       }
       await refresh();
@@ -344,9 +527,10 @@ export default function AdminSettingsPage() {
         /* sessionStorage unavailable — non-fatal */
       }
       setDirty(false);
+      setFieldErrors({});
       showToast('ok', 'Settings saved');
     } catch {
-      showToast('err', 'Network error — try again.');
+      setSaveError('The save did not reach the server. Check your connection and try again.');
     } finally {
       setSaving(false);
     }
@@ -354,6 +538,8 @@ export default function AdminSettingsPage() {
 
   const handleResetToDefaults = () => {
     setDirty(true);
+    setFieldErrors({});
+    setSaveError(null);
     setDraft(DEFAULT_SETTINGS);
   };
 
@@ -362,7 +548,7 @@ export default function AdminSettingsPage() {
       <div style={wrapStyle}>
         <div style={{ marginBottom: 16 }}>
           <Link href="/admin" style={backLinkStyle}>
-            <ArrowLeft size={14} /> Back to dashboard
+            <ArrowLeft size={14} /> Back to Dashboard
           </Link>
         </div>
 
@@ -378,22 +564,28 @@ export default function AdminSettingsPage() {
             <button
               type="button"
               onClick={handleResetToDefaults}
-              style={secondaryBtnStyle}
+              className={btn}
               disabled={saving}
               title="Replace the form below with the hard-coded defaults. You still need to click Save to apply."
             >
-              <RotateCcw size={14} /> Reset form
+              <RotateCcw size={14} /> Reset Form
             </button>
             <button
               type="button"
               onClick={handleSave}
-              style={primaryBtnStyle}
-              disabled={saving || !dirty}
+              className={btnPrimary}
+              disabled={saving}
             >
-              <Save size={14} /> {saving ? 'Saving…' : dirty ? 'Save changes' : 'Saved'}
+              <Save size={14} /> {saving ? 'Saving…' : dirty ? 'Save Changes' : 'Saved'}
             </button>
           </div>
         </header>
+
+        {saveError && (
+          <div role="alert" style={saveErrorBannerStyle}>
+            {saveError}
+          </div>
+        )}
 
         {!ready && (
           <div style={infoBannerStyle}>
@@ -402,9 +594,22 @@ export default function AdminSettingsPage() {
           </div>
         )}
 
+        {/* --- Billing rates (own page: a table, not a form draft) --- */}
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Billing Rates</h2>
+          <p style={sectionSubStyle}>
+            Dollars per 15-minute unit by program (NOW/COMP, GAPP, EDWP, ICWP) for shift nursing
+            and RN oversight, with the claim code and modifier and effective dates. Feeds the $
+            views on the Shift Notes list and each client&apos;s Hours tab. Admin only.
+          </p>
+          <Link href="/admin/settings/billing-rates" className={btn}>
+            Open Billing Rates →
+          </Link>
+        </section>
+
         {/* --- Submissions list defaults --- */}
         <section style={sectionStyle}>
-          <h2 style={sectionTitleStyle}>Submissions list</h2>
+          <h2 style={sectionTitleStyle}>Submissions List</h2>
           <p style={sectionSubStyle}>
             What everyone sees when they open <code>/admin/submissions</code> with no
             filters. Individual nurses can still sort / filter however they want — these
@@ -420,10 +625,10 @@ export default function AdminSettingsPage() {
                 }
                 style={selectStyle}
               >
-                <option value="dateOfService">Date of service</option>
-                <option value="submittedAt">Submitted at</option>
-                <option value="clientName">Client name</option>
-                <option value="nurseName">Nurse name</option>
+                <option value="dateOfService">Date of Service</option>
+                <option value="submittedAt">Submitted At</option>
+                <option value="clientName">Client Name</option>
+                <option value="nurseName">Nurse Name</option>
               </select>
             </Field>
 
@@ -435,8 +640,8 @@ export default function AdminSettingsPage() {
                 }
                 style={selectStyle}
               >
-                <option value="desc">Newest first (descending)</option>
-                <option value="asc">Oldest first (ascending)</option>
+                <option value="desc">Newest First (Descending)</option>
+                <option value="asc">Oldest First (Ascending)</option>
               </select>
             </Field>
 
@@ -451,13 +656,15 @@ export default function AdminSettingsPage() {
                 <option value="active">Active</option>
                 <option value="archived">Archived</option>
                 <option value="all">All</option>
-                <option value="team">Care team</option>
+                <option value="team">Care Team</option>
               </select>
             </Field>
 
             <Field
               label="Rows per page"
               hint="Between 5 and 100. The pagination uses this to chunk the table."
+              id={settingsFieldId('submissions.pageSize')}
+              error={fieldErrors['submissions.pageSize']}
             >
               <input
                 type="number"
@@ -469,7 +676,8 @@ export default function AdminSettingsPage() {
                   const n = parseInt(e.target.value, 10);
                   if (Number.isFinite(n)) updateSubmissions('pageSize', n);
                 }}
-                style={inputStyle}
+                style={{ ...inputStyle, ...hi('submissions.pageSize') }}
+                aria-invalid={!!fieldErrors['submissions.pageSize']}
               />
             </Field>
           </div>
@@ -486,7 +694,7 @@ export default function AdminSettingsPage() {
 
         {/* --- Co-signature requirements --- */}
         <section style={sectionStyle}>
-          <h2 style={sectionTitleStyle}>Co-signature requirements</h2>
+          <h2 style={sectionTitleStyle}>Co-Signature Requirements</h2>
           <p style={sectionSubStyle}>
             Which clinical credentials require an RN to co-sign every submitted note. RN
             isn&apos;t in this list — RNs can&apos;t co-sign their own work, and an RN co-
@@ -516,7 +724,7 @@ export default function AdminSettingsPage() {
 
         {/* --- Patient roster enforcement --- */}
         <section style={sectionStyle}>
-          <h2 style={sectionTitleStyle}>Patient roster</h2>
+          <h2 style={sectionTitleStyle}>Patient Roster</h2>
           <p style={sectionSubStyle}>
             Control whether nurses can type a patient name freely, or must select from
             the existing roster. Tightening this stops typo notes from accumulating in
@@ -534,7 +742,7 @@ export default function AdminSettingsPage() {
 
         {/* --- Critical-vitals escalation gate --- */}
         <section style={sectionStyle}>
-          <h2 style={sectionTitleStyle}>Critical-vitals escalation prompt</h2>
+          <h2 style={sectionTitleStyle}>Critical-Vitals Escalation Prompt</h2>
           <p style={sectionSubStyle}>
             When a nurse submits a note with a vital that crosses a provider-notification
             (critical) threshold, the form prompts them to record the escalation they made —
@@ -553,15 +761,20 @@ export default function AdminSettingsPage() {
 
         {/* --- Note corrections & the new-notes block --- */}
         <section style={sectionStyle}>
-          <h2 style={sectionTitleStyle}>Note corrections</h2>
+          <h2 style={sectionTitleStyle}>Note Corrections</h2>
           <p style={sectionSubStyle}>
             When a reviewer flags a note for CORRECTION, the flag can block its author from
             starting or submitting any new progress notes. The block is lifted only by a
-            person: when the nurse amends the note, the reviewer below is notified (email,
-            text, portal bell) to verify the fix actually addresses the flag, then removes
-            the block or resolves the correction from the note&apos;s panel. The nurse&apos;s
-            block screen tells her to call the reviewer after saving her correction.
-            Admins can also block or unblock a nurse manually from Staff &amp; Roles.
+            person, who verifies the fix actually addresses the flag, then removes the block
+            or resolves the correction from the note&apos;s panel. The nurse&apos;s block
+            screen tells her to call the reviewer after saving her correction. Admins can
+            also block or unblock a nurse manually from Staff &amp; Roles.
+          </p>
+          <p style={sectionSubStyle}>
+            Whenever a nurse amends or replies on ANY flagged note (correction or
+            clarification, blocking or not), the person who raised the flag, the reviewer
+            below, and every admin are notified by email and portal bell. The flagger and the
+            reviewer also get a text message.
           </p>
 
           <Toggle
@@ -574,7 +787,7 @@ export default function AdminSettingsPage() {
           <div style={{ ...fieldGridStyle, marginTop: 14 }}>
             <Field
               label="Corrections reviewer"
-              hint="The staff member (normally the RN supervisor) notified by email, text, and portal bell when a nurse amends a blocked note. Picking someone fills in the display name and phone below."
+              hint="The staff member (normally the RN supervisor) notified by email, text, and portal bell whenever a nurse amends or replies on a flagged note, in addition to whoever raised the flag. Also the person the blocked nurse is told to call. Picking someone fills in the display name and phone below."
             >
               {reviewerOptions.length > 0 ? (
                 <select
@@ -601,7 +814,7 @@ export default function AdminSettingsPage() {
                   }}
                   style={selectStyle}
                 >
-                  <option value="">Not set — no one is notified</option>
+                  <option value="">Not Set — Only the Flagger and Admins Are Notified</option>
                   {reviewerOptions.map((o) => (
                     <option key={o.uid} value={o.uid}>
                       {o.displayName}
@@ -617,7 +830,7 @@ export default function AdminSettingsPage() {
                   {draft.corrections.reviewerUid &&
                     !reviewerOptions.some((o) => o.uid === draft.corrections.reviewerUid) && (
                       <option value={draft.corrections.reviewerUid}>
-                        {draft.corrections.reviewerName || 'Current reviewer'}
+                        {draft.corrections.reviewerName || 'Current Reviewer'}
                       </option>
                     )}
                 </select>
@@ -647,9 +860,9 @@ export default function AdminSettingsPage() {
               hint="Displayed as a tap-to-call link on the block screen so a nurse can discuss the correction."
             >
               <input
-                type="text"
+                type="tel"
                 value={draft.corrections.reviewerPhone}
-                onChange={(e) => updateCorrections('reviewerPhone', e.target.value)}
+                onChange={(e) => updateCorrections('reviewerPhone', formatUSPhone(e.target.value))}
                 maxLength={20}
                 style={inputStyle}
               />
@@ -657,12 +870,462 @@ export default function AdminSettingsPage() {
           </div>
         </section>
 
+        {/* --- Shift-change alerts ("Since your last shift" on Page 2) --- */}
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Shift-Change Alerts</h2>
+          <p style={sectionSubStyle}>
+            Every progress note starts with three required questions about the time since the
+            nurse&apos;s last shift: any hospital admission, any urgent care or ER visit, and any
+            medication started, changed, or stopped. When a nurse answers Yes to any of them, the
+            people checked below are alerted by email and portal bell (naming the client, the
+            answers, and the nurse&apos;s details) and by a text message if they have a phone on
+            file. If no one is checked, the alert goes to the Corrections reviewer above.
+          </p>
+          {reviewerOptions.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {reviewerOptions.map((o) => {
+                const checked = draft.shiftChangeAlerts.recipientUids.includes(o.uid);
+                return (
+                  <label
+                    key={o.uid}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+                      background: checked ? '#eef4fb' : '#f8fafc', border: '1px solid #e5e7eb',
+                      borderRadius: 6, cursor: 'pointer', fontSize: 13.5, color: '#2c3e50',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => toggleShiftChangeRecipient(o.uid, e.target.checked)}
+                    />
+                    <span style={{ fontWeight: 600 }}>{o.displayName}</span>
+                    <span style={{ color: '#5c6b7a', fontSize: 12.5 }}>
+                      {o.credential ? `${o.credential}, ` : ''}{o.role}
+                      {o.phone ? ` · ${o.phone}` : ' · no phone on file (email + bell only)'}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ fontSize: 13.5, color: '#5c6b7a', padding: '9px 0' }}>
+              Staff list unavailable right now — reload to change the recipients.
+            </div>
+          )}
+          {draft.shiftChangeAlerts.recipientUids.length === 0 && (
+            <p style={{ ...sectionSubStyle, marginTop: 10, marginBottom: 0 }}>
+              Currently falling back to the Corrections reviewer
+              {draft.corrections.reviewerName ? ` (${draft.corrections.reviewerName})` : ''}.
+            </p>
+          )}
+        </section>
+
+        {/* --- Support coordination agencies --- */}
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Support Coordination Agencies</h2>
+          <p style={sectionSubStyle}>
+            The agencies that provide support coordination (SC / ISC) or case management for our clients. The Agency
+            field on each client&apos;s Support Coordinator card picks from this list and fills in the office address,
+            so every client shows the agency spelled the same way.
+          </p>
+          {draft.supportCoordination.agencies.length === 0 && (
+            <div style={{ fontSize: 13.5, color: '#5c6b7a', padding: '4px 0 10px' }}>No agencies yet.</div>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {draft.supportCoordination.agencies.map((a, i) => {
+              const key = (f: string) => `supportCoordination.agencies.${i}.${f}`;
+              const update = (f: keyof typeof a, v: string) => {
+                clearFieldError(key(f));
+                setDirty(true);
+                setDraft((prev) => ({
+                  ...prev,
+                  supportCoordination: {
+                    agencies: prev.supportCoordination.agencies.map((x, j) => (j === i ? { ...x, [f]: v } : x)),
+                  },
+                }));
+              };
+              return (
+                <div key={a.id || i} style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 12, background: '#fbfcfd' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
+                    <Field label="Agency name" id={settingsFieldId(key('name'))} error={fieldErrors[key('name')]}>
+                      <input type="text" value={a.name} style={{ ...inputStyle, ...hi(key('name')) }} placeholder="e.g. Creative Consulting Services" onChange={(e) => update('name', e.target.value)} />
+                    </Field>
+                    <Field label="Office address" id={settingsFieldId(key('address'))}>
+                      <input type="text" value={a.address} style={inputStyle} onChange={(e) => update('address', e.target.value)} />
+                    </Field>
+                    <Field label="Main phone" id={settingsFieldId(key('phone'))}>
+                      <input type="tel" value={a.phone} style={inputStyle} onChange={(e) => update('phone', formatUSPhoneExt(e.target.value))} />
+                    </Field>
+                    <Field label="Fax" id={settingsFieldId(key('fax'))}>
+                      <input type="tel" value={a.fax} style={inputStyle} onChange={(e) => update('fax', formatUSPhone(e.target.value))} />
+                    </Field>
+                    <Field label="After-hours line" id={settingsFieldId(key('afterHours'))}>
+                      <input type="tel" value={a.afterHours} style={inputStyle} placeholder="Emergency pager" onChange={(e) => update('afterHours', formatUSPhone(e.target.value))} />
+                    </Field>
+                    <Field label="Notes" id={settingsFieldId(key('notes'))}>
+                      <input type="text" value={a.notes} style={inputStyle} onChange={(e) => update('notes', e.target.value)} />
+                    </Field>
+                  </div>
+                  <fieldset id={settingsFieldId(key('regions'))} style={{ border: 'none', padding: 0, margin: '10px 0 0' }}>
+                    <legend style={{ fontSize: 12.5, fontWeight: 600, color: '#2c3e50', marginBottom: 6, padding: 0 }}>DBHDD regions served</legend>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {DBHDD_REGIONS.map((n) => {
+                        const on = (a.regions || []).includes(n);
+                        return (
+                          <label
+                            key={n}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer',
+                              padding: '5px 10px', borderRadius: 6,
+                              border: `1px solid ${on ? '#1a3a5c' : '#d1d5db'}`,
+                              background: on ? '#e8eef5' : '#fff',
+                              color: '#2c3e50',
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={on}
+                              onChange={() => {
+                                clearFieldError(key('regions'));
+                                setDirty(true);
+                                setDraft((prev) => ({
+                                  ...prev,
+                                  supportCoordination: {
+                                    agencies: prev.supportCoordination.agencies.map((x, j) => {
+                                      if (j !== i) return x;
+                                      const cur = x.regions || [];
+                                      const next = cur.includes(n) ? cur.filter((r) => r !== n) : [...cur, n].sort((p, q) => p - q);
+                                      return { ...x, regions: next };
+                                    }),
+                                  },
+                                }));
+                              }}
+                            />
+                            Region {n}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <FieldError message={fieldErrors[key('regions')]} />
+                  </fieldset>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                    <button
+                      type="button"
+                      className={`${btnDanger} ${btnSm}`}
+                      onClick={() => {
+                        clearFieldErrorsUnder('supportCoordination.agencies');
+                        setDirty(true);
+                        setDraft((prev) => ({ ...prev, supportCoordination: { agencies: prev.supportCoordination.agencies.filter((_, j) => j !== i) } }));
+                      }}
+                    >
+                      <X size={12} /> Remove
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            className={btn}
+            style={{ marginTop: 10 }}
+            onClick={() => {
+              setDirty(true);
+              setDraft((prev) => ({
+                ...prev,
+                supportCoordination: {
+                  agencies: [...prev.supportCoordination.agencies, { id: `new-${Date.now().toString(36)}`, name: '', address: '', phone: '', fax: '', afterHours: '', notes: '', regions: [] }],
+                },
+              }));
+            }}
+          >
+            <Plus size={14} /> Add Agency
+          </button>
+        </section>
+
+        {/* --- Verbal orders --- */}
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Verbal Orders</h2>
+          <p style={sectionSubStyle}>
+            When a nurse takes a telephone order, the physician is faxed an authentication form to sign and
+            return. An order still unsigned after the first number of days is marked overdue on the queue and
+            re-faxed once; after the second it rings the admin bell. The return fax number is printed on the
+            form; leave it blank to use the portal&apos;s SRFax number.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+            <Field label="Overdue after (days)" id={settingsFieldId('verbalOrders.overdueDays')} error={fieldErrors['verbalOrders.overdueDays']}>
+              <input type="number" min={1} max={365} value={draft.verbalOrders.overdueDays} style={{ ...inputStyle, ...hi('verbalOrders.overdueDays') }} aria-invalid={!!fieldErrors['verbalOrders.overdueDays']}
+                onChange={(e) => {
+                  clearFieldError('verbalOrders.overdueDays');
+                  clearFieldError('verbalOrders.escalateDays');
+                  setDraft((prev) => ({ ...prev, verbalOrders: { ...prev.verbalOrders, overdueDays: Number(e.target.value) || 1 } }));
+                  setDirty(true);
+                }} />
+            </Field>
+            <Field label="Escalate after (days)" id={settingsFieldId('verbalOrders.escalateDays')} error={fieldErrors['verbalOrders.escalateDays']}>
+              <input type="number" min={1} max={365} value={draft.verbalOrders.escalateDays} style={{ ...inputStyle, ...hi('verbalOrders.escalateDays') }} aria-invalid={!!fieldErrors['verbalOrders.escalateDays']}
+                onChange={(e) => {
+                  clearFieldError('verbalOrders.escalateDays');
+                  setDraft((prev) => ({ ...prev, verbalOrders: { ...prev.verbalOrders, escalateDays: Number(e.target.value) || 1 } }));
+                  setDirty(true);
+                }} />
+            </Field>
+            <Field label="Return fax number (optional)" id={settingsFieldId('verbalOrders.returnFax')} error={fieldErrors['verbalOrders.returnFax']}>
+              <input type="tel" placeholder="(470) 235-1891" value={formatUSPhone(draft.verbalOrders.returnFax)} style={{ ...inputStyle, ...hi('verbalOrders.returnFax') }} aria-invalid={!!fieldErrors['verbalOrders.returnFax']}
+                onChange={(e) => {
+                  clearFieldError('verbalOrders.returnFax');
+                  setDraft((prev) => ({ ...prev, verbalOrders: { ...prev.verbalOrders, returnFax: e.target.value.replace(/\D/g, '').slice(0, 10) } }));
+                  setDirty(true);
+                }} />
+            </Field>
+          </div>
+        </section>
+
+        {/* --- Fax Center --- */}
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Fax Center</h2>
+          <p style={sectionSubStyle}>
+            The Fax Center sends a PDF to any fax number through the portal&apos;s SRFax line, with a cover
+            sheet, and tracks whether it went through. When it is on, every admin can use it. Check the
+            supervisors and virtual assistants who should have it too. Anyone you check can see every fax in
+            the outbox, which may include client information.
+          </p>
+          <label
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', marginBottom: 12,
+              background: draft.fax.enabled ? '#eef4fb' : '#f8fafc', border: '1px solid #e5e7eb',
+              borderRadius: 6, cursor: 'pointer', fontSize: 14, color: '#2c3e50', fontWeight: 600,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={draft.fax.enabled}
+              onChange={(e) => {
+                const enabled = e.target.checked;
+                setDirty(true);
+                setDraft((prev) => ({ ...prev, fax: { ...prev.fax, enabled } }));
+              }}
+            />
+            Turn on the Fax Center
+          </label>
+          <label
+            style={{
+              display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', marginBottom: 12,
+              background: draft.fax.ppotPrefillIdentity ? '#eef4fb' : '#f8fafc', border: '1px solid #e5e7eb',
+              borderRadius: 6, cursor: 'pointer', fontSize: 13.5, color: '#2c3e50',
+            }}
+          >
+            <input
+              type="checkbox"
+              style={{ marginTop: 3 }}
+              checked={draft.fax.ppotPrefillIdentity}
+              onChange={(e) => {
+                const ppotPrefillIdentity = e.target.checked;
+                setDirty(true);
+                setDraft((prev) => ({ ...prev, fax: { ...prev.fax, ppotPrefillIdentity } }));
+              }}
+            />
+            <span>
+              <strong>Print name and Medicaid ID on the Appendix T</strong>
+              <span style={{ display: 'block', color: '#5c6b7a', fontSize: 12.5, marginTop: 2 }}>
+                When on, PPOT requests print the member&apos;s name and Medicaid ID (when we have it) on the form&apos;s
+                Member Name and Member Medicaid Number lines. Everything else stays blank for the physician. The GAPP
+                manual (913.3) says providers cannot complete the PPOT, so turn this on only after DCH or your GAPP
+                contact confirms identity fields are acceptable. When off, they appear on the cover sheet only.
+              </span>
+            </span>
+          </label>
+          <div style={{ maxWidth: 320, marginBottom: 12 }}>
+            <Field
+              label="Recertification reminder (days before the authorization ends)"
+              id={settingsFieldId('fax.recertLeadDays')}
+              error={fieldErrors['fax.recertLeadDays']}
+            >
+              <input
+                type="number"
+                min={7}
+                max={180}
+                value={draft.fax.recertLeadDays}
+                style={{ ...inputStyle, ...hi('fax.recertLeadDays') }}
+                aria-invalid={!!fieldErrors['fax.recertLeadDays']}
+                onChange={(e) => {
+                  clearFieldError('fax.recertLeadDays');
+                  const recertLeadDays = Number(e.target.value) || 7;
+                  setDirty(true);
+                  setDraft((prev) => ({ ...prev, fax: { ...prev.fax, recertLeadDays } }));
+                }}
+              />
+            </Field>
+          </div>
+          <p style={sectionSubStyle}>Automatic PPOT faxes go out on the selected calendar days after the original request, during weekday office hours. Signed or cancelled requests stop. Missed milestones produce only one catch-up fax. A manual follow-up covers milestones through that day; later reminders stay scheduled. Changes also apply to outstanding requests.</p>
+          <Field label="PPOT automatic follow-up days" id={settingsFieldId('fax.ppotFollowupDays')} error={fieldErrors['fax.ppotFollowupDays']}>
+            <input value={ppotScheduleText} placeholder="3, 7, 10" style={inputStyle} onChange={(e) => {
+              const text = e.target.value; setPpotScheduleText(text); clearFieldError('fax.ppotFollowupDays'); setDirty(true);
+              const days = text.trim() ? text.split(',').map((part) => part.trim() ? Number(part.trim()) : Number.NaN) : [];
+              setDraft((prev) => ({ ...prev, fax: { ...prev.fax, ppotFollowupDays: days } }));
+            }} />
+            <p style={sectionSubStyle}>Enter increasing days separated by commas, for example 3, 7, 10. Leave blank to disable automatic follow-up faxes. Manual sends and staff escalation remain available.</p>
+            <button type="button" className={btn} onClick={() => { setPpotScheduleText('3, 7, 10'); clearFieldError('fax.ppotFollowupDays'); setDirty(true); setDraft((prev) => ({ ...prev, fax: { ...prev.fax, ppotFollowupDays: [3, 7, 10] } })); }}>Use days 3, 7, 10</button>
+          </Field>
+          <Field label="PPOT staff escalation after (days)" id={settingsFieldId('fax.ppotEscalateDays')} error={fieldErrors['fax.ppotEscalateDays']}>
+            <input type="number" min={1} max={365} step={1} value={draft.fax.ppotEscalateDays ?? draft.verbalOrders.escalateDays} style={inputStyle} onChange={(e) => {
+              clearFieldError('fax.ppotEscalateDays'); setDirty(true);
+              setDraft((prev) => ({ ...prev, fax: { ...prev.fax, ppotEscalateDays: Number(e.target.value) } }));
+            }} />
+            <p style={sectionSubStyle}>Notify staff once to call the office. This does not stop later scheduled faxes.</p>
+          </Field>
+          {faxOptions.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, opacity: draft.fax.enabled ? 1 : 0.6 }}>
+              {faxOptions.map((o) => {
+                const checked = draft.fax.userUids.includes(o.uid);
+                return (
+                  <label
+                    key={o.uid}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+                      background: checked ? '#eef4fb' : '#f8fafc', border: '1px solid #e5e7eb',
+                      borderRadius: 6, cursor: 'pointer', fontSize: 13.5, color: '#2c3e50',
+                    }}
+                  >
+                    <input type="checkbox" checked={checked} onChange={(e) => toggleFaxUser(o.uid, e.target.checked)} />
+                    <span style={{ fontWeight: 600 }}>{o.displayName}</span>
+                    <span style={{ color: '#5c6b7a', fontSize: 12.5 }}>{o.role === 'va' ? 'Virtual Assistant' : 'Supervisor'}</span>
+                  </label>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ fontSize: 13.5, color: '#5c6b7a', padding: '9px 0' }}>
+              No active supervisors or virtual assistants to list (or the staff list is unavailable right now).
+            </div>
+          )}
+        </section>
+
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Create Client Records from Referrals</h2>
+          <p style={sectionSubStyle}>
+            Admins and supervisors have access by default. Checked people can preview and create client
+            records from referrals. Uncheck anyone to remove this permission, then save. Creating a record copies referral details and
+            documents into the client record and moves the referral to Active. It does not grant
+            access to clinical profiles or permission to manage existing client records.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {referralOptions.map((o) => (
+              <label key={o.uid} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', border: '1px solid #e5e7eb', borderRadius: 6, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={canCreateClientFromReferral(draft.referralConversion, o.uid, o.role)}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setDirty(true);
+                    setDraft((prev) => ({ ...prev, referralConversion: {
+                      userUids: checked && o.role === 'va'
+                        ? Array.from(new Set([...prev.referralConversion.userUids, o.uid]))
+                        : prev.referralConversion.userUids.filter((uid) => uid !== o.uid),
+                      excludedUserUids: checked
+                        ? (prev.referralConversion.excludedUserUids ?? []).filter((uid) => uid !== o.uid)
+                        : Array.from(new Set([...(prev.referralConversion.excludedUserUids ?? []), o.uid])),
+                    } }));
+                  }}
+                />
+                <span>{o.displayName}</span>
+                <span style={{ color: '#5c6b7a', fontSize: 12.5 }}>
+                  {o.role === 'admin' ? 'Admin' : o.role === 'supervisor' ? 'Supervisor' : 'Virtual Assistant'}
+                  {o.role !== 'va' && (canCreateClientFromReferral(draft.referralConversion, o.uid, o.role)
+                    ? ' — Has access by default' : ' — Access removed')}
+                </span>
+              </label>
+            ))}
+            {referralOptions.length === 0 && <p style={sectionSubStyle}>No active staff available, or the staff list could not be loaded.</p>}
+          </div>
+        </section>
+
+        <AssistantClientAccessSettings value={draft.assistantClients} staff={referralOptions} onChange={(assistantClients) => {
+          setDirty(true);
+          setDraft((prev) => ({ ...prev, assistantClients }));
+        }} />
+
+        {/* --- EDWP Consents access --- */}
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>EDWP Consents Access</h2>
+          <p style={sectionSubStyle}>
+            EDWP Consents shows every signed EDWP consent form (client names, contact details, and signatures) and
+            emails the form to clients. Admins always have access. Check the supervisors and virtual assistants who
+            should have it too; everyone else no longer sees the page, and the portal refuses its data.
+          </p>
+          {draft.edwp.userUids === null && (
+            <div style={{ fontSize: 13, color: '#5c6b7a', background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 6, padding: '8px 12px', marginBottom: 8 }}>
+              Not set yet: every virtual assistant has access. Checking or unchecking anyone saves an exact list.
+            </div>
+          )}
+          {faxOptions.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {faxOptions.map((o) => {
+                const checked = draft.edwp.userUids === null ? o.role === 'va' : draft.edwp.userUids.includes(o.uid);
+                return (
+                  <label
+                    key={o.uid}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+                      background: checked ? '#eef4fb' : '#f8fafc', border: '1px solid #e5e7eb',
+                      borderRadius: 6, cursor: 'pointer', fontSize: 13.5, color: '#2c3e50',
+                    }}
+                  >
+                    <input type="checkbox" checked={checked} onChange={(e) => toggleEdwpUser(o.uid, e.target.checked)} />
+                    <span style={{ fontWeight: 600 }}>{o.displayName}</span>
+                    <span style={{ color: '#5c6b7a', fontSize: 12.5 }}>{o.role === 'va' ? 'Virtual Assistant' : 'Supervisor'}</span>
+                  </label>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ fontSize: 13.5, color: '#5c6b7a', padding: '9px 0' }}>
+              No active supervisors or virtual assistants to list (or the staff list is unavailable right now).
+            </div>
+          )}
+        </section>
+
+        {/* --- E-signature tracking (PandaDoc webhook) --- */}
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>E-Signature Tracking (PandaDoc)</h2>
+          <p style={sectionSubStyle}>
+            Packets are still sent from PandaDoc. A PandaDoc webhook tells the portal each time one is viewed, signed,
+            or completed, and the E-Signatures page shows where each stands (same people as the Fax Center). A PandaDoc
+            document is tracked when its document or template name contains one of these words. Start of care packets
+            carry client information, so leave them out until PandaDoc has signed a BAA with the agency.
+          </p>
+          <Field label="Track documents whose name contains (comma separated)" id={settingsFieldId('esign.trackKeywords')} error={fieldErrors['esign.trackKeywords']}>
+            <input
+              type="text"
+              value={draft.esign.trackKeywords.join(', ')}
+              style={{ ...inputStyle, ...hi('esign.trackKeywords') }}
+              placeholder="onboarding"
+              onChange={(e) => {
+                clearFieldError('esign.trackKeywords');
+                const trackKeywords = e.target.value.split(',').map((w) => w.trimStart());
+                setDirty(true);
+                setDraft((prev) => ({ ...prev, esign: { trackKeywords } }));
+              }}
+            />
+          </Field>
+          <details style={{ marginTop: 10, fontSize: 13, color: '#5c6b7a' }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 600, color: '#2c3e50' }}>How to Connect the Webhook</summary>
+            <ol style={{ margin: '8px 0 0', paddingLeft: 20, lineHeight: 1.6 }}>
+              <li>In PandaDoc, open Dev Center, Configuration, then Create webhook.</li>
+              <li>URL: <code>https://www.heartandsoulhc.org/api/pandadoc/webhook</code></li>
+              <li>Events: Document state changed, Recipient completed, and Document deleted. Leave payload options at their defaults.</li>
+              <li>Save, then copy the webhook&apos;s shared key and give it to whoever manages the portal&apos;s Cloud Run secrets (it becomes PANDADOC_WEBHOOK_KEY).</li>
+            </ol>
+          </details>
+        </section>
+
         {/* --- Pediatric vital ranges (collapsed by default: the per-age-group
             grid is by far the longest block on this page) --- */}
         <section style={sectionStyle}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
             <h2 style={{ ...sectionTitleStyle, marginBottom: vitalsOpen ? undefined : 0 }}>
-              Vital sign ranges
+              Vital Sign Ranges
             </h2>
             <button
               type="button"
@@ -721,19 +1384,9 @@ export default function AdminSettingsPage() {
                       <button
                         type="button"
                         onClick={() => clearVitalOverridesForGroup(group)}
-                        style={{
-                          background: 'transparent',
-                          border: '1px solid #c44',
-                          color: '#c44',
-                          padding: '4px 10px',
-                          borderRadius: 4,
-                          fontSize: 12,
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          fontFamily: 'inherit',
-                        }}
+                        className={`${btnDanger} ${btnSm}`}
                       >
-                        Reset {AGE_GROUP_LABELS[group]} to defaults
+                        Reset {AGE_GROUP_LABELS[group]} to Defaults
                       </button>
                     )}
                   </div>
@@ -747,14 +1400,17 @@ export default function AdminSettingsPage() {
                     {ALL_VITAL_RANGE_KEYS.map((vital) => {
                       const pair = groupOverrides[vital];
                       const def = getDefaultVitalRange(group, vital);
+                      const vitalKey = `vitals.rangesByAgeGroup.${group}.${vital}`;
                       return (
                         <div
                           key={vital}
+                          id={settingsFieldId(vitalKey)}
                           style={{
                             border: '1px solid #e5e7eb',
                             borderRadius: 6,
                             padding: '8px 10px',
                             background: 'white',
+                            ...hi(vitalKey),
                           }}
                         >
                           <div
@@ -794,6 +1450,7 @@ export default function AdminSettingsPage() {
                               style={smallNumberInputStyle}
                             />
                           </div>
+                          <FieldError message={fieldErrors[vitalKey]} />
                         </div>
                       );
                     })}
@@ -808,7 +1465,7 @@ export default function AdminSettingsPage() {
 
         {/* --- Branding & emails --- */}
         <section style={sectionStyle}>
-          <h2 style={sectionTitleStyle}>Branding &amp; emails</h2>
+          <h2 style={sectionTitleStyle}>Branding &amp; Emails</h2>
           <p style={sectionSubStyle}>
             Org-identity strings shown in the staff portal sidebar, on PDFs, and as the
             human-readable part of outbound email From lines. Changes apply on the next
@@ -823,93 +1480,107 @@ export default function AdminSettingsPage() {
             <Field
               label="Organization name"
               hint="Used in the sidebar, PDF header, detail-view header, and email bodies."
+              id={settingsFieldId('branding.orgName')}
+              error={fieldErrors['branding.orgName']}
             >
               <input
                 type="text"
                 value={draft.branding.orgName}
                 onChange={(e) => updateBranding('orgName', e.target.value)}
                 maxLength={80}
-                style={inputStyle}
+                style={{ ...inputStyle, ...hi('branding.orgName') }}
+                aria-invalid={!!fieldErrors['branding.orgName']}
               />
             </Field>
             <Field
               label="Tagline"
               hint="Subtitle under the org name on PDFs and the detail-view header."
+              id={settingsFieldId('branding.tagline')}
+              error={fieldErrors['branding.tagline']}
             >
               <input
                 type="text"
                 value={draft.branding.tagline}
                 onChange={(e) => updateBranding('tagline', e.target.value)}
                 maxLength={120}
-                style={inputStyle}
+                style={{ ...inputStyle, ...hi('branding.tagline') }}
+                aria-invalid={!!fieldErrors['branding.tagline']}
               />
             </Field>
             <Field
               label="From-email display name"
               hint="Shown to recipients before the email address. Leave blank to fall back to the organization name."
+              id={settingsFieldId('branding.fromEmailDisplay')}
+              error={fieldErrors['branding.fromEmailDisplay']}
             >
               <input
                 type="text"
                 value={draft.branding.fromEmailDisplay}
                 onChange={(e) => updateBranding('fromEmailDisplay', e.target.value)}
                 maxLength={80}
-                style={inputStyle}
+                style={{ ...inputStyle, ...hi('branding.fromEmailDisplay') }}
+                aria-invalid={!!fieldErrors['branding.fromEmailDisplay']}
               />
             </Field>
           </div>
 
           <h3 style={{ fontSize: 14, color: '#2c3e50', margin: '20px 0 6px' }}>
-            Email subject lines
+            Email Subject Lines
           </h3>
           <p style={{ ...sectionSubStyle, marginTop: 0, marginBottom: 12 }}>
             Password-reset emails are sent by Firebase Auth, not this app — those are
             configured separately in Firebase Console → Authentication → Templates.
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <Field label="Staff invite (welcome)">
+            <Field label="Staff invite (welcome)" id={settingsFieldId('emails.subjects.staffInviteWelcome')} error={fieldErrors['emails.subjects.staffInviteWelcome']}>
               <input
                 type="text"
                 value={draft.emails.subjects.staffInviteWelcome}
                 onChange={(e) => updateEmailSubject('staffInviteWelcome', e.target.value)}
                 maxLength={200}
-                style={inputStyle}
+                style={{ ...inputStyle, ...hi('emails.subjects.staffInviteWelcome') }}
+                aria-invalid={!!fieldErrors['emails.subjects.staffInviteWelcome']}
               />
             </Field>
-            <Field label="Staff invite (resend / fresh link)">
+            <Field label="Staff invite (resend / fresh link)" id={settingsFieldId('emails.subjects.staffInviteResend')} error={fieldErrors['emails.subjects.staffInviteResend']}>
               <input
                 type="text"
                 value={draft.emails.subjects.staffInviteResend}
                 onChange={(e) => updateEmailSubject('staffInviteResend', e.target.value)}
                 maxLength={200}
-                style={inputStyle}
+                style={{ ...inputStyle, ...hi('emails.subjects.staffInviteResend') }}
+                aria-invalid={!!fieldErrors['emails.subjects.staffInviteResend']}
               />
             </Field>
             <Field
               label="Email-changed security notice"
               hint="Sent to the OLD address when admin changes a staff member's email."
+              id={settingsFieldId('emails.subjects.emailChanged')}
+              error={fieldErrors['emails.subjects.emailChanged']}
             >
               <input
                 type="text"
                 value={draft.emails.subjects.emailChanged}
                 onChange={(e) => updateEmailSubject('emailChanged', e.target.value)}
                 maxLength={200}
-                style={inputStyle}
+                style={{ ...inputStyle, ...hi('emails.subjects.emailChanged') }}
+                aria-invalid={!!fieldErrors['emails.subjects.emailChanged']}
               />
             </Field>
           </div>
         </section>
 
         <section style={sectionStyle}>
-          <h2 style={sectionTitleStyle}>Referral intake</h2>
+          <h2 style={sectionTitleStyle}>Referral Intake</h2>
           <p style={sectionSubStyle}>
             What Heart &amp; Soul itself accepts: the GAPP services you offer and the
             Georgia counties you serve. Every card on the Referrals board is judged
-            against this profile (Good fit / Possible fit / Not a fit), which drives
+            against this profile (Good Fit / Possible Fit / Not a Fit), which drives
             the fit filter and, later, the refer-out workflow. Update it here whenever
             you add a service line or expand coverage.
           </p>
 
-          <h3 style={{ fontSize: 14, color: '#2c3e50', margin: '14px 0 6px' }}>Services you offer</h3>
+          <h3 style={{ fontSize: 14, color: '#2c3e50', margin: '14px 0 6px' }}>Services You Offer</h3>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
             {GAPP_SERVICES.map((s) => (
               <label
@@ -927,7 +1598,7 @@ export default function AdminSettingsPage() {
           </div>
 
           <h3 style={{ fontSize: 14, color: '#2c3e50', margin: '18px 0 6px' }}>
-            Counties you serve ({draft.intake.counties.length})
+            Counties You Serve ({draft.intake.counties.length})
           </h3>
           {draft.intake.counties.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
@@ -971,11 +1642,7 @@ export default function AdminSettingsPage() {
             <button
               type="button"
               onClick={addIntakeCounty}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 5, background: 'white',
-                color: '#1a3a5c', border: '1px solid #d1d5db', borderRadius: 8, padding: '0 12px',
-                fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-              }}
+              className={btn}
             >
               <Plus size={14} /> Add
             </button>
@@ -983,7 +1650,7 @@ export default function AdminSettingsPage() {
         </section>
 
         <section style={sectionStyle}>
-          <h2 style={sectionTitleStyle}>Provider list email (to families)</h2>
+          <h2 style={sectionTitleStyle}>Provider List Email (to Families)</h2>
           <p style={sectionSubStyle}>
             Sent to a family when no partner agency can take their referral, with a link
             to Georgia Medicaid&apos;s official list of approved GAPP providers. This is the
@@ -1005,67 +1672,76 @@ export default function AdminSettingsPage() {
             <Field
               label="Subject"
               hint="Client names are not allowed here: subject lines are visible in notification previews."
+              id={settingsFieldId('emails.providerList.subject')}
+              error={fieldErrors['emails.providerList.subject']}
             >
               <input
                 type="text"
                 value={draft.emails.providerList.subject}
                 onChange={(e) => updateProviderListCopy('subject', e.target.value)}
                 maxLength={200}
-                style={inputStyle}
+                style={{ ...inputStyle, ...hi('emails.providerList.subject') }}
+                aria-invalid={!!fieldErrors['emails.providerList.subject']}
               />
             </Field>
-            <Field label="Callback number" hint="Shown in the body and used for {{phone}}.">
+            <Field label="Callback number" hint="Shown in the body and used for {{phone}}." id={settingsFieldId('emails.providerList.phone')} error={fieldErrors['emails.providerList.phone']}>
               <input
-                type="text"
+                type="tel"
                 value={draft.emails.providerList.phone}
-                onChange={(e) => updateProviderListCopy('phone', e.target.value)}
+                onChange={(e) => updateProviderListCopy('phone', formatUSPhone(e.target.value))}
                 maxLength={40}
-                style={{ ...inputStyle, maxWidth: 220 }}
+                style={{ ...inputStyle, maxWidth: 220, ...hi('emails.providerList.phone') }}
+                aria-invalid={!!fieldErrors['emails.providerList.phone']}
               />
             </Field>
-            <Field label="Opening" hint="First thing they read, above the list link.">
+            <Field label="Opening" hint="First thing they read, above the list link." id={settingsFieldId('emails.providerList.intro')} error={fieldErrors['emails.providerList.intro']}>
               <textarea
                 value={draft.emails.providerList.intro}
                 onChange={(e) => updateProviderListCopy('intro', e.target.value)}
                 maxLength={2000}
                 rows={3}
-                style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }}
+                style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5, ...hi('emails.providerList.intro') }}
+                aria-invalid={!!fieldErrors['emails.providerList.intro']}
               />
             </Field>
-            <Field label="Introducing the list" hint="Sits directly above the button.">
+            <Field label="Introducing the list" hint="Sits directly above the button." id={settingsFieldId('emails.providerList.explainer')} error={fieldErrors['emails.providerList.explainer']}>
               <textarea
                 value={draft.emails.providerList.explainer}
                 onChange={(e) => updateProviderListCopy('explainer', e.target.value)}
                 maxLength={2000}
                 rows={3}
-                style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }}
+                style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5, ...hi('emails.providerList.explainer') }}
+                aria-invalid={!!fieldErrors['emails.providerList.explainer']}
               />
             </Field>
-            <Field label="Button label">
+            <Field label="Button label" id={settingsFieldId('emails.providerList.ctaLabel')} error={fieldErrors['emails.providerList.ctaLabel']}>
               <input
                 type="text"
                 value={draft.emails.providerList.ctaLabel}
                 onChange={(e) => updateProviderListCopy('ctaLabel', e.target.value)}
                 maxLength={80}
-                style={{ ...inputStyle, maxWidth: 340 }}
+                style={{ ...inputStyle, maxWidth: 340, ...hi('emails.providerList.ctaLabel') }}
+                aria-invalid={!!fieldErrors['emails.providerList.ctaLabel']}
               />
             </Field>
-            <Field label="Closing" hint="Everything after the button.">
+            <Field label="Closing" hint="Everything after the button." id={settingsFieldId('emails.providerList.closing')} error={fieldErrors['emails.providerList.closing']}>
               <textarea
                 value={draft.emails.providerList.closing}
                 onChange={(e) => updateProviderListCopy('closing', e.target.value)}
                 maxLength={2000}
                 rows={4}
-                style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }}
+                style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5, ...hi('emails.providerList.closing') }}
+                aria-invalid={!!fieldErrors['emails.providerList.closing']}
               />
             </Field>
-            <Field label="Sign-off">
+            <Field label="Sign-off" id={settingsFieldId('emails.providerList.signOff')} error={fieldErrors['emails.providerList.signOff']}>
               <input
                 type="text"
                 value={draft.emails.providerList.signOff}
                 onChange={(e) => updateProviderListCopy('signOff', e.target.value)}
                 maxLength={120}
-                style={{ ...inputStyle, maxWidth: 340 }}
+                style={{ ...inputStyle, maxWidth: 340, ...hi('emails.providerList.signOff') }}
+                aria-invalid={!!fieldErrors['emails.providerList.signOff']}
               />
             </Field>
           </div>
@@ -1083,21 +1759,21 @@ export default function AdminSettingsPage() {
             <button
               type="button"
               onClick={() => setShowEmailPreview((v) => !v)}
-              style={secondaryBtnStyle}
+              className={btn}
             >
-              <Eye size={14} /> {showEmailPreview ? 'Hide preview' : 'Preview email'}
+              <Eye size={14} /> {showEmailPreview ? 'Hide Preview' : 'Preview Email'}
             </button>
             <button
               type="button"
               onClick={sendProviderListTest}
               disabled={sendingTest}
-              style={{ ...secondaryBtnStyle, opacity: sendingTest ? 0.6 : 1 }}
+              className={btn}
               title="Sends to your own account email, never to a family"
             >
-              <Send size={14} /> {sendingTest ? 'Sending…' : 'Send test to myself'}
+              <Send size={14} /> {sendingTest ? 'Sending…' : 'Send Test to Myself'}
             </button>
-            <button type="button" onClick={resetProviderListCopy} style={secondaryBtnStyle}>
-              <RotateCcw size={14} /> Restore default wording
+            <button type="button" onClick={resetProviderListCopy} className={btn}>
+              <RotateCcw size={14} /> Restore Default Wording
             </button>
           </div>
           {testResult && (
@@ -1160,15 +1836,20 @@ function Field({
   label,
   hint,
   children,
+  id,
+  error,
 }: {
   label: string;
   hint?: string;
   children: React.ReactNode;
+  id?: string;
+  error?: string;
 }) {
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+    <label id={id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <span style={{ fontSize: 12, fontWeight: 600, color: '#5c6b7a' }}>{label}</span>
       {children}
+      <FieldError message={error} />
       {hint && <span style={{ fontSize: 11, color: '#7f8c8d' }}>{hint}</span>}
     </label>
   );
@@ -1332,34 +2013,6 @@ const selectStyle: React.CSSProperties = {
   backgroundSize: '14px',
   cursor: 'pointer',
 };
-const primaryBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: '#27ae60',
-  color: 'white',
-  padding: '10px 14px',
-  borderRadius: 6,
-  border: 'none',
-  fontSize: 14,
-  fontWeight: 700,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-const secondaryBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: '#eef1f4',
-  color: '#2c3e50',
-  padding: '10px 14px',
-  borderRadius: 6,
-  border: 'none',
-  fontSize: 14,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
 const toastOkStyle: React.CSSProperties = {
   position: 'fixed',
   bottom: 20,
@@ -1375,6 +2028,16 @@ const toastOkStyle: React.CSSProperties = {
 const toastErrStyle: React.CSSProperties = {
   ...toastOkStyle,
   background: '#c62828',
+};
+const saveErrorBannerStyle: React.CSSProperties = {
+  margin: '0 0 16px',
+  padding: '10px 14px',
+  borderRadius: 8,
+  background: '#fdecea',
+  border: '1px solid #f3b6b0',
+  color: '#b3261e',
+  fontSize: 13,
+  fontWeight: 600,
 };
 const smallNumberInputStyle: React.CSSProperties = {
   width: '100%',

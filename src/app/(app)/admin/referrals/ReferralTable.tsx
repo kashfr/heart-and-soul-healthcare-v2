@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { btn, btnDanger, btnPrimary } from '@/components/buttons';
 import { Printer, Download, Trash2, Share2, X, Check } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
 import {
@@ -11,6 +12,12 @@ import { assessReferralFit, type ReferralFit } from '@/lib/referralFit';
 import { useSettings } from '@/components/SettingsProvider';
 import MatchSuggestions from './MatchSuggestions';
 import { usePartnerAgencies } from './PartnerAgenciesProvider';
+import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
+
+type BulkShareField = 'agency' | 'email';
+const BULK_SHARE_FIELD_ORDER: readonly BulkShareField[] = ['agency', 'email'];
+const bulkShareFieldId = (k: BulkShareField) => `bulk-share-${k}`;
+const BULK_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 import {
   downloadCsv, formatDate, initials, matchInputFor,
   REFERRAL_STAGES, STAGE_ACCENT, STAGE_LABEL, SOURCE_LABEL,
@@ -164,7 +171,7 @@ export default function ReferralTable({ referrals, onOpen, onPrint, onDelete, ca
         <div style={{ flex: 1 }} />
         <button
           onClick={() => actionTarget.length > 0 && onPrint(actionTarget)}
-          style={ghostBtnStyle}
+          className={btn}
           title="Open a printable call sheet for these referrals"
         >
           <Printer size={15} /> Print
@@ -172,12 +179,12 @@ export default function ReferralTable({ referrals, onOpen, onPrint, onDelete, ca
         </button>
         <button
           onClick={() => downloadCsv(actionTarget, { intake: settings.intake, agencies })}
-          style={ghostBtnStyle}
+          className={btn}
         >
           <Download size={15} /> Export CSV
         </button>
         {selectedVisible.length > 0 && (
-          <button onClick={() => setShareOpen(true)} style={shareBtnStyle}>
+          <button onClick={() => setShareOpen(true)} className={btnPrimary}>
             <Share2 size={15} /> Share ({selectedVisible.length})
           </button>
         )}
@@ -190,7 +197,7 @@ export default function ReferralTable({ referrals, onOpen, onPrint, onDelete, ca
                 clearSelection();
               }
             }}
-            style={deleteBtnStyle}
+            className={btnDanger}
           >
             <Trash2 size={15} /> Delete ({selectedVisible.length})
           </button>
@@ -358,12 +365,21 @@ function BulkShareModal({
   const [move, setMove] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<BulkShareField, string>>>({});
   const [result, setResult] = useState<{ createdCount: number; failedCount: number; movedCount: number; emailSent: boolean } | null>(null);
+
+  const clearFieldError = (k: BulkShareField) => {
+    if (fieldErrors[k]) setFieldErrors((prev) => ({ ...prev, [k]: undefined }));
+  };
 
   const onAgencyName = (value: string) => {
     setAgency(value);
+    clearFieldError('agency');
     const match = agencies.find((a) => a.name.toLowerCase() === value.trim().toLowerCase());
-    if (match) setEmail(match.email);
+    if (match) {
+      setEmail(match.email);
+      clearFieldError('email');
+    }
   };
 
   // Smart-match across the whole batch: rank agencies by how many of the
@@ -376,9 +392,14 @@ function BulkShareModal({
   );
 
   const submit = async () => {
-    if (!agency.trim() || !email.trim() || sending) return;
-    setSending(true);
+    if (sending) return;
     setError(null);
+    const errs: Partial<Record<BulkShareField, string>> = {};
+    if (!agency.trim()) errs.agency = 'Enter the partner agency name.';
+    if (!email.trim()) errs.email = 'Enter the partner agency email.';
+    else if (!BULK_EMAIL_RE.test(email.trim())) errs.email = 'Enter a valid email address, like intake@agency.org.';
+    if (!applyFieldErrors(errs, BULK_SHARE_FIELD_ORDER, setFieldErrors, bulkShareFieldId)) return;
+    setSending(true);
     try {
       const res = await authedFetch('/api/admin/referrals/bulk-share', {
         method: 'POST',
@@ -399,7 +420,9 @@ function BulkShareModal({
         emailSent: !!data.emailSent,
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not share referrals.');
+      const message = e instanceof Error && e.message ? e.message : 'Could not share the referrals. Please try again.';
+      if (/email/i.test(message)) applyFieldErrors({ email: message }, BULK_SHARE_FIELD_ORDER, setFieldErrors, bulkShareFieldId);
+      else setError(message);
     } finally {
       setSending(false);
     }
@@ -411,7 +434,7 @@ function BulkShareModal({
       <div style={modalCardStyle} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div style={modalHeaderStyle}>
           <div style={{ fontSize: 17, fontWeight: 700, color: '#2c3e50' }}>
-            Share {n} referral{n === 1 ? '' : 's'} with an agency
+            Share {n} Referral{n === 1 ? '' : 's'} with an Agency
           </div>
           <button onClick={onClose} style={modalCloseStyle} aria-label="Close"><X size={18} /></button>
         </div>
@@ -433,53 +456,61 @@ function BulkShareModal({
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
-              <button onClick={onDone} style={modalPrimaryStyle}>Done</button>
+              <button onClick={onDone} className={btnPrimary}>Done</button>
             </div>
           </div>
         ) : (
           <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
             <MatchSuggestions
               matches={suggestions}
-              onPick={(a) => { setAgency(a.name); setEmail(a.email); setError(null); }}
+              onPick={(a) => { setAgency(a.name); setEmail(a.email); setError(null); setFieldErrors({}); }}
             />
-            <input
-              value={agency}
-              onChange={(e) => onAgencyName(e.target.value)}
-              placeholder="Partner agency name"
-              style={modalInputStyle}
-              list="bulk-agency-options"
-              autoComplete="off"
-              autoFocus
-            />
+            <div id={bulkShareFieldId('agency')}>
+              <input
+                value={agency}
+                onChange={(e) => onAgencyName(e.target.value)}
+                placeholder="Partner agency name"
+                style={{ ...modalInputStyle, ...(fieldErrors.agency ? FIELD_ERROR_STYLE : null) }}
+                aria-invalid={!!fieldErrors.agency}
+                list="bulk-agency-options"
+                autoComplete="off"
+                autoFocus
+              />
+              <FieldError message={fieldErrors.agency} />
+            </div>
             <datalist id="bulk-agency-options">
               {agencies.map((a) => <option key={a.id} value={a.name} />)}
             </datalist>
-            <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Partner email"
-              type="email"
-              style={modalInputStyle}
-            />
+            <div id={bulkShareFieldId('email')}>
+              <input
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); clearFieldError('email'); }}
+                placeholder="Partner email"
+                type="email"
+                style={{ ...modalInputStyle, ...(fieldErrors.email ? FIELD_ERROR_STYLE : null) }}
+                aria-invalid={!!fieldErrors.email}
+              />
+              <FieldError message={fieldErrors.email} />
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 13, color: '#5c6b7a' }}>Expires in</span>
               <select value={expiry} onChange={(e) => setExpiry(Number(e.target.value))} style={modalSelectStyle}>
-                {[7, 14, 30, 90].map((d) => <option key={d} value={d}>{d} days</option>)}
+                {[7, 14, 30, 90].map((d) => <option key={d} value={d}>{d} Days</option>)}
               </select>
             </div>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#5c6b7a', cursor: 'pointer' }}>
               <input type="checkbox" checked={move} onChange={(e) => setMove(e.target.checked)} />
               Move {n === 1 ? 'it' : 'them'} to Referred Out (mark as handed off)
             </label>
-            {error && <div style={{ color: '#b3261e', fontSize: 13 }}>{error}</div>}
+            {error && <div role="alert" style={{ color: '#b3261e', fontSize: 13, fontWeight: 600 }}>{error}</div>}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 6 }}>
-              <button onClick={onClose} style={ghostBtnStyle}>Cancel</button>
+              <button onClick={onClose} className={btn}>Cancel</button>
               <button
                 onClick={submit}
-                disabled={sending || !agency.trim() || !email.trim()}
-                style={{ ...modalPrimaryStyle, opacity: sending || !agency.trim() || !email.trim() ? 0.55 : 1 }}
+                disabled={sending}
+                className={btnPrimary}
               >
-                {sending ? 'Sending…' : `Create & email ${n} link${n === 1 ? '' : 's'}`}
+                {sending ? 'Sending…' : `Create & Email ${n} Link${n === 1 ? '' : 's'}`}
               </button>
             </div>
           </div>
@@ -492,11 +523,6 @@ function BulkShareModal({
 const SELECT_CHEVRON =
   "white url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\") no-repeat right 10px center";
 
-const shareBtnStyle: React.CSSProperties = {
-  display: 'inline-flex', alignItems: 'center', gap: 6, background: '#1a3a5c', color: 'white',
-  border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600,
-  cursor: 'pointer', fontFamily: 'inherit',
-};
 const modalBackdropStyle: React.CSSProperties = {
   position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 1000,
   display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
@@ -522,10 +548,6 @@ const modalSelectStyle: React.CSSProperties = {
   fontSize: 13, fontFamily: 'inherit', color: '#111827',
   background: SELECT_CHEVRON, backgroundSize: '14px', cursor: 'pointer',
 };
-const modalPrimaryStyle: React.CSSProperties = {
-  background: '#1a3a5c', color: 'white', border: 'none', borderRadius: 8, padding: '9px 16px',
-  fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
-};
 
 const actionsBarStyle: React.CSSProperties = {
   display: 'flex',
@@ -542,34 +564,6 @@ const linkBtnStyle: React.CSSProperties = {
   cursor: 'pointer',
   fontFamily: 'inherit',
   textDecoration: 'underline',
-};
-const ghostBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: 'white',
-  color: '#5c6b7a',
-  border: '1px solid #d1d5db',
-  borderRadius: 8,
-  padding: '8px 14px',
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-const deleteBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: 'white',
-  color: '#b3261e',
-  border: '1px solid #f0c2bd',
-  borderRadius: 8,
-  padding: '8px 14px',
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
 };
 const tableWrapStyle: React.CSSProperties = {
   background: 'white',

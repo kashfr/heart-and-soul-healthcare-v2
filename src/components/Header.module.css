@@ -59,7 +59,7 @@
   text-decoration: none;
   color: var(--color-gray-900);
   flex-shrink: 0;
-  max-width: 130px;
+  max-width: 210px;
   transition: max-width var(--transition-fast);
 }
 
@@ -375,7 +375,7 @@
   }
 
   .logo {
-    max-width: 110px;
+    max-width: 180px;
   }
 }
 
@@ -396,6 +396,6 @@
   }
 
   .logo {
-    max-width: 90px;
+    max-width: 150px;
   }
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Phone, Mail, Download, ShieldCheck, Clock, Ban, FileQuestion } from 'lucide-react';
+import { formatDateUS } from '@/lib/dateFormat';
 
 interface Detail {
   label: string;
@@ -63,7 +64,7 @@ export default function SharedReferralClient({ token }: { token: string }) {
       <div style={wrap}>
         <div style={brandRow}>
           <div style={{ fontWeight: 800, fontSize: 18, color: '#1a3a5c' }}>Heart &amp; Soul Healthcare</div>
-          <div style={{ fontSize: 12, color: '#7f8c8d' }}>Secure referral</div>
+          <div style={{ fontSize: 12, color: '#7f8c8d' }}>Secure Referral</div>
         </div>
 
         {state.kind === 'loading' && <div style={card}><div style={muted}>Loading referral…</div></div>}
@@ -81,10 +82,10 @@ export default function SharedReferralClient({ token }: { token: string }) {
             </div>
             <h1 style={{ fontSize: 20, color: '#2c3e50', margin: '6px 0' }}>
               {state.reason === 'expired'
-                ? 'This link has expired'
+                ? 'This Link Has Expired'
                 : state.reason === 'revoked'
-                  ? 'This link is no longer active'
-                  : 'This link is not valid'}
+                  ? 'This Link Is No Longer Active'
+                  : 'This Link Is Not Valid'}
             </h1>
             <p style={muted}>
               Please contact Heart &amp; Soul Healthcare to request an updated link.
@@ -140,7 +141,7 @@ function ReferralCard({ referral, token }: { referral: SharedReferral; token: st
           {rows.map((d, i) => (
             <tr key={i}>
               <td style={labelCell}>{d.label}</td>
-              <td style={valueCell}>{d.value ? d.value : <span style={{ color: '#9ca3af' }}>—</span>}</td>
+              <td style={valueCell}>{d.value ? formatDateUS(d.value) : <span style={{ color: '#9ca3af' }}>—</span>}</td>
             </tr>
           ))}
         </tbody>

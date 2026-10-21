@@ -4,7 +4,9 @@ import { renderToBuffer, type DocumentProps } from '@react-pdf/renderer';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { getServerSettings } from '@/lib/settingsServer';
-import { compareMarOrders, resolveCurrentAdministrations } from '@/lib/marShared';
+import { cleanTimeLabels, compareMarOrders, resolveCurrentAdministrations, describeFrequency } from '@/lib/marShared';
+import { GLUCOSE_UNIT, parseSlidingScale, summarizeSlidingScale, type SlidingScaleRow } from '@/lib/slidingScale';
+import { formatDateUS, formatMonthUSFile } from '@/lib/dateFormat';
 import MarPDF, {
   type MarPdfCell,
   type MarPdfRow,
@@ -21,6 +23,16 @@ const ADMIN_BY_LABELS: Record<string, string> = {
   self: 'Client (self)',
   proxy: 'Proxy',
 };
+
+/** Blank log rows on a printout that will be written on by hand. */
+const LOG_WRITE_IN_ROWS = 6;
+
+/** The agency's current month, 'YYYY-MM' (Georgia time, not the container's UTC). */
+function agencyMonth(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit' })
+    .format(new Date())
+    .slice(0, 7);
+}
 
 function daysInMonth(month: string): number {
   const [y, m] = month.split('-').map(Number);
@@ -54,8 +66,12 @@ interface OrderDoc {
   route: string;
   frequencyLabel: string;
   scheduledTimes: string[];
+  timeLabels: Record<string, string>; // meal anchors, keyed by 'HH:MM'
+  slidingScale: SlidingScaleRow[]; // dose looked up from a blood glucose reading
   isPRN: boolean;
+  prnFrequencyLabel: string; // PRN only: how often it may be given
   indication: string; // standing purpose — printed on PRN rows (manual D.6.b.ii.d)
+  parameters: string; // hold / check-before-giving criteria — printed first on the MAR row
   notes: string; // special instructions — printed on the MAR row (manual D.6.a.ii.e)
   startDate: string;
   endDate: string | null;
@@ -79,11 +95,16 @@ interface AdminDoc {
   actualTime: string;
   initials: string;
   reason: string;
+  parametersReading: string; // the reading checked against the order's parameters
   prescriberNotified: boolean | null;
   outcome: string;
   /** Reading for a check-style order (gastric residual, etc.); '' for doses. */
   value: string;
   valueUnit: string;
+  /** Sliding-scale dose: meter reading, the matched range, why it differs. */
+  glucoseReading: string;
+  scaleRange: string;
+  scaleDeviationReason: string;
   documentedBy: string;
   documentedByName: string;
   documentedByCredential: string;
@@ -177,8 +198,12 @@ export async function POST(request: Request) {
         route: String(o.route || ''),
         frequencyLabel: String(o.frequencyLabel || ''),
         scheduledTimes: Array.isArray(o.scheduledTimes) ? o.scheduledTimes.map(String) : [],
+        timeLabels: cleanTimeLabels(o.timeLabels, o.scheduledTimes, !!o.isPRN),
+        slidingScale: parseSlidingScale(o.slidingScale),
         isPRN: !!o.isPRN,
+        prnFrequencyLabel: String(o.prnFrequencyLabel || ''),
         indication: String(o.indication || ''),
+        parameters: String(o.parameters || ''),
         notes: String(o.notes || ''),
         startDate: String(o.startDate || ''),
         endDate: o.endDate ? String(o.endDate) : null,
@@ -210,6 +235,7 @@ export async function POST(request: Request) {
         actualTime: String(a.actualTime || ''),
         initials: String(a.initials || ''),
         reason: String(a.reason || ''),
+        parametersReading: String(a.parametersReading || ''),
         // Tri-state: docs from before the attestation feature existed have no
         // field at all — printing "(prescriber not yet notified)" on them
         // would stamp a false negative assertion onto historical months.
@@ -218,6 +244,9 @@ export async function POST(request: Request) {
         outcome: String(a.outcome || ''),
         value: String(a.value || ''),
         valueUnit: String(a.valueUnitSnapshot || ''),
+        glucoseReading: String(a.glucoseReading || '').trim(),
+        scaleRange: String(a.scaleRangeSnapshot || ''),
+        scaleDeviationReason: String(a.scaleDeviationReason || ''),
         documentedBy: String(a.documentedBy || ''),
         documentedByName: String(a.documentedByName || ''),
         documentedByCredential: String(a.documentedByCredential || ''),
@@ -263,6 +292,23 @@ export async function POST(request: Request) {
             continue;
           }
           const first = hits[0];
+          // A sliding-scale row prints three labeled lines per time: the
+          // blood glucose reading, the units given, and the initials (RN
+          // supervisor, 10/02/2026: a bare "232" in a box told a non-clinical
+          // reader nothing). Keyed off the ORDER, so a held or refused dose
+          // with no reading still lands on the right lines.
+          const scaleUnits = (h: AdminDoc) =>
+            h.status === 'given' ? `${h.doseSnapshot}u` : h.status === 'held' ? 'Held' : 'Ref';
+          if (o.slidingScale.length > 0) {
+            cells.push({
+              label: hits.map((h) => h.glucoseReading).filter(Boolean).join('/'),
+              sub: hits.map(scaleUnits).join('/'),
+              initials: hits.map((h) => h.initials).filter(Boolean).join('/'),
+              status: (first.status as MarCellStatus) || 'given',
+              star: hits.some((h) => h.administeredByType && h.administeredByType !== 'nurse'),
+            });
+            continue;
+          }
           cells.push({
             // A check-style order records a reading; the number is the record,
             // so print it in the box rather than the documenter's initials
@@ -280,7 +326,7 @@ export async function POST(request: Request) {
           medLine2: [
             [o.dose, o.units].filter(Boolean).join(' '),
             o.route,
-            o.frequencyLabel,
+            describeFrequency(o),
             o.status === 'discontinued' ? `D/C ${o.endDate ? shortDate(o.endDate) : ''}`.trim() : '',
           ]
             .filter(Boolean)
@@ -290,13 +336,24 @@ export async function POST(request: Request) {
           // Capped: rows render wrap={false}, so an unbounded free-text note
           // would silently clip on the printed record. The full text always
           // lives on the order itself.
+          // Parameters lead (hold / check criteria are what a surveyor and
+          // the next nurse need first), then the PRN purpose, then notes.
+          // The whole sliding scale, uncapped: it IS the dose on this row, so
+          // it must never print truncated. Bounded by the 15-range limit.
+          medScale: o.slidingScale.length > 0 ? `Sliding scale (${GLUCOSE_UNIT}: units): ${summarizeSlidingScale(o.slidingScale)}` : undefined,
           medLine3: truncate(
-            [o.isPRN && o.indication ? `For: ${o.indication}` : '', o.notes]
+            [
+              o.parameters ? `Parameters: ${o.parameters}` : '',
+              o.isPRN && o.indication ? `For: ${o.indication}` : '',
+              o.notes,
+            ]
               .filter(Boolean)
               .join(' · '),
             220,
           ),
           slot,
+          slotLabel: o.timeLabels[slot] || undefined,
+          isScale: o.slidingScale.length > 0,
           isPRN: o.isPRN,
           cells,
         });
@@ -312,6 +369,7 @@ export async function POST(request: Request) {
           a.status !== 'given' ||
           (a.administeredByType && a.administeredByType !== 'nurse') ||
           !rowOrderIds.has(a.orderId) ||
+          !!a.scaleDeviationReason || // an amount that differs from the sliding scale
           !!a.amends, // corrections always appear in the audit log
       )
       .sort((a, b) => (a.date + a.actualTime).localeCompare(b.date + b.actualTime))
@@ -332,12 +390,25 @@ export async function POST(request: Request) {
           // Positive attestation prints on any held/refused dose; the NEGATIVE
           // prints only on refusals (holds are often physician-directed, and
           // legacy docs without the field print nothing at all).
-          reason:
+          // The reading checked against the order's parameters leads, so a
+          // "held per parameters" entry prints with the BP it was based on.
+          // A sliding-scale entry in this log (held, refused, or an amount
+          // that differs from the scale) leads with its reading and, for a
+          // deviation, what the scale called for and why it was not followed.
+          reason: [
+            a.glucoseReading ? `Blood glucose ${a.glucoseReading} ${GLUCOSE_UNIT}` : '',
+            a.scaleDeviationReason
+              ? `Scale called for ${a.scaleRange || 'a different amount'}; differs because: ${a.scaleDeviationReason}`
+              : '',
+            a.parametersReading ? `Checked: ${a.parametersReading}` : '',
             (a.status === 'held' || a.status === 'refused') && a.prescriberNotified === true
               ? `${a.reason || '-'} (prescriber notified)`
               : a.status === 'refused' && a.prescriberNotified === false
                 ? `${a.reason || '-'} (prescriber not yet notified)`
-                : a.reason || '-',
+                : a.reason || (a.glucoseReading || a.scaleDeviationReason ? '' : '-'),
+          ]
+            .filter(Boolean)
+            .join(' · '),
           // A given PRN dose is complete only once its result is recorded; the
           // export says so explicitly rather than printing a silent blank.
           // A check's reading belongs in Result: it is what the entry recorded.
@@ -382,7 +453,7 @@ export async function POST(request: Request) {
       days,
       patient: {
         name: String(p.name || ''),
-        dob: String(p.dob || ''),
+        dob: formatDateUS(String(p.dob || '')),
         sex: String(c.sex || ''),
         recordNumber: String(p.mrn || ''),
         diagnosis: String(p.diagnosis || ''),
@@ -393,6 +464,11 @@ export async function POST(request: Request) {
       rows,
       legend: legendEntries,
       log,
+      // A month that is not over yet is printed and used as a paper MAR (a
+      // future month for a day program, or the rest of the current month),
+      // so its log needs ruled rows to write in. A finished month prints the
+      // record as it stands.
+      logWriteInRows: month >= agencyMonth() ? LOG_WRITE_IN_ROWS : 0,
       generatedAt: new Date().toLocaleString('en-US'),
       generatedBy: caller.profile.displayName || caller.email || '',
     });
@@ -403,7 +479,7 @@ export async function POST(request: Request) {
     return new NextResponse(new Uint8Array(buffer), {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="MAR_${safeName}_${month}.pdf"`,
+        'Content-Disposition': `attachment; filename="MAR_${safeName}_${formatMonthUSFile(month)}.pdf"`,
       },
     });
   } catch (err) {

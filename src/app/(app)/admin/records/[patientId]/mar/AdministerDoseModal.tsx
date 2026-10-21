@@ -1,17 +1,38 @@
 'use client';
 
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { btn, btnPrimary } from '@/components/buttons';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { parseValueOptions, writeMarAdministrations, type MarOrder } from '@/lib/mar';
-import { parseHHMM } from '@/lib/marShared';
+import { decideNurseDoseGate, describeSlot, parseHHMM, orderParameters } from '@/lib/marShared';
+import {
+  EMPTY_SCALE_ENTRY,
+  SLIDING_SCALE_UNITS,
+  lookupScaleDose,
+  parseSlidingScale,
+  resolveScaleCharting,
+  type ScaleChartingEntry,
+} from '@/lib/slidingScale';
+import SlidingScaleCharting from '@/components/mar/SlidingScaleCharting';
+import { getMyShiftWindowsForDate, type ShiftWindow } from '@/lib/submissions';
+import { formatDateUS } from '@/lib/dateFormat';
 import { withSelectChevron } from '@/lib/selectChevron';
+import { escortToField, firstErrorKey, FieldError, FIELD_ERROR_STYLE, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
+
+/** Every problem the save can raise, keyed by where it is shown. `shiftBlock`
+ *  is not a field: it is the notice at the top of the modal. */
+type DoseField = 'shiftBlock' | 'glucoseReading' | 'unitsGiven' | 'deviationReason' | 'status' | 'parameters' | 'parametersReading' | 'value' | 'actualTime' | 'administratorName' | 'reason' | 'attest';
+type DoseErrors = Partial<Record<DoseField, string>>;
+/** Top-to-bottom order on the sheet, so the escort lands on the topmost problem. */
+const FIELD_ORDER: readonly DoseField[] = ['shiftBlock', 'glucoseReading', 'unitsGiven', 'deviationReason', 'status', 'parameters', 'parametersReading', 'value', 'actualTime', 'administratorName', 'reason', 'attest'];
+const fieldId = (k: DoseField) => `ad-field-${k}`;
 
 const ADMIN_BY_OPTIONS = [
-  { value: 'nurse', label: 'Nurse (me)' },
-  { value: 'family', label: 'Family member' },
-  { value: 'responsibleParty', label: 'Responsible party' },
-  { value: 'self', label: 'Client (self)' },
+  { value: 'nurse', label: 'Nurse (Me)' },
+  { value: 'family', label: 'Family Member' },
+  { value: 'responsibleParty', label: 'Responsible Party' },
+  { value: 'self', label: 'Client (Self)' },
   { value: 'proxy', label: 'Proxy' },
 ];
 
@@ -68,10 +89,67 @@ export default function AdministerDoseModal({
   // and the amend flow records a late notification).
   const [prescriberNotified, setPrescriberNotified] = useState(false);
   const [outcome, setOutcome] = useState('');
+  // The order's hold / check-before-giving criteria. A GIVEN dose against an
+  // order that has them requires this explicit acknowledgment (owner rule:
+  // the form hand-holds; a nurse must not be able to chart midodrine as given
+  // without being shown "hold if SBP > 140" and confirming she checked).
+  const parameters = orderParameters(order);
+  const [parametersChecked, setParametersChecked] = useState(false);
+  // The reading checked against the parameters ("BP 116/74, HR 72"): required
+  // for a given OR held dose, since the hold is only defensible with the number.
+  const [parametersReading, setParametersReading] = useState('');
+  const needsParametersReading = !!parameters && (status === 'given' || status === 'held');
   // Reading for a check-style order (e.g. gastric residual in mL).
   const [value, setValue] = useState('');
+  // Sliding-scale order: the dose is looked up from the meter reading typed
+  // here, never read off the table by eye (see slidingScale.ts).
+  const scaleRows = parseSlidingScale(order.slidingScale);
+  const isScale = scaleRows.length > 0;
+  const [scaleEntry, setScaleEntry] = useState<ScaleChartingEntry>(EMPTY_SCALE_ENTRY);
+  // The reading calls for no insulin: the entry records the check with 0
+  // units, so the wording drops "given".
+  const noInsulinDue =
+    isScale && !scaleEntry.customDose && lookupScaleDose(scaleRows, scaleEntry.glucoseReading).row?.units === 0;
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Per-field problems (outlined and explained where they sit) and the
+  // server's answer, which has no field and lives next to the buttons.
+  const [errors, setErrors] = useState<DoseErrors>({});
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const clearErr = (...keys: DoseField[]) =>
+    setErrors((cur) => {
+      if (!keys.some((k) => cur[k])) return cur;
+      const next = { ...cur };
+      for (const k of keys) delete next[k];
+      return next;
+    });
+  const hi = (k: DoseField): CSSProperties => (errors[k] ? FIELD_ERROR_STYLE : {});
+  // Dose-vs-shift check (owner request: a nurse must not attest NURSE-GIVEN
+  // doses at times she was not in the home). Her window comes from her own
+  // submitted note for this client+date; while it loads ('loading') the check
+  // fails open, with the submit-time state used at save. 'none' = no note on
+  // file, so we cannot know the window -> an explicit personal attestation is
+  // required instead. Family/proxy administration is exempt (that is the
+  // correct record for a dose given by mom, starred on the MAR).
+  const [shiftWindows, setShiftWindows] = useState<ShiftWindow[] | 'loading' | 'unavailable'>('loading');
+  const [attestConfirmed, setAttestConfirmed] = useState(false);
+  // The in-flight lookup, kept so save() can AWAIT it instead of racing it —
+  // 'unavailable' (the fetch itself failed) is the only state that fails open.
+  const windowsPromiseRef = useRef<Promise<ShiftWindow[] | 'unavailable'> | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setShiftWindows('loading');
+    setAttestConfirmed(false);
+    const p = getMyShiftWindowsForDate(documenter.uid, patientId, dateISO).catch(
+      () => 'unavailable' as const,
+    );
+    windowsPromiseRef.current = p;
+    void p.then((w) => {
+      if (!cancelled) setShiftWindows(w);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [documenter.uid, patientId, dateISO]);
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -113,28 +191,100 @@ export default function AdministerDoseModal({
     Math.abs(actualMinutes - slotMinutes) > 120;
 
   const save = async () => {
+    if (busy) return;
+    setSaveError(null);
+    // Collect every problem, then outline each field and escort to the first.
+    const e: DoseErrors = {};
     if (!status) {
-      setError(isCheck ? 'Choose Done, Held, or Refused.' : 'Choose Given, Held, or Refused.');
-      return;
+      e.status = isCheck ? 'Choose Done, Held, or Refused.' : 'Choose Given, Held, or Refused.';
     }
     if (status === 'given' && !actualTime) {
-      setError(isCheck ? 'Enter the time the check was done.' : 'Enter the time the dose was given.');
-      return;
+      e.actualTime = isCheck ? 'Enter the time the check was done.' : 'Enter the time the dose was given.';
     }
     if (isCheck && status === 'given' && !value.trim()) {
-      setError(
+      e.value =
         valueOptions.length > 0
           ? `Select the ${valueLabel.toLowerCase()} reading.`
-          : `Enter the ${valueLabel.toLowerCase()} reading.`,
-      );
-      return;
+          : `Enter the ${valueLabel.toLowerCase()} reading.`;
+    }
+    if (status === 'given' && parameters && !parametersChecked) {
+      e.parameters = isCheck
+        ? 'Confirm you reviewed the parameters before recording this check.'
+        : 'Confirm the parameters were checked before this dose was given. If they were not met, mark the dose Held instead.';
+    }
+    if (needsParametersReading && !parametersReading.trim()) {
+      e.parametersReading =
+        status === 'held'
+          ? 'Record the reading that led you to hold (e.g., BP 132/84).'
+          : 'Record the reading you checked against the parameters (e.g., BP 116/74).';
     }
     if (needsReason && !reason.trim()) {
-      setError(status === 'given' ? 'A PRN dose needs a reason (why it was given).' : 'A reason is required.');
+      e.reason = status === 'given' ? 'A PRN dose needs a reason (why it was given).' : 'A reason is required.';
+    }
+    const scale = isScale ? resolveScaleCharting(scaleRows, status, scaleEntry) : null;
+    if (scale) Object.assign(e, scale.errors);
+    if (status === 'given' && !isNurseAdmin && administeredByType !== 'self' && !administratorName.trim()) {
+      e.administratorName = 'Enter the name of the person who administered it (e.g., "Jane Doe (daughter)").';
+    }
+    let noNoteAttested = false;
+    if (status === 'given' && isNurseAdmin) {
+      const doseTime = actualTime || (!isPRN ? slot : '');
+      let windows = shiftWindows;
+      if (windows === 'loading' && windowsPromiseRef.current) {
+        // Don't let a fast Save win the race against the lookup: wait for it.
+        setBusy(true);
+        windows = await windowsPromiseRef.current;
+        setBusy(false);
+      }
+      if (Array.isArray(windows)) {
+        const gate = decideNurseDoseGate(doseTime, windows);
+        if (gate === 'block') {
+          // Only same-date notes can block, so this text always has them.
+          const windowText = windows
+            .filter((w) => !w.prevDayTail)
+            .map((w) => `${w.start} to ${w.end}${w.endsNextDay ? ' the next day' : ''}`)
+            .join(' and ');
+          e.shiftBlock =
+            `Your shift on ${formatDateUS(dateISO)} was ${windowText} (from your progress note), but this ` +
+            `${isCheck ? 'check' : 'dose'} is recorded as ${isCheck ? 'performed' : 'given'} by YOU at ${doseTime}. ` +
+            `You can only attest to ${isCheck ? 'checks' : 'doses'} you personally performed during your shift. ` +
+            `If a family member or caregiver ${isCheck ? 'did it' : 'gave it'}, change "Administered by" below ` +
+            `(it will be starred on the MAR). If your note's shift times are wrong, correct the note first.`;
+        } else if (gate === 'attest') {
+          if (!attestConfirmed) {
+            const tailEnd = windows
+              .filter((w) => w.prevDayTail)
+              .map((w) => w.end)
+              .sort()
+              .pop();
+            e.attest = tailEnd
+              ? `You haven't submitted a note for this date yet — your previous night's note covers only ` +
+                `until ${tailEnd}. If this ${isCheck ? 'check' : 'dose'} belongs to tonight's shift, check the ` +
+                `attestation box to confirm you personally ${isCheck ? 'performed it' : 'administered it'}, ` +
+                `or change "Administered by".`
+              : 'No progress note from you is on file for this date, so your shift window is unknown. ' +
+                'Check the attestation box to confirm you personally ' +
+                (isCheck ? 'performed this check' : 'administered this dose') +
+                ', or change "Administered by".';
+          } else {
+            noNoteAttested = true;
+          }
+        }
+      }
+      // 'unavailable' (lookup failed) fails open: we could not verify the
+      // window, and an infrastructure error must never block charting.
+    }
+    setErrors(e);
+    const first = firstErrorKey(FIELD_ORDER, e);
+    if (first) {
+      // Deferred a tick: the attestation row may only render once the awaited
+      // shift-window state lands, and the escort needs it in the DOM.
+      window.setTimeout(() => escortToField(fieldId(first)), 0);
       return;
     }
+    // Unreachable (e.status covers it) but narrows `status` for the write.
+    if (!status) return;
     setBusy(true);
-    setError(null);
     try {
       await writeMarAdministrations(
         [
@@ -142,8 +292,10 @@ export default function AdministerDoseModal({
             patientId,
             orderId: order.id || '',
             medName: order.medName,
-            dose: order.dose,
-            units: order.units || '',
+            // A given sliding-scale dose records the units actually given;
+            // anything else keeps the order's own dose text.
+            dose: scale && status === 'given' ? scale.doseGiven : order.dose,
+            units: scale && status === 'given' ? SLIDING_SCALE_UNITS : order.units || '',
             route: order.route,
             scheduledTime: slot,
             status,
@@ -153,11 +305,19 @@ export default function AdministerDoseModal({
             reason,
             isPRN,
             indication,
+            parameters,
+            parametersChecked,
+            parametersReading,
             outcome,
             prescriberNotified,
+            noNoteAttestation: noNoteAttested,
             value,
             valueLabel,
             valueUnit,
+            glucoseReading: scale?.glucoseReading || '',
+            scaleDose: scale?.scaleDose || '',
+            scaleRange: scale?.scaleRange || '',
+            scaleDeviationReason: scale?.deviationReason || '',
           },
         ],
         { patientId, date: dateISO, sourceNoteId: '', documenter },
@@ -165,7 +325,7 @@ export default function AdministerDoseModal({
       onSaved();
       onClose();
     } catch {
-      setError(isCheck ? 'Could not save the entry. Please try again.' : 'Could not save the dose. Please try again.');
+      setSaveError(isCheck ? 'Could not save the entry. Please try again.' : 'Could not save the dose. Please try again.');
       setBusy(false);
     }
   };
@@ -182,7 +342,7 @@ export default function AdministerDoseModal({
               {isCheck
                 ? `${valueLabel}${valueUnit ? ` (${valueUnit})` : ''}`
                 : `${order.dose}${order.units ? ` ${order.units}` : ''}`}
-              {' · '}{order.route} · {isPRN ? 'PRN' : slot}
+              {' · '}{order.route} · {isPRN ? 'PRN' : describeSlot(order, slot)}
             </div>
             <div style={dateLine}>{prettyDate(dateISO)}</div>
           </div>
@@ -190,6 +350,15 @@ export default function AdministerDoseModal({
             <X size={20} />
           </button>
         </div>
+
+        {/* Not a field problem: the recorded time falls outside the nurse's
+            own shift. It is the first thing on the sheet so the escort lands
+            on the explanation, not on an innocent-looking input. */}
+        {errors.shiftBlock && (
+          <div id={fieldId('shiftBlock')} role="alert" style={shiftBlockNotice}>
+            <strong>Outside your shift.</strong> {errors.shiftBlock}
+          </div>
+        )}
 
         {isLate && (
           <div style={lateNotice}>
@@ -200,30 +369,93 @@ export default function AdministerDoseModal({
 
         {isPRN && indication && <div style={indicationLine}>Ordered for: {indication}</div>}
 
-        <div style={statusRow}>
+        {/* Hold / check-before-giving criteria from the order, shown before the
+            status choice so they are read BEFORE the nurse decides given vs held. */}
+        {parameters && (
+          <div style={paramCallout} role="note">
+            <div style={paramCalloutTitle}>Parameters: Check Before Giving</div>
+            <div style={paramCalloutText}>{parameters}</div>
+          </div>
+        )}
+
+        {/* Sliding scale: the reading comes first, because the dose (and
+            whether any insulin is due at all) is decided by it. */}
+        {isScale && (
+          <SlidingScaleCharting
+            rows={scaleRows}
+            status={status}
+            entry={scaleEntry}
+            onChange={(patch) => {
+              setScaleEntry((cur) => ({ ...cur, ...patch }));
+              clearErr('glucoseReading', 'unitsGiven', 'deviationReason');
+            }}
+            errors={errors}
+            fieldId={fieldId}
+            givenByOther={!isNurseAdmin}
+          />
+        )}
+
+        <div id={fieldId('status')} style={errors.status ? { ...statusRow, ...FIELD_ERROR_WRAP_STYLE } : statusRow}>
           {(['given', 'held', 'refused'] as const).map((s) => (
             <button
               key={s}
               type="button"
-              onClick={() => setStatus((cur) => (cur === s ? '' : s))}
+              onClick={() => {
+                setStatus((cur) => (cur === s ? '' : s));
+                clearErr('status', 'shiftBlock', 'attest', 'parameters', 'parametersReading');
+              }}
               style={status === s ? statusActive[s] : statusBtn}
             >
-              {s === 'given' ? (isCheck ? 'Done' : 'Given') : s === 'held' ? 'Held' : 'Refused'}
+              {s === 'given' ? (isCheck ? 'Done' : noInsulinDue ? 'No Insulin Due' : 'Given') : s === 'held' ? 'Held' : 'Refused'}
             </button>
           ))}
         </div>
+        <FieldError message={errors.status} />
+
+        {status === 'given' && parameters && (
+          <label id={fieldId('parameters')} style={errors.parameters ? { ...paramCheckRow, ...FIELD_ERROR_WRAP_STYLE } : paramCheckRow}>
+            <input
+              type="checkbox"
+              checked={parametersChecked}
+              onChange={(e) => { setParametersChecked(e.target.checked); clearErr('parameters'); }}
+              style={{ marginTop: 2 }}
+            />
+            <span style={{ fontSize: 13, color: '#1f2937', lineHeight: 1.4 }}>
+              {isNurseAdmin
+                ? `I checked the parameters above before ${isCheck ? 'recording this check' : 'giving this dose'}, and they were met. *`
+                : `The parameters above were checked before this ${isCheck ? 'check was done' : 'dose was given'}, and they were met. *`}
+            </span>
+          </label>
+        )}
+        <FieldError message={errors.parameters} />
+
+        {needsParametersReading && (
+          <label id={fieldId('parametersReading')} style={{ ...field, marginBottom: 10 }}>
+            <span style={fieldLabel}>
+              {status === 'held' ? 'Reading that led you to hold *' : 'Reading you checked before giving *'}
+            </span>
+            <input
+              type="text"
+              value={parametersReading}
+              onChange={(e) => { setParametersReading(e.target.value); clearErr('parametersReading'); }}
+              style={{ ...input, ...hi('parametersReading') }}
+              placeholder="e.g., BP 116/74, HR 72"
+            />
+            <FieldError message={errors.parametersReading} />
+          </label>
+        )}
 
         {status === 'given' && (
           <div style={grid2}>
             {isCheck && (
-              <label style={field}>
+              <label id={fieldId('value')} style={field}>
                 <span style={fieldLabel}>
                   {valueLabel}
                   {valueUnit ? ` (${valueUnit})` : ''} *
                 </span>
                 {valueOptions.length > 0 ? (
-                  <select value={value} onChange={(e) => setValue(e.target.value)} style={select}>
-                    <option value="">Select a reading…</option>
+                  <select value={value} onChange={(e) => { setValue(e.target.value); clearErr('value'); }} style={{ ...select, ...hi('value') }}>
+                    <option value="">Select a Reading…</option>
                     {valueOptions.map((o) => (
                       <option key={o} value={o}>
                         {/^-?\d+(\.\d+)?$/.test(o) && valueUnit ? `${o} ${valueUnit}` : o}
@@ -237,20 +469,31 @@ export default function AdministerDoseModal({
                     min={0}
                     step="any"
                     value={value}
-                    onChange={(e) => setValue(e.target.value)}
-                    style={input}
+                    onChange={(e) => { setValue(e.target.value); clearErr('value'); }}
+                    style={{ ...input, ...hi('value') }}
                     placeholder={valueUnit ? `e.g., 30 ${valueUnit}` : 'Reading'}
                   />
                 )}
+                <FieldError message={errors.value} />
               </label>
             )}
-            <label style={field}>
-              <span style={fieldLabel}>{isCheck ? 'Time checked' : 'Time given'}</span>
-              <input type="time" value={actualTime} onChange={(e) => setActualTime(e.target.value)} style={input} />
+            <label id={fieldId('actualTime')} style={field}>
+              <span style={fieldLabel}>{isCheck || noInsulinDue ? 'Time checked' : 'Time given'}</span>
+              <input
+                type="time"
+                value={actualTime}
+                onChange={(e) => { setActualTime(e.target.value); clearErr('actualTime', 'shiftBlock', 'attest'); }}
+                style={{ ...input, ...hi('actualTime') }}
+              />
+              <FieldError message={errors.actualTime} />
             </label>
             <label style={field}>
               <span style={fieldLabel}>Administered by</span>
-              <select value={administeredByType} onChange={(e) => setAdministeredByType(e.target.value)} style={select}>
+              <select
+                value={administeredByType}
+                onChange={(e) => { setAdministeredByType(e.target.value); clearErr('administratorName', 'shiftBlock', 'attest'); }}
+                style={select}
+              >
                 {ADMIN_BY_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
@@ -259,40 +502,44 @@ export default function AdministerDoseModal({
               </select>
             </label>
             {!isNurseAdmin && (
-              <label style={field}>
+              <label id={fieldId('administratorName')} style={field}>
                 <span style={fieldLabel}>Administrator name</span>
                 <input
                   type="text"
                   value={administratorName}
-                  onChange={(e) => setAdministratorName(e.target.value)}
-                  style={input}
+                  onChange={(e) => { setAdministratorName(e.target.value); clearErr('administratorName'); }}
+                  style={{ ...input, ...hi('administratorName') }}
                   placeholder="e.g., Jane Doe (daughter)"
                 />
+                <FieldError message={errors.administratorName} />
               </label>
             )}
           </div>
         )}
 
         {needsReason && (
-          <label style={{ ...field, marginTop: 12 }}>
+          <label id={fieldId('reason')} style={{ ...field, marginTop: 12 }}>
             <span style={fieldLabel}>
               {status === 'given' ? 'Reason this PRN dose was given *' : 'Reason *'}
             </span>
             <input
               type="text"
               value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              style={input}
+              onChange={(e) => { setReason(e.target.value); clearErr('reason'); }}
+              style={{ ...input, ...hi('reason') }}
               placeholder={
                 status === 'refused'
                   ? 'Reason for refusal'
                   : status === 'held'
-                    ? 'Reason held / omitted'
+                    ? parameters
+                      ? 'e.g., held per parameters: SBP 152/90'
+                      : 'Reason held / omitted'
                     : indication
                       ? `e.g., ${indication}; rated 6/10`
                       : 'e.g., complained of pain, rated 6/10'
               }
             />
+            <FieldError message={errors.reason} />
           </label>
         )}
 
@@ -318,7 +565,7 @@ export default function AdministerDoseModal({
 
         {/* PRN effectiveness follow-up. The result is usually observed 30-60
             minutes after the dose, so it's OPTIONAL here — an unrecorded result
-            shows as "Result pending" on the grid until it's filled in. */}
+            shows as "Result Pending" on the grid until it's filled in. */}
         {status === 'given' && isPRN && (
           <label style={{ ...field, marginTop: 12 }}>
             <span style={fieldLabel}>Outcome / result (if already known)</span>
@@ -344,14 +591,39 @@ export default function AdministerDoseModal({
           </div>
         )}
 
-        {error && <div style={errBox}>{error}</div>}
+        {status === 'given' &&
+          isNurseAdmin &&
+          Array.isArray(shiftWindows) &&
+          decideNurseDoseGate(actualTime || (!isPRN ? slot : ''), shiftWindows) === 'attest' && (
+          <div id={fieldId('attest')} style={errors.attest ? { marginTop: 10, ...FIELD_ERROR_WRAP_STYLE } : { marginTop: 10 }}>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={attestConfirmed}
+                onChange={(e) => { setAttestConfirmed(e.target.checked); clearErr('attest'); }}
+                style={{ marginTop: 2 }}
+              />
+              <span style={{ fontSize: 12.5, color: '#5c6b7a', lineHeight: 1.4 }}>
+                {shiftWindows.some((w) => w.prevDayTail)
+                  ? "You haven't submitted a note for this date yet, and this time is past your previous night's shift."
+                  : 'No progress note from you is on file for this date, so your shift window is unknown.'}{' '}
+                I confirm I personally {isCheck ? 'performed this check' : 'administered this dose'} at{' '}
+                {actualTime || 'the time entered'} on {formatDateUS(dateISO)}.
+                (If a family member or caregiver {isCheck ? 'did it' : 'gave it'}, change &quot;Administered by&quot; above instead.)
+              </span>
+            </label>
+            <FieldError message={errors.attest} />
+          </div>
+        )}
+
+        {saveError && <div style={errBox} role="alert">{saveError}</div>}
 
         <div style={actions}>
-          <button type="button" style={cancelBtn} onClick={onClose} disabled={busy}>
+          <button type="button" className={btn} onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button type="button" style={saveBtn} onClick={save} disabled={busy}>
-            {busy ? 'Saving…' : isCheck ? 'Save entry' : 'Save dose'}
+          <button type="button" className={btnPrimary} onClick={save} disabled={busy}>
+            {busy ? 'Saving…' : isCheck ? 'Save Entry' : 'Save Dose'}
           </button>
         </div>
       </div>
@@ -368,7 +640,12 @@ const medMeta: CSSProperties = { fontSize: 13, color: '#6b7280', marginTop: 2 };
 const dateLine: CSSProperties = { fontSize: 13, color: '#1a3a5c', fontWeight: 600, marginTop: 4 };
 const closeBtn: CSSProperties = { width: 40, height: 40, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#f1f3f5', border: 'none', borderRadius: 10, color: '#2c3e50', cursor: 'pointer', flexShrink: 0 };
 const lateNotice: CSSProperties = { background: '#fff7e6', border: '1px solid #f5d9a8', color: '#8a5a0d', borderRadius: 8, padding: '9px 11px', fontSize: 12.5, lineHeight: 1.45, marginBottom: 12 };
+const shiftBlockNotice: CSSProperties = { background: '#fdeaea', border: '1px solid #b3261e', color: '#7f1d1d', borderRadius: 8, padding: '10px 12px', fontSize: 13, lineHeight: 1.5, marginBottom: 12, boxShadow: '0 0 0 3px rgba(179,38,30,0.15)' };
 const indicationLine: CSSProperties = { fontSize: 12.5, color: '#5c6b7a', marginBottom: 12 };
+const paramCallout: CSSProperties = { background: '#fff7e6', border: '1px solid #f5d9a8', borderRadius: 8, padding: '10px 12px', marginBottom: 12 };
+const paramCalloutTitle: CSSProperties = { fontSize: 11, fontWeight: 700, color: '#b45309', letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 3 };
+const paramCalloutText: CSSProperties = { fontSize: 13.5, color: '#1f2937', lineHeight: 1.45, whiteSpace: 'pre-wrap' };
+const paramCheckRow: CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 4, marginBottom: 10, cursor: 'pointer', padding: '2px 0' };
 const statusRow: CSSProperties = { display: 'flex', gap: 8, flexWrap: 'wrap' };
 const statusBtn: CSSProperties = { padding: '8px 16px', borderRadius: 6, border: '1px solid #d0d7de', background: 'white', color: '#374151', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const statusActive: Record<'given' | 'held' | 'refused', CSSProperties> = {
@@ -384,5 +661,3 @@ const select: CSSProperties = withSelectChevron(input);
 const outcomeHint: CSSProperties = { fontSize: 11.5, color: '#8a949e', lineHeight: 1.4, marginTop: 2 };
 const errBox: CSSProperties = { marginTop: 12, background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '8px 11px', fontSize: 13 };
 const actions: CSSProperties = { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 };
-const cancelBtn: CSSProperties = { background: 'white', color: '#374151', border: '1px solid #d0d7de', padding: '9px 16px', borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const saveBtn: CSSProperties = { background: '#1a3a5c', color: 'white', border: '1px solid #1a3a5c', padding: '9px 16px', borderRadius: 6, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };

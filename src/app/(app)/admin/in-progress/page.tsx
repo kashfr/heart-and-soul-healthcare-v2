@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState, type CSSProperties } from 'react';
+import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -11,6 +12,7 @@ import {
 } from 'lucide-react';
 import { subscribeDrafts, type NoteDraft } from '@/lib/drafts';
 import { findDuplicateSubmission } from '@/lib/submissions';
+import { formatDateUS } from '@/lib/dateFormat';
 import { authedFetch } from '@/lib/authedFetch';
 import {
   flattenDraft,
@@ -18,6 +20,7 @@ import {
   NOTE_TAB_NAMES,
   type NoteIssue,
 } from '@/lib/noteValidation';
+import { readVitalsRechecks, recheckBloodPressure } from '@/lib/vitalsRecheck';
 
 interface Row {
   draft: NoteDraft;
@@ -234,7 +237,7 @@ export default function InProgressPage() {
                     {draft.clientName || '(no client name yet)'}
                   </div>
                   <div style={{ fontSize: 13, color: '#6b7280' }}>
-                    {draft.nurseName || 'Unknown nurse'} · DOS {draft.dateOfService || '—'} · on Tab{' '}
+                    {draft.nurseName || 'Unknown nurse'} · DOS {formatDateUS(draft.dateOfService) || '—'} · on Tab{' '}
                     {draft.currentPage} ({NOTE_TAB_NAMES[draft.currentPage] ?? ''})
                   </div>
                 </div>
@@ -252,7 +255,7 @@ export default function InProgressPage() {
                 </div>
                 {pendingApproval && (
                   <span style={badgeApproval}>
-                    <ShieldAlert size={13} /> Needs your approval
+                    <ShieldAlert size={13} /> Needs Your Approval
                   </span>
                 )}
                 <span style={ready ? badgeReady : badgeNeeds}>
@@ -262,7 +265,7 @@ export default function InProgressPage() {
                     </>
                   ) : (
                     <>
-                      <AlertTriangle size={13} /> {issues.length} to fix
+                      <AlertTriangle size={13} /> {issues.length} to Fix
                     </>
                   )}
                 </span>
@@ -273,11 +276,11 @@ export default function InProgressPage() {
                   {pendingApproval && dupReq && (
                     <div style={approvalPanel}>
                       <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                        <ShieldAlert size={16} /> Duplicate-note approval requested
+                        <ShieldAlert size={16} /> Duplicate-Note Approval Requested
                       </div>
                       <p style={{ margin: '0 0 8px', fontSize: 13, lineHeight: 1.5 }}>
                         {draft.nurseName || 'This nurse'} is asking to submit a <strong>second</strong> note for{' '}
-                        <strong>{dupReq.clientName}</strong> on <strong>{dupReq.dateOfService}</strong> — a client already
+                        <strong>{dupReq.clientName}</strong> on <strong>{formatDateUS(dupReq.dateOfService)}</strong> — a client already
                         documented on that date.
                       </p>
                       <div style={{ fontSize: 13, marginBottom: 10 }}>
@@ -291,7 +294,7 @@ export default function InProgressPage() {
                           rel="noopener noreferrer"
                           style={{ fontSize: 13, color: '#0e7c4a', fontWeight: 600 }}
                         >
-                          View the existing note ↗
+                          View the Existing Note ↗
                         </a>
                       )}
 
@@ -314,15 +317,15 @@ export default function InProgressPage() {
                               type="button"
                               onClick={() => decide(id, 'deny', denyNote.trim())}
                               disabled={busyId === id}
-                              style={denyConfirmBtn}
+                              className={`${btnDanger} ${btnSm}`}
                             >
-                              {busyId === id ? 'Denying…' : 'Confirm deny'}
+                              {busyId === id ? 'Denying…' : 'Confirm Deny'}
                             </button>
                             <button
                               type="button"
                               onClick={() => { setDenyForId(null); setDenyNote(''); }}
                               disabled={busyId === id}
-                              style={ghostBtn}
+                              className={`${btn} ${btnSm}`}
                             >
                               Cancel
                             </button>
@@ -334,15 +337,15 @@ export default function InProgressPage() {
                             type="button"
                             onClick={() => decide(id, 'approve')}
                             disabled={busyId === id}
-                            style={approveBtn}
+                            className={`${btnPrimary} ${btnSm}`}
                           >
-                            {busyId === id ? 'Approving…' : 'Approve second note'}
+                            {busyId === id ? 'Approving…' : 'Approve Second Note'}
                           </button>
                           <button
                             type="button"
                             onClick={() => { setDenyForId(id); setActionError(null); }}
                             disabled={busyId === id}
-                            style={denyBtn}
+                            className={`${btnDanger} ${btnSm}`}
                           >
                             Deny
                           </button>
@@ -388,12 +391,12 @@ export default function InProgressPage() {
                   )}
 
                   <div style={{ marginTop: 14 }}>
-                    <div style={snapshotHeader}>Vitals &amp; key details entered</div>
+                    <div style={snapshotHeader}>Vitals &amp; Key Details Entered</div>
                     <div style={snapshotGrid}>
                       <Detail label="Client" value={flat.q3_clientName} />
-                      <Detail label="Date of birth" value={flat.q4_dateofBirth} />
+                      <Detail label="Date of birth" value={formatDateUS(flat.q4_dateofBirth)} />
                       <Detail label="Credential" value={flat.q12_credential} />
-                      <Detail label="Date of service" value={flat.q6_dateofService} />
+                      <Detail label="Date of service" value={formatDateUS(flat.q6_dateofService)} />
                       {(flat.q16_vitalsNotObtainedReason || '').trim() !== '' && (
                         <Detail
                           label="Vitals not obtained"
@@ -414,6 +417,19 @@ export default function InProgressPage() {
                       <Detail label="Pulse" value={flat.q18_pulse} />
                       <Detail label="Respiration" value={flat.q19_respiration} />
                       <Detail label="O₂ saturation" value={flat.q20_oxygenSaturation} />
+                      {readVitalsRechecks(flat).map((r) => (
+                        <Detail
+                          key={r.index}
+                          label={`Recheck ${r.index}${r.time ? ` at ${r.time}` : ''}`}
+                          value={[
+                            r.temperature ? `T ${r.temperature}` : '',
+                            recheckBloodPressure(r) ? `BP ${recheckBloodPressure(r)}` : '',
+                            r.pulse ? `P ${r.pulse}` : '',
+                            r.respiration ? `R ${r.respiration}` : '',
+                            r.oxygenSaturation ? `SpO₂ ${r.oxygenSaturation}%` : '',
+                          ].filter(Boolean).join(' · ')}
+                        />
+                      ))}
                       <Detail label="Signature" value={flat.q61_signature ? 'Signed' : ''} />
                     </div>
                   </div>
@@ -425,7 +441,7 @@ export default function InProgressPage() {
                       style={fullToggleBtn}
                     >
                       {showFull === id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                      {showFull === id ? 'Hide full note' : 'Show full note (everything entered)'}
+                      {showFull === id ? 'Hide Full Note' : 'Show Full Note (Everything Entered)'}
                     </button>
                     {showFull === id && (() => {
                       const entries = Object.entries(flat)
@@ -439,7 +455,7 @@ export default function InProgressPage() {
                           ) : (
                             <div style={fullGrid}>
                               {entries.map(([k, v]) => (
-                                <Detail key={k} label={humanizeKey(k)} value={String(v)} />
+                                <Detail key={k} label={humanizeKey(k)} value={formatDateUS(String(v))} />
                               ))}
                               {signed && <Detail label="Signature" value="Signed" />}
                             </div>
@@ -603,44 +619,6 @@ const approvalPanel: CSSProperties = {
   borderRadius: 8,
   padding: '14px 16px',
   marginBottom: 14,
-};
-
-const approveBtn: CSSProperties = {
-  background: '#0e7c4a',
-  color: 'white',
-  border: 'none',
-  padding: '8px 14px',
-  borderRadius: 6,
-  fontSize: 13,
-  fontWeight: 700,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-
-const denyBtn: CSSProperties = {
-  background: 'white',
-  color: '#b3261e',
-  border: '1px solid #f5c6c0',
-  padding: '8px 14px',
-  borderRadius: 6,
-  fontSize: 13,
-  fontWeight: 700,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-
-const denyConfirmBtn: CSSProperties = { ...denyBtn, background: '#fdecea' };
-
-const ghostBtn: CSSProperties = {
-  background: 'transparent',
-  color: '#6b7280',
-  border: '1px solid #d1d5db',
-  padding: '8px 14px',
-  borderRadius: 6,
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
 };
 
 const denyTextareaStyle: CSSProperties = {

@@ -4,6 +4,7 @@ import {
   mergeWithDefaults,
   validateSettings,
   SettingsValidationError,
+  formatRegions,
 } from './settings';
 
 describe('mergeWithDefaults', () => {
@@ -230,7 +231,7 @@ describe('mergeWithDefaults — new settings fields', () => {
   it('fills in default email subjects when absent', () => {
     const merged = mergeWithDefaults({});
     expect(merged.emails.subjects.staffInviteWelcome).toMatch(/Welcome/);
-    expect(merged.emails.subjects.emailChanged).toMatch(/email was changed/);
+    expect(merged.emails.subjects.emailChanged).toMatch(/Email Was Changed/);
   });
 });
 
@@ -309,4 +310,107 @@ describe('intake settings (org service profile)', () => {
     expect(merged.intake.counties).toEqual(['Cobb', 'DeKalb']);
     expect(merged.intake.services).toEqual(['nursing', 'pss']);
   });
+});
+
+describe('fax settings (Fax Center grant)', () => {
+  it('defaults to off with nobody granted', () => {
+    expect(mergeWithDefaults(null).fax).toEqual({ enabled: false, userUids: [], recertLeadDays: 45, ppotPrefillIdentity: false, ppotOverdueDays: 14, ppotEscalateDays: 30 });
+  });
+  it('keeps the switch and dedupes / trims the granted uids', () => {
+    expect(mergeWithDefaults({ fax: { enabled: true, userUids: [' rose ', 'rose', '', 'sup1', 7] } }).fax).toEqual({
+      enabled: true,
+      userUids: ['rose', 'sup1'],
+      recertLeadDays: 45,
+      ppotPrefillIdentity: false,
+      ppotOverdueDays: 14, ppotEscalateDays: 30,
+    });
+  });
+  it('treats anything but true as off', () => {
+    expect(mergeWithDefaults({ fax: { enabled: 'yes' } }).fax.enabled).toBe(false);
+  });
+  it('keeps a recertification lead time in range and falls back otherwise', () => {
+    expect(mergeWithDefaults({ fax: { recertLeadDays: 60 } }).fax.recertLeadDays).toBe(60);
+    expect(mergeWithDefaults({ fax: { recertLeadDays: 2 } }).fax.recertLeadDays).toBe(45);
+    expect(() => validateSettings({ fax: { recertLeadDays: 500 } })).toThrow(SettingsValidationError);
+  });
+  it('prints identity on the form only when explicitly turned on', () => {
+    expect(mergeWithDefaults({ fax: { ppotPrefillIdentity: true } }).fax.ppotPrefillIdentity).toBe(true);
+    expect(mergeWithDefaults({ fax: { ppotPrefillIdentity: 'yes' } }).fax.ppotPrefillIdentity).toBe(false);
+    expect(() => validateSettings({ fax: { ppotPrefillIdentity: 1 } })).toThrow(SettingsValidationError);
+  });
+  it('rejects a malformed payload', () => {
+    expect(() => validateSettings({ fax: { enabled: 'yes' } })).toThrow(SettingsValidationError);
+    expect(() => validateSettings({ fax: { userUids: 'rose' } })).toThrow(SettingsValidationError);
+  });
+});
+
+describe('esign settings (PandaDoc tracking)', () => {
+  it('tracks onboarding packets by default', () => {
+    expect(mergeWithDefaults(null).esign).toEqual({ trackKeywords: ['onboarding'] });
+  });
+  it('trims, lowercases, and dedupes keywords; an explicit empty list means track nothing', () => {
+    expect(mergeWithDefaults({ esign: { trackKeywords: [' Onboarding ', 'onboarding', '', 'Handbook'] } }).esign.trackKeywords).toEqual(['onboarding', 'handbook']);
+    expect(mergeWithDefaults({ esign: { trackKeywords: [] } }).esign.trackKeywords).toEqual([]);
+  });
+  it('rejects a malformed payload', () => {
+    expect(() => validateSettings({ esign: { trackKeywords: 'onboarding' } })).toThrow(SettingsValidationError);
+  });
+});
+
+describe('supportCoordination settings', () => {
+  it('defaults to an empty agency list', () => {
+    expect(mergeWithDefaults({}).supportCoordination.agencies).toEqual([]);
+  });
+
+  it('keeps named agencies, drops blank rows and duplicate names, and sorts by name', () => {
+    const out = mergeWithDefaults({ supportCoordination: { agencies: [
+      { id: 'ccs', name: ' Creative Consulting Services ', address: '353 Resource Pkwy, Winder, GA 30680' },
+      { name: '' },
+      { name: 'Benchmark Human Services' },
+      { name: 'creative consulting services' },
+    ] } });
+    expect(out.supportCoordination.agencies.map((a) => a.name)).toEqual(['Benchmark Human Services', 'Creative Consulting Services']);
+    expect(out.supportCoordination.agencies[1]).toMatchObject({ id: 'ccs', address: '353 Resource Pkwy, Winder, GA 30680', phone: '' });
+    expect(out.supportCoordination.agencies[0].id).toBe('benchmark-human-services');
+  });
+
+  it('keeps valid regions (deduped, ascending) and drops anything outside 1-6', () => {
+    const out = mergeWithDefaults({ supportCoordination: { agencies: [
+      { name: 'Compass Coordination', regions: [3, 1, 3, 9, 0, '2'] },
+      { name: 'Creative Consulting Services' },
+    ] } });
+    expect(out.supportCoordination.agencies[0].regions).toEqual([1, 3]);
+    expect(out.supportCoordination.agencies[1].regions).toEqual([]);
+  });
+
+  it('rejects regions outside 1-6', () => {
+    expect(() => validateSettings({ supportCoordination: { agencies: [{ name: 'A', regions: [7] }] } })).toThrow(/1 through 6/);
+    expect(() => validateSettings({ supportCoordination: { agencies: [{ name: 'A', regions: [1, 6] }] } })).not.toThrow();
+  });
+
+  it('formats regions for display', () => {
+    expect(formatRegions([])).toBe('');
+    expect(formatRegions([1])).toBe('Region 1');
+    expect(formatRegions([1, 3, 5, 6])).toBe('Regions 1, 3, 5, 6');
+    expect(formatRegions([1, 2, 3, 4, 5, 6])).toBe('All regions');
+  });
+
+  it('rejects a filled-in row with no name, and a duplicate name', () => {
+    expect(() => validateSettings({ supportCoordination: { agencies: [{ name: '', address: 'x' }] } })).toThrow(/agency name/);
+    expect(() => validateSettings({ supportCoordination: { agencies: [{ name: 'A' }, { name: 'a' }] } })).toThrow(/already on the list/);
+  });
+});
+
+ it('preserves legacy reminder intervals until PPOT intervals are saved independently', () => {
+   expect(mergeWithDefaults({ verbalOrders: { overdueDays: 10, escalateDays: 20 } }).fax).toMatchObject({ ppotOverdueDays: 10, ppotEscalateDays: 20 });
+   expect(mergeWithDefaults({ verbalOrders: { overdueDays: 14, escalateDays: 30 }, fax: { ppotOverdueDays: 3, ppotEscalateDays: 7 } }).fax).toMatchObject({ ppotOverdueDays: 3, ppotEscalateDays: 7 });
+   for (const value of [0, 366, 1.5]) expect(() => validateSettings({ fax: { ppotOverdueDays: value } })).toThrow(SettingsValidationError);
+   expect(() => validateSettings({ fax: { ppotOverdueDays: 10, ppotEscalateDays: 3 } })).toThrow(SettingsValidationError);
+ });
+
+it('validates and preserves a multi-step PPOT schedule independently of staff escalation', () => {
+  expect(validateSettings({ fax: { ppotFollowupDays: [3, 7, 10], ppotEscalateDays: 7 } }).fax.ppotFollowupDays).toEqual([3, 7, 10]);
+  expect(mergeWithDefaults({ fax: { ppotFollowupDays: [] } }).fax.ppotFollowupDays).toEqual([]);
+  for (const days of [[7, 3], [3, 3], [0], [366], [1.5], ['3'], null]) expect(() => validateSettings({ fax: { ppotFollowupDays: days } })).toThrow(SettingsValidationError);
+  expect(mergeWithDefaults({ fax: { ppotOverdueDays: 3 } }).fax.ppotFollowupDays).toBeUndefined();
 });

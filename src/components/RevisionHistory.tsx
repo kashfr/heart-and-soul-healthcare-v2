@@ -28,7 +28,7 @@ export default function RevisionHistory({ entries }: { entries: EditHistoryEntry
       <button onClick={() => setCollapsed((c) => !c)} style={headerBtnStyle} aria-expanded={!collapsed}>
         {collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
         <History size={16} color="#5c6b7a" />
-        <strong style={titleStyle}>Amendment history</strong>
+        <strong style={titleStyle}>Amendment History</strong>
         <span style={countStyle}>
           {count === 0 ? 'No amendments' : `${count} amendment${count === 1 ? '' : 's'}`}
         </span>
@@ -56,7 +56,7 @@ export default function RevisionHistory({ entries }: { entries: EditHistoryEntry
                           <span style={roleBadgeStyle(e.editedByRole as Role)}>{e.editedByRole}</span>
                         )}
                         <span style={{ color: '#7f8c8d', fontSize: 12 }}>
-                          · {e.editedAt ? e.editedAt.toLocaleString() : '—'}
+                          · {e.editedAt ? e.editedAt.toLocaleString('en-US') : '—'}
                         </span>
                       </div>
                       <div style={reasonStyle}>{e.reason}</div>

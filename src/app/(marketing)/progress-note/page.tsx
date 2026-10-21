@@ -2,9 +2,11 @@
 
 import { useCallback, useMemo, useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { ViewAsWriteBlock } from '@/components/ImpersonationProvider';
 import { useForm } from 'react-hook-form';
 import { Check, AlertTriangle, Loader2 } from 'lucide-react';
-import { getPatients, type Patient } from '@/lib/patients';
+import { getPatients, getPatientClinical, type Patient } from '@/lib/patients';
+import { baselinesToNoteFields } from '@/lib/vitalsBaselines';
 import {
   getNoteDocRequirements,
   stripInapplicableQeprFields,
@@ -13,6 +15,8 @@ import {
 import { computeAgeString } from '@/lib/age';
 import { findNameCandidates, type RosterPatientLite, type MatchCandidate } from '@/lib/levenshtein';
 import { saveSubmission, getSubmission, updateSubmission, submissionExists, findDuplicateSubmission, computeSubmissionChanges, type ProgressNoteFormData, type DuplicateMatch } from '@/lib/submissions';
+import { formatDateUS } from '@/lib/dateFormat';
+import { SHIFT_CHANGE_KEYS } from '@/lib/shiftChange';
 import { saveDraft, loadDraft, deleteDraft, clearDuplicateRequest, subscribeOwnDupRequest, type NoteDraft, type DuplicateRequest } from '@/lib/drafts';
 import { getCriticalFindings, summarizeFindings, type CriticalFinding } from '@/lib/criticalVitals';
 import { isBpRoutinelyRequired } from '@/lib/vitalRanges';
@@ -39,7 +43,15 @@ import {
   getStagedChangesForNote,
   orderAppliesOn,
 } from '@/lib/mar';
-import { computeRequiredDoseGaps, resolveCurrentAdministrations } from '@/lib/marShared';
+import { classifyDoseAgainstShift, computeRequiredDoseGaps, resolveCurrentAdministrations } from '@/lib/marShared';
+import { SLIDING_SCALE_UNITS, scaleMarkDoseGiven, scaleMarkProblems } from '@/lib/slidingScale';
+import { seizureGaps } from '@/lib/seizureShared';
+import { vitalsRecheckGaps } from '@/lib/vitalsRecheck';
+import { vitalsFollowUpApplies, vitalsFollowUpGaps } from '@/lib/vitalsFollowUp';
+import { noteVitalRanges } from '@/lib/vitalRanges';
+import { writeSeizureEvents } from '@/lib/seizures';
+import { postHandoff } from '@/lib/handoffs';
+import { isSubstantiveHandoffText } from '@/lib/handoffShared';
 import {
   getAllMarAdmin,
   clearMarAdmin,
@@ -129,6 +141,14 @@ function ProgressNotePageInner() {
   const [currentPage, setCurrentPageState] = useState(1);
   const setCurrentPage = (page: number) => {
     setCurrentPageState(page);
+  };
+  // "Go to medication changes" from the Page 2 MAR callout: jump to the
+  // Medications page and scroll to the add/change/discontinue box.
+  const goToMedChanges = () => {
+    setCurrentPage(5);
+    setTimeout(() => {
+      document.getElementById('mar-changes-anchor')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 60);
   };
   const [credential, setCredential] = useState<CredentialTier>('');
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -271,6 +291,16 @@ function ProgressNotePageInner() {
     const match = patients.find((p) => normalizeName(p.name) === typed);
     return !!match?.hasFeedingTube;
   }, [watchedClientName, patients]);
+  // Same roster match for the seizure-disorder flag: gates the seizure log
+  // section and the per-shift "no seizure noted" attestation (next PR).
+  const clientHasSeizureDisorder = useMemo(() => {
+    const typed = normalizeName(String(watchedClientName || ''));
+    if (!typed) return false;
+    const match = patients.find((p) => normalizeName(p.name) === typed);
+    return !!match?.hasSeizureDisorder;
+  }, [watchedClientName, patients]);
+  // Bumped by the seizure submit gate so Page 3 force-opens Neurological.
+  const [neuroExpandSignal, setNeuroExpandSignal] = useState(0);
 
   // Roster-driven MAR requirement: when the client is flagged requiresMar,
   // Page 5 escalates its "no meds on file" hint to a hard warning and submit is
@@ -318,7 +348,7 @@ function ProgressNotePageInner() {
   // (no stamp) stays unstamped so it is never retroactively flagged, and a
   // rev-2 note keeps the program it was written under (see docReqs above).
   useEffect(() => {
-    if (!isEditMode) setValue('q1_formRev', '2');
+    if (!isEditMode) setValue('q1_formRev', '4');
   }, [isEditMode, setValue]);
   useEffect(() => {
     if (isEditMode) return;
@@ -367,6 +397,40 @@ function ProgressNotePageInner() {
     }
     for (const f of QEPR_NARRATIVE_FIELDS) setValue(f, '');
   }, [rosterClient, isEditMode, setValue, getValues]);
+
+  // Snapshot the selected client's vitals baselines onto the note (q16b_*),
+  // so the form, the submit gate, the admin view, and the PDF all judge this
+  // note by the ranges in effect when it was written. New notes only: an
+  // edit keeps the snapshot it was submitted with. A nurse without clinical
+  // read access (not on the care team) simply gets no baselines, which is
+  // the age-range behaviour she had before.
+  const baselineClientRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (isEditMode) return;
+    const pid = rosterClient?.id || null;
+    if (baselineClientRef.current === pid) return;
+    baselineClientRef.current = pid;
+    let cancelled = false;
+    const apply = (fields: Record<string, string>) => {
+      for (const [k, v] of Object.entries(fields)) {
+        if (String(getValues(k) || '') !== v) setValue(k, v);
+      }
+    };
+    if (!pid) {
+      apply(baselinesToNoteFields());
+      return;
+    }
+    getPatientClinical(pid)
+      .then((c) => {
+        if (!cancelled) apply(baselinesToNoteFields(c?.vitalsBaselines, c?.vitalsBaselinesNote));
+      })
+      .catch(() => {
+        if (!cancelled) apply(baselinesToNoteFields());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [rosterClient?.id, isEditMode, getValues, setValue]);
 
   // One-time scrub of the legacy localStorage draft layer. It used to silently
   // rehydrate a previous session's note (unscoped to the signed-in user — a
@@ -429,6 +493,11 @@ function ProgressNotePageInner() {
         key.startsWith('q55_') || key.startsWith('q41_overallCarePlan')
       );
       lpnRnRadioKeys.forEach(key => setRadio(key, null));
+      // The seizure attestation lives in the read-only (for HHA/CNA) System
+      // Assessments block; a lingering "Yes" with a half-filled entry would
+      // block the note with no way to fix it. Clearing the answer wipes the
+      // entries too (SeizureLogSection's effect).
+      setRadio('q30_seizureEvent', null);
     }
   };
 
@@ -559,11 +628,11 @@ function ProgressNotePageInner() {
     prevClientKeyRef.current = null;
     skipFirstSelectionClearRef.current = true;
     reset(draft.formValues as FormValues);
-    // reset() replaces the whole RHF store, which erases the q1_formRev='2'
+    // reset() replaces the whole RHF store, which erases the q1_formRev='4'
     // stamp the mount effect wrote (drafts saved before the QEPR update have
     // no stamp in formValues, and the mount effect never re-runs). A draft is
     // by definition a NEW note being finished on today's form, so re-stamp.
-    setValue('q1_formRev', '2');
+    setValue('q1_formRev', '4');
     // Carry the draft's reserved submission id so a resume-then-submit
     // (or a retry after reload) overwrites the same note rather than
     // duplicating. Drafts written before this field fall back to '' and
@@ -821,6 +890,11 @@ function ProgressNotePageInner() {
         // shift required-field gates — send the user back to the detail view.
         if (data && data.noteType === 'rn-oversight-visit') {
           alert('This is an RN oversight visit note; it cannot be edited in the progress note form.');
+          router.push(`/admin/submissions/${editId}`);
+          return;
+        }
+        if (data && data.noteType === 'home-supervisory-visit') {
+          alert('This is a home supervisory visit; it cannot be edited in the progress note form.');
           router.push(`/admin/submissions/${editId}`);
           return;
         }
@@ -1189,6 +1263,80 @@ function ProgressNotePageInner() {
       return;
     }
 
+    // Vitals rechecks (later readings in the same shift): every added block
+    // needs a time and at least one vital, both BP numbers or neither, and a
+    // route / oxygen source once their value is present. The DOM scan above
+    // catches the plain `required` inputs when the nurse is on Tab 2; this
+    // owns the either/or rules and fires from any tab. Same escort as the
+    // seizure gate: switch tab, scroll, red-outline, focus.
+    {
+      const recheckGaps = vitalsRecheckGaps(getValues() as Record<string, unknown>);
+      if (recheckGaps.length > 0) {
+        setCurrentPage(2);
+        const firstTarget = recheckGaps[0].targetId;
+        setTimeout(() => {
+          const el = formRef.current?.querySelector(`#${firstTarget}`) as HTMLInputElement | null;
+          if (!el) return;
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.style.border = '2px solid #c62828';
+          el.style.background = '#fff5f5';
+          const clearHighlight = () => {
+            el.style.border = '';
+            el.style.background = '';
+            el.removeEventListener('input', clearHighlight);
+            el.removeEventListener('change', clearHighlight);
+          };
+          el.addEventListener('input', clearHighlight);
+          el.addEventListener('change', clearHighlight);
+          el.focus();
+        }, 150);
+        alert(
+          `A vitals recheck on the Status & Vitals tab isn't complete:\n\n${recheckGaps.map((g) => `• ${g.label}`).join('\n')}\n\n` +
+            `We've taken you to the first one and highlighted it in red. (Remove a recheck you didn't mean to add.)`
+        );
+        return;
+      }
+    }
+
+    // Abnormal-vitals follow-up (rev 4+): a first-set vital outside the
+    // age range must be retaken after a rest interval, and one that stays
+    // out of range needs a documented action (src/lib/vitalsFollowUp.ts).
+    // Same escort as the recheck gate. Critical values additionally get the
+    // escalation modal below.
+    {
+      const all = getValues() as Record<string, unknown>;
+      if (vitalsFollowUpApplies(all)) {
+        const followUpGaps = vitalsFollowUpGaps(all, noteVitalRanges(all));
+        if (followUpGaps.length > 0) {
+          setCurrentPage(2);
+          const firstTarget = followUpGaps[0].targetId;
+          setTimeout(() => {
+            const el = formRef.current?.querySelector(`#${firstTarget}`) as HTMLElement | null;
+            if (!el) return;
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            el.style.outline = '2px solid #c62828';
+            el.style.outlineOffset = '2px';
+            const clearHighlight = () => {
+              el.style.outline = '';
+              el.style.outlineOffset = '';
+              el.removeEventListener('input', clearHighlight);
+              el.removeEventListener('change', clearHighlight);
+              el.removeEventListener('click', clearHighlight);
+            };
+            el.addEventListener('input', clearHighlight);
+            el.addEventListener('change', clearHighlight);
+            el.addEventListener('click', clearHighlight);
+            if (el.tagName === 'INPUT' || el.tagName === 'SELECT') (el as HTMLInputElement).focus();
+          }, 150);
+          alert(
+            `A vital sign was outside the expected range and needs a follow-up before this note can be submitted:\n\n${followUpGaps.map((g) => `• ${g.label}`).join('\n')}\n\n` +
+              `We've taken you to the Vitals section and highlighted it in red.`
+          );
+          return;
+        }
+      }
+    }
+
     // Date-of-service guardrails. The picker has max={today}, but a date can
     // still be typed; and a far-past date is where typos (wrong month/day) land.
     // (a) HARD block a future date. (b) SOFT confirm when more than 7 days back.
@@ -1242,6 +1390,41 @@ function ProgressNotePageInner() {
           'A note cannot be signed before the shift it documents. Please correct the shift end date.'
         );
         return;
+      }
+    }
+
+    // The shift WINDOW itself must be possible: end datetime strictly after
+    // start datetime. Without this, an end-before-start entry submits with
+    // 0.00 total hours (real incident, 08/15: 20:30 -> 14:30 same day), and
+    // the requires-MAR gate silently reinterprets end<start as an overnight
+    // shift — turning an AM/PM typo into a wall of "missing doses" with no
+    // pointer at the actual error (real incident, 19:30 typed for 07:30).
+    // Overnight shifts remain legal: set the Shift End Date to the next day.
+    {
+      const startStr = String(getValues('q7_shiftStart') || '').trim();
+      const endTimeStr = String(getValues('q62_shiftEndTime') || '').trim();
+      if (dosStr && shiftEndStr && startStr && endTimeStr) {
+        const startDT = new Date(`${dosStr}T${startStr}`);
+        const endDT = new Date(`${shiftEndStr}T${endTimeStr}`);
+        if (
+          !Number.isNaN(startDT.getTime()) &&
+          !Number.isNaN(endDT.getTime()) &&
+          endDT.getTime() <= startDT.getTime()
+        ) {
+          setCurrentPage(activePages[activePages.length - 1]);
+          setTimeout(() => {
+            const el = formRef.current?.querySelector('#q62_shiftEndTime') as HTMLElement | null;
+            el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            (el as HTMLInputElement | null)?.focus();
+          }, 100);
+          alert(
+            `The shift end (${shiftEndStr} at ${endTimeStr}) is not after the shift start (${dosStr} at ${startStr}), ` +
+            'so total hours cannot be calculated.\n\n' +
+            'If this was an overnight shift, set the Shift End Date to the NEXT day.\n' +
+            'Otherwise, correct the Shift Start Time (Page 1) or the Shift End Time.'
+          );
+          return;
+        }
       }
     }
 
@@ -1318,6 +1501,63 @@ function ProgressNotePageInner() {
         alert(
           `The feeding tube documentation isn't complete:\n\n${tubeList}\n\n` +
           `We've opened the Feeding Tube section on the Observations tab and taken you to the first one — the fields that still need an answer are outlined in red.`
+        );
+        return;
+      }
+    }
+
+    // Seizure gate, two layers, new notes only (historical notes predate the
+    // log):
+    //  1. Attestation: a client flagged hasSeizureDisorder must have "No
+    //     seizure noted" or a logged seizure on every note. LPN/RN only, like
+    //     the tube gate: the System Assessments block is read-only for
+    //     HHA/CNA, so demanding the answer would lock their notes out.
+    //  2. Completeness: whenever the answer is "Yes", every seizure entry
+    //     needs its required fields, for ANY credential and ANY client. A
+    //     half-filled seizure must never submit just because the roster flag
+    //     is off.
+    // The Yes/No is a DeselectableRadio (invisible to the DOM scan) and the
+    // blocks live in the collapsible Neurological section (skipped by the
+    // scan while collapsed), so enforce here from any tab. Escort mirrors the
+    // required-field scan: open the section, scroll, red-outline, focus.
+    if (!isEditMode) {
+      const seizureAttestationRequired =
+        clientHasSeizureDisorder && (credential === 'LPN' || credential === 'RN');
+      const gateData: Record<string, unknown> = { ...(getValues() as Record<string, unknown>) };
+      for (const [k, v] of Object.entries(radioState)) {
+        if (v) gateData[k] = v;
+      }
+      const gaps = seizureGaps(gateData, { attestationRequired: seizureAttestationRequired });
+      if (gaps.length > 0) {
+        setCurrentPage(3);
+        setNeuroExpandSignal((n) => n + 1);
+        const firstTarget = gaps[0].targetId;
+        setTimeout(() => {
+          const el = formRef.current?.querySelector(`#${firstTarget}`) as HTMLElement | null;
+          if (!el) return;
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // Same red outline the required-field scan paints, so the nurse
+          // sees WHICH box, not just which section. Clears once she edits it
+          // (a wrapper row clears on the click that answers its radio).
+          const isInput = el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA';
+          const clearEvents: string[] = isInput ? ['input', 'change'] : ['click', 'change'];
+          el.style.border = '2px solid #c62828';
+          el.style.background = '#fff5f5';
+          const clearHighlight = () => {
+            el.style.border = '';
+            el.style.background = '';
+            for (const ev of clearEvents) el.removeEventListener(ev, clearHighlight);
+          };
+          for (const ev of clearEvents) el.addEventListener(ev, clearHighlight);
+          if (isInput) (el as HTMLInputElement).focus();
+        }, 150);
+        const lead = clientHasSeizureDisorder
+          ? `This client has a seizure disorder, and the seizure log isn't complete:`
+          : `You answered "Yes" to a seizure event, and the seizure log isn't complete:`;
+        alert(
+          `${lead}\n\n${gaps.map((g) => `• ${g.label}`).join('\n')}\n\n` +
+            `We've opened the Neurological section on the Observations tab and taken you there. ` +
+            `Answer "No seizure noted" if none occurred, or add one entry per seizure.`,
         );
         return;
       }
@@ -1415,6 +1655,50 @@ function ProgressNotePageInner() {
             if (!(m.reason || '').trim()) incomplete.push(`${med}: reason the PRN dose was given`);
             if (!(m.outcome || '').trim()) incomplete.push(`${med}: outcome / result of the PRN dose`);
           }
+          // A given PRN / one-off mark has no scheduled slot to fall back on,
+          // so a blank "Time given" would make the dose untimed on the legal
+          // record AND slip past the shift-window gate below ('' classifies
+          // as 'unknown'). Scheduled marks fall back to the slot, so only the
+          // slotless kinds are required here.
+          if (
+            m.status === 'given' &&
+            (isPrnMark || m.scheduledTime === 'unscheduled') &&
+            !(m.actualTime || '').trim()
+          ) {
+            incomplete.push(`${med}: time the dose was given`);
+          }
+          // An order with hold / check-before-giving parameters: a given dose
+          // must carry the nurse's acknowledgment that she checked them. The
+          // criteria are snapshotted onto the mark when it is created, so the
+          // gate reads the mark, not the live order (which may have changed).
+          if (m.status === 'given' && (m.parameters || '').trim() && m.parametersChecked !== true) {
+            incomplete.push(`${med}: confirm the parameters were checked before the dose was given`);
+          }
+          // ...and the reading the decision was based on (given OR held): a
+          // "hold if BP above 120/80" order is only defensible with the BP.
+          if (
+            (m.status === 'given' || m.status === 'held') &&
+            (m.parameters || '').trim() &&
+            !(m.parametersReading || '').trim()
+          ) {
+            incomplete.push(`${med}: the reading you checked against the parameters (e.g., BP)`);
+          }
+          // Sliding-scale dose: the reading the dose was looked up from, and
+          // (when the amount given differs from the scale) the amount and why.
+          if (m.hasSlidingScale) {
+            for (const problem of scaleMarkProblems(m)) incomplete.push(`${med}: ${problem}`);
+          }
+          // A family/proxy dose is legal (starred on the MAR) but must say WHO
+          // gave it — an anonymous escape hatch would defeat the attestation.
+          if (
+            m.status === 'given' &&
+            m.administeredByType &&
+            m.administeredByType !== 'nurse' &&
+            m.administeredByType !== 'self' &&
+            !(m.administratorName || '').trim()
+          ) {
+            incomplete.push(`${med}: name of the person who administered it`);
+          }
         }
       }
       if (incomplete.length > 0) {
@@ -1424,6 +1708,57 @@ function ProgressNotePageInner() {
           `Please complete the medication documentation before submitting:\n\n${incomplete
             .map((m) => `• ${m}`)
             .join('\n')}\n\n(Expand "scheduled doses documented today" on the Medications page if a dose is collapsed.)`
+        );
+        return;
+      }
+    }
+
+    // Dose-vs-shift-window gate (owner request after a nurse repeatedly
+    // charted 22:00 doses as NURSE-GIVEN on a shift that ended mid-afternoon:
+    // an attestation of personally administering meds while not in the home).
+    // A nurse-given dose must fall inside her own shift window (60-minute
+    // grace; overnight shifts open-ended on the service day). Family/proxy
+    // administration stays legal via the Administered-by picker and is
+    // starred on the MAR. 'unknown' verdicts pass — missing/invalid times
+    // are owned by the required-field and shift-sanity gates.
+    if (!isEditMode) {
+      const gatePid = String(getValues('patientId') || '').trim();
+      const wShiftStart = String(getValues('q7_shiftStart') || '');
+      const wShiftEnd = String(getValues('q62_shiftEndTime') || '');
+      const wEndDate = String(getValues('q62_shiftEndDate') || '');
+      const wDos = String(getValues('q6_dateofService') || '');
+      const wNextDay = !!wEndDate && !!wDos && wEndDate > wDos;
+      const outside: string[] = [];
+      if (gatePid) {
+        for (const m of selectSubmittableMarks(getAllMarAdmin(), {
+          patientId: gatePid,
+          sessionId: submissionIdRef.current,
+        })) {
+          if (m.status !== 'given') continue;
+          if (m.administeredByType && m.administeredByType !== 'nurse') continue;
+          const doseTime =
+            (m.actualTime || '').trim() ||
+            (m.scheduledTime && m.scheduledTime !== 'PRN' && m.scheduledTime !== 'unscheduled'
+              ? m.scheduledTime
+              : '');
+          const verdict = classifyDoseAgainstShift({
+            doseTime,
+            shiftStart: wShiftStart,
+            shiftEnd: wShiftEnd,
+            shiftEndsNextDay: wNextDay,
+          });
+          if (verdict === 'outside') {
+            outside.push(`${m.medName || 'a medication'} at ${doseTime}`);
+          }
+        }
+      }
+      if (outside.length > 0) {
+        setCurrentPage(5);
+        window.scrollTo(0, 0);
+        alert(
+          `These doses are marked as given BY YOU at times outside your shift (${wShiftStart || '?'} to ${wShiftEnd || '?'}${wNextDay ? ' the next day' : ''}):\n\n${outside
+            .map((m) => `• ${m}`)
+            .join('\n')}\n\nYou can only attest to doses you personally administered during your shift.\n\n• If a family member or caregiver gave the dose, change "Administered by" on that dose (it will be starred on the MAR).\n• If you gave it and your shift times are wrong, fix the Shift Start (Page 1) or Shift End (signature page).\n• Otherwise, remove the mark.`
         );
         return;
       }
@@ -1452,7 +1787,7 @@ function ProgressNotePageInner() {
               setCurrentPage(5);
               window.scrollTo(0, 0);
               alert(
-                `${marGateClient} is flagged as requiring a Medication Administration Record (MAR), but no medications are on file.\n\nOn the Medications tab, use "Add, change, or discontinue a medication" to enter their medications from the physician's orders. The note can be submitted once they're added.`
+                `${marGateClient} is flagged as requiring a Medication Administration Record (MAR), but no medications are on file.\n\nOn the Medications tab, use "Add, Change, or Discontinue a Medication" to enter their medications from the physician's orders. The note can be submitted once they're added.`
               );
               return;
             }
@@ -1485,10 +1820,22 @@ function ProgressNotePageInner() {
               if (gaps.length > 0) {
                 setCurrentPage(5);
                 window.scrollTo(0, 0);
+                // Say exactly which window the gate reasoned from, so a
+                // typo'd time is discoverable (real incident: 19:30 typed for
+                // 07:30 read as an overnight shift; the nurse had no pointer
+                // to the actual error).
+                const gateStart = String(getValues('q7_shiftStart') || '?');
+                const gateEnd = String(getValues('q62_shiftEndTime') || '?');
+                const endsNextDay = !!shiftEndDate && !!serviceDate && shiftEndDate > serviceDate;
+                const windowLabel = endsNextDay
+                  ? `${gateStart} to ${gateEnd} the next day`
+                  : gateEnd < gateStart
+                    ? `${gateStart} to ${gateEnd} (read as an OVERNIGHT shift because the end time is before the start time)`
+                    : `${gateStart} to ${gateEnd}`;
                 alert(
-                  `${marGateClient} requires a MAR, and these scheduled doses due during your shift haven't been documented yet:\n\n${gaps
+                  `${marGateClient} requires a MAR, and these scheduled doses due during your shift (${windowLabel}) haven't been documented yet:\n\n${gaps
                     .map((g) => `• ${g.medName} at ${g.slot}`)
-                    .join('\n')}\n\nMark each one given, held, or refused on the Medications tab before submitting.`
+                    .join('\n')}\n\nMark each one given, held, or refused on the Medications tab before submitting.\n\nIf that shift window looks wrong (for example an evening time typed instead of morning), fix the Shift Start Time on Page 1 or the Shift End on the signature page first \u2014 the required doses follow your shift window.`
                 );
                 return;
               }
@@ -1626,7 +1973,7 @@ function ProgressNotePageInner() {
         // values after a mid-note client or credential switch unmounts their
         // sections, and without this a previous client's choice/oversight
         // narrative would ride along into the wrong chart.
-        values.q1_formRev = '2';
+        values.q1_formRev = '4';
         stripInapplicableQeprFields(values, docReqs);
       }
 
@@ -1664,16 +2011,29 @@ function ProgressNotePageInner() {
           editReasonRef.current.trim() || undefined,
         );
         editReasonRef.current = '';
-        // If this note's open correction is BLOCKING the author, tell the
-        // server an amendment landed: it verifies the editHistory entry,
-        // appends the thread line, and notifies the corrections reviewer to
-        // verify the fix. The block does NOT lift here — only a reviewer
-        // removes it (the gate tells the nurse to call after saving). Errors
-        // are non-fatal; a non-blocked note answers 409 'no-block'.
+        // If this note has an OPEN flag (a correction, blocking or advisory, or
+        // a clarification), tell the server an amendment landed: it verifies
+        // the editHistory entry, appends the thread line, and notifies whoever
+        // flagged it plus the corrections reviewer. A block does NOT lift here
+        // — only a reviewer removes it (the gate tells the nurse to call after
+        // saving). Errors are non-fatal; a note with no open flag answers 409
+        // 'no-open-flag'.
         try {
           await authedFetch(`/api/admin/submissions/${editId}/amended`, { method: 'POST' });
         } catch (err) {
           console.warn('Correction-amended event failed (non-fatal):', err);
+        }
+        // An amendment can turn a "since your last shift" answer to Yes; the
+        // server dedups against the note's stamp, so firing on every save is
+        // safe and never rings twice.
+        try {
+          await authedFetch('/api/progress-note/shift-change-alert', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ noteId: editId }),
+          });
+        } catch (err) {
+          console.warn('Shift-change alert failed (non-fatal):', err);
         }
         alert('Progress note updated successfully!');
         window.location.href = `/admin/submissions/${editId}`;
@@ -1703,6 +2063,34 @@ function ProgressNotePageInner() {
       skipCriticalRef.current = false;
 
       const submissionId = ensureSubmissionId();
+
+      // "Since your last shift" MAR reminder (new LPN/RN notes): she reported a
+      // medication change but staged no MAR change on this note. One confirm,
+      // never a hard stop — the family may report a change she cannot verify
+      // against a written order this shift, and the supervisor alert is the
+      // safety net. Skipped if the staged-change check itself fails.
+      if (
+        user &&
+        (credential === 'LPN' || credential === 'RN') &&
+        String(submission[SHIFT_CHANGE_KEYS.medChange] || '') === 'Yes'
+      ) {
+        let staged: unknown[] | null = null;
+        try {
+          staged = await getStagedChangesForNote(submissionId, user.uid);
+        } catch (err) {
+          console.warn('Staged-change check skipped (fetch failed):', err);
+        }
+        if (staged && staged.length === 0) {
+          const proceed = window.confirm(
+            'You reported a medication started, changed, or stopped since the last shift, but no medication change is recorded on this note.\n\nPress OK to submit anyway (your supervisor will be alerted to verify the MAR), or Cancel to go to the Medications page and record it.',
+          );
+          if (!proceed) {
+            setSubmitting(false);
+            goToMedChanges();
+            return;
+          }
+        }
+      }
       const clientNameVal = String(submission.q3_clientName || '');
       const dateOfServiceVal = String(submission.q6_dateofService || '');
 
@@ -1752,6 +2140,18 @@ function ProgressNotePageInner() {
           submission as unknown as ProgressNoteFormData,
           { ...(user ? { nurseId: user.uid } : {}), submissionId }
         );
+        // "Since your last shift" alert: if any answer was Yes, the server
+        // alerts the configured supervisor(s) — email + bell naming the client,
+        // PHI-free text. It re-reads the SAVED note (never trusts the browser)
+        // and dedups via a stamp on the note. Fire-and-forget: the note is
+        // already saved.
+        if (user) {
+          void authedFetch('/api/progress-note/shift-change-alert', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ noteId: docId }),
+          }).catch((err) => console.error('Shift-change alert failed:', err));
+        }
         // Self-healing care-team membership. Always fired post-save —
         // the endpoint handles BOTH the "patientId set by the form"
         // case AND the "nurse typed manually so patientId is empty but
@@ -1784,8 +2184,14 @@ function ProgressNotePageInner() {
             patientId: r.patientId,
             orderId: r.orderId,
             medName: r.medName,
-            dose: r.dose,
-            units: r.units,
+            // A given sliding-scale dose records the units actually given;
+            // anything else keeps the order's own dose text.
+            dose: r.hasSlidingScale && r.status === 'given' ? scaleMarkDoseGiven(r) : r.dose,
+            units: r.hasSlidingScale && r.status === 'given' ? SLIDING_SCALE_UNITS : r.units,
+            glucoseReading: r.hasSlidingScale ? r.glucoseReading || '' : '',
+            scaleDose: r.hasSlidingScale ? r.scaleDose || '' : '',
+            scaleRange: r.hasSlidingScale ? r.scaleRange || '' : '',
+            scaleDeviationReason: r.hasSlidingScale && r.scaleCustomDose ? r.scaleDeviationReason || '' : '',
             route: r.route,
             scheduledTime: r.scheduledTime,
             status: r.status as 'given' | 'held' | 'refused',
@@ -1796,6 +2202,9 @@ function ProgressNotePageInner() {
             reason: r.reason,
             isPRN: r.isPRN,
             indication: r.indication || '',
+            parameters: r.parameters || '',
+            parametersChecked: r.parametersChecked === true,
+            parametersReading: r.parametersReading || '',
             outcome: r.outcome || '',
             prescriberNotified: r.prescriberNotified === true,
           }));
@@ -1813,6 +2222,55 @@ function ProgressNotePageInner() {
               });
             } catch (err) {
               console.error('Failed to write MAR administrations:', err);
+            }
+          }
+        }
+
+        // Seizure log records: one append-only seizureEvents doc per seizure
+        // block on the note (batched). Best-effort post-save like the MAR
+        // marks — the note itself is the record; a failed log write is logged.
+        if (user && profile) {
+          const szPid = String(getValues('patientId') || '').trim();
+          const szValues: Record<string, unknown> = { ...(getValues() as Record<string, unknown>) };
+          for (const [k, v] of Object.entries(radioState)) {
+            if (v) szValues[k] = v;
+          }
+          if (szPid) {
+            try {
+              await writeSeizureEvents(szValues, {
+                patientId: szPid,
+                date: String(submission.q6_dateofService || ''),
+                sourceNoteId: docId,
+                documenter: {
+                  uid: user.uid,
+                  name: profile.displayName || user.email || '',
+                  credential: profile.credential || '',
+                },
+              });
+            } catch (err) {
+              console.error('Failed to write seizure events:', err);
+            }
+          }
+        }
+
+        // Handoff: the next-shift plan becomes a post on the client's handoff
+        // board, addressed to every other nurse on the care team (computed
+        // server-side, idempotent per note). New notes only — an amendment
+        // must not re-ring every colleague. Best-effort like the writes above.
+        if (!isEditMode) {
+          const hoPid = String(getValues('patientId') || '').trim();
+          const plan = String(getValues('q60_nextShiftPlan') || '');
+          if (hoPid && isSubstantiveHandoffText(plan)) {
+            try {
+              await postHandoff({
+                patientId: hoPid,
+                text: plan,
+                source: 'note',
+                sourceNoteId: docId,
+                shiftDate: String(submission.q6_dateofService || ''),
+              });
+            } catch (err) {
+              console.error('Failed to post handoff from note:', err);
             }
           }
         }
@@ -1969,7 +2427,7 @@ function ProgressNotePageInner() {
             {pendingDraft.clientName && <> Client: <strong>{pendingDraft.clientName}</strong>.</>}
             {pendingDraft.updatedAt && (
               <> Last saved{' '}
-                {pendingDraft.updatedAt.toLocaleString([], {
+                {pendingDraft.updatedAt.toLocaleString('en-US', {
                   month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
                 })}
                 .
@@ -1993,7 +2451,7 @@ function ProgressNotePageInner() {
                 fontWeight: 600,
               }}
             >
-              Resume draft
+              Resume Draft
             </button>
             <button
               type="button"
@@ -2009,7 +2467,7 @@ function ProgressNotePageInner() {
                 fontWeight: 600,
               }}
             >
-              Start fresh
+              Start Fresh
             </button>
           </div>
         </div>
@@ -2071,7 +2529,7 @@ function ProgressNotePageInner() {
             {saveStatus === 'saved' && lastSavedAt && (
               <>
                 <Check size={13} aria-hidden />
-                Saved {lastSavedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                Saved {lastSavedAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
               </>
             )}
             {saveStatus === 'error' && (
@@ -2082,7 +2540,7 @@ function ProgressNotePageInner() {
             )}
             {saveStatus === 'idle' && (
               draftHydrated
-                ? 'Not yet saved'
+                ? 'Not Yet Saved'
                 : pendingDraft && !resumeDecided
                   ? '' /* waiting on resume-banner decision */
                   : 'Loading…'
@@ -2105,7 +2563,7 @@ function ProgressNotePageInner() {
             }}
             title="Save this draft and return to the submissions dashboard"
           >
-            Save &amp; exit
+            Save &amp; Exit
           </button>
           <button
             type="button"
@@ -2147,7 +2605,7 @@ function ProgressNotePageInner() {
             fontStyle: 'italic',
           }}
         >
-          Your work saves automatically as you type. Use <strong>Save &amp; exit</strong> to leave and come back later.
+          Your work saves automatically as you type. Use <strong>Save &amp; Exit</strong> to leave and come back later.
         </p>
       )}
 
@@ -2221,7 +2679,7 @@ function ProgressNotePageInner() {
           return (
             <div style={{ ...base, background: '#fffbeb', borderColor: '#fde68a', color: '#92400e' }}>
               <strong>Approval requested.</strong> You can keep working on this note, but you can&apos;t
-              submit it until an admin or supervisor approves a second note for {req.clientName} on {req.dateOfService}.
+              submit it until an admin or supervisor approves a second note for {req.clientName} on {formatDateUS(req.dateOfService)}.
             </div>
           );
         }
@@ -2229,7 +2687,7 @@ function ProgressNotePageInner() {
           return (
             <div style={{ ...base, background: '#f0fdf4', borderColor: '#bbf7d0', color: '#166534' }}>
               <strong>Approved.</strong> {req.decidedByName ? `${req.decidedByName} approved` : 'A reviewer approved'} a
-              second note for {req.clientName} on {req.dateOfService}. You can submit this note.
+              second note for {req.clientName} on {formatDateUS(req.dateOfService)}. You can submit this note.
             </div>
           );
         }
@@ -2243,8 +2701,8 @@ function ProgressNotePageInner() {
 
       <form ref={formRef} onSubmit={handleSubmit} className={styles.form} noValidate>
         <div style={pageStyle(1)}><FormPageOne formRef={ref} register={register} watch={watch} setValue={setValue} control={control} onCredentialChange={handleCredentialChange} patients={patients} initialClientName={initialClientName} lockIdentity={isNurse && !isEditMode} /></div>
-        <div style={pageStyle(2)}><FormPageTwo formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} ageStr={watch('q5_ageYears')} dob={watch('q4_dateofBirth')} errors={errors} /></div>
-        <div style={pageStyle(3)}><FormPageThree formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} clientHasFeedingTube={clientHasFeedingTube} giExpandSignal={giExpandSignal} errors={errors} /></div>
+        <div style={pageStyle(2)}><FormPageTwo formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} ageStr={watch('q5_ageYears')} dob={watch('q4_dateofBirth')} errors={errors} isEditMode={isEditMode} onGoToMedChanges={goToMedChanges} /></div>
+        <div style={pageStyle(3)}><FormPageThree formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} clientHasFeedingTube={clientHasFeedingTube} giExpandSignal={giExpandSignal} clientHasSeizureDisorder={clientHasSeizureDisorder} neuroExpandSignal={neuroExpandSignal} errors={errors} isEditMode={isEditMode} /></div>
         <div style={pageStyle(4)}><FormPageFour formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} editMode={isEditMode} errors={errors} /></div>
         <div style={pageStyle(5)}><FormPageFive formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} isEditMode={isEditMode} clientRequiresMar={clientRequiresMar} documenter={user && profile ? { uid: user.uid, name: profile.displayName || user.email || '', credential: profile.credential || '' } : undefined} getNoteId={ensureSubmissionId} /></div>
         <div style={pageStyle(6)}><FormPageSix formRef={ref} register={register} watch={watch} setValue={setValue} control={control} credential={credential} isEditMode={isEditMode} docReqs={docReqs} errors={errors} /></div>
@@ -2289,7 +2747,7 @@ function ProgressNotePageInner() {
         <div className={`${styles.confirmModal} ${styles.active}`}>
           <div className={styles.modalContent}>
             <h2 style={{ color: '#7c3a00', marginTop: 0 }}>
-              Did you mean a patient already in the roster?
+              Did You Mean a Patient Already in the Roster?
             </h2>
             <p style={{ color: '#555', lineHeight: 1.6, marginBottom: 8 }}>
               You&apos;re about to submit this note for:
@@ -2325,7 +2783,7 @@ function ProgressNotePageInner() {
             >
               {pendingPatientConfirm.candidate.patientName}{' '}
               <span style={{ color: '#5c6b7a', fontSize: 12 }}>
-                (DOB {pendingPatientConfirm.candidate.patientDob})
+                (DOB {formatDateUS(pendingPatientConfirm.candidate.patientDob)})
               </span>
             </p>
             <p style={{ color: '#666', fontSize: 13, lineHeight: 1.5, marginBottom: 20 }}>
@@ -2348,7 +2806,7 @@ function ProgressNotePageInner() {
                 }}
                 className={styles.cancelBtn}
               >
-                Submit as typed
+                Submit as Typed
               </button>
               <button
                 type="button"
@@ -2390,7 +2848,7 @@ function ProgressNotePageInner() {
         <div className={`${styles.confirmModal} ${styles.active}`}>
           <div className={styles.modalContent}>
             <h2 style={{ color: '#1a3a5c', marginTop: 0 }}>
-              What changed, and why?
+              What Changed, and Why?
             </h2>
             <p style={{ color: '#555', lineHeight: 1.6, marginBottom: 12 }}>
               You&apos;re amending a submitted note. Please note the reason for this
@@ -2465,7 +2923,7 @@ function ProgressNotePageInner() {
                 className={styles.confirmBtn}
                 style={!editReasonText.trim() ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
               >
-                Save change
+                Save Change
               </button>
             </div>
           </div>
@@ -2480,7 +2938,7 @@ function ProgressNotePageInner() {
         <div className={`${styles.confirmModal} ${styles.active}`}>
           <div className={styles.modalContent}>
             <h2 style={{ color: '#b3261e', marginTop: 0 }}>
-              Provider notification may be needed
+              Provider Notification May Be Needed
             </h2>
             <p style={{ color: '#555', lineHeight: 1.6, marginBottom: 10 }}>
               One or more vitals you documented are at a level that typically warrants
@@ -2534,7 +2992,7 @@ function ProgressNotePageInner() {
                 className={styles.cancelBtn}
                 onClick={() => { setShowCriticalModal(false); }}
               >
-                Go back
+                Go Back
               </button>
               <button
                 type="button"
@@ -2571,7 +3029,7 @@ function ProgressNotePageInner() {
                   setTimeout(() => formRef.current?.requestSubmit(), 0);
                 }}
               >
-                Confirm & submit
+                Confirm & Submit
               </button>
             </div>
           </div>
@@ -2584,7 +3042,7 @@ function ProgressNotePageInner() {
       {pendingDateConfirm && (
         <div className={`${styles.confirmModal} ${styles.active}`}>
           <div className={styles.modalContent}>
-            <h2 style={{ color: '#7c3a00', marginTop: 0 }}>Double-check the date of service</h2>
+            <h2 style={{ color: '#7c3a00', marginTop: 0 }}>Double-Check the Date of Service</h2>
             <p style={{ color: '#555', lineHeight: 1.6, marginBottom: 8 }}>
               You&apos;ve set the date of service to:
             </p>
@@ -2613,7 +3071,7 @@ function ProgressNotePageInner() {
                   }, 100);
                 }}
               >
-                Let me fix the date
+                Let Me Fix the Date
               </button>
               <button
                 type="button"
@@ -2624,7 +3082,7 @@ function ProgressNotePageInner() {
                   setTimeout(() => formRef.current?.requestSubmit(), 0);
                 }}
               >
-                Yes, the date is correct
+                Yes, the Date Is Correct
               </button>
             </div>
           </div>
@@ -2645,10 +3103,10 @@ function ProgressNotePageInner() {
             <div className={styles.modalContent}>
               <h2 style={{ color: isPending ? '#1a3a5c' : '#7c3a00', marginTop: 0 }}>
                 {isPending
-                  ? 'Waiting for approval'
+                  ? 'Waiting for Approval'
                   : isDenied
-                  ? 'Second note not approved'
-                  : 'You already have a note for this client on this date'}
+                  ? 'Second Note Not Approved'
+                  : 'You Already Have a Note for This Client on This Date'}
               </h2>
 
               <div
@@ -2663,10 +3121,10 @@ function ProgressNotePageInner() {
                 }}
               >
                 <strong>{dupBlock.clientName || 'this client'}</strong> on{' '}
-                <strong>{dupBlock.dateOfService}</strong>
+                <strong>{formatDateUS(dupBlock.dateOfService)}</strong>
                 {dupBlock.submittedAt && (
                   <span style={{ color: '#5c6b7a', fontSize: 12, display: 'block', marginTop: 4 }}>
-                    Submitted {dupBlock.submittedAt.toLocaleString()}
+                    Submitted {dupBlock.submittedAt.toLocaleString('en-US')}
                   </span>
                 )}
                 {dupBlock.id && (
@@ -2751,7 +3209,7 @@ function ProgressNotePageInner() {
 
               <div className={styles.modalButtons}>
                 <button type="button" onClick={() => setDupBlock(null)} className={styles.cancelBtn}>
-                  {isPending ? 'Keep working' : 'Go back'}
+                  {isPending ? 'Keep Working' : 'Go Back'}
                 </button>
                 {!isPending && (
                   <button
@@ -2760,7 +3218,7 @@ function ProgressNotePageInner() {
                     disabled={dupFiling}
                     className={styles.confirmBtn}
                   >
-                    {dupFiling ? 'Sending…' : isDenied ? 'Request again' : 'Request approval'}
+                    {dupFiling ? 'Sending…' : isDenied ? 'Request Again' : 'Request Approval'}
                   </button>
                 )}
               </div>
@@ -2790,7 +3248,7 @@ function ProgressNotePageInner() {
               <Check size={36} color="#2e7d32" strokeWidth={3} />
             </div>
             <h2 style={{ color: '#2e7d32', marginTop: 0, marginBottom: 8 }}>
-              Note submitted
+              Note Submitted
             </h2>
             <p style={{ color: '#555', lineHeight: 1.6, margin: 0 }}>
               {submittedInfo.clientName ? `${submittedInfo.clientName}'s ` : ''}progress note was
@@ -2851,7 +3309,7 @@ function ProgressNotePageInner() {
       {showDiscardModal && (
         <div className={`${styles.confirmModal} ${styles.active}`}>
           <div className={styles.modalContent}>
-            <h2 style={{ color: '#c62828', marginTop: 0 }}>Discard this note?</h2>
+            <h2 style={{ color: '#c62828', marginTop: 0 }}>Discard This Note?</h2>
             <p style={{ color: '#555', lineHeight: 1.6, marginBottom: '20px' }}>
               All entered data will be permanently deleted and you&apos;ll return to your submissions list. This cannot be undone.
             </p>
@@ -2893,7 +3351,9 @@ function ProgressNotePageInner() {
 export default function ProgressNotePage() {
   return (
     <Suspense fallback={<div style={{ textAlign: 'center', padding: '40px 20px' }}><p>Loading...</p></div>}>
-      <ProgressNotePageInner />
+      <ViewAsWriteBlock>
+        <ProgressNotePageInner />
+      </ViewAsWriteBlock>
     </Suspense>
   );
 }

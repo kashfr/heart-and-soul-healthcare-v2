@@ -1,10 +1,16 @@
 'use client';
 
 import { useState } from 'react';
+import { btnDanger, btnPrimary } from '@/components/buttons';
 import { Phone, Mail, Clock, Check } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { authedFetch } from '@/lib/authedFetch';
-import { formatUSPhone } from '@/lib/phone';
+import { formatUSPhone, isValidUSPhone } from '@/lib/phone';
+import { escortToField, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_FIELD_ID = 'profile-phone';
+const EMAIL_FIELD_ID = 'profile-new-email';
 
 export default function MyProfilePage() {
   // Always the REAL signed-in user (never the impersonated nurse): you only
@@ -38,9 +44,21 @@ export default function MyProfilePage() {
   const phoneDirty = phone.trim() !== (profile.phone || '');
 
   const savePhone = async () => {
-    setPhoneBusy(true);
+    if (phoneBusy) return;
     setPhoneErr(null);
     setPhoneMsg(null);
+    const trimmed = phone.trim();
+    if (!phoneDirty) {
+      setPhoneErr('The phone number has not changed.');
+      escortToField(PHONE_FIELD_ID);
+      return;
+    }
+    if (trimmed && !isValidUSPhone(trimmed)) {
+      setPhoneErr('Enter a 10-digit US phone number, or clear the field to remove it.');
+      escortToField(PHONE_FIELD_ID);
+      return;
+    }
+    setPhoneBusy(true);
     try {
       const res = await authedFetch('/api/me/profile', {
         method: 'PATCH',
@@ -52,15 +70,28 @@ export default function MyProfilePage() {
       if (typeof data.phone === 'string') setPhone(data.phone);
       setPhoneMsg('Phone number saved.');
     } catch (err) {
-      setPhoneErr(err instanceof Error ? err.message : 'Could not save.');
+      setPhoneErr(err instanceof Error && err.message ? err.message : 'Could not save the phone number. Please try again.');
+      escortToField(PHONE_FIELD_ID);
     } finally {
       setPhoneBusy(false);
     }
   };
 
   const submitEmailRequest = async () => {
-    setEmailBusy(true);
+    if (emailBusy) return;
     setEmailErr(null);
+    const trimmed = newEmail.trim();
+    const current = (profile.email || user.email || '').toLowerCase();
+    let problem: string | null = null;
+    if (!trimmed) problem = 'Enter the new email address you want to sign in with.';
+    else if (!EMAIL_RE.test(trimmed)) problem = 'Enter a valid email address, like name@example.com.';
+    else if (trimmed.toLowerCase() === current) problem = 'That is already your login email. Enter a different address.';
+    if (problem) {
+      setEmailErr(problem);
+      escortToField(EMAIL_FIELD_ID);
+      return;
+    }
+    setEmailBusy(true);
     try {
       const res = await authedFetch('/api/me/profile', {
         method: 'PATCH',
@@ -72,7 +103,8 @@ export default function MyProfilePage() {
       setReason('');
       // The pending banner appears automatically via the live profile subscription.
     } catch (err) {
-      setEmailErr(err instanceof Error ? err.message : 'Could not submit request.');
+      setEmailErr(err instanceof Error && err.message ? err.message : 'Could not submit the request. Please try again.');
+      escortToField(EMAIL_FIELD_ID);
     } finally {
       setEmailBusy(false);
     }
@@ -123,26 +155,29 @@ export default function MyProfilePage() {
         <section style={sectionStyle}>
           <div style={sectionHeaderStyle}>
             <Phone size={16} color="#1a3a5c" />
-            <h2 style={sectionTitleStyle}>Phone number</h2>
+            <h2 style={sectionTitleStyle}>Phone Number</h2>
           </div>
-          <input
-            type="tel"
-            value={phone}
-            onChange={(e) => { setPhone(formatUSPhone(e.target.value)); setPhoneMsg(null); setPhoneErr(null); }}
-            placeholder="(555) 123-4567"
-            style={inputStyle}
-            aria-label="Phone number"
-          />
-          {phoneErr && <div style={errStyle}>{phoneErr}</div>}
+          <div id={PHONE_FIELD_ID}>
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => { setPhone(formatUSPhone(e.target.value)); setPhoneMsg(null); setPhoneErr(null); }}
+              placeholder="(555) 123-4567"
+              style={{ ...inputStyle, ...(phoneErr ? FIELD_ERROR_STYLE : null) }}
+              aria-invalid={!!phoneErr}
+              aria-label="Phone number"
+            />
+            <FieldError message={phoneErr} />
+          </div>
           {phoneMsg && <div style={okStyle}><Check size={13} /> {phoneMsg}</div>}
           <div style={{ marginTop: 10 }}>
             <button
               type="button"
               onClick={savePhone}
-              disabled={phoneBusy || !phoneDirty}
-              style={{ ...primaryBtn, ...(phoneBusy || !phoneDirty ? disabledBtn : {}) }}
+              disabled={phoneBusy}
+              className={btnPrimary}
             >
-              {phoneBusy ? 'Saving…' : 'Save phone'}
+              {phoneBusy ? 'Saving…' : 'Save Phone'}
             </button>
           </div>
         </section>
@@ -151,7 +186,7 @@ export default function MyProfilePage() {
         <section style={sectionStyle}>
           <div style={sectionHeaderStyle}>
             <Mail size={16} color="#1a3a5c" />
-            <h2 style={sectionTitleStyle}>Login email</h2>
+            <h2 style={sectionTitleStyle}>Login Email</h2>
           </div>
           <div style={labelStyle}>Current email</div>
           <div style={{ ...valueStyle, marginBottom: 14 }}>{profile.email || user.email || '—'}</div>
@@ -159,7 +194,7 @@ export default function MyProfilePage() {
           {pendingRequest ? (
             <div style={pendingBoxStyle}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontWeight: 700, color: '#a35400' }}>
-                <Clock size={15} /> Request pending admin approval
+                <Clock size={15} /> Request Pending Admin Approval
               </div>
               <div style={{ marginTop: 8, fontSize: 14, color: '#2c3e50' }}>
                 Requested new email: <strong>{pendingRequest.newEmail}</strong>
@@ -174,22 +209,26 @@ export default function MyProfilePage() {
               </div>
               {emailErr && <div style={errStyle}>{emailErr}</div>}
               <div style={{ marginTop: 10 }}>
-                <button type="button" onClick={withdrawEmailRequest} disabled={emailBusy} style={secondaryBtn}>
-                  {emailBusy ? 'Working…' : 'Withdraw request'}
+                <button type="button" onClick={withdrawEmailRequest} disabled={emailBusy} className={btnDanger}>
+                  {emailBusy ? 'Working…' : 'Withdraw Request'}
                 </button>
               </div>
             </div>
           ) : (
             <>
               <div style={labelStyle}>New email address</div>
-              <input
-                type="email"
-                value={newEmail}
-                onChange={(e) => { setNewEmail(e.target.value); setEmailErr(null); }}
-                placeholder="you@example.com"
-                style={inputStyle}
-                aria-label="New email address"
-              />
+              <div id={EMAIL_FIELD_ID}>
+                <input
+                  type="email"
+                  value={newEmail}
+                  onChange={(e) => { setNewEmail(e.target.value); setEmailErr(null); }}
+                  placeholder="you@example.com"
+                  style={{ ...inputStyle, ...(emailErr ? FIELD_ERROR_STYLE : null) }}
+                  aria-invalid={!!emailErr}
+                  aria-label="New email address"
+                />
+                <FieldError message={emailErr} />
+              </div>
               <div style={{ ...labelStyle, marginTop: 12 }}>Reason (optional)</div>
               <textarea
                 value={reason}
@@ -199,15 +238,14 @@ export default function MyProfilePage() {
                 style={textareaStyle}
                 aria-label="Reason for email change"
               />
-              {emailErr && <div style={errStyle}>{emailErr}</div>}
               <div style={{ marginTop: 10 }}>
                 <button
                   type="button"
                   onClick={submitEmailRequest}
-                  disabled={emailBusy || !newEmail.trim()}
-                  style={{ ...primaryBtn, ...(emailBusy || !newEmail.trim() ? disabledBtn : {}) }}
+                  disabled={emailBusy}
+                  className={btnPrimary}
                 >
-                  {emailBusy ? 'Submitting…' : 'Request email change'}
+                  {emailBusy ? 'Submitting…' : 'Request Email Change'}
                 </button>
               </div>
             </>
@@ -232,9 +270,6 @@ const sectionHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: '
 const sectionTitleStyle: React.CSSProperties = { fontSize: 16, color: '#2c3e50', margin: 0 };
 const inputStyle: React.CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '9px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 14, fontFamily: 'inherit' };
 const textareaStyle: React.CSSProperties = { ...inputStyle, resize: 'vertical' };
-const primaryBtn: React.CSSProperties = { background: '#1a3a5c', color: 'white', border: 'none', borderRadius: 6, padding: '9px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const secondaryBtn: React.CSSProperties = { background: 'white', color: '#1a3a5c', border: '1px solid #1a3a5c', borderRadius: 6, padding: '8px 14px', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const disabledBtn: React.CSSProperties = { opacity: 0.5, cursor: 'not-allowed' };
 const errStyle: React.CSSProperties = { color: '#b3261e', fontSize: 13, marginTop: 8 };
 const okStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, color: '#166534', fontSize: 13, marginTop: 8 };
 const pendingBoxStyle: React.CSSProperties = { background: '#fff8ec', border: '1px solid #f0d9a8', borderRadius: 8, padding: '14px 16px' };

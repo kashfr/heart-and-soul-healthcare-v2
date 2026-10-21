@@ -5,6 +5,15 @@ import { adminDb } from './firebaseAdmin';
 import { isStaleReferredOut, REFERRED_OUT_AUTO_CLOSE_DAYS } from './referralAutoClose';
 import type { AuthedCaller } from './adminAuthGuard';
 import type { ServiceKey } from './diagnosisCatalog';
+import {
+  changedPhoneIntakeFields, formatPhone, phoneReferralDetails, programLabel, toPhoneIntake,
+  type PhoneIntake, type PhoneReferralInput,
+} from './phoneReferralShared';
+import { applyEdits, currentEditValues, describeEdits, editFieldsFor, isEditableSource, validateEdits } from './referralEditShared';
+import {
+  SCREENED_ORDER, buildFor, mergeScreenedRows, readScreened, refusalFor, screenedChanges, screenedValidation,
+  serviceAfterEdit, writeScreened, type ScreenedAnswers,
+} from './screenedAnswers';
 
 export { REFERRED_OUT_AUTO_CLOSE_DAYS } from './referralAutoClose';
 
@@ -12,12 +21,13 @@ export { REFERRED_OUT_AUTO_CLOSE_DAYS } from './referralAutoClose';
 //   - 'gapp-website'  -> the Georgia Pediatric Program site's referral form
 //                         (forwarded to /api/referrals/intake)
 //   - 'hs-website'    -> this site's own /referral marketing form
+//   - 'phone'         -> a call staff logged with "Log Phone Referral"
 // The admin Referrals tab reads from this collection and renders it as a
 // Trello/ClickUp-style pipeline board.
 
 const COLLECTION = 'referrals';
 
-export type ReferralSource = 'gapp-website' | 'hs-website';
+export type ReferralSource = 'gapp-website' | 'hs-website' | 'phone';
 
 /**
  * Legacy three-value status, kept in sync from `stage` on every write so any
@@ -127,10 +137,17 @@ export interface ReferralInput {
   service?: ServiceKey | null;
   /** Full submission, rendered as-is in the detail view. */
   details: ReferralDetail[];
+  /** Website referrals: the family's answers as the form sent them, so a staff
+   *  edit of a screened answer can be re-screened and the card rebuilt
+   *  (src/lib/websiteIntake.ts). Absent on referrals from before 10/2026. */
+  intakeAnswers?: unknown;
+  /** Phone referrals only: the form answers (for editing) and who took the call. */
+  phoneIntake?: PhoneIntake;
+  takenByName?: string;
 }
 
 /** A referral as returned to the admin UI (timestamps serialized to ISO). */
-export interface Referral extends ReferralInput {
+export interface Referral extends Omit<ReferralInput, 'phoneIntake' | 'takenByName' | 'intakeAnswers'> {
   id: string;
   /** Pipeline stage — the board column this card sits in. */
   stage: ReferralStage;
@@ -149,6 +166,13 @@ export interface Referral extends ReferralInput {
   providerListSentTo: string | null;
   submittedAt: string | null;
   updatedAt: string | null;
+  /** The client record created from this referral, once there is one. */
+  patientId: string | null;
+  convertedAt: string | null;
+  /** A phone referral's form answers, so it can be reopened for editing. */
+  phoneIntake: PhoneIntake | null;
+  /** A website referral's answers as sent (from 10/2026), for screened edits. */
+  intakeAnswers: unknown;
 }
 
 // Upper bounds on stored text, so a single referral can never bloat a Firestore
@@ -168,6 +192,11 @@ const MAX = {
 function clamp(value: string, max: number): string {
   const s = String(value ?? '');
   return s.length > max ? s.slice(0, max) : s;
+}
+
+/** A plain-JSON copy: Firestore rejects `undefined`, which form payloads carry. */
+function firestoreSafe(value: unknown): unknown {
+  return JSON.parse(JSON.stringify(value ?? null));
 }
 
 function normalizeDetails(details: ReferralDetail[]): ReferralDetail[] {
@@ -210,7 +239,9 @@ function toMillis(ts: unknown): number | null {
  * duplicate document or a second notification email.
  */
 export async function createReferral(
-  input: ReferralInput
+  input: ReferralInput,
+  /** Who entered it by hand (a phone referral); the timeline says so. */
+  createdBy?: { caller: AuthedCaller; text: string }
 ): Promise<{ id: string; deduped: boolean }> {
   const data = {
     source: input.source,
@@ -230,6 +261,8 @@ export async function createReferral(
     referrerName: clamp(input.referrerName ?? '', MAX.referrer),
     service: input.service ?? null,
     details: normalizeDetails(input.details),
+    ...(input.phoneIntake ? { phoneIntake: input.phoneIntake, takenByName: clamp(input.takenByName ?? '', MAX.name) } : {}),
+    ...(input.intakeAnswers ? { intakeAnswers: firestoreSafe(input.intakeAnswers) } : {}),
     submittedAt: FieldValue.serverTimestamp(),
     createdAt: FieldValue.serverTimestamp(),
   };
@@ -241,7 +274,7 @@ export async function createReferral(
     const ref = adminDb().collection(COLLECTION).doc(docIdForExternal(input.externalId));
     try {
       await ref.create(data);
-      await logCreated(ref.id);
+      await logCreated(ref.id, createdBy);
       return { id: ref.id, deduped: false };
     } catch (err) {
       if (isAlreadyExists(err)) return { id: ref.id, deduped: true };
@@ -252,7 +285,7 @@ export async function createReferral(
   // No externalId (e.g. the on-site marketing form): plain auto-id document.
   const ref = adminDb().collection(COLLECTION).doc();
   await ref.set(data);
-  await logCreated(ref.id);
+  await logCreated(ref.id, createdBy);
   return { id: ref.id, deduped: false };
 }
 
@@ -285,6 +318,10 @@ function toReferral(id: string, data: FirebaseFirestore.DocumentData): Referral 
     details: Array.isArray(data.details) ? data.details : [],
     submittedAt: toIso(data.submittedAt),
     updatedAt: toIso(data.updatedAt),
+    patientId: data.patientId ? String(data.patientId) : null,
+    convertedAt: toIso(data.convertedAt),
+    phoneIntake: data.source === 'phone' && data.phoneIntake ? (data.phoneIntake as PhoneIntake) : null,
+    intakeAnswers: data.source !== 'phone' && data.intakeAnswers ? data.intakeAnswers : null,
   };
 }
 
@@ -348,13 +385,17 @@ export async function logReferralActivity(referralId: string, entry: ActivityWri
 }
 
 /** Best-effort "created" timeline entry; never blocks the intake write. */
-async function logCreated(referralId: string): Promise<void> {
+async function logCreated(referralId: string, createdBy?: { caller: AuthedCaller; text: string }): Promise<void> {
   try {
-    await logReferralActivity(referralId, {
-      type: 'created',
-      text: 'Referral received',
-      byName: 'System',
-    });
+    await logReferralActivity(referralId, createdBy
+      ? {
+          type: 'created',
+          text: createdBy.text,
+          byUid: createdBy.caller.uid,
+          byName: createdBy.caller.profile.displayName || '',
+          byRole: createdBy.caller.role,
+        }
+      : { type: 'created', text: 'Referral received', byName: 'System' });
   } catch (err) {
     console.error('Referral activity (created) log failed (non-fatal):', err);
   }
@@ -691,4 +732,167 @@ export async function assignReferral(
     });
   }
   return true;
+}
+
+// --- Phone referrals (logged by staff from a call) ---
+
+/** The referral fields a phone referral's answers become (create and edit). */
+export function phoneReferralRecord(input: PhoneReferralInput, today: string, takenByName: string) {
+  return {
+    clientName: clamp(input.clientName.trim(), MAX.name),
+    clientEmail: clamp(input.callerEmail.trim(), MAX.email),
+    clientPhone: clamp(formatPhone(input.callerPhone), MAX.phone),
+    county: clamp(input.county, MAX.county),
+    program: clamp(programLabel(input.program), MAX.program),
+    referrerName: clamp(input.callerName.trim(), MAX.referrer),
+    service: (input.service || null) as ServiceKey | null,
+    details: normalizeDetails(phoneReferralDetails(input, today, takenByName)),
+    phoneIntake: toPhoneIntake(input),
+  };
+}
+
+export type PhoneEditResult =
+  | { ok: true; changed: string[] }
+  | { ok: false; status: number; error: string };
+
+/**
+ * Correct a phone referral: re-derive every field from the edited answers and
+ * note on the timeline which ones changed. Only phone referrals (the website
+ * ones carry the family's own words), and not once a client record exists,
+ * since the record was built from these answers and would silently diverge.
+ */
+export async function updatePhoneReferral(
+  id: string,
+  input: PhoneReferralInput,
+  today: string,
+  caller: AuthedCaller
+): Promise<PhoneEditResult> {
+  const ref = adminDb().collection(COLLECTION).doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) return { ok: false, status: 404, error: 'Referral not found.' };
+  const prev = snap.data() as FirebaseFirestore.DocumentData;
+  if (prev.source !== 'phone') return { ok: false, status: 400, error: 'Only phone referrals can be edited.' };
+  if (prev.patientId) {
+    return { ok: false, status: 409, error: 'This referral already has a client record. Make corrections on the client’s record instead.' };
+  }
+  const record = phoneReferralRecord(input, today, String(prev.takenByName || ''));
+  const changed = changedPhoneIntakeFields(prev.phoneIntake, record.phoneIntake);
+  if (changed.length === 0) return { ok: true, changed };
+  await ref.update({
+    ...record,
+    updatedAt: FieldValue.serverTimestamp(),
+    statusUpdatedBy: caller.uid,
+    statusUpdatedByName: caller.profile.displayName || '',
+  });
+  await logReferralActivity(id, {
+    type: 'note',
+    text: `Phone referral edited: ${changed.join(', ')}.`,
+    byUid: caller.uid,
+    byName: caller.profile.displayName || '',
+    byRole: caller.role,
+  });
+  return { ok: true, changed };
+}
+
+// --- Website referrals: correcting details the screening never reads ---
+
+export type DetailsEditResult =
+  | { ok: true; changed: number }
+  | { ok: false; status: number; error: string; fieldErrors?: Record<string, string>; refused?: string };
+
+/**
+ * Correct a website referral's contact details, Medicaid ID, address,
+ * physician, insurance, or notes (the fields in referralEditShared). Every
+ * other answer and every ⚠ flag is kept as the family submitted it, so the
+ * GAPP screening's result can't change. Old and new values go on the timeline.
+ */
+export async function updateWebsiteReferralDetails(
+  id: string,
+  values: Record<string, string>,
+  caller: AuthedCaller,
+  /** Screened answers to change (see screenedAnswers.ts); re-screened first. */
+  screened: Partial<ScreenedAnswers> = {}
+): Promise<DetailsEditResult> {
+  const ref = adminDb().collection(COLLECTION).doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) return { ok: false, status: 404, error: 'Referral not found.' };
+  const prev = snap.data() as FirebaseFirestore.DocumentData;
+  if (!isEditableSource(String(prev.source))) {
+    return { ok: false, status: 400, error: 'Only website referrals are edited here.' };
+  }
+  if (prev.patientId) {
+    return { ok: false, status: 409, error: 'This referral already has a client record. Make corrections on the client’s record instead.' };
+  }
+  const specs = editFieldsFor(prev.source);
+  const current = {
+    clientName: String(prev.clientName ?? ''),
+    referrerName: String(prev.referrerName ?? ''),
+    clientPhone: String(prev.clientPhone ?? ''),
+    clientEmail: String(prev.clientEmail ?? ''),
+    county: String(prev.county ?? ''),
+    details: Array.isArray(prev.details) ? (prev.details as ReferralDetail[]) : [],
+  };
+  // Only keys this source allows; anything else in the body is ignored.
+  const allowed: Record<string, string> = {};
+  for (const sp of specs) if (typeof values[sp.key] === 'string') allowed[sp.key] = values[sp.key];
+  const fieldErrors = validateEdits(specs.filter((sp) => sp.key in allowed), allowed, currentEditValues(current, specs));
+  if (Object.keys(fieldErrors).length) {
+    return { ok: false, status: 400, error: Object.values(fieldErrors)[0], fieldErrors };
+  }
+  // Screened answers: only on a referral that kept the family's answers, and
+  // only if the website would accept the edited answers. Refused exactly as
+  // the website refuses, with its message; nothing is written.
+  const screenedEdits: Partial<ScreenedAnswers> = {};
+  for (const k of SCREENED_ORDER) if (typeof screened[k] === 'string') screenedEdits[k] = String(screened[k]).trim();
+  let screenedResult: { answers: unknown; changes: { label: string; from: string; to: string }[]; service: ServiceKey | null } | null = null;
+  if (Object.keys(screenedEdits).length) {
+    const answers = prev.intakeAnswers as Parameters<typeof readScreened>[1] | undefined;
+    if (!answers) {
+      return { ok: false, status: 409, error: 'This referral came in before the website saved its answers, so these answers can’t be changed here. Have the family submit the form again.' };
+    }
+    const before = readScreened(prev.source, answers);
+    const nextAnswers = writeScreened(prev.source, answers, screenedEdits);
+    const after = readScreened(prev.source, nextAnswers);
+    const changes = screenedChanges(before, after);
+    if (changes.length) {
+      const invalid = screenedValidation(prev.source, nextAnswers);
+      if (Object.keys(invalid).length) {
+        const fe = Object.fromEntries(Object.entries(invalid).map(([k, v]) => [`screened:${k}`, String(v)]));
+        return { ok: false, status: 400, error: Object.values(fe)[0], fieldErrors: fe };
+      }
+      const refusal = refusalFor(prev.source, nextAnswers);
+      if (refusal) return { ok: false, status: 422, error: refusal.reason, refused: refusal.code };
+      const rebuilt = buildFor(prev.source, nextAnswers);
+      current.details = mergeScreenedRows(current.details, rebuilt.details);
+      screenedResult = {
+        answers: nextAnswers,
+        changes,
+        service: serviceAfterEdit((prev.service as ServiceKey | null) ?? null, buildFor(prev.source, answers), rebuilt),
+      };
+    }
+  }
+
+  const { top, details, changes: detailChanges } = applyEdits(current, specs, allowed);
+  const changes = [...(screenedResult?.changes ?? []), ...detailChanges];
+  if (changes.length === 0) return { ok: true, changed: 0 };
+  await ref.update({
+    ...(top.clientName !== undefined ? { clientName: clamp(top.clientName, MAX.name) } : {}),
+    ...(top.referrerName !== undefined ? { referrerName: clamp(top.referrerName, MAX.referrer) } : {}),
+    ...(top.clientPhone !== undefined ? { clientPhone: clamp(top.clientPhone, MAX.phone) } : {}),
+    ...(top.clientEmail !== undefined ? { clientEmail: clamp(top.clientEmail, MAX.email) } : {}),
+    ...(top.county !== undefined ? { county: clamp(top.county, MAX.county) } : {}),
+    details: normalizeDetails(details),
+    ...(screenedResult ? { intakeAnswers: firestoreSafe(screenedResult.answers), service: screenedResult.service } : {}),
+    updatedAt: FieldValue.serverTimestamp(),
+    statusUpdatedBy: caller.uid,
+    statusUpdatedByName: caller.profile.displayName || '',
+  });
+  await logReferralActivity(id, {
+    type: 'note',
+    text: describeEdits(changes),
+    byUid: caller.uid,
+    byName: caller.profile.displayName || '',
+    byRole: caller.role,
+  });
+  return { ok: true, changed: changes.length };
 }

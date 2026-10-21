@@ -3,9 +3,23 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   X, Phone, Mail, Printer, MessageSquare, ArrowRightLeft, UserCheck,
-  Inbox, PhoneCall, Send, Share2, Copy, Check, Trash2, Plus, Stethoscope,
+  Inbox, PhoneCall, Send, Share2, Copy, Check, Trash2, Plus, Stethoscope, FileSignature, UserPlus, ExternalLink,
+  ChevronLeft, ChevronRight, Pencil,
 } from 'lucide-react';
+import { btn, btnDanger, btnIcon, btnPrimary } from '@/components/buttons';
+import RoiSection from '../fax/RoiSection';
+import ReferralDocuments from './ReferralDocuments';
+import ConvertReferralModal from './ConvertReferralModal';
+import PhoneReferralModal from './PhoneReferralModal';
+import EditReferralModal from './EditReferralModal';
+import { isEditableSource } from '@/lib/referralEditShared';
+import Link from 'next/link';
+import { useEffectiveUser } from '@/components/AuthProvider';
+import { useSettings } from '@/components/SettingsProvider';
+import { canCreateClientFromReferral } from '@/lib/referralPermissions';
+import { canUseFax } from '@/lib/faxShared';
 import { authedFetch } from '@/lib/authedFetch';
+import { formatDateUS } from '@/lib/dateFormat';
 import { buildShareUrl } from '@/lib/shareLink';
 import { GAPP_SERVICES, SERVICE_LABEL, serviceFromCareNeed, type GappServiceKey } from '@/lib/georgia';
 import type { ServiceKey } from '@/lib/diagnosisCatalog';
@@ -14,6 +28,7 @@ import MatchSuggestions from './MatchSuggestions';
 import FitBadge from './FitBadge';
 import PartnerMatchBadge from './PartnerMatchBadge';
 import { usePartnerAgencies } from './PartnerAgenciesProvider';
+import { applyFieldErrors, escortToField, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
 import {
   fieldRows, formatDateTime, formatRelative, serviceForReferral,
   REFERRAL_STAGES, STAGE_ACCENT, STAGE_LABEL, SOURCE_LABEL,
@@ -34,18 +49,39 @@ interface Props {
   canDelete: boolean;
   /** Refetch the board after a share that may have moved this card's stage. */
   onChanged?: () => void;
+  /** Where this card sits in its stage column, for Previous / Next. */
+  nav?: { index: number; total: number; prevId: string | null; nextId: string | null } | null;
+  onNavigate?: (id: string) => void;
 }
 
 export default function ReferralDetail({
   referral, staff, busy, onClose, onStageChange, onAssign, onServiceChange,
-  onPrint, onDelete, canDelete, onChanged,
+  onPrint, onDelete, canDelete, onChanged, nav, onNavigate,
 }: Props) {
+  const { uid: viewerUid, role: viewerRole } = useEffectiveUser();
+  const { settings } = useSettings();
+  const canFax = canUseFax(settings.fax, viewerUid, viewerRole);
   const [activity, setActivity] = useState<ReferralActivity[]>([]);
   const [activityLoading, setActivityLoading] = useState(true);
   const [noteText, setNoteText] = useState('');
   const [noteType, setNoteType] = useState<'note' | 'contact'>('note');
   const [savingNote, setSavingNote] = useState(false);
+  const [noteError, setNoteError] = useState<string | null>(null);
   const [activityError, setActivityError] = useState<string | null>(null);
+  const [documentsRefresh, setDocumentsRefresh] = useState(0);
+  const [showReleases, setShowReleases] = useState(false);
+  const [converting, setConverting] = useState(false);
+  const [editing, setEditing] = useState(false);
+  // Staff can correct a referral until a client record has been built from
+  // it: a phone referral fully (it is staff's own notes), a website referral
+  // only in the fields the GAPP screening never reads (referralEditShared).
+  const canEdit =
+    (referral.source === 'phone' || isEditableSource(referral.source)) &&
+    !referral.patientId &&
+    (viewerRole === 'admin' || viewerRole === 'va');
+  const [created, setCreated] = useState<{ patientId: string; mrn: string; documentsMoved: number } | null>(null);
+  const canCreateClient = canCreateClientFromReferral(settings.referralConversion, viewerUid, viewerRole);
+  const patientId = created?.patientId || referral.patientId || null;
 
   const loadActivity = useCallback(async () => {
     setActivityLoading(true);
@@ -62,6 +98,21 @@ export default function ReferralDetail({
     }
   }, [referral.id]);
 
+  // Left / Right arrows step through the stage column, unless the person is
+  // typing in a field.
+  useEffect(() => {
+    if (!nav || !onNavigate) return;
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+      if (showReleases) return;
+      if (e.key === 'ArrowLeft' && nav.prevId) onNavigate(nav.prevId);
+      if (e.key === 'ArrowRight' && nav.nextId) onNavigate(nav.nextId);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [nav, onNavigate, showReleases]);
+
   // Reload on open (id change) and whenever the referral is mutated elsewhere
   // (stage move / assignment bumps updatedAt), so server-logged entries appear.
   useEffect(() => {
@@ -69,8 +120,14 @@ export default function ReferralDetail({
   }, [loadActivity, referral.updatedAt]);
 
   const addNote = async () => {
+    if (savingNote) return;
     const text = noteText.trim();
-    if (!text || savingNote) return;
+    setNoteError(null);
+    if (!text) {
+      setNoteError(noteType === 'note' ? 'Type the note before adding it.' : 'Describe the call or outreach attempt before logging it.');
+      escortToField(NOTE_FIELD_ID);
+      return;
+    }
     setSavingNote(true);
     try {
       const res = await authedFetch(`/api/admin/referrals/${referral.id}/activity`, {
@@ -85,7 +142,8 @@ export default function ReferralDetail({
       if (data.entry) setActivity((prev) => [data.entry, ...prev]);
       setNoteText('');
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Could not add note.');
+      setNoteError(err instanceof Error && err.message ? err.message : 'Could not add the note. Please try again.');
+      escortToField(NOTE_FIELD_ID);
     } finally {
       setSavingNote(false);
     }
@@ -130,6 +188,35 @@ export default function ReferralDetail({
             <X size={18} />
           </button>
         </div>
+
+        {nav && onNavigate && (
+          <div style={navStripStyle}>
+            <button
+              type="button"
+              className={`${btn} ${btnIcon}`}
+              onClick={() => nav.prevId && onNavigate(nav.prevId)}
+              disabled={!nav.prevId || busy}
+              aria-label={`Previous referral in ${STAGE_LABEL[referral.stage]}`}
+              title="Previous in this stage (Left arrow)"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <span style={navTextStyle}>
+              <span style={{ ...navDotStyle, background: STAGE_ACCENT[referral.stage] }} aria-hidden />
+              {nav.index + 1} of {nav.total} in {STAGE_LABEL[referral.stage]}
+            </span>
+            <button
+              type="button"
+              className={`${btn} ${btnIcon}`}
+              onClick={() => nav.nextId && onNavigate(nav.nextId)}
+              disabled={!nav.nextId || busy}
+              aria-label={`Next referral in ${STAGE_LABEL[referral.stage]}`}
+              title="Next in this stage (Right arrow)"
+            >
+              <ChevronRight size={18} />
+            </button>
+          </div>
+        )}
 
         <div style={bodyStyle}>
           {/* Contact */}
@@ -210,8 +297,8 @@ export default function ReferralDetail({
               >
                 <option value="">
                   {fallbackService
-                    ? `From the form: ${SERVICE_LABEL[fallbackService]}`
-                    : 'From the form: not stated'}
+                    ? `From the Form: ${SERVICE_LABEL[fallbackService]}`
+                    : 'From the Form: Not Stated'}
                 </option>
                 {GAPP_SERVICES.map((svc) => (
                   <option key={svc.key} value={svc.key}>
@@ -234,15 +321,29 @@ export default function ReferralDetail({
                 <tr key={i}>
                   <td style={detailLabelStyle}>{d.label}</td>
                   <td style={detailValueStyle}>
-                    {d.value ? d.value : <span style={{ color: '#9ca3af' }}>—</span>}
+                    {d.value ? formatDateUS(d.value) : <span style={{ color: '#9ca3af' }}>—</span>}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
 
+          {patientId && (
+            <div style={clientNoteStyle}>
+              <UserPlus size={14} style={{ flexShrink: 0 }} />
+              <span style={{ flex: 1 }}>
+                {created ? `Client record created${created.mrn ? ` (record #${created.mrn})` : ''}${created.documentsMoved ? `, with ${created.documentsMoved} document${created.documentsMoved === 1 ? '' : 's'} filed to it` : ''}.` : 'This referral has a client record.'}
+              </span>
+              <Link href={`/admin/clients/${patientId}`} style={clientLinkStyle}>
+                Open Client Record <ExternalLink size={12} />
+              </Link>
+            </div>
+          )}
+
+          <ReferralDocuments referralId={referral.id} patientId={patientId} refreshKey={`${referral.updatedAt || ""}:${documentsRefresh}`} />
+
           {/* Share with a partner agency */}
-          <div style={sectionTitleStyle}>Share with agency</div>
+          <div style={sectionTitleStyle}>Share with Agency</div>
           {referral.providerListSentAt && (
             <div style={providerListNoteStyle}>
               GAPP provider list{' '}
@@ -278,31 +379,35 @@ export default function ReferralDetail({
                 onClick={() => setNoteType('contact')}
                 style={noteType === 'contact' ? { ...composerTab, ...composerTabActive } : composerTab}
               >
-                <PhoneCall size={13} /> Log contact
+                <PhoneCall size={13} /> Log Contact
               </button>
             </div>
-            <textarea
-              value={noteText}
-              onChange={(e) => setNoteText(e.target.value)}
-              onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') addNote();
-              }}
-              placeholder={
-                noteType === 'note'
-                  ? 'Add a note about this referral…'
-                  : 'Log a call or outreach attempt…'
-              }
-              rows={2}
-              style={textareaStyle}
-            />
+            <div id={NOTE_FIELD_ID}>
+              <textarea
+                value={noteText}
+                onChange={(e) => { setNoteText(e.target.value); setNoteError(null); }}
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') addNote();
+                }}
+                placeholder={
+                  noteType === 'note'
+                    ? 'Add a note about this referral…'
+                    : 'Log a call or outreach attempt…'
+                }
+                rows={2}
+                style={{ ...textareaStyle, ...(noteError ? FIELD_ERROR_STYLE : null) }}
+                aria-invalid={!!noteError}
+              />
+              <FieldError message={noteError} />
+            </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <button
                 onClick={addNote}
-                disabled={!noteText.trim() || savingNote}
+                disabled={savingNote}
                 style={{
                   ...addNoteBtnStyle,
-                  opacity: !noteText.trim() || savingNote ? 0.55 : 1,
-                  cursor: !noteText.trim() || savingNote ? 'not-allowed' : 'pointer',
+                  opacity: savingNote ? 0.55 : 1,
+                  cursor: savingNote ? 'not-allowed' : 'pointer',
                 }}
               >
                 <Send size={14} /> {savingNote ? 'Adding…' : 'Add'}
@@ -325,15 +430,40 @@ export default function ReferralDetail({
           )}
         </div>
 
-        {/* Footer */}
+        {/* Footer: the one action this stage is for gets the full width on
+            top; the everyday actions share an even row below, with Delete as
+            a red icon at the end of that row so it never strands on a line
+            of its own. */}
         <div style={footerStyle}>
-          <button onClick={() => onPrint(referral)} style={ghostBtnStyle}>
-            <Printer size={15} /> Print call sheet
-          </button>
-          {canDelete && (
-            <>
-              <div style={{ flex: 1 }} />
+          {canCreateClient && !patientId && referral.stage !== 'closed' && referral.stage !== 'referred_out' && (
+            <button type="button" onClick={() => setConverting(true)} className={btnPrimary} style={{ width: '100%' }} disabled={busy}>
+              <UserPlus size={15} /> Create Client Record
+            </button>
+          )}
+          {canFax && referral.stage !== 'closed' && referral.stage !== 'referred_out' && (
+            <button type="button" onClick={() => setShowReleases(true)} className={btn} style={{ width: '100%' }}>
+              <FileSignature size={15} /> Release of Information
+            </button>
+          )}
+          <div style={footerRowStyle}>
+            <button type="button" onClick={() => onPrint(referral)} className={btn} style={footerGrowStyle}>
+              <Printer size={15} /> Print Call Sheet
+            </button>
+            {canEdit && (
+              <button type="button" onClick={() => setEditing(true)} className={btn} style={footerGrowStyle} disabled={busy}>
+                <Pencil size={15} /> Edit Details
+              </button>
+            )}
+            {canFax && /gapp/i.test(referral.program || '') && referral.stage !== 'closed' && referral.stage !== 'referred_out' && (
+              // New GAPP case: ask the child's physician for the Appendix T.
+              // Opens the Fax Center with this referral already picked.
+              <Link href={`/admin/fax?ppot=referral:${referral.id}`} className={btn} style={footerGrowStyle}>
+                <FileSignature size={15} /> Request PPOT
+              </Link>
+            )}
+            {canDelete && (
               <button
+                type="button"
                 onClick={() => {
                   if (
                     confirm(
@@ -343,17 +473,65 @@ export default function ReferralDetail({
                     onDelete();
                   }
                 }}
-                style={deleteBtnStyle}
+                className={btnDanger}
+                style={footerIconStyle}
+                aria-label="Delete referral"
+                title="Delete referral"
               >
-                <Trash2 size={15} /> Delete
+                <Trash2 size={16} />
               </button>
-            </>
-          )}
+            )}
+          </div>
         </div>
       </aside>
+      {showReleases && canFax && <div style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={(e) => e.stopPropagation()}>
+        <div role="dialog" aria-modal="true" aria-label="Referral releases of information" style={{ width: '100%', maxWidth: 1000, maxHeight: '90vh', overflowY: 'auto', background: 'white', borderRadius: 12, padding: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <strong>{referral.clientName}: Release of Information</strong>
+            <button type="button" className={btn} onClick={() => { setShowReleases(false); setDocumentsRefresh((n) => n + 1); void loadActivity(); onChanged?.(); }} aria-label="Close releases"><X size={18} /></button>
+          </div>
+          <RoiSection key={referral.id} referralId={referral.id} refreshKey={0} openRequest={0} faxConfigured={false} onFaxSent={() => { void loadActivity(); }} />
+        </div>
+      </div>}
+      {editing && referral.source === 'phone' && (
+        <PhoneReferralModal
+          staff={staff}
+          editing={{ referralId: referral.id, intake: referral.phoneIntake ?? null }}
+          onClose={() => setEditing(false)}
+          onCreated={() => {
+            setEditing(false);
+            onChanged?.();
+          }}
+        />
+      )}
+      {editing && isEditableSource(referral.source) && (
+        <EditReferralModal
+          referral={{ ...referral, source: referral.source }}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
+            onChanged?.();
+          }}
+        />
+      )}
+      {converting && (
+        <ConvertReferralModal
+          referralId={referral.id}
+          clientName={referral.clientName || 'this client'}
+          onClose={() => setConverting(false)}
+          onCreated={(r) => {
+            setConverting(false);
+            setCreated(r);
+            onChanged?.();
+          }}
+        />
+      )}
     </div>
   );
 }
+
+const clientNoteStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, background: '#e6f4ea', border: '1px solid #b7dfc1', color: '#1e7e34', borderRadius: 8, padding: '9px 12px', fontSize: 13 };
+const clientLinkStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, color: '#1e7e34', fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap' };
 
 const ACTIVITY_ICON: Record<ReferralActivityType, React.ReactNode> = {
   created: <Inbox size={14} />,
@@ -396,14 +574,18 @@ const SHARE_STATUS_STYLE: Record<ShareStatus, React.CSSProperties> = {
 };
 
 const EXPIRY_OPTIONS = [
-  { days: 7, label: '7 days' },
-  { days: 14, label: '14 days' },
-  { days: 30, label: '30 days' },
-  { days: 90, label: '90 days' },
+  { days: 7, label: '7 Days' },
+  { days: 14, label: '14 Days' },
+  { days: 30, label: '30 Days' },
+  { days: 90, label: '90 Days' },
 ];
 
 // Email check used when staging a multi-agency recipient before it's added.
 const SHARE_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const NOTE_FIELD_ID = 'referral-note-text';
+type ShareField = 'agency' | 'email';
+const SHARE_FIELD_ORDER: readonly ShareField[] = ['agency', 'email'];
+const shareFieldId = (k: ShareField) => `referral-share-${k}`;
 
 function SharePanel({
   referralId,
@@ -434,6 +616,10 @@ function SharePanel({
   const [move, setMove] = useState(true);
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<ShareField, string>>>({});
+  const clearFieldError = (k: ShareField) => {
+    if (fieldErrors[k]) setFieldErrors((prev) => ({ ...prev, [k]: undefined }));
+  };
   const [created, setCreated] = useState<{ count: number; emailsSent: number; failed: number } | null>(null);
   const [copiedShareId, setCopiedShareId] = useState<string | null>(null);
   // Saved partner agencies (shared directory, fetched once for the screen)
@@ -453,25 +639,32 @@ function SharePanel({
 
   const onAgencyName = (value: string) => {
     setAgency(value);
+    clearFieldError('agency');
     const match = agencies.find((a) => a.name.toLowerCase() === value.trim().toLowerCase());
-    if (match) setEmail(match.email);
+    if (match) {
+      setEmail(match.email);
+      clearFieldError('email');
+    }
+  };
+
+  /** Problems with the staging row (agency + email inputs). */
+  const stagingErrors = (n: string, e: string): Partial<Record<ShareField, string>> => {
+    const errs: Partial<Record<ShareField, string>> = {};
+    if (!n) errs.agency = 'Enter the partner agency name.';
+    if (!e) errs.email = 'Enter the partner agency email.';
+    else if (!SHARE_EMAIL_RE.test(e)) errs.email = 'Enter a valid email address, like intake@agency.org.';
+    else if (recipients.some((r) => r.email === e)) errs.email = 'That agency is already added to this share.';
+    return errs;
   };
 
   const addRecipient = () => {
     const n = agency.trim();
     const e = email.trim().toLowerCase();
-    if (!n || !SHARE_EMAIL_RE.test(e)) {
-      setFormError('Enter an agency name and a valid email before adding.');
-      return;
-    }
-    if (recipients.some((r) => r.email === e)) {
-      setFormError('That agency is already added.');
-      return;
-    }
+    setFormError(null);
+    if (!applyFieldErrors(stagingErrors(n, e), SHARE_FIELD_ORDER, setFieldErrors, shareFieldId)) return;
     setRecipients((prev) => [...prev, { name: n, email: e }]);
     setAgency('');
     setEmail('');
-    setFormError(null);
   };
   const removeRecipient = (idx: number) =>
     setRecipients((prev) => prev.filter((_, i) => i !== idx));
@@ -502,15 +695,20 @@ function SharePanel({
     let list = recipients;
     const n = agency.trim();
     const e = email.trim().toLowerCase();
-    if (n && SHARE_EMAIL_RE.test(e) && !recipients.some((r) => r.email === e)) {
+    setFormError(null);
+    const alreadyAdded = !!e && recipients.some((r) => r.email === e);
+    if ((n || e) && !alreadyAdded) {
+      // A partly filled staging row is a mistake waiting to be sent without
+      // that agency: point at what is missing rather than silently dropping it.
+      // (An agency typed again after being added is simply skipped.)
+      if (!applyFieldErrors(stagingErrors(n, e), SHARE_FIELD_ORDER, setFieldErrors, shareFieldId)) return;
       list = [...recipients, { name: n, email: e }];
     }
     if (list.length === 0) {
-      setFormError('Add at least one agency.');
+      applyFieldErrors({ agency: 'Add at least one agency to share with.' }, SHARE_FIELD_ORDER, setFieldErrors, shareFieldId);
       return;
     }
     setCreating(true);
-    setFormError(null);
     setCreated(null);
     try {
       const res = await authedFetch(`/api/admin/referrals/${referralId}/shares`, {
@@ -536,7 +734,7 @@ function SharePanel({
       // Refresh the board so the new "Shared" badge and any stage move show up.
       onChanged?.();
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Could not create shares.');
+      setFormError(err instanceof Error && err.message ? err.message : 'Could not create the shares. Please try again.');
     } finally {
       setCreating(false);
     }
@@ -601,19 +799,20 @@ function SharePanel({
 
       {!showForm ? (
         <button onClick={() => { setShowForm(true); setCreated(null); }} style={shareCtaBtn}>
-          <Plus size={15} /> Share with an agency
+          <Plus size={15} /> Share with an Agency
         </button>
       ) : (
         <div style={shareFormBox}>
           <MatchSuggestions
             matches={suggestions}
-            onPick={(a) =>
+            onPick={(a) => {
+              clearFieldError('agency');
               setRecipients((prev) =>
                 prev.some((r) => r.email === a.email.toLowerCase())
                   ? prev
                   : [...prev, { name: a.name, email: a.email.toLowerCase() }]
-              )
-            }
+              );
+            }}
           />
           {recipients.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -634,27 +833,35 @@ function SharePanel({
           )}
           <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
-              <input
-                value={agency}
-                onChange={(e) => onAgencyName(e.target.value)}
-                placeholder="Partner agency name"
-                style={shareInput}
-                list="referral-agency-options"
-                autoComplete="off"
-              />
+              <div id={shareFieldId('agency')}>
+                <input
+                  value={agency}
+                  onChange={(e) => onAgencyName(e.target.value)}
+                  placeholder="Partner agency name"
+                  style={{ ...shareInput, ...(fieldErrors.agency ? FIELD_ERROR_STYLE : null) }}
+                  aria-invalid={!!fieldErrors.agency}
+                  list="referral-agency-options"
+                  autoComplete="off"
+                />
+                <FieldError message={fieldErrors.agency} />
+              </div>
               <datalist id="referral-agency-options">
                 {agencies.map((a) => (
                   <option key={a.id} value={a.name} />
                 ))}
               </datalist>
-              <input
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addRecipient(); } }}
-                placeholder="Partner email"
-                type="email"
-                style={shareInput}
-              />
+              <div id={shareFieldId('email')}>
+                <input
+                  value={email}
+                  onChange={(e) => { setEmail(e.target.value); clearFieldError('email'); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addRecipient(); } }}
+                  placeholder="Partner email"
+                  type="email"
+                  style={{ ...shareInput, ...(fieldErrors.email ? FIELD_ERROR_STYLE : null) }}
+                  aria-invalid={!!fieldErrors.email}
+                />
+                <FieldError message={fieldErrors.email} />
+              </div>
             </div>
             <button type="button" onClick={addRecipient} style={addAgencyBtn} title="Add another agency to this share">
               <Plus size={14} /> Add
@@ -672,13 +879,13 @@ function SharePanel({
             </select>
             <div style={{ flex: 1 }} />
             <button
-              onClick={() => { setShowForm(false); setFormError(null); setRecipients([]); setAgency(''); setEmail(''); }}
+              onClick={() => { setShowForm(false); setFormError(null); setFieldErrors({}); setRecipients([]); setAgency(''); setEmail(''); }}
               style={shareCancelBtn}
             >
               Cancel
             </button>
-            <button onClick={submit} disabled={creating || sendCount === 0} style={shareSubmitBtn}>
-              {creating ? 'Sending…' : sendCount <= 1 ? 'Create & email link' : `Create & email ${sendCount} links`}
+            <button onClick={submit} disabled={creating} style={shareSubmitBtn}>
+              {creating ? 'Sending…' : sendCount <= 1 ? 'Create & Email Link' : `Create & Email ${sendCount} Links`}
             </button>
           </div>
           {!isTerminal && (
@@ -687,7 +894,7 @@ function SharePanel({
               Move to Referred Out (mark as handed off)
             </label>
           )}
-          {formError && <div style={{ color: '#b3261e', fontSize: 12.5 }}>{formError}</div>}
+          {formError && <div role="alert" style={{ color: '#b3261e', fontSize: 12.5, fontWeight: 600 }}>{formError}</div>}
         </div>
       )}
 
@@ -1045,36 +1252,29 @@ const timelineMetaStyle: React.CSSProperties = {
 };
 const footerStyle: React.CSSProperties = {
   display: 'flex',
-  alignItems: 'center',
+  flexDirection: 'column',
   gap: 10,
-  padding: '14px 20px',
+  padding: '14px 20px 16px',
   borderTop: '1px solid #e5e7eb',
+  background: '#fafbfc',
 };
-const ghostBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
+const footerRowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'stretch',
+  gap: 10,
+};
+// Labeled buttons in the row split the width evenly.
+const footerGrowStyle: React.CSSProperties = { flex: '1 1 0', minWidth: 0 };
+// Delete: a square the same height as its neighbors.
+const footerIconStyle: React.CSSProperties = { flex: '0 0 auto', width: 44, padding: 0 };
+const navStripStyle: React.CSSProperties = {
+  display: 'flex',
   alignItems: 'center',
-  gap: 6,
-  background: 'white',
-  color: '#5c6b7a',
-  border: '1px solid #d1d5db',
-  borderRadius: 8,
-  padding: '8px 14px',
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
+  justifyContent: 'space-between',
+  gap: 10,
+  padding: '8px 20px',
+  borderBottom: '1px solid #e5e7eb',
+  background: '#f8fafc',
 };
-const deleteBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: 'white',
-  color: '#b3261e',
-  border: '1px solid #f0c2bd',
-  borderRadius: 8,
-  padding: '8px 14px',
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
+const navTextStyle: React.CSSProperties = { fontSize: 12.5, fontWeight: 600, color: '#5c6b7a', display: 'inline-flex', alignItems: 'center', gap: 6 };
+const navDotStyle: React.CSSProperties = { width: 9, height: 9, borderRadius: 999, display: 'inline-block' };

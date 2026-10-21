@@ -6,6 +6,8 @@
  */
 import { Resend } from 'resend';
 import { getServerSettings } from '../settingsServer';
+import { formatDateUS } from '../dateFormat';
+import { emailLogoRow } from './logo';
 
 const FROM_ADDRESS = 'notifications@heartandsoulhc.org';
 const IN_PROGRESS_URL = 'https://www.heartandsoulhc.org/admin/in-progress';
@@ -51,7 +53,7 @@ export async function sendDuplicateRequestNotice({
   const orgName = settings.branding.orgName;
   const fromDisplay = settings.branding.fromEmailDisplay || orgName;
   const fromEmail = `${fromDisplay} <${FROM_ADDRESS}>`;
-  const subject = `Duplicate-note approval needed — ${clientName} (${dateOfService})`;
+  const subject = `Duplicate-Note Approval Needed: ${clientName} (${formatDateUS(dateOfService)})`;
 
   const html = `<!doctype html>
 <html>
@@ -59,13 +61,14 @@ export async function sendDuplicateRequestNotice({
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f7fa;padding:32px 20px;">
       <tr><td align="center">
         <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
+            ${emailLogoRow()}
           <tr><td style="padding:28px 32px 8px;">
-            <h1 style="margin:0;font-size:20px;color:#1a3a5c;">Duplicate-note approval needed</h1>
+            <h1 style="margin:0;font-size:20px;color:#1a3a5c;">Duplicate-Note Approval Needed</h1>
           </td></tr>
           <tr><td style="padding:8px 32px 0;font-size:15px;line-height:1.6;color:#2c3e50;">
             <p style="margin:0 0 12px;"><strong>${escapeHtml(nurseName)}</strong> is asking to submit a <strong>second</strong> progress note for a client already documented on this date:</p>
             <p style="margin:0 0 8px;background:#fff8ec;border:1px solid #f0d9a8;padding:10px 12px;border-radius:6px;">
-              <strong>${escapeHtml(clientName)}</strong> &middot; ${escapeHtml(dateOfService)}
+              <strong>${escapeHtml(clientName)}</strong> &middot; ${escapeHtml(formatDateUS(dateOfService))}
             </p>
             <p style="margin:0 0 4px;color:#5c6b7a;font-size:13px;">Reason given:</p>
             <p style="margin:0 0 16px;padding:10px 12px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:6px;">${reason ? escapeHtml(reason) : '<em>(no reason given)</em>'}</p>
@@ -85,7 +88,7 @@ export async function sendDuplicateRequestNotice({
   </body>
 </html>`;
 
-  const text = `${nurseName} is asking to submit a second progress note for a client already documented on this date:\n\n${clientName} · ${dateOfService}\n\nReason: ${reason || '(none given)'}\n\nApprove or deny it on the In Progress screen: ${IN_PROGRESS_URL}`;
+  const text = `${nurseName} is asking to submit a second progress note for a client already documented on this date:\n\n${clientName} · ${formatDateUS(dateOfService)}\n\nReason: ${reason || '(none given)'}\n\nApprove or deny it on the In Progress screen: ${IN_PROGRESS_URL}`;
 
   try {
     const { error } = await resend.emails.send({ from: fromEmail, to, subject, html, text });

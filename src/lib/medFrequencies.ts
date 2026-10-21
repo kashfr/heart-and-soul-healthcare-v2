@@ -19,6 +19,8 @@ export const MED_FREQUENCIES = [
   'Four times daily (QID)',
   'Every morning',
   'Every evening',
+  'Before meals (AC)',
+  'Before meals and at bedtime',
   'At bedtime',
   'Every other day',
   'Every 4 hours (Q4H)',
@@ -37,3 +39,14 @@ export const MED_FREQUENCIES = [
  * All three med-entry forms derive isPRN from this label.
  */
 export const PRN_FREQUENCY = 'As needed (PRN)';
+
+/**
+ * The sub-frequency a PRN order may carry: how often the med MAY be given when
+ * it is needed, so an order written "Q4H PRN" is stored as PRN plus
+ * "Every 4 hours (Q4H)" rather than flattened to "as needed". Every scheduled
+ * frequency except PRN itself and Continuous, neither of which can qualify an
+ * as-needed order. Optional on the forms: not every PRN order sets an interval.
+ */
+export const PRN_SUB_FREQUENCIES = MED_FREQUENCIES.filter(
+  (f) => f !== PRN_FREQUENCY && f !== 'Continuous',
+);

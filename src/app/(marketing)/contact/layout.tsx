@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
   title: 'Contact Us | Heart and Soul Healthcare',
-  description: 'Contact Heart and Soul Healthcare in Atlanta, GA. Call (678) 644-0337 or send a message. We respond within 24 hours. Mon–Fri, 10:00 AM – 3:00 PM EST.',
+  description: 'Contact Heart and Soul Healthcare in Atlanta, GA. Call (678) 644-0337 or send a message. We respond within 24 hours. Monday to Friday, 9:00 AM to 5:00 PM ET.',
   alternates: { canonical: 'https://www.heartandsoulhc.org/contact' },
   openGraph: {
     title: 'Contact Us | Heart and Soul Healthcare',

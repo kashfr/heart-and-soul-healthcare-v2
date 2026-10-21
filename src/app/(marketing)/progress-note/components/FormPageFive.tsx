@@ -15,8 +15,17 @@ import {
   type MarChangeRequest,
   type MarAdministration,
 } from '@/lib/mar';
-import { doseTimeStatus, resolveCurrentAdministrations, type DoseTimeStatus } from '@/lib/marShared';
+import { classifyDoseAgainstShift, doseTimeStatus, resolveCurrentAdministrations, slotAnchor, type DoseTimeStatus } from '@/lib/marShared';
+import {
+  lookupScaleDose,
+  parseSlidingScale,
+  resolveScaleCharting,
+  scaleMarkProblems,
+  type SlidingScaleRow,
+} from '@/lib/slidingScale';
+import SlidingScaleCharting from '@/components/mar/SlidingScaleCharting';
 import MedChart from './MedChart';
+import { formatDateUS } from '@/lib/dateFormat';
 import {
   marAdminState,
   setMarAdmin,
@@ -32,10 +41,10 @@ import MedChangeRequestModal from './MedChangeRequestModal';
 const ADVERSE_VALUE = 'Adverse reaction / intolerance; document below';
 
 const ADMIN_BY_OPTIONS = [
-  { value: 'nurse', label: 'Nurse (me)' },
-  { value: 'family', label: 'Family member' },
-  { value: 'responsibleParty', label: 'Responsible party' },
-  { value: 'self', label: 'Client (self)' },
+  { value: 'nurse', label: 'Nurse (Me)' },
+  { value: 'family', label: 'Family Member' },
+  { value: 'responsibleParty', label: 'Responsible Party' },
+  { value: 'self', label: 'Client (Self)' },
   { value: 'proxy', label: 'Proxy' },
 ];
 
@@ -91,6 +100,13 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
   useSyncExternalStore(marAdminSubscribe, marAdminGetSnapshot, marAdminGetSnapshot);
   const marPatientId = String(watch('patientId') || '').trim();
   const marDate = String(watch('q6_dateofService') || '');
+  // Shift window for the dose-vs-shift check (owner request: a nurse must not
+  // attest NURSE-GIVEN doses at times she was not in the home; family-given
+  // stays legal via the Administered-by picker and is starred on the MAR).
+  const shiftStartW = String(watch('q7_shiftStart') || '');
+  const shiftEndW = String(watch('q62_shiftEndTime') || '');
+  const shiftEndDateW = String(watch('q62_shiftEndDate') || '');
+  const shiftEndsNextDayW = !!shiftEndDateW && !!marDate && shiftEndDateW > marDate;
   const [marAllOrders, setMarAllOrders] = useState<MarOrder[]>([]);
   const [marLoading, setMarLoading] = useState(false);
   // A FAILED med-orders fetch (network, permissions) must never render as
@@ -209,6 +225,11 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
   const marPrnTextVal = String(watch('q43_prnMeds') || '');
   const medNoteVisible = medNoteOpen || marSchedTextVal.trim() !== '';
 
+  // The sliding scale on a mark's order ([] when it has none, or the order is
+  // no longer on file).
+  const scaleRowsFor = (orderId: string): SlidingScaleRow[] =>
+    orderId ? parseSlidingScale(marAllOrders.find((o) => o.id === orderId)?.slidingScale) : [];
+
   // One row per scheduled time (PRN orders get a single 'PRN' row).
   const marRows: { order: MarOrder; slot: string }[] = [];
   for (const o of marApplicableOrders) {
@@ -221,7 +242,19 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
   // resumed "extra"/unlisted marks that have no current order row.
   const patchMarkByKey = (key: string, fallback: MarAdminRecord, patch: Partial<MarAdminRecord>) => {
     const existing = marAdminState[key] || fallback;
-    setMarAdmin(key, { ...existing, ...patch });
+    const next = { ...existing, ...patch };
+    // Sliding-scale order: look the dose up from the reading HERE, where the
+    // order's scale is at hand, and keep the answer on the mark. The submit
+    // gate and the write read only the mark (this card may be collapsed or
+    // unmounted by then).
+    const rows = scaleRowsFor(next.orderId);
+    if (rows.length > 0) {
+      const lookup = lookupScaleDose(rows, next.glucoseReading);
+      next.hasSlidingScale = true;
+      next.scaleDose = lookup.scaleDose;
+      next.scaleRange = lookup.scaleRange;
+    }
+    setMarAdmin(key, next);
   };
 
   const updateMark = (order: MarOrder, slot: string, patch: Partial<MarAdminRecord>) => {
@@ -238,6 +271,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
         scheduledTime: slot,
         isPRN: slot === 'PRN',
         indication: order.indication || '',
+        parameters: order.parameters || '',
         status: '',
         administeredByType: 'nurse',
         administratorName: '',
@@ -317,11 +351,35 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
     extra?: boolean;
     isPRN?: boolean;
     indication?: string;
+    parameters?: string;
     prnGivenToday?: number;
+    /** The order's sliding scale; non-empty makes this a sliding-scale card. */
+    scaleRows?: SlidingScaleRow[];
   }) => {
     const status = opts.rec?.status || '';
+    // Sliding-scale order: the nurse types the meter reading and the dose is
+    // looked up from the order's scale (never read off the table by eye).
+    const scaleRows = opts.scaleRows || [];
+    const isScale = scaleRows.length > 0;
+    const scaleEntry = {
+      glucoseReading: opts.rec?.glucoseReading || '',
+      customDose: opts.rec?.scaleCustomDose === true,
+      unitsGiven: opts.rec?.scaleUnitsGiven || '',
+      deviationReason: opts.rec?.scaleDeviationReason || '',
+    };
+    const scaleResult = isScale ? resolveScaleCharting(scaleRows, status, scaleEntry) : null;
+    const noInsulinDue =
+      isScale && !scaleEntry.customDose && lookupScaleDose(scaleRows, scaleEntry.glucoseReading).row?.units === 0;
     const isNurseAdmin = !opts.rec || !opts.rec.administeredByType || opts.rec.administeredByType === 'nurse';
     const indication = (opts.indication || '').trim();
+    // Hold / check-before-giving criteria from the order. Shown on the card
+    // before the status choice, and a GIVEN dose must acknowledge them (the
+    // submit gate in page.tsx enforces it from the store, since this card can
+    // be collapsed/unmounted by the time the note is submitted).
+    const parameters = (opts.parameters || '').trim();
+    const parametersChecked = opts.rec?.parametersChecked === true;
+    const parametersReading = opts.rec?.parametersReading || '';
+    const needsParametersReading = !!parameters && (status === 'given' || status === 'held');
     // The time pill's color reflects the dose's combined state. A documented
     // status (this draft, or a prior submitted entry) wins; an undocumented
     // SCHEDULED dose is colored by how its time compares to now (today only).
@@ -349,6 +407,13 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
           <div style={marIndicationStyle}>Ordered for: {indication}</div>
         )}
 
+        {parameters && (
+          <div style={marParamCalloutStyle} role="note">
+            <div style={marParamTitleStyle}>Parameters: Check Before Giving</div>
+            <div style={marParamTextStyle}>{parameters}</div>
+          </div>
+        )}
+
         {opts.extra && (
           <div style={marExtraNoteStyle}>One-off dose documented this shift (not a scheduled order).</div>
         )}
@@ -360,6 +425,26 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
             {opts.prior.initials ? ` (${opts.prior.initials})` : ''}
             {opts.prior.documentedByName ? ` · ${opts.prior.documentedByName}` : ''}
           </div>
+        )}
+
+        {/* Sliding scale: the reading comes first, because the dose (and
+            whether any insulin is due at all) is decided by it. */}
+        {isScale && !lockedByPrior && (
+          <SlidingScaleCharting
+            rows={scaleRows}
+            status={status}
+            entry={scaleEntry}
+            onChange={(patch) =>
+              opts.onPatch({
+                ...(patch.glucoseReading !== undefined ? { glucoseReading: patch.glucoseReading } : {}),
+                ...(patch.customDose !== undefined ? { scaleCustomDose: patch.customDose } : {}),
+                ...(patch.unitsGiven !== undefined ? { scaleUnitsGiven: patch.unitsGiven } : {}),
+                ...(patch.deviationReason !== undefined ? { scaleDeviationReason: patch.deviationReason } : {}),
+              })
+            }
+            errors={status ? scaleResult?.errors : undefined}
+            givenByOther={!isNurseAdmin}
+          />
         )}
 
         {lockedByPrior ? (
@@ -376,7 +461,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
                 onClick={() => opts.onPatch({ status: status === s ? '' : s })}
                 style={status === s ? marStatusBtnActive[s] : marStatusBtnStyle}
               >
-                {s === 'given' ? 'Given' : s === 'held' ? 'Held' : 'Refused'}
+                {s === 'given' ? (noInsulinDue ? 'No Insulin Due' : 'Given') : s === 'held' ? 'Held' : 'Refused'}
               </button>
             ))}
             {opts.extra && status && (
@@ -390,7 +475,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
         {status === 'given' && (
           <div style={marDetailGridStyle}>
             <label style={marFieldStyle}>
-              <span style={marFieldLabelStyle}>Time given</span>
+              <span style={marFieldLabelStyle}>{noInsulinDue ? 'Time checked' : 'Time given'}</span>
               <input type="time" value={opts.rec?.actualTime || ''} onChange={(e) => opts.onPatch({ actualTime: e.target.value })} style={marInputStyle} />
             </label>
             <label style={marFieldStyle}>
@@ -406,6 +491,69 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
               </label>
             )}
           </div>
+        )}
+        {status === 'given' &&
+          isNurseAdmin &&
+          classifyDoseAgainstShift({
+            doseTime:
+              (opts.rec?.actualTime || '').trim() ||
+              (opts.scheduledSlot && opts.scheduledSlot !== 'PRN' ? opts.scheduledSlot : ''),
+            shiftStart: shiftStartW,
+            shiftEnd: shiftEndW,
+            shiftEndsNextDay: shiftEndsNextDayW,
+          }) === 'outside' && (
+            <div style={{ background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '8px 11px', fontSize: 12.5, lineHeight: 1.5, marginTop: 8, fontWeight: 600 }}>
+              This dose time is outside your shift ({shiftStartW || '?'} to {shiftEndW || '?'}
+              {shiftEndsNextDayW ? ' next day' : ''}). If a family member or caregiver gave it, change
+              &quot;Administered by&quot; above and it will be starred on the MAR. If you gave it, your shift
+              times must be wrong. The note cannot be submitted with a nurse-given dose outside your shift.
+            </div>
+          )}
+
+        {/* The parameters acknowledgment: a given dose against an order with
+            hold / check criteria must confirm they were checked and met. */}
+        {status === 'given' && parameters && (
+          <label style={parametersChecked ? marParamCheckRowStyle : marParamCheckRowRequiredStyle}>
+            <input
+              type="checkbox"
+              required
+              aria-label={`Parameters checked before ${opts.medName} dose`}
+              checked={parametersChecked}
+              onChange={(e) => opts.onPatch({ parametersChecked: e.target.checked })}
+              style={{ marginTop: 2 }}
+            />
+            <span style={{ fontSize: 13, color: '#1f2937', lineHeight: 1.4 }}>
+              {isNurseAdmin
+                ? 'I checked the parameters above before giving this dose, and they were met. *'
+                : 'The parameters above were checked before this dose was given, and they were met. *'}
+              {!parametersChecked && (
+                <span style={{ ...marRequiredHintStyle, display: 'block' }}>
+                  Required: if the parameters were not met, mark the dose Held instead.
+                </span>
+              )}
+            </span>
+          </label>
+        )}
+
+        {/* The reading the parameters decision was based on (given OR held). */}
+        {needsParametersReading && (
+          <label style={{ ...marFieldStyle, marginTop: 8 }}>
+            <span style={marFieldLabelStyle}>
+              {status === 'held' ? 'Reading that led you to hold *' : 'Reading you checked before giving *'}
+            </span>
+            <input
+              type="text"
+              required
+              aria-label={`Reading checked against ${opts.medName} parameters`}
+              value={parametersReading}
+              onChange={(e) => opts.onPatch({ parametersReading: e.target.value })}
+              style={!parametersReading.trim() ? marInputRequiredStyle : marInputStyle}
+              placeholder="e.g., BP 116/74, HR 72"
+            />
+            {!parametersReading.trim() && (
+              <span style={marRequiredHintStyle}>Required: the record must show the reading this decision was based on.</span>
+            )}
+          </label>
         )}
 
         {/* A PRN ("as needed") dose must record WHY it was given this time, shown
@@ -506,12 +654,15 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
       rec: marAdminState[key],
       medName: order.medName,
       doseLabel: `${order.dose}${order.units ? ` ${order.units}` : ''} · ${order.route}`,
-      badgeLabel: slot === 'PRN' ? 'PRN' : slot,
+      // A meal-anchored time reads as the instruction, then the clock time.
+      badgeLabel: slot === 'PRN' ? 'PRN' : slotAnchor(order, slot) ? `${slotAnchor(order, slot)} ${slot}` : slot,
       scheduledSlot: slot,
       prior: priorFor(order.id || '', slot, order.medName),
       onPatch: (patch) => updateMark(order, slot, patch),
       isPRN: slot === 'PRN',
       indication: order.indication,
+      parameters: order.parameters,
+      scaleRows: parseSlidingScale(order.slidingScale),
       prnGivenToday: slot === 'PRN' ? prnGivenToday(order.id || '') : 0,
     });
   };
@@ -528,6 +679,9 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
     const rec = marAdminState[marAdminKey(marPatientId, order.id || '', slot)];
     if (rec?.status) {
       if ((rec.status === 'held' || rec.status === 'refused') && !(rec.reason || '').trim()) return false;
+      // Same for a sliding-scale dose still missing its reading (or the
+      // reason it differs from the scale).
+      if (rec.hasSlidingScale && scaleMarkProblems(rec).length > 0) return false;
       return true;
     }
     return !!priorFor(order.id || '', slot, order.medName);
@@ -762,7 +916,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
               marActiveCount > 0 ? (
                 <p style={marHintStyle}>
                   This client has {marActiveCount} active medication order{marActiveCount === 1 ? '' : 's'}, but none
-                  apply to the date of service{marDate ? ` (${marDate})` : ''}. Check the date of service on Page 1 and the
+                  apply to the date of service{marDate ? ` (${formatDateUS(marDate)})` : ''}. Check the date of service on Page 1 and the
                   order&apos;s start / end dates under Records; a shift dated before an order&apos;s start date won&apos;t show it.
                 </p>
               ) : clientRequiresMar ? (
@@ -783,7 +937,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
                     onClick={() => { setChangeReqMsg(null); setChangeReqOpen(true); }}
                     style={marRequiredWarnBtnStyle}
                   >
-                    Add this client&apos;s medications
+                    Add This Client&apos;s Medications
                   </button>
                 </div>
               ) : (
@@ -850,7 +1004,12 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
                         extra: isUnlisted,
                         isPRN: rec.isPRN || sched === 'PRN',
                         indication: rec.indication,
+                        // Marks created before this field existed carry none;
+                        // fall back to the live order so the criteria still show.
+                        parameters:
+                          rec.parameters || marAllOrders.find((o) => o.id === rec.orderId)?.parameters || '',
                         prnGivenToday: rec.orderId ? prnGivenToday(rec.orderId) : 0,
+                        scaleRows: scaleRowsFor(rec.orderId),
                       });
                     })}
                   </>
@@ -862,7 +1021,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
 
         {stagedChanges.length > 0 && (
           <div style={stagedBoxStyle}>
-            <div style={stagedHeaderStyle}>Medication changes on this note (apply when you submit)</div>
+            <div style={stagedHeaderStyle}>Medication Changes on This Note (apply when you submit)</div>
             {stagedChanges.map((c) => (
               <div key={c.id} style={stagedRowStyle}>
                 <span style={c.type === 'discontinue' ? stagedTagDcStyle : stagedTagAddStyle}>
@@ -888,19 +1047,19 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
         )}
 
         {marPatientId && (
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div id="mar-changes-anchor" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             {!isEditMode && (
               <button
                 type="button"
                 onClick={() => { setChangeReqMsg(null); setChangeReqOpen(true); }}
                 style={requestChangeBtnStyle}
               >
-                Add, change, or discontinue a medication
+                Add, Change, or Discontinue a Medication
               </button>
             )}
             {isLpnRn && (
               <button type="button" onClick={() => setChartOpen(true)} style={viewChartBtnStyle}>
-                View medication chart
+                View Medication Chart
               </button>
             )}
           </div>
@@ -1002,7 +1161,7 @@ export default function FormPageFive({ formRef, register, watch, setValue, contr
               </div>
             ) : (
               <button type="button" onClick={() => setMedNoteOpen(true)} style={medNoteLinkStyle}>
-                + Add a medication note (optional — doses are recorded above)
+                + Add a Medication Note (optional — doses are recorded above)
               </button>
             )}
             {/* Legacy PRN narrative from a resumed draft: never hide text that
@@ -1193,6 +1352,11 @@ const marFieldLabelStyle: CSSProperties = { fontSize: 12, fontWeight: 600, color
 const marInputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', height: 38 };
 const marInputRequiredStyle: CSSProperties = { ...marInputStyle, border: '1px solid #d9a441', background: '#fffdf6' };
 const marRequiredHintStyle: CSSProperties = { fontSize: 11.5, color: '#8a5a0d', lineHeight: 1.4, marginTop: 3 };
+const marParamCalloutStyle: CSSProperties = { marginTop: 8, background: '#fff7e6', border: '1px solid #f5d9a8', borderRadius: 8, padding: '8px 10px' };
+const marParamTitleStyle: CSSProperties = { fontSize: 10.5, fontWeight: 700, color: '#b45309', letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 2 };
+const marParamTextStyle: CSSProperties = { fontSize: 13, color: '#1f2937', lineHeight: 1.45, whiteSpace: 'pre-wrap' };
+const marParamCheckRowStyle: CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 10, cursor: 'pointer', padding: '6px 8px', borderRadius: 6, border: '1px solid transparent' };
+const marParamCheckRowRequiredStyle: CSSProperties = { ...marParamCheckRowStyle, border: '1px solid #f5d9a8', background: '#fffdf7' };
 const marIndicationStyle: CSSProperties = { marginTop: 6, fontSize: 12.5, color: '#5c6b7a' };
 const marPrnCountStyle: CSSProperties = { marginTop: 12, fontSize: 12.5, fontWeight: 700, color: '#b56a17' };
 // Same box as the inputs (appearance reset + custom chevron) so the select is

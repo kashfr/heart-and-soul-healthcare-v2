@@ -5,23 +5,11 @@ import { GoogleSpreadsheet } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
 import { createClickUpTask } from '@/lib/clickup';
 import { createReferral } from '@/lib/referrals';
+import { referralPortalButtonHtml } from '@/lib/emails/referralPortalLink';
 import { sendReferralConfirmation } from '@/lib/emails/referralConfirmation';
-import { paidCaregiverDiagnosisFlag, paidCaregiverAgeFlag } from '@/lib/diagnosisScreening';
 import { formatDateUS } from '@/lib/dateFormat';
-import {
-  behaviorRiskLabel,
-  composeDiagnosisText,
-  currentServiceLabels,
-  equipmentLabels,
-  inferService,
-  type ServiceKey,
-} from '@/lib/diagnosisCatalog';
-
-const GAPP_SERVICE_LABELS: Record<ServiceKey, string> = {
-  nursing: 'Skilled Nursing',
-  pss: 'Personal Support Services (PSS)',
-  behavioral: 'Behavioral Support Aide Services (BSS)',
-};
+import { buildHsReferral, hsRefusal, type HsAnswers } from '@/lib/websiteIntake';
+import { emailLogoBlock } from '@/lib/emails/logo';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -48,31 +36,6 @@ const REFERRAL_SOURCE_OPTIONS: Record<string, string> = {
   'other': '95b9966f-50f3-436d-826e-821a2bab4014',           // Other
 };
 
-// Friendly labels for the values the marketing form stores as codes, so the
-// referrals tab shows readable text instead of "gapp" / "physician" / "urgent".
-const PROGRAM_LABELS: Record<string, string> = {
-  'gapp': 'GAPP - Georgia Pediatric Program',
-  'now-comp': 'NOW/COMP Waiver',
-  'icwp': 'ICWP - Independent Care Waiver',
-  'edwp': 'EDWP (CCSP & SOURCE)',
-  'private-pay': 'Private Pay',
-  'other': 'Other / Not Sure',
-};
-const SOURCE_LABELS: Record<string, string> = {
-  'hospital': 'Hospital / Medical Facility',
-  'physician': 'Physician / Healthcare Provider',
-  'case-manager': 'Case Manager / Support Coordinator',
-  'family': 'Family Member',
-  'self': 'Self-Referral',
-  'other': 'Other',
-};
-const URGENCY_LABELS: Record<string, string> = {
-  'standard': 'Standard (1-2 weeks)',
-  'urgent': 'Urgent (within 1 week)',
-  'immediate': 'Immediate (ASAP)',
-};
-const labelFor = (map: Record<string, string>, code: string) =>
-  map[code] ?? code;
 
 // Format phone number for ClickUp (requires +1 XXX-XXX-XXXX format for US numbers)
 function formatPhoneForClickUp(phone: string): string {
@@ -139,6 +102,7 @@ export async function processContactSubmission(data: any) {
       replyTo: email,
       subject: `New Contact Form Submission: ${subject}`,
       html: `
+        ${emailLogoBlock()}
         <h2>New Contact Form Submission</h2>
         <p><strong>Name:</strong> ${escapeHtml(name)}</p>
         <p><strong>Email:</strong> ${escapeHtml(email)}</p>
@@ -156,7 +120,7 @@ export async function processContactSubmission(data: any) {
 
     // 2. Add to Google Sheet
     await addToGoogleSheet('Contact Submissions', {
-      Date: new Date().toISOString(),
+      Date: new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }),
       Name: name,
       Email: email,
       Phone: phone,
@@ -197,15 +161,49 @@ export async function processReferralSubmission(data: any) {
   }
 
   const { client, program, referrer, details } = data;
+  const physician = (data.physician ?? {}) as { name?: string; office?: string; phone?: string; fax?: string };
+
+  // Hard stops (GAPP only), same rules as the GAPP site and the portal intake:
+  // the paid-caregiver dead ends, and declining agency staff, are refused
+  // before any email, CRM, or referral record is created. The form blocks
+  // these client-side; this is the backstop for anything that bypasses it.
+  // Returned, not thrown, so the page can show the reason. The rules live in
+  // src/lib/websiteIntake.ts, shared with staff edits of the screened answers.
+  const answers: HsAnswers = { client, program, referrer, details, physician: data.physician ?? {} };
+  const refusal = hsRefusal(answers);
+  if (refusal) {
+    return { success: false, refused: refusal.code, error: refusal.reason };
+  }
 
   try {
-    // 1. Send Email
+    // 1. Store in the unified referrals collection so it appears in the admin
+    // Referrals tab alongside referrals forwarded from the GAPP site. Done
+    // before the email so the email can link straight to the card. Non-fatal:
+    // a storage failure must never block the email/Sheets/ClickUp flow (the
+    // email then just goes out without the link).
+    let storedId: string | null = null;
+    try {
+      // The card is built by the shared builder (src/lib/websiteIntake.ts),
+      // and the answers are kept on the referral so staff edits of the
+      // screened answers can be re-screened and rebuilt the same way.
+      const stored = await createReferral({
+        source: 'hs-website',
+        ...buildHsReferral(answers),
+        intakeAnswers: answers,
+      });
+      storedId = stored.id;
+    } catch (storeErr) {
+      console.error('Referral Firestore store failed (non-fatal):', storeErr);
+    }
+
+    // 2. Send Email
     const { data: result, error } = await resend.emails.send({
       from: FROM_EMAIL,
       to: NOTIFICATION_EMAIL,
       replyTo: referrer.email,
       subject: `New Client Referral: ${client.firstName} ${client.lastName}`,
       html: `
+        ${emailLogoBlock()}
         <h2>New Client Referral</h2>
 
         <h3>Client Information</h3>
@@ -223,6 +221,12 @@ export async function processReferralSubmission(data: any) {
         <p><strong>Insurance Provider:</strong> ${escapeHtml(program.insuranceProvider || 'N/A')}</p>
         <p><strong>Insurance Policy #:</strong> ${escapeHtml(program.insuranceNumber || 'N/A')}</p>
 
+        <h3>Child's Physician</h3>
+        <p><strong>Name:</strong> ${escapeHtml(physician.name || 'N/A')}</p>
+        <p><strong>Office:</strong> ${escapeHtml(physician.office || 'N/A')}</p>
+        <p><strong>Phone:</strong> ${escapeHtml(physician.phone || 'N/A')}</p>
+        <p><strong>Fax:</strong> ${escapeHtml(physician.fax || 'N/A')}</p>
+
         <h3>Referrer Information</h3>
         <p><strong>Source:</strong> ${escapeHtml(referrer.source || 'N/A')}</p>
         <p><strong>Name:</strong> ${escapeHtml(referrer.name)}</p>
@@ -234,6 +238,7 @@ export async function processReferralSubmission(data: any) {
         <p><strong>Urgency:</strong> ${escapeHtml(details.urgency)}</p>
         <p><strong>Service Needs:</strong> ${escapeHtml(details.serviceNeeds || 'N/A')}</p>
         <p><strong>Additional Notes:</strong> ${escapeHtml(details.additionalNotes || 'N/A')}</p>
+        ${storedId ? referralPortalButtonHtml(storedId) : ''}
       `,
     });
 
@@ -242,104 +247,6 @@ export async function processReferralSubmission(data: any) {
       throw new Error(error.message);
     }
 
-    // 1.5 Store in the unified referrals collection so it appears in the admin
-    // Referrals tab alongside referrals forwarded from the GAPP site. Non-fatal:
-    // a storage failure must never block the email/Sheets/ClickUp flow.
-    try {
-      // Backstop flag (mirrors the GAPP intake): flag a GAPP paid-caregiver
-      // request whose described needs read behavioral/developmental.
-      const reviewFlag =
-        program.interest === 'gapp'
-          ? paidCaregiverDiagnosisFlag(
-              `${details.serviceNeeds ?? ''} ${details.additionalNotes ?? ''}`,
-              details.seekingPaidCaregiver
-            )
-          : null;
-      // Young-child advisory (GAPP only): paid family hours cover only care
-      // beyond age-typical needs, so a toddler request is unlikely as-is.
-      const ageFlag =
-        program.interest === 'gapp'
-          ? paidCaregiverAgeFlag(client.dob, details.seekingPaidCaregiver)
-          : null;
-      // Which GAPP service line the answers point to. Scoped to GAPP: the other
-      // programs on this form (NOW/COMP, ICWP, EDWP, private pay) don't have
-      // GAPP service lines and never see the clinical questions.
-      const inferred =
-        program.interest === 'gapp' ? inferService(details) : null;
-
-      await createReferral({
-        source: 'hs-website',
-        clientName: `${client.firstName ?? ''} ${client.lastName ?? ''}`.trim(),
-        clientEmail: client.email ?? '',
-        clientPhone: client.phone ?? '',
-        county: client.county ?? '',
-        program: labelFor(PROGRAM_LABELS, program.interest ?? ''),
-        referrerName: referrer.name ?? '',
-        service: inferred?.service ?? null,
-        details: [
-          ...(reviewFlag ? [{ label: '⚠ Review', value: reviewFlag }] : []),
-          ...(ageFlag ? [{ label: '⚠ Young child', value: ageFlag }] : []),
-          ...(inferred?.conflict
-            ? [{ label: '⚠ Care need unclear', value: inferred.conflict }]
-            : []),
-          { label: 'Date of birth', value: formatDateUS(client.dob ?? '') },
-          { label: 'Secondary phone', value: client.secondaryPhone ?? '' },
-          {
-            label: 'Address',
-            value: [client.address, client.city, client.state, client.zip]
-              .filter(Boolean)
-              .join(', '),
-          },
-          { label: 'Medicaid #', value: program.medicaidNumber ?? '' },
-          { label: 'Insurance provider', value: program.insuranceProvider ?? '' },
-          { label: 'Insurance policy #', value: program.insuranceNumber ?? '' },
-          { label: 'Referral source', value: labelFor(SOURCE_LABELS, referrer.source ?? '') },
-          { label: 'Referrer phone', value: referrer.phone ?? '' },
-          { label: 'Referrer email', value: referrer.email ?? '' },
-          { label: 'Referrer organization', value: referrer.organization ?? '' },
-          { label: 'Urgency', value: labelFor(URGENCY_LABELS, details.urgency ?? '') },
-          { label: 'Diagnosis', value: composeDiagnosisText(details.diagnoses, details.diagnosisOther) },
-          { label: 'Equipment & daily care', value: equipmentLabels(details.equipment).join(', ') },
-          { label: 'Behavior risk', value: behaviorRiskLabel(details.behaviorRisk) },
-          { label: 'Current services', value: currentServiceLabels(details.currentServices).join(', ') },
-          { label: 'Service needs', value: details.serviceNeeds ?? '' },
-          { label: 'Additional notes', value: details.additionalNotes ?? '' },
-          {
-            label: 'Seeking paid caregiver',
-            value:
-              details.seekingPaidCaregiver === 'yes'
-                ? 'Yes'
-                : details.seekingPaidCaregiver === 'no'
-                ? 'No'
-                : '',
-          },
-          {
-            label: 'Inferred service need',
-            value: inferred?.service
-              ? `${GAPP_SERVICE_LABELS[inferred.service]} (${inferred.reason})`
-              : '',
-          },
-          ...(details.seekingPaidCaregiver === 'yes'
-            ? [
-                {
-                  label: 'Primary care need',
-                  value: labelFor(
-                    {
-                      personal: 'Hands-on personal care',
-                      nursing: 'Skilled medical / nursing care',
-                      behavioral: 'Behavioral / autism support',
-                      unsure: 'Not sure',
-                    },
-                    details.careNeeds ?? ''
-                  ),
-                },
-              ]
-            : []),
-        ],
-      });
-    } catch (storeErr) {
-      console.error('Referral Firestore store failed (non-fatal):', storeErr);
-    }
 
     // 1.6 Confirmation auto-responder to the submitter (non-fatal). Goes to the
     // referrer's email if given, otherwise the client/contact email.
@@ -355,9 +262,9 @@ export async function processReferralSubmission(data: any) {
       console.error('Referral confirmation email failed (non-fatal):', confirmErr);
     }
 
-    // 2. Add to Google Sheet
+    // 3. Add to Google Sheet
     await addToGoogleSheet('Referral Submissions', {
-      Date: new Date().toISOString(),
+      Date: new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }),
       'Client Name': `${client.firstName} ${client.lastName}`,
       'Client DOB': formatDateUS(client.dob ?? ''),
       'Client Phone': client.phone,
@@ -384,7 +291,7 @@ export async function processReferralSubmission(data: any) {
 
 
 
-    // 3. Create ClickUp Task
+    // 4. Create ClickUp Task
     const referralListId = process.env.CLICKUP_REFERRAL_LIST_ID;
     if (referralListId) {
       await createClickUpTask(referralListId, {

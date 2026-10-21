@@ -54,6 +54,8 @@ export function ageYears(dobISO: string, todayISO: string): number | null {
 
 export interface DashboardNote {
   id: string;
+  /** '' = shift note, 'rn-oversight-visit' = RN oversight visit note, 'home-supervisory-visit' = home supervisory visit. */
+  noteType: string;
   dateISO: string; // normalized q6_dateofService; '' when unparseable
   submittedAt: Date | null;
   nurseId: string;
@@ -68,10 +70,30 @@ export interface DashboardNote {
   painScore: string;
   medTolerance: string; // q43 radio value
   physNotified: string; // q43_reactionPhysNotified ('Yes' | 'No' | '')
+  shiftStart: string; // q7_shiftStart 'HH:MM' ('' when absent)
+  shiftEnd: string; // q62_shiftEndTime
+  shiftEndDate: string; // q62_shiftEndDate ISO ('' when absent)
   addrLine1: string;
   city: string;
   state: string;
   postal: string;
+  /**
+   * Later readings in the same shift (vitals rechecks, q16r_reading{n}_*),
+   * each holding only the vitals that were retaken. Optional: notes fetched
+   * before the feature carry none.
+   */
+  rechecks?: DashboardRecheck[];
+}
+
+/** One later-in-shift vitals reading, slimmed for the trend chart. */
+export interface DashboardRecheck {
+  time: string; // 'HH:MM'
+  context: string; // what the client was doing ('' when not recorded)
+  temperature: string;
+  bloodPressure: string; // "120/80" or ''
+  pulse: string;
+  respiration: string;
+  oxygenSaturation: string;
 }
 
 /** Notes sorted newest-first by date of service (ties by submittedAt). */
@@ -187,6 +209,7 @@ export function careTeamFromNotes(
 // ---------------------------------------------------------------------------
 // MAR compliance. Structural types mirror MarOrder / MarAdministration without
 // importing the Firebase-backed module.
+import { classifyDoseAgainstShiftSet } from './marShared';
 // ---------------------------------------------------------------------------
 
 export interface DashOrder {
@@ -211,6 +234,10 @@ export interface DashAdmin {
   status: string; // given | held | refused
   outcome?: string;
   prescriberNotified?: boolean;
+  documentedBy?: string;
+  administeredByType?: string;
+  actualTime?: string;
+  voided?: boolean;
 }
 
 function orderAppliesOnLite(o: DashOrder, date: string): boolean {
@@ -222,10 +249,12 @@ function orderAppliesOnLite(o: DashOrder, date: string): boolean {
 /** Live (non-superseded) records — local mirror of resolveCurrentAdministrations.
  *  Exported so callers (e.g. the activity feed) never render a corrected record
  *  alongside its correction. */
-export function currentAdmins<T extends { id?: string; amends?: string }>(list: T[]): T[] {
+export function currentAdmins<T extends { id?: string; amends?: string; voided?: boolean }>(
+  list: T[],
+): T[] {
   const superseded = new Set<string>();
   for (const r of list) if (r.amends) superseded.add(r.amends);
-  return list.filter((r) => !(r.id && superseded.has(r.id)));
+  return list.filter((r) => !(r.id && superseded.has(r.id)) && r.voided !== true);
 }
 
 /** A dose is PRN-ish when charted against the PRN slot OR as an unscheduled
@@ -466,6 +495,12 @@ export function bestCurrency(a: DocumentCurrency, b: DocumentCurrency): Document
 
 export interface VitalPoint {
   dateISO: string;
+  /**
+   * Set on a point that came from a vitals recheck rather than the note's
+   * first set: the 1-based reading number, its 'HH:MM', and what the client
+   * was doing. The chart draws these as hollow dots and labels them by time.
+   */
+  recheck?: { index: number; time: string; context: string };
   temp?: number;
   sys?: number;
   dia?: number;
@@ -479,35 +514,63 @@ function inBounds(v: number, low: number, high: number): number | undefined {
   return !isNaN(v) && v >= low && v <= high ? v : undefined;
 }
 
-/** One point per note carrying at least one plausible vital, oldest first. */
+function parseVitals(
+  p: VitalPoint,
+  v: { temperature: string; bloodPressure: string; pulse: string; respiration: string; oxygenSaturation: string; painScore?: string },
+): boolean {
+  p.temp = inBounds(parseFloat(v.temperature), 90, 110);
+  const bp = /^\s*(\d{2,3})\s*\/\s*(\d{2,3})\s*$/.exec(v.bloodPressure || '');
+  if (bp) {
+    p.sys = inBounds(Number(bp[1]), 50, 260);
+    p.dia = inBounds(Number(bp[2]), 20, 160);
+  }
+  p.pulse = inBounds(parseFloat(v.pulse), 20, 260);
+  p.resp = inBounds(parseFloat(v.respiration), 4, 80);
+  p.spo2 = inBounds(parseFloat(v.oxygenSaturation), 50, 100);
+  if (v.painScore !== undefined) p.pain = inBounds(parseFloat(v.painScore), 0, 10);
+  return (
+    p.temp !== undefined ||
+    p.sys !== undefined ||
+    p.dia !== undefined ||
+    p.pulse !== undefined ||
+    p.resp !== undefined ||
+    p.spo2 !== undefined ||
+    p.pain !== undefined
+  );
+}
+
+/**
+ * One point per note carrying at least one plausible vital, oldest first,
+ * followed on the same date by one point per vitals recheck (in the order
+ * the nurse logged them, then by time). A recheck point carries only the
+ * vitals that were retaken, so a pulse-only recheck leaves every other line
+ * at its previous value (the chart connects across the gap).
+ */
 export function vitalSeries(notes: DashboardNote[]): VitalPoint[] {
   const points: VitalPoint[] = [];
   for (const n of notes) {
     if (!n.dateISO) continue;
     const p: VitalPoint = { dateISO: n.dateISO };
-    p.temp = inBounds(parseFloat(n.temperature), 90, 110);
-    const bp = /^\s*(\d{2,3})\s*\/\s*(\d{2,3})\s*$/.exec(n.bloodPressure || '');
-    if (bp) {
-      p.sys = inBounds(Number(bp[1]), 50, 260);
-      p.dia = inBounds(Number(bp[2]), 20, 160);
-    }
-    p.pulse = inBounds(parseFloat(n.pulse), 20, 260);
-    p.resp = inBounds(parseFloat(n.respiration), 4, 80);
-    p.spo2 = inBounds(parseFloat(n.oxygenSaturation), 50, 100);
-    p.pain = inBounds(parseFloat(n.painScore), 0, 10);
-    if (
-      p.temp !== undefined ||
-      p.sys !== undefined ||
-      p.dia !== undefined ||
-      p.pulse !== undefined ||
-      p.resp !== undefined ||
-      p.spo2 !== undefined ||
-      p.pain !== undefined
-    ) {
-      points.push(p);
-    }
+    if (parseVitals(p, n)) points.push(p);
+    (n.rechecks || []).forEach((r, i) => {
+      const rp: VitalPoint = { dateISO: n.dateISO, recheck: { index: i + 1, time: r.time, context: r.context } };
+      if (parseVitals(rp, r)) points.push(rp);
+    });
   }
-  return points.sort((a, b) => a.dateISO.localeCompare(b.dateISO));
+  // Stable sort: same-date points keep note order (first set, then rechecks
+  // in logged order), and rechecks additionally order by clock time.
+  return points
+    .map((p, i) => ({ p, i }))
+    .sort((a, b) => {
+      const byDate = a.p.dateISO.localeCompare(b.p.dateISO);
+      if (byDate !== 0) return byDate;
+      const ta = a.p.recheck ? a.p.recheck.time || '99:99' : '';
+      const tb = b.p.recheck ? b.p.recheck.time || '99:99' : '';
+      if (!!a.p.recheck !== !!b.p.recheck) return a.p.recheck ? 1 : -1;
+      const byTime = ta.localeCompare(tb);
+      return byTime !== 0 ? byTime : a.i - b.i;
+    })
+    .map(({ p }) => p);
 }
 
 export interface MedWeekBucket {
@@ -628,4 +691,80 @@ export function groupVisitsByDate<T extends DashVisit>(visits: T[]): Map<string,
     list.sort((a, b) => (a.startTime || '99:99').localeCompare(b.startTime || '99:99'));
   }
   return map;
+}
+
+/**
+ * Doses attested as NURSE-GIVEN at times outside the documenting nurse's own
+ * shift window (from her note for that date), across [startISO..endISO].
+ * Powers the "Shift-window integrity" readiness card (owner request after a
+ * nurse repeatedly charted 22:00 doses on a shift ending mid-afternoon).
+ * Conservative by construction: only provable mismatches count — family/proxy
+ * doses, doses with no matching note, and unparseable times are all skipped
+ * (capture-time gates own prevention; this surface is for supervisor review).
+ */
+export function outOfWindowDoseCount(
+  admins: DashAdmin[],
+  notes: DashboardNote[],
+  startISO: string,
+  endISO: string,
+): number {
+  // ALL of a nurse's windows for a date (split-shift second notes included),
+  // plus the next-day TAIL of an overnight note (00:00 -> its end) indexed
+  // under the following date, so legitimate early-morning back-charting from
+  // an overnight shift is not counted.
+  const windowsByNurseDate = new Map<string, Array<{ start: string; end: string; endsNextDay: boolean }>>();
+  const push = (key: string, w: { start: string; end: string; endsNextDay: boolean }) => {
+    const list = windowsByNurseDate.get(key) || [];
+    list.push(w);
+    windowsByNurseDate.set(key, list);
+  };
+  const HHMM_RE = /^\d{2}:\d{2}$/;
+  for (const n of notes) {
+    if (!n.nurseId || !n.dateISO || !n.shiftStart || !n.shiftEnd) continue;
+    const endsNextDay = !!n.shiftEndDate && n.shiftEndDate > n.dateISO;
+    push(`${n.nurseId}|${n.dateISO}`, {
+      start: n.shiftStart,
+      end: n.shiftEnd,
+      endsNextDay,
+    });
+    const overnight =
+      endsNextDay || (HHMM_RE.test(n.shiftStart) && HHMM_RE.test(n.shiftEnd) && n.shiftEnd < n.shiftStart);
+    if (overnight) {
+      push(`${n.nurseId}|${shiftISO(n.dateISO, 1)}`, {
+        start: '00:00',
+        end: n.shiftEnd,
+        endsNextDay: false,
+      });
+    }
+  }
+  // The GIVING nurse is the chain root's documenter: an amendment re-stamps
+  // documentedBy to the amender (often a supervisor), whose shift windows say
+  // nothing about who gave the dose.
+  const byId = new Map<string, DashAdmin>();
+  for (const a of admins) if (a.id) byId.set(a.id, a);
+  const rootDocumenter = (a: DashAdmin): string => {
+    let cur: DashAdmin = a;
+    for (let hop = 0; hop < 20 && cur.amends; hop += 1) {
+      const prev = byId.get(cur.amends);
+      if (!prev) break;
+      cur = prev;
+    }
+    return cur.documentedBy || a.documentedBy || '';
+  };
+  let count = 0;
+  for (const a of currentAdmins(admins)) {
+    if (a.status !== 'given') continue;
+    if (a.administeredByType && a.administeredByType !== 'nurse') continue;
+    if (!a.date || a.date < startISO || a.date > endISO) continue;
+    const giver = rootDocumenter(a);
+    const ws = giver ? windowsByNurseDate.get(`${giver}|${a.date}`) : undefined;
+    if (!ws || ws.length === 0) continue;
+    const doseTime =
+      (a.actualTime || '').trim() ||
+      (a.scheduledTime && a.scheduledTime !== 'PRN' && a.scheduledTime !== 'unscheduled' ? a.scheduledTime : '');
+    if (classifyDoseAgainstShiftSet(doseTime, ws) === 'outside') {
+      count += 1;
+    }
+  }
+  return count;
 }

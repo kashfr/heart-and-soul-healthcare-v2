@@ -1,5 +1,6 @@
 import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer';
 import type { SharedReferralView } from '@/lib/referralShares';
+import { formatDateUS } from '@/lib/dateFormat';
 
 // A clean one-page PDF of a shared referral, for the partner agency to download.
 
@@ -58,7 +59,7 @@ export default function ReferralSharePDF({ view }: { view: SharedReferralView })
           <Row key={`b${i}`} label={label} value={value} />
         ))}
         {view.details.map((d, i) => (
-          <Row key={`d${i}`} label={d.label} value={d.value} />
+          <Row key={`d${i}`} label={d.label} value={d.value ? formatDateUS(d.value) : d.value} />
         ))}
 
         <Text style={styles.footer}>

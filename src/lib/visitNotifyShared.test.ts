@@ -47,7 +47,7 @@ describe('visitSmsBody', () => {
     const body = visitSmsBody('reminder', SHIFT);
     expect(body).toContain('reminder');
     expect(body).toContain('today, Fri, Jul 10 at 10:00 AM');
-    expect(visitEmailSubject('reminder', SHIFT)).toBe('Visit reminder for today: Fri, Jul 10');
+    expect(visitEmailSubject('reminder', SHIFT)).toBe('Visit Reminder for Today: Fri, Jul 10');
     expect(visitEmailBody('reminder', SHIFT, 'Steve')).toContain('A reminder: you have a shift visit today');
   });
 
@@ -56,7 +56,7 @@ describe('visitSmsBody', () => {
     expect(body).toContain('tomorrow, Fri, Jul 10 at 10:00 AM');
     expect(body).not.toContain('today');
     expect(body).toContain(PORTAL_LOGIN_URL);
-    expect(visitEmailSubject('reminder_tomorrow', SHIFT)).toBe('Visit reminder for tomorrow: Fri, Jul 10');
+    expect(visitEmailSubject('reminder_tomorrow', SHIFT)).toBe('Visit Reminder for Tomorrow: Fri, Jul 10');
     expect(visitEmailBody('reminder_tomorrow', SHIFT, 'Steve')).toContain(
       'A reminder: you have a shift visit tomorrow',
     );
@@ -107,9 +107,9 @@ describe('morning-nudge cutoff', () => {
 
 describe('visitEmailSubject / visitEmailBody', () => {
   it('subject names the event and date', () => {
-    expect(visitEmailSubject('assigned', SHIFT)).toBe('New shift visit assigned: Fri, Jul 10');
-    expect(visitEmailSubject('cancelled', SHIFT)).toBe('Visit cancelled: Fri, Jul 10');
-    expect(visitEmailSubject('restored', SUP_NO_TIME)).toBe('Visit back on the schedule: Sun, Jul 12');
+    expect(visitEmailSubject('assigned', SHIFT)).toBe('New Shift Visit Assigned: Fri, Jul 10');
+    expect(visitEmailSubject('cancelled', SHIFT)).toBe('Visit Cancelled: Fri, Jul 10');
+    expect(visitEmailSubject('restored', SUP_NO_TIME)).toBe('Visit Back on the Schedule: Sun, Jul 12');
   });
 
   it('body greets by first name and explains where client details live', () => {
@@ -152,5 +152,21 @@ describe('PHI-free by construction', () => {
     // the fixed copy plus date/time/type simply doesn't contain them.
     expect(everything).not.toMatch(/\d{3,} [A-Z][a-z]+ (St|Ave|Dr|Rd|Blvd)/);
     expect(everything).not.toMatch(/MRN|record #|diagnosis/i);
+  });
+});
+
+describe('offered and auto-next notices stay PHI-free', () => {
+  const facts = { date: '2026-10-05', startTime: '10:00', type: 'supervisory' as const };
+  it('offered: says a supervisory visit needs a supervisor and where to accept', () => {
+    expect(visitSmsBody('offered', facts)).toBe(
+      'Heart & Soul Healthcare: a supervisory visit on Mon, Oct 5 at 10:00 AM needs a supervisor. The first to accept takes it. Sign in to accept: https://www.heartandsoulhc.org/login',
+    );
+    expect(visitEmailSubject('offered', facts)).toBe('Supervisory Visit Needs a Supervisor: Mon, Oct 5');
+    expect(visitEmailBody('offered', facts, 'Nya')).toContain('the first to accept takes it');
+  });
+  it('auto_next: tells the supervisor her next visit was scheduled', () => {
+    expect(visitSmsBody('auto_next', facts)).toContain('your next supervisory visit was scheduled for Mon, Oct 5 at 10:00 AM');
+    expect(visitEmailSubject('auto_next', facts)).toBe('Next Supervisory Visit Scheduled: Mon, Oct 5');
+    expect(visitEmailBody('auto_next', facts, '')).toContain('30 days after the one you filed');
   });
 });

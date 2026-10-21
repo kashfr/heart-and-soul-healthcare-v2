@@ -2,17 +2,8 @@ import { NextResponse } from 'next/server';
 import { timingSafeEqual } from 'node:crypto';
 import { createReferral, type ReferralInput } from '@/lib/referrals';
 import { sendReferralNotification } from '@/lib/emails/referralNotification';
-import { formatDateUS } from '@/lib/dateFormat';
 import { sendReferralConfirmation } from '@/lib/emails/referralConfirmation';
-import { paidCaregiverDiagnosisFlag, paidCaregiverAgeFlag } from '@/lib/diagnosisScreening';
-import {
-  CATALOG_VERSION,
-  behaviorRiskLabel,
-  currentServiceLabels,
-  equipmentLabels,
-  inferService,
-  type BehaviorRisk,
-} from '@/lib/diagnosisCatalog';
+import { buildGappReferral, gappRefusal, type GappAnswers } from '@/lib/websiteIntake';
 
 // Public intake for referrals submitted from external sites (the GAPP website).
 // Authenticated with a shared secret (not a user session), since the caller is
@@ -43,145 +34,20 @@ interface IncomingPayload {
   source?: string;
   id?: string;
   submittedAt?: string;
-  referral?: {
-    submitterName?: string;
-    fullName?: string;
-    phoneNumber?: string;
-    emailAddress?: string;
-    streetAddress?: string;
-    city?: string;
-    zip?: string;
-    county?: string;
-    childsMedicaidID?: string;
-    /** Readable diagnosis text. Composed by the form from the structured
-     *  answers below (or typed free-hand by older form builds), and stored
-     *  verbatim as the Diagnosis row so nothing downstream had to change. */
-    diagnosis?: string;
-    /** Structured intake (src/lib/diagnosisCatalog.ts). Absent on submissions
-     *  from a form build that predates the checkboxes — every consumer below
-     *  degrades to the free-text diagnosis in that case. */
-    diagnoses?: string[];
-    diagnosisOther?: string;
-    equipment?: string[];
-    behaviorRisk?: BehaviorRisk;
-    currentServices?: string[];
-    /** The catalog the submitting form was built against. */
-    catalogVersion?: string;
-    comments?: string;
-    provideLater?: boolean;
-    dob?: string;
-    careNeeds?: '' | 'personal' | 'nursing' | 'behavioral' | 'unsure';
-    seekingPaidCaregiver?: '' | 'yes' | 'no';
-  };
+  referral?: GappAnswers;
 }
 
-const CARE_LABEL: Record<string, string> = {
-  personal: 'Hands-on personal care',
-  nursing: 'Skilled medical / nursing care',
-  behavioral: 'Behavioral / autism support',
-  unsure: 'Not sure',
-};
-
-const SERVICE_LABEL: Record<string, string> = {
-  nursing: 'Skilled Nursing',
-  pss: 'Personal Support Services (PSS)',
-  behavioral: 'Behavioral Support Aide Services (BSS)',
-};
-
-// Age label for the staff view, e.g. "2 years" or "8 months". Empty if the date
-// of birth is missing or unparseable.
-function ageLabel(dob?: string): string {
-  if (!dob) return '';
-  const birth = new Date(`${dob}T00:00:00`);
-  if (Number.isNaN(birth.getTime())) return '';
-  const now = new Date();
-  if (birth > now) return '';
-  let months =
-    (now.getFullYear() - birth.getFullYear()) * 12 +
-    (now.getMonth() - birth.getMonth());
-  if (now.getDate() < birth.getDate()) months -= 1;
-  if (months < 0) return '';
-  const years = Math.floor(months / 12);
-  return years < 1
-    ? `${months} month${months === 1 ? '' : 's'}`
-    : `${years} year${years === 1 ? '' : 's'}`;
-}
-
-// Map the GAPP website's payload into a unified referral.
+// Map the GAPP website's payload into a unified referral. The card is built
+// by the shared builder (src/lib/websiteIntake.ts), which also rebuilds it
+// when staff edit the screened answers, and the answers themselves are kept
+// on the referral for that.
 function toReferralInput(payload: IncomingPayload): ReferralInput {
-  const r = payload.referral ?? {};
-  const address = [r.streetAddress, r.city, r.zip ? `GA ${r.zip}` : '']
-    .filter(Boolean)
-    .join(', ');
-  const medicaid = r.childsMedicaidID
-    ? r.childsMedicaidID
-    : r.provideLater
-    ? 'Will provide later'
-    : '';
-
-  const seekingValue =
-    r.seekingPaidCaregiver === 'yes'
-      ? 'Yes'
-      : r.seekingPaidCaregiver === 'no'
-      ? 'No'
-      : '';
-  // Backstop flag: the GAPP form blocks most paid-caregiver-for-behavioral
-  // requests, but flag any that reach us so staff can triage at a glance.
-  const reviewFlag = paidCaregiverDiagnosisFlag(r.diagnosis, r.seekingPaidCaregiver);
-  // Young-child advisory: paid family hours cover only care beyond age-typical
-  // needs, so a request for a toddler is unlikely to be approved as-is.
-  const ageFlag = paidCaregiverAgeFlag(r.dob, r.seekingPaidCaregiver);
-
-  // Which GAPP service line the family's answers point to, and whether that
-  // disagrees with the care need they selected. Advisory: it drives the board's
-  // partner matching and flags the card, it never decides eligibility (which
-  // Alliant determines on medical necessity, GAPP manual §702.1.1).
-  const inferred = inferService(r);
-  const inferredValue = inferred.service
-    ? `${SERVICE_LABEL[inferred.service]} (${inferred.reason})`
-    : '';
-
-  // A form built against a different catalog than this one is speaking a
-  // vocabulary we may not fully understand, so say so on the card rather than
-  // silently dropping codes we don't recognize.
-  const catalogDrift =
-    r.catalogVersion && r.catalogVersion !== CATALOG_VERSION
-      ? `Submitted by a form using catalog ${r.catalogVersion}; this portal expects ${CATALOG_VERSION}. Some answers may be missing.`
-      : null;
-
+  const answers = payload.referral ?? {};
   return {
     source: 'gapp-website',
     externalId: payload.id,
-    clientName: r.fullName ?? '',
-    clientEmail: r.emailAddress ?? '',
-    clientPhone: r.phoneNumber ?? '',
-    county: r.county ?? '',
-    program: 'GAPP - Georgia Pediatric Program',
-    referrerName: r.submitterName || undefined,
-    service: inferred.service,
-    details: [
-      ...(reviewFlag ? [{ label: '⚠ Review', value: reviewFlag }] : []),
-      ...(ageFlag ? [{ label: '⚠ Young child', value: ageFlag }] : []),
-      ...(inferred.conflict
-        ? [{ label: '⚠ Care need unclear', value: inferred.conflict }]
-        : []),
-      ...(catalogDrift ? [{ label: '⚠ Form version', value: catalogDrift }] : []),
-      { label: 'Date of birth', value: formatDateUS(r.dob ?? '') },
-      { label: 'Age', value: ageLabel(r.dob) },
-      { label: 'Address', value: address },
-      { label: "Member's Medicaid ID", value: medicaid },
-      { label: 'Diagnosis', value: r.diagnosis ?? '' },
-      { label: 'Equipment & daily care', value: equipmentLabels(r.equipment).join(', ') },
-      { label: 'Behavior risk', value: behaviorRiskLabel(r.behaviorRisk) },
-      { label: 'Current services', value: currentServiceLabels(r.currentServices).join(', ') },
-      { label: 'Comments', value: r.comments ?? '' },
-      {
-        label: 'Primary care need',
-        value: CARE_LABEL[r.careNeeds ?? ''] ?? '',
-      },
-      { label: 'Inferred service need', value: inferredValue },
-      { label: 'Seeking paid caregiver', value: seekingValue },
-    ],
+    ...buildGappReferral(answers),
+    intakeAnswers: answers,
   };
 }
 
@@ -213,6 +79,20 @@ export async function POST(req: Request) {
     );
   }
 
+  // Hard stops, mirrored from the GAPP site's form and route: the paid-caregiver
+  // dead ends are refused, not stored, and not emailed. There is nothing the
+  // agency can do with them. 422 (not 5xx) so the site treats it as a refusal
+  // rather than an outage and does not fire its portal-down fallback email.
+  // Declining agency staff is refused whether or not pay is sought, so it
+  // runs after (and outside) the paid-only checks, matching the forms.
+  const refusal = gappRefusal(payload.referral ?? {});
+  if (refusal) {
+    return NextResponse.json(
+      { error: refusal.reason, refused: refusal.code },
+      { status: 422 }
+    );
+  }
+
   let created;
   try {
     created = await createReferral(input);
@@ -228,7 +108,7 @@ export async function POST(req: Request) {
   if (!created.deduped) {
     const r = payload.referral ?? {};
     const [notif, confirm] = await Promise.all([
-      sendReferralNotification(input),
+      sendReferralNotification(input, created.id),
       sendReferralConfirmation({
         to: input.clientEmail,
         submitterName: r.submitterName,

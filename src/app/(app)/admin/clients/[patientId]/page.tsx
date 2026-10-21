@@ -1,26 +1,35 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { btn, btnPrimary, btnSm } from '@/components/buttons';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowLeft,
   MapPin,
+  MessagesSquare,
   Pill,
   FileText,
   ClipboardList,
+  Copy,
   Activity,
   AlertTriangle,
   CalendarClock,
   FolderOpen,
+  ListChecks,
+  Clock,
   Stethoscope,
   TrendingUp,
 } from 'lucide-react';
 import { AuthGuard } from '@/components/AuthGuard';
+import { ClientActivityLog } from '@/components/ClientActivityLog';
+import { AssistantClientDetails } from '@/components/AssistantClients';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
 import { getPatient, getPatientClinical, type Patient, type PatientClinical } from '@/lib/patients';
+import { describeBaselines } from '@/lib/vitalsBaselines';
+import { formatUSFaxNumber } from '@/lib/verbalOrderShared';
 import { getMarOrders, getAdministrationsForRange, type MarOrder, type MarAdministration } from '@/lib/mar';
 import { getNotesForPatient } from '@/lib/submissions';
 import { getPatientDocuments, type PatientDocument } from '@/lib/patientDocuments';
@@ -28,6 +37,20 @@ import { getVisitsForPatient, type PatientVisit } from '@/lib/patientVisits';
 import DocumentsSection from './DocumentsSection';
 import VisitsSection from './VisitsSection';
 import QuickNotesSection from './QuickNotesSection';
+import HandoffBoardSection from './HandoffBoardSection';
+import VerbalOrdersSection from './VerbalOrdersSection';
+import MedErrorsSection from './MedErrorsSection';
+import SeizureLogSection from './SeizureLogSection';
+import CarePlanSection from './CarePlanSection';
+import HoursSection from './HoursSection';
+import DayProgramSection from './DayProgramSection';
+import PhysiciansSection from './PhysiciansSection';
+import GuardianSection from './GuardianSection';
+import SupportCoordinatorSection from './SupportCoordinatorSection';
+import ServicePlanSection from './ServicePlanSection';
+import CommunicationsLog from '@/components/CommunicationsLog';
+import { SERVICE_PLAN_DOC_CATEGORY, SERVICE_PLAN_MAX_DAYS } from '@/lib/servicePlanShared';
+import { monthLabel } from '@/lib/shiftHours';
 import { physicianAttributionPending, physicianOrderStale } from '@/lib/marShared';
 import {
   adverseEvents,
@@ -46,6 +69,7 @@ import {
   timelinessStats,
   upcomingVisits,
   type DashboardNote,
+  outOfWindowDoseCount,
 } from '@/lib/clientDashboardShared';
 
 // The dashboard grew to seven full sections; tabs keep each audience's view
@@ -57,8 +81,19 @@ const TABS = [
   { key: 'overview', label: 'Overview' },
   { key: 'schedule', label: 'Schedule' },
   { key: 'trends', label: 'Trends' },
-  { key: 'readiness', label: 'Survey readiness' },
+  { key: 'readiness', label: 'Survey Readiness' },
   { key: 'documents', label: 'Documents' },
+  { key: 'serviceplan', label: 'Service Plan' },
+  { key: 'communications', label: 'Communications' }, // staff-only
+  // Staff-only: the care-task editor that used to be the Care Plans sidebar
+  // tab (nav consolidation, Aug 2026). Hidden from nurses at render time and
+  // guarded in the tab resolver below.
+  { key: 'careplan', label: 'Care Plan' },
+  // Owner-only: authorized hours vs documented shift hours (billing + the
+  // parent's "how many hours are left"). Hidden from every other role and
+  // while an admin previews a nurse's view; guarded in the resolver below.
+  { key: 'hours', label: 'Hours' },
+  { key: 'activity', label: 'Activity Log' },
 ] as const;
 type TabKey = (typeof TABS)[number]['key'];
 
@@ -116,6 +151,10 @@ interface ActivityItem {
   when: Date;
   text: string;
   kind: 'note' | 'med' | 'dose';
+  /** Where the entry came from, so the row opens the actual record. */
+  href?: string;
+  /** Tooltip on the link ("Open this progress note"). */
+  hint?: string;
 }
 
 function tsToDate(v: unknown): Date | null {
@@ -138,19 +177,27 @@ function ClientDashboardInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
-  const tab: TabKey = isTabKey(tabParam) ? tabParam : 'overview';
-  const setTab = (next: TabKey) => {
-    router.replace(next === 'overview' ? pathname : `${pathname}?tab=${next}`, { scroll: false });
-  };
-  const { uid, role } = useEffectiveUser();
+  const { uid, role, isViewingAs } = useEffectiveUser();
   const isNurse = role === 'nurse';
-  const { settings } = useSettings();
   // Writes (upload/archive) always act as the REAL signed-in user — the
   // Firestore create rule pins uploadedBy to auth.uid, so a view-as session
   // can't forge authorship.
   const { user, profile } = useAuth();
   const realRole = profile?.role || '';
   const realStaff = realRole === 'admin' || realRole === 'supervisor';
+  // The Hours tab is the owner's alone (hoursAuthorizations is admin-only in
+  // rules too), and it stays hidden while previewing another user's view.
+  const showHoursTab = realRole === 'admin' && !isViewingAs;
+  // Care plan is a staff surface; a nurse deep-linking ?tab=careplan lands on
+  // Overview instead of an editor she isn't meant to drive.
+  const tab: TabKey =
+    isTabKey(tabParam) && !((tabParam === 'careplan' || tabParam === 'communications') && isNurse) && !((tabParam === 'hours' || tabParam === 'activity') && !showHoursTab)
+      ? tabParam
+      : 'overview';
+  const setTab = (next: TabKey) => {
+    router.replace(next === 'overview' ? pathname : `${pathname}?tab=${next}`, { scroll: false });
+  };
+  const { settings } = useSettings();
 
   const [patient, setPatient] = useState<Patient | null>(null);
   const [clinical, setClinical] = useState<PatientClinical | null>(null);
@@ -229,6 +276,10 @@ function ClientDashboardInner() {
   const physicianPendingCount = activeOrders.filter((o) => physicianAttributionPending(o)).length;
   // D.1 second half: the signed order itself must be dated within 12 months.
   const staleOrderCount = activeOrders.filter((o) => physicianOrderStale(o, today)).length;
+  // Verbal orders whose signed copy hasn't come back: no signed order behind
+  // the med yet, whatever its start date says. Counted separately so the
+  // tile can say "awaiting signature" rather than "older than 12 months".
+  const pendingVerbalCount = activeOrders.filter((o) => o.verbalOrderPending === true).length;
 
   const mar30 = useMemo(
     () => marComplianceStats(orders, admins, start30, today, today),
@@ -262,6 +313,13 @@ function ClientDashboardInner() {
     () => documentCurrency(documents, 'Plan of Care (485)', POC_MAX_DAYS, today),
     [documents, today],
   );
+  // The agency's own Service Plan: signing a plan or a "no changes" review
+  // files a PDF under this category, dated that day, so the newest one is the
+  // last review. 111-8-65-.11(2): nursing plans every 62 days.
+  const servicePlanCurrency = useMemo(
+    () => documentCurrency(documents, SERVICE_PLAN_DOC_CATEGORY, SERVICE_PLAN_MAX_DAYS, today),
+    [documents, today],
+  );
 
   // Upload rights: staff, or a nurse on THIS client's care team (real user —
   // the create rules verify the same thing server-side).
@@ -276,6 +334,10 @@ function ClientDashboardInner() {
     return n ? [n.addrLine1, n.city, n.state, n.postal].filter(Boolean).join(', ') : '';
   }, [patient, notes]);
 
+  // Declared before the activity memo below, which links medication and
+  // dose entries into the MAR.
+  const marHref = isNurse ? `/admin/mar/${patientId}` : `/admin/records/${patientId}/mar`;
+
   const activity = useMemo<ActivityItem[]>(() => {
     const items: ActivityItem[] = [];
     // Rank note candidates by WHEN THEY WERE SUBMITTED, not date of service —
@@ -288,17 +350,35 @@ function ClientDashboardInner() {
       items.push({
         when: n.submittedAt as Date,
         kind: 'note',
-        text: `Progress note for ${fmtDate(n.dateISO)} by ${n.nurseName || 'a nurse'}${n.credential ? `, ${n.credential}` : ''}`,
+        text: `${n.noteType === 'rn-oversight-visit' ? 'RN oversight visit' : n.noteType === 'home-supervisory-visit' ? 'Home supervisory visit' : 'Progress note'} for ${fmtDate(n.dateISO)} by ${n.nurseName || 'a nurse'}${n.credential ? `, ${n.credential}` : ''}`,
+        href: `/admin/submissions/${n.id}`,
+        hint: 'Open this note',
       });
     }
+    // Medication entries open the MAR on the month the change was made, so a
+    // med added in July doesn't land on the current month's grid.
+    const marMonthHref = (d: Date) =>
+      `${marHref}?month=${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     for (const o of orders) {
       const created = tsToDate(o.createdAt);
       if (created) {
-        items.push({ when: created, kind: 'med', text: `Medication added: ${o.medName} ${o.dose}${o.units ? ` ${o.units}` : ''}${o.createdByName ? ` (by ${o.createdByName})` : ''}` });
+        items.push({
+          when: created,
+          kind: 'med',
+          text: `Medication added: ${o.medName} ${o.dose}${o.units ? ` ${o.units}` : ''}${o.createdByName ? ` (by ${o.createdByName})` : ''}`,
+          href: marMonthHref(created),
+          hint: `Open the MAR for ${o.medName}`,
+        });
       }
       const dced = tsToDate(o.discontinuedAt);
       if (dced) {
-        items.push({ when: dced, kind: 'med', text: `Medication discontinued: ${o.medName}${o.discontinuedByName ? ` (by ${o.discontinuedByName})` : ''}` });
+        items.push({
+          when: dced,
+          kind: 'med',
+          text: `Medication discontinued: ${o.medName}${o.discontinuedByName ? ` (by ${o.discontinuedByName})` : ''}`,
+          href: marMonthHref(dced),
+          hint: `Open the MAR for ${o.medName}`,
+        });
       }
     }
     // Amendment-resolved, so a corrected record never shows beside its correction.
@@ -306,15 +386,23 @@ function ClientDashboardInner() {
       if (a.status === 'held' || a.status === 'refused') {
         const when = tsToDate(a.at);
         if (when) {
-          items.push({ when, kind: 'dose', text: `Dose ${a.status}: ${a.medNameSnapshot} on ${fmtDate(a.date)}${a.reason ? ` (${a.reason})` : ''}` });
+          // The dose's own date drives the month (a late entry for the 30th
+          // charted on the 1st belongs to the month it was given in).
+          const month = /^\d{4}-\d{2}/.test(a.date) ? a.date.slice(0, 7) : null;
+          items.push({
+            when,
+            kind: 'dose',
+            text: `Dose ${a.status}: ${a.medNameSnapshot} on ${fmtDate(a.date)}${a.reason ? ` (${a.reason})` : ''}`,
+            href: month ? `${marHref}?month=${month}` : marHref,
+            hint: `Open the MAR for ${fmtDate(a.date)}`,
+          });
         }
       }
     }
     return items.sort((x, y) => y.when.getTime() - x.when.getTime()).slice(0, 10);
-  }, [notes, orders, admins]);
+  }, [notes, orders, admins, marHref]);
 
   const age = patient?.dob ? ageYears(patient.dob, today) : null;
-  const marHref = isNurse ? `/admin/mar/${patientId}` : `/admin/records/${patientId}/mar`;
 
   // Survey-readiness signals (baseline thresholds; tune with the compliance nurse).
   const timelinessSignal: Signal =
@@ -326,8 +414,22 @@ function ClientDashboardInner() {
     adverse.length === 0 ? 'good' : adverse.every((e) => e.physNotified === 'Yes') ? 'warn' : 'bad';
   const physicianSignal: Signal =
     activeOrders.length === 0 ? 'none' : physicianPendingCount === 0 ? 'good' : 'bad';
+  // Nurse-given doses charted at times outside the documenting nurse's own
+  // shift window (60-minute grace) — supervisor review queue, warn tier:
+  // prevention now lives at capture, and legacy entries need amendment
+  // conversations (usually to family-given), not a red alarm.
+  const outOfWindow30 = useMemo(
+    () => outOfWindowDoseCount(admins, notes, start30, today),
+    [admins, notes, start30, today],
+  );
+  // Gate on ALL charted given doses — scheduled AND PRN/one-off — or a
+  // client whose only doses are PRN would show 'No doses charted' while an
+  // out-of-window PRN dose hides behind it.
+  const given30 = mar30.given + mar30.prnGiven;
+  const shiftIntegritySignal: Signal =
+    outOfWindow30 > 0 ? 'warn' : given30 === 0 ? 'none' : 'good';
   const orderCurrencySignal: Signal =
-    activeOrders.length === 0 ? 'none' : staleOrderCount === 0 ? 'good' : 'bad';
+    activeOrders.length === 0 ? 'none' : staleOrderCount > 0 ? 'bad' : pendingVerbalCount > 0 ? 'warn' : 'good';
   // Warn (not bad): the attestation checkbox is new, so historical refusals
   // all read as un-notified; treat as follow-up work, not a red alarm.
   const notifySignal: Signal =
@@ -370,6 +472,12 @@ function ClientDashboardInner() {
       go: () => router.push(marHref),
     });
   }
+  if (pendingVerbalCount > 0) {
+    alerts.push({
+      text: `${pendingVerbalCount} verbal order${pendingVerbalCount === 1 ? '' : 's'} awaiting the physician's signature`,
+      go: () => router.push('/admin/verbal-orders'),
+    });
+  }
   if (adverseSignal === 'bad') {
     alerts.push({ text: 'Adverse reaction without physician notification', go: () => setTab('readiness') });
   }
@@ -388,6 +496,11 @@ function ClientDashboardInner() {
   } else if (pocCurrency.status === 'none') {
     alerts.push({ text: 'No plan of care on file', go: () => setTab('documents') });
   }
+  if (servicePlanCurrency.status === 'bad') {
+    alerts.push({ text: 'Service plan review overdue', go: () => setTab('serviceplan') });
+  } else if (servicePlanCurrency.status === 'none') {
+    alerts.push({ text: 'No service plan on file', go: () => setTab('serviceplan') });
+  }
   const readinessBadge = [
     timelinessSignal,
     gapSignal,
@@ -399,6 +512,7 @@ function ClientDashboardInner() {
     supCurrency.status,
     rnCurrency.status,
     pocCurrency.status,
+    servicePlanCurrency.status,
   ].filter((s) => s === 'bad').length;
 
   return (
@@ -437,6 +551,34 @@ function ClientDashboardInner() {
                   {patient.mrn ? ` · Record #${patient.mrn}` : ''}
                   {clinical?.sex ? ` · ${clinical.sex}` : ''}
                 </div>
+                {/* Read from the existing protected clinical profile, never the
+                    broadly readable client directory. Hide in VA previews too. */}
+                {clinical && role !== 'va' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 8, fontSize: 14 }}>
+                    <span style={{ color: '#64748b' }}>Medicaid ID:</span>
+                    <strong style={{ color: NAVY, fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere' }}>
+                      {clinical.medicaidId?.trim() || 'Not on file'}
+                    </strong>
+                    {clinical.medicaidId?.trim() && (
+                      <button
+                        type="button"
+                        aria-label="Copy Medicaid ID"
+                        title="Copy Medicaid ID"
+                        className={`${btn} ${btnSm}`}
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(clinical.medicaidId!.trim());
+                            showToast('Medicaid ID copied');
+                          } catch {
+                            showToast('Could not copy. Select the Medicaid ID and copy it manually.');
+                          }
+                        }}
+                      >
+                        <Copy size={13} aria-hidden="true" /> Copy
+                      </button>
+                    )}
+                  </div>
+                )}
                 {address && (
                   <div style={addressLineStyle}>
                     <MapPin size={13} style={{ flexShrink: 0, marginTop: 2 }} /> {address}
@@ -444,15 +586,19 @@ function ClientDashboardInner() {
                 )}
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <Link href={`/progress-note?patient=${patientId}`} style={secondaryActionStyle}>
-                  <FileText size={15} /> New progress note
-                </Link>
-                <Link href={marHref} style={primaryActionStyle}>
+                {/* Hidden during view-as: the note form blocks the session
+                    anyway (ViewAsWriteBlock), so don't offer a dead door. */}
+                {!isViewingAs && (
+                  <Link href={`/progress-note?patient=${patientId}`} className={btn}>
+                    <FileText size={15} /> New Progress Note
+                  </Link>
+                )}
+                <Link href={marHref} className={btnPrimary}>
                   <Pill size={15} /> Open MAR
                 </Link>
                 {!isNurse && (
-                  <Link href={`/admin/records/${patientId}`} style={secondaryActionStyle}>
-                    <ClipboardList size={15} /> Manage record
+                  <Link href={`/admin/records/${patientId}`} className={btn}>
+                    <ClipboardList size={15} /> Manage Record
                   </Link>
                 )}
               </div>
@@ -462,9 +608,17 @@ function ClientDashboardInner() {
               <HeaderField label="Allergies" value={clinical?.allergies} highlight />
               <HeaderField
                 label="Attending physician"
-                value={[clinical?.physicianName, clinical?.physicianPhone].filter(Boolean).join(' · ')}
+                value={[clinical?.physicianName, clinical?.physicianPhone, clinical?.physicianFax ? `fax ${formatUSFaxNumber(clinical.physicianFax)}` : ''].filter(Boolean).join(' · ')}
               />
               <HeaderField label="Diet / special instructions" value={clinical?.diet} />
+              <HeaderField
+                label="Vitals baselines"
+                value={
+                  clinical?.vitalsBaselines && describeBaselines(clinical.vitalsBaselines)
+                    ? `${describeBaselines(clinical.vitalsBaselines)}${clinical.vitalsBaselinesNote ? ` (${clinical.vitalsBaselinesNote})` : ''}`
+                    : 'None set; age-based ranges apply'
+                }
+              />
             </div>
             {team.length > 0 && (
               <div style={teamRowStyle}>
@@ -482,7 +636,7 @@ function ClientDashboardInner() {
 
           {/* Tab bar */}
           <div style={tabBarStyle} role="tablist" aria-label="Dashboard sections">
-            {TABS.map((t) => (
+            {TABS.filter((t) => ((t.key !== 'careplan' && t.key !== 'communications') || !isNurse) && ((t.key !== 'hours' && t.key !== 'activity') || showHoursTab)).map((t) => (
               <button
                 key={t.key}
                 type="button"
@@ -516,18 +670,18 @@ function ClientDashboardInner() {
           {/* Stat tiles */}
           <div style={tileGridStyle}>
             <StatTile
-              label="Last visit"
+              label="Last Visit"
               value={lastVisit ? (daysSinceVisit === 0 ? 'Today' : `${daysSinceVisit}d ago`) : 'None yet'}
               sub={lastVisit ? fmtDate(lastVisit) : 'No notes documented'}
             />
-            <StatTile label="Visits this month" value={String(visitsThisMonth)} sub={today.slice(0, 7)} />
+            <StatTile label="Visits This Month" value={String(visitsThisMonth)} sub={monthLabel(today.slice(0, 7))} />
             <StatTile
-              label="Active medications"
+              label="Active Medications"
               value={String(activeOrders.length)}
               sub={prnCount > 0 ? `${prnCount} PRN` : activeOrders.length > 0 ? 'All scheduled' : 'None on file'}
             />
             <StatTile
-              label="MAR compliance (30d)"
+              label="MAR Compliance (30d)"
               value={mar30.pctGiven === null ? '—' : `${mar30.pctGiven}%`}
               sub={mar30.expected === 0 ? 'No scheduled doses due' : `${mar30.given}/${mar30.expected} scheduled doses given`}
             />
@@ -536,7 +690,7 @@ function ClientDashboardInner() {
               {/* Next visits, compact — the full calendar lives on Schedule */}
               <section style={sectionCardStyle}>
                 <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
-                  <CalendarClock size={16} /> Next visits
+                  <CalendarClock size={16} /> Next Visits
                 </div>
                 {nextVisits.length === 0 ? (
                   <div style={emptyInlineStyle}>No upcoming visits scheduled.</div>
@@ -546,7 +700,7 @@ function ClientDashboardInner() {
                       <li key={v.id} style={miniVisitRowStyle}>
                         <span style={{ fontWeight: 700, color: '#1a3a5c', minWidth: 96, flexShrink: 0 }}>{fmtDate(v.date)}</span>
                         <span style={{ color: '#2c3e50', minWidth: 0 }}>
-                          {v.type === 'supervisory' ? 'Supervisory visit' : 'Shift'}
+                          {v.type === 'supervisory' ? 'Supervisory Visit' : 'Shift'}
                           {v.startTime ? ` · ${fmtTime(v.startTime)}` : ''}
                           {v.nurseName ? ` · ${v.nurseName}` : ''}
                         </span>
@@ -555,10 +709,55 @@ function ClientDashboardInner() {
                   </ul>
                 )}
                 <button type="button" onClick={() => setTab('schedule')} style={jumpLinkStyle}>
-                  Full schedule
+                  Full Schedule
                 </button>
               </section>
 
+              {/* Day program: where the client spends the day and who to call
+                  there. Clinical sub-record, so VAs (no clinical read) skip it. */}
+              {realRole !== 'va' && (
+                <DayProgramSection
+                  key={`dp-${patientId}`}
+                  patientId={patientId}
+                  canEdit={realStaff && !isViewingAs}
+                  actorName={profile?.displayName || user?.email || ''}
+                  onToast={showToast}
+                />
+              )}
+              {/* Physicians: every doctor with phone and fax (reference
+                  directory; the attending on the clinical profile drives
+                  verbal orders and PPOT). */}
+              {realRole !== 'va' && (
+                <PhysiciansSection
+                  key={`ph-${patientId}`}
+                  patientId={patientId}
+                  canEdit={realStaff && !isViewingAs}
+                  actorName={profile?.displayName || user?.email || ''}
+                  onToast={showToast}
+                />
+              )}
+              {/* Guardian and responsible parties: who signs consents and
+                  releases, plus payee/conservator contacts. */}
+              {realRole !== 'va' && (
+                <GuardianSection
+                  key={`gd-${patientId}`}
+                  patientId={patientId}
+                  canEdit={realStaff && !isViewingAs}
+                  actorName={profile?.displayName || user?.email || ''}
+                  onToast={showToast}
+                />
+              )}
+              {/* Support coordinator: who writes the ISP and handles
+                  authorizations and the annual meeting. */}
+              {realRole !== 'va' && (
+                <SupportCoordinatorSection
+                  key={`sc-${patientId}`}
+                  patientId={patientId}
+                  canEdit={realStaff && !isViewingAs}
+                  actorName={profile?.displayName || user?.email || ''}
+                  onToast={showToast}
+                />
+              )}
               {/* Quick notes — the lightweight jot-it-down sibling of the
                   progress note (author/time auto-captured, immutable). Keyed
                   by patient so NOTHING (esp. an open modal with typed text)
@@ -569,8 +768,39 @@ function ClientDashboardInner() {
                 actor={{ uid: user?.uid || '', name: profile?.displayName || user?.email || '' }}
                 onToast={showToast}
               />
+              {/* Handoff board: nurse-to-nurse messages on this client, with
+                  read receipts. Posting is for staff or an assigned nurse (the
+                  API re-checks); acknowledging is the real user's own action. */}
+              {realRole !== 'va' && (
+              <HandoffBoardSection
+                key={`ho-${patientId}`}
+                patientId={patientId}
+                actor={{ uid: isViewingAs ? '' : user?.uid || '', name: profile?.displayName || user?.email || '' }}
+                canPost={!isViewingAs && canUploadDocs}
+                onToast={showToast}
+              />
+              )}
+              {/* Verbal orders: telephone orders and their signature status. Taking
+                  one needs an RN/LPN credential (the form and API both re-check). */}
+              {realRole !== 'va' && (
+                <VerbalOrdersSection key={`vo-${patientId}`} patientId={patientId} canTake={!isViewingAs && (realStaff || ['RN', 'LPN'].includes(profile?.credential || ''))} />
+              )}
+              {/* Medication error reports: anyone with a clinical credential (or staff) can file. */}
+              {realRole !== 'va' && (
+                <MedErrorsSection key={`me-${patientId}`} patientId={patientId} canFile={!isViewingAs && (realStaff || !!profile?.credential)} />
+              )}
+              {/* Seizure log: only for clients flagged hasSeizureDisorder. */}
+              {patient?.hasSeizureDisorder && (
+                <SeizureLogSection key={`sz-${patientId}`} patientId={patientId} patientName={patient.name} patientDob={patient.dob || ''} />
+              )}
             </>
           )}
+
+          {tab === 'activity' && showHoursTab && <ClientActivityLog key={patientId} patientId={patientId} onUndone={() => {
+            void Promise.all([getPatient(patientId), getPatientClinical(patientId), getPatientDocuments(patientId)]).then(([nextPatient, nextClinical, nextDocuments]) => {
+              setPatient(nextPatient); setClinical(nextClinical); setDocuments(nextDocuments);
+            });
+          }} />}
 
           {tab === 'schedule' && (
           <section style={sectionCardStyle}>
@@ -604,6 +834,7 @@ function ClientDashboardInner() {
               admins={admins}
               dob={patient.dob}
               vitalsOverride={settings.vitals.rangesByAgeGroup}
+              baselines={clinical?.vitalsBaselines}
             />
           </section>
           )}
@@ -612,7 +843,7 @@ function ClientDashboardInner() {
           {tab === 'readiness' && (
           <section style={sectionCardStyle}>
             <div style={sectionTitleStyle}>
-              <Activity size={16} /> Survey readiness · baseline
+              <Activity size={16} /> Survey Readiness · Baseline
             </div>
             <p style={sectionSubStyle}>
               Signals a surveyor checks first, computed from the last 90 days (medication window: 30 days).
@@ -621,32 +852,32 @@ function ClientDashboardInner() {
             <div style={readinessGridStyle}>
               <ReadinessCard
                 signal={timelinessSignal}
-                title="Documentation timeliness"
+                title="Documentation Timeliness"
                 value={timeliness.pctSameDay === null ? 'No notes in window' : `${timeliness.pctSameDay}% same-day`}
                 detail={timeliness.late > 0 ? `${timeliness.late} late ${timeliness.late === 1 ? 'entry' : 'entries'}` : 'No late entries'}
               />
               <ReadinessCard
                 signal={gapSignal}
-                title="Continuity of care"
+                title="Continuity of Care"
                 value={gap === null ? 'No visits in window' : `Largest gap: ${gap}d`}
                 detail={daysSinceVisit !== null ? `${daysSinceVisit}d since last visit` : 'No visits yet'}
               />
               <ReadinessCard
                 signal={doseSignal}
-                title="Scheduled doses (30d)"
+                title="Scheduled Doses (30d)"
                 value={mar30.expected === 0 ? 'None due' : mar30.undocumented === 0 ? 'All documented' : `${mar30.undocumented} undocumented`}
                 detail={`${mar30.given} given · ${mar30.held} held · ${mar30.refused} refused`}
               />
               <ReadinessCard
                 signal={prnSignal}
-                title="PRN follow-up (30d)"
+                title="PRN Follow-Up (30d)"
                 value={mar30.prnGiven === 0 ? 'No PRN doses' : mar30.prnPendingResult === 0 ? 'All results recorded' : `${mar30.prnPendingResult} result${mar30.prnPendingResult === 1 ? '' : 's'} pending`}
                 detail={mar30.prnGiven > 0 ? `${mar30.prnGiven} PRN dose${mar30.prnGiven === 1 ? '' : 's'} given` : 'Nothing to follow up'}
                 href={mar30.prnPendingResult > 0 ? marHref : undefined}
               />
               <ReadinessCard
                 signal={physicianSignal}
-                title="Physician attribution"
+                title="Physician Attribution"
                 value={
                   activeOrders.length === 0
                     ? 'No active medications'
@@ -665,17 +896,21 @@ function ClientDashboardInner() {
               />
               <ReadinessCard
                 signal={orderCurrencySignal}
-                title="Physician order currency"
+                title="Physician Order Currency"
                 value={
                   activeOrders.length === 0
                     ? 'No active medications'
-                    : staleOrderCount === 0
-                      ? 'All orders within 12 months'
-                      : `${staleOrderCount} order${staleOrderCount === 1 ? '' : 's'} need renewal`
+                    : staleOrderCount > 0
+                      ? `${staleOrderCount} order${staleOrderCount === 1 ? '' : 's'} need renewal`
+                      : pendingVerbalCount > 0
+                        ? `${pendingVerbalCount} verbal order${pendingVerbalCount === 1 ? '' : 's'} awaiting signature`
+                        : 'All orders within 12 months'
                 }
                 detail={
                   staleOrderCount > 0
                     ? 'DBHDD D.1: a signed physician order dated within the past year must back every med. Get the renewal, then update "Physician order signed on" for each flagged med.'
+                    : pendingVerbalCount > 0
+                      ? 'A telephone order is on the MAR but the physician has not returned the signed authentication yet. Track it under Verbal orders.'
                     : activeOrders.length > 0
                       ? 'Every active order has a signed date within the past year'
                       : ''
@@ -684,7 +919,7 @@ function ClientDashboardInner() {
               />
               <ReadinessCard
                 signal={notifySignal}
-                title="Prescriber notification (30d)"
+                title="Prescriber Notification (30d)"
                 value={
                   mar30.refusedTotal === 0
                     ? 'No refused doses'
@@ -702,8 +937,27 @@ function ClientDashboardInner() {
                 href={mar30.refusedNoNotify > 0 ? marHref : undefined}
               />
               <ReadinessCard
+                signal={shiftIntegritySignal}
+                title="Shift-Window Integrity (30d)"
+                value={
+                  outOfWindow30 > 0
+                    ? `${outOfWindow30} dose${outOfWindow30 === 1 ? '' : 's'} outside the nurse's shift`
+                    : given30 === 0
+                      ? 'No doses charted'
+                      : 'All nurse-given doses within shifts'
+                }
+                detail={
+                  outOfWindow30 > 0
+                    ? 'Doses attested as nurse-given at times outside the documenting nurse\'s own shift window (60-minute grace). Review with the nurse: correct each dose from the MAR day view — a dose actually given by family is amended to family-given via "Administered by" (starred on the MAR); a wrong time is amended to the true time.'
+                    : given30 > 0
+                      ? 'Every nurse-given dose falls inside the shift its nurse documented'
+                      : ''
+                }
+                href={outOfWindow30 > 0 ? marHref : undefined}
+              />
+              <ReadinessCard
                 signal={adverseSignal}
-                title="Adverse reactions (90d)"
+                title="Adverse Reactions (90d)"
                 value={adverse.length === 0 ? 'None reported' : `${adverse.length} reported`}
                 detail={
                   adverse.length === 0
@@ -715,7 +969,7 @@ function ClientDashboardInner() {
               />
               <ReadinessCard
                 signal={supCurrency.status}
-                title="Supervisory visits"
+                title="Supervisory Visits"
                 value={
                   supCurrency.status === 'none'
                     ? 'No visit form on file'
@@ -730,7 +984,7 @@ function ClientDashboardInner() {
               />
               <ReadinessCard
                 signal={rnCurrency.status}
-                title="RN oversight"
+                title="RN Oversight"
                 value={
                   rnCurrency.status === 'none'
                     ? 'No oversight form on file'
@@ -745,7 +999,7 @@ function ClientDashboardInner() {
               />
               <ReadinessCard
                 signal={pocCurrency.status}
-                title="Plan of care currency"
+                title="Plan of Care Currency"
                 value={
                   pocCurrency.status === 'none'
                     ? 'No plan of care on file'
@@ -757,6 +1011,21 @@ function ClientDashboardInner() {
                     : `${fmtDate(pocCurrency.newestDateISO)} · ${POC_MAX_DAYS}d cert period (baseline)`
                 }
                 icon={<FolderOpen size={14} />}
+              />
+              <ReadinessCard
+                signal={servicePlanCurrency.status}
+                title="Service Plan"
+                value={
+                  servicePlanCurrency.status === 'none'
+                    ? 'No service plan on file'
+                    : `Last signed or reviewed ${servicePlanCurrency.daysSince}d ago`
+                }
+                detail={
+                  servicePlanCurrency.status === 'none'
+                    ? 'Write and sign the service plan on the Service plan tab'
+                    : `${fmtDate(servicePlanCurrency.newestDateISO)} · reviewed at least every ${SERVICE_PLAN_MAX_DAYS}d (111-8-65-.11)`
+                }
+                icon={<ClipboardList size={14} />}
               />
             </div>
           </section>
@@ -773,6 +1042,7 @@ function ClientDashboardInner() {
               documents={documents}
               canUpload={canUploadDocs}
               isStaff={realStaff}
+              isAdmin={realRole === 'admin' && !isViewingAs}
               uploader={{
                 uid: user?.uid || '',
                 name: profile?.displayName || user?.email || '',
@@ -788,27 +1058,90 @@ function ClientDashboardInner() {
           </section>
           )}
 
+          {/* Service plan: the agency's signed Service Plan form, one per
+              revision, written by supervisors and read by the care team. */}
+          {tab === 'serviceplan' && (
+          <section style={sectionCardStyle}>
+            <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
+              <ClipboardList size={16} /> Service Plan
+            </div>
+            <ServicePlanSection key={`sp-${patientId}`} patientId={patientId} canAuthor={realStaff && !isViewingAs} />
+          </section>
+          )}
+
+          {/* Communications (staff-only): notices sent to staff about this
+              client, word for word, plus messages logged by hand. */}
+          {tab === 'communications' && !isNurse && (
+          <section style={sectionCardStyle}>
+            <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
+              <MessagesSquare size={16} /> Communications
+            </div>
+            <CommunicationsLog key={`comm-${patientId}`} patientId={patientId} readOnly={isViewingAs} onToast={showToast} />
+          </section>
+          )}
+
+          {/* Care plan (staff-only tab; the old /admin/care-plan editor) */}
+          {tab === 'careplan' && !isNurse && (
+          <section style={sectionCardStyle}>
+            <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
+              <ListChecks size={16} /> Care Plan
+            </div>
+            <CarePlanSection patientId={patientId} />
+          </section>
+          )}
+
+          {/* Hours (owner-only tab) */}
+          {tab === 'hours' && showHoursTab && user && (
+          <section style={{ ...sectionCardStyle, background: 'transparent', border: 'none', padding: 0 }}>
+            <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
+              <Clock size={16} /> Hours
+            </div>
+            <HoursSection patientId={patientId} patientName={patient.name} program={patient.program || ''} notes={notes} uid={user.uid} todayISO={today} />
+          </section>
+          )}
+
           {/* Recent activity (Overview: renders below Next visits) */}
           {tab === 'overview' && (
           <section style={sectionCardStyle}>
             <div style={sectionTitleStyle}>
-              <ClipboardList size={16} /> Recent activity
+              <ClipboardList size={16} /> Recent Activity
             </div>
             {activity.length === 0 ? (
               <div style={emptyInlineStyle}>Nothing documented yet for this client.</div>
             ) : (
               <ul style={activityListStyle}>
-                {activity.map((a, i) => (
-                  <li key={i} style={activityRowStyle}>
-                    <span style={activityIconStyle(a.kind)}>
-                      {a.kind === 'note' ? <FileText size={13} /> : a.kind === 'med' ? <Pill size={13} /> : <AlertTriangle size={13} />}
-                    </span>
-                    <span style={{ flex: 1, minWidth: 0 }}>{a.text}</span>
-                    <span style={activityWhenStyle}>
-                      {a.when.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                    </span>
-                  </li>
-                ))}
+                {activity.map((a, i) => {
+                  const body = (
+                    <>
+                      <span style={activityIconStyle(a.kind)}>
+                        {a.kind === 'note' ? <FileText size={13} /> : a.kind === 'med' ? <Pill size={13} /> : <AlertTriangle size={13} />}
+                      </span>
+                      <span style={{ flex: 1, minWidth: 0 }}>{a.text}</span>
+                      <span style={activityWhenStyle}>
+                        {a.when.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </span>
+                    </>
+                  );
+                  return (
+                    <li key={i}>
+                      {a.href ? (
+                        // The whole row is the link: click anything in it to
+                        // open the note or the MAR month it came from.
+                        <Link
+                          href={a.href}
+                          title={a.hint}
+                          style={activityLinkStyle}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = '#f1f5f9'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                        >
+                          {body}
+                        </Link>
+                      ) : (
+                        <span style={activityRowStyle}>{body}</span>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </section>
@@ -822,9 +1155,11 @@ function ClientDashboardInner() {
 }
 
 export default function ClientDashboardPage() {
+  const { role } = useEffectiveUser();
+  const params = useParams();
   return (
-    <AuthGuard allow={['admin', 'supervisor', 'nurse']}>
-      <ClientDashboardInner />
+    <AuthGuard allow={['admin', 'supervisor', 'nurse', 'va']}>
+      {role === 'va' ? <AssistantClientDetails patientId={String(params.patientId)} /> : <ClientDashboardInner />}
     </AuthGuard>
   );
 }
@@ -898,8 +1233,6 @@ const avatarStyle: React.CSSProperties = { width: 52, height: 52, borderRadius: 
 const titleStyle: React.CSSProperties = { fontSize: 22, color: '#1f2937', margin: 0, lineHeight: 1.2 };
 const identityLineStyle: React.CSSProperties = { fontSize: 13.5, color: '#5c6b7a', marginTop: 4 };
 const addressLineStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 5, fontSize: 13, color: '#5c6b7a', marginTop: 4 };
-const primaryActionStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: NAVY, color: 'white', padding: '9px 14px', borderRadius: 8, fontSize: 13.5, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap' };
-const secondaryActionStyle: React.CSSProperties = { ...primaryActionStyle, background: 'white', color: NAVY, border: `1px solid ${NAVY}` };
 const headerGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginTop: 14, paddingTop: 14, borderTop: '1px solid #f1f3f5' };
 const headerFieldLabelStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: '#8a949e', textTransform: 'uppercase', letterSpacing: 0.4 };
 const headerFieldValueStyle: React.CSSProperties = { fontSize: 13.5, marginTop: 3, lineHeight: 1.4 };
@@ -974,7 +1307,10 @@ const readinessValueStyle: React.CSSProperties = { fontSize: 15.5, fontWeight: 7
 const readinessDetailStyle: React.CSSProperties = { fontSize: 12.5, color: '#64748b', marginTop: 3 };
 const emptyInlineStyle: React.CSSProperties = { padding: '18px 0 6px', color: '#7f8c8d', fontSize: 13.5 };
 const activityListStyle: React.CSSProperties = { listStyle: 'none', margin: '12px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 8 };
-const activityRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13.5, color: '#2c3e50', lineHeight: 1.4 };
+const activityRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13.5, color: '#2c3e50', lineHeight: 1.4, padding: '4px 6px' };
+// Same row, as a link: no underline (the icon + hover tint carry the
+// affordance), and the hit area covers the whole row.
+const activityLinkStyle: React.CSSProperties = { ...activityRowStyle, textDecoration: 'none', borderRadius: 6, transition: 'background 120ms', cursor: 'pointer' };
 const activityWhenStyle: React.CSSProperties = { fontSize: 12, color: '#8a949e', whiteSpace: 'nowrap' };
 const toastStyle: React.CSSProperties = {
   position: 'fixed',

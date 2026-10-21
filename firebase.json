@@ -8,5 +8,16 @@
       "bucket": "heart-and-soul-hc.firebasestorage.app",
       "rules": "storage.rules"
     }
+  ],
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "client-audit",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "*.test.js"
+      ]
+    }
   ]
 }

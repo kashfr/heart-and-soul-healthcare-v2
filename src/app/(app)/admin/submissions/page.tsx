@@ -1,14 +1,18 @@
 'use client';
 
+import MonthPicker from '@/components/MonthPicker';
+
 import { useCallback, useMemo, useState, useEffect } from 'react';
+import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Archive as ArchiveIcon, Download, RotateCcw, X, Search, Plus, CheckCircle2 } from 'lucide-react';
+import { Archive as ArchiveIcon, Download, RotateCcw, X, Search, Plus, CheckCircle2, Clock, FileSpreadsheet } from 'lucide-react';
 import {
   getSubmissions,
   getNurseAccessibleSubmissions,
   setSubmissionsArchive,
   needsCosign,
+  clarificationTurnLabel,
   type ArchiveView,
   type SubmissionSummary,
 } from '@/lib/submissions';
@@ -26,6 +30,34 @@ import { logExport } from '@/lib/audit';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
 import { RN_COSIGN_SESSION_KEY } from '@/lib/settings';
+import { RANGE_PRESETS, describeRange, isRangePreset, resolveRange, type RangePreset } from '@/lib/dateRange';
+import {
+  QTY_VIEW_LABEL,
+  fmtDollars,
+  fmtH,
+  fmtUnits,
+  hoursInRange,
+  segmentsToDollars,
+  segmentsToUnits,
+  oversightVisitBilling,
+  splitShiftByDay,
+  type HoursAuthorization,
+  type OversightVisitBilling,
+  type OversightVisitWindow,
+  totalOfSegments,
+  touchesRange,
+  type DaySegment,
+  type HoursBucket,
+  type QtyView,
+} from '@/lib/shiftHours';
+import { getAllHoursAuthorizations } from '@/lib/hoursAuthorizations';
+import { getBillingRates, type BillingRate } from '@/lib/billingRates';
+import { resolveRate, resolveRateRow } from '@/lib/billingRatesShared';
+import { getPatients } from '@/lib/patients';
+import { getProgram } from '@/lib/programs';
+import { formatDateUS, formatDateUSFile } from '@/lib/dateFormat';
+import { SUPERVISORY_NOTE_TYPE, canAuthorSupervisoryVisit } from '@/lib/supervisoryVisit';
+import styles from './page.module.css';
 
 const MAX_BATCH = 50;
 // PAGE_SIZE used to be a constant here; it's now driven by
@@ -42,9 +74,8 @@ const FALLBACK_PAGE_SIZE = 25;
 // archive a care-team note from her view without affecting anyone
 // else's. Admin/supervisor never see this scope.
 type Scope = 'active' | 'archived' | 'all' | 'team';
-type SortKey = 'submittedAt' | 'dateOfService' | 'clientName' | 'nurseName';
+type SortKey = 'submittedAt' | 'dateOfService' | 'clientName' | 'nurseName' | 'hours' | 'credential' | 'flags';
 type SortDir = 'asc' | 'desc';
-type DatePreset = '' | 'today' | 'week' | 'month' | '30d';
 
 function parseDateOfService(mmddyyyy: string): Date | null {
   const [m, d, y] = mmddyyyy.split('/').map(Number);
@@ -52,33 +83,39 @@ function parseDateOfService(mmddyyyy: string): Date | null {
   return new Date(y, m - 1, d);
 }
 
-function startOfDay(d: Date) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
+/** Local calendar date as 'YYYY-MM-DD' (the date-of-service convention). */
+function localTodayISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function presetRange(preset: DatePreset): { start: Date | null; end: Date | null } {
-  if (!preset) return { start: null, end: null };
-  const now = startOfDay(new Date());
-  const end = new Date(now);
-  end.setHours(23, 59, 59, 999);
-  if (preset === 'today') return { start: now, end };
-  if (preset === 'week') {
-    const start = new Date(now);
-    start.setDate(start.getDate() - now.getDay());
-    return { start, end };
-  }
-  if (preset === 'month') {
-    const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    return { start, end };
-  }
-  if (preset === '30d') {
-    const start = new Date(now);
-    start.setDate(start.getDate() - 30);
-    return { start, end };
-  }
-  return { start: null, end: null };
+const CREDENTIAL_RANK: Record<string, number> = { RN: 0, LPN: 1, CNA: 2, HHA: 3 };
+function credentialRank(c: string): number {
+  return CREDENTIAL_RANK[(c || '').toUpperCase()] ?? 9;
+}
+
+/** Hours per client/nurse for the pivot under the totals strip. Shift hours
+ *  and RN oversight hours are kept apart (they are paid from different
+ *  authorization lines and are never summed). */
+interface HoursPivotRow {
+  key: string;
+  hours: number;
+  /** Billable units (each calendar day rounded up separately). */
+  units: number;
+  shifts: number;
+  rnHours: number;
+  rnUnits: number;
+  visits: number;
+  /** Dollars at each client's line rate; null when any counted row lacks a rate. */
+  dollars: number | null;
+  rnDollars: number | null;
+  /** By-day pivot only: who worked that day. By-nurse pivot: the nurse's credential(s). */
+  who?: string;
+}
+
+function csvCell(v: string | number): string {
+  const str = String(v ?? '');
+  return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
 }
 
 function useDebounced<T>(value: T, delay = 250): T {
@@ -88,6 +125,15 @@ function useDebounced<T>(value: T, delay = 250): T {
     return () => clearTimeout(t);
   }, [value, delay]);
   return v;
+}
+
+/** Tooltip for an RN oversight row's hours: documented time and what bills. */
+function oversightBillTitle(s: SubmissionSummary, b: OversightVisitBilling | undefined): string {
+  const window = `RN oversight visit, ${s.shiftStart || '?'} to ${s.shiftEnd || '?'}`;
+  if (!b || b.capHours == null) return `${window}. Counted as RN oversight hours, not shift hours.`;
+  if (b.nonBillable) return `${window} (${fmtH(b.documentedHours)} h documented). Non-billable: the month's ${fmtH(b.capHours)} RN hours bill with an earlier visit.`;
+  if (b.trimmed || b.toppedUp) return `${window} (${fmtH(b.documentedHours)} h documented). Bills the month's ${fmtH(b.capHours)} authorized RN hours.`;
+  return `${window}. Bills the month's ${fmtH(b.capHours)} authorized RN hours.`;
 }
 
 export default function SubmissionsPage() {
@@ -131,11 +177,26 @@ export default function SubmissionsPage() {
   const dirParam = (searchParams.get('dir') as SortDir) || subDefaults.defaultDir;
   const credParam = searchParams.get('cred') ?? '';
   const nurseParam = searchParams.get('nurse') ?? '';
-  const datePreset = (searchParams.get('range') as DatePreset) || '';
+  const clientParam = searchParams.get('client') ?? '';
+  // Owner-only views for the Hours column / totals: hours or 15-minute units
+  // (?u=units), and, independently, dollars at the client's line rate shown
+  // alongside (?usd=1).
+  const qtyView: QtyView = searchParams.get('u') === 'units' ? 'units' : 'hours';
+  const showDollars = searchParams.get('usd') === '1';
+  // Date-of-service range: a relative preset, a picked month (?range=m&m=YYYY-MM)
+  // or an explicit window (?range=c&from=&to=). Resolved to ISO bounds below.
+  const rangeRaw = searchParams.get('range');
+  const rangePreset: RangePreset = isRangePreset(rangeRaw) ? rangeRaw : '';
+  const monthParam = searchParams.get('m') ?? '';
+  const fromParam = searchParams.get('from') ?? '';
+  const toParam = searchParams.get('to') ?? '';
   const flagAbnormal = searchParams.get('abn') === '1';
   const flagIncident = searchParams.get('inc') === '1';
   const flagPhysNotified = searchParams.get('phy') === '1';
   const flagNeedsCosign = searchParams.get('cosign') === '1';
+  const flagHospitalEr = searchParams.get('hosp') === '1';
+  const flagMedChange = searchParams.get('med') === '1';
+  const flagOpen = searchParams.get('flag') === '1';
   const page = Math.max(1, Number(searchParams.get('p') || '1'));
   // Current filter/sort state, carried to the note detail page so its
   // "Back to Submissions" returns to this exact filtered view.
@@ -153,6 +214,8 @@ export default function SubmissionsPage() {
   const [queryInput, setQueryInput] = useState(qParam);
   const debouncedQuery = useDebounced(queryInput, 250);
   const [draftSavedToast, setDraftSavedToast] = useState(false);
+  /** Which form the saved/discarded draft came from (oversight, supervisory, or the shift note). */
+  const [draftToastKind, setDraftToastKind] = useState<'note' | 'oversight' | 'supervisory'>('note');
   const [draftDiscardedToast, setDraftDiscardedToast] = useState(false);
   /** The notes currently shown in the co-sign modal (1 = per-note flow, many = batch). */
   const [cosignTargets, setCosignTargets] = useState<SubmissionSummary[]>([]);
@@ -166,9 +229,15 @@ export default function SubmissionsPage() {
   // Show a confirmation toast when we arrive here via Save & exit or Discard.
   // Both share the same dismissal pattern; only one can be true at a time.
   useEffect(() => {
-    const saved = searchParams.get('draftSaved') === '1';
-    const discarded = searchParams.get('discarded') === '1';
+    const savedParam = searchParams.get('draftSaved');
+    const discardedParam = searchParams.get('discarded');
+    const kindOf = (v: string | null) => (v === 'oversight' || v === 'supervisory' ? v : v === '1' ? 'note' : null);
+    const savedKind = kindOf(savedParam);
+    const discardedKind = kindOf(discardedParam);
+    const saved = !!savedKind;
+    const discarded = !!discardedKind;
     if (!saved && !discarded) return;
+    setDraftToastKind(savedKind || discardedKind || 'note');
     if (saved) setDraftSavedToast(true);
     if (discarded) setDraftDiscardedToast(true);
     const params = new URLSearchParams(searchParams.toString());
@@ -280,8 +349,8 @@ export default function SubmissionsPage() {
     if (typeof window === 'undefined') return;
     if (sessionStorage.getItem(RN_COSIGN_SESSION_KEY) === '1') return;
     const hasAnyFilter =
-      qParam || credParam || nurseParam || datePreset ||
-      flagAbnormal || flagIncident || flagPhysNotified || flagNeedsCosign;
+      qParam || credParam || nurseParam || clientParam || rangePreset ||
+      flagAbnormal || flagIncident || flagPhysNotified || flagNeedsCosign || flagHospitalEr || flagMedChange || flagOpen;
     if (hasAnyFilter) {
       sessionStorage.setItem(RN_COSIGN_SESSION_KEY, '1');
       return;
@@ -334,10 +403,177 @@ export default function SubmissionsPage() {
     allSubmissions.forEach((s) => s.nurseName && set.add(s.nurseName));
     return Array.from(set).sort();
   }, [allSubmissions]);
+  const clientOptions = useMemo(() => {
+    const set = new Set<string>();
+    allSubmissions.forEach((s) => s.clientName && set.add(s.clientName));
+    return Array.from(set).sort();
+  }, [allSubmissions]);
 
-  const { start: rangeStart, end: rangeEnd } = useMemo(
-    () => presetRange(datePreset),
-    [datePreset]
+  // Memoized so the range does not shift under a midnight boundary mid-session.
+  const todayIso = useMemo(() => localTodayISO(), []);
+  const { fromISO: rangeFrom, toISO: rangeTo } = useMemo(
+    () => resolveRange(rangePreset, { month: monthParam, from: fromParam, to: toParam }, todayIso),
+    [rangePreset, monthParam, fromParam, toParam, todayIso],
+  );
+  const rangeActive = Boolean(rangeFrom || rangeTo);
+
+  // Each note's hours cut at midnight (shiftHours.ts), computed once per load.
+  // Drives the range filter (a 19:00 to 07:00 shift on 8/31 belongs to
+  // September too), the Hours column, and the totals strip, so the numbers
+  // agree with the client Hours tab and the roster badges.
+  // Each client's authorizations, so RN oversight visits bill only up to the
+  // month's authorized hours (the same cap the client Hours tab applies).
+  const [authsByPatient, setAuthsByPatient] = useState<Map<string, HoursAuthorization[]>>(new Map());
+  // RN oversight: the month's first visit bills the authorization, later
+  // visits that month bill nothing (shiftHours.oversightVisitBilling).
+  // Archived notes are not billed and do not use up the month.
+  const oversightBillingById = useMemo(() => {
+    const byPatient = new Map<string, OversightVisitWindow[]>();
+    for (const s of allSubmissions) {
+      if (s.noteType !== 'rn-oversight-visit' || s.archivedAt || !s.patientId || !s.dateISO || !s.shiftStart || !s.shiftEnd) continue;
+      const list = byPatient.get(s.patientId) ?? [];
+      list.push({ id: s.id, dateISO: s.dateISO, timeIn: s.shiftStart, timeOut: s.shiftEnd });
+      byPatient.set(s.patientId, list);
+    }
+    const out = new Map<string, OversightVisitBilling>();
+    for (const [pid, visits] of byPatient) {
+      for (const [id, b] of oversightVisitBilling(authsByPatient.get(pid) ?? [], visits)) out.set(id, b);
+    }
+    return out;
+  }, [allSubmissions, authsByPatient]);
+
+  const segmentsById = useMemo(() => {
+    const m = new Map<string, DaySegment[]>();
+    for (const s of allSubmissions) {
+      const bill = oversightBillingById.get(s.id);
+      // A zero-hour segment keeps a non-billable visit inside date-range views.
+      m.set(s.id, bill ? [{ dateISO: s.dateISO, hours: bill.billableHours }] : splitShiftByDay(s));
+    }
+    return m;
+  }, [allSubmissions, oversightBillingById]);
+
+  // Hours a row contributes to the current view: the in-range slice when a
+  // range is set, else the whole shift / visit. RN oversight visits (time in
+  // to time out) are a separate bucket: shown in a blue chip, totalled apart,
+  // never added to shift hours. null when the note has no usable window.
+  const rowHours = useCallback(
+    (s: SubmissionSummary): number | null => {
+      const segs = segmentsById.get(s.id) ?? [];
+      if (segs.length === 0) return null;
+      return rangeActive ? hoursInRange(segs, rangeFrom, rangeTo) : totalOfSegments(segs);
+    },
+    [segmentsById, rangeActive, rangeFrom, rangeTo],
+  );
+  const isOversight = (s: SubmissionSummary) => s.noteType === 'rn-oversight-visit';
+  /** How many flag badges the Flags column shows for a row (the Flags sort). */
+  const flagCount = (s: SubmissionSummary): number =>
+    [
+      s.hasCriticalVitals || s.hasAbnormalVitals,
+      s.hasIncident,
+      s.physicianNotified,
+      s.hospitalAdmission || s.erUrgentCare,
+      s.medChangeReported,
+      needsCosign(s, requiredCosignCreds),
+      s.clarificationStatus === 'open',
+      s.clarificationBlocksNotes,
+    ].filter(Boolean).length;
+
+  // A note is in range when any of its days is. Notes with no usable day
+  // segments (no hours and no times) fall back to the date of service.
+  const noteTouchesRange = useCallback(
+    (s: SubmissionSummary): boolean => {
+      const segs = segmentsById.get(s.id) ?? [];
+      if (segs.length > 0) return touchesRange(segs, rangeFrom, rangeTo);
+      if (!s.dateISO) return false;
+      if (rangeFrom && s.dateISO < rangeFrom) return false;
+      if (rangeTo && s.dateISO > rangeTo) return false;
+      return true;
+    },
+    [segmentsById, rangeFrom, rangeTo],
+  );
+
+  // Hours are an owner-only surface (billing + parent questions); the
+  // effective role hides the column while previewing a nurse's view.
+  const showHours = role === 'admin';
+
+  // The billing rate table (owner-only) plus each client's program, so the
+  // dollar view can price every day at the rate in force for that program
+  // and bucket on that date.
+  const [rates, setRates] = useState<BillingRate[]>([]);
+  const [programByPatient, setProgramByPatient] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    if (!showHours) return;
+    let cancelled = false;
+    Promise.all([getBillingRates(), getPatients(), getAllHoursAuthorizations()])
+      .then(([r, patients, auths]) => {
+        if (cancelled) return;
+        setRates(r);
+        setProgramByPatient(new Map(patients.map((p) => [p.id || '', p.program || ''])));
+        setAuthsByPatient(auths);
+      })
+      .catch((err) => console.error('Billing rates load failed:', err));
+    return () => { cancelled = true; };
+  }, [showHours]);
+
+  const bucketOf = (s: SubmissionSummary): HoursBucket => (s.noteType === 'rn-oversight-visit' ? 'oversight' : 'shift');
+  const rateResolverFor = useCallback(
+    (s: SubmissionSummary) => {
+      const program = s.patientId ? programByPatient.get(s.patientId) || '' : '';
+      const bucket = bucketOf(s);
+      // The note author's credential picks a credential-specific row (GAPP
+      // pays LPN and RN shifts differently); an "any nurse" row is the fallback.
+      return (dateISO: string) => resolveRate(rates, program, bucket, dateISO, s.credential);
+    },
+    [rates, programByPatient],
+  );
+  /** The row's day segments inside the current range. */
+  const rowSegments = useCallback(
+    (s: SubmissionSummary): DaySegment[] =>
+      (segmentsById.get(s.id) ?? []).filter(
+        (seg) => (!rangeActive || !rangeFrom || seg.dateISO >= rangeFrom) && (!rangeActive || !rangeTo || seg.dateISO <= rangeTo),
+      ),
+    [segmentsById, rangeActive, rangeFrom, rangeTo],
+  );
+  /** "45 units × $24.36 (NOW/COMP, any nurse)" for the $ cell's tooltip. */
+  const rateHint = useCallback(
+    (s: SubmissionSummary): string => {
+      const program = s.patientId ? programByPatient.get(s.patientId) || '' : '';
+      const segs = rowSegments(s);
+      const first = segs[0];
+      if (!program || !first) return 'Not linked to a client on the roster, so no program to price by.';
+      const row = resolveRateRow(rates, program, bucketOf(s), first.dateISO, s.credential);
+      const programLabel = getProgram(program)?.label || program;
+      if (!row) return `No billing rate for ${programLabel} ${bucketOf(s) === 'oversight' ? 'RN oversight' : 'shift hours'}${s.credential ? ` (${s.credential})` : ''}. Add one under Settings → Billing Rates.`;
+      return `${fmtUnits(segmentsToUnits(segs))} units × ${fmtDollars(row.ratePerUnit)} (${programLabel}, ${row.credential || 'any nurse'}${row.serviceCode ? `, ${row.serviceCode}${row.modifier ? ` ${row.modifier}` : ''}` : ''})`;
+    },
+    [rates, programByPatient, rowSegments],
+  );
+  /** Billable units for a row (each day rounded up to whole units). */
+  const rowUnits = useCallback((s: SubmissionSummary): number => segmentsToUnits(rowSegments(s)), [rowSegments]);
+  // Dollars for a row's in-view hours: each day priced at the rate in force
+  // for the client's program. null when the note is unlinked, the program
+  // has no rate row, or any day is unpriced.
+  const rowDollars = useCallback(
+    (s: SubmissionSummary): number | null => {
+      if (!s.patientId) return null;
+      const segs = rowSegments(s);
+      if (segs.length === 0) return null;
+      return segmentsToDollars(segs, rateResolverFor(s));
+    },
+    [rowSegments, rateResolverFor],
+  );
+  /** A row's quantity in the chosen view. */
+  const rowQty = useCallback(
+    (s: SubmissionSummary, h: number): string => (qtyView === 'units' ? fmtUnits(rowUnits(s)) : fmtH(h)),
+    [qtyView, rowUnits],
+  );
+  /** The row's dollars as text ('—' when the client has no rate). */
+  const rowDollarText = useCallback(
+    (s: SubmissionSummary): string => {
+      const d = rowDollars(s);
+      return d == null ? '—' : fmtDollars(d);
+    },
+    [rowDollars],
   );
 
   // Defined here (rather than after `sorted`) so the cross-scope-counts memo
@@ -346,11 +582,15 @@ export default function SubmissionsPage() {
     !!qParam ||
     !!credParam ||
     !!nurseParam ||
-    !!datePreset ||
+    !!clientParam ||
+    !!rangePreset ||
     flagAbnormal ||
     flagIncident ||
     flagPhysNotified ||
     flagNeedsCosign ||
+    flagHospitalEr ||
+    flagMedChange ||
+    flagOpen ||
     sortParam !== subDefaults.defaultSort ||
     dirParam !== subDefaults.defaultDir;
 
@@ -365,16 +605,15 @@ export default function SubmissionsPage() {
       }
       if (credParam && s.credential !== credParam) return false;
       if (nurseParam && s.nurseName !== nurseParam) return false;
+      if (clientParam && s.clientName !== clientParam) return false;
       if (flagAbnormal && !s.hasAbnormalVitals) return false;
       if (flagIncident && !s.hasIncident) return false;
       if (flagPhysNotified && !s.physicianNotified) return false;
       if (flagNeedsCosign && !needsCosign(s, requiredCosignCreds)) return false;
-      if (rangeStart || rangeEnd) {
-        const d = parseDateOfService(s.dateOfService);
-        if (!d) return false;
-        if (rangeStart && d < rangeStart) return false;
-        if (rangeEnd && d > rangeEnd) return false;
-      }
+      if (flagHospitalEr && !(s.hospitalAdmission || s.erUrgentCare)) return false;
+      if (flagMedChange && !s.medChangeReported) return false;
+      if (flagOpen && s.clarificationStatus !== 'open') return false;
+      if (rangeActive && !noteTouchesRange(s)) return false;
       return true;
     });
   }, [
@@ -382,12 +621,16 @@ export default function SubmissionsPage() {
     qParam,
     credParam,
     nurseParam,
+    clientParam,
     flagAbnormal,
     flagIncident,
     flagPhysNotified,
     flagNeedsCosign,
-    rangeStart,
-    rangeEnd,
+    flagHospitalEr,
+    flagMedChange,
+    flagOpen,
+    rangeActive,
+    noteTouchesRange,
   ]);
 
   // Keep the bulk-action selection in lockstep with what's actually visible.
@@ -430,16 +673,15 @@ export default function SubmissionsPage() {
       }
       if (credParam && s.credential !== credParam) continue;
       if (nurseParam && s.nurseName !== nurseParam) continue;
+      if (clientParam && s.clientName !== clientParam) continue;
       if (flagAbnormal && !s.hasAbnormalVitals) continue;
       if (flagIncident && !s.hasIncident) continue;
       if (flagPhysNotified && !s.physicianNotified) continue;
       if (flagNeedsCosign && !needsCosign(s, requiredCosignCreds)) continue;
-      if (rangeStart || rangeEnd) {
-        const d = parseDateOfService(s.dateOfService);
-        if (!d) continue;
-        if (rangeStart && d < rangeStart) continue;
-        if (rangeEnd && d > rangeEnd) continue;
-      }
+      if (flagHospitalEr && !(s.hospitalAdmission || s.erUrgentCare)) continue;
+      if (flagMedChange && !s.medChangeReported) continue;
+      if (flagOpen && s.clarificationStatus !== 'open') continue;
+      if (rangeActive && !noteTouchesRange(s)) continue;
       if (s[archivedKey] != null) archived++;
       else active++;
     }
@@ -451,12 +693,16 @@ export default function SubmissionsPage() {
     qParam,
     credParam,
     nurseParam,
+    clientParam,
     flagAbnormal,
     flagIncident,
     flagPhysNotified,
     flagNeedsCosign,
-    rangeStart,
-    rangeEnd,
+    flagHospitalEr,
+    flagMedChange,
+    flagOpen,
+    rangeActive,
+    noteTouchesRange,
   ]);
 
   // Sort.
@@ -474,16 +720,214 @@ export default function SubmissionsPage() {
       } else if (sortParam === 'clientName') {
         av = a.clientName.toLowerCase();
         bv = b.clientName.toLowerCase();
+      } else if (sortParam === 'hours') {
+        av = rowHours(a) ?? -1;
+        bv = rowHours(b) ?? -1;
+      } else if (sortParam === 'credential') {
+        // Skill order (RN, LPN, CNA, HHA), not alphabetical.
+        av = credentialRank(a.credential);
+        bv = credentialRank(b.credential);
+      } else if (sortParam === 'flags') {
+        av = flagCount(a);
+        bv = flagCount(b);
       } else {
         av = a.nurseName.toLowerCase();
         bv = b.nurseName.toLowerCase();
       }
       if (av < bv) return dirParam === 'asc' ? -1 : 1;
       if (av > bv) return dirParam === 'asc' ? 1 : -1;
-      return 0;
+      // Ties (same credential, same flag count) fall back to newest service
+      // date so a grouped column still reads chronologically.
+      return (parseDateOfService(b.dateOfService)?.getTime() ?? 0) - (parseDateOfService(a.dateOfService)?.getTime() ?? 0);
     });
     return copy;
-  }, [filtered, sortParam, dirParam]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered, sortParam, dirParam, rowHours, requiredCosignCreds]);
+
+  // Totals for the whole filtered list (not just the page): the number the
+  // owner reads off when a parent asks "how many hours did we use in
+  // September". Shift hours and RN oversight hours are totalled separately.
+  const hoursStats = useMemo(() => {
+    if (!showHours) return null;
+    let hours = 0;
+    let shifts = 0;
+    let rnHours = 0;
+    let visits = 0;
+    let dollars: number | null = 0;
+    let rnDollars: number | null = 0;
+    let unpriced = 0;
+    const byClient = new Map<string, HoursPivotRow>();
+    const byNurse = new Map<string, HoursPivotRow>();
+    const byDay = new Map<string, HoursPivotRow & { nurses: Set<string> }>();
+    const credsByNurse = new Map<string, Set<string>>();
+    let units = 0;
+    let rnUnits = 0;
+    const blank = (key: string): HoursPivotRow => ({ key, hours: 0, units: 0, shifts: 0, rnHours: 0, rnUnits: 0, visits: 0, dollars: 0, rnDollars: 0 });
+    const addMoney = (cur: number | null, add: number | null) => (cur == null || add == null ? null : cur + add);
+    const bump = (m: Map<string, HoursPivotRow>, key: string, h: number, u: number, d: number | null, rn: boolean) => {
+      const b = m.get(key) ?? blank(key);
+      if (rn) {
+        b.rnHours += h;
+        b.rnUnits += u;
+        b.visits += 1;
+        b.rnDollars = addMoney(b.rnDollars, d);
+      } else {
+        b.hours += h;
+        b.units += u;
+        b.shifts += 1;
+        b.dollars = addMoney(b.dollars, d);
+      }
+      m.set(key, b);
+    };
+    for (const s of sorted) {
+      const h = rowHours(s);
+      if (h == null) continue;
+      const rn = isOversight(s);
+      const u = rowUnits(s);
+      const d = rowDollars(s);
+      if (d == null) unpriced += 1;
+      if (rn) {
+        visits += 1;
+        rnHours += h;
+        rnUnits += u;
+        rnDollars = addMoney(rnDollars, d);
+      } else {
+        shifts += 1;
+        hours += h;
+        units += u;
+        dollars = addMoney(dollars, d);
+      }
+      bump(byClient, s.clientName || '(no client)', h, u, d, rn);
+      bump(byNurse, s.nurseName || '(no nurse)', h, u, d, rn);
+      if (s.credential) {
+        const set = credsByNurse.get(s.nurseName || '(no nurse)') ?? new Set<string>();
+        set.add(s.credential);
+        credsByNurse.set(s.nurseName || '(no nurse)', set);
+      }
+      // By day: each calendar day carries exactly the hours worked on it
+      // (an overnight shift lands on two days), rounded and priced per day.
+      const rateFor = rateResolverFor(s);
+      for (const seg of rowSegments(s)) {
+        const b = byDay.get(seg.dateISO) ?? { ...blank(seg.dateISO), nurses: new Set<string>() };
+        const segDollars = s.patientId ? segmentsToDollars([seg], rateFor) : null;
+        const segUnits = segmentsToUnits([seg]);
+        if (rn) {
+          b.rnHours += seg.hours;
+          b.rnUnits += segUnits;
+          b.visits += 1;
+          b.rnDollars = addMoney(b.rnDollars, segDollars);
+        } else {
+          b.hours += seg.hours;
+          b.units += segUnits;
+          b.shifts += 1;
+          b.dollars = addMoney(b.dollars, segDollars);
+        }
+        if (s.nurseName) b.nurses.add(s.nurseName);
+        byDay.set(seg.dateISO, b);
+      }
+    }
+    const round = (n: number) => Math.round(n * 100) / 100;
+    const roundMoney = (n: number | null) => (n == null ? null : round(n));
+    const finish = (m: Map<string, HoursPivotRow>) =>
+      Array.from(m.values())
+        .map((b) => ({ ...b, hours: round(b.hours), rnHours: round(b.rnHours), dollars: roundMoney(b.dollars), rnDollars: roundMoney(b.rnDollars) }))
+        .sort((a, b) => b.hours - a.hours || b.rnHours - a.rnHours || a.key.localeCompare(b.key));
+    const days = Array.from(byDay.values())
+      .map((b) => ({ ...b, hours: round(b.hours), rnHours: round(b.rnHours), dollars: roundMoney(b.dollars), rnDollars: roundMoney(b.rnDollars), who: Array.from(b.nurses).sort().join(', ') }))
+      .sort((a, b) => b.key.localeCompare(a.key));
+    return {
+      hours: round(hours),
+      units,
+      shifts,
+      rnHours: round(rnHours),
+      rnUnits,
+      visits,
+      dollars: roundMoney(dollars),
+      rnDollars: roundMoney(rnDollars),
+      unpriced,
+      clients: byClient.size,
+      nurses: byNurse.size,
+      byClient: finish(byClient),
+      byNurse: finish(byNurse).map((b) => ({ ...b, who: Array.from(credsByNurse.get(b.key) ?? []).sort().join(' / ') })),
+      byDay: days,
+    };
+  }, [sorted, rowHours, rowUnits, rowDollars, rowSegments, rateResolverFor, showHours]);
+  const [pivot, setPivot] = useState<'' | 'client' | 'nurse' | 'day'>('');
+  // Pivot column sort. Resets to each pivot's natural order when you switch
+  // pivots (days newest first, clients / nurses by most hours).
+  type PivotSortKey = 'key' | 'who' | 'shifts' | 'hours' | 'dollars' | 'visits' | 'rnHours' | 'rnDollars';
+  const [pivotSort, setPivotSort] = useState<{ key: PivotSortKey; dir: 'asc' | 'desc' } | null>(null);
+  const openPivot = (next: '' | 'client' | 'nurse' | 'day') => {
+    setPivot(next);
+    setPivotSort(null);
+  };
+  const clickPivotSort = (key: PivotSortKey) => {
+    setPivotSort((cur) => {
+      // First click on a text column sorts A to Z; on a number column, biggest first.
+      const firstDir: 'asc' | 'desc' = key === 'key' || key === 'who' ? (pivot === 'day' && key === 'key' ? 'desc' : 'asc') : 'desc';
+      if (!cur || cur.key !== key) return { key, dir: firstDir };
+      return { key, dir: cur.dir === 'asc' ? 'desc' : 'asc' };
+    });
+  };
+  const pivotIndicator = (key: PivotSortKey) =>
+    pivotSort?.key === key ? (pivotSort.dir === 'asc' ? ' ↑' : ' ↓') : '';
+  const money = (d: number | null): string => (d == null ? '—' : fmtDollars(d));
+  /** A pivot quantity: exact hours or whole billable units. */
+  const pq = (hours: number, units: number): string => (qtyView === 'units' ? fmtUnits(units) : fmtH(hours));
+
+  // CSV of the filtered list with per-row hours: the billing worksheet. Same
+  // rows as the totals strip, so what is exported is what was on screen.
+  const exportHoursCsv = async () => {
+    if (!user || !hoursStats) return;
+    const header = [
+      'Date of service', 'Client', 'Nurse', 'Credential', 'Note type', 'Start', 'End date', 'End',
+      'Total hours', 'Shift hours in range', 'RN oversight hours in range', 'Units in range', 'Amount in range', 'Submitted at', 'Note ID',
+    ];
+    const lines = [header.join(',')];
+    for (const s of sorted) {
+      const h = rowHours(s);
+      const rn = isOversight(s);
+      lines.push([
+        s.dateOfService,
+        s.clientName,
+        s.nurseName,
+        s.credential,
+        rn ? 'RN oversight visit' : s.noteType === SUPERVISORY_NOTE_TYPE ? 'Home supervisory visit' : 'Shift note',
+        s.shiftStart,
+        formatDateUS(s.shiftEndDate),
+        s.shiftEnd,
+        s.totalHours,
+        h == null || rn ? '' : fmtH(h),
+        h == null || !rn ? '' : fmtH(h),
+        h == null ? '' : fmtUnits(rowUnits(s)),
+        (() => { const d = rowDollars(s); return d == null ? '' : d.toFixed(2); })(),
+        s.submittedAt ? s.submittedAt.toLocaleString('en-US') : '',
+        s.id,
+      ].map(csvCell).join(','));
+    }
+    lines.push('');
+    lines.push(['Shift hours', fmtH(hoursStats.hours)].join(','));
+    lines.push(['Shifts', String(hoursStats.shifts)].join(','));
+    lines.push(['RN oversight hours', fmtH(hoursStats.rnHours)].join(','));
+    lines.push(['RN visits', String(hoursStats.visits)].join(','));
+    lines.push(['Shift units', fmtUnits(hoursStats.units)].join(','));
+    lines.push(['RN oversight units', fmtUnits(hoursStats.rnUnits)].join(','));
+    lines.push(['Shift amount', hoursStats.dollars == null ? 'n/a (missing rate)' : hoursStats.dollars.toFixed(2)].join(','));
+    lines.push(['RN oversight amount', hoursStats.rnDollars == null ? 'n/a (missing rate)' : hoursStats.rnDollars.toFixed(2)].join(','));
+    lines.push(['Range', describeRange({ fromISO: rangeFrom, toISO: rangeTo })].join(','));
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const suffix = rangeFrom || rangeTo
+      ? `${formatDateUSFile(rangeFrom) || 'start'}_to_${formatDateUSFile(rangeTo) || 'today'}`
+      : 'all-dates';
+    triggerDownload(blob, `shift-notes-hours_${suffix}.csv`);
+    await logExport(user, {
+      submissionIds: sorted.map((s) => s.id),
+      count: sorted.length,
+      format: 'hours-csv',
+      dateRangeStart: rangeFrom || null,
+      dateRangeEnd: rangeTo || null,
+    });
+  };
 
   // Pagination — page size from /admin/settings, with a fallback for
   // the brief window before the settings hook hydrates on first paint.
@@ -514,11 +958,18 @@ export default function SubmissionsPage() {
       q: null,
       cred: null,
       nurse: null,
+      client: null,
       range: null,
+      m: null,
+      from: null,
+      to: null,
       abn: null,
       inc: null,
       phy: null,
       cosign: null,
+      hosp: null,
+      med: null,
+      flag: null,
       sort: null,
       dir: null,
       p: null,
@@ -533,10 +984,14 @@ export default function SubmissionsPage() {
 
   const dateRange = useMemo(() => {
     if (selectedSubmissions.length === 0) return { start: null, end: null };
+    const isoKey = (d: string) => {
+      const m = d.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      return m ? `${m[3]}-${m[1]}-${m[2]}` : d;
+    };
     const dates = selectedSubmissions
       .map((s) => s.dateOfService)
       .filter(Boolean)
-      .sort();
+      .sort((a, b) => isoKey(a).localeCompare(isoKey(b)));
     return { start: dates[0] || null, end: dates[dates.length - 1] || null };
   }, [selectedSubmissions]);
 
@@ -596,7 +1051,7 @@ export default function SubmissionsPage() {
   const clearSelection = () => setSelected(new Set());
 
   const handleBulkArchive = async (action: 'archive' | 'restore') => {
-    if (!user || !role) return;
+    if (!user || !role || isViewingAs) return;
     if (selectedIds.length === 0) return;
     if (action === 'archive') {
       const msg = isNurse
@@ -757,12 +1212,20 @@ export default function SubmissionsPage() {
   // page since it isn't counted in the paginator.
   const showDraftRow = myDraft != null && scope !== 'archived' && safePage === 1;
 
+  // Header buttons. Progress notes: anyone with a clinical credential, or an
+  // admin. Oversight notes: the same gate the form enforces (RN credential,
+  // or an admin/supervisor signing in their own name).
+  const canAuthorProgressNote = !isViewingAs && (!!profile?.credential || role === 'admin');
+  const canAuthorOversightNote =
+    !isViewingAs && (profile?.credential === 'RN' || role === 'admin' || role === 'supervisor');
+  const canAuthorSupervisory = !isViewingAs && canAuthorSupervisoryVisit(role);
+
   const sortIndicator = (key: SortKey) =>
     sortParam === key ? (dirParam === 'asc' ? ' ↑' : ' ↓') : '';
 
   return (
-    <div style={containerStyle}>
-      <div style={wrapStyle}>
+    <div className={styles.container}>
+      <div className={styles.wrap}>
         {draftSavedToast && (
           <div
             role="status"
@@ -777,7 +1240,11 @@ export default function SubmissionsPage() {
               fontWeight: 500,
             }}
           >
-            ✓ Draft saved. You can resume it anytime from the progress note page.
+            {draftToastKind === 'oversight'
+              ? '✓ Oversight note draft saved. Open New Oversight Note to resume it.'
+              : draftToastKind === 'supervisory'
+                ? '✓ Supervisory visit draft saved. Open New Supervisory Visit to resume it.'
+                : '✓ Draft saved. You can resume it anytime from the progress note page.'}
           </div>
         )}
         {draftDiscardedToast && (
@@ -814,11 +1281,13 @@ export default function SubmissionsPage() {
             ✓ Co-signed {cosignToast} {cosignToast === 1 ? 'note' : 'notes'}.
           </div>
         )}
-        <div style={headerStyle}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h1 style={titleStyle}>Progress Note Submissions</h1>
-            <p style={subtitleStyle}>All submitted nursing progress notes</p>
+        <div className={styles.header}>
+          <div className={styles.headerText}>
+            <h1 className={styles.title}>Progress Note Submissions</h1>
+            <p className={styles.subtitle}>All submitted nursing progress notes</p>
           </div>
+          {(canAuthorProgressNote || canAuthorOversightNote || canAuthorSupervisory) && (
+          <div className={styles.actions}>
           {/* Visible to anyone who can author a progress note: any user with
               a clinical credential (HHA / CNA / LPN / RN), OR an admin (so
               they can still demo / test the flow). This catches RN-credentialed
@@ -828,33 +1297,42 @@ export default function SubmissionsPage() {
               user never gets a "wait, what's this banner?" moment after
               clicking. The link target is the same either way; the
               progress-note page's existing resume-banner logic hydrates. */}
-          {!isViewingAs && (!!profile?.credential || role === 'admin') && (
+          {canAuthorProgressNote && (
             <Link
               href={myDraft ? '/progress-note?resume=1' : '/progress-note'}
-              style={newNoteBtnStyle}
+              className={btnPrimary}
             >
               <Plus size={16} />
-              {myDraft ? 'Resume draft' : 'New progress note'}
+              {myDraft ? 'Resume Draft' : 'New Progress Note'}
             </Link>
           )}
           {/* RN oversight visit note — same gate the form enforces: an RN
               credential, or an admin/supervisor signing in their own name. */}
-          {!isViewingAs &&
-            (profile?.credential === 'RN' || role === 'admin' || role === 'supervisor') && (
-              <Link href="/oversight-note" style={newNoteBtnStyle}>
-                <Plus size={16} />
-                New oversight note
-              </Link>
-            )}
+          {canAuthorOversightNote && (
+            <Link href="/oversight-note" className={btn}>
+              <Plus size={16} />
+              New Oversight Note
+            </Link>
+          )}
+          {/* Home supervisory visit — supervisors and admins only, like the form. */}
+          {canAuthorSupervisory && (
+            <Link href="/supervisory-visit" className={btn}>
+              <Plus size={16} />
+              New Supervisory Visit
+            </Link>
+          )}
+          </div>
+          )}
         </div>
 
-        <div style={tabsStyle} role="tablist" aria-label="Submissions view">
+        <div style={tabsStyle} className={styles.tabs} role="tablist" aria-label="Submissions view">
           <button
             type="button"
             role="tab"
             aria-selected={scope === 'active'}
             onClick={() => setScope('active')}
             style={scope === 'active' ? tabActiveStyle : tabStyle}
+            className={styles.tab}
           >
             Active <span style={tabCountStyle}>{activeCount}</span>
           </button>
@@ -864,6 +1342,7 @@ export default function SubmissionsPage() {
             aria-selected={scope === 'archived'}
             onClick={() => setScope('archived')}
             style={scope === 'archived' ? tabActiveStyle : tabStyle}
+            className={styles.tab}
           >
             Archived <span style={tabCountStyle}>{archivedCount}</span>
           </button>
@@ -873,6 +1352,7 @@ export default function SubmissionsPage() {
             aria-selected={scope === 'all'}
             onClick={() => setScope('all')}
             style={scope === 'all' ? tabActiveStyle : tabStyle}
+            className={styles.tab}
             title="Search across active + archived"
           >
             All <span style={tabCountStyle}>{allSubmissions.length}</span>
@@ -887,16 +1367,17 @@ export default function SubmissionsPage() {
               aria-selected={scope === 'team'}
               onClick={() => setScope('team')}
               style={scope === 'team' ? tabActiveStyle : tabStyle}
+            className={styles.tab}
               title="Notes from other nurses on patients you also work with"
             >
-              Care team <span style={tabCountStyle}>{teamCount}</span>
+              Care Team <span style={tabCountStyle}>{teamCount}</span>
             </button>
           )}
         </div>
 
         {/* Filter bar */}
-        <div style={filterBarStyle}>
-          <div style={searchWrapStyle}>
+        <div style={filterBarStyle} className={styles.filterBar}>
+          <div style={searchWrapStyle} className={styles.search}>
             <Search size={14} style={searchIconStyle} aria-hidden />
             <input
               type="search"
@@ -904,30 +1385,71 @@ export default function SubmissionsPage() {
               onChange={(e) => setQueryInput(e.target.value)}
               placeholder="Search client, nurse, diagnosis, date…"
               style={searchInputStyle}
+              className={styles.searchInput}
               aria-label="Search submissions"
             />
           </div>
 
           <select
-            value={datePreset}
-            onChange={(e) => updateParams({ range: e.target.value || null, p: null })}
+            value={rangePreset}
+            onChange={(e) => {
+              const next = e.target.value as RangePreset;
+              // Picking "month" defaults to the current month; "custom"
+              // starts from whatever bounds the previous preset resolved to
+              // so the inputs open pre-filled rather than blank.
+              updateParams({
+                range: next || null,
+                m: next === 'm' ? monthParam || todayIso.slice(0, 7) : null,
+                from: next === 'c' ? fromParam || rangeFrom || null : null,
+                to: next === 'c' ? toParam || rangeTo || null : null,
+                p: null,
+              });
+            }}
             style={selectStyle}
+            className={styles.select}
             aria-label="Date of service range"
           >
-            <option value="">Any date</option>
-            <option value="today">Today</option>
-            <option value="week">This week</option>
-            <option value="month">This month</option>
-            <option value="30d">Last 30 days</option>
+            {RANGE_PRESETS.map((p) => (
+              <option key={p.value || 'any'} value={p.value}>{p.label}</option>
+            ))}
           </select>
+          {rangePreset === 'm' && (
+            <MonthPicker
+              value={monthParam}
+              onChange={(month) => updateParams({ m: month || null, p: null })}
+              style={dateInputStyle}
+            />
+          )}
+          {rangePreset === 'c' && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} className={styles.rangeInputs}>
+              <input
+                type="date"
+                value={fromParam}
+                max={toParam || undefined}
+                onChange={(e) => updateParams({ from: e.target.value || null, p: null })}
+                style={dateInputStyle}
+                aria-label="From date"
+              />
+              <span style={{ fontSize: 12, color: '#7f8c8d' }}>to</span>
+              <input
+                type="date"
+                value={toParam}
+                min={fromParam || undefined}
+                onChange={(e) => updateParams({ to: e.target.value || null, p: null })}
+                style={dateInputStyle}
+                aria-label="To date"
+              />
+            </span>
+          )}
 
           <select
             value={credParam}
             onChange={(e) => updateParams({ cred: e.target.value || null, p: null })}
             style={selectStyle}
+            className={styles.select}
             aria-label="Credential"
           >
-            <option value="">All credentials</option>
+            <option value="">All Credentials</option>
             <option value="HHA">HHA</option>
             <option value="CNA">CNA</option>
             <option value="LPN">LPN</option>
@@ -939,12 +1461,30 @@ export default function SubmissionsPage() {
               value={nurseParam}
               onChange={(e) => updateParams({ nurse: e.target.value || null, p: null })}
               style={selectStyle}
+            className={styles.select}
               aria-label="Nurse"
             >
-              <option value="">All nurses</option>
+              <option value="">All Nurses</option>
               {nurseOptions.map((n) => (
                 <option key={n} value={n}>
                   {n}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {clientOptions.length > 1 && (
+            <select
+              value={clientParam}
+              onChange={(e) => updateParams({ client: e.target.value || null, p: null })}
+              style={selectStyle}
+            className={styles.select}
+              aria-label="Client"
+            >
+              <option value="">All Clients</option>
+              {clientOptions.map((c) => (
+                <option key={c} value={c}>
+                  {c}
                 </option>
               ))}
             </select>
@@ -957,54 +1497,83 @@ export default function SubmissionsPage() {
               updateParams({ sort: k, dir: d, p: null });
             }}
             style={selectStyle}
+            className={styles.select}
             aria-label="Sort by"
           >
-            <option value="submittedAt:desc">Newest submitted</option>
-            <option value="submittedAt:asc">Oldest submitted</option>
-            <option value="dateOfService:desc">Newest service date</option>
-            <option value="dateOfService:asc">Oldest service date</option>
+            <option value="submittedAt:desc">Newest Submitted</option>
+            <option value="submittedAt:asc">Oldest Submitted</option>
+            <option value="dateOfService:desc">Newest Service Date</option>
+            <option value="dateOfService:asc">Oldest Service Date</option>
             <option value="clientName:asc">Client A–Z</option>
             <option value="clientName:desc">Client Z–A</option>
             <option value="nurseName:asc">Nurse A–Z</option>
             <option value="nurseName:desc">Nurse Z–A</option>
+            {showHours && <option value="hours:desc">Most Hours</option>}
+            {showHours && <option value="hours:asc">Fewest Hours</option>}
+            <option value="credential:asc">Credential (RN First)</option>
+            <option value="flags:desc">Most Flags</option>
           </select>
         </div>
 
-        <div style={flagsRowStyle}>
-          <label style={flagLabelStyle}>
+        <div style={flagsRowStyle} className={styles.flagsRow}>
+          <label style={flagLabelStyle} className={styles.flagChip}>
             <input
               type="checkbox"
               checked={flagAbnormal}
               onChange={(e) => updateParams({ abn: e.target.checked ? '1' : null, p: null })}
             />
-            Abnormal vitals
+            Abnormal Vitals
           </label>
-          <label style={flagLabelStyle}>
+          <label style={flagLabelStyle} className={styles.flagChip}>
             <input
               type="checkbox"
               checked={flagIncident}
               onChange={(e) => updateParams({ inc: e.target.checked ? '1' : null, p: null })}
             />
-            Incident reported
+            Incident Reported
           </label>
-          <label style={flagLabelStyle}>
+          <label style={flagLabelStyle} className={styles.flagChip}>
             <input
               type="checkbox"
               checked={flagPhysNotified}
               onChange={(e) => updateParams({ phy: e.target.checked ? '1' : null, p: null })}
             />
-            Physician notified
+            Physician Notified
           </label>
-          <label style={flagLabelStyle}>
+          <label style={flagLabelStyle} className={styles.flagChip}>
             <input
               type="checkbox"
               checked={flagNeedsCosign}
               onChange={(e) => updateParams({ cosign: e.target.checked ? '1' : null, p: null })}
             />
-            Needs co-signature
+            Needs Co-Signature
+          </label>
+          <label style={flagLabelStyle} className={styles.flagChip}>
+            <input
+              type="checkbox"
+              checked={flagHospitalEr}
+              onChange={(e) => updateParams({ hosp: e.target.checked ? '1' : null, p: null })}
+            />
+            Hospital / ER Visit
+          </label>
+          <label style={flagLabelStyle} className={styles.flagChip}>
+            <input
+              type="checkbox"
+              checked={flagMedChange}
+              onChange={(e) => updateParams({ med: e.target.checked ? '1' : null, p: null })}
+            />
+            Med Change Reported
+          </label>
+          <label style={flagLabelStyle} className={styles.flagChip} title="Notes with an open correction or clarification flag">
+            <input
+              type="checkbox"
+              checked={flagOpen}
+              onChange={(e) => updateParams({ flag: e.target.checked ? '1' : null, p: null })}
+            />
+            Flagged
           </label>
 
-          <div style={{ flex: 1 }} />
+          <div style={{ flex: 1 }} className={styles.flagsSpacer} />
 
           {/* Always rendered so its (taller-than-the-checkboxes) box reserves the
               row height — the row no longer grows when a filter is applied. Just
@@ -1012,6 +1581,7 @@ export default function SubmissionsPage() {
           <button
             type="button"
             onClick={clearAllFilters}
+            className={styles.clearFilters}
             style={{
               ...clearFiltersBtnStyle,
               ...(hasAnyFilter ? {} : { visibility: 'hidden', pointerEvents: 'none' }),
@@ -1019,7 +1589,7 @@ export default function SubmissionsPage() {
             aria-hidden={!hasAnyFilter}
             tabIndex={hasAnyFilter ? 0 : -1}
           >
-            <X size={12} /> Clear all
+            <X size={12} /> Clear All
           </button>
         </div>
 
@@ -1085,8 +1655,11 @@ export default function SubmissionsPage() {
           </div>
         )}
 
-        {selected.size > 0 && (
-          <div style={bulkBarStyle}>
+        {/* Bulk actions stay hidden during view-as: archive/restore and
+            co-sign are live writes, and a "(read-only)" preview must not
+            offer them. */}
+        {!isViewingAs && selected.size > 0 && (
+          <div style={bulkBarStyle} className={styles.bulkBar}>
             <span style={{ fontWeight: 600, color: '#2c3e50' }}>
               {selected.size} selected
             </span>
@@ -1101,11 +1674,7 @@ export default function SubmissionsPage() {
             {isRn && (
               <button
                 onClick={() => setCosignTargets([...selectedSubmissions])}
-                style={{
-                  ...bulkCosignBtnStyle,
-                  opacity: bulkCosignState.canBulkCosign ? 1 : 0.55,
-                  cursor: bulkCosignState.canBulkCosign ? 'pointer' : 'not-allowed',
-                }}
+                className={btnPrimary}
                 disabled={busy || !bulkCosignState.canBulkCosign}
                 title={
                   bulkCosignState.canBulkCosign
@@ -1114,17 +1683,18 @@ export default function SubmissionsPage() {
                 }
               >
                 <CheckCircle2 size={14} />
-                Co-sign selected
+                Co-Sign Selected
               </button>
             )}
-            <button onClick={openExportModal} style={exportBtnStyle} disabled={busy}>
+            {/* One primary per bar: co-signing leads for RNs, export for everyone else. */}
+            <button onClick={openExportModal} className={isRn ? btn : btnPrimary} disabled={busy}>
               <Download size={14} />
               Export as PDF
             </button>
             {scope !== 'archived' ? (
               <button
                 onClick={() => handleBulkArchive('archive')}
-                style={archiveBtnStyle}
+                className={btn}
                 disabled={busy}
               >
                 <ArchiveIcon size={14} />
@@ -1133,17 +1703,184 @@ export default function SubmissionsPage() {
             ) : (
               <button
                 onClick={() => handleBulkArchive('restore')}
-                style={restoreBtnStyle}
+                className={btn}
                 disabled={busy}
               >
                 <RotateCcw size={14} />
                 Restore
               </button>
             )}
-            <button onClick={clearSelection} style={clearBtnStyle} disabled={busy}>
+            <button onClick={clearSelection} className={btn} disabled={busy}>
               <X size={14} />
               Clear
             </button>
+          </div>
+        )}
+
+        {/* Hours strip (owner only): totals for the whole filtered list plus
+            an optional by-client / by-nurse pivot and a CSV of the rows. */}
+        {!loading && hoursStats && sorted.length > 0 && (
+          <div style={hoursStripStyle}>
+            {/* Row 1: the numbers. Row 2: what they cover. Row 3: the
+                controls, always on their own line, so toggling $ (which adds
+                two dollar figures to row 1) never reflows the buttons. */}
+            <div style={hoursStripRowStyle} className={styles.hoursRow}>
+              <span style={hoursStripIconStyle}><Clock size={14} /></span>
+              <span style={hoursStatStyle}>
+                <strong style={hoursStatNumStyle}>{pq(hoursStats.hours, hoursStats.units)}</strong>
+                {qtyView === 'hours' ? ' shift hours' : ' shift units'}
+                {showDollars && <strong style={{ ...hoursStatNumStyle, marginLeft: 8, color: '#166534' }}>{money(hoursStats.dollars)}</strong>}
+                <span style={{ color: '#64748b' }}> · {hoursStats.shifts} {hoursStats.shifts === 1 ? 'shift' : 'shifts'}</span>
+              </span>
+              {(hoursStats.visits > 0 || hoursStats.rnHours > 0) && (
+                <span style={{ ...hoursStatStyle, color: '#1d4ed8' }} title="RN oversight visit hours (start time to end time); never added to shift hours">
+                  <strong style={{ ...hoursStatNumStyle, color: '#1d4ed8' }}>{pq(hoursStats.rnHours, hoursStats.rnUnits)}</strong>
+                  {qtyView === 'hours' ? ' RN oversight hours' : ' RN oversight units'}
+                  {showDollars && <strong style={{ ...hoursStatNumStyle, marginLeft: 8, color: '#166534' }}>{money(hoursStats.rnDollars)}</strong>}
+                  <span style={{ color: '#3b82f6' }}> · {hoursStats.visits} {hoursStats.visits === 1 ? 'visit' : 'visits'}</span>
+                </span>
+              )}
+              {showDollars && hoursStats.unpriced > 0 && (
+                <Link href="/admin/settings/billing-rates" style={{ ...hoursStatStyle, color: '#b45309', textDecoration: 'underline' }} title="Dollars need a billing rate for the client's program (Settings → Billing Rates)">
+                  {hoursStats.unpriced} {hoursStats.unpriced === 1 ? 'row has' : 'rows have'} no rate
+                </Link>
+              )}
+              <span style={hoursStatStyle}>
+                <strong style={hoursStatNumStyle}>{hoursStats.clients}</strong> {hoursStats.clients === 1 ? 'client' : 'clients'}
+              </span>
+              <span style={hoursStatStyle}>
+                <strong style={hoursStatNumStyle}>{hoursStats.nurses}</strong> {hoursStats.nurses === 1 ? 'nurse' : 'nurses'}
+              </span>
+            </div>
+            <div style={hoursStripNoteStyle}>
+              {describeRange({ fromISO: rangeFrom, toISO: rangeTo })}
+              {rangeActive && ' · shifts are split at midnight; only the hours inside the range count'}
+              {' · RN oversight visits are shown in blue and never added to shift hours'}
+            </div>
+            <div style={hoursToolbarStyle} className={styles.hoursToolbar}>
+              <span style={segmentedStyle} role="group" aria-label="Show as">
+                {(['hours', 'units'] as QtyView[]).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => updateParams({ u: v === 'hours' ? null : v })}
+                    style={qtyView === v ? segmentedActiveStyle : segmentedBtnStyle}
+                    title={v === 'units' ? '15-minute billing units (4 per hour)' : 'Hours'}
+                  >
+                    {v === 'hours' ? 'Hours' : 'Units'}
+                  </button>
+                ))}
+              </span>
+              <button
+                type="button"
+                onClick={() => updateParams({ usd: showDollars ? null : '1' })}
+                style={{ ...(showDollars ? dollarsBtnActiveStyle : pivotBtnStyle), minWidth: 60, justifyContent: 'center' }}
+                title="Show dollars alongside: units × the rate on the client's authorization line"
+                aria-pressed={showDollars}
+              >
+                $ {showDollars ? 'On' : 'Off'}
+              </button>
+              <div style={{ flex: 1 }} className={styles.hoursSpacer} />
+              <button
+                type="button"
+                onClick={() => openPivot(pivot === 'day' ? '' : 'day')}
+                style={pivot === 'day' ? pivotBtnActiveStyle : pivotBtnStyle}
+                title="Each calendar day's hours (overnight shifts split at midnight)"
+              >
+                By Day
+              </button>
+              <button
+                type="button"
+                onClick={() => openPivot(pivot === 'client' ? '' : 'client')}
+                style={pivot === 'client' ? pivotBtnActiveStyle : pivotBtnStyle}
+              >
+                By Client
+              </button>
+              <button
+                type="button"
+                onClick={() => openPivot(pivot === 'nurse' ? '' : 'nurse')}
+                style={pivot === 'nurse' ? pivotBtnActiveStyle : pivotBtnStyle}
+              >
+                By Nurse
+              </button>
+              <button type="button" onClick={exportHoursCsv} style={pivotBtnStyle} title="Download these rows with hours as a spreadsheet">
+                <FileSpreadsheet size={13} /> CSV
+              </button>
+            </div>
+            {pivot && (
+              <div className={styles.pivotWrap}>
+              <table style={{ ...pivotTableStyle, ...(pivot === 'day' ? { maxWidth: 760 } : null) }}>
+                <thead>
+                  <tr>
+                    <th style={pivotThSortStyle} onClick={() => clickPivotSort('key')}>{pivot === 'client' ? 'Client' : pivot === 'nurse' ? 'Nurse' : 'Day'}{pivotIndicator('key')}</th>
+                    {pivot === 'day' && <th style={pivotThSortStyle} onClick={() => clickPivotSort('who')}>Who{pivotIndicator('who')}</th>}
+                    {pivot === 'nurse' && <th style={pivotThSortStyle} onClick={() => clickPivotSort('who')}>Type{pivotIndicator('who')}</th>}
+                    <th style={{ ...pivotThSortStyle, textAlign: 'right' }} onClick={() => clickPivotSort('shifts')}>Shifts{pivotIndicator('shifts')}</th>
+                    <th style={{ ...pivotThSortStyle, textAlign: 'right' }} onClick={() => clickPivotSort('hours')}>{qtyView === 'hours' ? 'Shift Hours' : 'Shift Units'}{pivotIndicator('hours')}</th>
+                    {showDollars && <th style={{ ...pivotThSortStyle, textAlign: 'right', color: '#166534' }} onClick={() => clickPivotSort('dollars')}>Shift ${pivotIndicator('dollars')}</th>}
+                    {pivot !== 'day' && <th style={{ ...pivotThSortStyle, textAlign: 'right' }} onClick={() => clickPivotSort('hours')}>Share{pivotIndicator('hours')}</th>}
+                    {hoursStats.visits > 0 && <th style={{ ...pivotThSortStyle, textAlign: 'right', color: '#1d4ed8' }} onClick={() => clickPivotSort('visits')}>RN Visits{pivotIndicator('visits')}</th>}
+                    {hoursStats.visits > 0 && <th style={{ ...pivotThSortStyle, textAlign: 'right', color: '#1d4ed8' }} onClick={() => clickPivotSort('rnHours')}>{qtyView === 'hours' ? 'RN Hours' : 'RN Units'}{pivotIndicator('rnHours')}</th>}
+                    {hoursStats.visits > 0 && showDollars && <th style={{ ...pivotThSortStyle, textAlign: 'right', color: '#166534' }} onClick={() => clickPivotSort('rnDollars')}>RN ${pivotIndicator('rnDollars')}</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    const base = pivot === 'client' ? hoursStats.byClient : pivot === 'nurse' ? hoursStats.byNurse : hoursStats.byDay;
+                    if (!pivotSort) return base;
+                    const val = (b: HoursPivotRow): string | number => {
+                      switch (pivotSort.key) {
+                        case 'key': return b.key.toLowerCase();
+                        case 'who': return (b.who || '').toLowerCase();
+                        case 'shifts': return b.shifts;
+                        case 'hours': return b.hours;
+                        case 'dollars': return b.dollars ?? -1;
+                        case 'visits': return b.visits;
+                        case 'rnHours': return b.rnHours;
+                        case 'rnDollars': return b.rnDollars ?? -1;
+                      }
+                    };
+                    const dir = pivotSort.dir === 'asc' ? 1 : -1;
+                    return [...base].sort((x, y) => {
+                      const a = val(x);
+                      const b = val(y);
+                      return a < b ? -dir : a > b ? dir : x.key.localeCompare(y.key);
+                    });
+                  })().map((b) => (
+                    <tr key={b.key}>
+                      <td style={{ ...pivotTdStyle, whiteSpace: 'nowrap' }}>{pivot === 'day' ? formatDateUS(b.key) : b.key}</td>
+                      {pivot === 'day' && <td style={{ ...pivotTdStyle, color: '#475569' }}>{b.who}</td>}
+                      {pivot === 'nurse' && <td style={{ ...pivotTdStyle, color: '#475569' }}>{b.who}</td>}
+                      <td style={{ ...pivotTdStyle, textAlign: 'right' }}>{b.shifts || ''}</td>
+                      <td style={{ ...pivotTdStyle, textAlign: 'right', fontWeight: 700 }}>{b.shifts ? pq(b.hours, b.units) : ''}</td>
+                      {showDollars && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#166534', fontWeight: 600 }}>{b.shifts ? money(b.dollars) : ''}</td>}
+                      {pivot !== 'day' && (
+                        <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#64748b' }}>
+                          {b.shifts && hoursStats.hours > 0 ? `${Math.round((b.hours / hoursStats.hours) * 100)}%` : ''}
+                        </td>
+                      )}
+                      {hoursStats.visits > 0 && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#1d4ed8' }}>{b.visits || ''}</td>}
+                      {hoursStats.visits > 0 && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#1d4ed8', fontWeight: 700 }}>{b.visits ? pq(b.rnHours, b.rnUnits) : ''}</td>}
+                      {hoursStats.visits > 0 && showDollars && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#166534', fontWeight: 600 }}>{b.visits ? money(b.rnDollars) : ''}</td>}
+                    </tr>
+                  ))}
+                </tbody>
+                {pivot === 'day' && (
+                  <tfoot>
+                    <tr>
+                      <td style={{ ...pivotTdStyle, fontWeight: 700 }} colSpan={2}>Total</td>
+                      <td style={{ ...pivotTdStyle, textAlign: 'right' }}>{hoursStats.shifts}</td>
+                      <td style={{ ...pivotTdStyle, textAlign: 'right', fontWeight: 700 }}>{pq(hoursStats.hours, hoursStats.units)}</td>
+                      {showDollars && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#166534', fontWeight: 700 }}>{money(hoursStats.dollars)}</td>}
+                      {hoursStats.visits > 0 && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#1d4ed8' }}>{hoursStats.visits}</td>}
+                      {hoursStats.visits > 0 && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#1d4ed8', fontWeight: 700 }}>{pq(hoursStats.rnHours, hoursStats.rnUnits)}</td>}
+                      {hoursStats.visits > 0 && showDollars && <td style={{ ...pivotTdStyle, textAlign: 'right', color: '#166534', fontWeight: 700 }}>{money(hoursStats.rnDollars)}</td>}
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+              </div>
+            )}
           </div>
         )}
 
@@ -1154,7 +1891,7 @@ export default function SubmissionsPage() {
         ) : sorted.length === 0 && !showDraftRow ? (
           <div style={emptyStyle}>
             <p style={emptyTitleStyle}>
-              {allSubmissions.length === 0 ? 'No submissions yet' : 'No matches'}
+              {allSubmissions.length === 0 ? 'No Submissions Yet' : 'No Matches'}
             </p>
             <p style={emptySubStyle}>
               {allSubmissions.length === 0
@@ -1165,13 +1902,14 @@ export default function SubmissionsPage() {
         ) : (
           <>
             <div style={tableWrapStyle}>
-              <table style={tableStyle}>
+              <table style={tableStyle} className={styles.table}>
                 <thead>
                   <tr>
                     <th style={{ ...thStyle, width: 40 }}>
                       <input
                         type="checkbox"
                         checked={allOnPageSelected}
+                        disabled={isViewingAs}
                         ref={(el) => {
                           if (el) el.indeterminate = someOnPageSelected;
                         }}
@@ -1204,8 +1942,21 @@ export default function SubmissionsPage() {
                     >
                       Nurse{sortIndicator('nurseName')}
                     </th>
-                    <th style={thStyle}>Credential</th>
-                    <th style={thStyle}>Flags</th>
+                    <th style={{ ...thStyle, cursor: 'pointer' }} onClick={() => setSort('credential')} title="Sort by nurse type (RN, LPN, CNA, HHA)">
+                      Credential{sortIndicator('credential')}
+                    </th>
+                    {showHours && (
+                      <th
+                        style={{ ...thStyle, cursor: 'pointer', textAlign: 'right', whiteSpace: 'nowrap' }}
+                        onClick={() => setSort('hours')}
+                        title={rangeActive ? 'Hours inside the selected range (shifts split at midnight)' : 'Total shift hours'}
+                      >
+                        {QTY_VIEW_LABEL[qtyView]}{sortIndicator('hours')}
+                      </th>
+                    )}
+                    <th style={{ ...thStyle, cursor: 'pointer' }} onClick={() => setSort('flags')} title="Sort by how many flags a note has">
+                      Flags{sortIndicator('flags')}
+                    </th>
                     <th
                       style={{ ...thStyle, cursor: 'pointer' }}
                       onClick={() => setSort('submittedAt')}
@@ -1217,8 +1968,8 @@ export default function SubmissionsPage() {
                 </thead>
                 <tbody>
                   {showDraftRow && myDraft && (
-                    <tr style={{ background: '#fffbeb', borderLeft: '3px solid #f59e0b' }}>
-                      <td style={tdStyle}>
+                    <tr className={styles.row} data-draft="true" style={{ background: '#fffbeb', borderLeft: '3px solid #f59e0b' }}>
+                      <td style={tdStyle} className={styles.cSelect}>
                         {/* Draft rows are never bulk-selectable — batch export
                             and archive only apply to submitted notes. */}
                         <input
@@ -1228,8 +1979,8 @@ export default function SubmissionsPage() {
                           style={{ ...checkboxStyle, cursor: 'not-allowed', opacity: 0.4 }}
                         />
                       </td>
-                      <td style={{ ...tdStyle, textAlign: 'right', color: '#cbd5e1' }}>—</td>
-                      <td style={tdStyle}>
+                      <td style={{ ...tdStyle, textAlign: 'right', color: '#cbd5e1' }} className={styles.cNum}>—</td>
+                      <td style={tdStyle} className={styles.cDate}>
                         {myDraft.dateOfService
                           ? (() => {
                               // dateOfService is stored as YYYY-MM-DD in the draft
@@ -1238,35 +1989,36 @@ export default function SubmissionsPage() {
                             })()
                           : '—'}
                       </td>
-                      <td style={tdStyle}>{myDraft.clientName || <em style={{ color: '#94a3b8' }}>Not set</em>}</td>
-                      <td style={tdStyle}>{myDraft.nurseName || <em style={{ color: '#94a3b8' }}>Not set</em>}</td>
-                      <td style={tdStyle}>
+                      <td style={tdStyle} className={styles.cClient}>{myDraft.clientName || <em style={{ color: '#94a3b8' }}>Not set</em>}</td>
+                      <td style={tdStyle} className={styles.cNurse}>{myDraft.nurseName || <em style={{ color: '#94a3b8' }}>Not set</em>}</td>
+                      <td style={tdStyle} className={styles.cCred}>
                         <span style={{ color: '#94a3b8', fontSize: 12 }}>—</span>
                       </td>
-                      <td style={tdStyle}>
+                      {showHours && <td style={{ ...tdStyle, textAlign: 'right', color: '#cbd5e1' }} className={styles.cHours}>—</td>}
+                      <td style={tdStyle} className={styles.cFlags}>
                         <span style={draftBadgeStyle} title="This note hasn't been submitted yet">
                           Draft
                         </span>
                       </td>
-                      <td style={tdStyle}>
+                      <td style={tdStyle} className={styles.cSubmitted}>
                         {myDraft.updatedAt ? (
-                          <span title={myDraft.updatedAt.toLocaleString()}>
-                            Saved {myDraft.updatedAt.toLocaleString([], {
+                          <span title={myDraft.updatedAt.toLocaleString('en-US')}>
+                            Saved {myDraft.updatedAt.toLocaleString('en-US', {
                               month: 'short', day: 'numeric',
                               hour: 'numeric', minute: '2-digit',
                             })}
                           </span>
                         ) : '--'}
                       </td>
-                      <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }} className={styles.cActions}>
                         <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
-                          <Link href="/progress-note?resume=1" style={viewBtnStyle}>
+                          <Link href="/progress-note?resume=1" className={`${btn} ${btnSm}`}>
                             Resume
                           </Link>
                           <button
                             onClick={handleDiscardDraft}
                             disabled={discardingDraft}
-                            style={rowArchiveBtnStyle}
+                            className={`${btnDanger} ${btnSm}`}
                           >
                             {discardingDraft ? 'Discarding…' : 'Discard'}
                           </button>
@@ -1284,6 +2036,8 @@ export default function SubmissionsPage() {
                     return (
                       <tr
                         key={s.id}
+                        className={styles.row}
+                        data-selected={isSelected ? 'true' : undefined}
                         onClick={() => router.push(viewHref)}
                         style={{
                           ...(i % 2 === 1 ? altRowStyle : {}),
@@ -1294,22 +2048,23 @@ export default function SubmissionsPage() {
                         onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = '#f1f5f9'; }}
                         onMouseLeave={(e) => { e.currentTarget.style.background = restingBg; }}
                       >
-                        <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
+                        <td style={tdStyle} className={styles.cSelect} onClick={(e) => e.stopPropagation()}>
                           <input
                             type="checkbox"
                             checked={isSelected}
+                            disabled={isViewingAs}
                             onChange={() => toggleRow(s.id)}
                             aria-label={`Select ${s.clientName} ${s.dateOfService}`}
                             style={checkboxStyle}
                           />
                         </td>
-                        <td style={{ ...tdStyle, textAlign: 'right', color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>
+                        <td style={{ ...tdStyle, textAlign: 'right', color: '#64748b', fontVariantNumeric: 'tabular-nums' }} className={styles.cNum}>
                           {pageStart + i + 1}
                         </td>
-                        <td style={tdStyle}>
+                        <td style={tdStyle} className={styles.cDate}>
                           {s.dateOfService}
                         </td>
-                        <td style={tdStyle}>
+                        <td style={tdStyle} className={styles.cClient}>
                           {s.clientName}
                           {s.noteType === 'rn-oversight-visit' && (
                             <span
@@ -1329,16 +2084,79 @@ export default function SubmissionsPage() {
                               OVERSIGHT
                             </span>
                           )}
+                          {s.noteType === 'rn-oversight-visit' && (oversightBillingById.get(s.id)?.nonBillable ?? s.nonBillable) && (
+                            <span
+                              style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 4, fontSize: 10.5, fontWeight: 700, background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', whiteSpace: 'nowrap' }}
+                              title="The month's authorized RN hours bill with an earlier visit. This visit is on the record and is not billed."
+                            >
+                              NON-BILLABLE
+                            </span>
+                          )}
+                          {s.noteType === SUPERVISORY_NOTE_TYPE && (
+                            <span
+                              style={{
+                                marginLeft: 6,
+                                padding: '1px 6px',
+                                borderRadius: 4,
+                                fontSize: 10.5,
+                                fontWeight: 700,
+                                background: '#f3eefb',
+                                color: '#4a2a7a',
+                                border: '1px solid #dccdf2',
+                                whiteSpace: 'nowrap',
+                              }}
+                              title="Home supervisory visit"
+                            >
+                              SUPERVISORY
+                            </span>
+                          )}
                         </td>
-                        <td style={tdStyle}>{s.nurseName}</td>
-                        <td style={tdStyle}>
+                        <td style={tdStyle} className={styles.cNurse}>{s.nurseName}</td>
+                        <td style={tdStyle} className={styles.cCred}>
                           <span style={credentialBadge}>{s.credential}</span>
                         </td>
-                        <td style={tdStyle}>
+                        {showHours && (() => {
+                          const h = rowHours(s);
+                          const rn = isOversight(s);
+                          const total = totalOfSegments(segmentsById.get(s.id) ?? []);
+                          const partial = h != null && rangeActive && Math.abs(total - h) >= 0.01;
+                          return (
+                            <td
+                              className={styles.cHours}
+                              style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}
+                              title={
+                                s.noteType === SUPERVISORY_NOTE_TYPE
+                                  ? 'Home supervisory visit. Not counted toward shift or oversight hours.'
+                                  : h == null
+                                  ? 'No usable time window on this note'
+                                  : rn
+                                    ? oversightBillTitle(s, oversightBillingById.get(s.id))
+                                    : partial
+                                      ? `${fmtH(h)} of this ${fmtH(total)}-hour shift falls inside the selected range (${s.shiftStart || '?'} to ${s.shiftEnd || '?'})`
+                                      : `${s.shiftStart || '?'} to ${s.shiftEnd || '?'}`
+                              }
+                            >
+                              {h == null ? (
+                                <span style={{ color: '#cbd5e1' }}>—</span>
+                              ) : rn ? (
+                                <span style={rnHoursChipStyle}>RN {rowQty(s, h)}</span>
+                              ) : (
+                                <>
+                                  <strong style={{ color: '#0f172a' }}>{rowQty(s, h)}</strong>
+                                  {partial && <span style={{ color: '#94a3b8', fontSize: 11 }}> of {qtyView === 'units' ? fmtUnits(segmentsToUnits(segmentsById.get(s.id) ?? [])) : fmtH(total)}</span>}
+                                </>
+                              )}
+                              {h != null && showDollars && (
+                                <div style={{ fontSize: 11.5, color: '#166534', fontWeight: 600 }} title={rateHint(s)}>{rowDollarText(s)}</div>
+                              )}
+                            </td>
+                          );
+                        })()}
+                        <td style={tdStyle} className={styles.cFlags}>
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                             {s.hasCriticalVitals ? (
                               <span style={{ ...flagBadgeRed, fontWeight: 700 }} title="Critical vital — provider-notification threshold">
-                                Critical vital
+                                Critical Vital
                               </span>
                             ) : s.hasAbnormalVitals && (
                               <span style={flagBadgeRed} title="Abnormal vitals">
@@ -1355,40 +2173,74 @@ export default function SubmissionsPage() {
                                 Physician
                               </span>
                             )}
+                            {(s.hospitalAdmission || s.erUrgentCare) && (
+                              <span
+                                style={flagBadgeRed}
+                                title={`${[s.hospitalAdmission ? 'Hospital admission' : '', s.erUrgentCare ? 'Urgent care / ER visit' : ''].filter(Boolean).join(' · ')} since the last shift`}
+                              >
+                                Hospital/ER
+                              </span>
+                            )}
+                            {s.medChangeReported && (
+                              <span style={flagBadgeAmber} title="Medication started, changed, or stopped since the last shift — verify the MAR">
+                                Med Change
+                              </span>
+                            )}
                             {needsCosign(s, requiredCosignCreds) && (
                               <span style={flagBadgeAmber} title="Awaiting RN co-signature">
-                                Needs co-sign
+                                Needs Co-Sign
                               </span>
                             )}
                             {s.clarificationStatus === 'open' && (
                               s.clarificationKind === 'correction' ? (
                                 <span style={flagBadgeRed} title="Open correction flag">
-                                  Needs correction
+                                  Needs Correction
                                 </span>
                               ) : (
                                 <span style={flagBadgeAmber} title="Open clarification flag">
-                                  Needs clarification
+                                  Needs Clarification
                                 </span>
                               )
                             )}
+                            {s.clarificationStatus === 'open' && s.clarificationTurn && (() => {
+                              // Whose move the thread is on. The Flagged filter lists
+                              // every open flag while each nav badge counts one side,
+                              // so this hint is what reconciles the two numbers.
+                              const viewerIsAuthor = isNurse && s.nurseId === effectiveUid;
+                              const myTurn = viewerIsAuthor
+                                ? s.clarificationTurn === 'nurse'
+                                : !isNurse && s.clarificationTurn === 'reviewer';
+                              return (
+                                <span
+                                  style={myTurn ? flagTurnMine : flagTurnOther}
+                                  title={
+                                    s.clarificationTurn === 'nurse'
+                                      ? 'No reply from the nurse since the last reviewer message'
+                                      : 'The nurse replied or amended; no reviewer has answered or resolved since'
+                                  }
+                                >
+                                  {clarificationTurnLabel(s.clarificationTurn, viewerIsAuthor)}
+                                </span>
+                              );
+                            })()}
                             {s.clarificationBlocksNotes && (
                               <span
                                 style={flagBadgeBlocking}
                                 title="The author can't start or submit new notes until she amends this one."
                               >
-                                Blocking author
+                                Blocking Author
                               </span>
                             )}
                           </div>
                         </td>
-                        <td style={tdStyle}>
-                          {s.submittedAt ? s.submittedAt.toLocaleString() : '--'}
+                        <td style={tdStyle} className={styles.cSubmitted}>
+                          {s.submittedAt ? s.submittedAt.toLocaleString('en-US') : '--'}
                         </td>
                         {/* Actions cell stops click-propagation so the buttons
                             don't also trigger the row's open-note navigation.
                             whiteSpace:nowrap + flex nowrap keep all buttons on a
                             single line (the column claims the width it needs). */}
-                        <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
+                        <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }} className={styles.cActions} onClick={(e) => e.stopPropagation()}>
                           <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
                             {!isViewingAs && isRn && needsCosign(s, requiredCosignCreds) && s.nurseId !== user?.uid && (
                               // The row button is now a *navigation* into the
@@ -1399,10 +2251,10 @@ export default function SubmissionsPage() {
                               // which defeats the compliance review.
                               <Link
                                 href={`/admin/submissions/${s.id}?cosign=1${returnQs ? `&back=${encodeURIComponent(returnQs)}` : ''}`}
-                                style={rowCosignBtnStyle}
+                                className={`${btnPrimary} ${btnSm}`}
                                 title="Review and co-sign this note"
                               >
-                                Co-sign
+                                Co-Sign
                               </Link>
                             )}
                             {/* Archive button gated for nurses to own notes only.
@@ -1416,7 +2268,7 @@ export default function SubmissionsPage() {
                               rowArchived ? (
                                 <button
                                   onClick={() => handleRowArchive(s, 'restore')}
-                                  style={rowArchiveBtnStyle}
+                                  className={`${btn} ${btnSm}`}
                                   disabled={busy}
                                 >
                                   Restore
@@ -1424,7 +2276,7 @@ export default function SubmissionsPage() {
                               ) : (
                                 <button
                                   onClick={() => handleRowArchive(s, 'archive')}
-                                  style={rowArchiveBtnStyle}
+                                  className={`${btn} ${btnSm}`}
                                   disabled={busy}
                                 >
                                   Archive
@@ -1436,7 +2288,7 @@ export default function SubmissionsPage() {
                             {role === 'admin' && (
                               <button
                                 onClick={() => handleRowDelete(s)}
-                                style={rowDeleteBtnStyle}
+                                className={`${btnDanger} ${btnSm}`}
                                 disabled={busy}
                                 title="Permanently delete this note (admin only)"
                               >
@@ -1458,7 +2310,7 @@ export default function SubmissionsPage() {
                   type="button"
                   onClick={() => updateParams({ p: String(safePage - 1) })}
                   disabled={safePage <= 1}
-                  style={safePage <= 1 ? { ...pageBtnStyle, ...pageBtnDisabledStyle } : pageBtnStyle}
+                  className={`${btn} ${btnSm}`}
                 >
                   ← Prev
                 </button>
@@ -1469,7 +2321,7 @@ export default function SubmissionsPage() {
                   type="button"
                   onClick={() => updateParams({ p: String(safePage + 1) })}
                   disabled={safePage >= pageCount}
-                  style={safePage >= pageCount ? { ...pageBtnStyle, ...pageBtnDisabledStyle } : pageBtnStyle}
+                  className={`${btn} ${btnSm}`}
                 >
                   Next →
                 </button>
@@ -1483,7 +2335,7 @@ export default function SubmissionsPage() {
         <div style={modalBackdropStyle} onClick={closeExportModal}>
           <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
             <div style={modalHeaderStyle}>
-              <h2 style={{ margin: 0, fontSize: 18, color: '#2c3e50' }}>Export progress notes</h2>
+              <h2 style={{ margin: 0, fontSize: 18, color: '#2c3e50' }}>Export Progress Notes</h2>
               <button
                 onClick={closeExportModal}
                 disabled={exporting}
@@ -1521,7 +2373,7 @@ export default function SubmissionsPage() {
                   />
                   <div>
                     <div style={{ fontWeight: 600, color: '#2c3e50' }}>
-                      ZIP of individual PDFs
+                      ZIP of Individual PDFs
                     </div>
                     <div style={radioDescStyle}>
                       One PDF per note, named by date + client + nurse. Best for searching or attaching a single note to a record.
@@ -1538,7 +2390,7 @@ export default function SubmissionsPage() {
                   />
                   <div>
                     <div style={{ fontWeight: 600, color: '#2c3e50' }}>
-                      Single merged PDF
+                      Single Merged PDF
                     </div>
                     <div style={radioDescStyle}>
                       All notes combined into one file with page breaks. Best for audit review or handing off a batch in one document.
@@ -1571,11 +2423,11 @@ export default function SubmissionsPage() {
                 <button
                   onClick={closeExportModal}
                   disabled={exporting}
-                  style={secondaryBtnStyle}
+                  className={btn}
                 >
                   Cancel
                 </button>
-                <button onClick={handleExport} disabled={exporting} style={primaryBtnStyle}>
+                <button onClick={handleExport} disabled={exporting} className={btnPrimary}>
                   {exporting ? 'Exporting…' : 'Download'}
                 </button>
               </div>
@@ -1609,60 +2461,6 @@ export default function SubmissionsPage() {
 }
 
 // --- Inline styles ---
-
-const containerStyle: React.CSSProperties = {
-  maxWidth: 1400,
-  margin: '0 auto',
-  padding: 20,
-};
-
-const wrapStyle: React.CSSProperties = {
-  background: 'white',
-  padding: 30,
-  borderRadius: 8,
-  boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-};
-
-const headerStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: 16,
-  flexWrap: 'wrap',
-  marginBottom: 24,
-  borderBottom: '3px solid #2c3e50',
-  paddingBottom: 16,
-};
-
-const titleStyle: React.CSSProperties = {
-  color: '#2c3e50',
-  fontSize: 24,
-  marginBottom: 4,
-  marginTop: 0,
-};
-
-const newNoteBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: '#27ae60',
-  color: 'white',
-  padding: '10px 14px',
-  borderRadius: 6,
-  border: 'none',
-  fontSize: 14,
-  fontWeight: 700,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-  textDecoration: 'none',
-  flexShrink: 0,
-};
-
-const subtitleStyle: React.CSSProperties = {
-  color: '#7f8c8d',
-  fontSize: 14,
-  margin: 0,
-};
 
 const bulkBarStyle: React.CSSProperties = {
   display: 'flex',
@@ -1779,6 +2577,174 @@ const selectStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 
+const dateInputStyle: React.CSSProperties = {
+  padding: '7px 10px',
+  border: '1px solid #dfe5ec',
+  borderRadius: 6,
+  fontSize: 13,
+  fontFamily: 'inherit',
+  color: '#2c3e50',
+  background: 'white',
+};
+
+const hoursStripStyle: React.CSSProperties = {
+  marginBottom: 12,
+  padding: '10px 14px',
+  background: '#f0f7ff',
+  border: '1px solid #c8def5',
+  borderRadius: 8,
+};
+
+const hoursStripRowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+  gap: 14,
+};
+
+const hoursStripIconStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  color: '#1a3a5c',
+};
+
+const hoursStatStyle: React.CSSProperties = {
+  fontSize: 13,
+  color: '#334155',
+  whiteSpace: 'nowrap',
+};
+
+const hoursStatNumStyle: React.CSSProperties = {
+  fontSize: 16,
+  color: '#0f172a',
+  fontVariantNumeric: 'tabular-nums',
+};
+
+const segmentedStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  border: '1px solid #c8def5',
+  borderRadius: 6,
+  overflow: 'hidden',
+  background: 'white',
+};
+
+const segmentedBtnStyle: React.CSSProperties = {
+  background: 'white',
+  color: '#1a3a5c',
+  border: 'none',
+  padding: '5px 10px',
+  fontSize: 12,
+  fontWeight: 600,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
+
+const segmentedActiveStyle: React.CSSProperties = {
+  ...segmentedBtnStyle,
+  background: '#1a3a5c',
+  color: 'white',
+};
+
+
+/** Blue = RN oversight hours, matching the client Hours tab. */
+const rnHoursChipStyle: React.CSSProperties = {
+  display: 'inline-block',
+  padding: '1px 7px',
+  borderRadius: 999,
+  fontSize: 11.5,
+  fontWeight: 700,
+  background: '#dbeafe',
+  color: '#1d4ed8',
+  border: '1px solid #bfdbfe',
+};
+
+const pivotBtnStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 5,
+  background: 'white',
+  color: '#1a3a5c',
+  padding: '5px 10px',
+  borderRadius: 6,
+  border: '1px solid #c8def5',
+  fontSize: 12,
+  fontWeight: 600,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
+
+const pivotBtnActiveStyle: React.CSSProperties = {
+  ...pivotBtnStyle,
+  background: '#1a3a5c',
+  color: 'white',
+  // Longhand-free: overriding the `border` shorthand with borderColor makes
+  // React warn about mixed shorthand/longhand on rerender.
+  border: '1px solid #1a3a5c',
+};
+
+const hoursStripNoteStyle: React.CSSProperties = {
+  color: '#64748b',
+  fontSize: 12,
+  marginTop: 6,
+  lineHeight: 1.45,
+};
+
+const hoursToolbarStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+  gap: 8,
+  marginTop: 10,
+  paddingTop: 10,
+  borderTop: '1px solid #dbe7f5',
+};
+
+const pivotThSortStyle: React.CSSProperties = {
+  textAlign: 'left',
+  padding: '6px 10px',
+  fontSize: 11,
+  textTransform: 'uppercase',
+  letterSpacing: 0.4,
+  color: '#64748b',
+  borderBottom: '1px solid #e2e8f0',
+  cursor: 'pointer',
+  userSelect: 'none',
+  whiteSpace: 'nowrap',
+};
+
+const dollarsBtnActiveStyle: React.CSSProperties = {
+  ...pivotBtnStyle,
+  background: '#166534',
+  color: 'white',
+  border: '1px solid #166534',
+};
+
+const pivotTableStyle: React.CSSProperties = {
+  width: '100%',
+  maxWidth: 560,
+  marginTop: 10,
+  borderCollapse: 'collapse',
+  fontSize: 13,
+  background: 'white',
+  borderRadius: 6,
+  overflow: 'hidden',
+};
+
+const pivotThStyle: React.CSSProperties = {
+  textAlign: 'left',
+  padding: '6px 10px',
+  fontSize: 11,
+  textTransform: 'uppercase',
+  letterSpacing: 0.4,
+  color: '#64748b',
+  borderBottom: '1px solid #e2e8f0',
+};
+
+const pivotTdStyle: React.CSSProperties = {
+  padding: '6px 10px',
+  borderBottom: '1px solid #f1f5f9',
+  color: '#1e293b',
+};
+
 const flagsRowStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
@@ -1852,80 +2818,6 @@ const clearFiltersBtnStyle: React.CSSProperties = {
   borderRadius: 6,
   border: '1px solid #dfe5ec',
   fontSize: 12,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-
-const archiveBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: '#5c6b7a',
-  color: 'white',
-  padding: '8px 14px',
-  borderRadius: 6,
-  border: 'none',
-  fontSize: 13,
-  fontWeight: 700,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-
-const restoreBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: '#34495e',
-  color: 'white',
-  padding: '8px 14px',
-  borderRadius: 6,
-  border: 'none',
-  fontSize: 13,
-  fontWeight: 700,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-
-const exportBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: '#27ae60',
-  color: 'white',
-  padding: '8px 14px',
-  borderRadius: 6,
-  border: 'none',
-  fontSize: 13,
-  fontWeight: 700,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-
-const bulkCosignBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: '#1a3a5c',
-  color: 'white',
-  padding: '8px 14px',
-  borderRadius: 6,
-  border: 'none',
-  fontSize: 13,
-  fontWeight: 700,
-  fontFamily: 'inherit',
-};
-
-const clearBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 4,
-  background: 'white',
-  color: '#5c6b7a',
-  padding: '8px 12px',
-  borderRadius: 6,
-  border: '1px solid #dfe5ec',
-  fontSize: 13,
   fontWeight: 600,
   cursor: 'pointer',
   fontFamily: 'inherit',
@@ -2027,6 +2919,26 @@ const flagBadgeBlue: React.CSSProperties = {
   color: '#1a3a5c',
 };
 
+// Turn hints ride next to the Needs correction / clarification badge: outlined
+// rather than filled so they read as a status, not another flag.
+const flagTurnBase: React.CSSProperties = {
+  ...flagBadgeBase,
+  fontWeight: 600,
+  background: 'transparent',
+};
+
+const flagTurnMine: React.CSSProperties = {
+  ...flagTurnBase,
+  border: '1px solid #f0b429',
+  color: '#8a4b00',
+};
+
+const flagTurnOther: React.CSSProperties = {
+  ...flagTurnBase,
+  border: '1px solid #d0d7de',
+  color: '#57606a',
+};
+
 const flagBadgeBlocking: React.CSSProperties = {
   ...flagBadgeBase,
   background: '#7f1d1d',
@@ -2038,57 +2950,6 @@ const draftBadgeStyle: React.CSSProperties = {
   background: '#fef3c7',
   color: '#92400e',
   border: '1px solid #fcd34d',
-};
-
-const viewBtnStyle: React.CSSProperties = {
-  display: 'inline-block',
-  background: '#34495e',
-  color: 'white',
-  padding: '5px 11px',
-  borderRadius: 4,
-  textDecoration: 'none',
-  fontSize: 13,
-  fontWeight: 600,
-  whiteSpace: 'nowrap',
-};
-
-const rowArchiveBtnStyle: React.CSSProperties = {
-  display: 'inline-block',
-  background: '#f5f5f5',
-  color: '#2c3e50',
-  padding: '5px 11px',
-  borderRadius: 4,
-  border: '1px solid #ddd',
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
-};
-
-const rowDeleteBtnStyle: React.CSSProperties = {
-  display: 'inline-block',
-  background: '#fff',
-  color: '#c62828',
-  padding: '5px 11px',
-  borderRadius: 4,
-  border: '1px solid #f0b4b4',
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
-};
-
-const rowCosignBtnStyle: React.CSSProperties = {
-  display: 'inline-block',
-  background: '#27ae60',
-  color: 'white',
-  padding: '5px 11px',
-  borderRadius: 4,
-  border: 'none',
-  fontSize: 13,
-  fontWeight: 700,
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
 };
 
 const checkboxStyle: React.CSSProperties = {
@@ -2105,29 +2966,6 @@ const paginationStyle: React.CSSProperties = {
   justifyContent: 'center',
   gap: 16,
   marginTop: 16,
-};
-
-const pageBtnStyle: React.CSSProperties = {
-  background: 'white',
-  border: '1px solid #dfe5ec',
-  color: '#2c3e50',
-  padding: '6px 12px',
-  borderRadius: 6,
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-
-// Merged into pageBtnStyle when the button is at an edge of the pagination
-// (Prev on page 1, Next on the last page). Mirrors the disabled affordances
-// used elsewhere — muted bg + text, no-drop cursor — so the user can tell
-// at a glance there's nowhere to go in that direction.
-const pageBtnDisabledStyle: React.CSSProperties = {
-  background: '#f5f7fa',
-  color: '#a5afba',
-  borderColor: '#e5eaf0',
-  cursor: 'not-allowed',
 };
 
 const pageMetaStyle: React.CSSProperties = {
@@ -2239,26 +3077,3 @@ const errorStyle: React.CSSProperties = {
   fontSize: 13,
 };
 
-const primaryBtnStyle: React.CSSProperties = {
-  background: '#27ae60',
-  color: 'white',
-  padding: '10px 14px',
-  borderRadius: 6,
-  border: 'none',
-  fontSize: 14,
-  fontWeight: 700,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-
-const secondaryBtnStyle: React.CSSProperties = {
-  background: '#eef1f4',
-  color: '#2c3e50',
-  padding: '10px 14px',
-  borderRadius: 6,
-  border: 'none',
-  fontSize: 14,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};

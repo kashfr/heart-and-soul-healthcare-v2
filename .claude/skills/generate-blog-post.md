@@ -62,7 +62,7 @@ published: true
    ```
    bash .claude/scripts/generate-blog-images.sh content/blog/<slug>.mdx
    ```
-   This calls OpenAI `gpt-image-2` using `heroImagePrompt` for the hero (1792×1024) and each inline image's alt text (1344×896), saves to `public/images/blog/`, and strips the `PLACEHOLDER-` prefixes. It takes roughly 45–60 seconds per image. `OPENAI_API_KEY` is provided via `.claude/settings.local.json`.
+   This calls OpenAI `gpt-image-2.5-sunburst` (override with `OPENAI_IMAGE_MODEL`) using `heroImagePrompt` for the hero (1792×1024) and each inline image's alt text (1344×896), saves to `public/images/blog/`, and strips the `PLACEHOLDER-` prefixes. It takes roughly 20–60 seconds per image with Sunburst at medium quality. `OPENAI_API_KEY` is provided via `.claude/settings.local.json`.
 
    The script fails if any image is missing at the end. **If it fails, stop and report — do not commit a post with `PLACEHOLDER-` paths.** Missing images render as broken `<img>` tags on the live blog index and post page.
 

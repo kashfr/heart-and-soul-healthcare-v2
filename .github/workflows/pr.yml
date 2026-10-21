@@ -58,6 +58,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Audit capture tests
+        run: npm ci --prefix functions && npm test --prefix functions
+
       - name: Typecheck
         run: npx tsc --noEmit
 

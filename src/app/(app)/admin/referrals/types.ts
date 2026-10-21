@@ -4,14 +4,16 @@
 // every write, so this copy is purely for rendering.
 
 import { serviceFromCareNeed } from '@/lib/georgia';
+import { formatDateUS } from '@/lib/dateFormat';
 import type { ServiceKey } from '@/lib/diagnosisCatalog';
 import {
   matchAgencies, qualifiedMatches, summarizePartnerMatches, type MatchableAgency,
 } from '@/lib/agencyMatch';
 import { assessReferralFit } from '@/lib/referralFit';
 import type { IntakeSettings } from '@/lib/settings';
+import type { PhoneIntake } from '@/lib/phoneReferralShared';
 
-export type ReferralSource = 'gapp-website' | 'hs-website';
+export type ReferralSource = 'gapp-website' | 'hs-website' | 'phone';
 export type ReferralStatus = 'new' | 'contacted' | 'archived';
 export type ReferralStage =
   | 'new'
@@ -96,6 +98,13 @@ export interface Referral {
   providerListSentAt?: string | null;
   /** Family email the list went to; empty string for the no-email-on-file path. */
   providerListSentTo?: string | null;
+  /** The client record created from this referral, once there is one. */
+  patientId?: string | null;
+  convertedAt?: string | null;
+  /** A phone referral's form answers, for Edit Details. */
+  phoneIntake?: PhoneIntake | null;
+  /** A website referral's answers as sent (from 10/2026), for screened edits. */
+  intakeAnswers?: unknown;
 }
 
 /**
@@ -186,8 +195,9 @@ export const STAGE_ACCENT: Record<ReferralStage, string> = {
 };
 
 export const SOURCE_LABEL: Record<ReferralSource, string> = {
-  'gapp-website': 'GAPP site',
-  'hs-website': 'Heart & Soul site',
+  'gapp-website': 'GAPP Site',
+  'hs-website': 'Heart & Soul Site',
+  phone: 'Phone Call',
 };
 
 export function statusFromStage(stage: ReferralStage): ReferralStatus {
@@ -205,8 +215,8 @@ export function stageFromStatus(status: string | undefined): ReferralStage {
 
 export function formatDate(iso: string | null): string {
   if (!iso) return '—';
-  const d = new Date(iso);
-  return d.toLocaleDateString(undefined, {
+  const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T12:00:00` : iso);
+  return d.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -215,7 +225,7 @@ export function formatDate(iso: string | null): string {
 
 export function formatDateTime(iso: string | null): string {
   if (!iso) return '';
-  return new Date(iso).toLocaleString(undefined, {
+  return new Date(iso).toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -275,8 +285,8 @@ export function downloadCsv(list: Referral[], context: CsvMatchContext) {
   // saved spreadsheets keep their column positions.
   const headers = [
     'Name', 'Phone', 'Email', 'County', 'Program', 'Source', 'Stage',
-    'Assigned to', 'Received', 'Referred by', 'Details',
-    'Fit', 'Partner matches', 'Matching agencies',
+    'Assigned To', 'Received', 'Referred By', 'Details',
+    'Fit', 'Partner Matches', 'Matching Agencies',
   ];
   const rows = list.map((r) => {
     const input = matchInputFor(r);
@@ -298,9 +308,9 @@ export function downloadCsv(list: Referral[], context: CsvMatchContext) {
       SOURCE_LABEL[r.source] ?? r.source,
       STAGE_LABEL[r.stage],
       r.assigneeName ?? '',
-      r.submittedAt ? new Date(r.submittedAt).toLocaleString() : '',
+      r.submittedAt ? new Date(r.submittedAt).toLocaleString('en-US') : '',
       r.referrerName ?? '',
-      r.details.map((d) => `${d.label}: ${d.value}`).join(' | '),
+      r.details.map((d) => `${d.label}: ${formatDateUS(d.value)}`).join(' | '),
       fit?.label ?? '',
       // Blank (not 0) when there's no verdict, so "nothing matched" and
       // "couldn't be judged" stay distinguishable in the spreadsheet.
@@ -316,7 +326,11 @@ export function downloadCsv(list: Referral[], context: CsvMatchContext) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `referrals-${new Date().toISOString().slice(0, 10)}.csv`;
+  // Local date parts, not toISOString(): an evening export must not carry
+  // tomorrow's UTC date.
+  const now = new Date();
+  const stamp = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}-${now.getFullYear()}`;
+  a.download = `referrals-${stamp}.csv`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -330,6 +344,15 @@ const ORDER_STEP = 1000;
  * column. `before` is the order of the card that will sit just above the drop
  * point; `after` the card just below. Either may be undefined at an edge.
  */
+/**
+ * Board order within a stage column: by order, then id, so cards with
+ * (nearly) equal order after many midpoint reorders keep a stable position.
+ * The drawer's Previous / Next walk this same order.
+ */
+export function compareInStage(a: Pick<Referral, 'order' | 'id'>, b: Pick<Referral, 'order' | 'id'>): number {
+  return a.order - b.order || a.id.localeCompare(b.id);
+}
+
 export function orderBetween(
   before: number | undefined,
   after: number | undefined

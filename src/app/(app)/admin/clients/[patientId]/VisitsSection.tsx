@@ -1,11 +1,15 @@
 'use client';
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { CalendarClock, CalendarPlus, Check, History, Undo2, X } from 'lucide-react';
+import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
+import { CalendarClock, CalendarPlus, Check, HandHelping, History, Undo2, UserCheck, X } from 'lucide-react';
 import {
+  acceptOfferedVisit,
   addVisit,
   getActiveSupervisors,
+  handOffVisit,
   notifyVisitAssignee,
+  offerVisitToAll,
   setVisitStatus,
   type AssigneeOption,
   type PatientVisit,
@@ -14,6 +18,7 @@ import {
 } from '@/lib/patientVisits';
 import { overdueVisits, recentResolvedVisits, scheduledBeyond, upcomingVisits } from '@/lib/clientDashboardShared';
 import VisitsCalendar from './VisitsCalendar';
+import { escortToField, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
 
 function todayISO(): string {
   const d = new Date();
@@ -59,7 +64,28 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
   const [showHistory, setShowHistory] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [view, setView] = useState<'calendar' | 'list'>('calendar');
+  // The supervisory visit being handed off (modal), and the supervisor list
+  // it offers; loaded on first open.
+  const [handOffFor, setHandOffFor] = useState<PatientVisit | null>(null);
   const today = todayISO();
+
+  // An open supervisory visit: offered to every supervisor, nobody has taken it.
+  const isOpen = (v: PatientVisit) => v.type === 'supervisory' && v.status === 'scheduled' && v.offeredToAll === true && !v.nurseId;
+  // The signed-in person may take an open visit (staff = admin or supervisor;
+  // field nurses never see these controls).
+  const canTake = isStaff;
+
+  const accept = async (v: PatientVisit) => {
+    if (!v.id) return;
+    setBusyId(v.id);
+    try {
+      const r = await acceptOfferedVisit(v.id);
+      onToast(r.ok ? 'You have this visit. The other supervisors were told.' : r.message || 'Could not accept the visit.');
+      onChanged();
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   const upcoming = useMemo(() => upcomingVisits(visits, today, 5), [visits, today]);
   const moreScheduled = useMemo(() => scheduledBeyond(visits, today, 5), [visits, today]);
@@ -104,19 +130,33 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={v.type === 'supervisory' ? supChipStyle : shiftChipStyle}>
-            {v.type === 'supervisory' ? 'Supervisory visit' : 'Shift'}
+            {v.type === 'supervisory' ? 'Supervisory Visit' : 'Shift'}
           </span>
           {v.nurseName && <span style={{ fontSize: 13, color: '#2c3e50', fontWeight: 600 }}>{v.nurseName}</span>}
-          {isOverdue && <span style={overdueChipStyle}>Past date, not completed</span>}
+          {isOpen(v) && <span style={openChipStyle}>Needs a Supervisor</span>}
+          {isOverdue && <span style={overdueChipStyle}>Past Date, Not Completed</span>}
         </div>
         {v.notes && <div style={notesStyle}>{v.notes}</div>}
+        {v.handedOffFromName && v.releaseReason && (
+          <div style={notesStyle}>Handed off by {v.handedOffFromName}: {v.releaseReason}</div>
+        )}
       </div>
       {isStaff && (
-        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-          <button type="button" onClick={() => mark(v, 'completed')} disabled={busyId === v.id} style={actionBtnStyle} title="Mark completed">
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {isOpen(v) && canTake && (
+            <button type="button" onClick={() => accept(v)} disabled={busyId === v.id} className={`${btnPrimary} ${btnSm}`} title="Take this visit">
+              <UserCheck size={13} /> Accept
+            </button>
+          )}
+          {v.type === 'supervisory' && v.status === 'scheduled' && !isOpen(v) && (
+            <button type="button" onClick={() => setHandOffFor(v)} disabled={busyId === v.id} className={`${btn} ${btnSm}`} title="Hand this visit to another supervisor">
+              <HandHelping size={13} /> Hand Off
+            </button>
+          )}
+          <button type="button" onClick={() => mark(v, 'completed')} disabled={busyId === v.id} className={`${btn} ${btnSm}`} title="Mark completed">
             <Check size={13} /> Done
           </button>
-          <button type="button" onClick={() => mark(v, 'cancelled')} disabled={busyId === v.id} style={actionBtnStyle} title="Cancel this visit">
+          <button type="button" onClick={() => mark(v, 'cancelled')} disabled={busyId === v.id} className={`${btnDanger} ${btnSm}`} title="Cancel this visit">
             <X size={13} /> Cancel
           </button>
         </div>
@@ -149,15 +189,15 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
           </button>
         </div>
         {isStaff && (
-          <button type="button" onClick={() => { setAddDate(null); setAddOpen(true); }} style={addBtnStyle}>
-            <CalendarPlus size={15} /> Add visit
+          <button type="button" onClick={() => { setAddDate(null); setAddOpen(true); }} className={btnPrimary}>
+            <CalendarPlus size={15} /> Add Visit
           </button>
         )}
       </div>
 
       {overdue.length > 0 && (
         <>
-          <div style={groupLabelStyle}>Needs attention</div>
+          <div style={groupLabelStyle}>Needs Attention</div>
           <ul style={{ ...listStyle, marginBottom: 18 }}>{overdue.map((v) => renderVisit(v, true))}</ul>
         </>
       )}
@@ -169,6 +209,8 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
           isStaff={isStaff}
           busyId={busyId}
           onMark={mark}
+          onAccept={accept}
+          onHandOff={(v) => setHandOffFor(v)}
           onAddOn={(dateISO) => {
             setAddDate(dateISO);
             setAddOpen(true);
@@ -197,7 +239,7 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
       {view === 'list' && resolved.length > 0 && (
         <div style={{ marginTop: 12 }}>
           <button type="button" onClick={() => setShowHistory((s) => !s)} style={historyToggleStyle}>
-            <History size={13} /> {showHistory ? 'Hide' : 'Show'} recent history ({resolved.length})
+            <History size={13} /> {showHistory ? 'Hide' : 'Show'} Recent History ({resolved.length})
           </button>
           {showHistory && (
             <ul style={{ ...listStyle, marginTop: 8 }}>
@@ -210,7 +252,7 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <span style={v.type === 'supervisory' ? supChipStyle : shiftChipStyle}>
-                        {v.type === 'supervisory' ? 'Supervisory visit' : 'Shift'}
+                        {v.type === 'supervisory' ? 'Supervisory Visit' : 'Shift'}
                       </span>
                       <span style={v.status === 'completed' ? doneChipStyle : cancelledChipStyle}>
                         {v.status === 'completed' ? 'Completed' : 'Cancelled'}
@@ -223,7 +265,7 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
                       type="button"
                       onClick={() => mark(v, 'scheduled')}
                       disabled={busyId === v.id}
-                      style={actionBtnStyle}
+                      className={`${btn} ${btnSm}`}
                       title="Put this visit back on the schedule"
                     >
                       <Undo2 size={13} /> Restore
@@ -236,6 +278,18 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
         </div>
       )}
 
+      {handOffFor && (
+        <HandOffModal
+          visit={handOffFor}
+          actorUid={actor.uid}
+          onClose={() => setHandOffFor(null)}
+          onDone={(msg) => {
+            onToast(msg);
+            onChanged();
+          }}
+        />
+      )}
+
       {addOpen && (
         <AddVisitModal
           patientId={patientId}
@@ -243,8 +297,18 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
           careTeam={careTeam}
           initialDate={addDate || undefined}
           onClose={() => setAddOpen(false)}
-          onAdded={async ({ visitId, assigneeUid, assigneeName }) => {
+          onAdded={async ({ visitId, assigneeUid, assigneeName, offerToAll }) => {
             onChanged();
+            if (offerToAll) {
+              const r = await offerVisitToAll(visitId);
+              onToast(
+                r.ok
+                  ? `Visit scheduled and offered to ${r.notified} supervisor${r.notified === 1 ? '' : 's'}. The first to accept takes it.`
+                  : `Visit scheduled, but it could not be offered: ${r.message || 'try again from the visit.'}`,
+              );
+              onChanged();
+              return;
+            }
             if (!assigneeUid) {
               onToast('Visit scheduled.');
               return;
@@ -278,16 +342,20 @@ function AddVisitModal({
   careTeam: Array<{ uid: string; name: string; credential: string }>;
   initialDate?: string; // preset when opened from a calendar day
   onClose: () => void;
-  onAdded: (added: { visitId: string; assigneeUid: string; assigneeName: string }) => void;
+  onAdded: (added: { visitId: string; assigneeUid: string; assigneeName: string; offerToAll: boolean }) => void;
 }) {
   const [date, setDate] = useState(initialDate || todayISO());
   const [startTime, setStartTime] = useState('');
   const [type, setType] = useState<VisitType>('shift');
   const [nurseUid, setNurseUid] = useState('');
   const [nurseFree, setNurseFree] = useState('');
+  // Supervisory visit with no assignee: offer it to every supervisor instead
+  // of leaving it unassigned (the first to accept takes it).
+  const [offerToAll, setOfferToAll] = useState(false);
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dateError, setDateError] = useState<string | null>(null);
 
   // A supervisory visit is performed by an RN supervisor, not the client's
   // case nurse — so the assignee pool swaps with the visit type. Supervisors
@@ -306,13 +374,17 @@ function AddVisitModal({
   const assignPool: AssigneeOption[] = supervisory ? (supervisors ?? []) : careTeam;
 
   const save = async () => {
+    if (busy) return;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      setError('Pick the visit date.');
+      setDateError('Pick the visit date.');
+      escortToField('visit-date');
       return;
     }
+    setDateError(null);
     setBusy(true);
     setError(null);
     const pick = assignPool.find((m) => m.uid === nurseUid);
+    const offering = supervisory && !pick && offerToAll;
     try {
       const visitId = await addVisit(
         {
@@ -321,12 +393,12 @@ function AddVisitModal({
           startTime,
           type,
           nurseId: pick?.uid || '',
-          nurseName: pick ? `${pick.name}${pick.credential ? `, ${pick.credential}` : ''}` : nurseFree.trim(),
+          nurseName: pick ? `${pick.name}${pick.credential ? `, ${pick.credential}` : ''}` : offering ? '' : nurseFree.trim(),
           notes,
         },
         actor,
       );
-      onAdded({ visitId, assigneeUid: pick?.uid || '', assigneeName: pick?.name || '' });
+      onAdded({ visitId, assigneeUid: pick?.uid || '', assigneeName: pick?.name || '', offerToAll: offering });
       onClose();
     } catch {
       setError('Could not schedule the visit. Please try again.');
@@ -337,12 +409,22 @@ function AddVisitModal({
   return (
     <div style={backdropStyle} role="dialog" aria-modal="true" aria-label="Schedule a visit">
       <div style={sheetStyle}>
-        <div style={sheetTitleStyle}>Schedule a visit</div>
+        <div style={sheetTitleStyle}>Schedule a Visit</div>
 
         <div style={grid2Style}>
-          <label style={fieldStyle}>
+          <label style={fieldStyle} id="visit-date">
             <span style={fieldLabelStyle}>Date *</span>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inputStyle} />
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => {
+                setDate(e.target.value);
+                if (dateError) setDateError(null);
+              }}
+              style={{ ...inputStyle, ...(dateError ? FIELD_ERROR_STYLE : null) }}
+              aria-invalid={!!dateError}
+            />
+            <FieldError message={dateError} />
           </label>
           <label style={fieldStyle}>
             <span style={fieldLabelStyle}>Start time</span>
@@ -362,8 +444,8 @@ function AddVisitModal({
             }}
             style={selectStyle}
           >
-            <option value="shift">Shift (regular nursing visit)</option>
-            <option value="supervisory">Supervisory visit (RN supervision)</option>
+            <option value="shift">Shift (Regular Nursing Visit)</option>
+            <option value="supervisory">Supervisory Visit (RN Supervision)</option>
           </select>
         </label>
 
@@ -372,7 +454,7 @@ function AddVisitModal({
             <span style={fieldLabelStyle}>{supervisory ? 'Supervisor (RN)' : 'Nurse (care team)'}</span>
             <select value={nurseUid} onChange={(e) => setNurseUid(e.target.value)} style={selectStyle}>
               <option value="">
-                {supervisory && supervisors === null ? 'Loading supervisors…' : 'Not assigned yet…'}
+                {supervisory && supervisors === null ? 'Loading Supervisors…' : 'Not Assigned Yet…'}
               </option>
               {assignPool.map((m) => (
                 <option key={m.uid} value={m.uid}>
@@ -382,7 +464,15 @@ function AddVisitModal({
               ))}
             </select>
           </label>
-          {!nurseUid && (
+          {!nurseUid && supervisory && (
+            <label style={{ ...fieldStyle, flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingTop: 22 }}>
+              <input type="checkbox" checked={offerToAll} onChange={(e) => setOfferToAll(e.target.checked)} style={{ marginTop: 3 }} />
+              <span style={{ fontSize: 12.5, color: '#2c3e50', lineHeight: 1.4 }}>
+                Offer it to all supervisors. Each gets a text and email; the first to accept takes it.
+              </span>
+            </label>
+          )}
+          {!nurseUid && !(supervisory && offerToAll) && (
             <label style={fieldStyle}>
               <span style={fieldLabelStyle}>Or type a name</span>
               <input
@@ -409,11 +499,102 @@ function AddVisitModal({
         {error && <div style={errBoxStyle}>{error}</div>}
 
         <div style={actionsStyle}>
-          <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={busy}>
+          <button type="button" className={btn} onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button type="button" style={saveBtnStyle} onClick={save} disabled={busy}>
-            {busy ? 'Saving…' : 'Schedule visit'}
+          <button type="button" className={btnPrimary} onClick={save} disabled={busy}>
+            {busy ? 'Saving…' : 'Schedule Visit'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Hand a supervisory visit to a named supervisor, or release it to every
+ * other supervisor as an open offer. The assignee or an admin may do this
+ * (the server re-checks); the reason travels with the notice.
+ */
+function HandOffModal({ visit, actorUid, onClose, onDone }: { visit: PatientVisit; actorUid: string; onClose: () => void; onDone: (msg: string) => void }) {
+  const [supervisors, setSupervisors] = useState<AssigneeOption[] | null>(null);
+  const [toUid, setToUid] = useState('');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [reasonError, setReasonError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getActiveSupervisors().then((s) => {
+      if (!cancelled) setSupervisors(s.filter((x) => x.uid !== visit.nurseId));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [visit.nurseId]);
+  const mine = visit.nurseId === actorUid;
+
+  const save = async () => {
+    if (busy || !visit.id) return;
+    if (!reason.trim()) {
+      setReasonError('Say why, so whoever takes it knows (e.g., out that week).');
+      escortToField('handoff-reason');
+      return;
+    }
+    setReasonError(null);
+    setBusy(true);
+    setError(null);
+    const r = await handOffVisit(visit.id, toUid, reason.trim());
+    if (!r.ok) {
+      setError(r.message || 'Could not hand off the visit.');
+      setBusy(false);
+      return;
+    }
+    const to = supervisors?.find((s) => s.uid === toUid);
+    onDone(
+      toUid
+        ? `Visit handed to ${to?.name || 'the supervisor'}. They were notified by text and email.`
+        : `Visit released and offered to ${r.notified} supervisor${r.notified === 1 ? '' : 's'}. The first to accept takes it.`,
+    );
+    onClose();
+  };
+
+  return (
+    <div style={backdropStyle} role="dialog" aria-modal="true" aria-label="Hand off a supervisory visit">
+      <div style={sheetStyle}>
+        <div style={sheetTitleStyle}>Hand Off This Supervisory Visit</div>
+        <p style={{ fontSize: 13, color: '#5c6b7a', margin: '0 0 12px', lineHeight: 1.5 }}>
+          {fmtDate(visit.date)}{visit.startTime ? ` at ${fmtTime(visit.startTime)}` : ''}, currently {mine ? 'yours' : `assigned to ${visit.nurseName || 'nobody'}`}.
+          Hand it to one supervisor, or release it to all of them and the first to accept takes it.
+        </p>
+        <label style={fieldStyle}>
+          <span style={fieldLabelStyle}>Hand it to</span>
+          <select value={toUid} onChange={(e) => setToUid(e.target.value)} style={selectStyle}>
+            <option value="">{supervisors === null ? 'Loading Supervisors…' : 'All Supervisors (First to Accept Takes It)'}</option>
+            {(supervisors ?? []).map((s) => (
+              <option key={s.uid} value={s.uid}>
+                {s.name}{s.credential ? `, ${s.credential}` : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label style={fieldStyle} id="handoff-reason">
+          <span style={fieldLabelStyle}>Reason *</span>
+          <input
+            type="text"
+            value={reason}
+            onChange={(e) => { setReason(e.target.value); if (reasonError) setReasonError(null); }}
+            style={{ ...inputStyle, ...(reasonError ? FIELD_ERROR_STYLE : null) }}
+            placeholder="e.g., out of town that week"
+            aria-invalid={!!reasonError}
+          />
+          <FieldError message={reasonError} />
+        </label>
+        {error && <div style={errBoxStyle}>{error}</div>}
+        <div style={actionsStyle}>
+          <button type="button" className={btn} onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="button" className={btnPrimary} onClick={save} disabled={busy}>
+            {busy ? 'Sending…' : toUid ? 'Hand Off' : 'Release to All Supervisors'}
           </button>
         </div>
       </div>
@@ -424,7 +605,6 @@ function AddVisitModal({
 const NAVY = '#1a3a5c';
 const toolbarStyle: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 12 };
 const hintStyle: CSSProperties = { fontSize: 12.5, color: '#7f8c8d', flex: 1, minWidth: 200 };
-const addBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: NAVY, color: 'white', border: 'none', padding: '7px 13px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
 const groupLabelStyle: CSSProperties = { fontSize: 11.5, fontWeight: 700, color: '#8a949e', textTransform: 'uppercase', letterSpacing: 0.4, margin: '10px 0 6px' };
 const viewToggleStyle: CSSProperties = { display: 'inline-flex', background: '#eef2f6', borderRadius: 8, padding: 2, gap: 2 };
 const viewPillStyle: CSSProperties = { background: 'transparent', border: 'none', padding: '5px 12px', borderRadius: 6, fontSize: 12.5, fontWeight: 600, color: '#5c6b7a', cursor: 'pointer', fontFamily: 'inherit' };
@@ -434,13 +614,13 @@ const rowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10
 const overdueRowStyle: CSSProperties = { background: '#fff7e6', borderColor: '#f5d9a8' };
 const supChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#e0e7ff', color: '#3730a3', fontSize: 10.5, fontWeight: 700 };
 const shiftChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#e8eef4', color: NAVY, fontSize: 10.5, fontWeight: 700 };
+const openChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#fff3e0', color: '#b45309', fontSize: 10.5, fontWeight: 700 };
 const overdueChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#fdeaea', color: '#b3261e', fontSize: 10.5, fontWeight: 700 };
 const notesStyle: CSSProperties = { fontSize: 12.5, color: '#7f8c8d', marginTop: 3 };
 const moreLineStyle: CSSProperties = { fontSize: 12, color: '#8a949e', marginTop: 8, paddingLeft: 4 };
 const historyToggleStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, background: 'transparent', border: 'none', color: '#5c6b7a', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', padding: 0 };
 const doneChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#e8f4e8', color: '#1e5c1e', fontSize: 10.5, fontWeight: 700 };
 const cancelledChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#f1f5f9', color: '#64748b', fontSize: 10.5, fontWeight: 700 };
-const actionBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'white', color: '#2c3e50', border: '1px solid #d0d7de', padding: '6px 10px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
 const emptyStyle: CSSProperties = { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px 14px', color: '#7f8c8d', fontSize: 13, textAlign: 'center', background: '#f8fafc', borderRadius: 8 };
 const backdropStyle: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 3200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '10vh 16px', overflowY: 'auto' };
 const sheetStyle: CSSProperties = { width: '100%', maxWidth: 480, background: 'white', borderRadius: 12, padding: 18, boxShadow: '0 10px 40px rgba(0,0,0,0.25)' };
@@ -457,8 +637,6 @@ const selectStyle: CSSProperties = {
 const grid2Style: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 };
 const errBoxStyle: CSSProperties = { background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '8px 11px', fontSize: 13, marginBottom: 10 };
 const actionsStyle: CSSProperties = { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 };
-const cancelBtnStyle: CSSProperties = { background: 'white', color: '#374151', border: '1px solid #d0d7de', padding: '9px 16px', borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const saveBtnStyle: CSSProperties = { background: NAVY, color: 'white', border: `1px solid ${NAVY}`, padding: '9px 16px', borderRadius: 6, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
 
 function dateBadgeStyle(isOverdue: boolean): CSSProperties {
   return {

@@ -9,10 +9,15 @@
  *
  * It encodes the form's required fields and their credential/condition gates:
  *   - Tab 1 (Client & Shift): always required.
+ *   - Tab 2 (Since your last shift, rev 3+): three Yes/No answers required for
+ *     every credential and program; Details required when any answer is Yes.
  *   - Tab 2 (Vitals): required for every credential except HHA. Every vital is
  *     satisfied by a reading OR the section-level "unable to obtain vitals"
  *     reason (q16_vitalsNotObtainedReason); blood pressure additionally
  *     accepts its own BP-specific "unable to obtain" reason.
+ *   - Tab 2 (Vitals rechecks): each added later-in-shift reading needs a time
+ *     and at least one vital, both BP numbers or neither, and route / oxygen
+ *     source once their value is present (see src/lib/vitalsRecheck.ts).
  *   - Tab 4: the nutrition note is required only when aspiration concerns = Yes.
  *   - Tab 5 (Skilled Nursing): the intervention narrative is required for LPN/RN.
  *   - Tab 6: physician-notification details are required only when the nurse
@@ -25,6 +30,11 @@
  */
 
 import { isBpRoutinelyRequired } from './vitalRanges';
+import { SHIFT_CHANGE_KEYS, shiftChangeAnyYes } from './shiftChange';
+import { vitalsRecheckGaps } from './vitalsRecheck';
+import { vitalsFollowUpApplies, vitalsFollowUpGaps } from './vitalsFollowUp';
+import { noteVitalRanges } from './vitalRanges';
+import { SUPERVISORY_NOTE_TYPE } from './supervisoryVisit';
 
 export interface NoteIssue {
   /** Field key (also the DOM id the nurse form scrolls to). */
@@ -101,6 +111,11 @@ const vitalOr = (key: string) => (d: Record<string, string>) =>
  * fields that didn't exist when the visit happened.
  */
 const isRev2 = (d: Record<string, string>): boolean => Number(d['q1_formRev'] || '0') >= 2;
+/**
+ * Form revision 3 (Sept 2026) added the "since your last shift" screening.
+ * Same retroactivity rule as isRev2: older notes are never flagged for it.
+ */
+const isRev3 = (d: Record<string, string>): boolean => Number(d['q1_formRev'] || '0') >= 3;
 /** QEPR rules bind only to DBHDD-waiver (NOW/COMP) clients — see programDocRequirements.ts. */
 const isNowComp = (d: Record<string, string>): boolean => d['q2_program'] === 'now-comp';
 
@@ -117,6 +132,16 @@ const RULES: Rule[] = [
   { key: 'q7_shiftStart', label: 'Shift start time', tab: 1, applies: ALWAYS, filled: simple('q7_shiftStart') },
   { key: 'q11_nurseName', label: 'Nurse / caregiver name', tab: 1, applies: ALWAYS, filled: simple('q11_nurseName') },
   { key: 'q12_credential', label: 'Credential', tab: 1, applies: ALWAYS, filled: simple('q12_credential') },
+
+  // --- Tab 2: since your last shift (rev-3 notes; every credential and program) ---
+  // Hospital admission, urgent care / ER visit, medication started / changed /
+  // stopped: each needs an explicit Yes or No so it can't be glanced past, and
+  // a Yes needs Details. Only rev-3 notes: amending an older note must not
+  // demand answers for a shift long past.
+  { key: SHIFT_CHANGE_KEYS.hospitalAdmission, label: 'Since your last shift: hospital admission (Yes/No)', tab: 2, applies: (d) => isRev3(d), filled: simple(SHIFT_CHANGE_KEYS.hospitalAdmission) },
+  { key: SHIFT_CHANGE_KEYS.erUrgentCare, label: 'Since your last shift: urgent care or ER visit (Yes/No)', tab: 2, applies: (d) => isRev3(d), filled: simple(SHIFT_CHANGE_KEYS.erUrgentCare) },
+  { key: SHIFT_CHANGE_KEYS.medChange, label: 'Since your last shift: medication started, changed, or stopped (Yes/No)', tab: 2, applies: (d) => isRev3(d), filled: simple(SHIFT_CHANGE_KEYS.medChange) },
+  { key: SHIFT_CHANGE_KEYS.details, label: 'Since your last shift: details (required when any answer is Yes)', tab: 2, applies: (d) => isRev3(d) && shiftChangeAnyYes(d), filled: simple(SHIFT_CHANGE_KEYS.details) },
 
   // --- Tab 2: Vitals (all credentials except HHA) ---
   // Each vital is satisfied by a reading OR the section-level "unable to
@@ -214,14 +239,28 @@ const RULES: Rule[] = [
  */
 export function getIncompleteRequired(flat: Record<string, string>): NoteIssue[] {
   // These rules describe the SHIFT progress note. Other document types in the
-  // same collection (RN oversight visit notes) have their own rules — see
-  // src/lib/oversightNote.ts — and must never be scored against these.
+  // same collection (RN oversight visit notes, home supervisory visits) have
+  // their own rules — see src/lib/oversightNote.ts and supervisoryVisit.ts —
+  // and must never be scored against these.
   if ((flat['noteType'] || '') === 'rn-oversight-visit') return [];
+  if ((flat['noteType'] || '') === SUPERVISORY_NOTE_TYPE) return [];
   const cred = (flat['q12_credential'] || '').trim();
   const issues: NoteIssue[] = [];
   for (const r of RULES) {
     if (r.applies(flat, cred) && !r.filled(flat)) {
       issues.push({ key: r.key, label: r.label, tab: r.tab, tabName: NOTE_TAB_NAMES[r.tab] ?? `Tab ${r.tab}` });
+    }
+  }
+  // Vitals rechecks are numbered blocks, so their rules are computed rather
+  // than listed. Each gap's targetId is the input's DOM id, same as `key`.
+  for (const g of vitalsRecheckGaps(flat)) {
+    issues.push({ key: g.targetId, label: g.label, tab: 2, tabName: NOTE_TAB_NAMES[2] });
+  }
+  // Abnormal-vitals follow-up (rev 4+): an out-of-range first reading needs a
+  // recheck, and a recheck still out of range needs a documented action.
+  if (vitalsFollowUpApplies(flat)) {
+    for (const g of vitalsFollowUpGaps(flat, noteVitalRanges(flat))) {
+      issues.push({ key: g.targetId, label: g.label, tab: 2, tabName: NOTE_TAB_NAMES[2] });
     }
   }
   return issues;

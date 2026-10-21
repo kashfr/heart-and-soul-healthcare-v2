@@ -92,15 +92,15 @@ service cloud.firestore {
 
     // Patient Roster (directory fields: name, dob, diagnosis, address,
     // record #, requiresMar flag).
-    // The /progress-note form is authenticated (AuthGuard), so reads only need
-    // to be open to signed-in users — never the public. Nurses load the full
-    // roster for the form's autofill picker, so read stays at isSignedIn()
-    // rather than isStaff(); a whole-collection query would otherwise fail for
-    // a nurse the moment one doc is unreadable. Writes are staff-only.
+    // Active care staff can read the full roster, including nurses using the
+    // progress-note autofill picker. VAs use the server's program-scoped client
+    // workspace instead: a direct SDK read must not bypass its individual
+    // grants or expose clients outside their assigned programs. Inactive and
+    // missing profiles cannot read the roster. Writes stay staff-only.
     // Sensitive clinical PHI (sex, allergies, attending physician, diet) does
     // NOT live here — it's in the care-team-gated /clinical sub-record below.
     match /patients/{patientId} {
-      allow read: if isSignedIn();
+      allow read: if isActiveCareStaff();
       allow create: if isStaff() &&
         incomingData().name is string && incomingData().name.size() > 0 &&
         incomingData().dob is string && incomingData().dob.size() > 0 &&
@@ -125,6 +125,65 @@ service cloud.firestore {
                    .data.get('assignedNurseIds', []).hasAny([request.auth.uid]));
         allow write: if isStaff();
       }
+
+      // Delegated administrative changes: append-only history written by the
+      // assistant API. Owners can review it; no browser may alter the audit.
+      match /administrativeAudit/{entryId} {
+        allow read: if isAdmin();
+        allow write: if false;
+      }
+    }
+
+    // Authorized nursing hours per client, transcribed from the payer's Letter
+    // of Notification (GAPP weekly rate + per-month block hours) or Therap
+    // Service Authorization lines (NOW/COMP: LPN daily + RN monthly, annual
+    // 15-minute units). Each line says which bucket it caps (shift hours vs
+    // RN oversight visit hours; never summed together). OWNER-ONLY on
+    // purpose: the caps and how close a client is to them are billing and
+    // parent-facing numbers the owner answers personally, so admin is the only
+    // role that can read or write them. Top-level (keyed by patientId) so the
+    // roster loads every client's lines in one query. Math in shiftHours.ts.
+    match /hoursAuthorizations/{authId} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin()
+        && incomingData().patientId is string && incomingData().patientId.size() > 0
+        && incomingData().paNumber is string && incomingData().paNumber.size() <= 60
+        && incomingData().kind in ['skilled', 'unskilled']
+        && incomingData().covers in ['shift', 'oversight']
+        && incomingData().rateBasis in ['day', 'week', 'month']
+        && (incomingData().rateHours == null
+            || (incomingData().rateHours is number
+                && incomingData().rateHours >= 0 && incomingData().rateHours <= 744))
+        && (incomingData().totalUnits == null
+            || (incomingData().totalUnits is number && incomingData().totalUnits >= 0))
+        && incomingData().serviceCode is string && incomingData().serviceCode.size() <= 40
+        && incomingData().from is string && incomingData().from.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        && incomingData().to is string && incomingData().to.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        && incomingData().from <= incomingData().to
+        && incomingData().monthOverrides is map
+        && incomingData().note is string && incomingData().note.size() <= 1000;
+      allow delete: if isAdmin();
+    }
+
+    // Billing rate table: dollars per 15-minute unit by payer program and
+    // bucket (shift nursing vs RN oversight), with the claim code/modifier
+    // and an effective window. OWNER-ONLY like hoursAuthorizations; the
+    // dollar views on the Shift Notes list and the client Hours tab read it.
+    match /billingRates/{rateId} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin()
+        && incomingData().program is string && incomingData().program.size() > 0 && incomingData().program.size() <= 40
+        && incomingData().bucket in ['shift', 'oversight']
+        && incomingData().credential in ['', 'LPN', 'RN', 'HHA', 'CNA']
+        && incomingData().serviceCode is string && incomingData().serviceCode.size() <= 20
+        && incomingData().modifier is string && incomingData().modifier.size() <= 20
+        && incomingData().description is string && incomingData().description.size() <= 120
+        && incomingData().ratePerUnit is number && incomingData().ratePerUnit >= 0 && incomingData().ratePerUnit <= 1000
+        && incomingData().effectiveFrom is string && incomingData().effectiveFrom.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        && incomingData().effectiveTo is string
+        && (incomingData().effectiveTo == '' || incomingData().effectiveTo.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}'))
+        && incomingData().note is string && incomingData().note.size() <= 500;
+      allow delete: if isAdmin();
     }
 
     // Auto-assigned record-number counter (counters/patients). Staff-only:
@@ -399,7 +458,7 @@ service cloud.firestore {
         && incomingData().userId == request.auth.uid
         && incomingData().exportedAt == request.time
         && incomingData().submissionIds is list
-        && incomingData().format in ['zip', 'merged-pdf'];
+        && incomingData().format in ['zip', 'merged-pdf', 'hours-csv'];
       allow read: if isAdmin();
       allow update, delete: if false;
     }
@@ -466,11 +525,28 @@ service cloud.firestore {
            ]
         && incomingData().storagePath ==
              'patients/' + incomingData().patientId + '/documents/' + docId + '/' + incomingData().fileName;
-      // Staff may archive/restore and fix labeling; identity, file pointer,
-      // and ownership fields are immutable.
+      // Staff may archive/restore, fix labeling, and REPLACE the file (new
+      // object in the same document folder; the server removes the old one).
+      // Identity and ownership fields stay immutable, and a replacement can
+      // only point inside this document's own folder with an allowlisted type.
       allow update: if isStaff()
         && incomingData().diff(resource.data).affectedKeys()
-             .hasOnly(['archived', 'archivedBy', 'archivedByName', 'archivedAt', 'title', 'category', 'docDate']);
+             .hasOnly(['archived', 'archivedBy', 'archivedByName', 'archivedAt', 'title', 'category', 'docDate',
+                       'periodStart', 'periodEnd',
+                       'fileName', 'storagePath', 'contentType', 'size', 'replacedAt', 'replacedBy', 'replacedByName'])
+        && (!incomingData().diff(resource.data).affectedKeys().hasAny(['fileName', 'storagePath', 'contentType', 'size'])
+            || (incomingData().fileName is string && incomingData().fileName.size() > 0
+                && incomingData().storagePath ==
+                     'patients/' + resource.data.patientId + '/documents/' + docId + '/' + incomingData().fileName
+                && incomingData().contentType in [
+                     'application/pdf', 'image/jpeg', 'image/png', 'image/heic',
+                     'application/msword',
+                     'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                   ]
+                && incomingData().replacedBy == request.auth.uid
+                && incomingData().replacedAt == request.time));
+      // Hard delete is admin-only through /api/documents/[id] (Admin SDK),
+      // which snapshots the metadata into deletedDocuments first.
       allow delete: if false;
     }
 
@@ -539,16 +615,176 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // "What's new" announcements. No PHI. Every ACTIVE staff profile reads the
+    // active ones (the gate filters audience client-side); admins also read
+    // retired ones for the receipts view. All writes, including the
+    // acknowledgment map, go through the API so a receipt is trustworthy.
+    match /announcements/{announcementId} {
+      // Admin clause FIRST: it is independent of resource.data, so the
+      // unfiltered receipts query (orderBy only) is provable; the engine does
+      // not fall through to a later clause once an earlier resource-bound one
+      // is unprovable.
+      allow read: if isAdmin()
+        || (hasActiveProfile() && resource.data.active == true);
+      allow write: if false;
+    }
+
+    // Handoffs: nurse-to-nurse cross communication on a client. Created ONLY
+    // server-side (POST /api/handoffs computes the recipient list from the
+    // care team and writes the bells). The post is immutable; the single
+    // permitted client write is a recipient acknowledging her OWN copy —
+    // remove exactly herself from pendingIds and stamp acks.{uid} with the
+    // server time, nothing else. That acknowledgment is the read receipt
+    // that makes this a clinical handoff rather than a chat message.
+    match /handoffs/{handoffId} {
+      // The inbox query filters on pendingIds and the history query on
+      // recipientIds; each needs its OWN clause here because the rules engine
+      // proves list queries from the query's constraints alone (it can't know
+      // pendingIds is a subset of recipientIds).
+      allow read: if isStaff()
+        || (isNurse()
+            && (request.auth.uid in resource.data.pendingIds
+                || request.auth.uid in resource.data.recipientIds
+                || resource.data.authorId == request.auth.uid
+                || (resource.data.get('patientId', null) != null
+                    && get(/databases/$(database)/documents/patients/$(resource.data.patientId))
+                         .data.get('assignedNurseIds', []).hasAny([request.auth.uid]))));
+      allow create: if false;
+      allow update: if hasActiveProfile()
+        && resource.data.get('pendingIds', []).hasAny([request.auth.uid])
+        && incomingData().diff(resource.data).affectedKeys().hasOnly(['pendingIds', 'acks'])
+        && incomingData().pendingIds == resource.data.pendingIds.removeAll([request.auth.uid])
+        && incomingData().acks.diff(resource.data.get('acks', {})).affectedKeys() == [request.auth.uid].toSet()
+        && incomingData().acks[request.auth.uid] == request.time;
+      allow delete: if false;
+    }
+
+    // Seizure log: one record per seizure, written by the progress-note
+    // submit (client SDK) for the nurse's own note. Append-only like MAR
+    // administrations; `amends` is reserved for a future superseding-record
+    // correction flow. Read access mirrors quickNotes (staff, or an assigned
+    // nurse for that client).
+    // Verbal (telephone) physician orders. Written ONLY through the Admin
+    // SDK (/api/verbal-orders and the cron sweep): the record, its fax state,
+    // and the physician's signature all come from the server. Read: staff,
+    // the nurse who took it, or a nurse on the client's care team. The e-sign
+    // token map and the inbound-fax ledger are server-only.
+    match /verbalOrders/{orderId} {
+      allow read: if isStaff()
+        || (isNurse()
+            && (resource.data.nurseId == request.auth.uid
+                || (resource.data.get('patientId', null) != null
+                    && get(/databases/$(database)/documents/patients/$(resource.data.patientId))
+                         .data.get('assignedNurseIds', []).hasAny([request.auth.uid]))));
+      allow create, update, delete: if false;
+    }
+    match /verbalOrderSignTokens/{token} {
+      allow read, write: if false;
+    }
+    match /verbalOrderInbound/{faxId} {
+      allow read: if isStaff();
+      allow write: if false;
+    }
+
+    // Medication error reports. Written ONLY through the Admin SDK
+    // (/api/med-errors files, /api/med-errors/[id]/review adds the nursing
+    // review). Immutable once filed. Read: staff, the reporter, or a nurse on
+    // the client's care team.
+    // Reviewers (an RN, or the configured corrections reviewer) read every
+    // report so the review queue and bell deep links work for a nurse-role
+    // reviewer; both clauses are independent of resource.data, so the staff
+    // style orderBy-only query is provable for them too.
+    match /medErrorReports/{reportId} {
+      allow read: if isStaff()
+        || (isNurse()
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('credential', '') == 'RN')
+        || (isNurse()
+            && get(/databases/$(database)/documents/settings/global).data.get('corrections', {}).get('reviewerUid', '') == request.auth.uid)
+        || (isNurse()
+            && (resource.data.reporterId == request.auth.uid
+                || (resource.data.get('patientId', null) != null
+                    && get(/databases/$(database)/documents/patients/$(resource.data.patientId))
+                         .data.get('assignedNurseIds', []).hasAny([request.auth.uid]))));
+      allow create, update, delete: if false;
+    }
+
+    match /seizureEvents/{eventId} {
+      allow read: if isStaff()
+        || (isNurse()
+            && resource.data.get('patientId', null) != null
+            && get(/databases/$(database)/documents/patients/$(resource.data.patientId))
+                 .data.get('assignedNurseIds', []).hasAny([request.auth.uid]));
+      allow create: if (isStaff()
+              || (isNurse()
+                  && get(/databases/$(database)/documents/patients/$(incomingData().patientId))
+                       .data.get('assignedNurseIds', []).hasAny([request.auth.uid])))
+        && incomingData().patientId is string && incomingData().patientId.size() > 0
+        && incomingData().date is string && incomingData().date.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        && incomingData().sourceNoteId is string && incomingData().sourceNoteId.size() > 0
+        && incomingData().documentedBy == request.auth.uid
+        && incomingData().documentedByName is string && incomingData().documentedByName.size() > 0
+        && incomingData().startTime is string
+        && incomingData().seizureType is string
+        && incomingData().createdAt == request.time;
+      allow update: if false;
+      allow delete: if false;
+    }
+
     // In-portal notifications (the bell). Written ONLY server-side (Admin
     // SDK: visit assign/cancel/restore + the day-of reminder cron), so client
-    // create/delete are denied. A user reads only her own and may flip ONLY
-    // readAt (mark-as-read) — recipient, text, and links are immutable.
+    // create/delete are denied. A user reads only her own and may set ONLY
+    // readAt (mark-as-read) and dismissedAt (clear from the bell; the doc is
+    // kept) — recipient, text, and links are immutable.
     match /notifications/{noteId} {
       allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow update: if isSignedIn()
         && resource.data.userId == request.auth.uid
-        && incomingData().diff(resource.data).affectedKeys().hasOnly(['readAt']);
+        && incomingData().diff(resource.data).affectedKeys().hasOnly(['readAt', 'dismissedAt']);
       allow create, delete: if false;
+    }
+
+    // EDWP consent forms and the "please sign" invites staff send. Written by
+    // the public intake route and read by the admin routes, all through the
+    // Admin SDK; the signature image and Medicaid ID never go browser-to-DB.
+    match /edwpConsents/{consentId} {
+      allow read, write: if false;
+    }
+    match /edwpConsentInvites/{inviteId} {
+      allow read, write: if false;
+    }
+
+    // Fax Center outbox. Written and read only by the /api/fax routes (Admin
+    // SDK), which check the per-person grant in settings/global; the sent PDF
+    // lives under faxes/outbound/ in Storage, also server-only.
+    match /outboundFaxes/{faxId} {
+      allow read, write: if false;
+    }
+    // PPOT (Appendix T) request bookkeeping: the latest request per member and
+    // one recertification reminder per authorization period. Server-only.
+    match /ppotRequests/{key} {
+      allow read, write: if false;
+    }
+    // Releases of Information (DBHDD Attachment A): who, which way, the signed
+    // copy, and every fax of it. Server-only (Fax Center routes).
+    match /roiRequests/{id} {
+      allow read, write: if false;
+    }
+    // Papers filed against a referral before it has a client record. Server-only.
+    match /referralDocuments/{id} {
+      allow read, write: if false;
+    }
+    match /ppotRecertReminders/{key} {
+      allow read, write: if false;
+    }
+    // Signed Service Plans (the agency's form), one doc per revision.
+    // Server-only: the API routes check a nurse's care-team scope against the
+    // client record on every read, and only staff may sign one.
+    match /servicePlans/{id} {
+      allow read, write: if false;
+    }
+    // PandaDoc packets tracked from the webhook (E-signatures page). Server-only.
+    match /pandadocDocuments/{docId} {
+      allow read, write: if false;
     }
 
     // Default deny

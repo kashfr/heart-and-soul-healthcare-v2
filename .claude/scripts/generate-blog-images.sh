@@ -3,7 +3,7 @@
 # Usage: bash .claude/scripts/generate-blog-images.sh <path-to-mdx>
 #
 # Generates images for all PLACEHOLDER entries in a blog MDX file using
-# OpenAI's gpt-image-2 model. Saves to public/images/blog/ and rewrites the
+# OpenAI's gpt-image-2.5-sunburst model (override with OPENAI_IMAGE_MODEL). Saves to public/images/blog/ and rewrites the
 # MDX to remove PLACEHOLDER- prefixes.
 #
 # Required env var: OPENAI_API_KEY
@@ -14,6 +14,7 @@ MDX_FILE="${1:?Usage: $0 <path-to-mdx-file>}"
 PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 PUBLIC_DIR="$PROJECT_DIR/public/images/blog"
 QUALITY="${OPENAI_IMAGE_QUALITY:-medium}"
+MODEL="${OPENAI_IMAGE_MODEL:-gpt-image-2.5-sunburst}"
 
 [ -z "${OPENAI_API_KEY:-}" ] && { echo "❌  OPENAI_API_KEY not set"; exit 1; }
 [ ! -f "$MDX_FILE" ] && { echo "❌  File not found: $MDX_FILE"; exit 1; }
@@ -40,8 +41,8 @@ generate_image() {
     curl -s -X POST "https://api.openai.com/v1/images/generations" \
       -H "Authorization: Bearer $OPENAI_API_KEY" \
       -H "Content-Type: application/json" \
-      -d "$(jq -n --arg p "$prompt" --arg s "$size" --arg q "$QUALITY" \
-           '{model: "gpt-image-2", prompt: $p, size: $s, quality: $q, n: 1}')" \
+      -d "$(jq -n --arg p "$prompt" --arg s "$size" --arg q "$QUALITY" --arg m "$MODEL" \
+           '{model: $m, prompt: $p, size: $s, quality: $q, n: 1}')" \
       > "$tmpfile"
 
     err=$(jq -r '.error.message // empty' "$tmpfile" 2>/dev/null || echo "parse_error")
@@ -65,7 +66,7 @@ generate_image() {
 
 echo ""
 echo "🖼   Generating images for: $(basename "$MDX_FILE")"
-echo "    Model: gpt-image-2  |  Quality: $QUALITY"
+echo "    Model: $MODEL  |  Quality: $QUALITY"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # ── House rule: every post carries a hero + at least MIN_INLINE inline images ──

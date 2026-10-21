@@ -1,18 +1,32 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
 import Link from 'next/link';
 import { formatUSPhone } from '@/lib/phone';
-import { YOUNG_PAID_CAREGIVER_AGE_YEARS } from '@/lib/diagnosisScreening';
+import { escortToField, FieldError, FIELD_ERROR_WRAP_STYLE, firstErrorKey } from '@/lib/formEscort';
+import { nextFormControl, shouldAdvanceOnEnter } from '@/lib/enterToNext';
+import { screenYoungPaidCaregiver } from '@/lib/diagnosisScreening';
 import {
   BEHAVIOR_RISK_OPTIONS,
   CURRENT_SERVICE_OPTIONS,
   DIAGNOSIS_GROUPS,
   EQUIPMENT_OPTIONS,
-  classifyFreeText,
-  diagnosisPicture,
+  PAID_CARE_BASIS_OPTIONS,
+  RELATIONSHIP_OPTIONS,
+  highBehaviorPaidFlag,
+  GAPP_NURSING_REQUIRED_CITATION,
+  GAPP_NURSING_REQUIRED_QUOTE,
+  screenAgencyStaff,
+  screenCaregiverRelationship,
   inferService,
+  screenBehavioralPaidCaregiver,
+  screenMixedPaidCaregiver,
   type BehaviorRisk,
+  type CaregiverRelationship,
+  type PaidCareBasis,
+  highAcuityNeeds,
+  shouldPromptHighAcuityNurse,
 } from '@/lib/diagnosisCatalog';
 import {
   FileText,
@@ -32,10 +46,87 @@ import {
 } from 'lucide-react';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import HighAcuityNursePrompt from './HighAcuityNursePrompt';
 import { processReferralSubmission } from '@/app/actions';
 import { ScrollReveal } from '@/components/animations';
 import { motion, AnimatePresence } from 'framer-motion';
 import styles from './page.module.css';
+import {
+  BEHAVIORAL_TRIGGER_TEXT,
+  FIELD_ORDER,
+  behavioralBlockTriggers,
+  behavioralTriggerLinks,
+  blockedSubmitEscort,
+  fieldId,
+  type ReferralField,
+  type ReferralFieldErrors,
+} from './referralGuards';
+
+// The on-screen question for each required field. The labels below render
+// these same strings, so the banner of missing answers reads exactly like the
+// questions. The paid-caregiver follow-ups are worded for whoever is filling
+// the form, so the component builds those (see questionFor).
+const QUESTION_LABEL: Record<
+  Exclude<ReferralField, 'seekingPaidCaregiver' | 'careNeeds' | 'paidCareBasis' | 'hasGuardianship'>,
+  string
+> = {
+  programInterest: 'Program of Interest',
+  clientCounty: 'County',
+  clientFirstName: 'First Name',
+  clientLastName: 'Last Name',
+  clientDOB: 'Date of Birth',
+  clientPhone: 'Phone Number',
+  clientSecondaryPhone: 'Secondary Phone Number',
+  clientEmail: 'Email Address',
+  referralSource: 'Who is making this referral?',
+  relationship: 'Your relationship to the child',
+  referrerName: 'Your Name',
+  diagnoses: 'What has your child been diagnosed with?',
+  equipment: 'Which of these does your child need at home?',
+  behaviorRisk: 'Does your child have behaviors that put them or others at risk, or that stop daily activities?',
+  wantsAgencyStaff: 'Will you accept a nurse or aide from our agency in the home?',
+};
+// The outlined answer lists of the two required checklists. Each field's
+// escort target is its heading block (label, hint and message), so the scroll
+// lands at the top of the list with the question and the message in view,
+// and the heading itself takes focus.
+const DIAGNOSES_OPTIONS_ID = 'ref-field-diagnoses-options';
+const EQUIPMENT_OPTIONS_ID = 'ref-field-equipment-options';
+// A checklist's answer frame has the same border width and padding whether or
+// not it is outlined (FIELD_ERROR_WRAP_STYLE is the same 1px border and 8px
+// padding, only coloured), so clearing the error moves nothing under the
+// user's finger.
+const OPTIONS_FRAME_STYLE: CSSProperties = { border: '1px solid transparent', borderRadius: 8, padding: 8 };
+const optionsFrameStyle = (invalid: boolean): CSSProperties =>
+  invalid ? { ...OPTIONS_FRAME_STYLE, ...FIELD_ERROR_WRAP_STYLE } : OPTIONS_FRAME_STYLE;
+// The panels that explain a GAPP hard stop, so a blocked Submit can escort to
+// the one that is active instead of leaving the user at the button.
+const BLOCK_PANEL_ID = {
+  behavioral: 'ref-block-behavioral',
+  youngChild: 'ref-block-youngChild',
+  mixed: 'ref-block-mixed',
+  foster: 'ref-block-foster',
+  staff: 'ref-block-staff',
+} as const;
+
+/** A button-styled link that takes the user to a control on the form: a
+ *  missing answer listed in the banner, or the answer that would lift a stop.
+ *  A link rather than a button, so a stop panel holding one still takes focus
+ *  itself when the escort lands on it. */
+function EscortLink({ to, className, children }: { to: string; className: string; children: ReactNode }) {
+  return (
+    <a
+      href={`#${to}`}
+      className={className}
+      onClick={(e: MouseEvent<HTMLAnchorElement>) => {
+        e.preventDefault();
+        escortToField(to);
+      }}
+    >
+      {children}
+    </a>
+  );
+}
 
 // County data organized by tier
 const primaryCounties = [
@@ -115,10 +206,35 @@ function formatAge(dob: string): string {
 
 export default function ReferralPage() {
   const [step, setStep] = useState(1);
+  // The form card. A step change brings its top back into view: the user taps
+  // Next or Previous at the bottom of a long step, and the new step would
+  // otherwise render at that same scroll offset, mid-form. Compared against
+  // the previous step (not a first-run flag) so Strict Mode's double mount
+  // never scrolls the page on load. The html scroll-padding-top keeps the
+  // card clear of the fixed header, and the html scroll-behavior decides the
+  // motion (smooth, or instant under prefers-reduced-motion), so no behavior
+  // is forced here.
+  const formCardRef = useRef<HTMLFormElement>(null);
+  const prevStepRef = useRef(step);
+  useEffect(() => {
+    if (prevStepRef.current !== step) {
+      formCardRef.current?.scrollIntoView({ block: 'start' });
+    }
+    prevStepRef.current = step;
+  }, [step]);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Trach/vent family answered No to a nurse: explain in a popup first.
+  const [highAcuityPromptOpen, setHighAcuityPromptOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showValidation, setShowValidation] = useState(false);
+  // The steps the user has tried to leave or submit. A step's outlines,
+  // messages, banner and stop emphasis show once it has been attempted and
+  // survive Previous and Next, so returning to a step still marks what is
+  // missing there, while a first visit starts clean.
+  const [attemptedSteps, setAttemptedSteps] = useState<ReadonlySet<number>>(() => new Set());
+  const showValidation = attemptedSteps.has(step);
+  const markAttempted = (n: number) =>
+    setAttemptedSteps((prev) => (prev.has(n) ? prev : new Set([...prev, n])));
   const [formData, setFormData] = useState({
     // Client Information
     programInterest: '',
@@ -143,11 +259,19 @@ export default function ReferralPage() {
     medicaidNumber: '',
     insuranceProvider: '',
     insuranceNumber: '',
+    physicianName: '',
+    physicianOffice: '',
+    physicianPhone: '',
+    physicianFax: '',
     serviceNeeds: '',
     urgency: 'standard',
     additionalNotes: '',
     seekingPaidCaregiver: '',
     careNeeds: '',
+    paidCareBasis: '' as PaidCareBasis,
+    relationship: '' as CaregiverRelationship,
+    hasGuardianship: '' as '' | 'yes' | 'no',
+    wantsAgencyStaff: '' as '' | 'yes' | 'no',
     diagnoses: [] as string[],
     diagnosisOther: '',
     equipment: [] as string[],
@@ -159,6 +283,20 @@ export default function ReferralPage() {
   // user types the date (the native date input fires a change per digit). Recompute
   // 800ms after the user pauses, and never show an implausible age.
   const [debouncedClientDOB, setDebouncedClientDOB] = useState('');
+  // A link like /referral?program=gapp (from a program or service page)
+  // arrives with that program already chosen. Only known programs are
+  // honored; anything else is ignored.
+  useEffect(() => {
+    try {
+      const wanted = new URLSearchParams(window.location.search).get('program');
+      if (wanted && programs.some((p) => p.value === wanted)) {
+        setFormData((prev) => (prev.programInterest ? prev : { ...prev, programInterest: wanted }));
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   useEffect(() => {
     const id = setTimeout(() => setDebouncedClientDOB(formData.clientDOB), 800);
     return () => clearTimeout(id);
@@ -218,16 +356,8 @@ export default function ReferralPage() {
     sourceView === 'self'
       ? 'What do you mainly need help with at home?'
       : `What does ${careSubject} mainly need help with at home?`;
-  const careNeedsMissingLabel =
-    sourceView === 'self'
-      ? 'What you need help with'
-      : `What ${careSubject} needs help with`;
-  // What the structured answers say, and which GAPP service line they point to.
-  // Same catalog and inference the GAPP site's form and the portal intake use.
-  const structuredPicture = diagnosisPicture(
-    formData.diagnoses,
-    formData.diagnosisOther
-  );
+  // Which GAPP service line the structured answers point to. Same catalog and
+  // inference the GAPP site's form and the portal intake use.
   const inferred = inferService({
     diagnoses: formData.diagnoses,
     diagnosisOther: formData.diagnosisOther,
@@ -236,37 +366,116 @@ export default function ReferralPage() {
     currentServices: formData.currentServices,
     careNeeds: formData.careNeeds,
   });
-  // Cross-check the free-text needs/notes too — submitters dodge the radio by
-  // picking "personal care" while describing autism. Kept separate from the
-  // structured answers rather than concatenated: this prose is a long
-  // description, and feeding it in as "Other" would read as an unclassifiable
-  // medical signal on every submission and quietly disable the check.
-  const proseDxClass = classifyFreeText(
-    `${formData.serviceNeeds} ${formData.additionalNotes}`
-  );
-  // Reported skilled equipment settles it — the child needs nursing, so nothing
-  // in the prose should block them (same rule as the GAPP site's form).
-  const reportsSkilledCare = inferred.source === 'equipment';
+  // Paid + behavioral picture: the structured answers, or the free-text
+  // needs/notes (submitters dodge the radio by picking "personal care" while
+  // describing autism). A behavioral-only diagnosis with no medical condition
+  // and no skilled equipment is refused whatever daily-care boxes are checked;
+  // reported skilled equipment settles it the other way (same rule as the
+  // GAPP site's form and both server intakes).
+  const prose = `${formData.serviceNeeds} ${formData.additionalNotes}`;
   const isPaidBehavioralBlock =
-    seekingPaidGapp &&
-    !reportsSkilledCare &&
-    (inferred.service === 'behavioral' || proseDxClass === 'behavioral');
-  // Blocked by what they described, not the option they picked.
-  const blockedByDiagnosis =
-    isPaidBehavioralBlock && formData.careNeeds !== 'behavioral';
-  // Behavioral alongside a physical/medical condition: don't block; prompt.
-  const isPaidMixedDx =
-    seekingPaidGapp &&
+    screenBehavioralPaidCaregiver({
+      diagnoses: formData.diagnoses,
+      diagnosisOther: formData.diagnosisOther,
+      equipment: formData.equipment,
+      behaviorRisk: formData.behaviorRisk,
+      currentServices: formData.currentServices,
+      careNeeds: formData.careNeeds,
+      freeText: prose,
+      seekingPaidCaregiver: seekingPaidGapp ? 'yes' : 'no',
+    }) !== null;
+  // The answers behind the behavioral stop, named in its panel so the family
+  // can see what led there (and fix a mistake) instead of a bare refusal.
+  const behavioralTriggers = isPaidBehavioralBlock
+    ? behavioralBlockTriggers({
+        diagnoses: formData.diagnoses,
+        diagnosisOther: formData.diagnosisOther,
+        equipment: formData.equipment,
+        behaviorRisk: formData.behaviorRisk,
+        currentServices: formData.currentServices,
+        careNeeds: formData.careNeeds,
+        serviceNeeds: formData.serviceNeeds,
+        additionalNotes: formData.additionalNotes,
+        seekingPaidCaregiver: seekingPaidGapp ? 'yes' : 'no',
+      })
+    : [];
+  // Behavioral alongside a physical/medical condition: the form cannot tell
+  // which one the hands-on care is for, so the family must say. "Autism or
+  // developmental" refuses the paid request (they can switch to No and still
+  // refer the child); the other answers go through, stored for the assessment.
+  const mixedPaid = screenMixedPaidCaregiver({
+    diagnoses: formData.diagnoses,
+    diagnosisOther: formData.diagnosisOther,
+    freeText: prose,
+    seekingPaidCaregiver: seekingPaidGapp ? 'yes' : 'no',
+    paidCareBasis: formData.paidCareBasis,
+  });
+  const isPaidMixedDx = !isPaidBehavioralBlock && mixedPaid.asks;
+  const isPaidMixedBlock = isPaidMixedDx && mixedPaid.block !== null;
+  // Young child + paid-caregiver: a hard stop when the care picture is
+  // everyday personal support (no skilled equipment, no scoring mobility
+  // need). Same rule as the GAPP site and both server intakes. Uses the raw
+  // DOB rather than the debounced one: a half-typed year reads as an ancient
+  // age, never a young child, so nothing flashes, and the gate is right the
+  // instant Submit is pressed.
+  const youngChild = screenYoungPaidCaregiver({
+    dob: formData.clientDOB,
+    seekingPaidCaregiver: seekingPaidGapp ? 'yes' : 'no',
+    equipment: formData.equipment,
+  });
+  const isPaidYoungChildBlock = !isPaidBehavioralBlock && youngChild.block !== null;
+  const isPaidYoungChildCleared = !isPaidBehavioralBlock && youngChild.cleared !== null;
+  // Who is asking to be paid (GAPP only). Foster parent = refused (manual
+  // §604.3, §907); grandparent/relative, or a parent of a member 18+, must say
+  // whether they hold legal guardianship (flagged for staff, not refused).
+  const relationshipScreen = screenCaregiverRelationship({
+    relationship: formData.relationship,
+    hasGuardianship: formData.hasGuardianship,
+    seekingPaidCaregiver: seekingPaidGapp ? 'yes' : 'no',
+    dob: formData.clientDOB,
+  });
+  const isPaidFosterBlock = !isPaidBehavioralBlock && relationshipScreen.block !== null;
+  const asksGuardianship = !isPaidBehavioralBlock && relationshipScreen.asksGuardianship;
+  // Behaviors that need help to manage + seeking pay: the FCO never pays for
+  // behavior management. Said plainly; not a block.
+  const showHighBehaviorPaid =
     !isPaidBehavioralBlock &&
-    (proseDxClass === 'mixed' || structuredPicture === 'mixed');
-  // Young child + paid-caregiver: advisory only, never a block. There is no age
-  // rule in the GAPP manual; the lever is medical necessity (paid family hours
-  // cover only care beyond age-typical needs), so we set expectations without
-  // turning away medically fragile toddlers who can legitimately qualify.
-  const isPaidYoungChild =
-    seekingPaidGapp &&
-    !!childAge &&
-    childAge.years < YOUNG_PAID_CAREGIVER_AGE_YEARS;
+    highBehaviorPaidFlag({
+      behaviorRisk: formData.behaviorRisk,
+      seekingPaidCaregiver: seekingPaidGapp ? 'yes' : 'no',
+    }) !== null;
+  const otherBlock =
+    isPaidBehavioralBlock || isPaidYoungChildBlock || isPaidMixedBlock || isPaidFosterBlock;
+  // Declining agency staff is a dead end in every case (GAPP only): every
+  // GAPP member must require skilled nursing (manual §604.2, Rev. 10/2026).
+  // Shown only when no other stop is already explaining why.
+  const isStaffBlock =
+    !otherBlock &&
+    screenAgencyStaff({
+      wantsAgencyStaff: showGappClinical ? formData.wantsAgencyStaff : '',
+    }) !== null;
+  const isBlocked = otherBlock || isStaffBlock;
+  // The panel explaining the active stop, first in DOM order when more than
+  // one applies, so a blocked Submit escorts to it the way a missing field
+  // is escorted to.
+  const activeBlockId = isPaidBehavioralBlock
+    ? BLOCK_PANEL_ID.behavioral
+    : isPaidMixedBlock
+    ? BLOCK_PANEL_ID.mixed
+    : isPaidYoungChildBlock
+    ? BLOCK_PANEL_ID.youngChild
+    : isPaidFosterBlock
+    ? BLOCK_PANEL_ID.foster
+    : isStaffBlock
+    ? BLOCK_PANEL_ID.staff
+    : null;
+  // After a blocked attempt the active panel gets a red edge, so the user can
+  // tell which note the message under the button means. Every stop panel can
+  // take focus (tabIndex -1), so the escort moves focus onto it.
+  const blockPanelClass = `${styles.countyNotice} ${styles.blockPanel} ${showValidation ? styles.blockFlagged : ''}`;
+  const memberWord = childAge && childAge.years >= 18 ? 'member' : 'child';
+  const paidCareBasisLabel = `The hands-on care ${careSubject === 'your child' ? 'your child needs' : 'needed'} is mainly because of`;
+  const guardianshipLabel = `Do you have legal guardianship of the ${memberWord}?`;
 
   // "None of these" is mutually exclusive with every real answer, both ways.
   const toggleMulti = (field: 'diagnoses' | 'equipment' | 'currentServices',
@@ -288,56 +497,123 @@ export default function ReferralPage() {
   const hasDiagnosis =
     formData.diagnoses.length > 0 || formData.diagnosisOther.trim().length > 0;
 
-  // Returns list of missing required field labels for the current step
-  const getMissingFields = (): string[] => {
-    const missing: string[] = [];
+  // The missing required fields for the current step, keyed by field, each
+  // with the message shown directly under it. Same rules as isStepValid.
+  const getFieldErrors = (): ReferralFieldErrors => {
+    const errs: ReferralFieldErrors = {};
     if (step === 1) {
-      if (!formData.programInterest) missing.push('Program of Interest');
-      if (!formData.clientCounty) missing.push('County');
-      if (!formData.clientFirstName) missing.push('First Name');
-      if (!formData.clientLastName) missing.push('Last Name');
-      if (!formData.clientDOB) missing.push('Date of Birth');
-      if (!formData.clientPhone) missing.push('Phone Number');
-      if (!formData.clientSecondaryPhone) missing.push('Secondary Phone Number');
-      if (!formData.clientEmail) missing.push('Email Address');
+      if (!formData.programInterest) errs.programInterest = 'Please select a program.';
+      if (!formData.clientCounty) errs.clientCounty = 'Please select a county.';
+      if (!formData.clientFirstName) errs.clientFirstName = 'Please enter the first name.';
+      if (!formData.clientLastName) errs.clientLastName = 'Please enter the last name.';
+      if (!formData.clientDOB) errs.clientDOB = 'Please enter the date of birth.';
+      if (!formData.clientPhone) errs.clientPhone = 'Please enter a phone number.';
+      if (!formData.clientSecondaryPhone) errs.clientSecondaryPhone = 'Please enter a secondary phone number.';
+      if (!formData.clientEmail) errs.clientEmail = 'Please enter an email address.';
     } else if (step === 2) {
-      if (!formData.referralSource) missing.push('Referral Source');
-      if (!isSelfReferral && formData.referralSource && !formData.referrerName) missing.push('Referrer Name');
-      if (showGappClinical && !hasDiagnosis) missing.push("Your child's diagnosis");
-      if (showGappClinical && formData.equipment.length === 0)
-        missing.push('What your child needs at home');
-      if (showGappClinical && !formData.behaviorRisk) missing.push('Behavior question');
-      if (!formData.seekingPaidCaregiver) missing.push('Paid caregiver question');
-      if (formData.seekingPaidCaregiver === 'yes' && !formData.careNeeds)
-        missing.push(careNeedsMissingLabel);
+      if (!formData.referralSource) errs.referralSource = 'Please tell us who is making this referral.';
+      if (!isSelfReferral && formData.referralSource && !formData.referrerName) errs.referrerName = 'Please enter your name.';
+      if (showGappClinical && !hasDiagnosis) errs.diagnoses = 'Check at least one diagnosis, or describe it under Other.';
+      if (showGappClinical && formData.equipment.length === 0) errs.equipment = 'Please check at least one, or check \u201cNone of these.\u201d';
+      if (showGappClinical && !formData.behaviorRisk) errs.behaviorRisk = 'Please choose an answer.';
+      if (!formData.seekingPaidCaregiver) errs.seekingPaidCaregiver = 'Please answer Yes or No.';
+      if (formData.seekingPaidCaregiver === 'yes' && !formData.careNeeds) errs.careNeeds = 'Please choose an answer.';
+      if (isPaidMixedDx && !formData.paidCareBasis) errs.paidCareBasis = 'Please tell us what the hands-on care is mainly for.';
+      if (showGappClinical && !formData.relationship) errs.relationship = 'Please choose your relationship to the child.';
+      if (asksGuardianship && !isPaidFosterBlock && !formData.hasGuardianship) errs.hasGuardianship = 'Please answer Yes or No.';
+      if (showGappClinical && !formData.wantsAgencyStaff) errs.wantsAgencyStaff = 'Please answer Yes or No.';
     }
-    return missing;
+    return errs;
+  };
+  // The on-screen question for a field, for the banner of missing answers.
+  const questionFor = (k: ReferralField): string => {
+    switch (k) {
+      case 'seekingPaidCaregiver': return paidCaregiverQuestion;
+      case 'careNeeds': return careNeedsLabel;
+      case 'paidCareBasis': return paidCareBasisLabel;
+      case 'hasGuardianship': return guardianshipLabel;
+      default: return QUESTION_LABEL[k];
+    }
   };
 
-  // Attempt to proceed — if invalid, show validation messages instead
+  // Recomputed from the live form data, so a field's message clears as soon
+  // as the user fixes it while the others stay put.
+  const fieldErrors: ReferralFieldErrors = showValidation ? getFieldErrors() : {};
+  const fieldMessage = (k: ReferralField) => fieldErrors[k];
+  const missingKeys = FIELD_ORDER.filter((k) => fieldErrors[k]);
+
+  // Show every problem on the step and take the user to the first one. The
+  // outlines and messages are committed (flushSync) before the escort
+  // measures, so the scroll lands where the field ends up, not where it was
+  // before the messages above it appeared. A checklist's escort target is its
+  // heading block, which takes focus itself.
+  const surfaceProblems = () => {
+    flushSync(() => markAttempted(step));
+    const first = firstErrorKey(FIELD_ORDER, getFieldErrors());
+    if (first) escortToField(fieldId(first));
+  };
+
+  // Attempt to proceed; if invalid, show validation messages instead.
   const handleAttemptNext = () => {
     if (isStepValid()) {
-      setShowValidation(false);
       nextStep();
     } else {
-      setShowValidation(true);
+      surfaceProblems();
     }
   };
 
-  const handleAttemptSubmit = (e: React.FormEvent) => {
-    // A GAPP parent seeking pay for behavioral/autism care cannot be submitted;
-    // the redirect panel explains why and points to the ASD Program.
-    if (isPaidBehavioralBlock) {
-      e.preventDefault();
+  const closeHighAcuityPrompt = (accept: boolean) => {
+    setHighAcuityPromptOpen(false);
+    if (accept) setFormData((prev) => ({ ...prev, wantsAgencyStaff: 'yes' }));
+    // Return focus to the question, now holding the family's answer.
+    window.setTimeout(() => document.getElementById('wantsAgencyStaff')?.focus(), 0);
+  };
+
+  const handleAttemptSubmit = () => {
+    if (isSubmitting) return;
+    // A GAPP hard stop (paid behavioral/autism care, everyday care of a young
+    // child, a mixed picture charged to the developmental diagnosis, a foster
+    // parent, or no agency nurse) cannot be submitted. The button stays
+    // enabled so the guard can explain itself. Everything still missing is
+    // outlined and committed first, so the escort measures the final layout.
+    // While the diagnosis or equipment answer is blank the user goes to the
+    // first missing field, since checking a medical diagnosis or a skilled
+    // need can lift the behavioral or young-child stop; otherwise to the
+    // panel that explains the stop, which takes focus so a phone keyboard
+    // closes and a screen reader reads it.
+    // Trach or vent family still declining a nurse: the prompt explains the
+    // stop better than the panel and offers the one-tap way back.
+    if (
+      isStaffBlock &&
+      shouldPromptHighAcuityNurse({ equipment: formData.equipment, wantsAgencyStaff: formData.wantsAgencyStaff })
+    ) {
+      flushSync(() => markAttempted(step));
+      setHighAcuityPromptOpen(true);
+      return;
+    }
+    if (isBlocked) {
+      const target = blockedSubmitEscort(getFieldErrors(), activeBlockId);
+      flushSync(() => markAttempted(step));
+      if (target?.kind === 'field') escortToField(fieldId(target.key));
+      else if (target?.kind === 'panel') escortToField(target.id);
       return;
     }
     if (!isStepValid()) {
-      e.preventDefault();
-      setShowValidation(true);
+      surfaceProblems();
       return;
     }
-    setShowValidation(false);
-    handleSubmit(e);
+    void handleSubmit();
+  };
+
+  // Return or Go in a single-line text field moves focus to the next control
+  // (or to the visible Next or Submit button after the last field). It never
+  // submits and never runs the validation sweep: only a click or tap on the
+  // visible button, or Enter or Space while it has focus, does that.
+  // Textareas keep Enter as a new line.
+  const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
+    if (!shouldAdvanceOnEnter(e.key, e.nativeEvent.isComposing, e.target)) return;
+    e.preventDefault();
+    nextFormControl(e.currentTarget, e.target)?.focus();
   };
 
   // As-you-type formatter: (XXX) XXX-XXXX, also strips a leading +1.
@@ -347,11 +623,8 @@ export default function ReferralPage() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
 
-    // Clear validation when user starts filling fields
-    if (showValidation) setShowValidation(false);
-
     // Auto-format phone number fields
-    if (name === 'clientPhone' || name === 'clientSecondaryPhone' || name === 'referrerPhone') {
+    if (name === 'clientPhone' || name === 'clientSecondaryPhone' || name === 'referrerPhone' || name === 'physicianPhone' || name === 'physicianFax') {
       setFormData({ ...formData, [name]: formatPhoneNumber(value) });
       return;
     }
@@ -373,12 +646,20 @@ export default function ReferralPage() {
         programInterest: value,
         clientCounty: '',
       });
+    } else if (name === 'wantsAgencyStaff') {
+      setFormData({ ...formData, wantsAgencyStaff: value as '' | 'yes' | 'no' });
+      // Trach or vent plus No: explain before the No stands.
+      if (showGappClinical && shouldPromptHighAcuityNurse({ equipment: formData.equipment, wantsAgencyStaff: value })) {
+        setHighAcuityPromptOpen(true);
+      }
     } else if (name === 'seekingPaidCaregiver' && value === 'no') {
-      // Switching to "No" clears the care-need follow-up.
+      // Switching to "No" clears the paid-only follow-ups.
       setFormData({
         ...formData,
         seekingPaidCaregiver: 'no',
         careNeeds: '',
+        paidCareBasis: '',
+        hasGuardianship: '',
       });
     } else {
       setFormData({
@@ -388,8 +669,7 @@ export default function ReferralPage() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async () => {
     setIsSubmitting(true);
     setError(null);
 
@@ -414,6 +694,15 @@ export default function ReferralPage() {
           insuranceProvider: formData.insuranceProvider,
           insuranceNumber: formData.insuranceNumber,
         },
+        // The child's own doctor. Optional; when a fax number is given, the
+        // office can send the physician the GAPP Plan of Treatment request
+        // (Appendix T) straight from the referral card.
+        physician: {
+          name: formData.physicianName,
+          office: formData.physicianOffice,
+          phone: formData.physicianPhone,
+          fax: formData.physicianFax,
+        },
         referrer: {
           source: formData.referralSource,
           name: formData.referrerName,
@@ -432,6 +721,10 @@ export default function ReferralPage() {
           // referral submitted for another program.
           seekingPaidCaregiver: formData.seekingPaidCaregiver,
           careNeeds: formData.careNeeds,
+          paidCareBasis: showGappClinical ? formData.paidCareBasis : '',
+          relationship: showGappClinical ? formData.relationship : '',
+          hasGuardianship: showGappClinical ? formData.hasGuardianship : '',
+          wantsAgencyStaff: showGappClinical ? formData.wantsAgencyStaff : '',
           diagnoses: showGappClinical ? formData.diagnoses : [],
           diagnosisOther: showGappClinical ? formData.diagnosisOther : '',
           equipment: showGappClinical ? formData.equipment : [],
@@ -448,7 +741,13 @@ export default function ReferralPage() {
       });
 
       // 2. Send Email Notification & Add to CRM
-      await processReferralSubmission(submissionData);
+      const result = await processReferralSubmission(submissionData);
+      if (result && result.success === false) {
+        // Server-side refusal (the same screen the form runs). Show the
+        // reason instead of the generic error.
+        setError(result.error ?? 'This referral cannot be submitted as answered.');
+        return;
+      }
 
       setIsSubmitted(true);
     } catch (err) {
@@ -472,29 +771,23 @@ export default function ReferralPage() {
               formData.equipment.length > 0 &&
               formData.behaviorRisk !== '')) &&
           formData.seekingPaidCaregiver &&
-          (formData.seekingPaidCaregiver === 'no' || formData.careNeeds)
+          (formData.seekingPaidCaregiver === 'no' || formData.careNeeds) &&
+          (!isPaidMixedDx || formData.paidCareBasis) &&
+          (!showGappClinical || formData.relationship) &&
+          (!asksGuardianship || isPaidFosterBlock || formData.hasGuardianship) &&
+          (!showGappClinical || formData.wantsAgencyStaff)
         );
       default:
         return true;
     }
   };
 
-  const nextStep = () => { setShowValidation(false); setStep(2); };
-  const prevStep = () => { setShowValidation(false); setStep(1); };
+  // Moving between steps keeps each step's validation (see attemptedSteps).
+  const nextStep = () => setStep(2);
+  const prevStep = () => setStep(1);
 
   // Check if a specific field should show a validation error
-  const isFieldInvalid = (fieldName: string): boolean => {
-    if (!showValidation) return false;
-    const value = formData[fieldName as keyof typeof formData];
-    // Only flag required fields
-    const requiredStep1 = ['programInterest', 'clientCounty', 'clientFirstName', 'clientLastName', 'clientDOB', 'clientPhone', 'clientSecondaryPhone', 'clientEmail'];
-    const requiredStep2 = ['referralSource', 'seekingPaidCaregiver'];
-    if (step === 1 && requiredStep1.includes(fieldName)) return !value;
-    if (step === 2 && requiredStep2.includes(fieldName)) return !value;
-    if (step === 2 && fieldName === 'referrerName' && !isSelfReferral && formData.referralSource) return !value;
-    if (step === 2 && fieldName === 'careNeeds' && formData.seekingPaidCaregiver === 'yes') return !value;
-    return false;
-  };
+  const isFieldInvalid = (fieldName: ReferralField): boolean => !!fieldErrors[fieldName];
 
   // Get counties for the selected program
   const counties = formData.programInterest ? getCountiesForProgram(formData.programInterest) : null;
@@ -522,15 +815,20 @@ export default function ReferralPage() {
                   onClick={() => {
                     setIsSubmitted(false);
                     setStep(1);
+                    setAttemptedSteps(new Set());
                     setFormData({
                       programInterest: '', clientCounty: '', clientFirstName: '', clientLastName: '',
                       clientDOB: '', clientPhone: '', clientSecondaryPhone: '', clientEmail: '', clientAddress: '',
                       clientCity: '', clientState: 'GA', clientZip: '',
                       referralSource: '', referrerName: '', referrerPhone: '',
                       referrerEmail: '', referrerOrganization: '', medicaidNumber: '',
-                      insuranceProvider: '', insuranceNumber: '', serviceNeeds: '',
+                      insuranceProvider: '', insuranceNumber: '',
+                      physicianName: '', physicianOffice: '', physicianPhone: '', physicianFax: '',
+                      serviceNeeds: '',
                       urgency: 'standard', additionalNotes: '',
-                      seekingPaidCaregiver: '', careNeeds: '',
+                      seekingPaidCaregiver: '', careNeeds: '', paidCareBasis: '' as PaidCareBasis,
+                      relationship: '' as CaregiverRelationship, hasGuardianship: '' as '' | 'yes' | 'no',
+                      wantsAgencyStaff: '' as '' | 'yes' | 'no',
                       diagnoses: [], diagnosisOther: '', equipment: [],
                       behaviorRisk: '' as BehaviorRisk, currentServices: [],
                     });
@@ -609,7 +907,17 @@ export default function ReferralPage() {
             </div>
           </div>
 
-          <form onSubmit={handleSubmit} className={styles.form}>
+          {/* No submit button: the visible Next and Submit buttons are
+              type="button" and run their own guards, and Return or Go in a
+              text field moves to the next field (handleFormKeyDown). onSubmit
+              only stops a stray native submission. */}
+          <form
+            ref={formCardRef}
+            onSubmit={(e) => e.preventDefault()}
+            onKeyDown={handleFormKeyDown}
+            noValidate
+            className={styles.form}
+          >
             {/* Step 1: Client Information */}
             {step === 1 && (
               <div className={styles.formStep}>
@@ -620,8 +928,8 @@ export default function ReferralPage() {
 
                 {/* Program Selection — first so county can filter */}
                 <div className={styles.formGridSingle}>
-                  <div className="form-group">
-                    <label htmlFor="programInterest" className="form-label">Program of Interest *</label>
+                  <div className="form-group" id={fieldId('programInterest')}>
+                    <label htmlFor="programInterest" className="form-label">{QUESTION_LABEL.programInterest} *</label>
                     <select
                       id="programInterest"
                       name="programInterest"
@@ -630,11 +938,12 @@ export default function ReferralPage() {
                       onChange={handleChange}
                       required
                     >
-                      <option value="">Select a program</option>
+                      <option value="">Select a Program</option>
                       {programs.map((prog) => (
                         <option key={prog.value} value={prog.value}>{prog.label}</option>
                       ))}
                     </select>
+                    <FieldError message={fieldMessage('programInterest')} />
                   </div>
                   <div className={styles.programDescription}>
                     <AnimatePresence mode="wait">
@@ -648,7 +957,7 @@ export default function ReferralPage() {
                         >
                           <div className={styles.programDescriptionHeader}>
                             <Info size={14} />
-                            <span>About this program</span>
+                            <span>About This Program</span>
                           </div>
                           <p>{programs.find(p => p.value === formData.programInterest)?.description}</p>
                           {formData.programInterest !== 'private-pay' && formData.programInterest !== 'other' && (
@@ -658,7 +967,7 @@ export default function ReferralPage() {
                               target="_blank"
                               rel="noopener noreferrer"
                             >
-                              Learn more about this program <ArrowRight size={14} />
+                              Learn More About This Program <ArrowRight size={14} />
                             </a>
                           )}
                         </motion.div>
@@ -680,8 +989,8 @@ export default function ReferralPage() {
 
                 {/* County Selection — dynamic based on program */}
                 <div className={styles.countySection}>
-                  <div className="form-group">
-                    <label htmlFor="clientCounty" className="form-label">County *</label>
+                  <div className="form-group" id={fieldId('clientCounty')}>
+                    <label htmlFor="clientCounty" className="form-label">{QUESTION_LABEL.clientCounty} *</label>
                     <select
                       id="clientCounty"
                       name="clientCounty"
@@ -692,7 +1001,7 @@ export default function ReferralPage() {
                       disabled={!formData.programInterest}
                     >
                       <option value="">
-                        {formData.programInterest ? 'Select county' : 'Select a program first'}
+                        {formData.programInterest ? 'Select County' : 'Select a Program First'}
                       </option>
                       {counties && (
                         <>
@@ -707,7 +1016,7 @@ export default function ReferralPage() {
                             ))}
                           </optgroup>
                           <optgroup label="Other">
-                            <option value="other">Other — My county is not listed</option>
+                            <option value="other">Other — My County Is Not Listed</option>
                           </optgroup>
                         </>
                       )}
@@ -715,6 +1024,7 @@ export default function ReferralPage() {
                     {!formData.programInterest && (
                       <span className="form-helper">Please select a program above to see available counties</span>
                     )}
+                    <FieldError message={fieldMessage('clientCounty')} />
                   </div>
                   {formData.clientCounty === 'other' && (
                     <div className={styles.countyNotice}>
@@ -729,8 +1039,8 @@ export default function ReferralPage() {
 
                 {/* Client Details */}
                 <div className={styles.formGrid}>
-                  <div className="form-group">
-                    <label htmlFor="clientFirstName" className="form-label">First Name *</label>
+                  <div className="form-group" id={fieldId('clientFirstName')}>
+                    <label htmlFor="clientFirstName" className="form-label">{QUESTION_LABEL.clientFirstName} *</label>
                     <input
                       type="text"
                       id="clientFirstName"
@@ -741,9 +1051,10 @@ export default function ReferralPage() {
                       onChange={handleChange}
                       required
                     />
+                    <FieldError message={fieldMessage('clientFirstName')} />
                   </div>
-                  <div className="form-group">
-                    <label htmlFor="clientLastName" className="form-label">Last Name *</label>
+                  <div className="form-group" id={fieldId('clientLastName')}>
+                    <label htmlFor="clientLastName" className="form-label">{QUESTION_LABEL.clientLastName} *</label>
                     <input
                       type="text"
                       id="clientLastName"
@@ -754,9 +1065,10 @@ export default function ReferralPage() {
                       onChange={handleChange}
                       required
                     />
+                    <FieldError message={fieldMessage('clientLastName')} />
                   </div>
-                  <div className="form-group">
-                    <label htmlFor="clientDOB" className="form-label">Date of Birth *</label>
+                  <div className="form-group" id={fieldId('clientDOB')}>
+                    <label htmlFor="clientDOB" className="form-label">{QUESTION_LABEL.clientDOB} *</label>
                     <input
                       type="date"
                       id="clientDOB"
@@ -768,6 +1080,7 @@ export default function ReferralPage() {
                       min={minDOB}
                       required
                     />
+                    <FieldError message={fieldMessage('clientDOB')} />
                     {showChildAge && (
                       <p style={{ marginTop: '0.5rem', fontSize: '0.9rem', color: '#374151' }}>
                         Child&apos;s age:{' '}
@@ -775,8 +1088,8 @@ export default function ReferralPage() {
                       </p>
                     )}
                   </div>
-                  <div className="form-group">
-                    <label htmlFor="clientPhone" className="form-label">Phone Number *</label>
+                  <div className="form-group" id={fieldId('clientPhone')}>
+                    <label htmlFor="clientPhone" className="form-label">{QUESTION_LABEL.clientPhone} *</label>
                     <input
                       type="tel"
                       id="clientPhone"
@@ -787,9 +1100,10 @@ export default function ReferralPage() {
                       onChange={handleChange}
                       required
                     />
+                    <FieldError message={fieldMessage('clientPhone')} />
                   </div>
-                  <div className="form-group">
-                    <label htmlFor="clientSecondaryPhone" className="form-label">Secondary Phone Number *</label>
+                  <div className="form-group" id={fieldId('clientSecondaryPhone')}>
+                    <label htmlFor="clientSecondaryPhone" className="form-label">{QUESTION_LABEL.clientSecondaryPhone} *</label>
                     <input
                       type="tel"
                       id="clientSecondaryPhone"
@@ -800,10 +1114,11 @@ export default function ReferralPage() {
                       onChange={handleChange}
                       required
                     />
+                    <FieldError message={fieldMessage('clientSecondaryPhone')} />
                     <span className="form-helper">Alternate contact number (e.g., caregiver, family member)</span>
                   </div>
-                  <div className="form-group">
-                    <label htmlFor="clientEmail" className="form-label">Email Address *</label>
+                  <div className="form-group" id={fieldId('clientEmail')}>
+                    <label htmlFor="clientEmail" className="form-label">{QUESTION_LABEL.clientEmail} *</label>
                     <input
                       type="email"
                       id="clientEmail"
@@ -814,6 +1129,7 @@ export default function ReferralPage() {
                       onChange={handleChange}
                       required
                     />
+                    <FieldError message={fieldMessage('clientEmail')} />
                   </div>
                   <div className="form-group">
                     <label htmlFor="clientAddress" className="form-label">Street Address</label>
@@ -889,8 +1205,8 @@ export default function ReferralPage() {
 
                 <div className={styles.formGridSingle}>
                   {/* Referral Source */}
-                  <div className="form-group">
-                    <label htmlFor="referralSource" className="form-label">Who is making this referral? *</label>
+                  <div className="form-group" id={fieldId('referralSource')}>
+                    <label htmlFor="referralSource" className="form-label">{QUESTION_LABEL.referralSource} *</label>
                     <select
                       id="referralSource"
                       name="referralSource"
@@ -899,12 +1215,38 @@ export default function ReferralPage() {
                       onChange={handleChange}
                       required
                     >
-                      <option value="">Select referral source</option>
+                      <option value="">Select Referral Source</option>
                       {referralSources.map((source) => (
                         <option key={source.value} value={source.value}>{source.label}</option>
                       ))}
                     </select>
+                    <FieldError message={fieldMessage('referralSource')} />
                   </div>
+
+                  {/* Relationship to the child (GAPP). Required: the Family
+                      Caregiver Option pays only a legally responsible family
+                      member, never a foster parent. */}
+                  {showGappClinical && (
+                    <div className="form-group" id={fieldId('relationship')}>
+                      <label htmlFor="relationship" className="form-label">
+                        {QUESTION_LABEL.relationship} *
+                      </label>
+                      <select
+                        id="relationship"
+                        name="relationship"
+                        className={`form-select ${isFieldInvalid('relationship') ? styles.fieldError : ''}`}
+                        value={formData.relationship}
+                        onChange={handleChange}
+                        required
+                      >
+                        <option value="">Select Your Relationship</option>
+                        {RELATIONSHIP_OPTIONS.map((o) => (
+                          <option key={o.code} value={o.code}>{o.label}</option>
+                        ))}
+                      </select>
+                      <FieldError message={fieldMessage('relationship')} />
+                    </div>
+                  )}
 
                   {/* Self-referral notice */}
                   {isSelfReferral && (
@@ -917,8 +1259,8 @@ export default function ReferralPage() {
                   {/* Referrer fields — only show if NOT self-referral */}
                   {!isSelfReferral && formData.referralSource && (
                     <>
-                      <div className="form-group">
-                        <label htmlFor="referrerName" className="form-label">Your Name *</label>
+                      <div className="form-group" id={fieldId('referrerName')}>
+                        <label htmlFor="referrerName" className="form-label">{QUESTION_LABEL.referrerName} *</label>
                         <input
                           type="text"
                           id="referrerName"
@@ -929,6 +1271,7 @@ export default function ReferralPage() {
                           onChange={handleChange}
                           required
                         />
+                        <FieldError message={fieldMessage('referrerName')} />
                       </div>
                       <div className="form-group">
                         <label htmlFor="referrerPhone" className="form-label">Your Phone</label>
@@ -1014,13 +1357,73 @@ export default function ReferralPage() {
                   </div>
                 </div>
 
+                {/* Child's physician */}
+                <div className={styles.sectionDivider} />
+                <h3 className={styles.subSectionTitle}>Child&apos;s Physician</h3>
+                <p className={styles.subSectionDescription}>Optional. The doctor who will sign the child&apos;s plan of treatment, if you know it</p>
+
+                <div className={styles.formGrid}>
+                  <div className="form-group">
+                    <label htmlFor="physicianName" className="form-label">Physician Name</label>
+                    <input
+                      type="text"
+                      id="physicianName"
+                      name="physicianName"
+                      className="form-input"
+                      placeholder="e.g. Dr. Anita Patel"
+                      maxLength={120}
+                      value={formData.physicianName}
+                      onChange={handleChange}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="physicianOffice" className="form-label">Practice or Office</label>
+                    <input
+                      type="text"
+                      id="physicianOffice"
+                      name="physicianOffice"
+                      className="form-input"
+                      placeholder="e.g. Peachtree Pediatrics"
+                      maxLength={120}
+                      value={formData.physicianOffice}
+                      onChange={handleChange}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="physicianPhone" className="form-label">Office Phone</label>
+                    <input
+                      type="tel"
+                      id="physicianPhone"
+                      name="physicianPhone"
+                      className="form-input"
+                      placeholder="(404) 555-0100"
+                      maxLength={40}
+                      value={formData.physicianPhone}
+                      onChange={handleChange}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="physicianFax" className="form-label">Office Fax</label>
+                    <input
+                      type="tel"
+                      id="physicianFax"
+                      name="physicianFax"
+                      className="form-input"
+                      placeholder="(404) 555-0101"
+                      maxLength={40}
+                      value={formData.physicianFax}
+                      onChange={handleChange}
+                    />
+                  </div>
+                </div>
+
                 {/* Service Needs Section */}
                 <div className={styles.sectionDivider} />
                 <h3 className={styles.subSectionTitle}>Additional Details</h3>
                 <p className={styles.subSectionDescription}>Optional — share anything that would help us serve this client better</p>
 
                 <div className={styles.formGridFull}>
-                  <div className="form-group">
+                  <div className="form-group" id={fieldId('serviceNeeds')}>
                     <label htmlFor="serviceNeeds" className="form-label">Description of Service Needs</label>
                     <textarea
                       id="serviceNeeds"
@@ -1042,13 +1445,13 @@ export default function ReferralPage() {
                         value={formData.urgency}
                         onChange={handleChange}
                       >
-                        <option value="standard">Standard (1-2 weeks)</option>
-                        <option value="urgent">Urgent (within 1 week)</option>
+                        <option value="standard">Standard (1-2 Weeks)</option>
+                        <option value="urgent">Urgent (Within 1 Week)</option>
                         <option value="immediate">Immediate (ASAP)</option>
                       </select>
                     </div>
                   </div>
-                  <div className="form-group">
+                  <div className="form-group" id={fieldId('additionalNotes')}>
                     <label htmlFor="additionalNotes" className="form-label">Additional Notes</label>
                     <textarea
                       id="additionalNotes"
@@ -1071,61 +1474,88 @@ export default function ReferralPage() {
                 {showGappClinical && (
                   <>
                     <div className={styles.sectionDivider} />
-                    <h3 className={styles.subSectionTitle}>About your child&apos;s needs</h3>
+                    <h3 className={styles.subSectionTitle}>About Your Child&apos;s Needs</h3>
                     <p className={styles.subSectionDescription}>
                       This helps us match your child with the right kind of care.
                     </p>
 
                     <div className={styles.formGridSingle}>
                       <div className="form-group">
-                        <label className="form-label">
-                          What has your child been diagnosed with? *
-                        </label>
-                        <p className={styles.checkboxHint}>
-                          Check everything that applies. If you are not sure of the
-                          exact name, use &ldquo;Other&rdquo; below.
-                        </p>
-                        {DIAGNOSIS_GROUPS.map((group) => (
-                          <fieldset key={group.key} className={styles.checkboxGroup}>
-                            <legend className={styles.checkboxLegend}>{group.title}</legend>
-                            {group.options.map((opt) => (
-                              <label key={opt.code} className={styles.checkboxRow}>
-                                <input
-                                  type="checkbox"
-                                  checked={formData.diagnoses.includes(opt.code)}
-                                  onChange={() => toggleMulti('diagnoses', opt.code)}
-                                />
-                                <span>{opt.label}</span>
-                              </label>
-                            ))}
-                          </fieldset>
-                        ))}
-                        <label htmlFor="diagnosisOther" className={styles.checkboxLegend}>
-                          Other (please describe)
-                        </label>
-                        <input
-                          id="diagnosisOther"
-                          name="diagnosisOther"
-                          type="text"
-                          className={`form-input ${
-                            isFieldInvalid('diagnosisOther') && !hasDiagnosis
-                              ? styles.fieldError
-                              : ''
-                          }`}
-                          placeholder="Anything not listed above"
-                          value={formData.diagnosisOther}
-                          onChange={handleChange}
-                        />
+                        {/* The escort lands on this heading block, so the scroll
+                            stops at the top of the checklist instead of centring
+                            on a 20-row list, with the message in view; the whole
+                            answer area below (every group plus the Other box) is
+                            outlined as one field. The message keeps its space
+                            while this step shows validation, so checking the
+                            first box does not pull the list up under the
+                            user's finger. */}
+                        <div id={fieldId('diagnoses')}>
+                          <label className="form-label">
+                            {QUESTION_LABEL.diagnoses} *
+                          </label>
+                          <p className={styles.checkboxHint}>
+                            Check everything that applies. If you are not sure of the
+                            exact name, use &ldquo;Other&rdquo; below.
+                          </p>
+                          <div className={showValidation ? styles.messageSlot : undefined}>
+                            <FieldError message={fieldMessage('diagnoses')} />
+                          </div>
+                        </div>
+                        <div
+                          id={DIAGNOSES_OPTIONS_ID}
+                          className={styles.checkboxGroup}
+                          style={optionsFrameStyle(isFieldInvalid('diagnoses'))}
+                        >
+                          {DIAGNOSIS_GROUPS.map((group) => (
+                            <fieldset key={group.key} className={styles.checkboxGroup}>
+                              <legend className={styles.checkboxLegend}>{group.title}</legend>
+                              {group.options.map((opt) => (
+                                <label key={opt.code} className={styles.checkboxRow}>
+                                  <input
+                                    type="checkbox"
+                                    checked={formData.diagnoses.includes(opt.code)}
+                                    onChange={() => toggleMulti('diagnoses', opt.code)}
+                                  />
+                                  <span>{opt.label}</span>
+                                </label>
+                              ))}
+                            </fieldset>
+                          ))}
+                          <label htmlFor="diagnosisOther" className={styles.checkboxLegend}>
+                            Other (please describe)
+                          </label>
+                          <input
+                            id="diagnosisOther"
+                            name="diagnosisOther"
+                            type="text"
+                            className="form-input"
+                            placeholder="Anything not listed above"
+                            value={formData.diagnosisOther}
+                            onChange={handleChange}
+                          />
+                        </div>
                       </div>
 
                       <div className="form-group">
-                        <label className="form-label">
-                          Which of these does your child need at home? *
-                        </label>
-                        <p className={styles.checkboxHint}>
-                          Check everything that applies.
-                        </p>
-                        <div className={styles.checkboxGroup}>
+                        {/* Same shape as the diagnosis question: the escort
+                            lands on the heading block (question, hint and
+                            message), and the outlined list sits below it. */}
+                        <div id={fieldId('equipment')}>
+                          <label className="form-label">
+                            {QUESTION_LABEL.equipment} *
+                          </label>
+                          <p className={styles.checkboxHint}>
+                            Check everything that applies.
+                          </p>
+                          <div className={showValidation ? styles.messageSlot : undefined}>
+                            <FieldError message={fieldMessage('equipment')} />
+                          </div>
+                        </div>
+                        <div
+                          id={EQUIPMENT_OPTIONS_ID}
+                          className={styles.checkboxGroup}
+                          style={optionsFrameStyle(isFieldInvalid('equipment'))}
+                        >
                           {EQUIPMENT_OPTIONS.map((opt) => (
                             <label key={opt.code} className={styles.checkboxRow}>
                               <input
@@ -1141,10 +1571,9 @@ export default function ReferralPage() {
                         </div>
                       </div>
 
-                      <div className="form-group">
+                      <div className="form-group" id={fieldId('behaviorRisk')}>
                         <label htmlFor="behaviorRisk" className="form-label">
-                          Does your child have behaviors that put them or others at
-                          risk, or that stop daily activities? *
+                          {QUESTION_LABEL.behaviorRisk} *
                         </label>
                         <p className={styles.checkboxHint}>
                           For example, aggression, self-injury, or running away.
@@ -1158,13 +1587,14 @@ export default function ReferralPage() {
                           value={formData.behaviorRisk}
                           onChange={handleChange}
                         >
-                          <option value="">Please select</option>
+                          <option value="">Please Select</option>
                           {BEHAVIOR_RISK_OPTIONS.map((opt) => (
                             <option key={opt.code} value={opt.code}>
                               {opt.label}
                             </option>
                           ))}
                         </select>
+                        <FieldError message={fieldMessage('behaviorRisk')} />
                       </div>
 
                       <div className="form-group">
@@ -1174,7 +1604,7 @@ export default function ReferralPage() {
                         <p className={styles.checkboxHint}>
                           Optional, but it helps us understand what is already in place.
                         </p>
-                        <div className={styles.checkboxGroup}>
+                        <div className={styles.checkboxGroup} style={OPTIONS_FRAME_STYLE}>
                           {CURRENT_SERVICE_OPTIONS.map((opt) => (
                             <label key={opt.code} className={styles.checkboxRow}>
                               <input
@@ -1201,10 +1631,10 @@ export default function ReferralPage() {
                     loved-one/client copy elsewhere, and nobody is ever asked
                     to be their own paid caregiver. */}
                 <div className={styles.sectionDivider} />
-                <h3 className={styles.subSectionTitle}>One more question</h3>
+                <h3 className={styles.subSectionTitle}>One More Question</h3>
 
                 <div className={styles.formGridSingle}>
-                  <div className="form-group">
+                  <div className="form-group" id={fieldId('seekingPaidCaregiver')}>
                     <label htmlFor="seekingPaidCaregiver" className="form-label">
                       {paidCaregiverQuestion} *
                     </label>
@@ -1236,8 +1666,8 @@ export default function ReferralPage() {
                             not available for autism, behavioral, or developmental
                             needs
                           </strong>
-                          . If you are unsure, choose No. It will not affect your
-                          application.
+                          . If you choose No, a nurse or aide from our agency, not a
+                          family member, provides your care.
                         </>
                       ) : sourceView === 'family' ? (
                         <>
@@ -1250,8 +1680,8 @@ export default function ReferralPage() {
                             not available for autism, behavioral, or developmental
                             needs
                           </strong>
-                          . If you are unsure, choose No. It will not affect your
-                          child&apos;s application.
+                          . If you choose No, a nurse or aide from our agency, not
+                          you, provides your child&apos;s care.
                         </>
                       ) : (
                         <>
@@ -1264,8 +1694,8 @@ export default function ReferralPage() {
                             not available for autism, behavioral, or developmental
                             needs
                           </strong>
-                          . If unsure, choose No. It will not affect the
-                          application.
+                          . If No, a nurse or aide from our agency, not a family
+                          member, provides the child&apos;s care.
                         </>
                       )}
                     </p>
@@ -1277,15 +1707,16 @@ export default function ReferralPage() {
                       onChange={handleChange}
                       required
                     >
-                      <option value="">Select an answer</option>
+                      <option value="">Select an Answer</option>
                       <option value="no">No</option>
                       <option value="yes">Yes</option>
                     </select>
+                    <FieldError message={fieldMessage('seekingPaidCaregiver')} />
                   </div>
 
                   {formData.seekingPaidCaregiver === 'yes' && (
                     <>
-                      <div className="form-group">
+                      <div className="form-group" id={fieldId('careNeeds')}>
                         <label htmlFor="careNeeds" className="form-label">
                           {careNeedsLabel} *
                         </label>
@@ -1297,84 +1728,291 @@ export default function ReferralPage() {
                           onChange={handleChange}
                           required
                         >
-                          <option value="">Please select</option>
+                          <option value="">Please Select</option>
                           <option value="personal">
-                            Hands-on personal care (feeding, bathing, dressing, getting around)
+                            Hands-On Personal Care (Feeding, Bathing, Dressing, Getting Around)
                           </option>
                           <option value="nursing">
-                            Skilled medical or nursing care (feeding tube, trach, ventilator, oxygen, seizures)
+                            Skilled Medical or Nursing Care (Feeding Tube, Trach, Ventilator, Oxygen, Seizures)
                           </option>
                           <option value="behavioral">
-                            Behavioral support or autism-related needs
+                            Behavioral Support or Autism-Related Needs
                           </option>
-                          <option value="unsure">Not sure</option>
+                          <option value="unsure">Not Sure</option>
                         </select>
+                        <FieldError message={fieldMessage('careNeeds')} />
                       </div>
 
                       {isPaidBehavioralBlock && (
-                        <div className={styles.countyNotice}>
+                        <div id={BLOCK_PANEL_ID.behavioral} className={blockPanelClass} tabIndex={-1}>
                           <AlertCircle size={16} />
-                          <p>
-                            {blockedByDiagnosis &&
-                              "Based on what you described, your child's needs look developmental or behavioral. "}
-                            A parent generally cannot be paid to provide behavioral
-                            or autism care. Under GAPP&apos;s Family Caregiver Option,
-                            a parent can be paid for personal care only (help with
-                            feeding, bathing, dressing, and getting around), not for
-                            skilled nursing or behavioral support. For autism, the
-                            program is Georgia Medicaid&apos;s Autism Spectrum Disorder
-                            (ASD) Program, which covers ABA therapy. To get started,
-                            contact your child&apos;s Medicaid care management
-                            organization (CMO) or visit{' '}
-                            <a
-                              href="https://medicaid.georgia.gov/programs/all-programs/autism-spectrum-disorder"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style={{ color: 'inherit', fontWeight: 600 }}
-                            >
-                              medicaid.georgia.gov/autism-spectrum-disorder
-                            </a>
-                            , or call Georgia Medicaid (DCH) at{' '}
-                            <a
-                              href="tel:+14046564507"
-                              style={{ color: 'inherit', fontWeight: 600 }}
-                            >
-                              (404) 656-4507
-                            </a>
-                            . For other developmental needs, look into the NOW and COMP
-                            waivers. If your child also needs hands-on personal care
-                            or nursing at home, please call us and we will help.
-                          </p>
+                          <div className={styles.blockBody}>
+                            {behavioralTriggers.length > 0 ? (
+                              <p>
+                                <strong>What led to this:</strong>{' '}
+                                {behavioralTriggers.map((t) => BEHAVIORAL_TRIGGER_TEXT[t]).join(' ')}
+                              </p>
+                            ) : (
+                              <p>
+                                Based on what you described, your child&apos;s needs look
+                                developmental or behavioral.
+                              </p>
+                            )}
+                            <p>
+                              A parent generally cannot be paid to provide behavioral
+                              or autism care. Under GAPP&apos;s Family Caregiver Option,
+                              a parent can be paid for personal care only (help with
+                              feeding, bathing, dressing, and getting around), not for
+                              skilled nursing or behavioral support. For autism, the
+                              program is Georgia Medicaid&apos;s Autism Spectrum Disorder
+                              (ASD) Program, which covers ABA therapy. To get started,
+                              contact your child&apos;s Medicaid care management
+                              organization (CMO) or visit{' '}
+                              <a
+                                href="https://medicaid.georgia.gov/programs/all-programs/autism-spectrum-disorder"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{ color: 'inherit', fontWeight: 600 }}
+                              >
+                                medicaid.georgia.gov/autism-spectrum-disorder
+                              </a>
+                              , or call Georgia Medicaid (DCH) at{' '}
+                              <a
+                                href="tel:+14046564507"
+                                style={{ color: 'inherit', fontWeight: 600 }}
+                              >
+                                (404) 656-4507
+                              </a>
+                              . For other developmental needs, look into the NOW and COMP
+                              waivers. If your child also needs hands-on personal care
+                              or nursing at home, please call us and we will help.
+                            </p>
+                            <div className={styles.panelActions}>
+                              <EscortLink to={fieldId('seekingPaidCaregiver')} className={styles.panelAction}>
+                                Change the Paid Caregiver Answer
+                              </EscortLink>
+                              {behavioralTriggerLinks(behavioralTriggers).map((l) => (
+                                <EscortLink key={l.anchor} to={l.anchor} className={styles.panelAction}>
+                                  {l.label}
+                                </EscortLink>
+                              ))}
+                            </div>
+                          </div>
                         </div>
                       )}
 
+                      {/* Mixed picture + paid: make the family say which
+                          condition the hands-on care is for. That answer
+                          decides whether a parent can be paid. */}
                       {isPaidMixedDx && (
+                        <>
+                          <div className={styles.countyNotice}>
+                            <AlertCircle size={16} />
+                            <p>
+                              <strong>
+                                You will not be paid for care related to autism, ADHD,
+                                or developmental delay.
+                              </strong>{' '}
+                              You described autism, ADHD, or a developmental diagnosis
+                              along with a medical condition. A parent can be paid only
+                              for hands-on personal care (feeding, bathing, dressing,
+                              toileting) that {careSubject === 'your child' ? 'your child needs' : 'is needed'}{' '}
+                              because of the medical or physical condition. No GAPP
+                              service pays a parent for autism, behavioral, or
+                              developmental support.
+                            </p>
+                          </div>
+                          <div className="form-group" id={fieldId('paidCareBasis')}>
+                            <label htmlFor="paidCareBasis" className="form-label">
+                              {paidCareBasisLabel}: *
+                            </label>
+                            <select
+                              id="paidCareBasis"
+                              name="paidCareBasis"
+                              className={`form-select ${isFieldInvalid('paidCareBasis') ? styles.fieldError : ''}`}
+                              value={formData.paidCareBasis}
+                              onChange={handleChange}
+                              required
+                            >
+                              <option value="">Please Select</option>
+                              {PAID_CARE_BASIS_OPTIONS.map((opt) => (
+                                <option key={opt.code} value={opt.code}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                            <FieldError message={fieldMessage('paidCareBasis')} />
+                          </div>
+                          {isPaidMixedBlock && (
+                            <div id={BLOCK_PANEL_ID.mixed} className={blockPanelClass} tabIndex={-1}>
+                              <AlertCircle size={16} />
+                              <div className={styles.blockBody}>
+                                <p>
+                                  <strong>
+                                    We cannot accept a paid-caregiver request for this
+                                    care.
+                                  </strong>{' '}
+                                  You told us the hands-on care is mainly because of the
+                                  autism, ADHD, or developmental diagnosis. Medicaid will
+                                  not approve paid family hours for that, and neither we
+                                  nor our partner agencies can change it, so please do not
+                                  submit this as a paid-caregiver request. {careSubject === 'your child' ? 'Your child' : 'The child'} may
+                                  still qualify for GAPP nursing or personal care for the
+                                  medical condition. To send this referral, change the
+                                  paid caregiver answer above to <strong>No</strong>. For
+                                  autism support, the program is Georgia Medicaid&apos;s{' '}
+                                  <a
+                                    href="https://medicaid.georgia.gov/programs/all-programs/autism-spectrum-disorder"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{ color: 'inherit', fontWeight: 600 }}
+                                  >
+                                    Autism Spectrum Disorder (ASD) Program
+                                  </a>{' '}
+                                  (ABA therapy), or call Georgia Medicaid (DCH) at{' '}
+                                  <a
+                                    href="tel:+14046564507"
+                                    style={{ color: 'inherit', fontWeight: 600 }}
+                                  >
+                                    (404) 656-4507
+                                  </a>
+                                  .
+                                </p>
+                                <div className={styles.panelActions}>
+                                  <EscortLink to={fieldId('seekingPaidCaregiver')} className={styles.panelAction}>
+                                    Change the Paid Caregiver Answer
+                                  </EscortLink>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
+
+                      {/* Paid + young child + everyday care only = dead end.
+                          Block, and say plainly why, so the family does not
+                          submit something nobody can act on. */}
+                      {isPaidYoungChildBlock && (
+                        <div id={BLOCK_PANEL_ID.youngChild} className={blockPanelClass} tabIndex={-1}>
+                          <AlertCircle size={16} />
+                          <div className={styles.blockBody}>
+                            <p>
+                              <strong>We cannot accept this referral as answered.</strong>{' '}
+                              You are asking to be paid to care for an infant or young
+                              child, and the only needs listed are everyday care. GAPP
+                              pays a parent only for personal care that goes beyond what
+                              a child this age ordinarily needs. Feeding, bathing,
+                              dressing, and diapering an infant or young child is
+                              considered typical parenting, so Medicaid will not approve
+                              paid family hours for it, and there is no other GAPP
+                              service that covers these needs. Neither we nor our partner
+                              agencies can act on this referral, so please do not submit
+                              it. If your child has a feeding tube, tracheostomy,
+                              ventilator, oxygen, or another skilled medical need that
+                              you did not check above, add it to that list and we will
+                              help. Otherwise, please talk with your child&apos;s
+                              pediatrician or Medicaid CMO about other supports.
+                            </p>
+                            <div className={styles.panelActions}>
+                              <EscortLink to={fieldId('equipment')} className={styles.panelAction}>
+                                Add Skilled Medical Needs
+                              </EscortLink>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Paid + young child who cleared the stop (skilled or
+                          mobility needs): set expectations, do not block. */}
+                      {isPaidYoungChildCleared && (
                         <div className={styles.countyNotice}>
                           <AlertCircle size={16} />
                           <p>
-                            You described a physical or medical condition along with a
-                            developmental or behavioral one. A parent can be paid only
-                            for hands-on care related to the physical or medical
-                            condition, not for autism or behavioral support. We will
-                            confirm what your child qualifies for when we talk.
+                            A note about being paid to care for a young child: a parent
+                            can be paid for personal care only, and at this age only for
+                            care that goes beyond what a child of the same age would
+                            ordinarily need. Because of the medical or mobility needs
+                            you listed, we will review this with you, and any paid hours
+                            are set by the nursing assessment.
                           </p>
                         </div>
                       )}
 
-                      {isPaidYoungChild && !isPaidBehavioralBlock && (
+                      {/* Paid + foster parent = dead end (manual §604.3, §907). */}
+                      {isPaidFosterBlock && (
+                        <div id={BLOCK_PANEL_ID.foster} className={blockPanelClass} tabIndex={-1}>
+                          <AlertCircle size={16} />
+                          <div className={styles.blockBody}>
+                            <p>
+                              <strong>Foster parents cannot be paid as the child&apos;s caregiver.</strong>{' '}
+                              You told us you are the child&apos;s foster parent.
+                              Georgia Medicaid&apos;s Family Caregiver Option does not allow
+                              foster parents to be paid for the child&apos;s care, and neither
+                              we nor our partner agencies can change that. The child may still
+                              qualify for GAPP nursing or personal care provided by our staff.
+                              To send this referral, change the paid caregiver answer above
+                              to <strong>No</strong>.
+                            </p>
+                            <div className={styles.panelActions}>
+                              <EscortLink to={fieldId('seekingPaidCaregiver')} className={styles.panelAction}>
+                                Change the Paid Caregiver Answer
+                              </EscortLink>
+                              <EscortLink to={fieldId('relationship')} className={styles.panelAction}>
+                                Review Your Relationship Answer
+                              </EscortLink>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Grandparent/relative, or a parent of a member 18+:
+                          asked, stored, flagged for staff; not a refusal. */}
+                      {asksGuardianship && !isPaidFosterBlock && (
+                        <>
+                          <div className={styles.countyNotice}>
+                            <AlertCircle size={16} />
+                            <p>
+                              Medicaid pays only a family member who is legally
+                              responsible for the {memberWord} and lives with them.{' '}
+                              {formData.relationship === 'parent'
+                                ? 'Once a child turns 18, a parent is legally responsible only with a court order of guardianship.'
+                                : 'A grandparent or other relative is legally responsible only with a court order of guardianship.'}
+                              {formData.hasGuardianship === 'no' &&
+                                ` Without guardianship, you may not qualify to be paid. We will confirm with Georgia Medicaid before anything is set up. The ${memberWord}'s own GAPP care does not depend on this.`}
+                            </p>
+                          </div>
+                          <div className="form-group" id={fieldId('hasGuardianship')}>
+                            <label htmlFor="hasGuardianship" className="form-label">
+                              {guardianshipLabel} *
+                            </label>
+                            <select
+                              id="hasGuardianship"
+                              name="hasGuardianship"
+                              className={`form-select ${isFieldInvalid('hasGuardianship') ? styles.fieldError : ''}`}
+                              value={formData.hasGuardianship}
+                              onChange={handleChange}
+                              required
+                            >
+                              <option value="">Select an Answer</option>
+                              <option value="yes">Yes</option>
+                              <option value="no">No</option>
+                            </select>
+                            <FieldError message={fieldMessage('hasGuardianship')} />
+                          </div>
+                        </>
+                      )}
+
+                      {/* Paid + behaviors that need help to manage. Not a block. */}
+                      {showHighBehaviorPaid && !isBlocked && (
                         <div className={styles.countyNotice}>
                           <AlertCircle size={16} />
                           <p>
-                            A note about being paid to care for a young child: Medicaid
-                            approves paid family caregiver hours only for care that goes
-                            beyond what a child of the same age would ordinarily need.
-                            Everyday help for infants and young children, like feeding,
-                            bathing, dressing, and diapering, is considered typical
-                            parenting, so paid hours are rarely approved at this age.
-                            Approval is more likely when a child has significant medical
-                            needs, such as a feeding tube, trach, or ventilator. You are
-                            welcome to apply either way. Your child may still qualify
-                            for other GAPP services based on their medical needs.
+                            <strong>You will not be paid for managing behaviors.</strong>{' '}
+                            You told us about behaviors that happen often and need help
+                            to manage. A parent can be paid only for hands-on personal
+                            care (feeding, bathing, dressing, toileting) tied to a medical
+                            condition. No GAPP service pays a parent for behavior
+                            management or supervision.
                           </p>
                         </div>
                       )}
@@ -1419,7 +2057,7 @@ export default function ReferralPage() {
                           tells the same family. */}
                       {formData.programInterest === 'gapp' &&
                         inferred.service === 'pss' &&
-                        !isPaidBehavioralBlock &&
+                        !isBlocked &&
                         !isPaidMixedDx && (
                           <div className={styles.countyNotice}>
                             <AlertCircle size={16} />
@@ -1453,6 +2091,78 @@ export default function ReferralPage() {
                     </>
                   )}
 
+                  {/* Agency staff in the home (GAPP). Every paid-caregiver
+                      stop keys on the paid answer being Yes; this makes "No"
+                      mean what it says. Since the Q4 2026 manual every GAPP
+                      member must require skilled nursing, so No is a dead end
+                      in every case. */}
+                  {showGappClinical && (
+                    <>
+                      <div className="form-group" id={fieldId('wantsAgencyStaff')}>
+                        <label htmlFor="wantsAgencyStaff" className="form-label">
+                          Every child in GAPP must have a skilled nurse.{' '}
+                          {QUESTION_LABEL.wantsAgencyStaff} *
+                        </label>
+                        <p style={{ margin: '0 0 8px', fontSize: 13, color: '#5c6b7a', lineHeight: 1.5 }}>
+                          Georgia Medicaid requires every child in GAPP to have
+                          medically necessary skilled nursing, and GAPP care is
+                          provided in the home by a nurse or aide who works for an
+                          agency like ours. This applies even when a parent is the
+                          paid caregiver: a parent can be paid only for hands-on
+                          personal care, and a nurse must still be involved.
+                          Answering No ends the application.
+                        </p>
+                        <select
+                          id="wantsAgencyStaff"
+                          name="wantsAgencyStaff"
+                          className={`form-select ${isFieldInvalid('wantsAgencyStaff') ? styles.fieldError : ''}`}
+                          value={formData.wantsAgencyStaff}
+                          onChange={handleChange}
+                          required
+                        >
+                          <option value="">Select an Answer</option>
+                          <option value="yes">Yes</option>
+                          <option value="no">No</option>
+                        </select>
+                        <FieldError message={fieldMessage('wantsAgencyStaff')} />
+                      </div>
+
+                      {isStaffBlock && (
+                        <div id={BLOCK_PANEL_ID.staff} className={blockPanelClass} tabIndex={-1}>
+                          <AlertCircle size={16} />
+                          <div className={styles.blockBody}>
+                            <p>
+                              <strong>We cannot accept this referral as answered.</strong>{' '}
+                              You told us you will not accept a nurse or aide from our
+                              agency in the home. Georgia Medicaid&apos;s GAPP policy
+                              requires skilled nursing for every child in the program,
+                              so without a nurse there is no GAPP service we or any
+                              other agency can set up, whether or not a parent is paid.
+                              The policy reads: &ldquo;<em>{GAPP_NURSING_REQUIRED_QUOTE}</em>&rdquo;
+                              ({GAPP_NURSING_REQUIRED_CITATION}). Please do not submit
+                              this referral. If you will accept a nurse or aide to help
+                              with the care, change this answer to <strong>Yes</strong>.
+                            </p>
+                            <div className={styles.panelActions}>
+                              <EscortLink to={fieldId('wantsAgencyStaff')} className={styles.panelAction}>
+                                Change the Nurse or Aide Answer
+                              </EscortLink>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {highAcuityPromptOpen && (
+                    <HighAcuityNursePrompt
+                      needs={highAcuityNeeds(formData.equipment)}
+                      subject={careSubject}
+                      onAccept={() => closeHighAcuityPrompt(true)}
+                      onKeep={() => closeHighAcuityPrompt(false)}
+                    />
+                  )}
+
                   {/* CMO disclosure. Per the January 2026 GAPP Provider
                       Teleconference: "if a member wants to apply for GAPP
                       services, that they will be removed from their CMO if they
@@ -1484,15 +2194,23 @@ export default function ReferralPage() {
               </div>
             )}
 
-            {/* Validation Banner */}
-            {showValidation && getMissingFields().length > 0 && (
+            {/* Validation banner, beside the button where the user is when a
+                Next or Submit is refused. Each item is worded exactly like its
+                question on screen and takes the user to it, so the list of
+                what else is missing stays reachable after an escort to a stop
+                panel or to the first field. */}
+            {showValidation && missingKeys.length > 0 && (
               <div className={styles.validationBanner}>
                 <AlertCircle size={18} />
                 <div>
                   <strong>Please complete the following required fields:</strong>
                   <ul>
-                    {getMissingFields().map((field) => (
-                      <li key={field}>{field}</li>
+                    {missingKeys.map((k) => (
+                      <li key={k}>
+                        <EscortLink to={fieldId(k)} className={styles.bannerLink}>
+                          {questionFor(k)}
+                        </EscortLink>
+                      </li>
                     ))}
                   </ul>
                 </div>
@@ -1502,7 +2220,7 @@ export default function ReferralPage() {
             {/* Form Navigation */}
             <div className={styles.formNav}>
               {step > 1 && (
-                <button type="button" className="btn btn-secondary" onClick={prevStep}>
+                <button type="button" className="btn btn-secondary" onClick={prevStep} data-enter-skip>
                   Previous Step
                 </button>
               )}
@@ -1525,12 +2243,27 @@ export default function ReferralPage() {
                   )}
                   <button
                     type="button"
-                    className={`btn btn-gold btn-lg ${isStepValid() && !isPaidBehavioralBlock ? styles.btnReady : styles.btnFaded}`}
+                    className={`btn btn-gold btn-lg ${isStepValid() && !isBlocked ? styles.btnReady : styles.btnFaded}`}
                     onClick={handleAttemptSubmit}
-                    disabled={isSubmitting || isPaidBehavioralBlock}
+                    disabled={isSubmitting}
                   >
                     <Send size={20} /> {isSubmitting ? 'Submitting...' : 'Submit Referral'}
                   </button>
+                  {isPaidBehavioralBlock && (
+                    <FieldError message="This referral cannot be submitted as answered: under GAPP a parent cannot be paid for behavioral or autism care. See the note above for the ASD Program, or change the paid caregiver answer if it was a mistake." />
+                  )}
+                  {isPaidYoungChildBlock && (
+                    <FieldError message="This referral cannot be submitted as answered: GAPP does not pay a parent for everyday care of an infant or young child, and no other GAPP service covers it. See the note above, or add the skilled medical needs your child has if they were left out." />
+                  )}
+                  {isPaidMixedBlock && (
+                    <FieldError message="This referral cannot be submitted as answered: a parent cannot be paid for care related to autism, ADHD, or developmental delay. Change the paid caregiver answer to No to send the referral for the medical condition." />
+                  )}
+                  {isStaffBlock && (
+                    <FieldError message="This referral cannot be submitted as answered: GAPP requires skilled nursing for every child, so without a nurse or aide from an agency in the home there is no GAPP service to set up. See the note above, or change that answer to Yes." />
+                  )}
+                  {isPaidFosterBlock && (
+                    <FieldError message="This referral cannot be submitted as answered: foster parents cannot be paid under the Family Caregiver Option. Change the paid caregiver answer to No to send the referral for the child's care." />
+                  )}
                 </div>
               )}
             </div>

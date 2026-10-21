@@ -45,14 +45,14 @@ export function assessReferralFit(
   if (countyOk === false) {
     return {
       level: 'none',
-      label: 'Not a fit',
+      label: 'Not a Fit',
       detail: `${county} is outside your service area`,
     };
   }
   if (serviceOk === false) {
     return {
       level: 'none',
-      label: 'Not a fit',
+      label: 'Not a Fit',
       detail: `You don't offer ${SERVICE_LABEL[service as GappServiceKey]}`,
     };
   }
@@ -60,7 +60,7 @@ export function assessReferralFit(
   if (countyOk === true && serviceOk === true) {
     return {
       level: 'good',
-      label: 'Good fit',
+      label: 'Good Fit',
       detail: `Covers ${county} · ${SERVICE_LABEL[service as GappServiceKey]}`,
     };
   }
@@ -68,7 +68,7 @@ export function assessReferralFit(
   // One side confirmed, the other unknown — plausible, needs a human look.
   return {
     level: 'partial',
-    label: 'Possible fit',
+    label: 'Possible Fit',
     detail:
       countyOk === true
         ? `In your service area (${county}); care need not specified`

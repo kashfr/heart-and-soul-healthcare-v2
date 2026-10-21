@@ -27,6 +27,10 @@ steps:
       '--build-arg', 'NEXT_PUBLIC_FIREBASE_PROJECT_ID=${_NEXT_PUBLIC_FIREBASE_PROJECT_ID}',
       '--build-arg', 'NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${_NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}',
       '--build-arg', 'NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=${_NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}',
+      # What is deployed, served by /api/version. $COMMIT_SHA and $BUILD_ID
+      # are Cloud Build's own substitutions (empty on a manual build).
+      '--build-arg', 'APP_COMMIT=${COMMIT_SHA}',
+      '--build-arg', 'APP_BUILD_ID=${BUILD_ID}',
       '-t', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:${_TAG}',
       '-t', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest',
       '.',

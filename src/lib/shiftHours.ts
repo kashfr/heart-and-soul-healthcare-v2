@@ -1,0 +1,773 @@
+// Shift hours math: splitting a documented shift into per-calendar-day hours,
+// summing hours inside a date range, and comparing usage against a client's
+// authorized hours (the GAPP "Letter of Notification").
+//
+// Why per-day: billing is by date of service, so a 19:00 to 07:00 shift is 5
+// hours on the first day and 7 on the next. A month's usage must count the
+// 7 hours that spilled into it from a shift whose date of service was the
+// last day of the prior month. Every consumer (submissions list totals, the
+// client Hours tab, the roster badges) goes through splitShiftByDay so the
+// numbers agree everywhere.
+//
+// Firebase-free and clock-free on purpose (today is always passed in) so it
+// runs on the roster, in a route, and under test with deterministic results.
+
+export interface ShiftLike {
+  /** Date of service, 'YYYY-MM-DD' ('' when unparseable). */
+  dateISO: string;
+  /** 'HH:MM' shift start ('' when absent). */
+  shiftStart: string;
+  /** 'YYYY-MM-DD' shift end date ('' on older notes). */
+  shiftEndDate: string;
+  /** 'HH:MM' shift end time ('' when absent). */
+  shiftEnd: string;
+  /** q9_totalHours as typed/computed on the note (free-text numeric). */
+  totalHours: string;
+}
+
+export interface DaySegment {
+  dateISO: string;
+  hours: number;
+}
+
+/** Longest shift the splitter trusts (a 32h weekend stretch is real; a
+ *  week-long one is a typo). Beyond this we fall back to the note's total. */
+const MAX_SHIFT_DAYS = 7;
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function parseHM(v: string): number | null {
+  const m = (v || '').trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
+/** Day-number arithmetic on ISO dates via UTC so DST never shifts a day. */
+function isoToDayNum(iso: string): number {
+  const [y, m, d] = iso.split('-').map(Number);
+  return Math.round(Date.UTC(y, m - 1, d) / 86400000);
+}
+
+function dayNumToISO(n: number): string {
+  const d = new Date(n * 86400000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+/** Shift an ISO date by n days (negative allowed). */
+export function addDaysISO(iso: string, n: number): string {
+  return dayNumToISO(isoToDayNum(iso) + n);
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/** The note's total as a number, or 0 when blank/garbage/absurd. Mirrors the
+ *  client dashboard's guard (h > 0) but allows multi-day stretches. */
+export function parseTotalHours(v: string): number {
+  const h = parseFloat(v);
+  if (!Number.isFinite(h) || h <= 0 || h > MAX_SHIFT_DAYS * 24) return 0;
+  return round2(h);
+}
+
+/**
+ * Split one shift into the hours that fall on each calendar day, cutting at
+ * midnight. Uses the start/end date-times when they are usable; otherwise
+ * (older notes with no end date and an end time earlier than the start roll
+ * to the next day, as the form did) and, when nothing parses, the whole
+ * total lands on the date of service so no hours are lost.
+ */
+export function splitShiftByDay(s: ShiftLike): DaySegment[] {
+  const dateISO = ISO_DATE.test(s.dateISO || '') ? s.dateISO : '';
+  const total = parseTotalHours(s.totalHours);
+  if (!dateISO) return [];
+
+  const startMin = parseHM(s.shiftStart);
+  const endMin = parseHM(s.shiftEnd);
+  if (startMin == null || endMin == null) {
+    return total > 0 ? [{ dateISO, hours: total }] : [];
+  }
+
+  const startDay = isoToDayNum(dateISO);
+  let endDay: number;
+  if (ISO_DATE.test(s.shiftEndDate || '')) {
+    endDay = isoToDayNum(s.shiftEndDate);
+  } else {
+    // Legacy note: no end date. Same-day unless the end time is not after
+    // the start, which the form treated as an overnight roll.
+    endDay = endMin > startMin ? startDay : startDay + 1;
+  }
+
+  const startAbs = startDay * 1440 + startMin;
+  const endAbs = endDay * 1440 + endMin;
+  const spanDays = endDay - startDay;
+  if (endAbs <= startAbs || spanDays > MAX_SHIFT_DAYS) {
+    // End-before-start or an implausible span: trust the note's total instead.
+    return total > 0 ? [{ dateISO, hours: total }] : [];
+  }
+
+  const out: DaySegment[] = [];
+  for (let day = startDay; day <= endDay; day += 1) {
+    const dayStart = day * 1440;
+    const dayEnd = dayStart + 1440;
+    const from = Math.max(startAbs, dayStart);
+    const to = Math.min(endAbs, dayEnd);
+    if (to <= from) continue;
+    out.push({ dateISO: dayNumToISO(day), hours: round2((to - from) / 60) });
+  }
+  return out;
+}
+
+/** Sum of a shift's hours that fall inside [fromISO, toISO] (inclusive).
+ *  Either bound may be '' for open-ended. */
+export function hoursInRange(segments: DaySegment[], fromISO: string, toISO: string): number {
+  let sum = 0;
+  for (const seg of segments) {
+    if (fromISO && seg.dateISO < fromISO) continue;
+    if (toISO && seg.dateISO > toISO) continue;
+    sum += seg.hours;
+  }
+  return round2(sum);
+}
+
+/** True when any of the shift's days falls inside the range. */
+export function touchesRange(segments: DaySegment[], fromISO: string, toISO: string): boolean {
+  return segments.some((seg) => (!fromISO || seg.dateISO >= fromISO) && (!toISO || seg.dateISO <= toISO));
+}
+
+/** Sum of all segments. */
+export function totalOfSegments(segments: DaySegment[]): number {
+  return round2(segments.reduce((a, s) => a + s.hours, 0));
+}
+
+/**
+ * Absolute [start, end) minutes of a shift, or null when the window can't be
+ * resolved (missing times, end before start, implausible span). Same rules as
+ * splitShiftByDay so a shift that split cleanly always has an interval.
+ */
+export function shiftInterval(s: ShiftLike): { start: number; end: number } | null {
+  if (!ISO_DATE.test(s.dateISO || '')) return null;
+  const startMin = parseHM(s.shiftStart);
+  const endMin = parseHM(s.shiftEnd);
+  if (startMin == null || endMin == null) return null;
+  const startDay = isoToDayNum(s.dateISO);
+  const endDay = ISO_DATE.test(s.shiftEndDate || '')
+    ? isoToDayNum(s.shiftEndDate)
+    : endMin > startMin ? startDay : startDay + 1;
+  const start = startDay * 1440 + startMin;
+  const end = endDay * 1440 + endMin;
+  if (end <= start || endDay - startDay > MAX_SHIFT_DAYS) return null;
+  return { start, end };
+}
+
+export interface OverlapHit {
+  /** The other shift's id. */
+  otherId: string;
+  /** Minutes the two windows share. */
+  minutes: number;
+}
+
+/**
+ * Pairs of shifts for ONE client whose clock windows intersect. Two nurses
+ * charting the same hour on the same client is either a real double-staffed
+ * hour or a data-entry error; either way it double-bills unless someone
+ * looks, so the worksheet points at it. Keyed by shift id; each entry lists
+ * every other shift it overlaps.
+ */
+export function findShiftOverlaps<T extends ShiftLike & { id: string }>(shifts: T[]): Map<string, OverlapHit[]> {
+  const out = new Map<string, OverlapHit[]>();
+  const withIv = shifts
+    .map((s) => ({ id: s.id, iv: shiftInterval(s) }))
+    .filter((x): x is { id: string; iv: { start: number; end: number } } => x.iv != null)
+    .sort((a, b) => a.iv.start - b.iv.start);
+  for (let i = 0; i < withIv.length; i += 1) {
+    for (let j = i + 1; j < withIv.length; j += 1) {
+      const a = withIv[i];
+      const b = withIv[j];
+      if (b.iv.start >= a.iv.end) break; // sorted by start: nothing later can overlap a
+      const minutes = Math.min(a.iv.end, b.iv.end) - b.iv.start;
+      if (minutes <= 0) continue;
+      (out.get(a.id) ?? out.set(a.id, []).get(a.id)!).push({ otherId: b.id, minutes });
+      (out.get(b.id) ?? out.set(b.id, []).get(b.id)!).push({ otherId: a.id, minutes });
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Month helpers ('YYYY-MM').
+// ---------------------------------------------------------------------------
+
+export function monthKeyOf(iso: string): string {
+  return iso.slice(0, 7);
+}
+
+export function daysInMonth(ym: string): number {
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+
+export function monthStartISO(ym: string): string {
+  return `${ym}-01`;
+}
+
+export function monthEndISO(ym: string): string {
+  return `${ym}-${String(daysInMonth(ym)).padStart(2, '0')}`;
+}
+
+/** 'September 2026' for a 'YYYY-MM' key. */
+export function monthLabel(ym: string): string {
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+/** Every 'YYYY-MM' from the month of `fromISO` through the month of `toISO`. */
+export function monthsBetween(fromISO: string, toISO: string): string[] {
+  const out: string[] = [];
+  let [y, m] = fromISO.slice(0, 7).split('-').map(Number);
+  const end = toISO.slice(0, 7);
+  for (let i = 0; i < 120; i += 1) {
+    const key = `${y}-${String(m).padStart(2, '0')}`;
+    out.push(key);
+    if (key >= end) break;
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Authorized hours (the GAPP Letter of Notification).
+//
+// The letter states a weekly rate ("21 hours/week of skilled nursing until
+// 9/30/2026") AND a per-month block table (Jul 93, Aug 93, Sep 90). Parents
+// spend the MONTHLY block however they like, so the month number is the one
+// that matters. weekly x days-in-month / 7 reproduces the letter's full
+// months exactly (21 x 31 / 7 = 93; 21 x 30 / 7 = 90); partial months and
+// any other deviation are entered as overrides, month by month.
+// ---------------------------------------------------------------------------
+
+/**
+ * Which hours a line caps. Shift hours come from shift notes (LPN/HHA/CNA on
+ * the clock); RN oversight hours come from RN oversight visit notes (time in
+ * to time out). NOW/COMP authorizes both as separate Therap lines (NL1 vs
+ * NR1); GAPP authorizes shift hours only. The two are never added together.
+ */
+export type HoursBucket = 'shift' | 'oversight';
+
+/** How the authorization states its rate: GAPP letters say hours/week,
+ *  Therap lines say hours daily (LPN) or hours monthly (RN). */
+export type RateBasis = 'day' | 'week' | 'month';
+
+/** Medicaid bills nursing in 15-minute units, so an hour is four units.
+ *  Therap's "Total Units" (5,840 on a 4-hour-daily LPN line) is in these. */
+export const UNITS_PER_HOUR = 4;
+
+export interface HoursAuthorization {
+  id?: string;
+  patientId: string;
+  /** Prior-authorization number as printed on the letter / Therap line. */
+  paNumber: string;
+  /** 'skilled' | 'unskilled' nursing hours. */
+  kind: 'skilled' | 'unskilled';
+  /** Which hours this line caps. */
+  covers: HoursBucket;
+  /** Rate as printed: 21 per week (GAPP), 4 per day (NL1), 6 per month (NR1).
+   *  rateHours null when the letter only lists month blocks. */
+  rateBasis: RateBasis;
+  rateHours: number | null;
+  /** 'YYYY-MM-DD' effective window. */
+  from: string;
+  to: string;
+  /** Month block hours as printed, keyed 'YYYY-MM'. Wins over the rate default. */
+  monthOverrides: Record<string, number>;
+  /** Therap "Total Units" for the whole window (15-minute units), the real
+   *  ceiling claims are paid against. null when the payer states none (GAPP). */
+  totalUnits: number | null;
+  /** Therap service code, e.g. 'NL1' or 'T1003-U1'. Display only. */
+  serviceCode?: string;
+  note?: string;
+}
+
+/** How a quantity of nursing time is displayed. */
+export type QtyView = 'hours' | 'units' | 'dollars';
+
+/**
+ * Billable units for a block of hours: every started 15 minutes is a unit,
+ * so hours round UP to the next quarter hour and units are whole numbers
+ * (3.42 h -> 3.5 h -> 14 units). Applied per calendar day, which is how the
+ * claim is built. A hair of float noise (8.0000001 h) does not add a unit.
+ */
+export function hoursToUnits(hours: number): number {
+  if (!(hours > 0)) return 0;
+  return Math.ceil(Math.round(hours * UNITS_PER_HOUR * 1000) / 1000);
+}
+
+/** Hours rounded up to the quarter hour (the billable hours behind the units). */
+export function billableHours(hours: number): number {
+  return hoursToUnits(hours) / UNITS_PER_HOUR;
+}
+
+/** Dollars for `hours` at a per-unit rate (billable units x rate); null when no rate is known. */
+export function hoursToDollars(hours: number, ratePerUnit: number | null | undefined): number | null {
+  if (ratePerUnit == null || !Number.isFinite(ratePerUnit)) return null;
+  return Math.round(hoursToUnits(hours) * ratePerUnit * 100) / 100;
+}
+
+export function fmtDollars(n: number): string {
+  return n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+}
+
+/** Format a quantity of hours in the chosen view ('—' when dollars are unknown). */
+export function fmtQty(hours: number, view: QtyView, ratePerUnit?: number | null): string {
+  if (view === 'units') return fmtUnits(hoursToUnits(hours));
+  if (view === 'dollars') {
+    const d = hoursToDollars(hours, ratePerUnit);
+    return d == null ? '—' : fmtDollars(d);
+  }
+  return fmtH(hours);
+}
+
+export const QTY_VIEW_LABEL: Record<QtyView, string> = { hours: 'Hours', units: 'Units', dollars: 'Amount' };
+
+/** Looks up the per-unit rate for a date (the billing rate table, by program + bucket). */
+export type RateResolver = (dateISO: string) => number | null;
+
+/** Billable units for a set of day segments (each day rounded up separately). */
+export function segmentsToUnits(segments: DaySegment[]): number {
+  return segments.reduce((a, s) => a + hoursToUnits(s.hours), 0);
+}
+
+/**
+ * Dollars for a set of day segments, each day priced at the rate in force on
+ * its date. null when any day has no rate (a partial dollar figure would be
+ * worse than none for billing).
+ */
+export function segmentsToDollars(segments: DaySegment[], rateFor: RateResolver): number | null {
+  let sum = 0;
+  for (const seg of segments) {
+    const d = hoursToDollars(seg.hours, rateFor(seg.dateISO));
+    if (d == null) return null;
+    sum += d;
+  }
+  return Math.round(sum * 100) / 100;
+}
+
+/** Short label for a line's bucket. */
+export function bucketLabel(b: HoursBucket): string {
+  return b === 'oversight' ? 'RN oversight' : 'Shift hours';
+}
+
+/** The label mid-sentence: "shift hours" lowercases, "RN oversight" keeps its initials. */
+export function bucketLabelLower(b: HoursBucket): string {
+  return b === 'oversight' ? 'RN oversight' : 'shift hours';
+}
+
+/** '21/wk', '4/day', '6/mo' for the source column and chips. */
+export function rateLabel(a: HoursAuthorization): string {
+  if (a.rateHours == null) return '';
+  const unit = a.rateBasis === 'day' ? 'day' : a.rateBasis === 'month' ? 'mo' : 'wk';
+  return `${fmtH(a.rateHours)}/${unit}`;
+}
+
+/** Does the authorization cover any day of this month? */
+export function authCoversMonth(a: HoursAuthorization, ym: string): boolean {
+  return a.from <= monthEndISO(ym) && a.to >= monthStartISO(ym);
+}
+
+/** Days of the month that fall inside the authorization window. */
+function coveredDays(a: HoursAuthorization, ym: string): number {
+  const start = a.from > monthStartISO(ym) ? a.from : monthStartISO(ym);
+  const end = a.to < monthEndISO(ym) ? a.to : monthEndISO(ym);
+  return Math.max(0, isoToDayNum(end) - isoToDayNum(start) + 1);
+}
+
+/**
+ * Authorized hours for one month under one authorization: the override when
+ * entered, otherwise derived from the rate. Weekly rates prorate over the
+ * covered days (weekly x days / 7 reproduces the GAPP letter's full months);
+ * daily rates multiply by the covered days; a monthly rate is the month's
+ * figure as stated, even for a partially covered month (Therap does not
+ * prorate a monthly line). null when neither is available.
+ */
+export function monthCap(a: HoursAuthorization, ym: string): number | null {
+  if (!authCoversMonth(a, ym)) return null;
+  const override = a.monthOverrides?.[ym];
+  if (typeof override === 'number' && Number.isFinite(override)) return override;
+  if (a.rateHours == null || !Number.isFinite(a.rateHours)) return null;
+  const days = coveredDays(a, ym);
+  if (a.rateBasis === 'day') return Math.round(a.rateHours * days * 100) / 100;
+  if (a.rateBasis === 'month') return a.rateHours;
+  return Math.round((a.rateHours * days) / 7);
+}
+
+/** Whether a month's cap came from an override or the rate default. */
+export function monthCapSource(a: HoursAuthorization, ym: string): 'override' | 'rate' | 'none' {
+  if (!authCoversMonth(a, ym)) return 'none';
+  if (typeof a.monthOverrides?.[ym] === 'number') return 'override';
+  return a.rateHours != null ? 'rate' : 'none';
+}
+
+/** The authorization in force for a month and bucket (newest `from` wins when several overlap). */
+export function authForMonth(auths: HoursAuthorization[], ym: string, bucket: HoursBucket = 'shift'): HoursAuthorization | null {
+  const covering = auths.filter((a) => a.covers === bucket && authCoversMonth(a, ym));
+  if (covering.length === 0) return null;
+  return [...covering].sort((a, b) => b.from.localeCompare(a.from))[0];
+}
+
+export interface UnitsUsage {
+  /** Hours documented inside the window through today. */
+  hours: number;
+  usedUnits: number;
+  totalUnits: number;
+  remainingUnits: number;
+  pct: number;
+  /** Straight-line projection of units at the end of the window. */
+  projectedUnits: number;
+  /** 'YYYY-MM-DD' the units run out at the current pace, when before the window end. */
+  runsOutOn: string | null;
+}
+
+/**
+ * Annual (whole-window) usage against Therap's Total Units. Only hours on
+ * days inside [from, to] count; pace is measured over the elapsed part of the
+ * window so a line acknowledged mid-year still projects sensibly.
+ */
+export function unitsUsage(a: HoursAuthorization, dayHours: Map<string, number>, todayISO: string): UnitsUsage | null {
+  if (a.totalUnits == null || !Number.isFinite(a.totalUnits) || a.totalUnits <= 0) return null;
+  let hours = 0;
+  for (const [d, h] of dayHours) {
+    if (d >= a.from && d <= a.to) hours += h;
+  }
+  hours = round2(hours);
+  const usedUnits = Math.round(hours * UNITS_PER_HOUR * 100) / 100;
+  const remainingUnits = Math.round((a.totalUnits - usedUnits) * 100) / 100;
+  const totalDays = isoToDayNum(a.to) - isoToDayNum(a.from) + 1;
+  const elapsed = Math.min(totalDays, Math.max(0, isoToDayNum(todayISO > a.to ? a.to : todayISO) - isoToDayNum(a.from) + 1));
+  const perDay = elapsed > 0 ? usedUnits / elapsed : 0;
+  const projectedUnits = elapsed >= totalDays ? usedUnits : Math.round(perDay * totalDays);
+  let runsOutOn: string | null = null;
+  if (elapsed < totalDays && perDay > 0) {
+    if (remainingUnits <= 0) runsOutOn = todayISO;
+    else {
+      // Strictly before the window end: running out ON the last day is the plan working.
+      const day = isoToDayNum(todayISO) + Math.floor(remainingUnits / perDay);
+      if (day < isoToDayNum(a.to)) runsOutOn = dayNumToISO(day);
+    }
+  }
+  return { hours, usedUnits, totalUnits: a.totalUnits, remainingUnits, pct: usedUnits / a.totalUnits, projectedUnits, runsOutOn };
+}
+
+export interface MonthUsage {
+  ym: string;
+  authorized: number | null;
+  used: number;
+  remaining: number | null;
+  /** used / authorized (0..∞), null when no cap. */
+  pct: number | null;
+  /** Straight-line projection of month-end usage from the pace so far.
+   *  Only meaningful for the current month; equals `used` for past months. */
+  projected: number | null;
+  /** Date the month's hours run out at the current pace, when that is before
+   *  month end. 'YYYY-MM-DD' or null. */
+  runsOutOn: string | null;
+  /** Average hours per day so far (current month) or over the month (past). */
+  perDay: number;
+}
+
+/**
+ * Usage for one month. `dayHours` is the per-day map already restricted to
+ * shift notes (callers filter noteType; this function is agnostic).
+ */
+export function monthUsage(
+  dayHours: Map<string, number>,
+  authorized: number | null,
+  ym: string,
+  todayISO: string,
+): MonthUsage {
+  const start = monthStartISO(ym);
+  const end = monthEndISO(ym);
+  let used = 0;
+  for (const [d, h] of dayHours) {
+    if (d >= start && d <= end) used += h;
+  }
+  used = round2(used);
+  const remaining = authorized == null ? null : round2(authorized - used);
+  const pct = authorized ? used / authorized : null;
+
+  const totalDays = daysInMonth(ym);
+  let elapsed: number;
+  if (todayISO < start) elapsed = 0;
+  else if (todayISO > end) elapsed = totalDays;
+  else elapsed = isoToDayNum(todayISO) - isoToDayNum(start) + 1;
+
+  const perDay = elapsed > 0 ? used / elapsed : 0;
+  let projected: number | null = null;
+  let runsOutOn: string | null = null;
+  if (elapsed >= totalDays) {
+    projected = used;
+  } else if (elapsed > 0) {
+    projected = round2(perDay * totalDays);
+    if (authorized != null && perDay > 0 && remaining != null && remaining > 0) {
+      const daysLeft = remaining / perDay;
+      const runOutDay = isoToDayNum(todayISO) + Math.floor(daysLeft);
+      if (runOutDay <= isoToDayNum(end)) runsOutOn = dayNumToISO(runOutDay);
+    } else if (remaining != null && remaining <= 0) {
+      runsOutOn = todayISO;
+    }
+  }
+  return { ym, authorized, used, remaining, pct, projected, runsOutOn, perDay: round2(perDay) };
+}
+
+/** Authorizations ending within this many days get a reminder. Matches the
+ *  Therap-authorization threshold in reconcile.ts. */
+export const HOURS_AUTH_EXPIRY_WARN_DAYS = 45;
+
+export type HoursFinding = { severity: 'error' | 'warn' | 'info'; message: string };
+
+/** Per-day hours for both buckets (each map keyed 'YYYY-MM-DD'). */
+export interface BucketDayHours {
+  shift: Map<string, number>;
+  oversight: Map<string, number>;
+}
+
+export const emptyBucketDayHours = (): BucketDayHours => ({ shift: new Map(), oversight: new Map() });
+
+/** After this day of the month, a NOW/COMP client with an RN oversight line
+ *  and no visit yet is worth a nudge (the monthly RN hours do not roll over). */
+export const RN_VISIT_NUDGE_DAY = 20;
+
+/**
+ * Roster-level findings for one client, per bucket: an expiring/expired
+ * line, a current month nearly used up or on pace to run over, annual units
+ * nearly used up or over, and (RN oversight lines only) no visit yet this
+ * month. Empty when the client has no authorization on file.
+ */
+export function hoursFindings(
+  auths: HoursAuthorization[],
+  dayHours: BucketDayHours,
+  todayISO: string,
+): HoursFinding[] {
+  const out: HoursFinding[] = [];
+  if (auths.length === 0) return out;
+  const ym = monthKeyOf(todayISO);
+  const monthName = monthLabel(ym).split(' ')[0];
+
+  for (const bucket of ['shift', 'oversight'] as HoursBucket[]) {
+    const lines = auths.filter((a) => a.covers === bucket);
+    if (lines.length === 0) continue;
+    const name = bucketLabel(bucket);
+    const lower = bucketLabelLower(bucket);
+    const hours = dayHours[bucket];
+    const latest = [...lines].sort((a, b) => b.to.localeCompare(a.to))[0];
+    const daysLeft = isoToDayNum(latest.to) - isoToDayNum(todayISO);
+    if (daysLeft < 0) {
+      out.push({ severity: 'error', message: `${name} authorization expired ${fmtUS(latest.to)}. No renewal on file.` });
+    } else if (daysLeft <= HOURS_AUTH_EXPIRY_WARN_DAYS) {
+      out.push({
+        severity: daysLeft <= 14 ? 'error' : 'warn',
+        message: `${name} authorization ends ${fmtUS(latest.to)} (${daysLeft === 0 ? 'today' : `${daysLeft} day${daysLeft === 1 ? '' : 's'}`}). No renewal on file.`,
+      });
+    }
+
+    const current = authForMonth(lines, ym, bucket);
+    if (!current) continue;
+    const u = monthUsage(hours, monthCap(current, ym), ym, todayISO);
+    if (u.authorized != null && u.remaining != null) {
+      if (u.remaining < 0) {
+        out.push({ severity: 'error', message: `${monthName} ${lower}: ${fmtH(u.used)} of ${fmtH(u.authorized)} used. Over by ${fmtH(-u.remaining)}.` });
+      } else if (u.pct != null && u.pct >= 0.9) {
+        // Nearly used up. For shift hours that is a heads-up (the parent may
+        // still want shifts scheduled); for an RN line, using the month's
+        // hours IS the plan, so it is informational and stays off the roster.
+        out.push({
+          severity: bucket === 'oversight' ? 'info' : 'warn',
+          message: `${monthName} ${lower}: ${fmtH(u.used)} of ${fmtH(u.authorized)} used (${Math.round(u.pct * 100)}%). ${fmtH(u.remaining)} left.`,
+        });
+      } else if (bucket === 'shift' && u.runsOutOn) {
+        out.push({ severity: 'warn', message: `${monthName} ${lower}: on pace to run out ${fmtUS(u.runsOutOn)} (${fmtH(u.used)} of ${fmtH(u.authorized)} used).` });
+      }
+    }
+    // Days the line has actually covered this month: a line that began on
+    // the 19th has not had 20 days to schedule a visit by the 21st.
+    const coveredFrom = current.from > monthStartISO(ym) ? current.from : monthStartISO(ym);
+    const daysCovered = isoToDayNum(todayISO) - isoToDayNum(coveredFrom) + 1;
+    if (bucket === 'oversight' && u.used === 0 && daysCovered > RN_VISIT_NUDGE_DAY) {
+      out.push({ severity: 'warn', message: `No RN oversight visit documented yet for ${monthName} (${fmtH(u.authorized ?? 0)} hours authorized).` });
+    }
+
+    const units = unitsUsage(current, hours, todayISO);
+    if (units) {
+      if (units.remainingUnits < 0) {
+        out.push({ severity: 'error', message: `${name}: ${fmtUnits(units.usedUnits)} of ${fmtUnits(units.totalUnits)} annual units used. Over by ${fmtUnits(-units.remainingUnits)}.` });
+      } else if (units.pct >= 0.9) {
+        out.push({ severity: 'warn', message: `${name}: ${fmtUnits(units.usedUnits)} of ${fmtUnits(units.totalUnits)} annual units used (${Math.round(units.pct * 100)}%).` });
+      } else if (units.runsOutOn) {
+        out.push({ severity: 'warn', message: `${name}: on pace to exhaust the ${fmtUnits(units.totalUnits)} annual units ${fmtUS(units.runsOutOn)}, before the line ends ${fmtUS(current.to)}.` });
+      }
+    }
+  }
+  return out;
+}
+
+/** '5,840' style units (whole numbers with separators; quarter units kept). */
+export function fmtUnits(n: number): string {
+  return n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+}
+
+/** '93', '5.5', '12.25' (no trailing zeros, at most two decimals). */
+export function fmtH(n: number): string {
+  if (Number.isInteger(n)) return String(n);
+  return n.toFixed(2).replace(/\.?0+$/, '');
+}
+
+function fmtUS(iso: string): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[2]}/${m[3]}/${m[1]}` : iso;
+}
+
+// ---------------------------------------------------------------------------
+// RN oversight: documented time vs. billed time.
+//
+// An oversight note records the visit as it happened (the nurse's own Time in
+// and Time out); the portal never fills or adjusts them. Billing is separate:
+// the client's RN line authorizes so many hours a month, and the owner bills
+// the month AT the authorization once an RN visit is documented, because the
+// RN oversight service also covers the other oversight duties done during the
+// month (owner's decision, 09/30/2026). So the month's first visit, in date
+// order, bills the full authorization whatever its length, and any later
+// visit that month is documented and not billed. A month with no visit bills
+// nothing. Nothing is billed in a month without a documented visit.
+// ---------------------------------------------------------------------------
+
+export interface OversightVisitWindow {
+  id: string;
+  dateISO: string;
+  timeIn: string;
+  timeOut: string;
+}
+
+export interface OversightVisitBilling {
+  /** Time in to time out, exact. */
+  documentedHours: number;
+  /** What this visit bills: the month's authorization on the first visit, 0 after. */
+  billableHours: number;
+  /** The month's authorized hours; null when no RN line covers the visit date. */
+  capHours: number | null;
+  /** The visit ran longer than the authorization; the excess is documented, not billed. */
+  trimmed: boolean;
+  /** The visit was shorter than the authorization; the month still bills in full. */
+  toppedUp: boolean;
+  /** An earlier visit this month already billed the authorization: documented only.
+   *  (A month with no RN line is not capped; its visits count as documented.) */
+  nonBillable: boolean;
+}
+
+const visitHours = (v: { dateISO: string; timeIn: string; timeOut: string }): number =>
+  totalOfSegments(splitShiftByDay({ dateISO: v.dateISO, shiftStart: v.timeIn, shiftEnd: v.timeOut, shiftEndDate: v.dateISO, totalHours: '' }));
+
+/** What one visit bills, given whether the month was already billed. */
+function billVisit(documentedHours: number, cap: number | null, monthAlreadyBilled: boolean): Omit<OversightVisitBilling, 'capHours'> {
+  if (cap == null) return { documentedHours, billableHours: documentedHours, trimmed: false, toppedUp: false, nonBillable: false };
+  if (monthAlreadyBilled) return { documentedHours, billableHours: 0, trimmed: false, toppedUp: false, nonBillable: true };
+  const d = Math.round(documentedHours * 100) / 100;
+  return { documentedHours, billableHours: cap, trimmed: d > cap, toppedUp: d < cap, nonBillable: false };
+}
+
+/**
+ * Bill one client's oversight visits month by month, in the order they
+ * happened (date, then time in, then id as a stable tiebreak): the first
+ * visit of a month with an RN line bills the month's authorization; later
+ * visits that month bill nothing. Pure: pass the client's lines and visits.
+ */
+export function oversightVisitBilling(auths: HoursAuthorization[], visits: OversightVisitWindow[]): Map<string, OversightVisitBilling> {
+  const out = new Map<string, OversightVisitBilling>();
+  const billedMonths = new Set<string>();
+  const ordered = [...visits].sort((a, b) => a.dateISO.localeCompare(b.dateISO) || a.timeIn.localeCompare(b.timeIn) || a.id.localeCompare(b.id));
+  for (const v of ordered) {
+    const ym = monthKeyOf(v.dateISO);
+    const line = authForMonth(auths, ym, 'oversight');
+    const cap = line ? monthCap(line, ym) : null;
+    out.set(v.id, { ...billVisit(visitHours(v), cap, billedMonths.has(ym)), capHours: cap });
+    if (cap != null) billedMonths.add(ym);
+  }
+  return out;
+}
+
+/**
+ * The same rule on a day -> hours map (the roster badges have day totals, not
+ * visits): the first day of a month with oversight hours bills the month's
+ * authorization, later days bill nothing. Months with no RN line are left as
+ * they are.
+ */
+export function capOversightDayHours(auths: HoursAuthorization[], dayHours: Map<string, number>): Map<string, number> {
+  const out = new Map<string, number>();
+  const billedMonths = new Set<string>();
+  for (const dateISO of [...dayHours.keys()].sort()) {
+    const hours = dayHours.get(dateISO) ?? 0;
+    const ym = monthKeyOf(dateISO);
+    const line = authForMonth(auths, ym, 'oversight');
+    const cap = line ? monthCap(line, ym) : null;
+    if (cap == null || !(hours > 0)) { out.set(dateISO, cap == null ? hours : 0); continue; }
+    out.set(dateISO, billedMonths.has(ym) ? 0 : cap);
+    billedMonths.add(ym);
+  }
+  return out;
+}
+
+export interface OversightAllotment {
+  /** Authorized RN oversight hours for the visit's month; null when no line covers it. */
+  monthlyHours: number | null;
+  /** Billable units already used this month by the client's OTHER oversight visits. */
+  usedUnits: number;
+  /** Hours still billable this month; null when no line. */
+  remainingHours: number | null;
+  /** The month's other visits, oldest first, with what each one bills. */
+  otherVisits: { dateISO: string; billableHours: number }[];
+}
+
+/**
+ * Where a client's month stands before this visit: the authorized RN hours,
+ * what the other visits that month already bill (the authorization once any
+ * visit is on file), and what is left. The form shows it; the nurse still
+ * records the visit's real times.
+ */
+export function oversightAllotment(
+  auths: HoursAuthorization[],
+  visitDateISO: string,
+  otherVisits: { dateISO: string; timeIn: string; timeOut: string }[],
+): OversightAllotment {
+  const ym = monthKeyOf(visitDateISO);
+  const line = authForMonth(auths, ym, 'oversight');
+  const cap = line ? monthCap(line, ym) : null;
+  const inMonth = otherVisits.filter((v) => monthKeyOf(v.dateISO) === ym).map((v, i) => ({ ...v, id: String(i).padStart(4, '0') }));
+  const billing = oversightVisitBilling(auths, inMonth);
+  const visits = inMonth
+    .map((v) => ({ dateISO: v.dateISO, timeIn: v.timeIn, billableHours: billing.get(v.id)?.billableHours ?? 0 }))
+    .sort((a, b) => a.dateISO.localeCompare(b.dateISO) || a.timeIn.localeCompare(b.timeIn))
+    .map(({ dateISO, billableHours }) => ({ dateISO, billableHours }));
+  const usedUnits = visits.reduce((n, v) => n + hoursToUnits(v.billableHours), 0);
+  if (cap == null) return { monthlyHours: null, usedUnits, remainingHours: null, otherVisits: visits };
+  const remainingUnits = Math.max(0, Math.round(cap * UNITS_PER_HOUR) - usedUnits);
+  return { monthlyHours: cap, usedUnits, remainingHours: remainingUnits / UNITS_PER_HOUR, otherVisits: visits };
+}
+
+/**
+ * What the visit being written will bill, given where the month stands.
+ * null until both times are entered and out is after in.
+ */
+export function previewOversightVisit(allotment: OversightAllotment, timeIn: string, timeOut: string): { documentedHours: number; billableHours: number; trimmed: boolean; toppedUp: boolean; nonBillable: boolean } | null {
+  if (!/^\d{1,2}:\d{2}$/.test(timeIn) || !/^\d{1,2}:\d{2}$/.test(timeOut) || timeOut <= timeIn) return null;
+  const documentedHours = visitHours({ dateISO: '2000-01-01', timeIn, timeOut });
+  return billVisit(documentedHours, allotment.monthlyHours, allotment.monthlyHours != null && (allotment.remainingHours ?? 0) <= 0);
+}

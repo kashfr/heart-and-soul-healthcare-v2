@@ -140,7 +140,7 @@ export default function OtherProgramsPage() {
               to more individuals in need, we would love to hear from you.
             </p>
             <Link href="/contact" className="btn btn-secondary">
-              <Users size={20} /> Partner With Us
+              <Users size={20} /> Partner with Us
             </Link>
           </div>
         </div>

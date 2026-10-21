@@ -10,25 +10,33 @@ import {
 } from 'firebase/firestore';
 import { getBlob, ref, uploadBytesResumable } from 'firebase/storage';
 import { db, storage } from './firebase';
+import { authedFetch } from './authedFetch';
 
 /**
  * Client documents: uploaded files (plan of care, initial assessment,
  * supervisory visit forms, physician orders, scans) whose bytes live in Cloud
  * Storage and whose metadata lives in the `patientDocuments` collection.
- * Staff and assigned nurses upload and view; only staff archive; nothing is
- * ever hard-deleted (append-only compliance record, like the MAR).
+ * Staff and assigned nurses upload and view. Staff can edit a document's
+ * labeling, archive it, or replace its file (the old file is removed
+ * server-side); only an admin can hard-delete one, through a privileged
+ * route that snapshots it first. RN oversight visit notes file themselves
+ * here automatically (sourceNoteId links back to the note).
  */
 
-export const DOC_CATEGORIES = [
+// Categories live in docCategories.ts (no Firebase imports) so server code
+// can validate against the same list; re-exported here for existing imports.
+export { DOC_CATEGORY_GROUPS, DOC_CATEGORIES, type DocCategory } from './docCategories';
+import type { DocCategory } from './docCategories';
+
+
+/** Categories that should always show as filter chips (the compliance
+ *  checklist), even when the client has none on file yet. */
+export const CORE_DOC_CATEGORIES: readonly DocCategory[] = [
   'Plan of Care (485)',
   'Initial Assessment',
   'Supervisory Visit',
   'RN Oversight',
-  'Physician Orders',
-  'Progress Note (scanned)',
-  'Other',
-] as const;
-export type DocCategory = (typeof DOC_CATEGORIES)[number];
+];
 
 export const MAX_DOC_BYTES = 20 * 1024 * 1024; // keep in sync with storage.rules
 
@@ -52,6 +60,11 @@ export interface PatientDocument {
   contentType: string;
   size: number;
   docDate: string; // YYYY-MM-DD — the date ON the document (drives currency tracking)
+  /** The period the document COVERS (inclusive ISO dates), when it has one:
+   *  the month of an eligibility letter, the span of an authorization, a plan
+   *  of care's certification period. Both set or neither (see documentPeriod.ts). */
+  periodStart?: string;
+  periodEnd?: string;
   uploadedBy: string;
   uploadedByName: string;
   uploadedByRole: string;
@@ -60,6 +73,28 @@ export interface PatientDocument {
   archivedBy?: string;
   archivedByName?: string;
   archivedAt?: unknown;
+  /** Set when the file was swapped out after upload. */
+  replacedAt?: unknown;
+  replacedBy?: string;
+  replacedByName?: string;
+  /** Set when staff edited the title, category, or date by hand. A note-filed
+   *  entry keeps those details when the note is re-filed. */
+  detailsEditedAt?: unknown;
+  detailsEditedByName?: string;
+  /** Present on documents the server filed from a submitted note. */
+  sourceNoteId?: string;
+  /** The note's noteType (filed since 09/2026); older entries infer it from the category. */
+  sourceNoteType?: string;
+  autoFiled?: boolean;
+  /** Present on the PDF filed when a Service Plan is signed. */
+  servicePlanId?: string;
+  /** Present on the one-page PDF filed for a "reviewed, no changes" review. */
+  servicePlanReviewId?: string;
+  /** Set when an admin moved the document here from another client's chart. */
+  movedFrom?: { patientId: string; documentId: string };
+  movedAt?: unknown;
+  movedBy?: string;
+  movedByName?: string;
 }
 
 export interface DocUploader {
@@ -106,11 +141,14 @@ export async function uploadPatientDocument(
     category: DocCategory;
     title: string;
     docDate: string;
+    /** ISO pair, both or neither; empty strings mean no period. */
+    periodStart?: string;
+    periodEnd?: string;
     uploader: DocUploader;
   },
   onProgress?: (pct: number) => void,
 ): Promise<string> {
-  const { patientId, file, category, title, docDate, uploader } = params;
+  const { patientId, file, category, title, docDate, periodStart, periodEnd, uploader } = params;
   const contentType = resolveContentType(file);
   if (!ALLOWED_DOC_TYPES[contentType]) {
     throw new Error(
@@ -144,6 +182,7 @@ export async function uploadPatientDocument(
     contentType,
     size: file.size,
     docDate,
+    ...(periodStart && periodEnd ? { periodStart, periodEnd } : {}),
     uploadedBy: uploader.uid,
     uploadedByName: uploader.name,
     uploadedByRole: uploader.role,
@@ -327,4 +366,149 @@ export async function setDocumentArchived(
     archivedByName: archived ? actor.name : '',
     archivedAt: archived ? serverTimestamp() : null,
   });
+}
+
+/** Staff-only relabel: title, category, date on the document. */
+/** Staff: re-render a filed service plan or review PDF in place (current layout). */
+export async function refreshServicePlanDocumentPdf(id: string): Promise<void> {
+  const res = await authedFetch(`/api/documents/${encodeURIComponent(id)}/refresh-service-plan`, { method: 'POST' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Could not refresh the PDF (${res.status}).`);
+  }
+}
+
+export async function updateDocumentDetails(
+  id: string,
+  patch: { title: string; category: DocCategory; docDate: string; periodStart?: string; periodEnd?: string },
+): Promise<void> {
+  // Through the server so a note-filed entry is marked as edited by hand
+  // (a later re-file of the note keeps these details).
+  const res = await authedFetch(`/api/documents/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ title: patch.title.trim(), category: patch.category, docDate: patch.docDate, periodStart: patch.periodStart ?? '', periodEnd: patch.periodEnd ?? '' }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Could not save (${res.status}).`);
+  }
+}
+
+/**
+ * Staff-only: swap the file behind an existing document (wrong file picked,
+ * better scan). The new object goes under the SAME document folder with a
+ * dated name (Storage objects are immutable, so the old one cannot be
+ * overwritten), the metadata is repointed, then a privileged route removes
+ * the old object so it does not linger. Title/category/date are untouched.
+ */
+export async function replaceDocumentFile(
+  d: PatientDocument,
+  file: File,
+  actor: { uid: string; name: string },
+  onProgress?: (pct: number) => void,
+): Promise<void> {
+  if (!d.id) throw new Error('Document is missing an id.');
+  const contentType = resolveContentType(file);
+  if (!ALLOWED_DOC_TYPES[contentType]) {
+    throw new Error('That file type is not supported. Upload a PDF, image, or Word document.');
+  }
+  if (file.size >= MAX_DOC_BYTES) throw new Error('That file is too large (20 MB max).');
+  const stamp = new Date();
+  const tag = `${String(stamp.getMonth() + 1).padStart(2, '0')}-${String(stamp.getDate()).padStart(2, '0')}-${stamp.getFullYear()}-${String(stamp.getHours()).padStart(2, '0')}${String(stamp.getMinutes()).padStart(2, '0')}`;
+  const fileName = sanitizeFileName(`replaced-${tag}-${file.name}`);
+  const storagePath = `patients/${d.patientId}/documents/${d.id}/${fileName}`;
+  const task = uploadBytesResumable(ref(storage, storagePath), file, { contentType });
+  await new Promise<void>((resolve, reject) => {
+    task.on(
+      'state_changed',
+      (snap) => onProgress?.(Math.round((snap.bytesTransferred / Math.max(1, snap.totalBytes)) * 100)),
+      reject,
+      () => resolve(),
+    );
+  });
+  await updateDoc(doc(db, 'patientDocuments', d.id), {
+    fileName,
+    storagePath,
+    contentType,
+    size: file.size,
+    replacedAt: serverTimestamp(),
+    replacedBy: actor.uid,
+    replacedByName: actor.name,
+  });
+  // Old bytes: removed by the server. Non-fatal if it fails; the metadata
+  // already points at the new file and the old one is unreachable from the UI.
+  try {
+    await authedFetch(`/api/documents/${d.id}/cleanup`, { method: 'POST' });
+  } catch (err) {
+    console.warn('Replaced-file cleanup failed (non-fatal):', err);
+  }
+}
+
+/** Admin-only hard delete through the privileged route. */
+export async function deletePatientDocument(id: string): Promise<void> {
+  const res = await authedFetch(`/api/documents/${id}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error || 'Could not delete the document.');
+  }
+}
+
+/**
+ * Ask the server to render a submitted note to PDF and file it under the
+ * client's Documents (RN oversight visits, home supervisory visits).
+ * Idempotent per note: an entry already on file gets its PDF re-rendered
+ * in place, which is what the Documents tab's "Refresh PDF" button does.
+ * Non-fatal for the note forms: a failed filing is repaired by
+ * syncNoteDocuments.
+ */
+export async function fileNoteDocument(noteId: string): Promise<void> {
+  const res = await authedFetch('/api/documents/file-note', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ noteId }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error || 'Could not file the note.');
+  }
+}
+
+export interface SyncNoteDocumentsSummary {
+  filed: number;
+  /** PDFs re-rendered in place (only when `refresh` was asked for). */
+  refreshed: number;
+  skipped: number;
+  errors: string[];
+}
+
+/**
+ * Staff: file every unfiled oversight note and supervisory visit for a
+ * client (backfill / repair). With `refresh`, also re-render every visit
+ * PDF already on file from the current note and renderer.
+ */
+export async function syncNoteDocuments(patientId: string, opts: { refresh?: boolean } = {}): Promise<SyncNoteDocumentsSummary> {
+  const res = await authedFetch('/api/documents/sync-notes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ patientId, ...(opts.refresh ? { refresh: true } : {}) }),
+  });
+  const body = (await res.json().catch(() => ({}))) as Partial<SyncNoteDocumentsSummary> & { error?: string };
+  if (!res.ok) throw new Error(body.error || 'Could not sync the notes.');
+  return { filed: body.filed ?? 0, refreshed: body.refreshed ?? 0, skipped: body.skipped ?? 0, errors: body.errors ?? [] };
+}
+
+/** Admin-only: move a wrongly filed document to another client (privileged route). */
+export async function movePatientDocument(
+  id: string,
+  toPatientId: string,
+  opts: { title?: string; docDate?: string; category?: DocCategory } = {},
+): Promise<{ documentId: string }> {
+  const res = await authedFetch(`/api/documents/${id}/move`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ toPatientId, ...opts }),
+  });
+  const body = (await res.json().catch(() => ({}))) as { documentId?: string; error?: string };
+  if (!res.ok || !body.documentId) throw new Error(body.error || 'Could not move the document.');
+  return { documentId: body.documentId };
 }

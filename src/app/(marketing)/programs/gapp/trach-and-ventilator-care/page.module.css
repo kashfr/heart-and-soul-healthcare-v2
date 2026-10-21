@@ -1,0 +1,301 @@
+.breadcrumb {
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+  opacity: 0.85;
+}
+.breadcrumb a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.heroActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.75rem;
+}
+
+.trustList {
+  list-style: none;
+  padding: 0;
+  margin: 1.5rem 0 0;
+  display: grid;
+  gap: 0.75rem;
+}
+.trustList li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  font-weight: 600;
+  color: var(--color-gray-900);
+}
+.trustList svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--color-accent);
+}
+
+.steps {
+  list-style: none;
+  padding: 0;
+  margin: 0 auto;
+  max-width: 820px;
+  display: grid;
+  gap: 1rem;
+}
+.step {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  background: white;
+  border: 1px solid var(--color-gray-200, #e5e7eb);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+}
+.step h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1.1rem;
+}
+.step p {
+  margin: 0;
+  color: var(--color-gray-600, #4b5563);
+  line-height: 1.6;
+}
+.stepNumber {
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  color: white;
+  background: var(--color-accent);
+}
+
+.factList {
+  padding-left: 1.1rem;
+  margin: 1rem 0 0;
+  display: grid;
+  gap: 0.85rem;
+  line-height: 1.65;
+  color: var(--color-gray-700, #374151);
+}
+
+.moreLink {
+  margin-top: 1.25rem;
+}
+.moreLink a {
+  font-weight: 600;
+  color: var(--color-accent-dark, var(--color-accent));
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.proBox {
+  max-width: 820px;
+  margin: 0 auto;
+  background: white;
+  border: 1px solid var(--color-gray-200, #e5e7eb);
+  border-left: 5px solid var(--color-accent);
+  border-radius: 12px;
+  padding: 2rem;
+}
+.proBox h2 {
+  margin: 0.25rem 0 0.75rem;
+}
+.proBox p {
+  line-height: 1.7;
+  color: var(--color-gray-700, #374151);
+  margin: 0;
+}
+
+.countyGroups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 2rem;
+  max-width: 900px;
+  margin: 0 auto;
+}
+.countyGroups h3 {
+  font-size: 1.05rem;
+  margin: 0 0 0.75rem;
+}
+.countyList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.countyList li {
+  background: white;
+  border: 1px solid var(--color-gray-200, #e5e7eb);
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.9rem;
+}
+
+.statewide {
+  text-align: center;
+  max-width: 640px;
+  margin: 2rem auto 0;
+  font-weight: 600;
+  color: var(--color-gray-700, #374151);
+}
+
+@media (max-width: 640px) {
+  .proBox {
+    padding: 1.5rem 1.25rem;
+  }
+  .heroActions :global(.btn) {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+.guideGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.5rem;
+}
+.guideCard {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: white;
+  border: 1px solid var(--color-gray-200, #e5e7eb);
+  border-radius: 12px;
+  overflow: hidden;
+  color: inherit;
+  text-decoration: none;
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.05));
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.guideCard:hover,
+.guideCard:focus-visible {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.1));
+}
+.guideImage {
+  position: relative;
+  aspect-ratio: 16 / 9;
+}
+.guideBody {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 1.25rem;
+}
+.guideBody h3 {
+  font-size: 1.05rem;
+  line-height: 1.35;
+  margin: 0 0 0.5rem;
+}
+.guideBody p {
+  font-size: 0.925rem;
+  line-height: 1.6;
+  color: var(--color-gray-700, #374151);
+  margin: 0 0 1rem;
+  flex: 1;
+}
+.guideMore {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+  color: var(--color-accent-dark, var(--color-accent));
+}
+@media (max-width: 1024px) {
+  .guideGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .guideGrid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .guideCard {
+    transition: none;
+  }
+  .guideCard:hover,
+  .guideCard:focus-visible {
+    transform: none;
+  }
+}
+
+.independence {
+  margin: 1.25rem 0 0;
+  padding: 0.9rem 1.1rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+.independenceLight {
+  max-width: 820px;
+  margin: 2rem auto 0;
+  padding: 1rem 1.25rem;
+  border-radius: 10px;
+  background: var(--color-gray-50, #f9fafb);
+  border: 1px solid var(--color-gray-200, #e5e7eb);
+  color: var(--color-gray-700, #374151);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  text-align: center;
+}
+.hospitalList {
+  display: grid;
+  gap: 1rem;
+  margin: 1.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.hospitalList li {
+  padding: 1rem 1.25rem;
+  border-radius: 12px;
+  background: white;
+  border: 1px solid var(--color-gray-200, #e5e7eb);
+}
+.hospitalList h3 {
+  margin: 0 0 0.25rem;
+  font-size: 1.05rem;
+}
+.hospitalList p {
+  margin: 0;
+  line-height: 1.6;
+  color: var(--color-gray-700, #374151);
+}
+.checklist {
+  margin: 1.25rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.6rem;
+}
+.checklist li {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  line-height: 1.6;
+  color: var(--color-gray-700, #374151);
+}
+.checklist svg {
+  flex: none;
+  margin-top: 0.2rem;
+  color: var(--color-accent);
+}
+.plannerList {
+  margin: 1rem 0 1.25rem;
+  padding-left: 1.25rem;
+  line-height: 1.7;
+  color: var(--color-gray-700, #374151);
+}
+.plannerList li + li {
+  margin-top: 0.35rem;
+}

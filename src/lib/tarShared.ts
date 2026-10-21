@@ -21,10 +21,10 @@ export type TarStatus = 'done' | 'not-done' | 'na';
  * in the not-done reasons.
  */
 export const TAR_PERFORMER_TYPES = [
-  { value: 'nurse', label: 'Nurse (me)' },
-  { value: 'family', label: 'Parent / guardian' },
-  { value: 'responsibleParty', label: 'Responsible party' },
-  { value: 'dsp', label: 'DSP / direct support staff' },
+  { value: 'nurse', label: 'Nurse (Me)' },
+  { value: 'family', label: 'Parent / Guardian' },
+  { value: 'responsibleParty', label: 'Responsible Party' },
+  { value: 'dsp', label: 'DSP / Direct Support Staff' },
   { value: 'proxy', label: 'Proxy' },
 ] as const;
 

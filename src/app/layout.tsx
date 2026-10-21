@@ -25,7 +25,7 @@ export const metadata: Metadata = {
     title: "Heart and Soul Healthcare | Home Health Services in Georgia",
     description: "Compassionate home health care services throughout Georgia. Specializing in GAPP, NOW/COMP, ICWP, and EDWP waiver programs.",
     url: siteUrl,
-    images: [{ url: "/images/logo.webp", width: 130, height: 67, alt: "Heart and Soul Healthcare Logo" }],
+    images: [{ url: "/images/logo-2026.webp", width: 900, height: 238, alt: "Heart and Soul Healthcare Logo" }],
   },
   twitter: {
     card: "summary_large_image",
@@ -39,8 +39,9 @@ const organizationJsonLd = {
   "@type": ["Organization", "MedicalBusiness", "HomeHealthCareService"],
   name: "Heart and Soul Healthcare",
   url: siteUrl,
-  logo: `${siteUrl}/images/logo.webp`,
+  logo: `${siteUrl}/images/logo-2026.webp`,
   telephone: "+16786440337",
+  faxNumber: "+14702351891",
   email: "info@heartandsoulhc.org",
   address: {
     "@type": "PostalAddress",
@@ -66,8 +67,8 @@ const organizationJsonLd = {
   openingHoursSpecification: {
     "@type": "OpeningHoursSpecification",
     dayOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
-    opens: "10:00",
-    closes: "15:00",
+    opens: "09:00",
+    closes: "17:00",
   },
 };
 
@@ -77,7 +78,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en-US" suppressHydrationWarning>
       <body suppressHydrationWarning>
         <script
           type="application/ld+json"

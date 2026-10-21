@@ -1,8 +1,11 @@
 import JSZip from 'jszip';
 import { PDFDocument } from 'pdf-lib';
+import { formatDateUSFile } from './dateFormat';
+import { compareChronological, isoDate } from './batchExportShared';
 import { getSubmission } from './submissions';
 import { authedFetch } from './authedFetch';
 import type { ProgressNoteFormData } from './submissions';
+import { SUPERVISORY_NOTE_TYPE } from './supervisoryVisit';
 
 export type ExportFormat = 'zip' | 'merged-pdf';
 
@@ -26,25 +29,19 @@ function sanitize(part: string): string {
   return part.replace(/[^a-zA-Z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
-function isoDate(s: string): string | null {
-  // Input may be YYYY-MM-DD already or MM/DD/YYYY
-  if (!s) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  const parts = s.split('/');
-  if (parts.length === 3) {
-    return `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
-  }
-  return null;
-}
-
 export function pdfFilenameFor(form: ProgressNoteFormData): string {
   const date = isoDate(form.q6_dateofService) || 'unknown-date';
   const client = sanitize(form.q3_clientName || 'client');
   const nurse = sanitize(form.q11_nurseName || 'nurse');
   // Discriminate document types so a same-day shift note and oversight
   // note for the same client/nurse can't collide inside one export.
-  const kind = form.noteType === 'rn-oversight-visit' ? '_oversight' : '';
-  return `${date}_${client}_${nurse}${kind}.pdf`;
+  const kind =
+    form.noteType === 'rn-oversight-visit'
+      ? '_oversight'
+      : form.noteType === SUPERVISORY_NOTE_TYPE
+        ? '_supervisory'
+        : '';
+  return `${formatDateUSFile(date)}_${client}_${nurse}${kind}.pdf`;
 }
 
 async function fetchPdfForSubmission(id: string): Promise<{ form: ProgressNoteFormData; bytes: Uint8Array }> {
@@ -86,10 +83,14 @@ async function fetchAllWithPool(
 
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, ids.length) }, worker));
 
-  // Preserve input order for downstream merge (alphabetic/date ordering handled by caller)
-  results.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+  // Chronological, oldest first: the export's order is a property of the
+  // export, not of how the notes were selected. (Before this, results kept the
+  // caller's id order, and the caller passed a Set in checkbox-click order, so
+  // "select all" on the default newest-first list produced newest-first PDFs.)
+  results.sort(compareChronological);
   return results;
 }
+
 
 function dateRangeOf(forms: ProgressNoteFormData[]): { start: string | null; end: string | null } {
   const dates = forms.map((f) => isoDate(f.q6_dateofService)).filter((d): d is string => !!d).sort();
@@ -98,12 +99,15 @@ function dateRangeOf(forms: ProgressNoteFormData[]): { start: string | null; end
 
 function archiveFilename(range: { start: string | null; end: string | null }, ext: 'zip' | 'pdf'): string {
   if (range.start && range.end && range.start !== range.end) {
-    return `progress-notes-${range.start}_to_${range.end}.${ext}`;
+    return `progress-notes-${formatDateUSFile(range.start)}_to_${formatDateUSFile(range.end)}.${ext}`;
   }
   if (range.start) {
-    return `progress-notes-${range.start}.${ext}`;
+    return `progress-notes-${formatDateUSFile(range.start)}.${ext}`;
   }
-  const today = new Date().toISOString().slice(0, 10);
+  // Local date, not toISOString(): an evening export must not carry
+  // tomorrow's UTC date.
+  const now = new Date();
+  const today = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}-${now.getFullYear()}`;
   return `progress-notes-${today}.${ext}`;
 }
 

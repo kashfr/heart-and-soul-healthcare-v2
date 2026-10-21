@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { Patient } from '@/lib/patients';
+import { formatDateUS } from '@/lib/dateFormat';
 import styles from '../page.module.css';
 
 interface PatientSearchProps {
@@ -142,7 +143,7 @@ export default function PatientSearch({ patients, formRef }: PatientSearchProps)
                 onMouseEnter={e => (e.currentTarget.style.background = '#f0f0f0')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'white')}
               >
-                {patient.name} (DOB: {patient.dob})
+                {patient.name} (DOB: {formatDateUS(patient.dob)})
               </div>
             ))}
           </div>
@@ -157,7 +158,7 @@ export default function PatientSearch({ patients, formRef }: PatientSearchProps)
             <p>
               Are you sure you want to select{' '}
               <strong>{selectedPatient.name}</strong> (DOB:{' '}
-              {selectedPatient.dob}, Age: {calculateAge(selectedPatient.dob)}
+              {formatDateUS(selectedPatient.dob)}, Age: {calculateAge(selectedPatient.dob)}
               )?
             </p>
             <div className={styles.modalButtons}>
