@@ -1,0 +1,530 @@
+'use client';
+import FaxSupportingSendModal from '@/components/FaxSupportingSendModal';
+
+import { useCallback, useEffect, useState } from 'react';
+import { Ban, Send, CheckCircle2, EyeOff, Eye, FileCheck2, FileUp, FolderInput, Hourglass, Inbox, X } from 'lucide-react';
+import FileToClientModal from './FileToClientModal';
+import UploadFaxModal from './UploadFaxModal';
+import { withSelectChevron } from '@/lib/selectChevron';
+import { authedFetch } from '@/lib/authedFetch';
+import PdfPreviewModal from '@/components/PdfPreviewModal';
+import { formatDateUS, formatDateTimeUS } from '@/lib/dateFormat';
+import { formatUSFaxNumber, inboundFaxSender } from '@/lib/verbalOrderShared';
+import { daysBetween, PPOT_REQUEST_LABEL, shouldAdvanceOrderDate, validatePpotFiling, type PpotOpenRequest, type PpotOrderLine, type PpotRequestType } from '@/lib/ppotShared';
+import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
+
+// The return half of PPOT requests: faxes that arrived on the portal line,
+// the requests still waiting on a physician, and the signed copies filed.
+// Nothing files itself: a person opens the fax and says which request it
+// answers (the same office also sends labs, records, and verbal orders).
+
+interface IncomingFax {
+  id: string;
+  callerId: string;
+  remoteId: string;
+  pages: number;
+  receivedAt: string;
+  ppotCandidateKeys: string[];
+  verbalOrderCandidates: number;
+  /** 'line' for the portal fax line; 'upload' for one someone added by hand. */
+  source?: 'line' | 'upload';
+  note?: string;
+}
+
+interface ReceivedPpot {
+  key: string;
+  subjectKind: 'referral' | 'client';
+  memberName: string;
+  requestType: PpotRequestType;
+  recipientName: string;
+  signedDate: string;
+  byName: string;
+}
+
+function todayET(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+
+export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
+  const [faxConfigured, setFaxConfigured] = useState(false);
+  const [incoming, setIncoming] = useState<IncomingFax[]>([]);
+  const [openRequests, setOpenRequests] = useState<PpotOpenRequest[]>([]);
+  const [received, setReceived] = useState<ReceivedPpot[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [filing, setFiling] = useState<IncomingFax | null>(null);
+  const [filingToClient, setFilingToClient] = useState<IncomingFax | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [canDismiss, setCanDismiss] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await authedFetch('/api/fax/inbound');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
+      setFaxConfigured(data.faxConfigured === true);
+      setIncoming(data.incoming ?? []);
+      setOpenRequests(data.openRequests ?? []);
+      setReceived(data.received ?? []);
+      setCanDismiss(data.canDismissIncoming === true);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load incoming faxes.');
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load, refreshKey]);
+
+  const [followup, setFollowup] = useState<{ key: string; description: string } | null>(null);
+  const [preview, setPreview] = useState<{ title: string; url: string } | null>(null);
+  const view = (title: string, url: string) => setPreview({ title, url });
+
+  // One helper for the three "clear it off the list" actions.
+  const act = async (key: string, url: string, body: object, question: string) => {
+    if (!confirm(question)) return;
+    setBusy(key);
+    try {
+      const res = await authedFetch(url, { method: 'POST', body: JSON.stringify(body) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
+      await load();
+      if ('action' in body && body.action === 'followup') setNotice('Follow-up fax submitted. Check Sent Faxes for delivery.');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not update the list.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const byKey = new Map(openRequests.map((r) => [r.key, r]));
+  const today = todayET();
+
+  return (
+    <>
+      {followup && <FaxSupportingSendModal title="Send PPOT follow-up" description={followup.description} onClose={() => setFollowup(null)} send={async (attachments) => {
+        const res = await authedFetch(`/api/fax/ppot/requests/${followup.key}`, { method: 'POST', body: JSON.stringify({ action: 'followup', attachments }) });
+        const data = await res.json(); if (!res.ok) throw new Error(data.error || 'Could not send follow-up.');
+        await load(); setNotice('Follow-up submitted. Check Sent Faxes for delivery.');
+      }} />}
+
+      {error && <div role="alert" style={{ ...noteStyle, color: '#b3261e', marginBottom: 14 }}>{error}</div>}
+      {notice && (
+        <div role="status" style={noticeStyle}>
+          <CheckCircle2 size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span style={{ flex: 1 }}>{notice}</span>
+          <button onClick={() => setNotice(null)} style={closeBtnStyle} aria-label="Dismiss message"><X size={15} /></button>
+        </div>
+      )}
+
+      <section style={{ marginBottom: 22 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <h2 style={sectionTitleStyle}>
+            <Inbox size={16} style={{ verticalAlign: -2, marginRight: 6 }} />
+            Incoming Faxes{incoming.length > 0 ? ` (${incoming.length})` : ''}
+          </h2>
+          <button onClick={() => setUploading(true)} className={btn} title="A fax that came to another fax number, or on paper">
+            <FileUp size={14} /> Add a Received Fax
+          </button>
+        </div>
+        <p style={noteStyle}>
+          Faxes on the portal line that haven&apos;t been filed. Open one to see what it is. Records, labs, and other papers
+          go to a client&apos;s Documents, or to a referral that has no client record yet, with File to Client; a signed
+          Appendix T is filed against its request. Signed verbal orders are matched under Verbal Orders instead. A fax that
+          reached another number (or came on paper) can be added with Add a Received Fax.
+        </p>
+        {incoming.length === 0 ? (
+          <div style={{ ...tableWrapStyle, padding: '14px 16px', fontSize: 13.5, color: '#7f8c8d' }}>No faxes waiting to be filed.</div>
+        ) : (
+          <div style={tableWrapStyle}>
+            <table style={tableStyle}>
+              <tbody>
+                {incoming.map((f) => {
+                  const suggested = f.ppotCandidateKeys.map((k) => byKey.get(k)).filter((r): r is PpotOpenRequest => !!r);
+                  const sender = inboundFaxSender(f.callerId, f.remoteId);
+                  return (
+                    <tr key={f.id}>
+                      <td style={tdStyle}>
+                        <div style={{ fontWeight: 600 }}>{sender.from || 'Unknown sender'}</div>
+                        {sender.line && (
+                          <div style={metaStyle} title="The phone line that dialed in. Online fax services send from shared lines, so this is often not the sender's own number.">
+                            Dialed from {sender.line}
+                          </div>
+                        )}
+                        <div style={metaStyle}>{formatDateTimeUS(f.receivedAt)} · {f.pages} page{f.pages === 1 ? '' : 's'}{f.source === 'upload' ? ' · added by hand' : ''}</div>
+                        {f.note && <div style={metaStyle}>{f.note}</div>}
+                      </td>
+                      <td style={tdStyle}>
+                        {suggested.length > 0 ? (
+                          <span style={suggestStyle}>
+                            Looks like the signed Appendix T for {suggested.map((r) => r.memberName).join(' or ')}
+                          </span>
+                        ) : f.verbalOrderCandidates > 0 ? (
+                          <span style={metaStyle}>May be a signed verbal order (see Verbal Orders)</span>
+                        ) : (
+                          <span style={metaStyle}>No match suggested</span>
+                        )}
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <button onClick={() => view(`Fax from ${sender.from || 'unknown sender'}, ${formatDateTimeUS(f.receivedAt)}`, `/api/fax/inbound/${f.id}/pdf`)} className={`${btn} ${btnSm}`}>
+                          <Eye size={14} /> View
+                        </button>
+                        <button onClick={() => setFilingToClient(f)} className={`${btn} ${btnSm}`} style={{ marginLeft: 6 }}>
+                          <FolderInput size={14} /> File to Client
+                        </button>
+                        <button onClick={() => setFiling(f)} className={`${btn} ${btnSm}`} style={{ marginLeft: 6 }} disabled={openRequests.length === 0} title={openRequests.length === 0 ? 'No PPOT request is waiting on a signed copy' : undefined}>
+                          <FileCheck2 size={14} /> File as Signed PPOT
+                        </button>
+                        {canDismiss && (
+                          <button
+                            onClick={() => act(f.id, `/api/fax/inbound/${f.id}/dismiss`, {}, 'Dismiss this fax without filing it? It also leaves the Verbal Orders queue, so only do this if it is not a signed verbal order.')}
+                            className={`${btnDanger} ${btnSm}`} style={{ marginLeft: 6 }}
+                            disabled={busy === f.id}
+                            title="Not anything to file (junk, duplicate, test)"
+                          >
+                            <X size={14} /> Dismiss
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {openRequests.length > 0 && (
+        <section style={{ marginBottom: 22 }}>
+          <h2 style={sectionTitleStyle}>
+            <Hourglass size={16} style={{ verticalAlign: -2, marginRight: 6 }} />
+            Waiting on Physicians ({openRequests.length})
+          </h2>
+          <p style={noteStyle}>
+            Requests sent and not yet answered. A request stays here until someone files the returned fax from Incoming Faxes
+            with File as Signed PPOT; nothing is filed automatically. Settings → Fax Center controls the automatic follow-up and escalation timing. You can also send a follow-up here. One follow-up attempt per day prevents duplicates. A manual follow-up covers milestones through that day; later automatic reminders remain scheduled.
+          </p>
+          <div style={tableWrapStyle}>
+            <table style={tableStyle}>
+              <tbody>
+                {openRequests.map((r) => {
+                  const waited = r.date ? daysBetween(r.date, today) : 0;
+                  return (
+                    <tr key={r.key}>
+                      <td style={tdStyle}>
+                        <div style={{ fontWeight: 600 }}>{r.memberName}</div>
+                        <div style={metaStyle}>{PPOT_REQUEST_LABEL[r.requestType]} · {r.subjectKind === 'client' ? 'Client' : 'Referral'}</div>
+                      </td>
+                      <td style={tdStyle}>
+                        {r.recipientName}
+                        <div style={metaStyle}>{r.toNumber ? `fax ${formatUSFaxNumber(r.toNumber)}` : ''}</div>
+                      </td>
+                      <td style={tdStyle}>
+                        Sent {formatDateUS(r.date)}
+                        <div style={metaStyle}>
+                          {waited <= 0 ? 'today' : `${waited} day${waited === 1 ? '' : 's'} waiting`}
+                        </div>
+                        {(r.followupDate || r.remindedDate) && <div style={metaStyle}>Last follow-up submitted {formatDateUS(r.followupDate || r.remindedDate)}</div>}
+                        {r.followupPending && <div style={metaStyle}>Follow-up processing or awaiting confirmation; check Sent Faxes.</div>}
+                        {r.followupError && <div style={metaStyle}>Last follow-up failed. Check Sent Faxes to retry.</div>}
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>
+                        <button type="button" className={`${btnPrimary} ${btnSm}`} style={{ marginBottom: 6 }}
+                          disabled={busy === r.key || !faxConfigured || r.followupPending || r.followupAttemptDate === today || r.remindedDate === today}
+                          title={!faxConfigured ? 'Fax sending is unavailable on this server' : 'Send another Appendix T request to this physician'}
+                          onClick={() => setFollowup({ key: r.key, description: `Send a follow-up Appendix T fax for ${r.memberName} to ${r.recipientName} at ${formatUSFaxNumber(r.toNumber)}.` })}>
+                          <Send size={14} /> Send Follow-up Fax
+                        </button>{' '}
+                        <button
+                          onClick={() => act(r.key, `/api/fax/ppot/requests/${r.key}`, { action: 'cancel' }, `Cancel the Appendix T request for ${r.memberName}? It leaves this list and no longer counts as this cycle's request. The fax itself stays in Sent Faxes.`)}
+                          className={`${btnDanger} ${btnSm}`}
+                          disabled={busy === r.key}
+                          title="Withdraw it (wrong office, no longer needed, or a test)"
+                        >
+                          <Ban size={14} /> Cancel Request
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {received.length > 0 && (
+        <section style={{ marginBottom: 22 }}>
+          <h2 style={sectionTitleStyle}>
+            <CheckCircle2 size={16} style={{ verticalAlign: -2, marginRight: 6 }} />
+            Signed PPOTs
+          </h2>
+          <p style={noteStyle}>Clients&apos; copies are also under Documents on the client&apos;s record.</p>
+          <div style={tableWrapStyle}>
+            <table style={tableStyle}>
+              <tbody>
+                {received.map((r) => (
+                  <tr key={r.key}>
+                    <td style={tdStyle}>
+                      <div style={{ fontWeight: 600 }}>{r.memberName}</div>
+                      <div style={metaStyle}>{PPOT_REQUEST_LABEL[r.requestType]} · {r.subjectKind === 'client' ? 'Client' : 'Referral'}</div>
+                    </td>
+                    <td style={tdStyle}>
+                      Signed {formatDateUS(r.signedDate)}
+                      <div style={metaStyle}>{[r.recipientName, r.byName ? `filed by ${r.byName}` : ''].filter(Boolean).join(' · ')}</div>
+                    </td>
+                    <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <button onClick={() => view(`Signed Appendix T: ${r.memberName}`, `/api/fax/ppot/signed/${r.key}`)} className={`${btn} ${btnSm}`}>
+                        <Eye size={14} /> View
+                      </button>
+                      <button
+                        onClick={() => act(r.key, `/api/fax/ppot/requests/${r.key}`, { action: 'hide' }, `Remove ${r.memberName}'s signed PPOT from this list? The signed copy stays filed${r.subjectKind === 'client' ? " under the client's Documents" : ''}.`)}
+                        className={`${btn} ${btnSm}`} style={{ marginLeft: 6 }}
+                        disabled={busy === r.key}
+                      >
+                        <EyeOff size={14} /> Remove from List
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {filing && (
+        <FileModal
+          fax={filing}
+          openRequests={openRequests}
+          today={today}
+          onView={() => view(`Fax from ${inboundFaxSender(filing.callerId, filing.remoteId).from || 'unknown sender'}, ${formatDateTimeUS(filing.receivedAt)}`, `/api/fax/inbound/${filing.id}/pdf`)}
+          onClose={() => setFiling(null)}
+          onFiled={(msg) => {
+            setFiling(null);
+            setNotice(msg);
+            void load();
+          }}
+        />
+      )}
+      {filingToClient && (
+        <FileToClientModal
+          fax={filingToClient}
+          today={today}
+          onView={() => view(`Fax from ${inboundFaxSender(filingToClient.callerId, filingToClient.remoteId).from || 'unknown sender'}, ${filingToClient.receivedAt}`, `/api/fax/inbound/${filingToClient.id}/pdf`)}
+          onClose={() => setFilingToClient(null)}
+          onFiled={(msg) => {
+            setFilingToClient(null);
+            setNotice(msg);
+            void load();
+          }}
+        />
+      )}
+      {uploading && (
+        <UploadFaxModal
+          today={today}
+          onClose={() => setUploading(false)}
+          onAdded={(msg) => {
+            setUploading(false);
+            setNotice(msg);
+            void load();
+          }}
+        />
+      )}
+      {preview && <PdfPreviewModal title={preview.title} url={preview.url} onClose={() => setPreview(null)} />}
+    </>
+  );
+}
+
+function FileModal({
+  fax,
+  openRequests,
+  today,
+  onView,
+  onClose,
+  onFiled,
+}: {
+  fax: IncomingFax;
+  openRequests: PpotOpenRequest[];
+  today: string;
+  onView: () => void;
+  onClose: () => void;
+  onFiled: (message: string) => void;
+}) {
+  const suggestedKey = fax.ppotCandidateKeys.find((k) => openRequests.some((r) => r.key === k)) || '';
+  const [requestKey, setRequestKey] = useState(suggestedKey);
+  const [signedDate, setSignedDate] = useState(today);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  // The client's active care-plan tasks and meds: a signed Appendix T is the
+  // physician order behind them, so filing it can renew their order date.
+  const [lines, setLines] = useState<PpotOrderLine[] | null>(null);
+  const [linesErr, setLinesErr] = useState<string | null>(null);
+  const [unticked, setUnticked] = useState<Set<string>>(new Set());
+  const isClient = requestKey.startsWith('client_');
+
+  useEffect(() => {
+    setLines(null);
+    setLinesErr(null);
+    setUnticked(new Set());
+    if (!requestKey.startsWith('client_')) return;
+    let live = true;
+    (async () => {
+      try {
+        const res = await authedFetch(`/api/fax/ppot/requests/${requestKey}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
+        if (live) setLines(data.lines ?? []);
+      } catch (e2) {
+        if (live) setLinesErr(e2 instanceof Error ? e2.message : 'Could not load the care plan.');
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [requestKey]);
+
+  const lineKey = (l: PpotOrderLine) => `${l.kind}:${l.id}`;
+  const toggle = (k: string) =>
+    setUnticked((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  const chosen = (lines ?? []).filter((l) => !unticked.has(lineKey(l)) && shouldAdvanceOrderDate(l.orderSignedDate, signedDate));
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (busy) return;
+    const invalid = validatePpotFiling({ requestKey, signedDate }, today);
+    if (invalid) return setErr(invalid);
+    const req = openRequests.find((r) => r.key === requestKey);
+    if (!confirm(`File this fax as the signed Appendix T for ${req?.memberName || 'this member'}?`)) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const orderLineIds = isClient ? chosen.map(lineKey) : [];
+      const res = await authedFetch(`/api/fax/inbound/${fax.id}/ppot`, { method: 'POST', body: JSON.stringify({ requestKey, signedDate, orderLineIds }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
+      const n = Number(data.ordersUpdated || 0);
+      const who = req?.memberName || 'the member';
+      onFiled(
+        n > 0
+          ? `Filed the signed Appendix T for ${who}, and dated ${n} care plan and medication order${n === 1 ? '' : 's'} ${formatDateUS(signedDate)}.`
+          : `Filed the signed Appendix T for ${who}.`,
+      );
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : 'Could not file the fax.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={backdropStyle} onClick={busy ? undefined : onClose}>
+      <div style={modalStyle} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="ppot-file-title">
+        <div style={modalHeaderStyle}>
+          <strong id="ppot-file-title" style={{ fontSize: 16, color: '#1a3a5c' }}>File as Signed Appendix T</strong>
+          <button onClick={onClose} style={closeBtnStyle} aria-label="Close" disabled={busy}>
+            <X size={18} />
+          </button>
+        </div>
+        <form onSubmit={submit} noValidate style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          <div style={{ padding: 20, display: 'grid', gap: 14, overflowY: 'auto' }}>
+            <p style={{ margin: 0, fontSize: 13, color: '#5c6b7a', lineHeight: 1.5 }}>
+              Fax from {inboundFaxSender(fax.callerId, fax.remoteId).from || 'an unknown sender'}, {fax.pages} page
+              {fax.pages === 1 ? '' : 's'}.{' '}
+              <button type="button" onClick={onView} style={linkBtnStyle}>Open it</button> and check that it is the completed,
+              signed form before filing. A client&apos;s copy goes under Documents (ISP / Plan of Treatment).
+            </p>
+            <label style={fieldStyle}>
+              <span style={fieldLabelStyle}>Which request does it answer?</span>
+              <select value={requestKey} onChange={(e) => { setRequestKey(e.target.value); setErr(null); }} style={withSelectChevron(inp)}>
+                <option value="">Choose a Request…</option>
+                {openRequests.map((r) => (
+                  <option key={r.key} value={r.key}>
+                    {r.memberName}: {PPOT_REQUEST_LABEL[r.requestType].toLowerCase()}, sent to {r.recipientName || 'physician'} {formatDateUS(r.date)}
+                    {r.key === suggestedKey ? ' (suggested)' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label style={fieldStyle}>
+              <span style={fieldLabelStyle}>Date the physician signed</span>
+              <input type="date" value={signedDate} max={today} onChange={(e) => { setSignedDate(e.target.value); setErr(null); }} style={{ ...inp, maxWidth: 200 }} />
+            </label>
+            {isClient && (
+              <div style={fieldStyle}>
+                <span style={fieldLabelStyle}>Update the Appendix T date on</span>
+                {linesErr ? (
+                  <span style={{ fontSize: 12.5, color: '#b3261e' }}>{linesErr} You can still file the fax and set the dates on the care plan and MAR.</span>
+                ) : lines === null ? (
+                  <span style={metaStyle}>Loading the care plan…</span>
+                ) : lines.length === 0 ? (
+                  <span style={metaStyle}>This client has no active care plan tasks or medications to date.</span>
+                ) : (
+                  <>
+                    <span style={{ fontSize: 12, color: '#7f8c8d', lineHeight: 1.45 }}>
+                      Untick anything the signed form doesn&apos;t cover. Ticked items get the signed date as their physician order
+                      date. RN approvals are kept.
+                    </span>
+                    <div style={checklistStyle}>
+                      {lines.map((l) => {
+                        const k = lineKey(l);
+                        const current = !shouldAdvanceOrderDate(l.orderSignedDate, signedDate);
+                        return (
+                          <label key={k} style={{ ...checkRowStyle, opacity: current ? 0.6 : 1 }}>
+                            <input type="checkbox" checked={!current && !unticked.has(k)} disabled={current || busy} onChange={() => toggle(k)} />
+                            <span style={{ flex: 1 }}>
+                              {l.name}
+                              <span style={{ color: '#7f8c8d' }}> · {l.kind === 'task' ? 'Care plan' : 'Medication'}</span>
+                            </span>
+                            <span style={{ fontSize: 12, color: '#7f8c8d', whiteSpace: 'nowrap' }}>
+                              {current ? `already ${formatDateUS(l.orderSignedDate)}` : l.orderSignedDate ? `now ${formatDateUS(l.orderSignedDate)}` : 'no date'}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+            {err && <div role="alert" style={{ color: '#b3261e', fontSize: 13, fontWeight: 600 }}>{err}</div>}
+          </div>
+          <div style={modalFooterStyle}>
+            <button type="button" onClick={onClose} className={btn} disabled={busy}>Cancel</button>
+            <button type="submit" className={btnPrimary} disabled={busy}>
+              <FileCheck2 size={14} /> {busy ? 'Filing…' : 'File Signed PPOT'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+const noticeStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#1e7e34', background: '#e6f4ea', border: '1px solid #b7dfc1', borderRadius: 8, padding: '10px 12px', marginBottom: 14 };
+const checklistStyle: React.CSSProperties = { border: '1px solid #e5e7eb', borderRadius: 8, maxHeight: 220, overflowY: 'auto' };
+const checkRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderBottom: '1px solid #f1f5f9', fontSize: 13, color: '#374151', cursor: 'pointer' };
+const sectionTitleStyle: React.CSSProperties = { fontSize: 15, fontWeight: 700, color: '#2c3e50', margin: '0 0 4px' };
+const noteStyle: React.CSSProperties = { fontSize: 12.5, color: '#7f8c8d', margin: '0 0 10px' };
+const tableWrapStyle: React.CSSProperties = { background: 'white', border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'auto' };
+const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 14 };
+const tdStyle: React.CSSProperties = { padding: '12px 16px', borderBottom: '1px solid #f1f5f9', color: '#374151', verticalAlign: 'top' };
+const metaStyle: React.CSSProperties = { fontSize: 12.5, color: '#7f8c8d', marginTop: 3 };
+const suggestStyle: React.CSSProperties = { display: 'inline-block', fontSize: 12.5, fontWeight: 700, color: '#1e7e34', background: '#e6f4ea', borderRadius: 999, padding: '3px 10px' };
+const linkBtnStyle: React.CSSProperties = { background: 'transparent', border: 'none', padding: 0, color: '#1a3a5c', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline' };
+const backdropStyle: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 };
+const modalStyle: React.CSSProperties = { background: 'white', borderRadius: 12, width: '100%', maxWidth: 560, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' };
+const modalHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #e5e7eb' };
+const modalFooterStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, padding: '14px 20px', borderTop: '1px solid #e5e7eb' };
+const closeBtnStyle: React.CSSProperties = { background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'inline-flex' };
+const fieldStyle: React.CSSProperties = { display: 'grid', gap: 5 };
+const fieldLabelStyle: React.CSSProperties = { fontSize: 12, color: '#5c6b7a', fontWeight: 600 };
+const inp: React.CSSProperties = { width: '100%', boxSizing: 'border-box', border: '1px solid #d1d5db', borderRadius: 8, padding: '8px 10px', fontSize: 14, fontFamily: 'inherit', color: '#111827' };

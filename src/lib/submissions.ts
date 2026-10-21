@@ -14,13 +14,18 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import type { Role } from './auth';
+import { clarificationBlocksNotes, clarificationTurn } from './clarificationShared';
+import type { NoteClarification, ClarificationKind, ClarificationTurn } from './clarificationShared';
 import { db } from './firebase';
 import { hasAnyAbnormalVital, type VitalRangesOverride } from './vitalRanges';
+import { readVitalsRechecks, recheckBloodPressure } from './vitalsRecheck';
 import { hasCriticalVital } from './criticalVitals';
 import { normalizeName } from './levenshtein';
 import { noteIsActiveDuplicate } from './duplicateMatch';
 import { normalizeDateISO, sortNotesDesc, type DashboardNote } from './clientDashboardShared';
 import { formatDateUS } from './dateFormat';
+import { readShiftChange } from './shiftChange';
+import { emptyBucketDayHours, splitShiftByDay, type BucketDayHours, type HoursBucket } from './shiftHours';
 
 /**
  * All form fields from the 7-page progress note form.
@@ -55,7 +60,8 @@ export interface ProgressNoteFormData {
   q2_serviceLevel?: string;
   /**
    * Discriminates document types sharing this collection. Absent or empty =
-   * a shift progress note; 'rn-oversight-visit' = an RN oversight visit note
+   * a shift progress note; 'rn-oversight-visit' = an RN oversight visit note;
+   * 'home-supervisory-visit' = a home supervisory visit
    * (see src/lib/oversightNote.ts). Oversight notes reuse the identity keys
    * above plus ov_-prefixed content fields.
    */
@@ -87,6 +93,14 @@ export interface ProgressNoteFormData {
   q19_respiration: string;
   q20_oxygenSaturation: string;
   q21_oxygenSource: string;
+  /**
+   * Later readings in the same shift (vitals rechecks). The count key plus
+   * numbered blocks q16r_reading{n}_{time,context,temperature,temperatureRoute,
+   * systolic,diastolic,bpMethod,bpSite,pulse,pulseSite,respiration,
+   * oxygenSaturation,oxygenSource,notes}, accessed as dynamic keys via
+   * src/lib/vitalsRecheck.ts. The first set stays in q16-q21 above.
+   */
+  q16r_readingCount?: string;
 
   // Page 2: Additional Observations
   q22_additionalObservations: string;
@@ -158,6 +172,16 @@ export interface ProgressNoteFormData {
   q56_apptsReviewed?: string;
   q56_oversightNotes?: string;
 
+  // Page 2 (rev 3): "since your last shift" screening — required Yes/No
+  // answers for every credential and program, Details required on any Yes.
+  // See src/lib/shiftChange.ts.
+  q68_sinceHospitalAdmission?: string;
+  q68_sinceErUrgentCare?: string;
+  q68_sinceMedChange?: string;
+  q68_sinceDetails?: string;
+  /** Set (Admin SDK) once the supervisor alert for a Yes answer has gone out. */
+  shiftChangeAlertedAt?: Timestamp | null;
+
   // Page 7: Signature & Completion
   q61_signature: string;
   q62_shiftEndDate: string;
@@ -210,122 +234,50 @@ export interface ProgressNoteFormData {
   linkReviewed?: boolean;
 }
 
-/**
- * One message in a clarification conversation. The thread is append-only; a
- * reviewer message (byRole !== 'nurse') awaiting a nurse reply is what drives
- * the nurse's blocking gate.
- */
-export interface ClarificationMessage {
-  by: string;        // author uid
-  byName: string;
-  byRole: Role;      // 'admin' | 'supervisor' | 'nurse'
-  text: string;
-  at?: Timestamp | null;
-}
-
-/**
- * "Flag for clarification" thread on a note. A reviewer raises a question, the
- * author and reviewers go back and forth via `thread` (append-only), a reviewer
- * resolves. Timestamps are Firestore Timestamps as stored; the view layer
- * converts as needed.
- *
- * `thread` is the source of truth for the conversation. The legacy single
- * `message` / `response` fields are retained for backward-compat reads of any
- * note not yet migrated; new writes append to `thread`.
- */
-/**
- * The intent of a flag:
- *  - 'clarification' = a non-adversarial question for the author.
- *  - 'correction'    = something is wrong and must be fixed (e.g. wrong date).
- * Same blocking + reply + resolve machinery; only the label, tone, and color
- * differ. Defaults to 'clarification' for any flag written before this field.
- */
-export type ClarificationKind = 'clarification' | 'correction';
-
-export interface NoteClarification {
-  status: 'open' | 'resolved';
-  /** What kind of flag this is. Absent → treat as 'clarification' (legacy). */
-  kind?: ClarificationKind;
-  /**
-   * When true on an OPEN correction, the author is BLOCKED from starting or
-   * submitting new notes until she actually AMENDS this note (a thread reply
-   * is not a fix). Set at flag time (reviewer checkbox, default on for
-   * corrections), cleared server-side by the amendment event or a reviewer's
-   * explicit unblock/resolve. The enforceable mirror lives on the author's
-   * users doc (correctionsBlock, Admin-SDK-only) — this field is the per-note
-   * source the mirror is recomputed from.
-   */
-  blocksNotes?: boolean;
-  /** Append-only conversation. First entry is the reviewer's opening question. */
-  thread?: ClarificationMessage[];
-  message: string;
-  flaggedBy: string;
-  flaggedByName: string;
-  flaggedByRole: Role;
-  flaggedAt?: Timestamp | null;
-  response?: string;
-  respondedBy?: string;
-  respondedByName?: string;
-  respondedByRole?: Role;
-  respondedAt?: Timestamp | null;
-  resolvedBy?: string;
-  resolvedByName?: string;
-  resolvedByRole?: Role;
-  resolvedAt?: Timestamp | null;
-  resolutionNote?: string;
-}
-
-/**
- * Build a normalized message list from a clarification, preferring `thread` and
- * falling back to the legacy `message` + `response` single fields. Used by every
- * reader (panel, gate, summary) so migrated and un-migrated notes render the same.
- */
-export function clarificationMessages(c: NoteClarification | null | undefined): ClarificationMessage[] {
-  if (!c) return [];
-  if (Array.isArray(c.thread) && c.thread.length > 0) return c.thread;
-  const out: ClarificationMessage[] = [];
-  if (c.message) {
-    out.push({ by: c.flaggedBy, byName: c.flaggedByName, byRole: c.flaggedByRole, text: c.message, at: c.flaggedAt ?? null });
-  }
-  if (c.response) {
-    out.push({ by: c.respondedBy || '', byName: c.respondedByName || '', byRole: c.respondedByRole || 'nurse', text: c.response, at: c.respondedAt ?? null });
-  }
-  return out;
-}
-
-/**
- * True when an OPEN clarification is currently awaiting the nurse — i.e. the
- * most recent message is from a reviewer (not the nurse). This is the single
- * condition that arms the nurse's blocking gate.
- */
-export function clarificationAwaitsNurse(c: NoteClarification | null | undefined): boolean {
-  if (!c || c.status !== 'open') return false;
-  const msgs = clarificationMessages(c);
-  if (msgs.length === 0) return false;
-  return msgs[msgs.length - 1].byRole !== 'nurse';
-}
-
-/**
- * True when this note's flag currently blocks its author from new notes:
- * an OPEN correction with blocksNotes set. A clarification (question) never
- * blocks, and a resolved flag never blocks.
- */
-export function clarificationBlocksNotes(c: NoteClarification | null | undefined): boolean {
-  return !!c && c.status === 'open' && c.kind === 'correction' && c.blocksNotes === true;
-}
+// Clarification / correction flag types and predicates live in
+// clarificationShared.ts (Firebase-free, so the server fan-out and unit tests
+// share them); re-exported here so existing importers keep working.
+export {
+  clarificationMessages,
+  clarificationAwaitsNurse,
+  clarificationAwaitsReviewer,
+  clarificationBlocksNotes,
+  clarificationTurn,
+  clarificationTurnLabel,
+} from './clarificationShared';
+import { SUPERVISORY_NOTE_TYPE } from './supervisoryVisit';
+export type { ClarificationKind, ClarificationMessage, ClarificationTurn, NoteClarification } from './clarificationShared';
 
 export interface SubmissionSummary {
   id: string;
   clientName: string;
   nurseName: string;
-  /** Document type discriminator: '' = shift note, 'rn-oversight-visit' = RN oversight visit note. */
+  /** Document type discriminator: '' = shift note, 'rn-oversight-visit' = RN oversight visit note,
+   *  'home-supervisory-visit' = home supervisory visit. */
   noteType: string;
+  /** RN oversight visit stamped non-billable at submit (the month's RN hours
+   *  were already documented). Shown to everyone; the owner's hours views
+   *  recompute billing from the authorizations. */
+  nonBillable?: boolean;
   /** Author's clinical credential at submit time: HHA | CNA | LPN | RN. */
   credential: string;
   /** Author's Firebase uid (used by the cosign self-author guard + nurse-only filtering). */
   nurseId: string;
   diagnosis: string;
   dateOfService: string;
+  /** Date of service normalized to 'YYYY-MM-DD' ('' when unparseable). */
+  dateISO: string;
+  /** Roster link (progressNotes.patientId); '' on unlinked legacy notes. */
+  patientId: string;
+  // --- Shift window (feeds the per-day hours split in shiftHours.ts) ---
+  /** 'HH:MM' shift start ('' when absent). */
+  shiftStart: string;
+  /** 'HH:MM' shift end ('' when absent). */
+  shiftEnd: string;
+  /** 'YYYY-MM-DD' shift end date ('' on older notes). */
+  shiftEndDate: string;
+  /** q9_totalHours as stored (free-text numeric). */
+  totalHours: string;
   submittedAt: Date | null;
   status: string;
   archivedAt: Date | null;
@@ -335,6 +287,10 @@ export interface SubmissionSummary {
   hasCriticalVitals: boolean;
   hasIncident: boolean;
   physicianNotified: boolean;
+  /** "Since your last shift" Yes answers (rev-3 notes; false on older notes). */
+  hospitalAdmission: boolean;
+  erUrgentCare: boolean;
+  medChangeReported: boolean;
   // --- RN co-signature (only populated for HHA/CNA/LPN notes once an RN signs off) ---
   cosignedAt: Date | null;
   cosignedByName: string;
@@ -345,6 +301,8 @@ export interface SubmissionSummary {
   clarificationKind: ClarificationKind | null;
   /** True when the open correction blocks the author from new notes. */
   clarificationBlocksNotes: boolean;
+  /** Whose reply an open flag is waiting on ('nurse' | 'reviewer'); null when none is open. */
+  clarificationTurn: ClarificationTurn;
 }
 
 export type ArchiveScope = 'staff' | 'nurse';
@@ -478,6 +436,40 @@ const NO_INCIDENT_VALUES = new Set([
   'na',
 ]);
 
+/**
+ * The documented clock window of a note, whichever type it is. Shift notes
+ * carry q7/q62 start + end (end date included); RN oversight visit notes
+ * carry ov_timeIn / ov_timeOut on the visit date. Returning both in one
+ * shape lets shiftHours.ts split and total either kind with the same code,
+ * while noteType keeps them in separate buckets everywhere they are shown.
+ */
+export function readShiftWindow(data: Record<string, unknown>): {
+  shiftStart: string;
+  shiftEnd: string;
+  shiftEndDate: string;
+  totalHours: string;
+} {
+  // A home supervisory visit is not a billed service: no window, so it never
+  // counts toward shift or oversight hours anywhere.
+  if ((data.noteType as string) === SUPERVISORY_NOTE_TYPE) {
+    return { shiftStart: '', shiftEnd: '', shiftEndDate: '', totalHours: '' };
+  }
+  if ((data.noteType as string) === 'rn-oversight-visit') {
+    return {
+      shiftStart: (data.ov_timeIn as string) || '',
+      shiftEnd: (data.ov_timeOut as string) || '',
+      shiftEndDate: normalizeDateISO((data.q6_dateofService as string) || ''),
+      totalHours: '',
+    };
+  }
+  return {
+    shiftStart: (data.q7_shiftStart as string) || '',
+    shiftEnd: (data.q62_shiftEndTime as string) || '',
+    shiftEndDate: (data.q62_shiftEndDate as string) || '',
+    totalHours: (data.q9_totalHours as string) || '',
+  };
+}
+
 // Map a single progressNotes Firestore doc to the dashboard's
 // SubmissionSummary shape. Extracted so getSubmissions +
 // getNurseAccessibleSubmissions agree on every derived field
@@ -500,15 +492,20 @@ function mapDocToSummary(
     incidentDetails || !NO_INCIDENT_VALUES.has(incidentType.toLowerCase())
   );
   const cosignedAt = data.cosignedAt as Timestamp | null | undefined;
+  const shiftChange = readShiftChange(data);
   return {
     id: d.id,
     clientName: (data.q3_clientName as string) || '',
     nurseName: (data.q11_nurseName as string) || '',
     noteType: (data.noteType as string) || '',
+    nonBillable: data.ov_nonBillable === 'Yes',
     credential: (data.q12_credential as string) || '',
     nurseId: (data.nurseId as string) || '',
     diagnosis: (data.q10_primaryDiagnosis as string) || '',
     dateOfService: formatDateUS((data.q6_dateofService as string) || ''),
+    dateISO: normalizeDateISO((data.q6_dateofService as string) || ''),
+    patientId: (data.patientId as string) || '',
+    ...readShiftWindow(data),
     submittedAt: submittedAt ? submittedAt.toDate() : null,
     status: (data.status as string) || 'submitted',
     archivedAt: archivedAt ? archivedAt.toDate() : null,
@@ -517,6 +514,9 @@ function mapDocToSummary(
     hasCriticalVitals: hasCriticalVital(data),
     hasIncident,
     physicianNotified: String(data.q52_physicianNotify || '').toLowerCase() === 'yes',
+    hospitalAdmission: shiftChange.hospitalAdmission,
+    erUrgentCare: shiftChange.erUrgentCare,
+    medChangeReported: shiftChange.medChange,
     cosignedAt: cosignedAt ? cosignedAt.toDate() : null,
     cosignedByName: (data.cosignedByName as string) || '',
     cosignedCredential: (data.cosignedCredential as string) || '',
@@ -529,6 +529,10 @@ function mapDocToSummary(
       ((data.clarification as { kind?: string } | undefined)?.kind as ClarificationKind | undefined) ?? null,
     clarificationBlocksNotes: clarificationBlocksNotes(
       (data.clarification as NoteClarification | undefined) ?? null,
+    ),
+    clarificationTurn: clarificationTurn(
+      (data.clarification as NoteClarification | undefined) ?? null,
+      (data.nurseId as string) || undefined,
     ),
   };
 }
@@ -884,20 +888,30 @@ export async function getNotesForPatient(patientId: string): Promise<DashboardNo
       const submittedAt = data.submittedAt as Timestamp | null;
       notes.push({
         id: d.id,
+        noteType: (data.noteType as string) || '',
         dateISO: normalizeDateISO((data.q6_dateofService as string) || ''),
         submittedAt: submittedAt && typeof submittedAt.toDate === 'function' ? submittedAt.toDate() : null,
         nurseId: (data.nurseId as string) || '',
         nurseName: (data.q11_nurseName as string) || '',
         credential: (data.q12_credential as string) || '',
-        totalHours: (data.q9_totalHours as string) || '',
         temperature: (data.q16_temperature as string) || '',
         bloodPressure: (data.q17_bloodPressure as string) || '',
         pulse: (data.q18_pulse as string) || '',
         respiration: (data.q19_respiration as string) || '',
         oxygenSaturation: (data.q20_oxygenSaturation as string) || '',
+        rechecks: readVitalsRechecks(data).map((r) => ({
+          time: r.time,
+          context: r.context,
+          temperature: r.temperature,
+          bloodPressure: recheckBloodPressure(r),
+          pulse: r.pulse,
+          respiration: r.respiration,
+          oxygenSaturation: r.oxygenSaturation,
+        })),
         painScore: (data.q24_painScore as string) || '',
         medTolerance: (data.q43_medTolerance as string) || '',
         physNotified: (data.q43_reactionPhysNotified as string) || '',
+        ...readShiftWindow(data),
         addrLine1: (data.q200_addr_line1 as string) || '',
         city: (data.q200_city as string) || '',
         state: (data.q200_state as string) || '',
@@ -909,4 +923,111 @@ export async function getNotesForPatient(patientId: string): Promise<DashboardNo
     console.error('Error fetching notes for patient:', error);
     return [];
   }
+}
+
+/**
+ * Per-client, per-day hours for every ACTIVE note whose date of service is
+ * on/after `fromISO`, in two buckets: shift notes and RN oversight visits
+ * (admin roster badges: "September shift hours: 84 of 90 used", "No RN
+ * oversight visit yet"). Shifts are split at midnight via shiftHours.ts so a
+ * note dated the last day of the prior month still lands its post-midnight
+ * hours in the current month; callers therefore pass a fromISO a day or two
+ * BEFORE the window they care about. Notes with no patientId can't be
+ * attributed and are skipped.
+ *
+ * A single range query on q6_dateofService (ISO 'YYYY-MM-DD' on every note
+ * the form has written; older non-ISO values sort out of range and are
+ * simply not counted, which only affects months long since billed).
+ */
+export async function getDayHoursByPatientSince(fromISO: string): Promise<Map<string, BucketDayHours>> {
+  const out = new Map<string, BucketDayHours>();
+  try {
+    const q = query(collection(db, 'progressNotes'), where('q6_dateofService', '>=', fromISO));
+    const snap = await getDocs(q);
+    for (const d of snap.docs) {
+      const data = d.data();
+      if ((data.status as string) === 'archived' || data.archivedAt) continue;
+      const patientId = (data.patientId as string) || '';
+      if (!patientId) continue;
+      const bucket: HoursBucket = (data.noteType as string) === 'rn-oversight-visit' ? 'oversight' : 'shift';
+      const segs = splitShiftByDay({
+        dateISO: normalizeDateISO((data.q6_dateofService as string) || ''),
+        ...readShiftWindow(data),
+      });
+      if (segs.length === 0) continue;
+      const buckets = out.get(patientId) ?? emptyBucketDayHours();
+      const days = buckets[bucket];
+      for (const seg of segs) days.set(seg.dateISO, Math.round(((days.get(seg.dateISO) || 0) + seg.hours) * 100) / 100);
+      out.set(patientId, buckets);
+    }
+  } catch (error) {
+    console.error('Error fetching day hours:', error);
+  }
+  return out;
+}
+
+/**
+ * Every documented shift window the signed-in nurse has for one client +
+ * date, from her own SUBMITTED progress notes. Used by the MAR grid's
+ * click-to-administer flow: a nurse-given dose must fall inside one of her
+ * windows, and when she has none on file the modal requires an explicit
+ * personal attestation instead (we cannot know her window).
+ *
+ * Returns ALL usable windows, not just the newest: an approved split-shift
+ * second note contributes a second window, and the previous day's overnight
+ * note contributes its next-day TAIL (represented as 00:00 -> its end time)
+ * so back-charting an early-morning dose from an overnight shift isn't
+ * false-flagged. [] = genuinely no note on file. THROWS on fetch failure so
+ * callers can tell "no note" from "couldn't check" and fail open.
+ */
+export interface ShiftWindow {
+  start: string; // 'HH:MM'
+  end: string; // 'HH:MM'
+  endsNextDay: boolean;
+  /** This window is the next-day tail of the previous day's overnight note. */
+  prevDayTail?: boolean;
+}
+
+const HHMM_RE = /^\d{2}:\d{2}$/;
+
+export async function getMyShiftWindowsForDate(
+  nurseId: string,
+  patientId: string,
+  dateISO: string,
+): Promise<ShiftWindow[]> {
+  const prev = new Date(dateISO + 'T12:00:00');
+  prev.setDate(prev.getDate() - 1);
+  const prevISO = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}-${String(prev.getDate()).padStart(2, '0')}`;
+  const forDate = (d: string) =>
+    getDocs(
+      query(
+        collection(db, 'progressNotes'),
+        where('nurseId', '==', nurseId),
+        where('patientId', '==', patientId),
+        where('q6_dateofService', '==', d),
+      ),
+    );
+  const [snapDay, snapPrev] = await Promise.all([forDate(dateISO), forDate(prevISO)]);
+  const windows: ShiftWindow[] = [];
+  for (const d of snapDay.docs) {
+    const data = d.data();
+    if ((data.status as string) === 'archived' || data.archivedAt) continue;
+    const start = String(data.q7_shiftStart || '').trim();
+    const end = String(data.q62_shiftEndTime || '').trim();
+    if (!start || !end) continue;
+    const endDate = String(data.q62_shiftEndDate || '').trim();
+    windows.push({ start, end, endsNextDay: !!endDate && endDate > dateISO });
+  }
+  for (const d of snapPrev.docs) {
+    const data = d.data();
+    if ((data.status as string) === 'archived' || data.archivedAt) continue;
+    const start = String(data.q7_shiftStart || '').trim();
+    const end = String(data.q62_shiftEndTime || '').trim();
+    if (!start || !end) continue;
+    const endDate = String(data.q62_shiftEndDate || '').trim();
+    const overnight =
+      (!!endDate && endDate > prevISO) || (HHMM_RE.test(start) && HHMM_RE.test(end) && end < start);
+    if (overnight) windows.push({ start: '00:00', end, endsNextDay: false, prevDayTail: true });
+  }
+  return windows;
 }

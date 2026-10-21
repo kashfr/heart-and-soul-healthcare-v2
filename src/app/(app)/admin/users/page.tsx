@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
 import {
   Plus,
   Mail,
@@ -12,12 +13,48 @@ import {
   UserCheck,
   Lock,
   Eye,
+  Search,
 } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
-import { useAuth } from '@/components/AuthProvider';
+import {
+  staffMatchesQuery,
+  compareStaff,
+  type StaffSortKey,
+  type StaffSortDir,
+} from './staffListView';
+import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { useViewAs } from '@/components/ImpersonationProvider';
 import type { Role } from '@/lib/auth';
-import { formatUSPhone } from '@/lib/phone';
+import { formatUSPhone, isValidUSPhone } from '@/lib/phone';
+import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
+
+type StaffField = 'displayName' | 'email' | 'phone' | 'credential';
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const ADD_STAFF_FIELD_ORDER: readonly StaffField[] = ['displayName', 'email', 'phone', 'credential'];
+const EDIT_STAFF_FIELD_ORDER: readonly StaffField[] = ['email', 'displayName', 'phone', 'credential'];
+
+/** Client-side mirror of the API's rules, so a blocked save lands on the field. */
+function validateStaffFields(v: { displayName: string; email: string; phone: string; credential: string; role: Role }): Partial<Record<StaffField, string>> {
+  const errs: Partial<Record<StaffField, string>> = {};
+  if (!v.displayName.trim()) errs.displayName = 'Enter the staff member\'s full name.';
+  const email = v.email.trim();
+  if (!email) errs.email = 'Enter an email address.';
+  else if (!EMAIL_RE.test(email)) errs.email = 'Enter a valid email address, like name@example.com.';
+  if (v.phone.trim() && !isValidUSPhone(v.phone)) errs.phone = 'Enter a 10-digit US phone number, or leave it blank.';
+  if (v.role === 'nurse' && !v.credential.trim()) errs.credential = 'Choose a credential. Nurses need one so the progress-note form fills in correctly.';
+  return errs;
+}
+
+/** Route a server rejection to the field it names; null means it belongs in the banner. */
+function staffFieldForServerError(message: string): StaffField | null {
+  // "Could not update the email address" is a backend failure, not a bad value.
+  if (/could not|failed/i.test(message)) return null;
+  if (/email/i.test(message)) return 'email';
+  if (/phone/i.test(message)) return 'phone';
+  if (/credential/i.test(message)) return 'credential';
+  if (/displayName|full name/i.test(message)) return 'displayName';
+  return null;
+}
 
 interface StaffRow {
   uid: string;
@@ -79,8 +116,13 @@ const CREDENTIAL_OPTIONS: { value: string; label: string }[] = [
 ];
 
 export default function AdminUsersPage() {
-  const { user: currentUser, role: currentRole } = useAuth();
+  const { user: currentUser } = useAuth();
   const { startViewAs } = useViewAs();
+  // Render gating keys off the EFFECTIVE role so a supervisor preview shows
+  // the supervisor's variant (admin rows locked, no View-as buttons — which
+  // also prevents silently swapping the preview target mid-session). Writes
+  // are separately blocked during view-as by the authedFetch guard.
+  const { role: currentRole } = useEffectiveUser();
   const isSupervisor = currentRole === 'supervisor';
 
   // Admin-only "View as" (read-only impersonation for testing). Logs the session
@@ -92,7 +134,15 @@ export default function AdminUsersPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ targetUid: s.uid, targetName: s.displayName || s.email || '' }),
       }).catch(() => {}); // audit is best-effort; don't block the session on it
-      startViewAs({ uid: s.uid, displayName: s.displayName || s.email || 'Staff', credential: s.credential });
+      startViewAs({
+        uid: s.uid,
+        displayName: s.displayName || s.email || 'Staff',
+        credential: s.credential,
+        // The target's real role drives the preview's nav + surfaces. Rows
+        // without a role stored (shouldn't happen for active staff) preview
+        // as the least-privileged clinical role rather than failing open.
+        role: s.role ?? 'nurse',
+      });
       window.location.href = '/admin';
     } catch (err) {
       console.error('View-as failed:', err);
@@ -104,6 +154,21 @@ export default function AdminUsersPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<StaffRow | null>(null);
   const [linkResult, setLinkResult] = useState<CreateResult | null>(null);
+  // Search + column sort are client-side views over the fetched list. Default
+  // is alphabetical by name — the API's createdAt ordering floated the newest
+  // hires to the top, which isn't how admins scan for a nurse.
+  const [query, setQuery] = useState('');
+  const [sortKey, setSortKey] = useState<StaffSortKey>('name');
+  const [sortDir, setSortDir] = useState<StaffSortDir>('asc');
+
+  const handleSort = (key: StaffSortKey) => {
+    if (key === sortKey) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  };
 
   const loadStaff = useCallback(async () => {
     try {
@@ -131,11 +196,15 @@ export default function AdminUsersPage() {
     const a: StaffRow[] = [];
     const d: StaffRow[] = [];
     for (const s of staff) {
+      if (!staffMatchesQuery(s, query)) continue;
       if (s.active) a.push(s);
       else d.push(s);
     }
+    const cmp = (x: StaffRow, y: StaffRow) => compareStaff(x, y, sortKey, sortDir);
+    a.sort(cmp);
+    d.sort(cmp);
     return { active: a, deactivated: d };
-  }, [staff]);
+  }, [staff, query, sortKey, sortDir]);
 
   const handleCreated = (created: CreateResult) => {
     setAddOpen(false);
@@ -163,24 +232,52 @@ export default function AdminUsersPage() {
               Invite admins, supervisors, and nurses. Click any row to edit a staff member, deactivate access, or resend a password-reset link.
             </p>
           </div>
-          <button onClick={() => setAddOpen(true)} style={primaryBtnStyle}>
-            <Plus size={16} /> Add staff
+          <button onClick={() => setAddOpen(true)} className={btnPrimary}>
+            <Plus size={16} /> Add Staff
           </button>
         </header>
 
         {listError && <div style={errorStyle}>{listError}</div>}
 
+        {!loading && staff.length > 0 && (
+          <div style={filterBarStyle}>
+            <div style={searchWrapStyle}>
+              <Search size={14} style={searchIconStyle} aria-hidden />
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search name, email, phone, role, credential…"
+                style={searchInputStyle}
+                aria-label="Search staff"
+              />
+            </div>
+            {query.trim() !== '' && (
+              <span style={matchCountStyle}>
+                {active.length + deactivated.length === 1
+                  ? '1 match'
+                  : `${active.length + deactivated.length} matches`}
+              </span>
+            )}
+          </div>
+        )}
+
         {loading ? (
           <div style={emptyStyle}>Loading…</div>
         ) : active.length === 0 ? (
           <div style={emptyStyle}>
-            No active staff. Click &ldquo;Add staff&rdquo; to create the first account.
+            {query.trim() !== ''
+              ? `No active staff match "${query.trim()}".${deactivated.length > 0 ? ' See the Deactivated section below.' : ''}`
+              : 'No active staff. Click "Add Staff" to create the first account.'}
           </div>
         ) : (
           <StaffTable
             rows={active}
             currentUserUid={currentUser?.uid}
             callerRole={currentRole}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            onSort={handleSort}
             onEdit={setEditing}
             onViewAs={currentRole === 'admin' ? handleViewAs : undefined}
           />
@@ -196,6 +293,9 @@ export default function AdminUsersPage() {
               rows={deactivated}
               currentUserUid={currentUser?.uid}
               callerRole={currentRole}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              onSort={handleSort}
               onEdit={setEditing}
               muted
             />
@@ -231,6 +331,9 @@ function StaffTable({
   rows,
   currentUserUid,
   callerRole,
+  sortKey,
+  sortDir,
+  onSort,
   onEdit,
   onViewAs,
   muted,
@@ -238,21 +341,41 @@ function StaffTable({
   rows: StaffRow[];
   currentUserUid: string | undefined;
   callerRole: Role | null;
+  sortKey: StaffSortKey;
+  sortDir: StaffSortDir;
+  onSort: (key: StaffSortKey) => void;
   onEdit: (s: StaffRow) => void;
   onViewAs?: (s: StaffRow) => void;
   muted?: boolean;
 }) {
+  // Active column shows its direction; the rest carry a faint ↕ so every
+  // header reads as clickable, not just the one currently sorted.
+  const sortableTh = (key: StaffSortKey, label: string) => (
+    <th
+      style={sortableThStyle}
+      onClick={() => onSort(key)}
+      aria-sort={sortKey === key ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
+      title={`Sort by ${label.toLowerCase()}`}
+    >
+      {label}
+      {sortKey === key ? (
+        <span aria-hidden> {sortDir === 'asc' ? '↑' : '↓'}</span>
+      ) : (
+        <span aria-hidden style={{ color: '#c3ccd6' }}> ↕</span>
+      )}
+    </th>
+  );
   return (
     <div style={tableWrapStyle}>
       <table style={tableStyle}>
         <thead>
           <tr>
-            <th style={thStyle}>Name</th>
-            <th style={thStyle}>Email</th>
-            <th style={thStyle}>Phone</th>
-            <th style={thStyle}>Role</th>
-            <th style={thStyle}>Credential</th>
-            <th style={thStyle}>Status</th>
+            {sortableTh('name', 'Name')}
+            {sortableTh('email', 'Email')}
+            {sortableTh('phone', 'Phone')}
+            {sortableTh('role', 'Role')}
+            {sortableTh('credential', 'Credential')}
+            {sortableTh('status', 'Status')}
             <th style={{ ...thStyle, textAlign: 'right', width: 60 }}></th>
           </tr>
         </thead>
@@ -293,9 +416,9 @@ function StaffTable({
                     {s.correctionsBlocked && (
                       <span
                         style={blockedBadgeStyle}
-                        title="Blocked from new notes until they amend a flagged note. Clear it from the note's correction panel (Remove block or Mark resolved)."
+                        title="Blocked from new notes until they amend a flagged note. Clear it from the note's correction panel (Remove Block or Mark Resolved)."
                       >
-                        Blocked — corrections
+                        Blocked — Corrections
                       </span>
                     )}
                     {s.manualNotesBlock && (
@@ -303,13 +426,13 @@ function StaffTable({
                         style={blockedBadgeStyle}
                         title="Manually blocked from new notes by an administrator. Toggle it off in Edit."
                       >
-                        Blocked — manual
+                        Blocked — Manual
                       </span>
                     )}
                   </div>
                   {s.emailChangeRequest && (
                     <div style={emailReqChipStyle} title={`Requested new email: ${s.emailChangeRequest.newEmail}`}>
-                      <Mail size={11} /> Email change requested
+                      <Mail size={11} /> Email Change Requested
                     </div>
                   )}
                 </td>
@@ -374,13 +497,11 @@ function StaffTable({
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); onViewAs(s); }}
-                        style={viewAsRowBtnStyle}
+                        className={`${btn} ${btnSm}`}
                         title={`See the portal exactly as ${s.displayName || 'this staff member'} (read-only)`}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = '#345d78'; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = '#3f6f8f'; }}
                       >
                         <Eye size={13} />
-                        View as
+                        View As
                       </button>
                     )}
                   </div>
@@ -413,11 +534,19 @@ function AddStaffModal({
   const [phone, setPhone] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<StaffField, string>>>({});
+  const fieldId = (k: StaffField) => `add-staff-${k}`;
+  const clearFieldError = (k: StaffField) => {
+    if (fieldErrors[k]) setFieldErrors((prev) => ({ ...prev, [k]: undefined }));
+  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setSubmitting(true);
+    if (submitting) return;
     setError(null);
+    const errs = validateStaffFields({ displayName, email, phone, credential, role });
+    if (!applyFieldErrors(errs, ADD_STAFF_FIELD_ORDER, setFieldErrors, fieldId)) return;
+    setSubmitting(true);
     try {
       const res = await authedFetch('/api/admin/users', {
         method: 'POST',
@@ -435,7 +564,10 @@ function AddStaffModal({
       }
       onCreated(body as CreateResult);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create account.');
+      const message = err instanceof Error && err.message ? err.message : 'Could not create the account. Please try again.';
+      const field = staffFieldForServerError(message);
+      if (field) applyFieldErrors({ [field]: message }, ADD_STAFF_FIELD_ORDER, setFieldErrors, fieldId);
+      else setError(message);
       setSubmitting(false);
     }
   };
@@ -444,43 +576,53 @@ function AddStaffModal({
     <div style={modalBackdropStyle} onClick={() => !submitting && onClose()}>
       <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
         <div style={modalHeaderStyle}>
-          <h2 style={modalTitleStyle}>Add staff</h2>
+          <h2 style={modalTitleStyle}>Add Staff</h2>
           <button onClick={onClose} disabled={submitting} style={modalCloseStyle} aria-label="Close">
             ✕
           </button>
         </div>
-        <form onSubmit={handleSubmit} style={{ padding: 20 }}>
-          <Field label="Full name *" help="Match the nurse's existing progress-note name exactly so past notes get linked.">
+        <form onSubmit={handleSubmit} noValidate style={{ padding: 20 }}>
+          <Field label="Full name *" help="Match the nurse's existing progress-note name exactly so past notes get linked." id={fieldId('displayName')} error={fieldErrors.displayName}>
             <input
               type="text"
-              required
               value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              style={inputStyle}
+              onChange={(e) => {
+                setDisplayName(e.target.value);
+                clearFieldError('displayName');
+              }}
+              style={{ ...inputStyle, ...(fieldErrors.displayName ? FIELD_ERROR_STYLE : null) }}
+              aria-invalid={!!fieldErrors.displayName}
               placeholder="e.g., Jordan Rivera"
               disabled={submitting}
             />
           </Field>
 
-          <Field label="Email *">
+          <Field label="Email *" id={fieldId('email')} error={fieldErrors.email}>
             <input
               type="email"
-              required
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              style={inputStyle}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                clearFieldError('email');
+              }}
+              style={{ ...inputStyle, ...(fieldErrors.email ? FIELD_ERROR_STYLE : null) }}
+              aria-invalid={!!fieldErrors.email}
               placeholder="staff@example.com"
               disabled={submitting}
             />
           </Field>
 
-          <Field label="Phone" help="US number. Optional — lets a reviewer call the nurse about their notes.">
+          <Field label="Phone" help="US number. Optional — lets a reviewer call the nurse about their notes." id={fieldId('phone')} error={fieldErrors.phone}>
             <input
               type="tel"
               inputMode="tel"
               value={phone}
-              onChange={(e) => setPhone(formatUSPhone(e.target.value))}
-              style={inputStyle}
+              onChange={(e) => {
+                setPhone(formatUSPhone(e.target.value));
+                clearFieldError('phone');
+              }}
+              style={{ ...inputStyle, ...(fieldErrors.phone ? FIELD_ERROR_STYLE : null) }}
+              aria-invalid={!!fieldErrors.phone}
               placeholder="(555) 123-4567"
               disabled={submitting}
             />
@@ -495,7 +637,10 @@ function AddStaffModal({
                     name="role"
                     value={opt.value}
                     checked={role === opt.value}
-                    onChange={() => setRole(opt.value)}
+                    onChange={() => {
+                      setRole(opt.value);
+                      clearFieldError('credential');
+                    }}
                     disabled={submitting}
                   />
                   <div>
@@ -510,12 +655,17 @@ function AddStaffModal({
           <Field
             label={role === 'nurse' ? 'Credential *' : 'Credential'}
             help="Clinical credential, independent of portal role. Used to auto-fill the progress-note form. Optional for admins and supervisors; required for nurses."
+            id={fieldId('credential')}
+            error={fieldErrors.credential}
           >
             <select
-              required={role === 'nurse'}
               value={credential}
-              onChange={(e) => setCredential(e.target.value)}
-              style={selectStyle}
+              onChange={(e) => {
+                setCredential(e.target.value);
+                clearFieldError('credential');
+              }}
+              style={{ ...selectStyle, ...(fieldErrors.credential ? FIELD_ERROR_STYLE : null) }}
+              aria-invalid={!!fieldErrors.credential}
               disabled={submitting}
             >
               {CREDENTIAL_OPTIONS.map((opt) => (
@@ -529,11 +679,11 @@ function AddStaffModal({
           {error && <div style={errorStyle}>{error}</div>}
 
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
-            <button type="button" onClick={onClose} disabled={submitting} style={secondaryBtnStyle}>
+            <button type="button" onClick={onClose} disabled={submitting} className={btn}>
               Cancel
             </button>
-            <button type="submit" disabled={submitting} style={primaryBtnStyle}>
-              {submitting ? 'Creating…' : 'Create account'}
+            <button type="submit" disabled={submitting} className={btnPrimary}>
+              {submitting ? 'Creating…' : 'Create Account'}
             </button>
           </div>
         </form>
@@ -567,6 +717,11 @@ function EditStaffModal({
   const [role, setRole] = useState<Role>(staff.role || 'nurse');
   const [busy, setBusy] = useState<null | 'save' | 'deactivate' | 'reactivate' | 'link' | 'approveEmail' | 'dismissEmail' | 'block'>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<StaffField, string>>>({});
+  const fieldId = (k: StaffField) => `edit-staff-${k}`;
+  const clearFieldError = (k: StaffField) => {
+    if (fieldErrors[k]) setFieldErrors((prev) => ({ ...prev, [k]: undefined }));
+  };
   const emailRequest = staff.emailChangeRequest || null;
 
   // Case-insensitive comparison so saving without any change to the email
@@ -599,9 +754,15 @@ function EditStaffModal({
 
   const handleSave = async (e: FormEvent) => {
     e.preventDefault();
-    if (!dirty) return;
-    setBusy('save');
+    if (busy) return;
     setError(null);
+    if (!dirty) {
+      setError('Nothing has changed yet. Edit a field above, then save.');
+      return;
+    }
+    const errs = validateStaffFields({ displayName, email, phone, credential, role });
+    if (!applyFieldErrors(errs, EDIT_STAFF_FIELD_ORDER, setFieldErrors, fieldId)) return;
+    setBusy('save');
     try {
       const patchBody: Record<string, unknown> = {};
       if (displayName.trim() !== (staff.displayName || '')) patchBody.displayName = displayName.trim();
@@ -612,7 +773,10 @@ function EditStaffModal({
       const updated = await patch(patchBody);
       if (updated) onSaved(updated);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed.');
+      const message = err instanceof Error && err.message ? err.message : 'Could not save the changes. Please try again.';
+      const field = staffFieldForServerError(message);
+      if (field) applyFieldErrors({ [field]: message }, EDIT_STAFF_FIELD_ORDER, setFieldErrors, fieldId);
+      else setError(message);
       setBusy(null);
     }
   };
@@ -724,17 +888,17 @@ function EditStaffModal({
     <div style={modalBackdropStyle} onClick={close}>
       <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
         <div style={modalHeaderStyle}>
-          <h2 style={modalTitleStyle}>Edit staff</h2>
+          <h2 style={modalTitleStyle}>Edit Staff</h2>
           <button onClick={close} disabled={!!busy} style={modalCloseStyle} aria-label="Close">
             ✕
           </button>
         </div>
 
-        <form onSubmit={handleSave} style={{ padding: 20 }}>
+        <form onSubmit={handleSave} noValidate style={{ padding: 20 }}>
           {emailRequest && (
             <div style={emailReqBoxStyle}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontWeight: 700, color: '#a35400' }}>
-                <Mail size={15} /> Email change requested
+                <Mail size={15} /> Email Change Requested
               </div>
               <div style={{ marginTop: 8, fontSize: 14, color: '#2c3e50' }}>
                 {staff.displayName || 'This user'} asked to change their login email to{' '}
@@ -750,15 +914,15 @@ function EditStaffModal({
                   type="button"
                   onClick={handleApproveEmailRequest}
                   disabled={!!busy}
-                  style={{ ...approveBtnStyle, ...(busy ? { opacity: 0.6, cursor: 'not-allowed' } : {}) }}
+                  className={`${btnPrimary} ${btnSm}`}
                 >
-                  {busy === 'approveEmail' ? 'Approving…' : 'Approve & change email'}
+                  {busy === 'approveEmail' ? 'Approving…' : 'Approve & Change Email'}
                 </button>
                 <button
                   type="button"
                   onClick={handleDismissEmailRequest}
                   disabled={!!busy}
-                  style={{ ...secondaryBtnStyle, ...(busy ? { opacity: 0.6, cursor: 'not-allowed' } : {}) }}
+                  className={`${btn} ${btnSm}`}
                 >
                   {busy === 'dismissEmail' ? 'Dismissing…' : 'Dismiss'}
                 </button>
@@ -772,35 +936,47 @@ function EditStaffModal({
                 ? `Changing this will change how this person signs in. They'll need to use the new email for their next login. A heads-up email goes to the old address (${staff.email}) so they can flag the change if it wasn't authorized. Existing notes stay linked.`
                 : 'Used as both the contact address and the sign-in identifier.'
             }
+            id={fieldId('email')}
+            error={fieldErrors.email}
           >
             <input
               type="email"
-              required
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              style={inputStyle}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                clearFieldError('email');
+              }}
+              style={{ ...inputStyle, ...(fieldErrors.email ? FIELD_ERROR_STYLE : null) }}
+              aria-invalid={!!fieldErrors.email}
               disabled={!!busy}
             />
           </Field>
 
-          <Field label="Full name *">
+          <Field label="Full name *" id={fieldId('displayName')} error={fieldErrors.displayName}>
             <input
               type="text"
-              required
               value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              style={inputStyle}
+              onChange={(e) => {
+                setDisplayName(e.target.value);
+                clearFieldError('displayName');
+              }}
+              style={{ ...inputStyle, ...(fieldErrors.displayName ? FIELD_ERROR_STYLE : null) }}
+              aria-invalid={!!fieldErrors.displayName}
               disabled={!!busy}
             />
           </Field>
 
-          <Field label="Phone" help="US number. Optional — lets a reviewer call the nurse about their notes.">
+          <Field label="Phone" help="US number. Optional — lets a reviewer call the nurse about their notes." id={fieldId('phone')} error={fieldErrors.phone}>
             <input
               type="tel"
               inputMode="tel"
               value={phone}
-              onChange={(e) => setPhone(formatUSPhone(e.target.value))}
-              style={inputStyle}
+              onChange={(e) => {
+                setPhone(formatUSPhone(e.target.value));
+                clearFieldError('phone');
+              }}
+              style={{ ...inputStyle, ...(fieldErrors.phone ? FIELD_ERROR_STYLE : null) }}
+              aria-invalid={!!fieldErrors.phone}
               placeholder="(555) 123-4567"
               disabled={!!busy}
             />
@@ -809,12 +985,17 @@ function EditStaffModal({
           <Field
             label={role === 'nurse' ? 'Credential *' : 'Credential'}
             help="Clinical credential, independent of portal role. Used to auto-fill the progress-note form. Optional for admins and supervisors; required for nurses."
+            id={fieldId('credential')}
+            error={fieldErrors.credential}
           >
             <select
-              required={role === 'nurse'}
               value={credential}
-              onChange={(e) => setCredential(e.target.value)}
-              style={selectStyle}
+              onChange={(e) => {
+                setCredential(e.target.value);
+                clearFieldError('credential');
+              }}
+              style={{ ...selectStyle, ...(fieldErrors.credential ? FIELD_ERROR_STYLE : null) }}
+              aria-invalid={!!fieldErrors.credential}
               disabled={!!busy}
             >
               {CREDENTIAL_OPTIONS.map((opt) => (
@@ -834,7 +1015,10 @@ function EditStaffModal({
                     name="role"
                     value={opt.value}
                     checked={role === opt.value}
-                    onChange={() => setRole(opt.value)}
+                    onChange={() => {
+                      setRole(opt.value);
+                      clearFieldError('credential');
+                    }}
                     disabled={!!busy || isSelf}
                   />
                   <div>
@@ -853,7 +1037,7 @@ function EditStaffModal({
               type="button"
               onClick={handleResendLink}
               disabled={!!busy}
-              style={secondaryBtnStyle}
+              className={btn}
               title="Generate a fresh password-reset link (old link will still work until it expires)."
             >
               {busy === 'link' ? (
@@ -862,7 +1046,7 @@ function EditStaffModal({
                 </>
               ) : (
                 <>
-                  <RefreshCw size={14} /> Resend reset link
+                  <RefreshCw size={14} /> Resend Reset Link
                 </>
               )}
             </button>
@@ -872,10 +1056,7 @@ function EditStaffModal({
                 type="button"
                 onClick={handleDeactivate}
                 disabled={!!busy || isSelf}
-                style={{
-                  ...dangerBtnStyle,
-                  ...(isSelf ? disabledBtnStyle : {}),
-                }}
+                className={btnDanger}
                 title={isSelf ? 'You cannot deactivate yourself.' : 'Disable sign-in without deleting history.'}
               >
                 <UserMinus size={14} />
@@ -886,7 +1067,7 @@ function EditStaffModal({
                 type="button"
                 onClick={handleReactivate}
                 disabled={!!busy}
-                style={secondaryBtnStyle}
+                className={btn}
               >
                 <UserCheck size={14} />
                 {busy === 'reactivate' ? 'Reactivating…' : 'Reactivate'}
@@ -898,7 +1079,7 @@ function EditStaffModal({
                 type="button"
                 onClick={handleToggleManualBlock}
                 disabled={!!busy}
-                style={staff.manualNotesBlock ? secondaryBtnStyle : dangerBtnStyle}
+                className={staff.manualNotesBlock ? btn : btnDanger}
                 title={
                   staff.manualNotesBlock
                     ? 'Allow this nurse to start and submit new progress notes again.'
@@ -908,18 +1089,18 @@ function EditStaffModal({
                 {busy === 'block'
                   ? 'Saving…'
                   : staff.manualNotesBlock
-                    ? 'Unblock new notes'
-                    : 'Block new notes'}
+                    ? 'Unblock New Notes'
+                    : 'Block New Notes'}
               </button>
             )}
 
             <div style={{ flex: 1 }} />
 
-            <button type="button" onClick={close} disabled={!!busy} style={secondaryBtnStyle}>
+            <button type="button" onClick={close} disabled={!!busy} className={btn}>
               Cancel
             </button>
-            <button type="submit" disabled={!!busy || !dirty} style={primaryBtnStyle}>
-              {busy === 'save' ? 'Saving…' : 'Save changes'}
+            <button type="submit" disabled={!!busy} className={btnPrimary}>
+              {busy === 'save' ? 'Saving…' : 'Save Changes'}
             </button>
           </div>
         </form>
@@ -945,7 +1126,7 @@ function SuccessModal({ result, onClose }: { result: CreateResult; onClose: () =
     }
   };
 
-  const title = typeof result.orphansClaimed === 'number' ? 'Account created' : 'Password-reset link generated';
+  const title = typeof result.orphansClaimed === 'number' ? 'Account Created' : 'Password-Reset Link Generated';
 
   return (
     <div style={modalBackdropStyle} onClick={onClose}>
@@ -1007,16 +1188,16 @@ function SuccessModal({ result, onClose }: { result: CreateResult; onClose: () =
             <div style={{ fontSize: 11, color: '#7f8c8d', marginTop: 8 }}>
               {result.emailSent
                 ? 'Only share this link directly if the user says they didn\'t receive the email.'
-                : 'Send this to the person so they can set their password. If it expires before they use it, click "Resend reset link" on the edit modal for a fresh one.'}
+                : 'Send this to the person so they can set their password. If it expires before they use it, click "Resend Reset Link" on the edit modal for a fresh one.'}
             </div>
           </div>
 
           <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
-            <button onClick={handleCopy} style={secondaryBtnStyle}>
-              {copied ? <><CheckCircle2 size={14} /> Copied</> : <><Copy size={14} /> Copy link</>}
+            <button onClick={handleCopy} className={btn}>
+              {copied ? <><CheckCircle2 size={14} /> Copied</> : <><Copy size={14} /> Copy Link</>}
             </button>
             <div style={{ flex: 1 }} />
-            <button onClick={onClose} style={primaryBtnStyle}>Done</button>
+            <button onClick={onClose} className={btnPrimary}>Done</button>
           </div>
         </div>
       </div>
@@ -1028,15 +1209,20 @@ function Field({
   label,
   help,
   children,
+  id,
+  error,
 }: {
   label: string;
   help?: string;
   children: React.ReactNode;
+  id?: string;
+  error?: string;
 }) {
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 14 }}>
+    <label id={id} style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 14 }}>
       <span style={{ fontSize: 12, fontWeight: 600, color: '#5c6b7a' }}>{label}</span>
       {children}
+      <FieldError message={error} />
       {help && <span style={{ fontSize: 11, color: '#7f8c8d' }}>{help}</span>}
     </label>
   );
@@ -1053,6 +1239,14 @@ const emptyStyle: React.CSSProperties = { textAlign: 'center', padding: '48px 20
 const tableWrapStyle: React.CSSProperties = { background: 'white', borderRadius: 10, border: '1px solid #e5e7eb', overflowX: 'auto' };
 const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 14 };
 const thStyle: React.CSSProperties = { textAlign: 'left', padding: '12px 14px', borderBottom: '1px solid #e5e7eb', color: '#5c6b7a', fontWeight: 700, fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 };
+const sortableThStyle: React.CSSProperties = { ...thStyle, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' };
+// Search bar matches the Submissions screen's filter bar so the two admin
+// tables share one visual language.
+const filterBarStyle: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 10 };
+const searchWrapStyle: React.CSSProperties = { position: 'relative', flex: '1 1 260px', minWidth: 220, maxWidth: 420 };
+const searchIconStyle: React.CSSProperties = { position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#7f8c8d', pointerEvents: 'none' };
+const searchInputStyle: React.CSSProperties = { width: '100%', padding: '8px 10px 8px 30px', border: '1px solid #dfe5ec', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', background: 'white' };
+const matchCountStyle: React.CSSProperties = { fontSize: 12, color: '#7f8c8d', whiteSpace: 'nowrap' };
 const tdStyle: React.CSSProperties = { padding: '12px 14px', borderBottom: '1px solid #f1f3f5', color: '#2c3e50' };
 const phoneLinkStyle: React.CSSProperties = { color: '#1a73e8', textDecoration: 'none', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' };
 const altRowStyle: React.CSSProperties = { background: '#fafbfc' };
@@ -1061,14 +1255,8 @@ const statusBadgeStyle: React.CSSProperties = { display: 'inline-block', padding
 const selfBadgeStyle: React.CSSProperties = { marginLeft: 8, fontSize: 10, padding: '2px 6px', borderRadius: 999, background: '#eef5ff', color: '#1a3a5c', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 };
 const testBadgeStyle: React.CSSProperties = { marginLeft: 8, fontSize: 10, padding: '2px 6px', borderRadius: 999, background: '#fdecea', color: '#a3261c', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 };
 const blockedBadgeStyle: React.CSSProperties = { marginLeft: 8, fontSize: 10, padding: '2px 6px', borderRadius: 999, background: '#7f1d1d', color: 'white', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 };
-const viewAsRowBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, background: '#3f6f8f', color: 'white', border: 'none', borderRadius: 999, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', transition: 'background 0.15s ease' };
 const emailReqChipStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 5, background: '#fff4e5', color: '#a35400', border: '1px solid #f0d9a8', borderRadius: 999, padding: '2px 9px', fontSize: 11, fontWeight: 700, letterSpacing: 0.2 };
 const emailReqBoxStyle: React.CSSProperties = { background: '#fff8ec', border: '1px solid #f0d9a8', borderRadius: 8, padding: '14px 16px', marginBottom: 18 };
-const approveBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#27ae60', color: 'white', border: 'none', borderRadius: 6, padding: '8px 14px', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
-const primaryBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#27ae60', color: 'white', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
-const secondaryBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#eef1f4', color: '#2c3e50', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const dangerBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fdecea', color: '#b3261e', padding: '10px 14px', borderRadius: 6, border: '1px solid #f5c6c0', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const disabledBtnStyle: React.CSSProperties = { opacity: 0.45, cursor: 'not-allowed' };
 const actionsRowStyle: React.CSSProperties = { display: 'flex', gap: 10, alignItems: 'center', marginTop: 20, flexWrap: 'wrap' };
 const modalBackdropStyle: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 };
 const modalStyle: React.CSSProperties = { background: 'white', borderRadius: 10, width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 12px 40px rgba(0,0,0,0.25)' };

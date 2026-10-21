@@ -1,0 +1,418 @@
+/**
+ * Release of Information (DBHDD Policy 23-110 Attachment A, the IDD version
+ * of 6/22/2023 from IDD Connects > Document Templates): types, defaults,
+ * validation, and the introduction letter's wording. Shared by the Fax
+ * Center, the /api/fax/roi routes, the PDF builders, and vitest. No Firebase
+ * imports.
+ *
+ * The form moves records ONE way: "From" the agency that holds them "To" the
+ * one asking. A facility that wants to share with us is From; we are To. When
+ * records should flow both ways the guardian signs two copies, one each way.
+ *
+ * Unlike the GAPP Appendix T, the agency may prepare this form: it is the
+ * member's (or guardian's) authorization, and they review, initial, and sign
+ * it. The portal fills in who, what, why, and for how long; the signer does
+ * the rest.
+ */
+import { normalizeUSFaxNumber } from './verbalOrderShared';
+import { getProgram } from './programs';
+import { CHOA, choaInformation, validateChoaRequest, type ChoaField, type ChoaRequest } from './choaRoi';
+
+export const ROI_FORMS = [
+  { id: 'dbhdd', label: 'DBHDD release of information', blankPath: '/forms/dbhdd-roi-attachment-a.pdf', outside: false },
+  { id: 'choa', label: 'CHOA medical records request', blankPath: '/forms/choa-medical-records-authorization.pdf', outside: false },
+  // Signed elsewhere (PandaDoc from our own template, the family, another
+  // agency): nothing to prepare, so the signed copy is recorded directly and
+  // tracked like any other release.
+  { id: 'ga-hipaa', label: 'Georgia HIPAA authorization (signed elsewhere)', blankPath: '', outside: true },
+  { id: 'outside', label: 'Other release (signed elsewhere)', blankPath: '', outside: true },
+] as const;
+export type RoiFormType = typeof ROI_FORMS[number]['id'];
+
+/** A release signed outside the portal: recorded with its signed copy, never prepared here. */
+export function isOutsideRoi(formType: string | undefined): boolean {
+  return formType === 'ga-hipaa' || formType === 'outside';
+}
+
+/** How each form names itself in the fax introduction letter. */
+export const ROI_AUTHORIZATION_NAME: Record<RoiFormType, string> = {
+  dbhdd: 'Authorization for Release of Information (DBHDD Policy 23-110, Attachment A)',
+  choa: "Children's Healthcare of Atlanta Authorization to Release/Obtain Protected Health Information",
+  'ga-hipaa': 'Georgia HIPAA Compliant Authorization for the Release of Patient Information (45 CFR 164.508)',
+  outside: 'Authorization for Release of Information',
+};
+
+/** Short label for the release list. */
+export const ROI_FORM_SHORT: Record<RoiFormType, string> = {
+  dbhdd: 'DBHDD release',
+  choa: 'CHOA medical records request',
+  'ga-hipaa': 'Georgia HIPAA authorization',
+  outside: 'outside release',
+};
+
+/** Heart and Soul as a party on the form and the letterhead. */
+export const AGENCY = {
+  name: 'Heart and Soul Healthcare',
+  street: '1372 Peachtree St NE',
+  cityStateZip: 'Atlanta, GA 30309',
+  phone: '4706355774',
+} as const;
+
+export interface RoiParty {
+  name: string;
+  address: string;
+  /** 10 digits or ''. */
+  phone: string;
+  /** 10 digits or ''. */
+  fax: string;
+}
+
+/** 'to-us': the facility releases to Heart and Soul. 'from-us': we release to
+ *  the facility. 'both': two copies, one each way, in one PDF. */
+export type RoiDirection = 'to-us' | 'from-us' | 'both';
+/** The two boxes on the form: one (1) year, or the period needed to finish
+ *  everything related to the member's services. */
+export type RoiDuration = 'year' | 'transactions';
+
+export const ROI_DIRECTION_LABEL: Record<RoiDirection, string> = {
+  'to-us': 'The facility shares with us',
+  'from-us': 'We share with the facility',
+  both: 'Both ways (two copies)',
+};
+
+export const ROI_TEXT_MAX = { name: 90, address: 120, information: 360, purpose: 300 } as const;
+
+export interface RoiInput {
+  formType?: RoiFormType;
+  choa?: ChoaRequest;
+  patientId: string;
+  referralId?: string;
+  referralDob?: string;
+  direction: RoiDirection;
+  facility: RoiParty;
+  information: string;
+  purpose: string;
+  duration: RoiDuration;
+  /** 'outside' releases only: when it expires as written on it ('' = no end date). */
+  outsideExpiresOn?: string;
+}
+
+export type RoiField = ChoaField | 'referralDob' | 'formType' | 'signedDate' | 'signedPdf' | 'outsideExpiresOn' | 'patientId' | 'direction' | 'facilityName' | 'facilityAddress' | 'facilityPhone' | 'facilityFax' | 'information' | 'purpose' | 'duration';
+export type RoiErrors = Partial<Record<RoiField, string>>;
+
+export const DEFAULT_ROI_INFORMATION =
+  'Medical and nursing records, diagnoses, medication lists, physician orders, care plans, progress notes, and discharge or transfer information needed to coordinate care.';
+
+export function defaultRoiPurpose(program: string | undefined): string {
+  const p = getProgram(program)?.label;
+  return p
+    ? `Coordination of care and services under the ${p} program.`
+    : 'Coordination of care and services.';
+}
+
+function phoneDigits(raw: string): string {
+  return normalizeUSFaxNumber(String(raw || ''));
+}
+
+/** Validate and tidy a Release of Information request from the browser. */
+export function validateRoiInput(raw: Record<string, unknown>): { errors: RoiErrors; value: RoiInput | null } {
+  const e: RoiErrors = {};
+  const formType = raw.formType ?? 'dbhdd';
+  if (!ROI_FORMS.some((f) => f.id === formType)) e.formType = 'Choose a supported authorization form.';
+  const outside = isOutsideRoi(String(formType));
+  let outsideExpiresOn = '';
+  if (outside) {
+    // Nothing is printed, so the defaults just describe what the signed form
+    // says; its own wording governs. Duration is not a choice here: the
+    // Georgia HIPAA form runs two years, an outside one has its own date.
+    raw = {
+      ...raw,
+      information: String(raw.information || '').trim() || 'As listed on the signed authorization.',
+      purpose: String(raw.purpose || '').trim() || 'As listed on the signed authorization.',
+      duration: 'transactions',
+    };
+    if (formType === 'outside') {
+      outsideExpiresOn = String(raw.outsideExpiresOn || '').trim();
+      if (outsideExpiresOn && !/^\d{4}-\d{2}-\d{2}$/.test(outsideExpiresOn)) e.outsideExpiresOn = 'Enter a valid date, or leave it blank if it has no end date.';
+    }
+  }
+  let choa: ChoaRequest | undefined;
+  if (formType === 'choa') {
+    const checked = validateChoaRequest(raw.choa);
+    Object.assign(e, checked.errors);
+    choa = checked.value || undefined;
+    if (raw.direction !== 'to-us') e.direction = 'CHOA requests release records to Heart and Soul.';
+    if (raw.duration !== 'year') e.duration = 'The CHOA authorization uses its standard 12-month term.';
+    raw = { ...raw, facility: CHOA, information: choa ? choaInformation(choa) : 'Medical records', purpose: 'Continuing care.' };
+  }
+  const patientId = String(raw.patientId || '').trim();
+  const referralId = String(raw.referralId || '').trim();
+  const referralDob = String(raw.referralDob || '').trim();
+  const validId = (id: string) => /^[A-Za-z0-9_-]{1,128}$/.test(id);
+  if (referralId) {
+    if (!validId(referralId) || patientId) e.patientId = 'Choose either a referral or a client, not both.';
+    if (referralDob && (!/^\d{4}-\d{2}-\d{2}$/.test(referralDob) || !Number.isFinite(Date.parse(referralDob)) || new Date(referralDob).toISOString().slice(0, 10) !== referralDob || referralDob > new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()))) e.referralDob = 'Enter a valid date of birth.';
+  } else if (!validId(patientId)) e.patientId = 'Choose the client.';
+  const direction = raw.direction;
+  if (direction !== 'to-us' && direction !== 'from-us' && direction !== 'both') e.direction = 'Choose which way the records go.';
+  const f = (raw.facility && typeof raw.facility === 'object' ? raw.facility : {}) as Partial<Record<keyof RoiParty, unknown>>;
+  const name = String(f.name || '').trim();
+  if (!name) e.facilityName = 'Enter the facility or agency name.';
+  else if (name.length > ROI_TEXT_MAX.name) e.facilityName = `Keep the name under ${ROI_TEXT_MAX.name} characters.`;
+  const address = String(f.address || '').trim();
+  if (address.length > ROI_TEXT_MAX.address) e.facilityAddress = `Keep the address under ${ROI_TEXT_MAX.address} characters.`;
+  const phoneRaw = String(f.phone || '').trim();
+  const phone = phoneDigits(phoneRaw);
+  if (phoneRaw && !phone) e.facilityPhone = 'Enter a 10-digit phone number, or leave it blank.';
+  const faxRaw = String(f.fax || '').trim();
+  const fax = phoneDigits(faxRaw);
+  if (faxRaw && !fax) e.facilityFax = 'Enter a 10-digit fax number, or leave it blank.';
+  const information = String(raw.information || '').trim();
+  if (!information) e.information = 'Say what information may be shared.';
+  else if (information.length > ROI_TEXT_MAX.information) e.information = `Keep this under ${ROI_TEXT_MAX.information} characters so it fits on the form.`;
+  const purpose = String(raw.purpose || '').trim();
+  if (!purpose) e.purpose = 'Say why the information is being shared.';
+  else if (purpose.length > ROI_TEXT_MAX.purpose) e.purpose = `Keep this under ${ROI_TEXT_MAX.purpose} characters so it fits on the form.`;
+  const duration = raw.duration;
+  if (duration !== 'year' && duration !== 'transactions') e.duration = 'Choose how long the authorization lasts.';
+  if (Object.keys(e).length > 0) return { errors: e, value: null };
+  return {
+    errors: e,
+    value: { formType: formType as RoiFormType, ...(choa ? { choa } : {}), ...(formType === 'outside' ? { outsideExpiresOn } : {}), patientId, ...(referralId ? { referralId, referralDob } : {}), direction: direction as RoiDirection, facility: { name, address, phone, fax }, information, purpose, duration: duration as RoiDuration },
+  };
+}
+
+/** The From/To pairs to print: one per copy the guardian signs. */
+export function roiCopies(direction: RoiDirection, facility: RoiParty, agencyFax: string): Array<{ from: RoiParty; to: RoiParty }> {
+  const us: RoiParty = { name: AGENCY.name, address: `${AGENCY.street}, ${AGENCY.cityStateZip}`, phone: AGENCY.phone, fax: agencyFax };
+  const toUs = { from: facility, to: us };
+  const fromUs = { from: us, to: facility };
+  if (direction === 'to-us') return [toUs];
+  if (direction === 'from-us') return [fromUs];
+  return [toUs, fromUs];
+}
+
+/** "(678) 644-0337 / Fax (470) 235-1891" for the form's Phone/Fax blank. */
+export function roiPhoneFaxLine(p: Pick<RoiParty, 'phone' | 'fax'>): string {
+  const fmt = (d: string) => (d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : '');
+  const phone = fmt(p.phone);
+  const fax = fmt(p.fax);
+  if (phone && fax) return `${phone} / Fax ${fax}`;
+  if (phone) return phone;
+  return fax ? `Fax ${fax}` : '';
+}
+
+/** When a signed authorization stops being good ('' when it runs to the end
+ *  of services and so has no fixed date). */
+export function roiExpiresOn(signedYmd: string, duration: RoiDuration): string {
+  if (duration !== 'year' || !/^\d{4}-\d{2}-\d{2}$/.test(signedYmd)) return '';
+  const [y, m, d] = signedYmd.split('-').map(Number);
+  // One year to the day; Feb 29 falls back to Feb 28.
+  const last = new Date(Date.UTC(y + 1, m, 0)).getUTCDate();
+  return `${y + 1}-${String(m).padStart(2, '0')}-${String(Math.min(d, last)).padStart(2, '0')}`;
+}
+
+/** Georgia HIPAA authorization: "in force and effect until two years from date of execution". */
+export function twoYearsFrom(signedYmd: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(signedYmd)) return '';
+  const [y, m, d] = signedYmd.split('-').map(Number);
+  const last = new Date(Date.UTC(y + 2, m, 0)).getUTCDate();
+  return `${y + 2}-${String(m).padStart(2, '0')}-${String(Math.min(d, last)).padStart(2, '0')}`;
+}
+
+/** When a signed release stops being good, for any form ('' = no fixed date). */
+export function roiExpiryFor(p: { formType?: RoiFormType; duration: RoiDuration; outsideExpiresOn?: string }, signedYmd: string): string {
+  if (p.formType === 'ga-hipaa') return twoYearsFrom(signedYmd);
+  if (p.formType === 'outside') return p.outsideExpiresOn || '';
+  return roiExpiresOn(signedYmd, p.duration);
+}
+
+/**
+ * The introduction letter that goes in front of the signed form when it is
+ * faxed: who we are, what we do for this member, and why the facility is
+ * getting the release. No em or en dashes (printed deliverable).
+ */
+export function roiIntroParagraphs(p: { memberName: string; program: string | undefined; facilityName: string; direction: RoiDirection; formType?: RoiFormType; isReferral?: boolean }): string[] {
+  const prog = getProgram(p.program)?.label;
+  const under = prog ? ` under the ${prog} program` : '';
+  const flow =
+    p.direction === 'to-us'
+      ? `allows ${p.facilityName} to share ${p.memberName}'s health information with Heart and Soul Healthcare`
+      : p.direction === 'from-us'
+        ? `allows Heart and Soul Healthcare to share ${p.memberName}'s health information with ${p.facilityName}`
+        : `allows ${p.facilityName} and Heart and Soul Healthcare to share ${p.memberName}'s health information with each other`;
+  const authorization = ROI_AUTHORIZATION_NAME[p.formType ?? 'dbhdd'];
+  return [
+    p.isReferral
+      ? `Heart and Soul Healthcare is a Georgia home care agency that provides skilled nursing services${under}. We received a referral for ${p.memberName} and are requesting information to coordinate their care and evaluate the referral.`
+      : `Heart and Soul Healthcare is a Georgia home care agency that provides skilled nursing services${under}. We provide skilled nursing care to ${p.memberName} and are part of the care team.`,
+    `Enclosed is the ${authorization}, signed by ${p.memberName} or a legally authorized representative. It ${flow}, so that we can coordinate care and keep everyone on the care team informed.`,
+    `Please keep this authorization on file with ${p.memberName}'s record and add Heart and Soul Healthcare as a care team contact. If you have questions, or need anything else from us, please call us at the number below.`,
+  ];
+}
+
+export type RoiStatus = 'awaiting-signature' | 'signed' | 'cancelled';
+
+/** A Release of Information as the Fax Center lists it. */
+export interface RoiRecord {
+  formType?: RoiFormType;
+  choa?: ChoaRequest;
+  id: string;
+  patientId: string;
+  referralId?: string;
+  memberName: string;
+  direction: RoiDirection;
+  facility: RoiParty;
+  information: string;
+  purpose: string;
+  duration: RoiDuration;
+  status: RoiStatus;
+  createdAt: string | null;
+  createdByName: string;
+  /** Filled once the signed copy is uploaded. */
+  signed: { documentId: string; signedDate: string; expiresOn: string; byName: string } | null;
+  /** 'outside' releases: the expiration written on the form ('' = none). */
+  outsideExpiresOn?: string;
+  faxes: Array<{ faxId: string; toNumber: string; recipientName: string; at: string; byName: string }>;
+  hidden: boolean;
+}
+
+export const ROI_MAX_PDF_BYTES = 10 * 1024 * 1024;
+
+/**
+ * Cover-sheet message when the signed release is faxed with its letter.
+ *
+ * A release that lets the facility share with us is sent to GET records, so
+ * the message asks for exactly what the release lists and where to fax it.
+ * (The first version only asked them to keep the release on file, so an
+ * office could file it and send nothing.) A release going the other way just
+ * asks them to keep it on file.
+ */
+export function defaultRoiFaxNote(p: { memberName: string; direction: RoiDirection; information: string; returnFax?: string }): string {
+  const intro = `Please see the attached introduction letter and the signed Authorization for Release of Information for ${p.memberName}.`;
+  const keepOnFile = `Please keep them on file with ${p.memberName}'s record and add Heart and Soul Healthcare as a care team contact.`;
+  if (p.direction === 'from-us') return `${intro} ${keepOnFile}`;
+  const d = (p.returnFax || '').replace(/\D/g, '');
+  const where = d.length === 10 ? `at (${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : 'at the fax number on the release';
+  const info = p.information.trim().replace(/[.\s]+$/, '');
+  const ask = info
+    ? `Please fax the following records to Heart and Soul Healthcare ${where}: ${info}.`
+    : `Please fax the records listed on the release to Heart and Soul Healthcare ${where}.`;
+  const also = p.direction === 'both' ? ` ${keepOnFile}` : '';
+  return `${intro} ${ask}${also} Questions: please call us at (678) 644-0337.`;
+}
+
+// --- Editing a release -------------------------------------------------------
+
+export type RoiEditField = 'facilityName' | 'facilityAddress' | 'facilityPhone' | 'facilityFax' | 'information' | 'purpose' | 'signedDate' | 'outsideExpiresOn';
+
+export const ROI_EDIT_LABEL: Record<RoiEditField, string> = {
+  facilityName: 'Facility',
+  facilityAddress: 'Address',
+  facilityPhone: 'Phone',
+  facilityFax: 'Fax',
+  information: 'Information that may be shared',
+  purpose: 'Purpose',
+  signedDate: 'Date signed',
+  outsideExpiresOn: 'Expires on',
+};
+
+/**
+ * What can be changed on a release without changing what someone signed.
+ *   - Phone and fax, always: how we reach the facility, not what was
+ *     authorized. (A DBHDD form prints them; the signed copy keeps what it
+ *     said, and the record gets the corrected number for faxing.)
+ *   - A release signed elsewhere: everything we recorded about it, since the
+ *     record is our transcription of a form we never printed.
+ *   - A DBHDD release still waiting on a signature: the facility and wording,
+ *     since the form is reprinted from the record. CHOA's facility is fixed.
+ * Once a prepared form is signed, its name, address, and wording are on the
+ * signed copy: cancel and prepare a new release to change those.
+ */
+export function roiEditableFields(r: Pick<RoiRecord, 'formType' | 'status'>): RoiEditField[] {
+  if (r.status === 'cancelled') return [];
+  if (isOutsideRoi(r.formType)) {
+    return ['facilityName', 'facilityAddress', 'facilityPhone', 'facilityFax', 'information', 'purpose', 'signedDate', ...(r.formType === 'outside' ? ['outsideExpiresOn' as const] : [])];
+  }
+  if (r.formType !== 'choa' && r.status === 'awaiting-signature') {
+    return ['facilityName', 'facilityAddress', 'facilityPhone', 'facilityFax', 'information', 'purpose'];
+  }
+  return ['facilityPhone', 'facilityFax'];
+}
+
+/** The release's current values for the edit form (phones as 10 digits). */
+export function roiEditValues(r: RoiRecord): Record<RoiEditField, string> {
+  return {
+    facilityName: r.facility.name,
+    facilityAddress: r.facility.address,
+    facilityPhone: r.facility.phone,
+    facilityFax: r.facility.fax,
+    information: r.information,
+    purpose: r.purpose,
+    signedDate: r.signed?.signedDate || '',
+    outsideExpiresOn: r.outsideExpiresOn || '',
+  };
+}
+
+/**
+ * Check an edit against what this release allows. Fields it doesn't allow are
+ * ignored; the clean values come back normalized (phones as 10 digits).
+ */
+export function validateRoiEdit(
+  r: RoiRecord,
+  raw: Partial<Record<RoiEditField, unknown>>,
+  today: string,
+): { errors: Partial<Record<RoiEditField, string>>; changes: Partial<Record<RoiEditField, string>> } {
+  const allowed = roiEditableFields(r);
+  const current = roiEditValues(r);
+  const errors: Partial<Record<RoiEditField, string>> = {};
+  const changes: Partial<Record<RoiEditField, string>> = {};
+  const next = { ...current } as Record<RoiEditField, string>;
+  for (const k of allowed) {
+    if (raw[k] === undefined) continue;
+    const v = String(raw[k] ?? '').trim();
+    next[k] = k === 'facilityPhone' || k === 'facilityFax' ? (v ? phoneDigits(v) || `!${v}` : '') : v;
+  }
+  if (allowed.includes('facilityName')) {
+    if (!next.facilityName) errors.facilityName = 'Enter the facility or agency name.';
+    else if (next.facilityName.length > ROI_TEXT_MAX.name) errors.facilityName = `Keep the name under ${ROI_TEXT_MAX.name} characters.`;
+    if (next.facilityAddress.length > ROI_TEXT_MAX.address) errors.facilityAddress = `Keep the address under ${ROI_TEXT_MAX.address} characters.`;
+  }
+  if (next.facilityPhone.startsWith('!')) errors.facilityPhone = 'Enter a 10-digit phone number, or leave it blank.';
+  if (next.facilityFax.startsWith('!')) errors.facilityFax = 'Enter a 10-digit fax number, or leave it blank.';
+  const outside = isOutsideRoi(r.formType);
+  if (allowed.includes('information')) {
+    if (!next.information && !outside) errors.information = 'Say what information may be shared.';
+    else if (next.information.length > ROI_TEXT_MAX.information) errors.information = `Keep this under ${ROI_TEXT_MAX.information} characters.`;
+    if (!next.purpose && !outside) errors.purpose = 'Say why the information is being shared.';
+    else if (next.purpose.length > ROI_TEXT_MAX.purpose) errors.purpose = `Keep this under ${ROI_TEXT_MAX.purpose} characters.`;
+  }
+  if (allowed.includes('signedDate')) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(next.signedDate)) errors.signedDate = 'Enter the date it was signed.';
+    else if (next.signedDate > today) errors.signedDate = 'The signed date cannot be in the future.';
+  }
+  if (allowed.includes('outsideExpiresOn') && next.outsideExpiresOn) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(next.outsideExpiresOn)) errors.outsideExpiresOn = 'Enter a valid date, or leave it blank if it has no end date.';
+    else if (next.signedDate && next.outsideExpiresOn <= next.signedDate) errors.outsideExpiresOn = 'The expiration date must be after the date it was signed.';
+  }
+  for (const k of allowed) if (next[k] !== current[k]) changes[k] = next[k];
+  if (outside) {
+    // Blank wording on a release signed elsewhere reads as "see the form".
+    if (changes.information === '') changes.information = 'As listed on the signed authorization.';
+    if (changes.purpose === '') changes.purpose = 'As listed on the signed authorization.';
+  }
+  return { errors, changes };
+}
+
+/** Old → new for the activity log, phones and dates formatted. */
+export function describeRoiEdit(r: RoiRecord, changes: Partial<Record<RoiEditField, string>>): string {
+  const before = roiEditValues(r);
+  const show = (k: RoiEditField, v: string) => {
+    if (!v) return '(blank)';
+    if (k === 'facilityPhone' || k === 'facilityFax') return v.length === 10 ? `(${v.slice(0, 3)}) ${v.slice(3, 6)}-${v.slice(6)}` : v;
+    if (k === 'signedDate' || k === 'outsideExpiresOn') { const [y, m, d] = v.split('-'); return `${m}/${d}/${y}`; }
+    return `"${v.length > 80 ? `${v.slice(0, 77)}…` : v}"`;
+  };
+  const parts = (Object.keys(changes) as RoiEditField[]).map((k) => `${ROI_EDIT_LABEL[k]} ${show(k, before[k])} → ${show(k, changes[k] ?? '')}`);
+  return `Release of information for ${r.facility.name} edited: ${parts.join('; ')}.`;
+}

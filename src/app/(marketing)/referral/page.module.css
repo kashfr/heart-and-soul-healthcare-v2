@@ -533,21 +533,114 @@
   padding: 0;
   margin: 0;
   font-size: var(--text-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
 }
 
-.validationBanner li {
-  padding: 2px 0;
+/* Each missing answer is a button-styled link that escorts to its question. */
+.bannerLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid #fca5a5;
+  border-radius: var(--radius-lg);
+  background: #ffffff;
+  color: #b91c1c;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
 }
 
-.validationBanner li::before {
-  content: '• ';
-  color: #dc2626;
+.bannerLink:hover {
+  background: #fee2e2;
 }
 
-/* Field Error State */
+.bannerLink:focus-visible {
+  outline: 3px solid rgba(220, 38, 38, 0.4);
+  outline-offset: 2px;
+}
+
+/* Field Error State. Border colour and ring only: the global .form-select
+   draws its chevron as a background-image, so this class must never set
+   background or appearance, or the outlined select loses its chevron. */
 .fieldError {
   border-color: #dc2626 !important;
   box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1) !important;
+}
+
+/* A GAPP hard stop the user tried to submit through. The panel the message
+   under the button points at gets a red edge so it reads as the problem, not
+   as one more advisory note. Left padding gives back the extra border width
+   so the text stays aligned with the other notices. */
+.blockFlagged {
+  border-left: 4px solid #dc2626;
+  padding-left: calc(var(--space-5) - 3px);
+}
+
+/* Every GAPP stop panel takes focus when a blocked Submit escorts to it
+   (tabIndex -1), so keyboard and screen-reader users land where the page
+   scrolled. The ring shows for keyboard focus; a tap or click relies on the
+   red edge above. */
+.blockPanel:focus {
+  outline: none;
+}
+
+.blockPanel:focus-visible {
+  outline: 3px solid rgba(220, 38, 38, 0.45);
+  outline-offset: 2px;
+}
+
+/* The panel's text and its way forward, stacked beside the icon. */
+.blockBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.panelActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* A button-styled link to the answer that would lift the stop. Sized for a
+   thumb, in the panel's own amber. */
+.panelAction {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0.5rem 0.9rem;
+  border: 1.5px solid currentColor;
+  border-radius: var(--radius-lg);
+  background: #ffffff;
+  color: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.3;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.panelAction:hover {
+  background: #fef3c7;
+}
+
+.panelAction:focus-visible {
+  outline: 3px solid rgba(146, 64, 14, 0.4);
+  outline-offset: 2px;
+}
+
+/* Keeps a checklist's message space (two lines of the 12.5px message plus
+   its 4px top margin) while the step shows validation, so the list below
+   does not jump when the message clears. */
+.messageSlot {
+  min-height: calc(4px + 2 * 1.4 * 12.5px);
 }
 
 /* Button starts faded, becomes vibrant when form is valid */

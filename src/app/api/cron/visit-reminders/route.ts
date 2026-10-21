@@ -4,8 +4,13 @@ import { adminDb } from '@/lib/firebaseAdmin';
 import { sendSms } from '@/lib/sms/sendSms';
 import { sendVisitNotice } from '@/lib/emails/visitNotice';
 import { createPortalNotification } from '@/lib/notificationsServer';
+import { recordCommunication } from '@/lib/communicationsServer';
+import { sweepServicePlanReminders } from '@/lib/servicePlanRemindersServer';
+import { sweepSupervisoryVisits } from '@/lib/supervisorySchedulingServer';
 import {
   needsMorningNudge,
+  visitEmailBody,
+  visitEmailSubject,
   visitSmsBody,
   whenPhrase,
   type VisitNotifyFacts,
@@ -123,7 +128,7 @@ export async function GET(request: Request) {
         const what = facts.type === 'supervisory' ? 'supervisory visit' : 'shift visit';
         const bellText = `Reminder: ${what} ${dayWord}${clientName ? ` for ${clientName}` : ''}, ${whenPhrase(facts)}`;
 
-        await Promise.all([
+        const [sms, email] = await Promise.all([
           sendSms(assignee.phone || '', visitSmsBody(smsEvent, facts)),
           sendVisitNotice({
             to: assignee.email || '',
@@ -139,6 +144,27 @@ export async function GET(request: Request) {
           }),
         ]);
 
+        const firstName = (assignee.displayName || '').trim().split(/\s+/)[0] || '';
+        await recordCommunication({
+          source: 'automated',
+          event: window === 'evening' ? 'visit-reminder-tomorrow' : 'visit-reminder',
+          direction: 'outbound',
+          patientId: String(v.patientId || ''),
+          patientName: clientName,
+          staffUid: v.nurseId,
+          staffName: assignee.displayName || '',
+          counterpartyName: '',
+          summary: bellText,
+          channels: [
+            { channel: 'email', to: assignee.email || '', ok: email.ok, ...(email.ok ? {} : { error: email.error || 'Not sent.' }), subject: visitEmailSubject(smsEvent, facts), body: visitEmailBody(smsEvent, facts, firstName) },
+            { channel: 'sms', to: assignee.phone || '', ok: sms.ok, ...(sms.ok ? {} : { error: sms.error || 'Not sent.', skipped: !!sms.skipped }), body: visitSmsBody(smsEvent, facts) },
+            { channel: 'portal', to: assignee.displayName || '', ok: true, body: bellText },
+          ],
+          relatedVisitId: docSnap.id,
+          loggedByUid: '',
+          loggedByName: 'Portal (scheduled reminder)',
+        });
+
         await docSnap.ref.update({ [stampField]: FieldValue.serverTimestamp() });
         reminded++;
       } catch (err) {
@@ -147,8 +173,38 @@ export async function GET(request: Request) {
       }
     }
 
+    // Once a day (the morning window): service plans that are missing,
+    // overdue, or due within 7 days. Isolated: a failure here never affects
+    // the visit reminders above.
+    let servicePlans: { clientsDue: number; recipients: number } | { error: string } | null = null;
+    if (window === 'morning') {
+      try {
+        servicePlans = await sweepServicePlanReminders(agencyDateISO(0));
+      } catch (err) {
+        console.error('Service plan reminder sweep failed:', err);
+        servicePlans = { error: 'Service plan reminder sweep failed.' };
+      }
+    }
+
+    // Once a day (the morning window): clients whose next supervisory visit
+    // is due within 7 days, overdue, or has never happened, with nothing on
+    // the calendar, get an open visit offered to every supervisor; open
+    // visits nobody accepted are offered again weekly. Isolated like the
+    // service plan sweep.
+    let supervisoryVisits: { created: number; reoffered: number; notified: number } | { error: string } | null = null;
+    if (window === 'morning') {
+      try {
+        supervisoryVisits = await sweepSupervisoryVisits(agencyDateISO(0));
+      } catch (err) {
+        console.error('Supervisory visit sweep failed:', err);
+        supervisoryVisits = { error: 'Supervisory visit sweep failed.' };
+      }
+    }
+
     return NextResponse.json({
       ok: true,
+      servicePlans,
+      supervisoryVisits,
       window,
       date: targetDate,
       reminded,

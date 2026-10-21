@@ -12,8 +12,9 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { buildMarAdminFields, parseValueOptions, DEFAULT_ML_VALUE_OPTIONS } from './marShared';
+import { buildMarAdminFields, cleanTimeLabels, measurementFields, parseValueOptions, DEFAULT_ML_VALUE_OPTIONS } from './marShared';
 import type { MarChangeKind, RegimenField } from './marShared';
+import { parseSlidingScale, SLIDING_SCALE_DOSE_LABEL, type SlidingScaleRow } from './slidingScale';
 
 // Re-exported so UI code can keep importing these from '@/lib/mar' alongside
 // the order types; they live in marShared because the server-only med-change
@@ -35,8 +36,14 @@ export type { MarChangeKind, RegimenField };
 /**
  * 'voided' = the change that created this order was reverted, so the order is
  * treated as never having existed: it is kept for the audit trail but filtered
- * out of every MAR view (grid, PDF, order lists). Only reachable when nothing
- * was ever charted against it — see revertChange.
+ * out of every MAR view (grid, PDF, order lists).
+ *
+ * LEGACY, READ-ONLY: the admin revert feature that produced voided orders was
+ * removed in Aug 2026 (nurses fix mistakes directly — void/amend a dose, or
+ * correct/discontinue the order — and revert was staff-only, so it served no
+ * one). Nothing writes 'voided' any more, but orders reverted before then
+ * still carry it, so every read path MUST keep filtering it out. Dropping the
+ * filter would resurrect a withdrawn medication onto a live MAR.
  */
 export type MarOrderStatus = 'active' | 'discontinued' | 'voided';
 
@@ -49,7 +56,30 @@ export interface MarOrder {
   route: string;
   frequencyLabel: string; // free text, e.g. "BID", "Every morning"
   scheduledTimes: string[]; // 'HH:MM' 24h slots; empty for PRN
+  /**
+   * Meal anchors for scheduled times, keyed by the 'HH:MM' slot: "Before
+   * Breakfast", "Before Lunch", "Before Dinner", "At Bedtime". The slot keeps
+   * a clock time (the client's usual time for that meal) so due / late colors,
+   * shift-window gates, and dose slot keys keep working; the anchor is shown
+   * with the time wherever the time is shown. See TIME_ANCHORS in marShared.
+   */
+  timeLabels?: Record<string, string>;
+  /**
+   * Sliding-scale dosing (insulin by blood glucose). When present, the order
+   * has no fixed dose: `dose` reads "Per sliding scale" and each charted dose
+   * records the meter reading, what the scale called for, and the units
+   * actually given. A regimen field: editing the scale is a dose change. See
+   * slidingScale.ts.
+   */
+  slidingScale?: SlidingScaleRow[];
   isPRN: boolean;
+  /**
+   * PRN only: how often the med MAY be given when needed — "Every 4 hours
+   * (Q4H)" for an order written "Q4H PRN". Blank when the order sets no
+   * interval, and always blank on scheduled orders. describeFrequency() in
+   * marShared renders it with the label wherever the frequency is shown.
+   */
+  prnFrequencyLabel?: string;
   // Structured "what is this for" (e.g. "Moderate pain", "Fever > 101"). Most
   // important for PRN orders, where the nurse documents WHY each dose was given
   // against this standing indication. Snapshotted onto each administration.
@@ -84,6 +114,17 @@ export interface MarOrder {
   // Display code should use physicianAttributionPending() from marShared,
   // which also treats legacy junk values ("N/A") as pending.
   physicianPending?: boolean;
+  /**
+   * Administration PARAMETERS from the physician's order: the conditions the
+   * nurse must check before giving, and when to hold ("Hold if SBP > 140 or
+   * HR < 60. Check BP/HR before each dose."). Distinct from `notes` (general
+   * instructions) because parameters must be in the nurse's face at charting
+   * time: every dose-charting surface (grid modal, progress-note card) shows
+   * them and a GIVEN dose requires an explicit "parameters checked"
+   * acknowledgment, snapshotted onto the administration. A correction-side
+   * field: editing it never starts a new regimen.
+   */
+  parameters?: string;
   notes?: string;
   status: MarOrderStatus;
   createdAt?: unknown;
@@ -102,6 +143,14 @@ export interface MarOrder {
   // (supersedesOrderId -> what it replaced) on the same effective date.
   supersedesOrderId?: string;
   supersededByOrderId?: string;
+  /** Set when this order came in by telephone: the verbalOrders record, and
+   *  whether the physician's signature is still outstanding. Cleared to false
+   *  (and orderSignedDate filled) when the signed copy is received. */
+  verbalOrderId?: string;
+  verbalOrderPending?: boolean;
+  /** The verbal order behind this med was cancelled before it was signed, so
+   *  the office should review whether the med should stay. */
+  verbalOrderCancelled?: boolean;
 }
 
 // Who is performing the write (stamped onto the doc for the audit trail).
@@ -119,7 +168,10 @@ export interface MarOrderInput {
   route: string;
   frequencyLabel: string;
   scheduledTimes: string[];
+  timeLabels?: Record<string, string>;
+  slidingScale?: SlidingScaleRow[];
   isPRN: boolean;
+  prnFrequencyLabel?: string;
   indication?: string;
   valueLabel?: string;
   valueUnit?: string;
@@ -129,6 +181,7 @@ export interface MarOrderInput {
   orderSignedDate?: string;
   orderingPhysician?: string;
   physicianPending?: boolean;
+  parameters?: string;
   notes?: string;
 }
 
@@ -140,25 +193,33 @@ export function orderRecordsValue(order: { valueLabel?: string }): boolean {
 // PRN orders carry no scheduled times; normalize so the stored shape is
 // consistent and free of undefined (Firestore rejects undefined values).
 function normalizeInput(input: MarOrderInput) {
+  const scheduledTimes = input.isPRN
+    ? []
+    : Array.from(new Set(input.scheduledTimes.filter(Boolean))).sort();
+  // A sliding-scale order has no fixed dose and is never a check-style order.
+  const slidingScale = parseSlidingScale(input.slidingScale);
+  const scaled = slidingScale.length > 0;
   return {
     medName: input.medName.trim(),
-    dose: input.dose.trim(),
-    units: input.units.trim(),
+    dose: scaled ? SLIDING_SCALE_DOSE_LABEL : input.dose.trim(),
+    units: scaled ? '' : input.units.trim(),
     route: input.route.trim(),
     frequencyLabel: input.frequencyLabel.trim(),
-    scheduledTimes: input.isPRN
-      ? []
-      : Array.from(new Set(input.scheduledTimes.filter(Boolean))).sort(),
+    scheduledTimes,
+    timeLabels: cleanTimeLabels(input.timeLabels, scheduledTimes, input.isPRN),
+    slidingScale,
     isPRN: input.isPRN,
+    prnFrequencyLabel: input.isPRN ? input.prnFrequencyLabel?.trim() ?? '' : '',
     indication: input.indication?.trim() ?? '',
-    valueLabel: input.valueLabel?.trim() ?? '',
-    valueUnit: input.valueUnit?.trim() ?? '',
-    valueOptions: parseValueOptions(input.valueOptions),
+    valueLabel: scaled ? '' : input.valueLabel?.trim() ?? '',
+    valueUnit: scaled ? '' : input.valueUnit?.trim() ?? '',
+    valueOptions: scaled ? [] : parseValueOptions(input.valueOptions),
     startDate: input.startDate,
     endDate: input.endDate ?? null,
     orderSignedDate: input.orderSignedDate?.trim() ?? '',
     orderingPhysician: input.orderingPhysician?.trim() ?? '',
     physicianPending: input.physicianPending === true,
+    parameters: input.parameters?.trim() ?? '',
     notes: input.notes?.trim() ?? '',
   };
 }
@@ -269,6 +330,16 @@ export interface MarAdministration {
   unitsSnapshot: string;
   routeSnapshot: string;
   indicationSnapshot?: string; // the order's "what for" at the time of this dose
+  // The order's administration parameters (hold / check-before-giving
+  // criteria) at the time of this dose, and whether the documenter confirmed
+  // she checked them before a GIVEN dose. Both blank/false when the order has
+  // no parameters; parametersChecked is forced false on held/refused doses.
+  parametersSnapshot?: string;
+  parametersChecked?: boolean;
+  // The reading(s) the nurse checked against the parameters ("BP 116/74,
+  // HR 72") for a given OR held dose, so the record shows what the decision
+  // was based on. Blank when the order has no parameters.
+  parametersReading?: string;
   // Measurement recorded against a check-style order (see MarOrder.valueLabel):
   // the number the nurse read, e.g. a 30 mL gastric residual. Empty on ordinary
   // dose administrations. The label/unit are snapshotted alongside so the
@@ -276,6 +347,14 @@ export interface MarAdministration {
   value?: string;
   valueLabelSnapshot?: string;
   valueUnitSnapshot?: string;
+  // Sliding-scale dose (see MarOrder.slidingScale): the meter reading in
+  // mg/dL, the units the scale called for at that reading, the matched range
+  // in words, and (only when the amount given differs from the scale) why.
+  // On a given sliding-scale dose, doseSnapshot is the units actually given.
+  glucoseReading?: string;
+  scaleDose?: string;
+  scaleRangeSnapshot?: string;
+  scaleDeviationReason?: string;
   date: string; // YYYY-MM-DD (date of service)
   scheduledTime: string; // 'HH:MM' or 'PRN'
   status: AdminStatus;
@@ -306,6 +385,10 @@ export interface MarAdministration {
   // superseded doc's id and `amendmentReason` records why. The amender signs the
   // new doc via documentedBy*/`at`, so the chain carries who-changed-what-when.
   amends?: string;
+  // The grid modal's no-note-on-file personal attestation admitted this
+  // nurse-given dose (no progress note dated that day existed at charting
+  // time). Persisted so review surfaces can show which control admitted it.
+  noNoteAttestation?: boolean;
   amendmentReason?: string;
   // Entered-in-error trail (the dose twin of a voided ORDER, see MarOrderStatus):
   // a mis-click charted a dose that never belonged on the record (wrong slot,
@@ -340,11 +423,23 @@ export interface MarAdministrationDraft {
   reason: string;
   isPRN: boolean; // a PRN given dose keeps its reason (why it was given)
   indication: string; // the order's standing indication, snapshotted
+  parameters?: string; // the order's administration parameters, snapshotted
+  parametersChecked?: boolean; // given dose: documenter confirmed she checked them
+  parametersReading?: string; // given/held: the reading checked against the parameters
   outcome?: string; // PRN effectiveness/result, when known at write time
   prescriberNotified?: boolean; // held/refused: documenter notified the prescriber
   value?: string; // measurement, for a check-style order (e.g. gastric residual)
   valueLabel?: string;
   valueUnit?: string;
+  // Sliding-scale dose: reading, what the scale called for, and why the amount
+  // given differs (when it does). `dose` carries the units actually given.
+  glucoseReading?: string;
+  scaleDose?: string;
+  scaleRange?: string;
+  scaleDeviationReason?: string;
+  // Grid modal only: the nurse checked the no-note-on-file personal
+  // attestation, persisted so the record shows which control admitted it.
+  noNoteAttestation?: boolean;
 }
 
 export interface MarDocumenter {
@@ -519,14 +614,16 @@ export async function discontinueMarOrder(
  * Lifecycle: the nurse STAGES the change on her note (status 'staged', written
  * immediately so it survives a reload but takes no effect yet). When she
  * SUBMITS the note, an Admin SDK route APPLIES it (creates/discontinues the
- * order) and flips it to status 'applied' + reviewStatus 'pending'. The RN
- * supervisor then simply REVIEWS it (acknowledges); there is no approval gate,
- * since maintaining the MAR per orders is within the nurse's scope.
+ * order) and flips it to status 'applied'. There is no approval gate and no
+ * acknowledgment step, since maintaining the MAR per orders is within the
+ * nurse's scope; the record persists as the audit trail of what was changed.
  */
 export type MarChangeRequestType = 'add' | 'change' | 'discontinue';
 export type MarChangeRequestStatus = 'staged' | 'applied';
-/** 'reverted' takes the change out of the acknowledgment queue: it has been
- *  undone, so there is nothing left for the RN to acknowledge. */
+/** All LEGACY as of Aug 2026: 'pending' / 'reviewed' came from the supervisor
+ *  acknowledgment queue and 'reverted' from the admin revert, both since
+ *  removed. Nothing writes any of these now, but records predating the change
+ *  still carry them, so the union stays for reads. */
 export type MarReviewStatus = 'pending' | 'reviewed' | 'reverted';
 
 export interface ProposedMed {
@@ -536,12 +633,21 @@ export interface ProposedMed {
   route: string;
   frequencyLabel: string;
   scheduledTimes: string[];
+  timeLabels?: Record<string, string>;
+  slidingScale?: SlidingScaleRow[];
   isPRN: boolean;
+  prnFrequencyLabel?: string;
   indication: string;
+  // Check-style order config (see MarOrder.valueLabel). Left off entirely by a
+  // form that cannot edit it; the change then keeps the order's own.
+  valueLabel?: string;
+  valueUnit?: string;
+  valueOptions?: string[];
   startDate: string;
   orderSignedDate: string;
   orderingPhysician: string;
   physicianPending: boolean;
+  parameters?: string;
   notes: string;
 }
 
@@ -576,16 +682,15 @@ export interface MarChangeRequest {
   changeKind?: MarChangeKind;
   updatedOrderId?: string; // the order edited in place, for a correction
   regimenFieldsChanged?: RegimenField[]; // what forced a new regimen
-  /** The documentation fields as they stood BEFORE a correction, so it can be
-   *  reverted without guessing. */
+  /** The documentation fields as they stood BEFORE a correction. */
   previousValues?: Record<string, unknown>;
-  // RN review (acknowledgment only; no approval).
+  // LEGACY, READ-ONLY. Nothing writes these any more: the supervisor review
+  // queue and the admin revert were both removed in Aug 2026. Records created
+  // before then still carry them, so they stay declared for reads.
   reviewStatus?: MarReviewStatus;
   reviewedBy?: string;
   reviewedByName?: string;
   reviewedAt?: unknown;
-  // Undo: set when a supervisor reverts an applied change. The request itself
-  // is kept, so the record shows what was done and that it was undone.
   revertedAt?: unknown;
   revertedBy?: string;
   revertedByName?: string;
@@ -605,19 +710,27 @@ export interface MarChangeRequestInput {
 }
 
 function normalizeProposed(p: ProposedMed): ProposedMed {
+  const scheduledTimes = p.isPRN ? [] : Array.from(new Set(p.scheduledTimes.filter(Boolean))).sort();
+  const slidingScale = parseSlidingScale(p.slidingScale);
+  const scaled = slidingScale.length > 0;
   return {
     medName: p.medName.trim(),
-    dose: p.dose.trim(),
-    units: p.units.trim(),
+    dose: scaled ? SLIDING_SCALE_DOSE_LABEL : p.dose.trim(),
+    units: scaled ? '' : p.units.trim(),
     route: p.route.trim(),
     frequencyLabel: p.frequencyLabel.trim(),
-    scheduledTimes: p.isPRN ? [] : Array.from(new Set(p.scheduledTimes.filter(Boolean))).sort(),
+    scheduledTimes,
+    timeLabels: cleanTimeLabels(p.timeLabels, scheduledTimes, p.isPRN),
+    slidingScale,
     isPRN: p.isPRN,
+    prnFrequencyLabel: p.isPRN ? p.prnFrequencyLabel?.trim() ?? '' : '',
     indication: p.indication.trim(),
+    ...measurementFields(p),
     startDate: p.startDate,
     orderSignedDate: p.orderSignedDate?.trim() ?? '',
     orderingPhysician: p.orderingPhysician.trim(),
     physicianPending: p.physicianPending === true,
+    parameters: p.parameters?.trim() ?? '',
     notes: p.notes.trim(),
   };
 }
@@ -732,34 +845,9 @@ export function subscribeStagedChanges(
   );
 }
 
-/** Live list of applied changes awaiting RN review (newest first). Staff-only.
- *  reviewStatus is only ever set to 'pending' once a change is applied, so this
- *  single-field query needs no composite index. */
-export function subscribePendingReviews(cb: (reqs: MarChangeRequest[]) => void): () => void {
-  const q = query(collection(db, 'marChangeRequests'), where('reviewStatus', '==', 'pending'));
-  return onSnapshot(
-    q,
-    (snap) => {
-      const items = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as MarChangeRequest[];
-      items.sort((a, b) => reqMillis(b.appliedAt) - reqMillis(a.appliedAt));
-      cb(items);
-    },
-    (err) => {
-      console.error('Pending-review subscription error:', err);
-      cb([]);
-    },
-  );
-}
-
-/** Live count of changes awaiting RN review, for the Records nav badge. */
-export function subscribePendingReviewCount(cb: (n: number) => void): () => void {
-  const q = query(collection(db, 'marChangeRequests'), where('reviewStatus', '==', 'pending'));
-  return onSnapshot(
-    q,
-    (snap) => cb(snap.size),
-    (err) => {
-      console.error('Pending-review count error:', err);
-      cb(0);
-    },
-  );
-}
+// The supervisor review queue that used to live here (subscribePendingReviews /
+// subscribePendingReviewCount) was retired in Aug 2026: keeping the MAR current
+// per a physician's order is within an LPN's scope, so acknowledging each change
+// was paperwork, not safety. It was never a gate — changes always applied
+// immediately. The change records themselves are unchanged and still carry who
+// applied what, when, why, and from which note.

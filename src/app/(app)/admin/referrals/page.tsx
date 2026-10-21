@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Search, X, RefreshCw, LayoutGrid, List } from 'lucide-react';
+import { btn, btnPrimary } from '@/components/buttons';
+import { Search, X, RefreshCw, LayoutGrid, List, PhoneCall } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
-import { useAuth } from '@/components/AuthProvider';
+import { useEffectiveUser } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
 import { type GappServiceKey } from '@/lib/georgia';
 import type { ServiceKey } from '@/lib/diagnosisCatalog';
@@ -15,22 +16,30 @@ import ReferralTable from './ReferralTable';
 import ReferralDetail from './ReferralDetail';
 import PrintOverlay from './PrintOverlay';
 import ReferOutModal from './ReferOutModal';
+import PhoneReferralModal from './PhoneReferralModal';
 import {
   matchInputFor,
   serviceForReferral,
   statusFromStage,
   type Referral, type ReferralStage, type StaffOption,
+  compareInStage,
 } from './types';
 
 type View = 'board' | 'table';
 const VIEW_KEY = 'referrals-view';
 
 export default function ReferralsPage() {
-  // Deleting referrals is admin-only; the VA gets the full workflow minus delete.
-  const { role } = useAuth();
+  // Deleting referrals is admin-only; the VA gets the full workflow minus
+  // delete. EFFECTIVE role, so a "View as Rosita" preview hides the delete
+  // affordances she never sees (and view-as targets are never admins, so this
+  // can only narrow). Board writes during a preview are separately refused by
+  // the authedFetch view-as guard, which the optimistic mutate runner
+  // surfaces as an alert + rollback.
+  const { role } = useEffectiveUser();
   const canDelete = role === 'admin';
   const [referrals, setReferrals] = useState<Referral[]>([]);
   const [staff, setStaff] = useState<StaffOption[]>([]);
+  const [loggingCall, setLoggingCall] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<View>('board');
@@ -121,6 +130,35 @@ export default function ReferralsPage() {
     load();
   }, [load]);
 
+  // Deep link from the new-referral email: /admin/referrals?open=<id> opens
+  // that card once the list has loaded. Read from window.location (not
+  // useSearchParams, which would need a Suspense boundary on this page), then
+  // stripped from the URL so closing the drawer or refreshing doesn't reopen it.
+  const linkedId = useRef<string | null>(null);
+  const [linkNotice, setLinkNotice] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      const id = url.searchParams.get('open');
+      if (!id) return;
+      linkedId.current = id;
+      url.searchParams.delete('open');
+      window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  useEffect(() => {
+    if (loading || !linkedId.current) return;
+    const id = linkedId.current;
+    linkedId.current = null;
+    if (referrals.some((r) => r.id === id)) {
+      setSelectedId(id);
+    } else if (!error) {
+      setLinkNotice('That referral is no longer on the board. It may have been deleted.');
+    }
+  }, [loading, referrals, error]);
+
   // The open drawer is derived from the live list, so it always reflects the
   // latest data for its referral without a syncing effect. Resolves to null if
   // the referral disappears (e.g. filtered out by a refetch).
@@ -128,6 +166,7 @@ export default function ReferralsPage() {
     () => (selectedId ? referrals.find((r) => r.id === selectedId) ?? null : null),
     [referrals, selectedId]
   );
+
 
   // Close drawer / print preview on Escape.
   useEffect(() => {
@@ -174,6 +213,21 @@ export default function ReferralsPage() {
       return hay.includes(needle);
     });
   }, [referrals, q, assigneeFilter, shareFilter, fitFilter, settings.intake, partnerFilter, agencies]);
+
+  // Previous / Next in the drawer walk the open referral's stage column in
+  // board order, limited to what the current filters show.
+  const stageNav = useMemo(() => {
+    if (!selected) return null;
+    const column = filtered.filter((r) => r.stage === selected.stage).sort(compareInStage);
+    const index = column.findIndex((r) => r.id === selected.id);
+    if (index < 0) return null;
+    return {
+      index,
+      total: column.length,
+      prevId: index > 0 ? column[index - 1].id : null,
+      nextId: index < column.length - 1 ? column[index + 1].id : null,
+    };
+  }, [filtered, selected]);
 
   // --- Mutations (optimistic, with server reconcile) ---
 
@@ -331,13 +385,18 @@ export default function ReferralsPage() {
             <p style={kickerStyle}>Admin</p>
             <h1 style={titleStyle}>Referrals</h1>
             <p style={subtitleStyle}>
-              Track incoming referrals from the GAPP and Heart &amp; Soul websites through your
-              intake pipeline.
+              Track incoming referrals from the GAPP and Heart &amp; Soul websites, and calls you
+              log here, through your intake pipeline.
             </p>
           </div>
-          <button onClick={load} style={refreshBtnStyle} title="Refresh">
-            <RefreshCw size={15} /> Refresh
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+            <button onClick={() => setLoggingCall(true)} className={btnPrimary}>
+              <PhoneCall size={15} /> Log Phone Referral
+            </button>
+            <button onClick={load} className={btn} title="Refresh">
+              <RefreshCw size={15} /> Refresh
+            </button>
+          </div>
         </header>
 
         <div style={toolbarStyle}>
@@ -366,7 +425,7 @@ export default function ReferralsPage() {
             style={filterSelectStyle}
             aria-label="Filter by assignee"
           >
-            <option value="all">All assignees</option>
+            <option value="all">All Assignees</option>
             <option value="unassigned">Unassigned</option>
             {staff.map((s) => (
               <option key={s.uid} value={s.uid}>
@@ -381,9 +440,9 @@ export default function ReferralsPage() {
             style={filterSelectStyle}
             aria-label="Filter by sharing"
           >
-            <option value="all">All sharing</option>
-            <option value="shared">Shared externally</option>
-            <option value="unshared">Not shared</option>
+            <option value="all">All Sharing</option>
+            <option value="shared">Shared Externally</option>
+            <option value="unshared">Not Shared</option>
           </select>
 
           <select
@@ -392,10 +451,10 @@ export default function ReferralsPage() {
             style={filterSelectStyle}
             aria-label="Filter by intake fit"
           >
-            <option value="all">All fits</option>
-            <option value="good">Good fit</option>
-            <option value="partial">Possible fit</option>
-            <option value="none">Not a fit</option>
+            <option value="all">All Fits</option>
+            <option value="good">Good Fit</option>
+            <option value="partial">Possible Fit</option>
+            <option value="none">Not a Fit</option>
           </select>
 
           <select
@@ -404,9 +463,9 @@ export default function ReferralsPage() {
             style={filterSelectStyle}
             aria-label="Filter by partner agency match"
           >
-            <option value="all">All partners</option>
-            <option value="match">Partner match</option>
-            <option value="none">No partner match</option>
+            <option value="all">All Partners</option>
+            <option value="match">Partner Match</option>
+            <option value="none">No Partner Match</option>
           </select>
 
           <div style={searchWrapStyle}>
@@ -425,14 +484,26 @@ export default function ReferralsPage() {
           </div>
         </div>
 
+        {linkNotice && (
+          <div
+            role="status"
+            style={{ ...emptyStyle, textAlign: 'left', padding: '10px 14px', marginBottom: 12, color: '#92400e', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}
+          >
+            <span>{linkNotice}</span>
+            <button onClick={() => setLinkNotice(null)} aria-label="Dismiss" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', display: 'flex' }}>
+              <X size={16} />
+            </button>
+          </div>
+        )}
+
         {loading ? (
           <div style={emptyStyle}>Loading…</div>
         ) : error ? (
           <div style={{ ...emptyStyle, color: '#b3261e' }}>
             {error}
             <div style={{ marginTop: 12 }}>
-              <button onClick={load} style={refreshBtnStyle}>
-                Try again
+              <button onClick={load} className={btn}>
+                Try Again
               </button>
             </div>
           </div>
@@ -466,6 +537,20 @@ export default function ReferralsPage() {
           onDelete={() => handleDelete(selected.id)}
           canDelete={canDelete}
           onChanged={load}
+          nav={stageNav}
+          onNavigate={(id) => setSelectedId(id)}
+        />
+      )}
+
+      {loggingCall && (
+        <PhoneReferralModal
+          staff={staff}
+          onClose={() => setLoggingCall(false)}
+          onCreated={async (id) => {
+            setLoggingCall(false);
+            await load();
+            setSelectedId(id);
+          }}
         />
       )}
 
@@ -516,21 +601,6 @@ const kickerStyle: React.CSSProperties = {
 };
 const titleStyle: React.CSSProperties = { fontSize: 32, color: '#2c3e50', margin: '4px 0 0' };
 const subtitleStyle: React.CSSProperties = { color: '#7f8c8d', fontSize: 15, marginTop: 6, maxWidth: 640 };
-const refreshBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: 'white',
-  border: '1px solid #d1d5db',
-  borderRadius: 8,
-  padding: '8px 12px',
-  fontSize: 13,
-  fontWeight: 600,
-  color: '#374151',
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-  flexShrink: 0,
-};
 const toolbarStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',

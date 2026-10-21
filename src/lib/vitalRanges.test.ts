@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  getVitalRanges,
-  checkVitalRange,
-  hasAnyAbnormalVital,
-  isBpRoutinelyRequired,
-  type VitalRangesOverride,
-} from './vitalRanges';
+import { getVitalRanges, checkVitalRange, hasAnyAbnormalVital, isBpRoutinelyRequired, type VitalRangesOverride, applyBaselines, isBaselineRange, readNoteBaselines, noteVitalRanges } from './vitalRanges';
 
 describe('isBpRoutinelyRequired (AAP: routine BP from age 3)', () => {
   // Recent DOBs are computed against the real "now"; pick ages well clear of
@@ -104,5 +98,35 @@ describe('hasAnyAbnormalVital — overrides', () => {
       preschool: { temperature: { low: 96.0, high: 99.5 } },
     };
     expect(hasAnyAbnormalVital(data, overrides)).toBe(false);
+  });
+});
+
+describe('client baselines', () => {
+  it('replace the age range for that vital only, and label the range', () => {
+    const base = getVitalRanges('30');
+    const r = applyBaselines(base, { pulse: { low: 95, high: 110 } });
+    expect(r.pulse).toMatchObject({ low: 95, high: 110, unit: 'bpm' });
+    expect(isBaselineRange(r.pulse)).toBe(true);
+    expect(r.temperature).toEqual(base.temperature);
+    expect(isBaselineRange(r.temperature)).toBe(false);
+  });
+
+  it('with no baselines the ranges are exactly the age ranges', () => {
+    const base = getVitalRanges('30');
+    expect(applyBaselines(base, undefined)).toBe(base);
+    expect(applyBaselines(base, {})).toBe(base);
+  });
+
+  it('read the snapshot off a note and drop half or inverted pairs', () => {
+    expect(readNoteBaselines({ q16b_pulse_low: '95', q16b_pulse_high: '110' })).toEqual({ pulse: { low: 95, high: 110 } });
+    expect(readNoteBaselines({ q16b_pulse_low: '95' })).toEqual({});
+    expect(readNoteBaselines({ q16b_pulse_low: '120', q16b_pulse_high: '110' })).toEqual({});
+  });
+
+  it('a reading inside the baseline is not an abnormal vital for the Submissions flag', () => {
+    const noteData = { q5_ageYears: '30', q18_pulse: '102' };
+    expect(hasAnyAbnormalVital(noteData)).toBe(true);
+    expect(hasAnyAbnormalVital({ ...noteData, q16b_pulse_low: '95', q16b_pulse_high: '110' })).toBe(false);
+    expect(noteVitalRanges({ ...noteData, q16b_pulse_low: '95', q16b_pulse_high: '110' }).pulse.high).toBe(110);
   });
 });

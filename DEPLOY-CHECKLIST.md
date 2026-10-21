@@ -12,6 +12,13 @@ had no block for that collection and the default-deny at the bottom caught it.
 The same PR also needed a composite index nobody had deployed, which produced a
 second, different failure once the rules were fixed.
 
+## Did the merge deploy yet?
+
+Open https://www.heartandsoulhc.org/api/version (no sign-in needed). It
+answers with the deployed commit, the Cloud Build id, and when the image was
+built. Compare `shortCommit` with the merge commit on `main`. Cloud Build
+usually finishes within a few minutes of the merge.
+
 ## After merging a PR that touched these files
 
 **`firestore.rules`**

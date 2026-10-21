@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
+import { recordCommunication } from '@/lib/communicationsServer';
 import { FieldValue } from 'firebase-admin/firestore';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { sendSms } from '@/lib/sms/sendSms';
 import { sendVisitNotice } from '@/lib/emails/visitNotice';
-import { visitSmsBody, whenPhrase, type VisitNotifyEvent, type VisitNotifyFacts } from '@/lib/visitNotifyShared';
+import { visitEmailBody, visitEmailSubject, visitSmsBody, whenPhrase, type VisitNotifyEvent, type VisitNotifyFacts } from '@/lib/visitNotifyShared';
 import { createPortalNotification } from '@/lib/notificationsServer';
 
 const EVENTS: VisitNotifyEvent[] = ['assigned', 'cancelled', 'restored'];
@@ -117,6 +118,29 @@ export async function POST(request: Request) {
       href: `/admin/clients/${String((visit as { patientId?: string }).patientId || '')}?tab=schedule`,
     }),
   ]);
+
+  // Communications log: exactly what went out on each channel, for the
+  // owner's "was she told, and what did it say?" view.
+  const firstName = (assignee.displayName || '').trim().split(/\s+/)[0] || '';
+  await recordCommunication({
+    source: 'automated',
+    event: `visit-${event}`,
+    direction: 'outbound',
+    patientId: String((visit as { patientId?: string }).patientId || ''),
+    patientName: clientName,
+    staffUid: assigneeUid,
+    staffName: assignee.displayName || '',
+    counterpartyName: '',
+    summary: bellText,
+    channels: [
+      { channel: 'email', to: assignee.email || '', ok: email.ok, ...(email.ok ? {} : { error: email.error || 'Not sent.' }), subject: visitEmailSubject(event, facts), body: visitEmailBody(event, facts, firstName) },
+      { channel: 'sms', to: assignee.phone || '', ok: sms.ok, ...(sms.ok ? {} : { error: sms.error || 'Not sent.', skipped: !!sms.skipped }), body: visitSmsBody(event, facts) },
+      { channel: 'portal', to: assignee.displayName || '', ok: true, body: bellText },
+    ],
+    relatedVisitId: visitId,
+    loggedByUid: caller.uid,
+    loggedByName: caller.profile.displayName || caller.email || '',
+  });
 
   // Audit stamp (Admin SDK bypasses the client-update allowlist by design).
   await visitSnap.ref.update({

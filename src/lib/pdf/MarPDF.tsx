@@ -14,6 +14,10 @@ export type MarCellStatus = 'given' | 'held' | 'refused' | 'none' | 'inactive';
 
 export interface MarPdfCell {
   label: string;
+  /** Sliding-scale rows only. `label` is the blood glucose reading, `sub`
+   *  the units given ("4u", or "Held" / "Ref"), `initials` the documenter's. */
+  sub?: string;
+  initials?: string;
   status: MarCellStatus;
   star: boolean; // administered by family/proxy; see log
 }
@@ -28,7 +32,14 @@ export interface MarPdfRow {
   // the route: rows are wrap={false}, so an unbounded line would silently
   // clip on a survey document.
   medLine3?: string;
+  /** The order's sliding scale in full (never truncated: it is the dose). */
+  medScale?: string;
   slot: string; // 'HH:MM' or 'PRN'
+  /** The meal the time is tied to ("Before Breakfast"), printed under it. */
+  slotLabel?: string;
+  /** Sliding-scale row: the boxes carry a blood glucose reading, the units
+   *  given and the initials, each on its own labeled line. */
+  isScale?: boolean;
   isPRN: boolean; // PRN rows render in their own labeled section (D.6.b)
   cells: MarPdfCell[]; // one per day of the month
 }
@@ -64,6 +75,13 @@ export interface MarPDFProps {
   rows: MarPdfRow[];
   legend: Array<{ initials: string; name: string }>;
   log: MarPdfLogEntry[];
+  /** Blank, ruled rows printed under the log for staff to write in by hand.
+   *  The route asks for them when the month is not over yet (the current
+   *  month or a future one), since that printout is used as a paper MAR.
+   *  Keep it small enough that title + rows fit on one page: with no real
+   *  entries the section is unbreakable, and an unbreakable block taller
+   *  than a page collapses the whole layout. */
+  logWriteInRows?: number;
   generatedAt: string;
   generatedBy: string;
 }
@@ -118,11 +136,10 @@ const s = StyleSheet.create({
     borderColor: BORDER,
     paddingVertical: 2,
     paddingHorizontal: 1,
-    fontSize: 6.5,
-    textAlign: 'center',
-    fontFamily: 'Helvetica-Bold',
-    color: NAVY,
   },
+  timeText: { fontSize: 6.5, textAlign: 'center', fontFamily: 'Helvetica-Bold', color: NAVY },
+  // The meal a time is tied to ("Before Breakfast"), under the clock time.
+  timeLabel: { fontSize: 5, textAlign: 'center', color: '#5c6b7a', marginTop: 1 },
   dayCell: {
     borderWidth: 0.5,
     borderColor: BORDER,
@@ -136,6 +153,33 @@ const s = StyleSheet.create({
   medMeta: { fontSize: 6, color: '#5c6b7a', marginTop: 1 },
   // Special instructions / PRN purpose (manual D.6.a.ii.e, D.6.b.ii.d).
   medInstructions: { fontSize: 6, color: '#2c3e50', marginTop: 1, fontFamily: 'Helvetica-Oblique' },
+  // The sliding scale, in full. It is the dose on the row, so it is never cut.
+  medScale: { fontSize: 6, color: NAVY, marginTop: 1 },
+  // Units given, under the blood glucose reading in a sliding-scale cell.
+  daySub: { fontSize: 5.5 },
+  // Sliding-scale rows: three labeled lines (reading, units, initials). The
+  // label column and every day column split into three equal-height cells,
+  // so each label lines up with its values across the whole month.
+  scaleLabelCell: {
+    flex: 1,
+    borderWidth: 0.5,
+    borderColor: BORDER,
+    backgroundColor: LIGHT,
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+    paddingVertical: 1,
+    minHeight: 11,
+  },
+  scaleLabelText: { fontSize: 5.2, fontFamily: 'Helvetica-Bold', color: NAVY },
+  scaleSubCell: {
+    flex: 1,
+    borderWidth: 0.5,
+    borderColor: BORDER,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 11,
+  },
+
   // Full-width section banner separating the routine portion of the grid
   // from the PRN / as-needed portion (manual D.6.a / D.6.b).
   sectionRow: {
@@ -170,16 +214,12 @@ const s = StyleSheet.create({
   },
   legendNote: { fontSize: 6.5, color: '#5c6b7a', marginTop: 5, lineHeight: 1.4 },
   sectionTitle: { fontSize: 9, fontFamily: 'Helvetica-Bold', color: NAVY, marginTop: 12, marginBottom: 4 },
-  sigRow: { flexDirection: 'row', flexWrap: 'wrap' },
-  sigEntry: {
-    flexDirection: 'row',
-    borderWidth: 0.5,
-    borderColor: BORDER,
-    paddingVertical: 3,
-    paddingHorizontal: 6,
-    marginRight: 6,
-    marginBottom: 4,
-  },
+  sigNote: { fontSize: 6.5, color: '#5c6b7a', marginBottom: 4 },
+  // Two side-by-side columns of signature lines (each 370pt wide).
+  sigGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  sigLine: { flexDirection: 'row', width: 370, marginBottom: 3 },
+  sigCell: { borderBottomWidth: 0.6, borderBottomColor: BORDER, minHeight: 14, justifyContent: 'flex-end', paddingHorizontal: 3, marginRight: 4 },
+  sigCellText: { fontSize: 7 },
   logTh: {
     backgroundColor: LIGHT,
     borderWidth: 0.5,
@@ -190,6 +230,7 @@ const s = StyleSheet.create({
     color: NAVY,
   },
   logTd: { borderWidth: 0.5, borderColor: BORDER, padding: 3, fontSize: 7 },
+  logBlankTd: { borderWidth: 0.5, borderColor: BORDER, height: 20 },
   footer: {
     position: 'absolute',
     bottom: 12,
@@ -217,6 +258,32 @@ const CELL_FG: Record<MarCellStatus, string> = {
   inactive: '#9aa6b2',
 };
 
+// Signature line widths: initials, printed name, credential / role, signature
+// (sums to 370 with the 4pt gaps).
+const SIG_W = [34, 120, 76, 124];
+// Header labels for the signature lines, printed as the first row.
+const SIG_LABELS = { initials: 'Initials', name: 'Printed name', credential: 'Credential / role' };
+/** Minimum signature lines on a printed MAR, so a blank month still has room for every nurse and proxy caregiver. */
+const MIN_SIG_LINES = 10;
+
+/**
+ * The legend's documented entries first (initials and name filled in, credential
+ * blank for the signer to complete), then blank lines up to the minimum, always
+ * an even count so the two columns balance.
+ */
+export function signatureRows(legend: Array<{ initials: string; name: string }>): Array<{ initials: string; name: string; credential: string }> {
+  const rows = [
+    { ...SIG_LABELS },
+    ...legend.map((l) => ({ initials: l.initials, name: l.name, credential: '' })),
+  ];
+  while (rows.length < MIN_SIG_LINES + 1 || rows.length % 2 === 1) rows.push({ initials: '', name: '', credential: '' });
+  return rows;
+}
+
+// Sliding-scale rows: the label column is carved out of the medication
+// column, so the Time and day columns stay aligned with every other row.
+const SCALE_LABEL_W = 44;
+const SCALE_LINE_LABELS = ['Blood glucose (mg/dL)', 'Units given', 'Initials'];
 // Log-table column widths (landscape usable width ≈ 748pt).
 const LOG_W = [56, 34, 140, 44, 116, 150, 128, 36];
 
@@ -228,6 +295,7 @@ export default function MarPDF({
   rows,
   legend,
   log,
+  logWriteInRows = 0,
   generatedAt,
   generatedBy,
 }: MarPDFProps) {
@@ -311,13 +379,52 @@ export default function MarPDF({
                   </Text>
                 </View>
               )}
+              {row.isScale ? (
+              <View style={s.row} wrap={false}>
+                <View style={[s.medCell, { width: MED_W - SCALE_LABEL_W }]}>
+                  <Text style={s.medName}>{row.medLine1}</Text>
+                  <Text style={s.medMeta}>{row.medLine2}</Text>
+                  {row.medScale ? <Text style={s.medScale}>{row.medScale}</Text> : null}
+                  {row.medLine3 ? <Text style={s.medInstructions}>{row.medLine3}</Text> : null}
+                </View>
+                <View style={{ width: SCALE_LABEL_W }}>
+                  {SCALE_LINE_LABELS.map((label) => (
+                    <View key={label} style={s.scaleLabelCell}>
+                      <Text style={s.scaleLabelText}>{label}</Text>
+                    </View>
+                  ))}
+                </View>
+                <View style={s.timeCell}>
+                  <Text style={s.timeText}>{row.slot}</Text>
+                  {row.slotLabel ? <Text style={s.timeLabel}>{row.slotLabel}</Text> : null}
+                </View>
+                {row.cells.map((cell, ci) => {
+                  const bg = CELL_BG[cell.status];
+                  const fg = CELL_FG[cell.status];
+                  const lines = [cell.label, cell.sub || '', `${cell.initials || ''}${cell.initials && cell.star ? '*' : ''}`];
+                  return (
+                    <View key={ci} style={{ width: dayW }}>
+                      {lines.map((text, li) => (
+                        <View key={li} style={[s.scaleSubCell, { backgroundColor: bg }]}>
+                          {text ? <Text style={[li === 0 ? s.dayText : s.daySub, { color: fg }]}>{text}</Text> : null}
+                        </View>
+                      ))}
+                    </View>
+                  );
+                })}
+              </View>
+              ) : (
               <View style={s.row} wrap={false}>
               <View style={s.medCell}>
                 <Text style={s.medName}>{row.medLine1}</Text>
                 <Text style={s.medMeta}>{row.medLine2}</Text>
+                {row.medScale ? <Text style={s.medScale}>{row.medScale}</Text> : null}
                 {row.medLine3 ? <Text style={s.medInstructions}>{row.medLine3}</Text> : null}
               </View>
-              <Text style={s.timeCell}>{row.slot}</Text>
+              <View style={s.timeCell}>
+                <Text style={s.timeText}>{row.slot}</Text>
+                {row.slotLabel ? <Text style={s.timeLabel}>{row.slotLabel}</Text> : null}
+              </View>
               {row.cells.map((cell, ci) => (
                 <View key={ci} style={[s.dayCell, { width: dayW, backgroundColor: CELL_BG[cell.status] }]}>
                   {cell.label ? (
@@ -346,6 +453,7 @@ export default function MarPDF({
                 </View>
               ))}
               </View>
+              )}
             </React.Fragment>
           ))}
         </View>
@@ -357,26 +465,44 @@ export default function MarPDF({
           E. Reasons a dose is held, refused, or otherwise not received are documented per dose in the log
           below (examples: refused, hospital, NPO (nothing by mouth), home visit, day service). PRN doses:
           reason and result are recorded in the log.
+          {rows.some((r) => r.isScale)
+            ? ' F. Sliding scale insulin: each time has three lines, the blood glucose reading (mg/dL), the units given (u), and the initials. A dose that was held, refused, or differs from the scale is explained in the log below.'
+            : ''}
         </Text>
 
-        {/* Initial / signature legend */}
+        {/* Initial / signature legend. Everyone who charts on this record
+            signs here once: the documented entries are pre-filled with their
+            initials and name, and blank rows follow so a printed copy (a
+            future month taken to a day program, for example) gives each
+            nurse and each proxy-trained caregiver a line to print, initial,
+            and sign. Two-column layout so the block stays compact. */}
         <Text style={s.sectionTitle}>Initial / Signature Legend</Text>
-        <View style={s.sigRow}>
-          {legend.length === 0 ? (
-            <Text style={{ fontSize: 7, color: '#7f8c8d' }}>No administrations documented this month.</Text>
-          ) : (
-            legend.map((l, i) => (
-              <View key={i} style={s.sigEntry} wrap={false}>
-                <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 7 }}>{l.initials}</Text>
-                <Text style={{ fontSize: 7, marginLeft: 4 }}>· {l.name}</Text>
-              </View>
-            ))
-          )}
+        <Text style={s.sigNote}>
+          Each person who documents on this MAR prints their name, credential or role (RN, LPN, proxy caregiver), initials, and signature below.
+        </Text>
+        <View style={s.sigGrid}>
+          {signatureRows(legend).map((r, i) => (
+            <View key={i} style={s.sigLine} wrap={false}>
+              <View style={[s.sigCell, { width: SIG_W[0] }]}><Text style={s.sigCellText}>{r.initials}</Text></View>
+              <View style={[s.sigCell, { width: SIG_W[1] }]}><Text style={s.sigCellText}>{r.name}</Text></View>
+              <View style={[s.sigCell, { width: SIG_W[2] }]}><Text style={s.sigCellText}>{r.credential}</Text></View>
+              <View style={[s.sigCell, { width: SIG_W[3] }]}><Text style={s.sigCellText}> </Text></View>
+            </View>
+          ))}
         </View>
 
-        {/* PRN & exception log */}
+        {/* PRN & exception log. On a blank printout (no entries, only rows to
+            write in) the whole section stays together, so the column headers
+            never end up on a different page from the rows under them. */}
+        <View wrap={log.length > 0}>
         <Text style={s.sectionTitle}>PRN, Refused &amp; Exception Log</Text>
-        {log.length === 0 ? (
+        {logWriteInRows > 0 ? (
+          <Text style={{ fontSize: 7, color: '#5c6b7a', marginBottom: 4 }}>
+            Write in every PRN dose (with the reason and the result) and every dose that was held, refused, or
+            not given (with the reason).
+          </Text>
+        ) : null}
+        {log.length === 0 && logWriteInRows === 0 ? (
           <Text style={{ fontSize: 7, color: '#7f8c8d' }}>None this month.</Text>
         ) : (
           <View>
@@ -406,8 +532,17 @@ export default function MarPDF({
                 ) : null}
               </View>
             ))}
+            {/* Ruled blank rows, tall enough to write in by hand. */}
+            {Array.from({ length: logWriteInRows }, (_, i) => (
+              <View key={`blank-${i}`} style={s.row} wrap={false}>
+                {LOG_W.map((w, ci) => (
+                  <View key={ci} style={[s.logBlankTd, { width: w }]} />
+                ))}
+              </View>
+            ))}
           </View>
         )}
+        </View>
 
         <View style={s.footer} fixed>
           <Text>

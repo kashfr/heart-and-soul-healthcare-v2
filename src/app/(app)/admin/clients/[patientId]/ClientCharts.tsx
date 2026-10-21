@@ -15,7 +15,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { getVitalRanges, type VitalRangesOverride } from '@/lib/vitalRanges';
+import { getVitalRanges, type VitalRangesOverride, applyBaselines, type VitalsBaselines } from '@/lib/vitalRanges';
 import {
   notesInWindow,
   shiftISO,
@@ -36,7 +36,7 @@ const BAND_FILL = '#0e7c4a';
 type Metric = 'bp' | 'pulse' | 'spo2' | 'temp' | 'resp' | 'pain';
 
 const METRICS: Array<{ key: Metric; label: string }> = [
-  { key: 'bp', label: 'Blood pressure' },
+  { key: 'bp', label: 'Blood Pressure' },
   { key: 'pulse', label: 'Pulse' },
   { key: 'spo2', label: 'SpO2' },
   { key: 'temp', label: 'Temperature' },
@@ -59,6 +59,8 @@ interface Props {
   admins: DashAdmin[];
   dob?: string;
   vitalsOverride?: VitalRangesOverride;
+  /** The client's current baselines (clinical profile); shade the band by them. */
+  baselines?: VitalsBaselines;
 }
 
 /**
@@ -67,18 +69,28 @@ interface Props {
  * visits + care hours. Pure presentation — every series comes pre-parsed and
  * bounds-guarded from clientDashboardShared.
  */
-export default function ClientCharts({ notes, admins, dob, vitalsOverride }: Props) {
+export default function ClientCharts({ notes, admins, dob, vitalsOverride, baselines }: Props) {
   const [metric, setMetric] = useState<Metric>('bp');
   const [rangeDays, setRangeDays] = useState<30 | 90>(90);
   const today = todayISO();
 
   // Age-aware normal ranges (admin overrides applied) drive the shaded band.
-  const ranges = useMemo(() => getVitalRanges('', dob, vitalsOverride), [dob, vitalsOverride]);
+  const ranges = useMemo(() => applyBaselines(getVitalRanges('', dob, vitalsOverride), baselines), [dob, vitalsOverride, baselines]);
 
+  // One x-category per point. A recheck (later reading in the same shift)
+  // gets its clock time appended so two readings on one date never share a
+  // label, and the tooltip can say what the client was doing.
   const points = useMemo(() => {
     const start = shiftISO(today, -(rangeDays - 1));
-    return vitalSeries(notesInWindow(notes, start, today)).map((p) => ({ ...p, x: shortDate(p.dateISO) }));
+    return vitalSeries(notesInWindow(notes, start, today)).map((p) => ({
+      ...p,
+      x: p.recheck ? `${shortDate(p.dateISO)} ${p.recheck.time || `#${p.recheck.index}`}` : shortDate(p.dateISO),
+      xLabel: p.recheck
+        ? `${shortDate(p.dateISO)} recheck ${p.recheck.index}${p.recheck.time ? ` at ${p.recheck.time}` : ''}${p.recheck.context ? ` (${p.recheck.context})` : ''}`
+        : shortDate(p.dateISO),
+    }));
   }, [notes, rangeDays, today]);
+  const anyRecheckPoints = points.some((p) => p.recheck);
 
   const medWeeks = useMemo(
     () => weeklyMedBuckets(admins, 12, today).map((b) => ({ ...b, x: shortDate(b.weekStartISO) })),
@@ -119,7 +131,7 @@ export default function ClientCharts({ notes, admins, dob, vitalsOverride }: Pro
       case 'resp':
         return { lines: [{ key: 'resp', name: 'Respirations', color: NAVY }], bands: [{ low: ranges.respiration.low, high: ranges.respiration.high }], unit: '/min', cap: undefined as number | undefined };
       case 'pain':
-        return { lines: [{ key: 'pain', name: 'Pain score', color: AMBER }], bands: [], unit: '/10', cap: 10 as number | undefined };
+        return { lines: [{ key: 'pain', name: 'Pain Score', color: AMBER }], bands: [], unit: '/10', cap: 10 as number | undefined };
     }
   }, [metric, ranges]);
 
@@ -132,7 +144,7 @@ export default function ClientCharts({ notes, admins, dob, vitalsOverride }: Pro
       {/* Vitals trend */}
       <div style={chartBlockStyle}>
         <div style={chartHeadStyle}>
-          <div style={chartTitleStyle}>Vitals trend</div>
+          <div style={chartTitleStyle}>Vitals Trend</div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {METRICS.map((m) => (
               <button key={m.key} type="button" onClick={() => setMetric(m.key)} style={metric === m.key ? chipActiveStyle : chipStyle}>
@@ -170,6 +182,7 @@ export default function ClientCharts({ notes, admins, dob, vitalsOverride }: Pro
                     distinguishable only by color). Single-line charts stay name-less. */}
                 <Tooltip
                   formatter={(v, name) => [`${v} ${cfg.unit}`, cfg.lines.length > 1 ? name : undefined]}
+                  labelFormatter={(_label, payload) => (payload && payload[0]?.payload?.xLabel) || String(_label)}
                   labelStyle={{ fontSize: 12 }}
                   itemStyle={{ fontSize: 12 }}
                 />
@@ -178,7 +191,17 @@ export default function ClientCharts({ notes, admins, dob, vitalsOverride }: Pro
                   <ReferenceArea key={i} y1={b.low} y2={b.high} fill={BAND_FILL} fillOpacity={0.08} stroke={BAND_FILL} strokeOpacity={0.18} />
                 ))}
                 {cfg.lines.map((l) => (
-                  <Line key={l.key} type="monotone" dataKey={l.key} name={l.name} stroke={l.color} strokeWidth={2} dot={{ r: 3 }} connectNulls isAnimationActive={false} />
+                  <Line
+                    key={l.key}
+                    type="monotone"
+                    dataKey={l.key}
+                    name={l.name}
+                    stroke={l.color}
+                    strokeWidth={2}
+                    dot={(props) => <VitalDot {...props} color={l.color} />}
+                    connectNulls
+                    isAnimationActive={false}
+                  />
                 ))}
               </LineChart>
             </ResponsiveContainer>
@@ -188,6 +211,7 @@ export default function ClientCharts({ notes, admins, dob, vitalsOverride }: Pro
                 {/* Default settings ship an EMPTY override object — truthiness
                     alone would claim agency thresholds on every install. */}
                 {vitalsOverride && Object.keys(vitalsOverride).length > 0 ? ' (agency thresholds applied)' : ''}.
+                {anyRecheckPoints ? ' Hollow dots = vitals rechecks later in the shift.' : ''}
               </div>
             )}
           </>
@@ -197,7 +221,7 @@ export default function ClientCharts({ notes, admins, dob, vitalsOverride }: Pro
       {/* Medication administration */}
       <div style={chartBlockStyle}>
         <div style={chartHeadStyle}>
-          <div style={chartTitleStyle}>Medication administration · weekly (12 weeks)</div>
+          <div style={chartTitleStyle}>Medication Administration · Weekly (12 Weeks)</div>
         </div>
         {!anyMeds ? (
           <div style={chartEmptyStyle}>No doses documented in the last 12 weeks.</div>
@@ -220,7 +244,7 @@ export default function ClientCharts({ notes, admins, dob, vitalsOverride }: Pro
       {/* Visits + hours */}
       <div style={{ ...chartBlockStyle, marginBottom: 0 }}>
         <div style={chartHeadStyle}>
-          <div style={chartTitleStyle}>Visits &amp; care hours · weekly (12 weeks)</div>
+          <div style={chartTitleStyle}>Visits &amp; Care Hours · Weekly (12 Weeks)</div>
         </div>
         {!anyVisits ? (
           <div style={chartEmptyStyle}>No visits documented in the last 12 weeks.</div>
@@ -240,6 +264,23 @@ export default function ClientCharts({ notes, admins, dob, vitalsOverride }: Pro
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Line dot: solid for a note's first set of vitals, hollow for a recheck
+ * (later reading in the same shift), so a retake reads as a retake on the
+ * trend line. recharts passes the point's row as `payload`; a row with no
+ * value for this line renders nothing (connectNulls bridges the gap).
+ */
+function VitalDot(props: { cx?: number; cy?: number; value?: number | null; payload?: { recheck?: unknown }; color: string }) {
+  const { cx, cy, value, payload, color } = props;
+  if (cx == null || cy == null || value == null) return null;
+  const recheck = !!payload?.recheck;
+  return recheck ? (
+    <circle cx={cx} cy={cy} r={4} fill="white" stroke={color} strokeWidth={2} />
+  ) : (
+    <circle cx={cx} cy={cy} r={3} fill={color} stroke={color} strokeWidth={1} />
   );
 }
 

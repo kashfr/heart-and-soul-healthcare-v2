@@ -1,8 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
 import { MessageCircleQuestion, CheckCircle2, Ban } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
+import { escortToField, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
 import { useSettings } from '@/components/SettingsProvider';
 import { clarificationMessages, clarificationBlocksNotes, type NoteClarification } from '@/lib/submissions';
 import type { Role } from '@/lib/auth';
@@ -11,7 +13,7 @@ type TS = { toDate?: () => Date } | Date | null | undefined;
 function fmt(ts: TS): string {
   if (!ts) return '';
   const d = ts instanceof Date ? ts : ts.toDate?.();
-  return d ? d.toLocaleString() : '';
+  return d ? d.toLocaleString('en-US') : '';
 }
 
 interface Props {
@@ -52,6 +54,7 @@ export default function ClarificationPanel({
   const [busy, setBusy] = useState(false);
   const [blockBusy, setBlockBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [textError, setTextError] = useState<string | null>(null);
 
   const isOpen = clarification?.status === 'open';
   const isResolved = clarification?.status === 'resolved';
@@ -62,6 +65,13 @@ export default function ClarificationPanel({
   if (!clarification && !canReview) return null;
 
   async function submit(action: 'flag' | 'respond' | 'resolve') {
+    if (busy) return;
+    if (action !== 'resolve' && !text.trim()) {
+      setTextError(action === 'flag' ? 'Type what you want to send first.' : 'Type your reply first.');
+      escortToField('clarification-composer');
+      return;
+    }
+    setTextError(null);
     setBusy(true);
     setError(null);
     try {
@@ -117,13 +127,13 @@ export default function ClarificationPanel({
       <div style={headerStyle}>
         <MessageCircleQuestion size={16} color={isOpen ? (isCorrection ? '#b3261e' : '#b45309') : '#5c6b7a'} />
         <strong style={{ fontSize: 14, color: '#2c3e50' }}>
-          {clarification ? (isCorrection ? 'Correction needed' : 'Clarification') : 'Clarification / Correction'}
+          {clarification ? (isCorrection ? 'Correction Needed' : 'Clarification') : 'Clarification / Correction'}
         </strong>
         {isOpen && <span style={isCorrection ? correctionBadge : openBadge}>Open</span>}
         {isResolved && <span style={resolvedBadge}>Resolved</span>}
         {blocksNow && (
           <span style={blockingBadge} title="The author can't start or submit new notes until she amends this one.">
-            <Ban size={10} /> Blocking new notes
+            <Ban size={10} /> Blocking New Notes
           </span>
         )}
       </div>
@@ -134,17 +144,17 @@ export default function ClarificationPanel({
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button
               type="button"
-              style={secondaryBtn}
-              onClick={() => { setFlagKind('clarification'); setMode('flag'); }}
+              className={`${btn} ${btnSm}`}
+              onClick={() => { setFlagKind('clarification'); setMode('flag'); setTextError(null); }}
             >
-              Flag for clarification
+              Flag for Clarification
             </button>
             <button
               type="button"
-              style={correctionBtn}
-              onClick={() => { setFlagKind('correction'); setMode('flag'); }}
+              className={`${btnDanger} ${btnSm}`}
+              onClick={() => { setFlagKind('correction'); setMode('flag'); setTextError(null); }}
             >
-              Flag a correction
+              Flag a Correction
             </button>
           </div>
         )}
@@ -183,19 +193,19 @@ export default function ClarificationPanel({
         {isOpen && mode === null && (
           <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
             {(isAuthor || canReview) && (
-              <button type="button" style={secondaryBtn} onClick={() => setMode('respond')}>
-                {clarificationMessages(clarification).length > 1 ? 'Add a reply' : 'Respond'}
+              <button type="button" className={`${btn} ${btnSm}`} onClick={() => { setMode('respond'); setTextError(null); }}>
+                {clarificationMessages(clarification).length > 1 ? 'Add a Reply' : 'Respond'}
               </button>
             )}
             {canReview && (
-              <button type="button" style={primaryBtn} onClick={() => setMode('resolve')}>
-                Mark resolved
+              <button type="button" className={`${btnPrimary} ${btnSm}`} onClick={() => { setMode('resolve'); setTextError(null); }}>
+                Mark Resolved
               </button>
             )}
             {canReview && isCorrection && (
               <button
                 type="button"
-                style={blocksNow ? ghostBtn : correctionBtn}
+                className={`${blocksNow ? btn : btnDanger} ${btnSm}`}
                 disabled={blockBusy}
                 onClick={() => setBlock(!blocksNow)}
                 title={
@@ -204,7 +214,7 @@ export default function ClarificationPanel({
                     : 'Stop the author from documenting new notes until she amends this note.'
                 }
               >
-                {blockBusy ? 'Saving…' : blocksNow ? 'Remove block' : 'Block new notes'}
+                {blockBusy ? 'Saving…' : blocksNow ? 'Remove Block' : 'Block New Notes'}
               </button>
             )}
           </div>
@@ -212,10 +222,14 @@ export default function ClarificationPanel({
 
         {/* Composer (flag / respond / resolve all share it). */}
         {mode && (
-          <div style={{ marginTop: 10 }}>
+          <div style={{ marginTop: 10 }} id="clarification-composer">
             <textarea
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => {
+                setText(e.target.value);
+                if (textError) setTextError(null);
+              }}
+              aria-invalid={!!textError}
               autoFocus
               rows={3}
               placeholder={
@@ -227,8 +241,9 @@ export default function ClarificationPanel({
                     ? 'Add your reply…'
                     : 'Optional note on how this was resolved…'
               }
-              style={textareaStyle}
+              style={{ ...textareaStyle, ...(textError ? FIELD_ERROR_STYLE : null) }}
             />
+            <FieldError message={textError} />
             {mode === 'flag' && flagKind === 'correction' && (
               <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 8, cursor: 'pointer' }}>
                 <input
@@ -240,7 +255,7 @@ export default function ClarificationPanel({
                 <span style={{ fontSize: 12.5, color: '#5c6b7a', lineHeight: 1.4 }}>
                   Block new notes until YOU clear it. The author can&apos;t start or submit new
                   progress notes; when she amends this note you&apos;ll be notified to verify the
-                  fix, and the block stays on until you remove it (Remove block) or resolve this
+                  fix, and the block stays on until you remove it (Remove Block) or resolve this
                   correction.
                 </span>
               </label>
@@ -249,11 +264,12 @@ export default function ClarificationPanel({
             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
               <button
                 type="button"
-                style={ghostBtn}
+                className={`${btn} ${btnSm}`}
                 onClick={() => {
                   setMode(null);
                   setText('');
                   setError(null);
+                  setTextError(null);
                 }}
                 disabled={busy}
               >
@@ -261,21 +277,16 @@ export default function ClarificationPanel({
               </button>
               <button
                 type="button"
-                style={{
-                  ...primaryBtn,
-                  ...(busy || (mode !== 'resolve' && !text.trim())
-                    ? { opacity: 0.5, cursor: 'not-allowed' }
-                    : {}),
-                }}
-                disabled={busy || (mode !== 'resolve' && !text.trim())}
+                className={`${btnPrimary} ${btnSm}`}
+                disabled={busy}
                 onClick={() => submit(mode)}
               >
                 {busy
                   ? 'Saving…'
                   : mode === 'flag'
-                    ? (flagKind === 'correction' ? 'Send correction' : 'Send flag')
+                    ? (flagKind === 'correction' ? 'Send Correction' : 'Send Flag')
                     : mode === 'respond'
-                      ? 'Send response'
+                      ? 'Send Response'
                       : 'Resolve'}
               </button>
             </div>
@@ -298,7 +309,3 @@ const metaStyle: React.CSSProperties = { fontSize: 11, color: '#64748b' };
 const msgStyle: React.CSSProperties = { fontSize: 13.5, color: '#1f2937', lineHeight: 1.5, marginTop: 3, whiteSpace: 'pre-wrap' };
 const textareaStyle: React.CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', resize: 'vertical' };
 const errStyle: React.CSSProperties = { color: '#b3261e', fontSize: 12.5, marginTop: 6 };
-const primaryBtn: React.CSSProperties = { background: '#1a3a5c', color: 'white', border: 'none', borderRadius: 6, padding: '7px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const secondaryBtn: React.CSSProperties = { background: 'white', color: '#1a3a5c', border: '1px solid #1a3a5c', borderRadius: 6, padding: '7px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const correctionBtn: React.CSSProperties = { background: '#b3261e', color: 'white', border: 'none', borderRadius: 6, padding: '7px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const ghostBtn: React.CSSProperties = { background: 'transparent', color: '#5c6b7a', border: '1px solid #cbd5e1', borderRadius: 6, padding: '7px 14px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' };

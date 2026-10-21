@@ -1,0 +1,44 @@
+# Heart and Soul Healthcare portal
+
+Next.js + Firebase staff portal and marketing site. Merging to `main` deploys
+the app to Cloud Run; Firestore rules and indexes deploy separately (see
+DEPLOY-CHECKLIST.md). Run `npx tsc --noEmit`, `npm test`, and `npm run build`
+before pushing; CI runs the same three. To see what is live, open
+https://www.heartandsoulhc.org/api/version (deployed commit, build id, build
+time).
+
+Before any reply that mentions a PR's status (open, merged, live), check it:
+`gh pr view <n> --json state,mergedAt,mergeCommit`, then compare the merge
+commit with /api/version. PRs here often merge within minutes, and nothing
+notifies the session when one merges (the CI monitor only fires on failures,
+conflicts and review comments).
+
+## Feature notes
+
+Read the matching note before changing one of these features.
+
+- Assistant client access (individual VA grants, GAPP scope, administrative edits, documents):
+  docs/features/assistant-client-access.md
+- Home Supervisory Visit form, shared vitals component, abnormal-vitals
+  follow-up: docs/features/supervisory-visit.md
+- Supervisory visit scheduling (next visit on filing, open visits offered to
+  all supervisors, accept, hand-off, daily sweep): docs/features/supervisory-scheduling.md
+- Per-client vitals baselines (client record, note snapshot, how the
+  ranges are judged): docs/features/vitals-baselines.md
+- Service Plan (per-client signed plan, tab + form + PDF filing):
+  docs/features/service-plan.md
+- Communications log (visit notices word for word, manual log):
+  docs/features/communications-log.md
+- RN oversight hours (real visit times, billing capped at the monthly
+  authorization, non-billable follow-up visits): docs/features/oversight-hours.md
+- RN oversight note vitals (rev 3) and the location dropdown:
+  docs/features/oversight-note.md
+- Sliding scale insulin and meal-anchored medication times (MAR orders,
+  dose charting, printed MAR): docs/features/sliding-scale.md
+- Fax Center incoming faxes (portal line and added by hand), filing to a
+  referral, creating a client record from a referral: docs/features/fax-center-inbound.md
+- Phone referrals ("Log Phone Referral" quick capture on the Referrals page):
+  docs/features/phone-referrals.md
+- Editing referrals (Edit Details: phone referrals fully, website referrals
+  only in fields the GAPP screening never reads): docs/features/referral-editing.md
+- Declared test account and test client: TEST-ACCOUNT.md

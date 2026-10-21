@@ -2,6 +2,7 @@ import 'server-only';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
 import type { AuthedCaller } from './adminAuthGuard';
+import { deleteNoteDocument } from './patientDocumentsServer';
 
 export type DeleteFailureReason = 'not-found';
 
@@ -80,6 +81,15 @@ export async function deleteNoteWithAudit(
     await adminDb().recursiveDelete(noteRef);
   } catch {
     /* ignore */
+  }
+
+  // An oversight note files itself into the client's Documents tab; a deleted
+  // note must not leave that PDF behind. Best-effort, audited like any other
+  // document deletion.
+  try {
+    await deleteNoteDocument(noteId, caller);
+  } catch (err) {
+    console.error('Auto-filed document cleanup failed for deleted note:', err);
   }
 
   return { ok: true, noteId };

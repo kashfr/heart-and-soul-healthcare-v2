@@ -83,7 +83,7 @@ describe('summarizePartnerMatches', () => {
       agency({ name: n, counties: ['Henry'], services: ['pss'] })
     );
     const out = summarizePartnerMatches({ county: 'Henry', service: 'pss' }, many);
-    expect(out).toMatchObject({ level: 'match', count: 4, label: '4 partners' });
+    expect(out).toMatchObject({ level: 'match', count: 4, label: '4 Partners' });
   });
 
   it('names the top 3 in the detail and tallies the remainder', () => {
@@ -98,12 +98,12 @@ describe('summarizePartnerMatches', () => {
 
   it('uses the singular label for one match', () => {
     const out = summarizePartnerMatches({ county: 'Henry', service: 'pss' }, [FULL]);
-    expect(out?.label).toBe('1 partner');
+    expect(out?.label).toBe('1 Partner');
   });
 
   it('reports no match when every saved agency is ruled out on known data', () => {
     const out = summarizePartnerMatches({ county: 'Henry', service: 'pss' }, [WRONG_COUNTY]);
-    expect(out).toMatchObject({ level: 'none', count: 0, label: 'No partner match' });
+    expect(out).toMatchObject({ level: 'none', count: 0, label: 'No Partner Match' });
     expect(out?.detail).toBe(
       'No saved partner covers Henry for Personal Support Services (PSS)'
     );
@@ -140,7 +140,7 @@ describe('summarizePartnerMatches', () => {
       agency({ name: 'B', counties: ['DeKalb'], services: ['nursing'] }),
     ];
     const out = summarizePartnerMatches({ county: 'DeKalb', service: 'behavioral' }, directory);
-    expect(out).toMatchObject({ level: 'none', count: 0, label: 'No partner match' });
+    expect(out).toMatchObject({ level: 'none', count: 0, label: 'No Partner Match' });
     expect(out?.detail).toBe(
       'No saved partner covers DeKalb for Behavioral Support Aide Services (BSS)'
     );

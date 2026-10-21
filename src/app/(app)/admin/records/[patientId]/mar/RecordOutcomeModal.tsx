@@ -1,10 +1,15 @@
 'use client';
 
 import { useEffect, useState, type CSSProperties } from 'react';
+import { btn, btnPrimary } from '@/components/buttons';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
+import { formatDateUS } from '@/lib/dateFormat';
 import type { MarAdministration } from '@/lib/mar';
+import { escortToField, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
+
+const OUTCOME_FIELD_ID = 'ro-field-outcome';
 
 interface Props {
   admin: MarAdministration; // the given PRN dose awaiting its result
@@ -21,6 +26,9 @@ interface Props {
 export default function RecordOutcomeModal({ admin, onClose, onSaved }: Props) {
   const [outcome, setOutcome] = useState('');
   const [busy, setBusy] = useState(false);
+  // The field's own problem sits under it; the save failure (no field) stays
+  // next to the buttons.
+  const [outcomeError, setOutcomeError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [mounted, setMounted] = useState(false);
@@ -34,12 +42,14 @@ export default function RecordOutcomeModal({ admin, onClose, onSaved }: Props) {
   }, [onClose]);
 
   const save = async () => {
+    setError(null);
     if (!outcome.trim()) {
-      setError('Describe the result of the dose.');
+      setOutcomeError('Describe the result of the dose.');
+      escortToField(OUTCOME_FIELD_ID);
       return;
     }
     setBusy(true);
-    setError(null);
+    setOutcomeError(null);
     try {
       const res = await authedFetch('/api/mar/outcome', {
         method: 'POST',
@@ -67,13 +77,13 @@ export default function RecordOutcomeModal({ admin, onClose, onSaved }: Props) {
       <div style={sheet}>
         <div style={head}>
           <div style={{ minWidth: 0 }}>
-            <div style={title}>Record result</div>
+            <div style={title}>Record Result</div>
             <div style={meta}>
               {admin.medNameSnapshot}
               {admin.doseSnapshot ? ` ${admin.doseSnapshot}` : ''}
               {admin.unitsSnapshot ? ` ${admin.unitsSnapshot}` : ''} · PRN
               {admin.actualTime ? ` · given at ${admin.actualTime}` : ''}
-              {admin.date ? ` · ${admin.date}` : ''}
+              {admin.date ? ` · ${formatDateUS(admin.date)}` : ''}
             </div>
             {admin.reason && <div style={reasonLine}>Given for: {admin.reason}</div>}
           </div>
@@ -82,29 +92,30 @@ export default function RecordOutcomeModal({ admin, onClose, onSaved }: Props) {
           </button>
         </div>
 
-        <label style={field}>
+        <label id={OUTCOME_FIELD_ID} style={field}>
           <span style={fieldLabel}>Outcome / result *</span>
           <textarea
             value={outcome}
-            onChange={(e) => setOutcome(e.target.value)}
-            style={textarea}
+            onChange={(e) => { setOutcome(e.target.value); setOutcomeError(null); }}
+            style={outcomeError ? { ...textarea, ...FIELD_ERROR_STYLE } : textarea}
             placeholder="e.g., pain decreased from 6/10 to 2/10 within 45 min"
             autoFocus
           />
+          <FieldError message={outcomeError} />
           <span style={hint}>
             What happened after the dose (recheck 30-60 min). This completes the PRN record; later
             changes go through the amend flow.
           </span>
         </label>
 
-        {error && <div style={errBox}>{error}</div>}
+        {error && <div style={errBox} role="alert">{error}</div>}
 
         <div style={actions}>
-          <button type="button" style={cancelBtn} onClick={onClose} disabled={busy}>
+          <button type="button" className={btn} onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button type="button" style={saveBtn} onClick={save} disabled={busy}>
-            {busy ? 'Saving…' : 'Save result'}
+          <button type="button" className={btnPrimary} onClick={save} disabled={busy}>
+            {busy ? 'Saving…' : 'Save Result'}
           </button>
         </div>
       </div>
@@ -126,5 +137,3 @@ const textarea: CSSProperties = { width: '100%', padding: '9px 11px', border: '1
 const hint: CSSProperties = { fontSize: 11.5, color: '#8a949e', lineHeight: 1.4, marginTop: 2 };
 const errBox: CSSProperties = { marginTop: 12, background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '8px 11px', fontSize: 13 };
 const actions: CSSProperties = { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 };
-const cancelBtn: CSSProperties = { background: 'white', color: '#374151', border: '1px solid #d0d7de', padding: '9px 16px', borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const saveBtn: CSSProperties = { background: '#1a3a5c', color: 'white', border: '1px solid #1a3a5c', padding: '9px 16px', borderRadius: 6, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };

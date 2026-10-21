@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { btn, btnIcon, btnPrimary } from '@/components/buttons';
 import Link from 'next/link';
-import { useParams, usePathname } from 'next/navigation';
+import { useParams, usePathname, useSearchParams } from 'next/navigation';
 import { ArrowLeft, ChevronLeft, ChevronRight, FileDown, Pill, PlusCircle } from 'lucide-react';
 import {
   getPatient,
@@ -18,21 +19,24 @@ import {
   type MarOrder,
   type MarAdministration,
 } from '@/lib/mar';
-import { physicianAttributionPending } from '@/lib/marShared';
+import { physicianAttributionPending, describeFrequency, orderParameters, slotAnchor } from '@/lib/marShared';
+import { GLUCOSE_UNIT, isNoInsulinEntry, parseSlidingScale, summarizeSlidingScale } from '@/lib/slidingScale';
 import { authedFetch } from '@/lib/authedFetch';
 import { triggerDownload } from '@/lib/batchExport';
+import { formatMonthUSFile } from '@/lib/dateFormat';
 import { compareMarOrders, resolveCurrentAdministrations } from '@/lib/marShared';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import AdministerDoseModal from './AdministerDoseModal';
 import ManageMedsModal from './ManageMedsModal';
 import RecordOutcomeModal from './RecordOutcomeModal';
 import MedChart from '@/app/(marketing)/progress-note/components/MedChart';
+import { ScaleLineLabels, ScaleLines } from '@/components/mar/ScaleGridLines';
 
 const ADMIN_BY_LABELS: Record<string, string> = {
   nurse: 'Nurse',
-  family: 'Family member',
-  responsibleParty: 'Responsible party',
-  self: 'Client (self)',
+  family: 'Family Member',
+  responsibleParty: 'Responsible Party',
+  self: 'Client (Self)',
   proxy: 'Proxy',
 };
 
@@ -125,8 +129,8 @@ export default function MonthlyMarPage() {
     profile?.role !== 'va' &&
     (profile?.credential === 'RN' || profile?.credential === 'LPN');
   // Adding / changing / discontinuing a med is within an RN/LPN's scope, and
-  // supervisors + admins may do it too; the med goes live immediately and the
-  // supervisor acknowledges it afterward. Admins get the button for visibility
+  // supervisors + admins may do it too; the med goes live immediately, with no
+  // approval or acknowledgment step. Admins get the button for visibility
   // (parity with what supervisors see); the server permits staff anyway. Uses
   // the REAL signed-in user, and is view-as guarded for the same reason
   // charting is: impersonation is read-only, so it must not reach a write.
@@ -141,7 +145,13 @@ export default function MonthlyMarPage() {
     credential: profile?.credential || '',
   };
 
-  const [month, setMonth] = useState(currentMonth());
+  // Deep links (?month=YYYY-MM) open the MAR on that month — the client
+  // dashboard's activity feed links a dose to the month it was charted in.
+  const searchParams = useSearchParams();
+  const monthParam = searchParams.get('month');
+  const [month, setMonth] = useState(
+    monthParam && /^\d{4}-\d{2}$/.test(monthParam) ? monthParam : currentMonth(),
+  );
   const [patient, setPatient] = useState<Patient | null>(null);
   const [clinical, setClinical] = useState<PatientClinical | null>(null);
   const [orders, setOrders] = useState<MarOrder[]>([]);
@@ -167,6 +177,10 @@ export default function MonthlyMarPage() {
   const monthStart = dayISO(month, 1);
   const monthEnd = dayISO(month, days);
   const isCurrentMonth = month === currentMonth();
+  // A month ahead of today has no doses yet; it prints as a blank paper MAR
+  // (the orders active that month, empty boxes, signature lines) for a nurse
+  // to take on site.
+  const isFutureMonth = month > currentMonth();
 
   const refreshAdmins = async () => {
     setAdmins(await getAdministrationsForRange(patientId, monthStart, monthEnd));
@@ -270,6 +284,9 @@ export default function MonthlyMarPage() {
             a.scheduledTime === 'unscheduled' ||
             a.status !== 'given' ||
             (a.administeredByType && a.administeredByType !== 'nurse') ||
+            // An amount that differs from the sliding scale is an exception
+            // and is explained here (the grid has no room for the reason).
+            !!(a.scaleDeviationReason || '').trim() ||
             !rowOrderIds.has(a.orderId),
         )
         .sort((a, b) => (a.date + (a.actualTime || '')).localeCompare(b.date + (b.actualTime || ''))),
@@ -322,7 +339,7 @@ export default function MonthlyMarPage() {
       }
       const blob = await res.blob();
       const safeName = (patient?.name || 'client').replace(/[^a-zA-Z0-9-]+/g, '_');
-      triggerDownload(blob, `MAR_${safeName}_${month}.pdf`);
+      triggerDownload(blob, `MAR_${safeName}_${formatMonthUSFile(month)}.pdf`);
     } catch {
       setToast('Export failed.');
     } finally {
@@ -346,8 +363,17 @@ export default function MonthlyMarPage() {
       const label = (a.valueLabelSnapshot || '').trim() || 'Reading';
       bits.splice(1, 0, `${label}: ${a.value}${unit ? ` ${unit}` : ''}`);
     }
+    // Sliding scale: the reading, what the scale called for, what was given.
+    if ((a.glucoseReading || '').trim()) {
+      const given =
+        a.status === 'given' ? `, ${isNoInsulinEntry(a) ? 'no insulin due' : `${a.doseSnapshot} units given`}` : '';
+      bits.splice(1, 0, `Blood glucose ${a.glucoseReading} ${GLUCOSE_UNIT}${given}`);
+      if ((a.scaleDeviationReason || '').trim()) bits.push(`Differs from the scale: ${a.scaleDeviationReason}`);
+    }
+    if ((a.parametersReading || '').trim()) bits.push(`Checked: ${a.parametersReading}`);
     if (a.reason) bits.push(`Reason: ${a.reason}`);
     if (a.outcome) bits.push(`Result: ${a.outcome}`);
+    if (a.noNoteAttestation) bits.push('Attested (no note was on file)');
     return bits.join(' · ');
   };
 
@@ -370,11 +396,11 @@ export default function MonthlyMarPage() {
       <div style={wrapStyle}>
         <div style={{ marginBottom: 16 }}>
           <Link
-            href={cameFromPicker ? '/admin/mar' : `/admin/records/${patientId}`}
+            href={cameFromPicker ? '/admin/clients' : `/admin/records/${patientId}`}
             style={backLinkStyle}
           >
             <ArrowLeft size={14} />{' '}
-            {cameFromPicker ? 'Back to Medications' : 'Back to medication orders'}
+            {cameFromPicker ? 'Back to Clients' : 'Back to Medication Orders'}
           </Link>
         </div>
 
@@ -399,13 +425,13 @@ export default function MonthlyMarPage() {
                   </div>
                 </div>
                 {!isNurse && (
-                  <button type="button" onClick={handleExport} disabled={exporting} style={exportBtnStyle}>
+                  <button type="button" onClick={handleExport} disabled={exporting} className={btn} style={{ flexShrink: 0 }}>
                     <FileDown size={15} /> {exporting ? 'Exporting…' : 'Export PDF'}
                   </button>
                 )}
                 {canManageMeds && (
-                  <button type="button" onClick={() => setManageMeds(true)} style={manageBtnStyle}>
-                    <PlusCircle size={15} /> Manage medications
+                  <button type="button" onClick={() => setManageMeds(true)} className={btnPrimary}>
+                    <PlusCircle size={15} /> Manage Medications
                   </button>
                 )}
               </div>
@@ -421,22 +447,28 @@ export default function MonthlyMarPage() {
             </header>
 
             <div style={monthNavStyle}>
-              <button type="button" onClick={() => setMonth(shiftMonth(month, -1))} style={navBtnStyle} aria-label="Previous month">
+              <button type="button" onClick={() => setMonth(shiftMonth(month, -1))} className={`${btn} ${btnIcon}`} aria-label="Previous month" title="Previous month">
                 <ChevronLeft size={18} />
               </button>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontWeight: 700, color: '#1f2937', fontSize: 17 }}>{monthLabel(month)}</div>
                 {!isCurrentMonth && (
                   <button type="button" onClick={() => setMonth(currentMonth())} style={jumpBtnStyle}>
-                    Jump to current month
+                    Jump to Current Month
                   </button>
+                )}
+                {isFutureMonth && (
+                  <div style={{ fontSize: 12, color: '#5c6b7a', marginTop: 2 }}>
+                    Future month. Export PDF prints a blank paper MAR with this month&apos;s orders and signature lines.
+                  </div>
                 )}
               </div>
               <button
                 type="button"
                 onClick={() => setMonth(shiftMonth(month, 1))}
-                style={{ ...navBtnStyle, visibility: isCurrentMonth ? 'hidden' : 'visible' }}
+                className={`${btn} ${btnIcon}`}
                 aria-label="Next month"
+                title="Next month"
               >
                 <ChevronRight size={18} />
               </button>
@@ -468,25 +500,48 @@ export default function MonthlyMarPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map(({ order, slot }) => (
+                    {rows.map(({ order, slot }) => {
+                      // Sliding-scale rows carry three labeled lines per time
+                      // (reading, units, initials) so the grid explains itself
+                      // (RN supervisor, 10/02/2026: a bare "232" in a box told
+                      // a non-clinical reader nothing).
+                      const isScale = parseSlidingScale(order.slidingScale).length > 0;
+                      return (
                       <tr key={`${order.id}-${slot}`}>
-                        <td style={{ ...gridTdStyle, ...medColStyle, textAlign: 'left' }}>
+                        <td style={{ ...gridTdStyle, ...medColStyle, ...(isScale ? scaleMedColStyle : null), textAlign: 'left' }}>
+                         <div style={isScale ? scaleMedWrapStyle : undefined}>
+                          <div style={isScale ? { flex: 1, minWidth: 0 } : undefined}>
                           <div style={{ fontWeight: 600, color: '#1f2937' }}>
                             {order.medName}
                             {order.status === 'discontinued' && <span style={dcChipStyle}>D/C</span>}
                             {order.status !== 'discontinued' && physicianAttributionPending(order) && (
                               <span style={physicianNeededChipStyle} title="No ordering physician on this order yet; update it via Manage meds.">
-                                Physician needed
+                                Physician Needed
                               </span>
                             )}
                           </div>
                           <div style={{ fontSize: 11, color: '#6b7280' }}>
                             {order.dose}{order.units ? ` ${order.units}` : ''} · {order.route}
-                            {order.frequencyLabel ? ` · ${order.frequencyLabel}` : ''}
+                            {describeFrequency(order) ? ` · ${describeFrequency(order)}` : ''}
                           </div>
+                          {parseSlidingScale(order.slidingScale).length > 0 && (
+                            <div style={scaleLineStyle} title={summarizeSlidingScale(parseSlidingScale(order.slidingScale))}>
+                              <span style={scaleTagStyle}>Sliding Scale</span>{' '}
+                              {summarizeSlidingScale(parseSlidingScale(order.slidingScale))}
+                            </div>
+                          )}
+                          {orderParameters(order) && (
+                            <div style={paramLineStyle} title={orderParameters(order)}>
+                              <span style={paramTagStyle}>Parameters</span> {orderParameters(order)}
+                            </div>
+                          )}
+                          </div>
+                          {isScale && <ScaleLineLabels />}
+                         </div>
                         </td>
                         <td style={{ ...gridTdStyle, ...timeColStyle, color: slot === 'PRN' ? '#b56a17' : '#1a3a5c' }}>
                           {slot}
+                          {slotAnchor(order, slot) && <div style={anchorLineStyle}>{slotAnchor(order, slot)}</div>}
                         </td>
                         {visibleDays.map((dnum) => {
                           const iso = dayISO(month, dnum);
@@ -504,11 +559,12 @@ export default function MonthlyMarPage() {
                               : iso === todayISO()
                                 ? { ...gridTdStyle, ...todayEmptyCellStyle }
                                 : gridTdStyle;
+                            const emptyCellStyle = isScale && applies ? { ...emptyStyle, padding: 0 } : emptyStyle;
                             return (
                               <td
                                 key={iso}
                                 className={chartable ? 'hs-chartable' : undefined}
-                                style={chartable ? { ...emptyStyle, ...clickableCellStyle } : emptyStyle}
+                                style={chartable ? { ...emptyCellStyle, ...clickableCellStyle } : emptyCellStyle}
                                 onClick={chartable ? () => setAdminister({ order, slot, iso }) : undefined}
                                 title={chartable ? 'Click to document this dose' : undefined}
                                 tabIndex={chartable ? 0 : undefined}
@@ -523,7 +579,9 @@ export default function MonthlyMarPage() {
                                       }
                                     : undefined
                                 }
-                              />
+                              >
+                                {isScale && applies ? <ScaleLines lines={['', '', '']} /> : null}
+                              </td>
                             );
                           }
                           const a = cellAdmins[0];
@@ -536,10 +594,22 @@ export default function MonthlyMarPage() {
                           // A check-style order records a reading, and the number
                           // IS the record, so the box shows it instead of initials
                           // (who documented it stays in the cell tooltip and log).
-                          const label = cellAdmins.length > 1
+                          const star = a.administeredByType && a.administeredByType !== 'nurse' ? '*' : '';
+                          // A sliding-scale row fills its three labeled lines:
+                          // reading, units given (or Held / Ref), initials.
+                          const scaleUnits = (x: MarAdministration) =>
+                            x.status === 'given' ? `${x.doseSnapshot}u` : x.status === 'held' ? 'Held' : 'Ref';
+                          const label = isScale ? (
+                            <ScaleLines
+                              lines={[
+                                cellAdmins.map((x) => (x.glucoseReading || '').trim()).filter(Boolean).join(' / '),
+                                cellAdmins.map(scaleUnits).join(' / '),
+                                `${cellAdmins.map((x) => x.initials).filter(Boolean).join(' / ')}${star}`,
+                              ]}
+                            />
+                          ) : cellAdmins.length > 1
                             ? cellAdmins.map((x) => x.value || x.initials || '·').join('/')
                             : a.value || a.initials || '✓';
-                          const star = a.administeredByType && a.administeredByType !== 'nurse' ? '*' : '';
                           // A PRN ("as needed") med can be given more than once a day,
                           // so a documented PRN cell still opens the dose modal to
                           // record ANOTHER. Scheduled cells open view/amend only — never
@@ -549,7 +619,7 @@ export default function MonthlyMarPage() {
                             <td
                               key={iso}
                               className={canAdminister ? 'hs-chartable' : undefined}
-                              style={canAdminister ? { ...gridTdStyle, ...style, ...clickableCellStyle } : { ...gridTdStyle, ...style }}
+                              style={{ ...gridTdStyle, ...style, ...(isScale ? { padding: 0 } : null), ...(canAdminister ? clickableCellStyle : null) }}
                               title={
                                 !canAdminister
                                   ? cellAdmins.map(cellTitle).join(' | ')
@@ -565,12 +635,13 @@ export default function MonthlyMarPage() {
                                     : () => setChartDay(iso)
                               }
                             >
-                              {label}{star}
+                              {label}{isScale ? '' : star}
                             </td>
                           );
                         })}
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -587,28 +658,28 @@ export default function MonthlyMarPage() {
             )}
 
             <div style={legendRowStyle}>
-              <span style={{ ...legendChipStyle, background: '#d8efd8', color: '#1e5c1e' }}>Initials = given</span>
+              <span style={{ ...legendChipStyle, background: '#d8efd8', color: '#1e5c1e' }}>Initials = Given</span>
               <span style={{ ...legendChipStyle, background: '#fcebcd', color: '#8a5a0d' }}>Held</span>
               <span style={{ ...legendChipStyle, background: '#f9dcd8', color: '#a82315' }}>Refused</span>
               <span style={{ ...legendChipStyle, background: 'white', color: '#5c6b7a', border: '1px solid #dde3ea' }}>
-                Blank = due, not documented
+                Blank = Due, Not Documented
               </span>
               <span style={{ ...legendChipStyle, ...inactiveCellStyle, color: '#5c6b7a' }}>
-                Hatched = order not active
+                Hatched = Order Not Active
               </span>
-              <span style={{ ...legendChipStyle, background: '#fde68a', color: '#1a3a5c' }}>Amber column = today</span>
-              <span style={{ ...legendChipStyle, background: '#eef4fb', color: '#1a3a5c' }}>* = given by family/proxy (see log)</span>
+              <span style={{ ...legendChipStyle, background: '#fde68a', color: '#1a3a5c' }}>Amber Column = Today</span>
+              <span style={{ ...legendChipStyle, background: '#eef4fb', color: '#1a3a5c' }}>* = Given by Family/Proxy (See Log)</span>
               {/* Future days are deliberately not chartable (a nurse documents
                   what happened, not what will). Saying so stops the silent
                   "why won't this box open?" dead end. */}
               <span style={{ ...legendChipStyle, background: 'white', color: '#5c6b7a', border: '1px solid #dde3ea' }}>
-                Future days can&apos;t be charted
+                Future Days Can&apos;t Be Charted
               </span>
             </div>
 
             {legend.length > 0 && (
               <section style={sectionCardStyle}>
-                <div style={sectionTitleStyle}>Initial / signature legend</div>
+                <div style={sectionTitleStyle}>Initial / Signature Legend</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
                   {legend.map(([uid, init, name]) => (
                     <span key={uid} style={legendEntryStyle}>
@@ -621,7 +692,7 @@ export default function MonthlyMarPage() {
 
             {logRows.length > 0 && (
               <section style={sectionCardStyle}>
-                <div style={sectionTitleStyle}>PRN, refused &amp; exception log</div>
+                <div style={sectionTitleStyle}>PRN, Refused &amp; Exception Log</div>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={logTableStyle}>
                     <thead>
@@ -630,8 +701,8 @@ export default function MonthlyMarPage() {
                         <th style={logThStyle}>Time</th>
                         <th style={logThStyle}>Medication</th>
                         <th style={logThStyle}>Status</th>
-                        <th style={logThStyle}>Administered by</th>
-                        <th style={logThStyle}>Reason / note</th>
+                        <th style={logThStyle}>Administered By</th>
+                        <th style={logThStyle}>Reason / Note</th>
                         <th style={logThStyle}>Result</th>
                         <th style={logThStyle}>Initials</th>
                       </tr>
@@ -662,7 +733,7 @@ export default function MonthlyMarPage() {
                             </span>
                             {a.voided === true && (
                               <span style={{ display: 'block', fontSize: 10.5, color: '#5c6b7a', fontWeight: 700, marginTop: 3 }}>
-                                Removed — entered in error
+                                Removed — Entered in Error
                               </span>
                             )}
                           </td>
@@ -672,6 +743,17 @@ export default function MonthlyMarPage() {
                               : a.documentedByName || 'Nurse'}
                           </td>
                           <td style={logTdStyle}>
+                            {(a.glucoseReading || '').trim() && (
+                              <span style={{ display: 'block', fontSize: 11, color: '#1a3a5c' }}>Blood glucose {a.glucoseReading} {GLUCOSE_UNIT}</span>
+                            )}
+                            {(a.scaleDeviationReason || '').trim() && (
+                              <span style={{ display: 'block', fontSize: 11, color: '#b45309', fontWeight: 600 }}>
+                                Scale called for {a.scaleRangeSnapshot || 'a different amount'}; differs because: {a.scaleDeviationReason}
+                              </span>
+                            )}
+                            {(a.parametersReading || '').trim() && (
+                              <span style={{ display: 'block', fontSize: 11, color: '#8a5a0d' }}>Checked: {a.parametersReading}</span>
+                            )}
                             {a.reason || '-'}
                             {a.voided === true && (
                               <span style={{ display: 'block', fontSize: 10.5, color: '#5c6b7a' }}>
@@ -680,12 +762,12 @@ export default function MonthlyMarPage() {
                             )}
                             {(a.status === 'held' || a.status === 'refused') && a.prescriberNotified === true && (
                               <span style={{ display: 'block', fontSize: 10.5, color: '#1e5c1e', fontWeight: 600 }}>
-                                Prescriber notified
+                                Prescriber Notified
                               </span>
                             )}
                             {a.status === 'refused' && a.prescriberNotified === false && (
                               <span style={{ display: 'block', fontSize: 10.5, color: '#b45309', fontWeight: 600 }}>
-                                Prescriber not yet notified
+                                Prescriber Not Yet Notified
                               </span>
                             )}
                           </td>
@@ -700,10 +782,10 @@ export default function MonthlyMarPage() {
                                   style={resultPendingBtnStyle}
                                   title="Record what happened after this PRN dose"
                                 >
-                                  Result pending — record
+                                  Result Pending — Record
                                 </button>
                               ) : (
-                                <span style={resultPendingChipStyle}>Result pending</span>
+                                <span style={resultPendingChipStyle}>Result Pending</span>
                               )
                             ) : (
                               '-'
@@ -770,6 +852,7 @@ export default function MonthlyMarPage() {
           patientId={patientId}
           patientName={patient.name}
           activeOrders={orders.filter((o) => o.status === 'active')}
+          orderIdsWithDoses={new Set(admins.map((a) => a.orderId))}
           onClose={() => setManageMeds(false)}
           onSaved={(summary) => {
             setToast(summary);
@@ -797,27 +880,15 @@ const resultPendingChipStyle: React.CSSProperties = {
   whiteSpace: 'nowrap',
 };
 
+// Stays amber like the chip it replaces: a PRN dose still waiting on its
+// outcome is an attention signal, not an ordinary row action.
 const resultPendingBtnStyle: React.CSSProperties = {
   ...resultPendingChipStyle,
   cursor: 'pointer',
   fontFamily: 'inherit',
 };
 
-const manageBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: '#0e7c4a',
-  color: 'white',
-  border: 'none',
-  padding: '9px 14px',
-  borderRadius: 8,
-  fontSize: 13.5,
-  fontWeight: 700,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-  whiteSpace: 'nowrap',
-};
+
 
 function HeaderField({ label, value, highlight }: { label: string; value?: string | null; highlight?: boolean }) {
   return (
@@ -837,12 +908,10 @@ const headerCardStyle: React.CSSProperties = { background: 'white', border: '1px
 const headerIconStyle: React.CSSProperties = { width: 46, height: 46, borderRadius: 10, background: '#eef5ff', color: '#1a3a5c', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
 const titleStyle: React.CSSProperties = { fontSize: 22, color: '#2c3e50', margin: 0 };
 const headerMetaStyle: React.CSSProperties = { fontSize: 13.5, color: '#5c6b7a', marginTop: 4 };
-const exportBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#1a3a5c', color: 'white', padding: '10px 16px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 };
 const headerGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginTop: 16, paddingTop: 16, borderTop: '1px solid #f1f3f5' };
 const headerFieldLabelStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: '#9aa6b2', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 };
 const headerFieldValueStyle: React.CSSProperties = { fontSize: 14, lineHeight: 1.45 };
 const monthNavStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 18, marginBottom: 14 };
-const navBtnStyle: React.CSSProperties = { width: 38, height: 38, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'white', border: '1px solid #d0d7de', borderRadius: 8, color: '#2c3e50', cursor: 'pointer' };
 const jumpBtnStyle: React.CSSProperties = { marginTop: 2, fontSize: 12, fontWeight: 600, color: '#1a73c4', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 };
 const emptyStyle: React.CSSProperties = { textAlign: 'center', padding: '40px 20px', background: 'white', borderRadius: 10, color: '#7f8c8d', fontSize: 14, border: '1px solid #e5e7eb' };
 const gridWrapStyle: React.CSSProperties = { background: 'white', borderRadius: 10, border: '1px solid #e5e7eb', overflowX: 'auto', marginBottom: 12 };
@@ -860,6 +929,21 @@ const medColStyle: React.CSSProperties = { minWidth: 190, maxWidth: 240, whiteSp
 const timeColStyle: React.CSSProperties = { background: '#f4f7fa', fontWeight: 700 };
 const physicianNeededChipStyle: React.CSSProperties = { display: 'inline-block', marginLeft: 6, padding: '1px 7px', borderRadius: 999, background: '#fff3e0', color: '#b45309', fontSize: 10, fontWeight: 700, verticalAlign: 'middle' };
 const dcChipStyle: React.CSSProperties = { marginLeft: 6, fontSize: 9, fontWeight: 700, background: '#fdeaea', color: '#c0392b', padding: '1px 5px', borderRadius: 999, letterSpacing: 0.4, verticalAlign: 'middle' };
+// Hold / check-before-giving criteria, kept on the row so they are read
+// before the nurse clicks a cell (the dose modal repeats them and requires
+// an acknowledgment). Amber = "conditions apply", matching the modal callout.
+const paramLineStyle: React.CSSProperties = { marginTop: 4, fontSize: 11, color: '#8a5a0d', lineHeight: 1.35, whiteSpace: 'normal', wordBreak: 'break-word' };
+const paramTagStyle: React.CSSProperties = { display: 'inline-block', padding: '0 5px', borderRadius: 999, background: '#fff3e0', color: '#b45309', fontSize: 9, fontWeight: 700, letterSpacing: 0.4, verticalAlign: 'middle', marginRight: 2 };
+// Sliding-scale rows: the medication cell holds the order text and, beside it,
+// the three line labels (see ScaleGridLines for how they stay aligned).
+const scaleMedColStyle: React.CSSProperties = { minWidth: 320, maxWidth: 360, verticalAlign: 'middle' };
+const scaleMedWrapStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8 };
+// The order's sliding scale, on the row for the same reason as parameters:
+// it is read before the cell is clicked. Blue = "dose is looked up".
+const scaleLineStyle: React.CSSProperties = { marginTop: 4, fontSize: 11, color: '#1a3a5c', lineHeight: 1.35, whiteSpace: 'normal', wordBreak: 'break-word' };
+const scaleTagStyle: React.CSSProperties = { display: 'inline-block', padding: '0 5px', borderRadius: 999, background: '#e3eefb', color: '#1a3a5c', fontSize: 9, fontWeight: 700, letterSpacing: 0.4, verticalAlign: 'middle', marginRight: 2 };
+// The meal a scheduled time is tied to ("Before Breakfast"), under the time.
+const anchorLineStyle: React.CSSProperties = { fontSize: 9.5, fontWeight: 600, color: '#5c6b7a', whiteSpace: 'normal', lineHeight: 1.2, marginTop: 1 };
 // Diagonal hatch = "order not active that day" (the paper-MAR N/A convention) -
 // unmistakably different from a plain white "due but not documented" cell.
 const inactiveCellStyle: React.CSSProperties = {

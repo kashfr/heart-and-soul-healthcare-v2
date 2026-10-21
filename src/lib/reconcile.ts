@@ -1,3 +1,4 @@
+import { formatDateUS } from './dateFormat';
 // Consistency checks between a client's classification, their service
 // authorizations, and the flags the rest of the portal keys off.
 //
@@ -160,7 +161,7 @@ export function reconcilePatient(p: ReconcileSubject, today: string): Finding[] 
         ? {
             rule: 'authorization-not-started',
             severity: 'info',
-            message: `Authorization has not started yet (begins ${upcoming[0].from}).`,
+            message: `Authorization has not started yet (begins ${formatDateUS(upcoming[0].from || '')}).`,
           }
         : {
             rule: 'authorization-expired',
@@ -177,7 +178,7 @@ export function reconcilePatient(p: ReconcileSubject, today: string): Finding[] 
       out.push({
         rule: 'authorization-expiring',
         severity: 'warn',
-        message: `Service authorization expires ${soonest.to} (${soonest.days} day${
+        message: `Service authorization expires ${formatDateUS(soonest.to)} (${soonest.days} day${
           soonest.days === 1 ? '' : 's'
         }).`,
       });

@@ -80,7 +80,7 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
           ) : (
             <div className={styles.emptyState}>
               <BookOpen size={48} />
-              <h3>No posts found</h3>
+              <h3>No Posts Found</h3>
               <p>
                 {activeCategory
                   ? `No posts in the "${activeCategory}" category yet. Check back soon!`

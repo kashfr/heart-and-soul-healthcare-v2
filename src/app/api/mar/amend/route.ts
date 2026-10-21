@@ -56,6 +56,15 @@ export async function POST(request: Request) {
       ...(body?.prescriberNotified !== undefined
         ? { prescriberNotified: body.prescriberNotified === true }
         : {}),
+      // Who physically gave it — an amendment may correct a wrongly-attested
+      // nurse-given dose to family/proxy (starred on the MAR). Omitted =
+      // carry the original forward.
+      ...(body?.administeredByType !== undefined
+        ? { administeredByType: String(body.administeredByType) }
+        : {}),
+      ...(body?.administratorName !== undefined
+        ? { administratorName: String(body.administratorName) }
+        : {}),
       amendmentReason: String(body?.amendmentReason || ''),
     },
     caller,

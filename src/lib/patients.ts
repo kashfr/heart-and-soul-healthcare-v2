@@ -16,6 +16,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import type { PatientAuthorization } from './reconcile';
+import type { VitalsBaselines } from './vitalRanges';
 
 export interface Patient {
   id?: string;
@@ -40,6 +41,16 @@ export interface Patient {
    * (gates UI surfaces; not the sensitive clinical sub-record).
    */
   hasFeedingTube?: boolean;
+  /**
+   * Whether this client has a seizure disorder (epilepsy, Lennox-Gastaut,
+   * seizures by history). Set deliberately by a nurse; NOT derived from the
+   * diagnosis text or the medication list (both proved unreliable: three of
+   * four seizure clients had no seizure diagnosis on their record, and a
+   * benzodiazepine on the MAR may be for mood). Drives the seizure log and
+   * the per-shift seizure attestation on progress notes. Directory-doc flag
+   * like hasFeedingTube.
+   */
+  hasSeizureDisorder?: boolean;
   /**
    * Payer program this client is enrolled in ('now-comp' | 'gapp' | 'edwp' |
    * 'icwp'). Decides whose rulebook applies: NOW/COMP runs on the DBHDD manual
@@ -84,6 +95,8 @@ export interface Patient {
    * Reads are still author-only when this list is empty or missing.
    */
   assignedNurseIds?: string[];
+  /** The referral this record was created from, when it was. */
+  referralId?: string;
 }
 
 /**
@@ -207,13 +220,33 @@ export interface PatientClinical {
   allergies?: string;
   physicianName?: string; // standing attending / primary physician
   physicianPhone?: string;
+  /** 10 digits. Where PPOT (Appendix T) requests are faxed; saved back
+   *  automatically after a request goes out. */
+  physicianFax?: string;
+  /** Georgia Medicaid member ID. Printed on the PPOT request cover sheet. */
+  medicaidId?: string;
   diet?: string; // diet / special instructions
+  /**
+   * The client's own normal ranges for individual vitals, set by a supervisor
+   * from the care plan or a physician's order. A vital with a baseline is
+   * judged by it instead of the age-based screening range; vitals without
+   * one keep the age range. See VitalsBaselines in vitalRanges.ts.
+   */
+  vitalsBaselines?: VitalsBaselines;
+  /** Where the baselines come from, e.g. "care plan dated 03/2026, Dr. Patel". */
+  vitalsBaselinesNote?: string;
+  vitalsBaselinesSetBy?: string;
+  /** 'YYYY-MM-DD' */
+  vitalsBaselinesSetAt?: string;
   updatedAt?: unknown;
 }
 
 // Single well-known doc id under patients/{id}/clinical.
 const CLINICAL_DOC_ID = 'profile';
-const CLINICAL_FIELDS = ['sex', 'allergies', 'physicianName', 'physicianPhone', 'diet'] as const;
+const CLINICAL_FIELDS = [
+  'sex', 'allergies', 'physicianName', 'physicianPhone', 'physicianFax', 'medicaidId', 'diet',
+  'vitalsBaselines', 'vitalsBaselinesNote', 'vitalsBaselinesSetBy', 'vitalsBaselinesSetAt',
+] as const;
 
 /**
  * Read a client's clinical profile. Returns null when none has been saved yet.

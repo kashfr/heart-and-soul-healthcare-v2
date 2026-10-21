@@ -1,3 +1,4 @@
+import { clientAuditActor } from '@/lib/clientAuditActor';
 import { NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebaseAdmin';
@@ -91,7 +92,7 @@ export async function POST(request: Request) {
     let batch = db.batch();
     let pending = 0;
     for (const { ref, oldAge, newAge } of refsToUpdate) {
-      batch.update(ref, {
+      batch.update(ref, { ...clientAuditActor(caller),
         q5_ageYears: newAge,
         ageRecalculatedAt: FieldValue.serverTimestamp(),
         ageRecalculatedBy: caller.uid,

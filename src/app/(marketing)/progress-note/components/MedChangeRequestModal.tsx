@@ -1,19 +1,44 @@
 'use client';
 
-import { useState, type CSSProperties } from 'react';
-import { X, Plus, Clock } from 'lucide-react';
-import { stageChangeRequest, type MarOrder, type MarDocumenter, type MarChangeRequestType } from '@/lib/mar';
+import { useEffect, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
+import { orderRecordsValue, stageChangeRequest, type MarOrder, type MarDocumenter, type MarChangeRequestType } from '@/lib/mar';
 import { setMarAdmin, unlistedMarAdminKey } from './marAdminStore';
-import { MED_FREQUENCIES, PRN_FREQUENCY } from '@/lib/medFrequencies';
-import { looksLikeUnknownPhysician } from '@/lib/marShared';
+import { MED_FREQUENCIES, PRN_FREQUENCY, PRN_SUB_FREQUENCIES } from '@/lib/medFrequencies';
+import {
+  describeSlot,
+  inheritMeasurement,
+  isPristineSchedule,
+  looksLikeUnknownPhysician,
+  suggestedScheduleFor,
+  timeLabelsFromRows,
+} from '@/lib/marShared';
+import {
+  parseSlidingScale,
+  slidingScaleFromForm,
+  slidingScaleToForm,
+  starterSlidingScaleForm,
+  type SlidingScaleFormRow,
+} from '@/lib/slidingScale';
+import ScheduledTimesEditor from '@/components/mar/ScheduledTimesEditor';
+import SlidingScaleEditor from '@/components/mar/SlidingScaleEditor';
+import { escortToField, firstErrorKey, FieldError, FIELD_ERROR_STYLE, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
+import {
+  MED_CHANGE_FIELD_ORDER,
+  validateMedChangeForm,
+  type MedChangeField,
+  type MedChangeFieldErrors,
+} from '@/lib/medChangeValidation';
+
+const fieldId = (k: MedChangeField) => `cr-field-${k}`;
 
 const ROUTES = ['PO (by mouth)', 'SL (sublingual)', 'Topical', 'Inhalation', 'Subcutaneous', 'IM', 'IV', 'Rectal', 'G-tube', 'J-tube', 'NG tube', 'Ophthalmic', 'Otic', 'Nasal'];
 const UNITS = ['mg', 'mcg', 'g', 'mL', 'units', 'mEq', 'tablet(s)', 'capsule(s)', 'puff(s)', 'drop(s)', 'patch(es)', 'spray(s)', '%'];
 const ADMIN_BY_OPTIONS = [
-  { value: 'nurse', label: 'Nurse (me)' },
-  { value: 'family', label: 'Family member' },
-  { value: 'responsibleParty', label: 'Responsible party' },
-  { value: 'self', label: 'Client (self)' },
+  { value: 'nurse', label: 'Nurse (Me)' },
+  { value: 'family', label: 'Family Member' },
+  { value: 'responsibleParty', label: 'Responsible Party' },
+  { value: 'self', label: 'Client (Self)' },
   { value: 'proxy', label: 'Proxy' },
 ];
 
@@ -45,7 +70,23 @@ export default function MedChangeRequestModal({
 }: Props) {
   const [mode, setMode] = useState<MarChangeRequestType>('add');
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
+  // Per-field problems (outlined and explained where they sit) and the
+  // problems that belong to no field, shown next to the buttons.
+  const [errors, setErrors] = useState<MedChangeFieldErrors>({});
+  const [submitError, setSubmitError] = useState('');
+  const clearErr = (...keys: MedChangeField[]) =>
+    setErrors((cur) => {
+      if (!keys.some((k) => cur[k])) return cur;
+      const next = { ...cur };
+      for (const k of keys) delete next[k];
+      return next;
+    });
+  const hi = (k: MedChangeField): CSSProperties => (errors[k] ? FIELD_ERROR_STYLE : {});
+  const switchMode = (m: MarChangeRequestType) => {
+    setMode(m);
+    setErrors({});
+    setSubmitError('');
+  };
 
   // Med fields (used by Add and Change; for Change these are the NEW values)
   const [medName, setMedName] = useState('');
@@ -53,16 +94,27 @@ export default function MedChangeRequestModal({
   const [units, setUnits] = useState('');
   const [route, setRoute] = useState('');
   const [frequencyLabel, setFrequencyLabel] = useState('');
+  // PRN only: how often the med may be given ("Q4H PRN"). Shown once the
+  // frequency is PRN; the normalizers blank it on scheduled orders.
+  const [prnFrequencyLabel, setPrnFrequencyLabel] = useState('');
   // Single PRN control (PR #77): choosing the "As needed (PRN)" frequency IS
   // marking the med PRN; no separate checkbox to disagree with the dropdown.
   const isPRN = frequencyLabel === PRN_FREQUENCY;
   const [times, setTimes] = useState<string[]>(['08:00']);
+  // Meal anchor per scheduled-time row ("Before Breakfast"); '' = clock time.
+  const [timeAnchors, setTimeAnchors] = useState<string[]>(['']);
+  // Sliding-scale order: the dose comes from a blood glucose table, so the
+  // fixed dose / units inputs are replaced by the table.
+  const [scaleChecked, setScaleOn] = useState(false);
+  const [scaleRows, setScaleRows] = useState<SlidingScaleFormRow[]>(starterSlidingScaleForm());
   const [indication, setIndication] = useState('');
   const [orderingPhysician, setOrderingPhysician] = useState('');
   const [orderSignedDate, setOrderSignedDate] = useState('');
   // Honest escape hatch: flag the physician as unknown instead of typing "N/A";
   // the order is badged for follow-up until the RN fills the real name in.
   const [physicianUnknown, setPhysicianUnknown] = useState(false);
+  // Hold / check-before-giving criteria from the order (see MarOrder.parameters).
+  const [parameters, setParameters] = useState('');
   const [notes, setNotes] = useState('');
 
   // Add-only: start date
@@ -79,9 +131,25 @@ export default function MedChangeRequestModal({
 
   const [reason, setReason] = useState('');
 
-  const setTimeAt = (i: number, v: string) => setTimes((t) => t.map((x, idx) => (idx === i ? v : x)));
-  const addTime = () => setTimes((t) => [...t, '']);
-  const removeTime = (i: number) => setTimes((t) => t.filter((_, idx) => idx !== i));
+  // Changing a check-style order (one that records a reading, such as a
+  // gastric residual check; see MarOrder.valueLabel). This form has no inputs
+  // for the measurement, so it is carried through from the order untouched,
+  // dose and units stay optional, and the row cannot become a sliding scale.
+  const changeTarget = mode === 'change' ? activeOrders.find((o) => o.id === targetOrderId) : undefined;
+  const checkLabel = changeTarget && orderRecordsValue(changeTarget) ? (changeTarget.valueLabel || '').trim() : '';
+  const isCheckTarget = !!checkLabel;
+  const scaleOn = scaleChecked && !isCheckTarget;
+
+  // Choosing a frequency that implies a schedule ("Before meals") fills the
+  // times in, but only while the schedule is still the untouched default.
+  const pickFrequency = (value: string) => {
+    setFrequencyLabel(value);
+    const suggested = suggestedScheduleFor(value);
+    if (suggested && isPristineSchedule(times, timeAnchors)) {
+      setTimes(suggested.times);
+      setTimeAnchors(suggested.anchors);
+    }
+  };
 
   // When the nurse picks an order to Change, prefill the fields with its
   // current values so she only edits what changed.
@@ -90,86 +158,96 @@ export default function MedChangeRequestModal({
     const o = activeOrders.find((x) => x.id === orderId);
     if (o) {
       setMedName(o.medName || '');
-      setDose(o.dose || '');
+      const scale = parseSlidingScale(o.slidingScale);
+      setScaleOn(scale.length > 0);
+      setScaleRows(scale.length > 0 ? slidingScaleToForm(scale) : starterSlidingScaleForm());
+      // A sliding-scale order's stored dose is only the "Per sliding scale"
+      // label, not something to edit.
+      setDose(scale.length > 0 ? '' : o.dose || '');
       setUnits(o.units || '');
       setRoute(o.route || '');
       setFrequencyLabel(o.isPRN ? PRN_FREQUENCY : o.frequencyLabel || '');
-      setTimes(o.scheduledTimes && o.scheduledTimes.length > 0 ? [...o.scheduledTimes] : ['08:00']);
+      setPrnFrequencyLabel(o.isPRN ? o.prnFrequencyLabel || '' : '');
+      const orderTimes = o.scheduledTimes && o.scheduledTimes.length > 0 ? [...o.scheduledTimes] : ['08:00'];
+      setTimes(orderTimes);
+      setTimeAnchors(orderTimes.map((t) => o.timeLabels?.[t] || ''));
       setIndication(o.indication || '');
       setOrderingPhysician(o.orderingPhysician || '');
       setOrderSignedDate(o.orderSignedDate || '');
       setPhysicianUnknown(o.physicianPending === true);
+      setParameters(o.parameters || '');
       setNotes(o.notes || '');
     }
   };
 
   const handleSubmit = async () => {
-    setError('');
+    setSubmitError('');
     if (!documenter) {
-      setError('You must be signed in.');
+      setSubmitError('You must be signed in.');
       return;
     }
-    if (!reason.trim()) {
-      setError('A reason is required.');
+    // The shared gates, collected per field so every problem is outlined at
+    // once and the first one is scrolled into view.
+    const fieldErrors = validateMedChangeForm({
+      mode,
+      reason,
+      targetOrderId,
+      medName,
+      dose,
+      units,
+      route,
+      isPRN,
+      times,
+      indication,
+      orderingPhysician,
+      orderSignedDate,
+      physicianUnknown,
+      valueLabel: checkLabel,
+      slidingScaleOn: scaleOn,
+      slidingScaleRows: scaleRows,
+      // The "I gave a dose" shortcut is not offered on a sliding-scale order
+      // (that dose needs a meter reading), so it never validates there.
+      doseGiven: doseGiven && !scaleOn,
+      doseByType,
+      doseByName,
+      doseTime,
+      today: todayISO(),
+    });
+    // The allowed readings are not edited here (they ride along from the
+    // order as they are), so there is no field to send the nurse to.
+    delete fieldErrors.valueOptions;
+    setErrors(fieldErrors);
+    const first = firstErrorKey(MED_CHANGE_FIELD_ORDER, fieldErrors);
+    if (first) {
+      escortToField(fieldId(first));
       return;
-    }
-
-    if (mode === 'add' || mode === 'change') {
-      if (mode === 'change' && !targetOrderId) {
-        setError('Choose the medication to change.');
-        return;
-      }
-      if (!medName.trim() || !dose.trim() || !units.trim() || !route.trim()) {
-        setError('Medication, dose, units, and route are required.');
-        return;
-      }
-      if (orderSignedDate && orderSignedDate > todayISO()) {
-        setError('"Physician order signed on" cannot be a future date.');
-        return;
-      }
-      if (!physicianUnknown && looksLikeUnknownPhysician(orderingPhysician)) {
-        setError(
-          orderingPhysician.trim()
-            ? 'Enter the ordering physician\'s actual name (placeholders like "N/A" don\'t document the order). If you don\'t know it right now, check the box below to flag it for follow-up.'
-            : 'Ordering physician is required; this change reflects a physician order. If you don\'t know it right now, check the box below to flag it for follow-up.',
-        );
-        return;
-      }
-      if (!isPRN && times.filter(Boolean).length === 0) {
-        setError('Add at least one scheduled time, or choose the "As needed (PRN)" frequency.');
-        return;
-      }
-      if (isPRN && !indication.trim()) {
-        setError('Add an indication: PRN doses are documented against what the med is for.');
-        return;
-      }
-      if (mode === 'add' && doseGiven && doseByType !== 'nurse' && !doseByName.trim()) {
-        setError('Enter who administered the dose.');
-        return;
-      }
-    } else {
-      if (!targetOrderId) {
-        setError('Choose the medication to discontinue.');
-        return;
-      }
     }
 
     setSubmitting(true);
     try {
-      const proposedMed = {
-        medName, dose, units, route, frequencyLabel,
-        scheduledTimes: times, isPRN, indication,
+      const entered = {
+        medName, route, frequencyLabel,
+        dose: scaleOn ? '' : dose,
+        units: scaleOn ? '' : units,
+        scheduledTimes: times,
+        timeLabels: timeLabelsFromRows(times, timeAnchors),
+        slidingScale: scaleOn ? slidingScaleFromForm(scaleRows) || [] : [],
+        isPRN, prnFrequencyLabel, indication,
         startDate: mode === 'add' ? startDate : effectiveDate,
         orderingPhysician,
         orderSignedDate,
         physicianPending: physicianUnknown && looksLikeUnknownPhysician(orderingPhysician),
+        parameters,
         notes,
       };
       const target = activeOrders.find((o) => o.id === targetOrderId);
+      // A change keeps the order's measurement exactly as it is, so editing a
+      // check-style order here can never strip what it records.
+      const proposedMed = mode === 'change' && target ? inheritMeasurement(entered, target) : entered;
 
       if (mode === 'add') {
         await stageChangeRequest(
-          { patientId, patientName, type: 'add', reason, doseRecorded: doseGiven, proposedMed },
+          { patientId, patientName, type: 'add', reason, doseRecorded: doseGiven && !scaleOn, proposedMed },
           documenter,
           getNoteId(),
         );
@@ -177,7 +255,7 @@ export default function MedChangeRequestModal({
         // append-only administration at submit (so it carries the note's date).
         // A unique key (not med+time) so two same-time one-offs don't collide,
         // and the note's session id so the mark can't leak onto another note.
-        if (doseGiven) {
+        if (doseGiven && !scaleOn) {
           const noteId = getNoteId();
           const key = unlistedMarAdminKey(patientId, medName, crypto.randomUUID());
           setMarAdmin(key, {
@@ -187,6 +265,9 @@ export default function MedChangeRequestModal({
             scheduledTime: 'unscheduled',
             isPRN,
             indication,
+            // Snapshotted, NOT auto-acknowledged: the Page 5 card still asks
+            // her to confirm the parameters were checked before this dose.
+            parameters: parameters.trim(),
             status: 'given',
             administeredByType: doseByType,
             administratorName: doseByName,
@@ -221,7 +302,7 @@ export default function MedChangeRequestModal({
       }
       onClose();
     } catch {
-      setError('Failed to stage the change. Please try again.');
+      setSubmitError('Failed to stage the change. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -229,38 +310,62 @@ export default function MedChangeRequestModal({
 
   const showMedFields = mode === 'add' || mode === 'change';
 
-  return (
+  // Rendered through a portal so the modal is NOT inside the note's <form>:
+  // otherwise Enter in a modal input submits the whole note, and the note's
+  // required-field scan picks up the modal's own field errors.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  if (!mounted) return null;
+
+  return createPortal(
     <div style={backdrop} onClick={() => !submitting && onClose()}>
-      <div style={modal} onClick={(e) => e.stopPropagation()}>
+      <div
+        style={modal}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') e.preventDefault();
+        }}
+      >
         <div style={head}>
-          <h2 style={{ margin: 0, fontSize: 17, color: '#2c3e50' }}>Medication change</h2>
+          <h2 style={{ margin: 0, fontSize: 17, color: '#2c3e50' }}>Medication Change</h2>
           <button type="button" onClick={onClose} style={closeBtn} aria-label="Close">✕</button>
         </div>
 
         <div style={{ padding: 18 }}>
           <p style={{ marginTop: 0, fontSize: 13, color: '#6b7280', lineHeight: 1.5 }}>
-            Record a medication change for <strong>{patientName}</strong> per a physician order. It applies when you
-            submit the note, and your supervisor reviews it afterward.
+            Record a medication change for <strong>{patientName}</strong> per a physician order. It takes effect on the
+            MAR when you submit this note, so check it against the order first.
           </p>
 
           <div style={tabRow}>
-            <button type="button" onClick={() => setMode('add')} style={mode === 'add' ? tabActive : tab}>Add</button>
-            <button type="button" onClick={() => setMode('change')} style={mode === 'change' ? tabActive : tab}>Change</button>
-            <button type="button" onClick={() => setMode('discontinue')} style={mode === 'discontinue' ? tabActive : tab}>Discontinue</button>
+            <button type="button" onClick={() => switchMode('add')} style={mode === 'add' ? tabActive : tab}>Add</button>
+            <button type="button" onClick={() => switchMode('change')} style={mode === 'change' ? tabActive : tab}>Change</button>
+            <button type="button" onClick={() => switchMode('discontinue')} style={mode === 'discontinue' ? tabActive : tab}>Discontinue</button>
           </div>
 
           <div>
             {(mode === 'change' || mode === 'discontinue') && (
-              <Field label={mode === 'change' ? 'Medication to change *' : 'Medication to discontinue *'}>
+              <Field id={fieldId('targetOrderId')} error={errors.targetOrderId} label={mode === 'change' ? 'Medication to change *' : 'Medication to discontinue *'}>
                 <select
                   value={targetOrderId}
-                  onChange={(e) => (mode === 'change' ? pickChangeTarget(e.target.value) : setTargetOrderId(e.target.value))}
-                  style={select}
+                  onChange={(e) => {
+                    if (mode === 'change') {
+                      pickChangeTarget(e.target.value);
+                      // The prefill rewrites every med field, so their errors are stale.
+                      setErrors((cur) => (cur.reason ? { reason: cur.reason } : {}));
+                    } else {
+                      setTargetOrderId(e.target.value);
+                      clearErr('targetOrderId');
+                    }
+                  }}
+                  style={{ ...select, ...hi('targetOrderId') }}
                 >
-                  <option value="">Select a medication…</option>
+                  <option value="">Select a Medication…</option>
                   {activeOrders.map((o) => (
                     <option key={o.id} value={o.id}>
-                      {o.medName} {o.dose}{o.units ? ` ${o.units}` : ''}{o.isPRN ? ' (PRN)' : o.scheduledTimes?.length ? ` (${o.scheduledTimes.join(', ')})` : ''}
+                      {o.medName} {o.dose}{o.units ? ` ${o.units}` : ''}{o.isPRN ? ' (PRN)' : o.scheduledTimes?.length ? ` (${o.scheduledTimes.map((t) => describeSlot(o, t)).join(', ')})` : ''}
                     </option>
                   ))}
                 </select>
@@ -275,28 +380,65 @@ export default function MedChangeRequestModal({
                     history stays intact.
                   </p>
                 )}
-                <Field label="Medication name *">
-                  <input type="text" value={medName} onChange={(e) => setMedName(e.target.value)} style={input} placeholder="e.g., Acetaminophen" />
+                <Field id={fieldId('medName')} error={errors.medName} label="Medication name *">
+                  <input type="text" value={medName} onChange={(e) => { setMedName(e.target.value); clearErr('medName'); }} style={{ ...input, ...hi('medName') }} placeholder="e.g., Acetaminophen" />
                 </Field>
+                {isCheckTarget && (
+                  <p style={{ fontSize: 12.5, color: '#6b7280', margin: '0 0 12px', lineHeight: 1.5 }}>
+                    This row records a <strong>{checkLabel}</strong> reading each time it is charted. The reading and
+                    its allowed values stay as they are.
+                  </p>
+                )}
+                {!isCheckTarget && (
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 12, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={scaleOn}
+                    onChange={(e) => {
+                      setScaleOn(e.target.checked);
+                      // Sliding-scale insulin goes under the skin; pre-fill the
+                      // route only when nothing was chosen yet.
+                      if (e.target.checked && !route) setRoute('Subcutaneous');
+                      clearErr('dose', 'units', 'slidingScale', 'route', 'doseTime', 'doseByName');
+                    }}
+                    style={{ marginTop: 2 }}
+                  />
+                  <span style={{ fontSize: 13, color: '#2c3e50', lineHeight: 1.4 }}>
+                    <strong>Sliding scale.</strong> The dose depends on a blood glucose reading (insulin).
+                  </span>
+                </label>
+                )}
+                {scaleOn ? (
+                  <div id={fieldId('slidingScale')} style={{ marginBottom: 12 }}>
+                    <div style={{ ...fieldLabel, marginBottom: 4 }}>Sliding scale from the order *</div>
+                    <SlidingScaleEditor
+                      rows={scaleRows}
+                      onChange={(rows) => { setScaleRows(rows); clearErr('slidingScale'); }}
+                      invalid={!!errors.slidingScale}
+                    />
+                    <FieldError message={errors.slidingScale} />
+                  </div>
+                ) : (
                 <div style={grid2}>
-                  <Field label="Dose *">
-                    <input type="text" value={dose} onChange={(e) => setDose(e.target.value)} style={input} placeholder="e.g., 500" />
+                  <Field id={fieldId('dose')} error={errors.dose} label={isCheckTarget ? 'Dose' : 'Dose *'}>
+                    <input type="text" value={dose} onChange={(e) => { setDose(e.target.value); clearErr('dose'); }} style={{ ...input, ...hi('dose') }} placeholder="e.g., 500" />
                   </Field>
-                  <Field label="Units *">
-                    <input type="text" list="cr-units" value={units} onChange={(e) => setUnits(e.target.value)} style={input} placeholder="e.g., mg" />
+                  <Field id={fieldId('units')} error={errors.units} label={isCheckTarget ? 'Units' : 'Units *'}>
+                    <input type="text" list="cr-units" value={units} onChange={(e) => { setUnits(e.target.value); clearErr('units'); }} style={{ ...input, ...hi('units') }} placeholder="e.g., mg" />
                     <datalist id="cr-units">{UNITS.map((u) => <option key={u} value={u} />)}</datalist>
                   </Field>
                 </div>
+                )}
                 <div style={grid2}>
-                  <Field label="Route *">
-                    <select value={route} onChange={(e) => setRoute(e.target.value)} style={select}>
-                      <option value="">Select route…</option>
+                  <Field id={fieldId('route')} error={errors.route} label="Route *">
+                    <select value={route} onChange={(e) => { setRoute(e.target.value); clearErr('route'); }} style={{ ...select, ...hi('route') }}>
+                      <option value="">Select Route…</option>
                       {ROUTES.map((r) => <option key={r} value={r}>{r}</option>)}
                     </select>
                   </Field>
                   <Field label="Frequency">
-                    <select value={frequencyLabel} onChange={(e) => setFrequencyLabel(e.target.value)} style={select}>
-                      <option value="">Select frequency…</option>
+                    <select value={frequencyLabel} onChange={(e) => { pickFrequency(e.target.value); clearErr('times', 'indication'); }} style={select}>
+                      <option value="">Select Frequency…</option>
                       {frequencyLabel && !MED_FREQUENCIES.includes(frequencyLabel as (typeof MED_FREQUENCIES)[number]) && (
                         <option value={frequencyLabel}>{frequencyLabel} (current)</option>
                       )}
@@ -305,30 +447,34 @@ export default function MedChangeRequestModal({
                   </Field>
                 </div>
 
+                {isPRN && (
+                  <Field label="PRN frequency (how often it may be given)">
+                    <select value={prnFrequencyLabel} onChange={(e) => setPrnFrequencyLabel(e.target.value)} style={select}>
+                      <option value="">No Set Interval</option>
+                      {PRN_SUB_FREQUENCIES.map((freq) => <option key={freq} value={freq}>{freq}</option>)}
+                    </select>
+                    <span style={dateHint}>Optional. Take it from the order: “Q4H PRN” is Every 4 hours (Q4H); “BID PRN” is Twice daily (BID).</span>
+                  </Field>
+                )}
+
                 {!isPRN && (
-                  <div style={{ marginBottom: 12 }}>
-                    <div style={fieldLabel}>Scheduled times</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {times.map((t, i) => (
-                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <Clock size={15} color="#7f8c8d" />
-                          <input type="time" value={t} onChange={(e) => setTimeAt(i, e.target.value)} style={{ ...input, maxWidth: 150 }} />
-                          {times.length > 1 && (
-                            <button type="button" onClick={() => removeTime(i)} style={removeTimeBtn} aria-label="Remove time"><X size={14} /></button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                    <button type="button" onClick={addTime} style={addTimeBtn}><Plus size={13} /> Add time</button>
+                  <div id={fieldId('times')} style={errors.times ? { marginBottom: 12, ...FIELD_ERROR_WRAP_STYLE } : { marginBottom: 12 }}>
+                    <div style={{ ...fieldLabel, marginBottom: 4 }}>Scheduled times</div>
+                    <ScheduledTimesEditor
+                      times={times}
+                      anchors={timeAnchors}
+                      onChange={(t, a) => { setTimes(t); setTimeAnchors(a); clearErr('times'); }}
+                    />
+                    <FieldError message={errors.times} />
                   </div>
                 )}
 
-                <Field label={isPRN ? 'Indication (what it’s given for) *' : 'Indication (what it’s for)'}>
+                <Field id={fieldId('indication')} error={errors.indication} label={isPRN ? 'Indication (what it’s given for) *' : 'Indication (what it’s for)'}>
                   <input
                     type="text"
                     value={indication}
-                    onChange={(e) => setIndication(e.target.value)}
-                    style={input}
+                    onChange={(e) => { setIndication(e.target.value); clearErr('indication'); }}
+                    style={{ ...input, ...hi('indication') }}
                     placeholder={isPRN ? 'e.g., Moderate pain (4-6/10)' : 'e.g., Hypertension'}
                   />
                   <span style={dateHint}>
@@ -348,13 +494,13 @@ export default function MedChangeRequestModal({
                     />
                     <span style={dateHint}>Use the date on the physician&apos;s order; a past date is OK if you&apos;re documenting late.</span>
                   </Field>
-                  <Field label="Ordering physician *">
-                    <input type="text" value={orderingPhysician} onChange={(e) => setOrderingPhysician(e.target.value)} style={input} placeholder="Dr. ..." />
+                  <Field id={fieldId('orderingPhysician')} error={errors.orderingPhysician} label="Ordering physician *">
+                    <input type="text" value={orderingPhysician} onChange={(e) => { setOrderingPhysician(e.target.value); clearErr('orderingPhysician'); }} style={{ ...input, ...hi('orderingPhysician') }} placeholder="Dr. ..." />
                   </Field>
                 </div>
 
-                <Field label="Physician order signed on">
-                  <input type="date" value={orderSignedDate} onChange={(e) => setOrderSignedDate(e.target.value)} style={{ ...input, maxWidth: 200 }} />
+                <Field id={fieldId('orderSignedDate')} error={errors.orderSignedDate} label="Physician order signed on">
+                  <input type="date" value={orderSignedDate} onChange={(e) => { setOrderSignedDate(e.target.value); clearErr('orderSignedDate'); }} style={{ ...input, maxWidth: 200, ...hi('orderSignedDate') }} />
                   <span style={dateHint}>Blank = the start/effective date. Update when the annual renewal comes in.</span>
                 </Field>
 
@@ -362,7 +508,7 @@ export default function MedChangeRequestModal({
                   <input
                     type="checkbox"
                     checked={physicianUnknown}
-                    onChange={(e) => setPhysicianUnknown(e.target.checked)}
+                    onChange={(e) => { setPhysicianUnknown(e.target.checked); clearErr('orderingPhysician'); }}
                     style={{ marginTop: 2 }}
                   />
                   <span style={{ fontSize: 12.5, color: '#5c6b7a', lineHeight: 1.4 }}>
@@ -371,32 +517,43 @@ export default function MedChangeRequestModal({
                   </span>
                 </label>
 
-                <Field label="Notes">
-                  <textarea value={notes} onChange={(e) => setNotes(e.target.value)} style={textarea} placeholder="Special instructions, hold parameters, etc." />
+                <Field label="Parameters (hold / check before giving)">
+                  <textarea value={parameters} onChange={(e) => setParameters(e.target.value)} style={textarea} placeholder="e.g., Hold if SBP > 140 mmHg or HR < 60. Check BP and HR before each dose." />
+                  <span style={dateHint}>Conditions to check before giving and when to hold, exactly as the physician wrote them. Nurses see this every time they chart a dose and must confirm they checked it.</span>
                 </Field>
 
-                {mode === 'add' && (
+                <Field label="Notes">
+                  <textarea value={notes} onChange={(e) => setNotes(e.target.value)} style={textarea} placeholder="Special instructions (anything that is not a hold / check parameter)." />
+                </Field>
+
+                {mode === 'add' && scaleOn && (
+                  <p style={{ fontSize: 12.5, color: '#5c6b7a', lineHeight: 1.45, margin: '4px 0 12px' }}>
+                    A sliding scale dose is charted with its blood glucose reading. After you submit this
+                    note, chart today&apos;s doses for this medication on the MAR.
+                  </p>
+                )}
+                {mode === 'add' && !scaleOn && (
                   <>
                     <label style={{ ...checkRow, marginTop: 4 }}>
-                      <input type="checkbox" checked={doseGiven} onChange={(e) => setDoseGiven(e.target.checked)} />
+                      <input type="checkbox" checked={doseGiven} onChange={(e) => { setDoseGiven(e.target.checked); clearErr('doseTime', 'doseByName'); }} />
                       <span style={{ fontSize: 13, fontWeight: 600, color: '#2c3e50' }}>I administered a dose during this shift</span>
                     </label>
                     {doseGiven && (
                       <div style={doseBox}>
                         <div style={grid2}>
-                          <Field label="Time given">
-                            <input type="time" value={doseTime} onChange={(e) => setDoseTime(e.target.value)} style={input} />
+                          <Field id={fieldId('doseTime')} error={errors.doseTime} label="Time given">
+                            <input type="time" value={doseTime} onChange={(e) => { setDoseTime(e.target.value); clearErr('doseTime'); }} style={{ ...input, ...hi('doseTime') }} />
                           </Field>
                         </div>
                         <div style={grid2}>
                           <Field label="Administered by">
-                            <select value={doseByType} onChange={(e) => setDoseByType(e.target.value)} style={select}>
+                            <select value={doseByType} onChange={(e) => { setDoseByType(e.target.value); clearErr('doseByName'); }} style={select}>
                               {ADMIN_BY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                             </select>
                           </Field>
                           {doseByType !== 'nurse' && (
-                            <Field label="Administrator name">
-                              <input type="text" value={doseByName} onChange={(e) => setDoseByName(e.target.value)} style={input} placeholder="e.g., Jane Doe (daughter)" />
+                            <Field id={fieldId('doseByName')} error={errors.doseByName} label="Administrator name">
+                              <input type="text" value={doseByName} onChange={(e) => { setDoseByName(e.target.value); clearErr('doseByName'); }} style={{ ...input, ...hi('doseByName') }} placeholder="e.g., Jane Doe (daughter)" />
                             </Field>
                           )}
                         </div>
@@ -414,31 +571,33 @@ export default function MedChangeRequestModal({
               </Field>
             )}
 
-            <Field label="Reason *">
-              <textarea value={reason} onChange={(e) => setReason(e.target.value)} style={textarea}
+            <Field id={fieldId('reason')} error={errors.reason} label="Reason *">
+              <textarea value={reason} onChange={(e) => { setReason(e.target.value); clearErr('reason'); }} style={{ ...textarea, ...hi('reason') }}
                 placeholder={mode === 'discontinue' ? 'Why is it being discontinued?' : 'Why is this being added/changed? (e.g., new physician order)'} />
             </Field>
 
-            {error && <div style={errorBox}>{error}</div>}
+            {submitError && <div style={errorBox} role="alert">{submitError}</div>}
 
             <div style={{ display: 'flex', gap: 10, marginTop: 8, justifyContent: 'flex-end' }}>
               <button type="button" onClick={onClose} disabled={submitting} style={secondaryBtn}>Cancel</button>
               <button type="button" onClick={handleSubmit} disabled={submitting} style={primaryBtn}>
-                {submitting ? 'Saving…' : 'Add to note'}
+                {submitting ? 'Saving…' : 'Add to Note'}
               </button>
             </div>
           </div>
         </div>
       </div>
     </div>
-  );
+  , document.body);
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+/** `id` is the escort target; `error` renders the message under the control. */
+function Field({ label, id, error, children }: { label: string; id?: string; error?: string; children: React.ReactNode }) {
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12, minWidth: 0 }}>
+    <label id={id} style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12, minWidth: 0 }}>
       <span style={fieldLabel}>{label}</span>
       {children}
+      <FieldError message={error} />
     </label>
   );
 }
@@ -463,8 +622,6 @@ const textarea: CSSProperties = { width: '100%', padding: '9px 11px', border: '1
 const grid2: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 };
 const checkRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, cursor: 'pointer' };
 const doseBox: CSSProperties = { border: '1px solid #e5e7eb', borderRadius: 8, padding: 12, background: '#fafbfc', marginBottom: 12 };
-const removeTimeBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', color: '#c44', border: 'none', padding: 4, borderRadius: 4, cursor: 'pointer' };
-const addTimeBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, background: 'white', color: '#0e7c4a', border: '1px dashed #0e7c4a', padding: '7px 12px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', marginTop: 8 };
 const errorBox: CSSProperties = { background: '#fef2f2', border: '1px solid #fecaca', color: '#b3261e', borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: 10 };
 const secondaryBtn: CSSProperties = { background: '#eef1f4', color: '#2c3e50', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const primaryBtn: CSSProperties = { background: '#27ae60', color: 'white', padding: '10px 16px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };

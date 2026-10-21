@@ -7,18 +7,36 @@ import {
   Phone, 
   Mail, 
   MapPin, 
-  Clock, 
+  
   Send,
   MessageSquare,
   ArrowRight,
   CheckCircle,
-  AlertCircle
-} from 'lucide-react';
+  AlertCircle, Printer } from 'lucide-react';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { processContactSubmission } from '@/app/actions';
 import ServiceAreaMap from '@/components/ServiceAreaMap';
+import { escortToField, FieldError, FIELD_ERROR_STYLE, firstErrorKey } from '@/lib/formEscort';
 import styles from './page.module.css';
+
+type ContactField = 'name' | 'email' | 'phone' | 'subject' | 'message';
+type ContactFieldErrors = Partial<Record<ContactField, string>>;
+// Display order on the page, so a blocked submit escorts to the topmost problem.
+const FIELD_ORDER: ContactField[] = ['name', 'email', 'phone', 'subject', 'message'];
+const fieldId = (k: ContactField) => `contact-field-${k}`;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function validateContact(f: { name: string; email: string; phone: string; subject: string; message: string }): ContactFieldErrors {
+  const errs: ContactFieldErrors = {};
+  if (!f.name.trim()) errs.name = 'Please enter your name.';
+  if (!f.email.trim()) errs.email = 'Please enter your email address.';
+  else if (!EMAIL_RE.test(f.email.trim())) errs.email = 'Please enter a valid email address.';
+  if (!f.phone.trim()) errs.phone = 'Please enter a phone number.';
+  if (!f.subject) errs.subject = 'Please choose a subject.';
+  if (!f.message.trim()) errs.message = 'Please tell us how we can help.';
+  return errs;
+}
 
 const contactInfo = [
   {
@@ -26,7 +44,13 @@ const contactInfo = [
     title: 'Phone',
     primary: '(678) 644-0337',
     link: 'tel:678-644-0337',
-    secondary: 'Mon - Fri: 9:00 AM - 5:00 PM',
+    secondary: 'Monday to Friday, 9:00 AM to 5:00 PM ET',
+  },
+  {
+    icon: Printer,
+    title: 'Fax',
+    primary: '(470) 235-1891',
+    secondary: 'Referrals and physician orders',
   },
   {
     icon: Mail,
@@ -41,12 +65,6 @@ const contactInfo = [
     primary: '1372 Peachtree St NE',
     secondary: 'Atlanta, GA 30309',
   },
-  {
-    icon: Clock,
-    title: 'Office Hours',
-    primary: 'Monday - Friday',
-    secondary: '10:00 AM - 3:00 PM EST',
-  },
 ];
 
 export default function ContactPage() {
@@ -60,6 +78,7 @@ export default function ContactPage() {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<ContactFieldErrors>({});
 
   // As-you-type formatter: (XXX) XXX-XXXX, also strips a leading +1.
   // Canonical helper shared with the portal forms.
@@ -67,6 +86,8 @@ export default function ContactPage() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
+    // The field's message clears as soon as the visitor starts fixing it.
+    setFieldErrors((prev) => (prev[name as ContactField] ? { ...prev, [name]: undefined } : prev));
     if (name === 'phone') {
       setFormData({ ...formData, phone: formatPhoneNumber(value) });
     } else {
@@ -76,8 +97,15 @@ export default function ContactPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
     setError(null);
+    const errs = validateContact(formData);
+    setFieldErrors(errs);
+    const first = firstErrorKey(FIELD_ORDER, errs);
+    if (first) {
+      escortToField(fieldId(first));
+      return;
+    }
+    setIsSubmitting(true);
 
     try {
       // 1. Save to Firestore
@@ -105,7 +133,7 @@ export default function ContactPage() {
       <section className={styles.hero}>
         <div className="container">
           <div className={styles.heroContent}>
-            <span className={styles.heroLabel}>Get In Touch</span>
+            <span className={styles.heroLabel}>Get in Touch</span>
             <h1>Contact Us</h1>
             <p className={styles.heroSubtitle}>
               We&apos;re here to answer your questions and help you explore the 
@@ -147,7 +175,7 @@ export default function ContactPage() {
           <div className={styles.formGrid}>
             <div className={styles.formInfo}>
               <span className={styles.sectionLabel}>Send Us a Message</span>
-              <h2>We&apos;d Love to Hear From You</h2>
+              <h2>We&apos;d Love to Hear from You</h2>
               <p>
                 Whether you have questions about our services, need guidance on 
                 available programs, or want to discuss care options, our team is 
@@ -187,6 +215,7 @@ export default function ContactPage() {
                     className="btn btn-secondary"
                     onClick={() => {
                       setIsSubmitted(false);
+                      setFieldErrors({});
                       setFormData({ name: '', email: '', phone: '', subject: '', message: '' });
                     }}
                   >
@@ -194,60 +223,71 @@ export default function ContactPage() {
                   </button>
                 </div>
               ) : (
-                <form onSubmit={handleSubmit} className={styles.form}>
+                <form onSubmit={handleSubmit} className={styles.form} noValidate>
                   <div className={styles.formRow}>
-                    <div className="form-group">
+                    <div className="form-group" id={fieldId('name')}>
                       <label htmlFor="name" className="form-label">Full Name *</label>
                       <input
                         type="text"
                         id="name"
                         name="name"
                         className="form-input"
+                        style={fieldErrors.name ? FIELD_ERROR_STYLE : undefined}
+                        aria-invalid={!!fieldErrors.name}
                         placeholder="John Doe"
                         value={formData.name}
                         onChange={handleChange}
                         required
                       />
+                      <FieldError message={fieldErrors.name} />
                     </div>
-                    <div className="form-group">
+                    <div className="form-group" id={fieldId('email')}>
                       <label htmlFor="email" className="form-label">Email Address *</label>
                       <input
                         type="email"
                         id="email"
                         name="email"
                         className="form-input"
+                        style={fieldErrors.email ? FIELD_ERROR_STYLE : undefined}
+                        aria-invalid={!!fieldErrors.email}
                         placeholder="john@example.com"
                         value={formData.email}
                         onChange={handleChange}
                         required
                       />
+                      <FieldError message={fieldErrors.email} />
                     </div>
                   </div>
                   <div className={styles.formRow}>
-                    <div className="form-group">
+                    <div className="form-group" id={fieldId('phone')}>
                       <label htmlFor="phone" className="form-label">Phone Number *</label>
                       <input
                         type="tel"
                         id="phone"
                         name="phone"
                         className="form-input"
+                        style={fieldErrors.phone ? FIELD_ERROR_STYLE : undefined}
+                        aria-invalid={!!fieldErrors.phone}
                         placeholder="(XXX) XXX-XXXX"
                         value={formData.phone}
                         onChange={handleChange}
                         required
                       />
+                      <FieldError message={fieldErrors.phone} />
                     </div>
-                    <div className="form-group">
+                    <div className="form-group" id={fieldId('subject')}>
                       <label htmlFor="subject" className="form-label">Subject *</label>
                       <select
                         id="subject"
                         name="subject"
                         className="form-select"
+                        style={fieldErrors.subject ? FIELD_ERROR_STYLE : undefined}
+                        aria-invalid={!!fieldErrors.subject}
                         value={formData.subject}
                         onChange={handleChange}
                         required
                       >
-                        <option value="">Select a subject</option>
+                        <option value="">Select a Subject</option>
                         <option value="General Inquiry">General Inquiry</option>
                         <option value="Services Information">Services Information</option>
                         <option value="Program Questions">Program Questions</option>
@@ -255,20 +295,24 @@ export default function ContactPage() {
                         <option value="Partnership Inquiry">Partnership Inquiry</option>
                         <option value="Other">Other</option>
                       </select>
+                      <FieldError message={fieldErrors.subject} />
                     </div>
                   </div>
-                  <div className="form-group">
+                  <div className="form-group" id={fieldId('message')}>
                     <label htmlFor="message" className="form-label">Message *</label>
                     <textarea
                       id="message"
                       name="message"
                       className="form-textarea"
+                      style={fieldErrors.message ? FIELD_ERROR_STYLE : undefined}
+                      aria-invalid={!!fieldErrors.message}
                       placeholder="How can we help you?"
                       rows={5}
                       value={formData.message}
                       onChange={handleChange}
                       required
                     />
+                    <FieldError message={fieldErrors.message} />
                   </div>
                   {error && (
                     <div className={styles.errorMessage}>

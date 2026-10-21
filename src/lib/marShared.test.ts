@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  amendCarryForwardFields,
   amendmentChain,
   buildMarAdminFields,
+  classifyDoseAgainstShift,
+  classifyDoseAgainstShiftSet,
+  decideNurseDoseGate,
   compareMarOrders,
   computeRequiredDoseGaps,
   deriveInitials,
@@ -11,11 +15,24 @@ import {
   physicianAttributionPending,
   physicianOrderStale,
   regimenFieldsChanged,
+  regimenFields,
+  REGIMEN_FIELDS,
+  inheritMeasurement,
+  measurementFields,
+  isSameDayAmendable,
   isCorrectionOnly,
   describeRegimenChanges,
+  describeFrequency,
   parseHHMM,
   parseValueOptions,
   resolveCurrentAdministrations,
+  anchorDefaultTime,
+  cleanTimeLabels,
+  describeSlot,
+  isPristineSchedule,
+  slotAnchor,
+  suggestedScheduleFor,
+  timeLabelsFromRows,
   type MarAdminFieldInput,
   type MarAdminFieldMeta,
 } from './marShared';
@@ -87,6 +104,42 @@ describe('buildMarAdminFields', () => {
     const f = buildMarAdminFields(input({ indication: '  Moderate pain  ' }), meta);
     expect(f.indicationSnapshot).toBe('Moderate pain');
     expect(buildMarAdminFields(input(), meta).indicationSnapshot).toBe('');
+  });
+
+  it('snapshots the order parameters and keeps the checked flag only on a given dose', () => {
+    const given = buildMarAdminFields(
+      input({ parameters: ' Hold if SBP > 140 ', parametersChecked: true }),
+      meta,
+    );
+    expect(given.parametersSnapshot).toBe('Hold if SBP > 140');
+    expect(given.parametersChecked).toBe(true);
+
+    // Held/refused: nothing was given, so "checked before giving" is moot.
+    const held = buildMarAdminFields(
+      input({ status: 'held', reason: 'SBP 152', parameters: 'Hold if SBP > 140', parametersChecked: true }),
+      meta,
+    );
+    expect(held.parametersSnapshot).toBe('Hold if SBP > 140');
+    expect(held.parametersChecked).toBe(false);
+
+    // No parameters on the order: the flag cannot be true, whatever the row says.
+    const none = buildMarAdminFields(input({ parametersChecked: true, parametersReading: 'BP 120/80' }), meta);
+    expect(none.parametersSnapshot).toBe('');
+    expect(none.parametersChecked).toBe(false);
+    expect(none.parametersReading).toBe('');
+  });
+
+  it('keeps the reading checked against the parameters on given and held doses', () => {
+    const given = buildMarAdminFields(
+      input({ parameters: 'Give if SBP < 120', parametersChecked: true, parametersReading: ' BP 112/70 ' }),
+      meta,
+    );
+    expect(given.parametersReading).toBe('BP 112/70');
+    const held = buildMarAdminFields(
+      input({ status: 'held', reason: 'above parameters', parameters: 'Give if SBP < 120', parametersReading: 'BP 132/84' }),
+      meta,
+    );
+    expect(held.parametersReading).toBe('BP 132/84');
   });
 
   it('blanks administratorName when the nurse gave it, keeps it (trimmed) otherwise', () => {
@@ -352,6 +405,120 @@ describe('buildMarAdminFields: prescriber-notified attestation', () => {
   });
 });
 
+describe('amendCarryForwardFields (what an amendment keeps from the original)', () => {
+  const meta: MarAdminFieldMeta = {
+    patientId: 'p1',
+    date: '2026-09-18',
+    sourceNoteId: '',
+    documenter: { uid: 'u1', name: 'Sam Jones', credential: 'LPN' },
+  };
+  const amender: MarAdminFieldMeta = {
+    ...meta,
+    documenter: { uid: 'u2', name: 'Rita Nash', credential: 'RN' },
+  };
+  const row: MarAdminFieldInput = {
+    orderId: 'o1', medName: 'Midodrine', dose: '5', units: 'mg', route: 'PO',
+    scheduledTime: '08:00', status: 'given', administeredByType: 'nurse',
+    administratorName: '', actualTime: '08:05', initials: 'SJ', reason: '',
+  };
+  // Mirrors amendMarAdministration: rebuild from the STORED doc's snapshots,
+  // with only status / time / reason coming from the amender.
+  const amend = (
+    stored: ReturnType<typeof buildMarAdminFields>,
+    change: Pick<MarAdminFieldInput, 'status' | 'actualTime' | 'reason'>,
+  ) =>
+    buildMarAdminFields(
+      {
+        orderId: stored.orderId,
+        medName: stored.medNameSnapshot,
+        dose: stored.doseSnapshot,
+        units: stored.unitsSnapshot,
+        route: stored.routeSnapshot,
+        scheduledTime: stored.scheduledTime,
+        administeredByType: 'nurse',
+        administratorName: '',
+        ...change,
+        ...amendCarryForwardFields(stored),
+      },
+      amender,
+    );
+
+  it('maps the stored snapshot names back to builder inputs', () => {
+    const stored = buildMarAdminFields(
+      {
+        ...row,
+        parameters: 'Give if SBP < 120', parametersChecked: true, parametersReading: 'BP 112/70',
+        value: '30', valueLabel: 'Residual', valueUnit: 'mL',
+      },
+      meta,
+    );
+    expect(amendCarryForwardFields(stored)).toEqual({
+      parameters: 'Give if SBP < 120',
+      parametersChecked: true,
+      parametersReading: 'BP 112/70',
+      value: '30',
+      valueLabel: 'Residual',
+      valueUnit: 'mL',
+    });
+  });
+
+  it('keeps the parameters, acknowledgment and reading when only the time is corrected', () => {
+    const stored = buildMarAdminFields(
+      { ...row, parameters: 'Give if SBP < 120', parametersChecked: true, parametersReading: 'BP 112/70' },
+      meta,
+    );
+    const next = amend(stored, { status: 'given', actualTime: '08:20', reason: '' });
+    expect(next.actualTime).toBe('08:20');
+    expect(next.parametersSnapshot).toBe('Give if SBP < 120');
+    expect(next.parametersChecked).toBe(true);
+    expect(next.parametersReading).toBe('BP 112/70');
+  });
+
+  it('keeps a check-style measurement, label and unit when only the time is corrected', () => {
+    const stored = buildMarAdminFields(
+      { ...row, medName: 'Gastric residual check', value: '30', valueLabel: 'Residual', valueUnit: 'mL' },
+      meta,
+    );
+    const next = amend(stored, { status: 'given', actualTime: '08:20', reason: '' });
+    expect(next.value).toBe('30');
+    expect(next.valueLabelSnapshot).toBe('Residual');
+    expect(next.valueUnitSnapshot).toBe('mL');
+  });
+
+  it('still applies the status rules: given corrected to held drops the value and the acknowledgment, keeps the reading', () => {
+    const stored = buildMarAdminFields(
+      {
+        ...row,
+        parameters: 'Give if SBP < 120', parametersChecked: true, parametersReading: 'BP 112/70',
+        value: '30', valueLabel: 'Residual', valueUnit: 'mL',
+      },
+      meta,
+    );
+    const next = amend(stored, { status: 'held', actualTime: '', reason: 'Charted on the wrong slot' });
+    expect(next.value).toBe('');
+    expect(next.parametersChecked).toBe(false);
+    expect(next.parametersSnapshot).toBe('Give if SBP < 120');
+    expect(next.parametersReading).toBe('BP 112/70');
+  });
+
+  it('carries a held dose\'s reading forward and never invents an acknowledgment on held-to-given', () => {
+    const stored = buildMarAdminFields(
+      { ...row, status: 'held', actualTime: '', reason: 'Above parameters', parameters: 'Give if SBP < 120', parametersReading: 'BP 132/84' },
+      meta,
+    );
+    const next = amend(stored, { status: 'given', actualTime: '08:30', reason: '' });
+    expect(next.parametersReading).toBe('BP 132/84');
+    expect(next.parametersChecked).toBe(false);
+  });
+
+  it('is blank-safe on legacy docs that predate these fields', () => {
+    expect(amendCarryForwardFields({})).toEqual({
+      parameters: '', parametersChecked: false, parametersReading: '',
+      value: '', valueLabel: '', valueUnit: '',
+    });
+  });
+});
+
 describe('computeRequiredDoseGaps', () => {
   const row = (orderId: string, slot: string, medName = 'Keppra', isPRN = false) => ({
     orderId,
@@ -579,6 +746,23 @@ describe('regimenFieldsChanged', () => {
     expect(regimenFieldsChanged(prn, { ...prn, frequencyLabel: 'As needed (PRN)' })).toEqual([]);
   });
 
+  it('flags a change to how often a PRN med may be given', () => {
+    // "Q4H PRN" → "Q6H PRN" is a new order from the physician, not a detail edit.
+    const prn = { ...order, isPRN: true, scheduledTimes: [], frequencyLabel: 'As needed (PRN)', prnFrequencyLabel: 'Every 4 hours (Q4H)' };
+    expect(regimenFieldsChanged(prn, { ...prn, prnFrequencyLabel: 'Every 6 hours (Q6H)' })).toEqual(['prnFrequencyLabel']);
+    expect(regimenFieldsChanged(prn, { ...prn, prnFrequencyLabel: '' })).toEqual(['prnFrequencyLabel']);
+    expect(describeRegimenChanges(['prnFrequencyLabel'])).toBe('PRN frequency');
+  });
+
+  it('does not re-read a PRN sub-frequency as a change when nothing moved', () => {
+    const prn = { ...order, isPRN: true, scheduledTimes: [], frequencyLabel: 'As needed (PRN)', prnFrequencyLabel: 'Every 4 hours (Q4H)' };
+    expect(regimenFieldsChanged(prn, { ...prn, prnFrequencyLabel: ' Every 4 hours (Q4H) ' })).toEqual([]);
+  });
+
+  it('ignores a PRN sub-frequency on a scheduled order (it only qualifies PRN)', () => {
+    expect(regimenFieldsChanged(order, { ...order, prnFrequencyLabel: 'Every 4 hours (Q4H)' })).toEqual([]);
+  });
+
   it('flags a change to what a check-style order measures', () => {
     const check = { ...order, dose: '', units: '', valueLabel: 'Gastric residual', valueUnit: 'mL' };
     expect(regimenFieldsChanged(check, { ...check, valueUnit: 'cc' })).toEqual(['valueUnit']);
@@ -591,6 +775,110 @@ describe('regimenFieldsChanged', () => {
   });
 });
 
+describe('measurementFields / inheritMeasurement', () => {
+  const residualCheck = {
+    medName: 'Gastric residual check',
+    dose: '',
+    units: '',
+    route: 'G-tube',
+    frequencyLabel: 'Every 4 hours (Q4H)',
+    scheduledTimes: ['08:00', '12:00'],
+    isPRN: false,
+    valueLabel: 'Gastric residual',
+    valueUnit: 'mL',
+    valueOptions: ['0', '10', '20', '30'],
+  };
+  // What the progress note's modal collects: no measurement keys at all.
+  const noteEdit = {
+    medName: 'Gastric residual check',
+    dose: '',
+    units: '',
+    route: 'G-tube',
+    frequencyLabel: 'Every 4 hours (Q4H)',
+    scheduledTimes: ['08:00', '12:00', '16:00'],
+    isPRN: false,
+  };
+
+  it('measurementFields stores the config normalized, or nothing when the proposal has none', () => {
+    expect(measurementFields({ valueLabel: ' Gastric residual ', valueUnit: ' mL ', valueOptions: '0, 10, 10, 20' })).toEqual({
+      valueLabel: 'Gastric residual',
+      valueUnit: 'mL',
+      valueOptions: ['0', '10', '20'],
+    });
+    // Blank is a statement ("not a check") and is kept; absent is not.
+    expect(measurementFields({ valueLabel: '' })).toEqual({ valueLabel: '', valueUnit: '', valueOptions: [] });
+    expect(measurementFields({})).toEqual({});
+    expect(measurementFields({ valueUnit: 'mL', valueOptions: ['0', '10'] })).toEqual({});
+  });
+
+  it('a proposal with no measurement inherits the order\'s, unchanged', () => {
+    const p = inheritMeasurement(noteEdit, residualCheck);
+    expect(p.valueLabel).toBe('Gastric residual');
+    expect(p.valueUnit).toBe('mL');
+    expect(p.valueOptions).toEqual(['0', '10', '20', '30']);
+    // Everything the nurse did enter is untouched.
+    expect(p.scheduledTimes).toEqual(['08:00', '12:00', '16:00']);
+  });
+
+  it('a note-side edit of a check-style order no longer reads as the measurement being removed', () => {
+    // Before: the bare proposal compared as valueLabel + valueUnit removed.
+    expect(regimenFieldsChanged(residualCheck, noteEdit)).toEqual(['scheduledTimes', 'valueLabel', 'valueUnit']);
+    const p = inheritMeasurement(noteEdit, residualCheck);
+    expect(regimenFieldsChanged(residualCheck, p)).toEqual(['scheduledTimes']);
+    // And the replacement order (or the amended one) still records the reading.
+    expect(regimenFields(p)).toMatchObject({ valueLabel: 'Gastric residual', valueUnit: 'mL' });
+    expect(measurementFields(p)).toEqual({ valueLabel: 'Gastric residual', valueUnit: 'mL', valueOptions: ['0', '10', '20', '30'] });
+  });
+
+  it('a documentation-only note edit of a check-style order stays a correction', () => {
+    const p = inheritMeasurement({ ...noteEdit, scheduledTimes: ['08:00', '12:00'] }, residualCheck);
+    expect(isCorrectionOnly(residualCheck, p)).toBe(true);
+  });
+
+  it('an explicit measurement on the proposal wins, including an explicit blank', () => {
+    // The standalone MAR form always sends the keys, so it can still rename
+    // the measurement or turn a check back into an ordinary dose row.
+    const renamed = inheritMeasurement({ ...noteEdit, valueLabel: 'Residual volume', valueUnit: 'cc', valueOptions: ['0', '5'] }, residualCheck);
+    expect(renamed).toMatchObject({ valueLabel: 'Residual volume', valueUnit: 'cc', valueOptions: ['0', '5'] });
+    const cleared = inheritMeasurement({ ...noteEdit, valueLabel: '', valueUnit: '', valueOptions: [] }, residualCheck);
+    expect(cleared.valueLabel).toBe('');
+    expect(regimenFieldsChanged(residualCheck, cleared)).toContain('valueLabel');
+  });
+
+  it('inheriting from an ordinary order yields an explicit "not a check"', () => {
+    const plain: { medName: string; dose: string; units: string; valueLabel?: string } = { medName: 'Keppra', dose: '10', units: 'mL' };
+    expect(inheritMeasurement({ medName: 'Keppra', dose: '15', units: 'mL' }, plain)).toMatchObject({
+      valueLabel: '',
+      valueUnit: '',
+      valueOptions: [],
+    });
+  });
+});
+
+describe('describeFrequency', () => {
+  it('reads a PRN order with a sub-frequency the way the order is written', () => {
+    expect(
+      describeFrequency({ frequencyLabel: 'As needed (PRN)', isPRN: true, prnFrequencyLabel: 'Every 4 hours (Q4H)' }),
+    ).toBe('Every 4 hours (Q4H) as needed (PRN)');
+    // Legacy PRN rows stored the bare label; the sub-frequency still wins.
+    expect(describeFrequency({ frequencyLabel: 'PRN', isPRN: true, prnFrequencyLabel: 'At bedtime' })).toBe(
+      'At bedtime as needed (PRN)',
+    );
+  });
+
+  it('falls back to the stored label without a sub-frequency', () => {
+    expect(describeFrequency({ frequencyLabel: 'As needed (PRN)', isPRN: true })).toBe('As needed (PRN)');
+    expect(describeFrequency({ frequencyLabel: 'Twice daily (BID)', isPRN: false })).toBe('Twice daily (BID)');
+    expect(describeFrequency({})).toBe('');
+  });
+
+  it('ignores a stray sub-frequency on a scheduled order', () => {
+    expect(
+      describeFrequency({ frequencyLabel: 'Twice daily (BID)', isPRN: false, prnFrequencyLabel: 'Every 4 hours (Q4H)' }),
+    ).toBe('Twice daily (BID)');
+  });
+});
+
 describe('describeRegimenChanges', () => {
   it('renders one, two, and three field names', () => {
     expect(describeRegimenChanges([])).toBe('');
@@ -599,5 +887,310 @@ describe('describeRegimenChanges', () => {
     expect(describeRegimenChanges(['dose', 'route', 'scheduledTimes'])).toBe(
       'dose, route and scheduled times',
     );
+  });
+});
+
+describe('classifyDoseAgainstShift', () => {
+  const day = { shiftEndsNextDay: false };
+  it('the real incident: 22:00 dose on an 08:45-14:45 shift is outside', () => {
+    expect(classifyDoseAgainstShift({ doseTime: '22:00', shiftStart: '08:45', shiftEnd: '14:45', ...day })).toBe('outside');
+  });
+  it('inside the window, and within the 60-minute grace at both edges', () => {
+    expect(classifyDoseAgainstShift({ doseTime: '09:00', shiftStart: '08:45', shiftEnd: '14:45', ...day })).toBe('inside');
+    expect(classifyDoseAgainstShift({ doseTime: '08:00', shiftStart: '08:45', shiftEnd: '14:45', ...day })).toBe('inside'); // 45m early
+    expect(classifyDoseAgainstShift({ doseTime: '15:30', shiftStart: '08:45', shiftEnd: '14:45', ...day })).toBe('inside'); // 45m late
+    expect(classifyDoseAgainstShift({ doseTime: '07:30', shiftStart: '08:45', shiftEnd: '14:45', ...day })).toBe('outside'); // 75m early
+    expect(classifyDoseAgainstShift({ doseTime: '16:00', shiftStart: '08:45', shiftEnd: '14:45', ...day })).toBe('outside'); // 75m late
+  });
+  it('overnight shifts have no service-day upper bound (matches the dose gate)', () => {
+    expect(classifyDoseAgainstShift({ doseTime: '22:00', shiftStart: '19:30', shiftEnd: '07:30', shiftEndsNextDay: true })).toBe('inside');
+    expect(classifyDoseAgainstShift({ doseTime: '23:59', shiftStart: '19:30', shiftEnd: '16:30', shiftEndsNextDay: false })).toBe('inside'); // end<start implies overnight
+    expect(classifyDoseAgainstShift({ doseTime: '17:00', shiftStart: '19:30', shiftEnd: '07:30', shiftEndsNextDay: true })).toBe('outside'); // 2.5h before start
+    expect(classifyDoseAgainstShift({ doseTime: '18:45', shiftStart: '19:30', shiftEnd: '07:30', shiftEndsNextDay: true })).toBe('inside'); // 45m before start
+  });
+  it('custom grace and unparseable times', () => {
+    expect(classifyDoseAgainstShift({ doseTime: '15:30', shiftStart: '08:45', shiftEnd: '14:45', ...day, graceMinutes: 30 })).toBe('outside');
+    expect(classifyDoseAgainstShift({ doseTime: '', shiftStart: '08:45', shiftEnd: '14:45', ...day })).toBe('unknown');
+    expect(classifyDoseAgainstShift({ doseTime: '22:00', shiftStart: '', shiftEnd: '14:45', ...day })).toBe('unknown');
+    expect(classifyDoseAgainstShift({ doseTime: '22:00', shiftStart: '08:45', shiftEnd: 'garbage', ...day })).toBe('unknown');
+  });
+  it('a dose before the shift starts is outside even without a parseable end (early-edge, Page 5 forward fill)', () => {
+    expect(classifyDoseAgainstShift({ doseTime: '07:00', shiftStart: '08:45', shiftEnd: '', ...day })).toBe('outside');
+    expect(classifyDoseAgainstShift({ doseTime: '08:00', shiftStart: '08:45', shiftEnd: '', ...day })).toBe('unknown'); // within grace but end unknown
+  });
+});
+
+describe('classifyDoseAgainstShiftSet', () => {
+  const dayW = { start: '08:45', end: '14:45', endsNextDay: false };
+  const overnightW = { start: '19:30', end: '07:30', endsNextDay: true };
+  const tailW = { start: '00:00', end: '06:00', endsNextDay: false }; // prev-day overnight tail
+  it('inside if ANY window contains the dose (split shift / overnight tail)', () => {
+    expect(classifyDoseAgainstShiftSet('22:00', [dayW, overnightW])).toBe('inside');
+    expect(classifyDoseAgainstShiftSet('05:30', [tailW])).toBe('inside');
+    expect(classifyDoseAgainstShiftSet('06:45', [tailW])).toBe('inside'); // within grace of the tail end
+  });
+  it('outside only when every window parsed and excluded it', () => {
+    expect(classifyDoseAgainstShiftSet('22:00', [dayW])).toBe('outside');
+    expect(classifyDoseAgainstShiftSet('08:00', [tailW])).toBe('outside');
+    // A dose AFTER an unparseable-end window's start can't be proven outside it: fails open.
+    expect(classifyDoseAgainstShiftSet('20:00', [dayW, { start: '19:30', end: 'garbage', endsNextDay: false }])).toBe('unknown');
+    // But BEFORE that window's start (minus grace) it is provably outside both.
+    expect(classifyDoseAgainstShiftSet('17:00', [dayW, { start: '19:30', end: 'garbage', endsNextDay: false }])).toBe('outside');
+  });
+  it('empty set is unknown (the caller owns no-note handling)', () => {
+    expect(classifyDoseAgainstShiftSet('22:00', [])).toBe('unknown');
+  });
+});
+
+describe('decideNurseDoseGate', () => {
+  const dayNote = { start: '08:45', end: '14:45', endsNextDay: false };
+  const tonightNote = { start: '22:00', end: '06:00', endsNextDay: true };
+  const lastNightTail = { start: '00:00', end: '06:00', endsNextDay: false, prevDayTail: true };
+
+  it('the incident: same-date day note excludes a 22:00 dose -> block', () => {
+    expect(decideNurseDoseGate('22:00', [dayNote])).toBe('block');
+    expect(decideNurseDoseGate('22:00', [dayNote, lastNightTail])).toBe('block');
+  });
+
+  it('consecutive nights WITH tonight\'s note on file -> allow', () => {
+    expect(decideNurseDoseGate('22:00', [tonightNote, lastNightTail])).toBe('allow');
+  });
+
+  it("consecutive nights, tonight's note NOT yet submitted (tail-only) -> attest, never block", () => {
+    expect(decideNurseDoseGate('22:00', [lastNightTail])).toBe('attest');
+  });
+
+  it("tail covers early-morning back-charting -> allow without attestation", () => {
+    expect(decideNurseDoseGate('05:30', [lastNightTail])).toBe('allow');
+  });
+
+  it('no windows at all -> attest', () => {
+    expect(decideNurseDoseGate('22:00', [])).toBe('attest');
+  });
+
+  it('same-date note with unparseable times fails open -> allow', () => {
+    expect(decideNurseDoseGate('22:00', [{ start: '08:45', end: 'garbage', endsNextDay: false }])).toBe('allow');
+  });
+});
+
+describe('isSameDayAmendable', () => {
+  const today = '2026-09-14';
+
+  it('amends in place when the order was entered today and nothing was charted', () => {
+    expect(isSameDayAmendable({ createdDayISO: '2026-09-14', today, hasDoses: false })).toBe(true);
+  });
+
+  it('never amends once a dose exists, even on the same day', () => {
+    // The dose was given under the entered terms; those terms are now part of its record.
+    expect(isSameDayAmendable({ createdDayISO: '2026-09-14', today, hasDoses: true })).toBe(false);
+  });
+
+  it('falls back to discontinue-and-replace for anything entered before today', () => {
+    expect(isSameDayAmendable({ createdDayISO: '2026-09-13', today, hasDoses: false })).toBe(false);
+    expect(isSameDayAmendable({ createdDayISO: '2026-07-24', today, hasDoses: false })).toBe(false);
+  });
+
+  it('treats an unknown or malformed creation day as not amendable', () => {
+    expect(isSameDayAmendable({ createdDayISO: null, today, hasDoses: false })).toBe(false);
+    expect(isSameDayAmendable({ createdDayISO: '09/14/2026', today, hasDoses: false })).toBe(false);
+  });
+});
+
+describe('regimenFields', () => {
+  it('snapshots exactly the regimen half, normalizing times and blanking them for PRN', () => {
+    expect(
+      regimenFields({
+        medName: 'Isosource 1.5 Cal',
+        dose: '200',
+        units: 'mL',
+        route: 'PO (by mouth)',
+        frequencyLabel: 'Every 5 hours',
+        scheduledTimes: ['13:00', '08:00', '08:00', ''],
+        isPRN: false,
+        valueLabel: '',
+        valueUnit: '',
+      }),
+    ).toEqual({
+      medName: 'Isosource 1.5 Cal',
+      dose: '200',
+      units: 'mL',
+      route: 'PO (by mouth)',
+      frequencyLabel: 'Every 5 hours',
+      scheduledTimes: ['08:00', '13:00'],
+      timeLabels: {},
+      isPRN: false,
+      prnFrequencyLabel: '',
+      valueLabel: '',
+      valueUnit: '',
+      slidingScale: [],
+    });
+    expect(regimenFields({ isPRN: true, scheduledTimes: ['08:00'] }).scheduledTimes).toEqual([]);
+  });
+
+  it('carries the PRN sub-frequency, and blanks it on a scheduled order', () => {
+    const prn = { medName: 'Acetaminophen', isPRN: true, frequencyLabel: 'As needed (PRN)', prnFrequencyLabel: ' Every 6 hours (Q6H) ' };
+    expect(regimenFields(prn).prnFrequencyLabel).toBe('Every 6 hours (Q6H)');
+    expect(regimenFields({ ...prn, prnFrequencyLabel: undefined }).prnFrequencyLabel).toBe('');
+    expect(regimenFields({ ...prn, isPRN: false }).prnFrequencyLabel).toBe('');
+  });
+
+  it('a same-day amendment of only the PRN interval writes the new interval and remembers the old', () => {
+    // What applyChangeInBatch does on the amendment path: the order is
+    // rewritten with regimenFields(proposal), and previousValues keeps
+    // regimenFields(order as it stood).
+    const order = { medName: 'Acetaminophen', dose: '500', units: 'mg', route: 'PO (by mouth)', frequencyLabel: 'As needed (PRN)', isPRN: true, prnFrequencyLabel: 'Every 4 hours (Q4H)' };
+    const proposal = { ...order, prnFrequencyLabel: 'Every 6 hours (Q6H)' };
+    expect(regimenFieldsChanged(order, proposal)).toEqual(['prnFrequencyLabel']);
+    expect(regimenFields(proposal).prnFrequencyLabel).toBe('Every 6 hours (Q6H)');
+    expect(regimenFields(order).prnFrequencyLabel).toBe('Every 4 hours (Q4H)');
+    // Once written, the amended order no longer differs from the proposal.
+    expect(regimenFieldsChanged({ ...order, ...regimenFields(proposal) }, proposal)).toEqual([]);
+  });
+
+  it('snapshots every field the comparison can report, so an amendment never records a change it did not write', () => {
+    const snapshot = regimenFields({});
+    for (const field of REGIMEN_FIELDS) expect(snapshot).toHaveProperty(field);
+  });
+
+  it('carries meal anchors and the sliding scale, and drops anchors for times not on the schedule', () => {
+    const f = regimenFields({
+      medName: 'Insulin lispro',
+      scheduledTimes: ['07:30', '17:00'],
+      timeLabels: { '07:30': 'Before Breakfast', '12:00': 'Before Lunch', '17:00': 'Nonsense' },
+      slidingScale: [
+        { min: 0, max: 150, units: 0, instruction: '' },
+        { min: 151, max: null, units: 2, instruction: '' },
+      ],
+    });
+    expect(f.timeLabels).toEqual({ '07:30': 'Before Breakfast' });
+    expect(f.slidingScale).toHaveLength(2);
+    expect(regimenFields({ isPRN: true, scheduledTimes: ['07:30'], timeLabels: { '07:30': 'Before Breakfast' } }).timeLabels).toEqual({});
+  });
+
+  it('round-trips with regimenFieldsChanged: a snapshot of an order changes nothing', () => {
+    const order = { medName: 'Keppra', dose: '10', units: 'mL', route: 'G-tube', frequencyLabel: 'BID', scheduledTimes: ['08:00', '20:00'], isPRN: false };
+    expect(regimenFieldsChanged(order, regimenFields(order))).toEqual([]);
+  });
+});
+
+describe('meal-anchored scheduled times', () => {
+  const order = { timeLabels: { '07:30': 'Before Breakfast', '21:00': 'At Bedtime' } };
+
+  it('reads a slot as the instruction with its clock time', () => {
+    expect(slotAnchor(order, '07:30')).toBe('Before Breakfast');
+    expect(describeSlot(order, '07:30')).toBe('Before Breakfast (07:30)');
+    expect(describeSlot(order, '12:00')).toBe('12:00');
+    expect(describeSlot({}, '08:00')).toBe('08:00');
+    expect(describeSlot(null, 'PRN')).toBe('PRN');
+  });
+
+  it('ignores a stored label that is not a known anchor', () => {
+    expect(slotAnchor({ timeLabels: { '08:00': 'Whenever' } }, '08:00')).toBe('');
+  });
+
+  it('keeps only known anchors for times on the schedule, and none for PRN', () => {
+    expect(
+      cleanTimeLabels({ '07:30': 'Before Breakfast', '09:00': 'Before Lunch', '17:00': 'junk' }, ['07:30', '17:00'], false),
+    ).toEqual({ '07:30': 'Before Breakfast' });
+    expect(cleanTimeLabels({ '07:30': 'Before Breakfast' }, ['07:30'], true)).toEqual({});
+    expect(cleanTimeLabels(null, ['07:30'], false)).toEqual({});
+    expect(cleanTimeLabels(['Before Breakfast'], ['07:30'], false)).toEqual({});
+  });
+
+  it('builds the label map from the form rows, skipping blank rows', () => {
+    expect(timeLabelsFromRows(['07:30', '', '20:00'], ['Before Breakfast', 'Before Lunch', ''])).toEqual({
+      '07:30': 'Before Breakfast',
+    });
+  });
+
+  it('suggests a schedule only for frequencies that imply one', () => {
+    expect(suggestedScheduleFor('Before meals (AC)')).toEqual({
+      times: ['07:30', '11:30', '17:00'],
+      anchors: ['Before Breakfast', 'Before Lunch', 'Before Dinner'],
+    });
+    expect(suggestedScheduleFor('Before meals and at bedtime')?.anchors).toEqual([
+      'Before Breakfast',
+      'Before Lunch',
+      'Before Dinner',
+      'At Bedtime',
+    ]);
+    expect(suggestedScheduleFor('At bedtime')).toEqual({ times: ['21:00'], anchors: ['At Bedtime'] });
+    expect(suggestedScheduleFor('Twice daily (BID)')).toBeNull();
+    expect(anchorDefaultTime('')).toBe('');
+  });
+
+  it('only an untouched schedule may be replaced by a suggestion', () => {
+    expect(isPristineSchedule(['08:00'], [''])).toBe(true);
+    expect(isPristineSchedule([''], [])).toBe(true);
+    expect(isPristineSchedule(['09:00'], [''])).toBe(false);
+    expect(isPristineSchedule(['08:00', '20:00'], ['', ''])).toBe(false);
+    expect(isPristineSchedule(['08:00'], ['Before Breakfast'])).toBe(false);
+  });
+
+  it('tying a time to a meal (or untying it) is a schedule change', () => {
+    const plain = { medName: 'Insulin', scheduledTimes: ['07:30'] };
+    const anchored = { ...plain, timeLabels: { '07:30': 'Before Breakfast' } };
+    expect(regimenFieldsChanged(plain, anchored)).toEqual(['scheduledTimes']);
+    expect(regimenFieldsChanged(anchored, plain)).toEqual(['scheduledTimes']);
+    expect(regimenFieldsChanged(anchored, { ...anchored })).toEqual([]);
+    // A label for a time that is not on the schedule is storage noise.
+    expect(regimenFieldsChanged(plain, { ...plain, timeLabels: { '12:00': 'Before Lunch' } })).toEqual([]);
+  });
+});
+
+describe('sliding scale on the regimen and the administration record', () => {
+  const scale = [
+    { min: 0, max: 150, units: 0, instruction: '' },
+    { min: 151, max: 200, units: 2, instruction: '' },
+    { min: 201, max: null, units: 4, instruction: 'Call the physician' },
+  ];
+  const order = { medName: 'Insulin lispro', dose: 'Per sliding scale', scheduledTimes: ['07:30'], slidingScale: scale };
+
+  it('editing the scale is a regimen change; re-saving it is not', () => {
+    expect(regimenFieldsChanged(order, { ...order, slidingScale: scale.map((r) => ({ ...r })) })).toEqual([]);
+    const moved = scale.map((r) => (r.min === 151 ? { ...r, units: 3 } : r));
+    expect(regimenFieldsChanged(order, { ...order, slidingScale: moved })).toEqual(['slidingScale']);
+    expect(regimenFieldsChanged(order, { ...order, slidingScale: [] })).toEqual(['slidingScale']);
+    expect(describeRegimenChanges(['slidingScale'])).toBe('sliding scale');
+  });
+
+  it('snapshots the reading, what the scale called for, and the units given', () => {
+    const f = buildMarAdminFields(
+      input({
+        dose: '4',
+        units: 'units',
+        glucoseReading: ' 232 ',
+        scaleDose: '4',
+        scaleRange: 'Above 200 mg/dL: 4 units. Call the physician',
+        scaleDeviationReason: 'should be dropped: the amount matches the scale',
+      }),
+      meta,
+    );
+    expect(f.glucoseReading).toBe('232');
+    expect(f.scaleDose).toBe('4');
+    expect(f.scaleRangeSnapshot).toBe('Above 200 mg/dL: 4 units. Call the physician');
+    expect(f.doseSnapshot).toBe('4');
+    expect(f.scaleDeviationReason).toBe('');
+  });
+
+  it('keeps the deviation reason only when a given amount differs from the scale', () => {
+    const differs = buildMarAdminFields(
+      input({ dose: '6', glucoseReading: '232', scaleDose: '4', scaleDeviationReason: ' one-time phone order ' }),
+      meta,
+    );
+    expect(differs.scaleDeviationReason).toBe('one-time phone order');
+    const held = buildMarAdminFields(
+      input({ status: 'held', reason: 'NPO', dose: 'Per sliding scale', glucoseReading: '232', scaleDose: '4', scaleDeviationReason: 'x' }),
+      meta,
+    );
+    expect(held.glucoseReading).toBe('232');
+    expect(held.scaleDeviationReason).toBe('');
+  });
+
+  it('an ordinary dose carries no sliding-scale fields', () => {
+    const f = buildMarAdminFields(input({ scaleDose: '4', scaleRange: 'x' }), meta);
+    expect(f.glucoseReading).toBe('');
+    expect(f.scaleDose).toBe('');
+    expect(f.scaleRangeSnapshot).toBe('');
   });
 });

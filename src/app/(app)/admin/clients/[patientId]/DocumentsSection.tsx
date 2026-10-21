@@ -1,18 +1,38 @@
 'use client';
+import BulkDocumentUpload from '@/components/BulkDocumentUpload';
 
-import { useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Archive, ArchiveRestore, ExternalLink, FileText, FileUp, Image as ImageIcon } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
+import Link from 'next/link';
+import { Archive, ArchiveRestore, ArrowRightLeft, ExternalLink, FileText, FileUp, FilePenLine, Image as ImageIcon, Pencil, RefreshCw, Replace, Trash2 } from 'lucide-react';
+import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
+import { withSelectChevron } from '@/lib/selectChevron';
+import DocumentPeriodFields from '@/components/DocumentPeriodFields';
+import { draftFromPeriod, formatDocumentPeriod, resolvePeriodDraft, type DocumentPeriodDraft } from '@/lib/documentPeriod';
 import {
   ALLOWED_DOC_TYPES,
+  CORE_DOC_CATEGORIES,
   DOC_CATEGORIES,
+  DOC_CATEGORY_GROUPS,
+  deletePatientDocument,
+  fileNoteDocument,
   getDocumentBlob,
+  movePatientDocument,
+  refreshServicePlanDocumentPdf,
   renderDocumentInWindow,
+  replaceDocumentFile,
   setDocumentArchived,
+  syncNoteDocuments,
+  updateDocumentDetails,
   uploadPatientDocument,
   type DocCategory,
   type DocUploader,
   type PatientDocument,
 } from '@/lib/patientDocuments';
+import { browseDocuments, DEFAULT_DOCUMENT_FILTERS, type DocumentFilters } from '@/lib/documentBrowse';
+import DocumentBrowseToolbar from './DocumentBrowseToolbar';
+import { getPatients, type Patient } from '@/lib/patients';
+import { isNoteFiledDocument, noteAmendHref } from '@/lib/noteDocLinks';
 
 function todayISO(): string {
   const d = new Date();
@@ -34,7 +54,9 @@ interface Props {
   patientId: string;
   documents: PatientDocument[];
   canUpload: boolean;
-  isStaff: boolean; // archive/restore rights + archived visibility
+  isStaff: boolean; // archive/restore/edit/replace rights + archived visibility
+  /** Hard delete (privileged route). Never while previewing another user's view. */
+  isAdmin: boolean;
   uploader: DocUploader;
   onChanged: () => void; // re-fetch after upload/archive
   onToast: (msg: string) => void;
@@ -43,37 +65,58 @@ interface Props {
 /**
  * The dashboard's Documents section (phase 3): categorized uploads (plan of
  * care, initial assessment, supervisory visits, physician orders, scans) with
- * view + staff-only archive. Files are immutable and never hard-deleted; an
- * archived document just leaves the default list (staff can show it again).
+ * view, staff edit / replace / archive, and admin delete. RN oversight visit
+ * notes file themselves here (autoFiled + sourceNoteId); Sync backfills any
+ * that were submitted before that existed or whose filing failed. A filed
+ * note's PDF is a snapshot: its card cannot be edited here (the note is
+ * amended instead, which re-files it), and staff can re-render the stored
+ * PDF one at a time (Refresh PDF) or for the whole client (Refresh Visit
+ * PDFs) after a renderer fix.
  */
 export default function DocumentsSection({
   patientId,
   documents,
   canUpload,
   isStaff,
+  isAdmin,
   uploader,
   onChanged,
   onToast,
 }: Props) {
-  const [filter, setFilter] = useState<string>('All');
-  const [showArchived, setShowArchived] = useState(false);
+  const [filters, setFilters] = useState<DocumentFilters>(DEFAULT_DOCUMENT_FILTERS);
+  const toggleCategory = (category: string) => setFilters((current) => ({
+    ...current, categories: current.categories.includes(category)
+      ? current.categories.filter((c) => c !== category) : [...current.categories, category],
+  }));
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [editing, setEditing] = useState<PatientDocument | null>(null);
+  const [replacing, setReplacing] = useState<PatientDocument | null>(null);
+  const [moving, setMoving] = useState<PatientDocument | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState<'sync' | 'refresh' | null>(null);
 
-  const visible = useMemo(() => {
-    return documents
-      .filter((d) => (showArchived ? true : !d.archived))
-      .filter((d) => filter === 'All' || d.category === filter);
-  }, [documents, filter, showArchived]);
+  const visible = useMemo(() => browseDocuments(documents, filters, isStaff), [documents, filters, isStaff]);
+  const accessible = useMemo(() => documents.filter((d) => isStaff || !d.archived), [documents, isStaff]);
 
   const counts = useMemo(() => {
     const map = new Map<string, number>();
-    for (const d of documents) {
-      if (d.archived) continue;
+    for (const d of accessible) {
+      if (filters.status === 'active' && d.archived) continue;
+      if (filters.status === 'archived' && !d.archived) continue;
       map.set(d.category, (map.get(d.category) || 0) + 1);
     }
     return map;
-  }, [documents]);
+  }, [accessible, filters.status]);
+
+  // Filter chips: the compliance checklist categories always, plus any other
+  // category this client has documents in (catalog order, unknown legacy
+  // names last), so the row stays readable now that the catalog is long.
+  const chipCategories = useMemo(() => {
+    const present = new Set(accessible.map((d) => d.category));
+    const ordered = DOC_CATEGORIES.filter((c) => CORE_DOC_CATEGORIES.includes(c) || present.has(c));
+    const legacy = Array.from(present).filter((c) => !(DOC_CATEGORIES as readonly string[]).includes(c)).sort();
+    return [...ordered, ...legacy];
+  }, [accessible]);
 
   const view = async (d: PatientDocument) => {
     // Open the tab SYNCHRONOUSLY inside the click gesture — after the awaited
@@ -113,37 +156,133 @@ export default function DocumentsSection({
     }
   };
 
+  const remove = async (d: PatientDocument) => {
+    if (!d.id || !isAdmin) return;
+    const what = d.servicePlanReviewId
+      ? `Delete "${d.title}"?\n\nThis is the PDF filed for a service plan review. The review itself stays on the Service plan tab, where its PDF can still be opened, but the readiness clock counts from the newest Service Plan document. The file and its entry are removed (a snapshot is kept in the deletion audit).`
+      : d.servicePlanId
+      ? `Delete "${d.title}"?\n\nThis is the PDF filed when the service plan was signed. The signed plan itself stays on the Service plan tab, where its PDF can still be opened. The file and its entry are removed (a snapshot is kept in the deletion audit).`
+      : d.autoFiled
+      ? `Delete "${d.title}"?\n\nThis is the PDF filed from an oversight note or supervisory visit. The note itself stays; Sync would file it again. The file and its entry are removed (a snapshot is kept in the deletion audit).`
+      : `Delete "${d.title}"?\n\nThe file and its entry are permanently removed from this client's documents (a snapshot is kept in the deletion audit). This cannot be undone.`;
+    if (!window.confirm(what)) return;
+    setBusyId(d.id);
+    try {
+      await deletePatientDocument(d.id);
+      onToast(`Deleted "${d.title}".`);
+      onChanged();
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : 'Could not delete the document.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const refreshPdf = async (d: PatientDocument) => {
+    if (!d.id || (!d.sourceNoteId && !d.servicePlanId)) return;
+    setBusyId(d.id);
+    try {
+      if (d.sourceNoteId) {
+        await fileNoteDocument(d.sourceNoteId);
+        onToast(`Re-rendered "${d.title}" from the note.`);
+      } else {
+        await refreshServicePlanDocumentPdf(d.id);
+        onToast(`Re-rendered "${d.title}" with the current layout.`);
+      }
+      onChanged();
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : 'Could not refresh the PDF.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const sync = async (refresh: boolean) => {
+    if (
+      refresh &&
+      !window.confirm(
+        'Re-render every oversight and supervisory visit PDF for this client from the current notes?\n\nEach stored PDF is replaced in place with a fresh rendering of its note. Nothing about the notes changes.',
+      )
+    ) {
+      return;
+    }
+    setSyncing(refresh ? 'refresh' : 'sync');
+    try {
+      const r = await syncNoteDocuments(patientId, { refresh });
+      const done = r.filed + r.refreshed;
+      onToast(
+        done > 0
+          ? [
+              r.filed ? `Filed ${r.filed} visit ${r.filed === 1 ? 'note' : 'notes'}` : '',
+              r.refreshed ? `Re-rendered ${r.refreshed} visit ${r.refreshed === 1 ? 'PDF' : 'PDFs'}` : '',
+            ]
+              .filter(Boolean)
+              .join(', ') +
+            (r.skipped ? ` (${r.skipped} already on file)` : '') +
+            (r.errors.length ? `. ${r.errors.length} failed: ${r.errors[0]}` : '.')
+          : r.errors.length
+            ? `Nothing filed: ${r.errors[0]}`
+            : r.skipped
+              ? `All ${r.skipped} visit ${r.skipped === 1 ? 'note is' : 'notes are'} already on file.`
+              : 'No oversight or supervisory visit notes to file for this client.',
+      );
+      if (done > 0) onChanged();
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : 'Could not sync the notes.');
+    } finally {
+      setSyncing(null);
+    }
+  };
+
   return (
     <div>
       <div style={toolbarStyle}>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flex: 1 }}>
-          {['All', ...DOC_CATEGORIES].map((c) => (
-            <button key={c} type="button" onClick={() => setFilter(c)} style={filter === c ? chipActiveStyle : chipStyle}>
+          {['All', ...chipCategories].map((c) => (
+            <button key={c} type="button" aria-pressed={c === 'All' ? filters.categories.length === 0 : filters.categories.includes(c)} onClick={() => c === 'All' ? setFilters((f) => ({ ...f, categories: [] })) : toggleCategory(c)} style={(c === 'All' ? filters.categories.length === 0 : filters.categories.includes(c)) ? chipActiveStyle : chipStyle}>
               {c}
               {c !== 'All' && counts.get(c) ? ` (${counts.get(c)})` : ''}
             </button>
           ))}
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
-          {isStaff && documents.some((d) => d.archived) && (
-            <label style={archToggleStyle}>
-              <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
-              Show archived
-            </label>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {isStaff && (
+            <button
+              type="button"
+              onClick={() => sync(false)}
+              disabled={syncing !== null}
+              className={btn}
+              title="File any RN oversight visit notes and home supervisory visits for this client that are not in Documents yet"
+            >
+              <RefreshCw size={14} /> {syncing === 'sync' ? 'Syncing…' : 'Sync Visit Notes'}
+            </button>
+          )}
+          {isStaff && documents.some(isNoteFiledDocument) && (
+            <button
+              type="button"
+              onClick={() => sync(true)}
+              disabled={syncing !== null}
+              className={btn}
+              title="Re-render every oversight and supervisory visit PDF on file for this client from the current notes (after a form or renderer fix)"
+            >
+              <RefreshCw size={14} /> {syncing === 'refresh' ? 'Re-rendering…' : 'Refresh Visit PDFs'}
+            </button>
           )}
           {canUpload && (
-            <button type="button" onClick={() => setUploadOpen(true)} style={uploadBtnStyle}>
+            <button type="button" onClick={() => setUploadOpen(true)} className={btnPrimary}>
               <FileUp size={15} /> Upload
             </button>
           )}
         </div>
       </div>
 
+      <DocumentBrowseToolbar filters={filters} onChange={setFilters} isStaff={isStaff} shown={visible.length} total={accessible.length} />
+
       {visible.length === 0 ? (
         <div style={emptyStyle}>
-          {documents.filter((d) => !d.archived).length === 0
+          {accessible.length === 0
             ? 'No documents on file yet. Upload the plan of care, initial assessment, and supervisory visit forms so they travel with the record.'
-            : 'No documents match this filter.'}
+            : 'No documents match your filters. Try changing them or choose Clear filters.'}
         </div>
       ) : (
         <ul style={listStyle}>
@@ -152,33 +291,104 @@ export default function DocumentsSection({
               <span style={docIconStyle}>
                 {d.contentType.startsWith('image/') ? <ImageIcon size={15} /> : <FileText size={15} />}
               </span>
-              <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ flex: '1 1 220px', minWidth: 0, overflowWrap: 'anywhere' }}>
                 <div style={docTitleStyle}>
                   {d.title}
+                  {d.autoFiled && (
+                    <span style={autoChipStyle} title={d.servicePlanReviewId ? 'Filed automatically when the service plan was reviewed' : d.servicePlanId ? 'Filed automatically when the service plan was signed' : 'Filed automatically from the submitted note; re-filed when the note is amended'}>
+                      {d.servicePlanReviewId ? 'From Plan Review' : d.servicePlanId ? 'From Service Plan' : 'From Note'}
+                    </span>
+                  )}
                   {d.archived && <span style={archivedChipStyle}>Archived</span>}
                 </div>
                 <div style={docMetaStyle}>
                   <span style={categoryChipStyle}>{d.category}</span>
                   {d.docDate ? ` ${fmtDate(d.docDate)}` : ''}
+                  {formatDocumentPeriod(d) && <>{' '}<span style={periodChipStyle} title="The period this document covers">Covers {formatDocumentPeriod(d)}</span></>}
                   {` · ${ALLOWED_DOC_TYPES[d.contentType] || 'File'}`}
                   {d.size ? ` · ${fmtSize(d.size)}` : ''}
-                  {d.uploadedByName ? ` · uploaded by ${d.uploadedByName}` : ''}
+                  {d.uploadedByName ? ` · ${d.autoFiled ? 'documented' : 'uploaded'} by ${d.uploadedByName}` : ''}
+                  {d.replacedByName ? ` · file replaced by ${d.replacedByName}` : ''}
+                  {d.detailsEditedByName ? ` · details edited by ${d.detailsEditedByName}` : ''}
+                  {d.movedByName ? ` · moved here by ${d.movedByName}` : ''}
+                  {d.sourceNoteId && (
+                    <>
+                      {' · '}
+                      <Link href={`/admin/submissions/${d.sourceNoteId}`} style={{ color: NAVY, fontWeight: 600 }}>
+                        Open Note
+                      </Link>
+                    </>
+                  )}
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                <button type="button" onClick={() => view(d)} style={actionBtnStyle} title="Open in a new tab">
+              <div style={{ display: 'flex', gap: 6, maxWidth: '100%', flexWrap: 'wrap', justifyContent: 'flex-end', marginLeft: 'auto' }}>
+                <button type="button" onClick={() => view(d)} className={`${btn} ${btnSm}`} title="Open in a new tab">
                   <ExternalLink size={14} /> View
                 </button>
                 {isStaff && (
                   <button
                     type="button"
+                    onClick={() => setEditing(d)}
+                    disabled={busyId === d.id}
+                    className={`${btn} ${btnSm}`}
+                    title={
+                      isNoteFiledDocument(d)
+                        ? 'Edit how this entry is listed (title, category, date). The note itself does not change; use Amend Note for that. Your edits are kept when the PDF is refreshed.'
+                        : 'Edit the title, category, or date'
+                    }
+                  >
+                    <Pencil size={14} /> Edit
+                  </button>
+                )}
+                {isNoteFiledDocument(d) && (
+                  <Link
+                    href={noteAmendHref(d) || '#'}
+                    className={`${btn} ${btnSm}`}
+                    title="Open the note in amend mode. The date, wording and signature live on the note; saving the amendment re-files this PDF."
+                  >
+                    <FilePenLine size={14} /> Amend Note
+                  </Link>
+                )}
+                {isStaff && (isNoteFiledDocument(d) || !!d.servicePlanId) && (
+                  <button
+                    type="button"
+                    onClick={() => refreshPdf(d)}
+                    disabled={busyId === d.id}
+                    className={`${btn} ${btnSm}`}
+                    title={
+                      d.servicePlanId
+                        ? 'Re-render this PDF with the current layout. The wording, dates and signatures stay as signed.'
+                        : 'Re-render this PDF from the note as it stands now (the stored copy is a snapshot taken when the note was filed)'
+                    }
+                  >
+                    <RefreshCw size={14} /> {busyId === d.id ? 'Re-rendering…' : 'Refresh PDF'}
+                  </button>
+                )}
+                {isStaff && !d.autoFiled && (
+                  <button type="button" onClick={() => setReplacing(d)} disabled={busyId === d.id} className={`${btn} ${btnSm}`} title="Upload a different file in place of this one (the old file is removed)">
+                    <Replace size={14} /> Replace
+                  </button>
+                )}
+                {isStaff && (
+                  <button
+                    type="button"
                     onClick={() => toggleArchived(d)}
                     disabled={busyId === d.id}
-                    style={actionBtnStyle}
+                    className={`${btn} ${btnSm}`}
                     title={d.archived ? 'Restore to the active list' : 'Archive (the file is kept)'}
                   >
                     {d.archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
                     {d.archived ? ' Restore' : ' Archive'}
+                  </button>
+                )}
+                {isAdmin && !d.autoFiled && (
+                  <button type="button" onClick={() => setMoving(d)} disabled={busyId === d.id} className={`${btn} ${btnSm}`} title="Move this document to another client's chart (uploaded to the wrong client)">
+                    <ArrowRightLeft size={14} /> Move
+                  </button>
+                )}
+                {isAdmin && (
+                  <button type="button" onClick={() => remove(d)} disabled={busyId === d.id} className={`${btnDanger} ${btnSm}`} title="Permanently delete this document (admin only)">
+                    <Trash2 size={14} /> Delete
                   </button>
                 )}
               </div>
@@ -198,86 +408,297 @@ export default function DocumentsSection({
           }}
         />
       )}
+      {editing && (
+        <EditDocumentModal
+          document={editing}
+          onClose={() => setEditing(null)}
+          onSaved={(title) => {
+            onToast(`Updated "${title}".`);
+            onChanged();
+          }}
+        />
+      )}
+      {moving && (
+        <MoveDocumentModal
+          document={moving}
+          currentPatientId={patientId}
+          onClose={() => setMoving(null)}
+          onMoved={(title, toName) => {
+            onToast(`Moved "${title}" to ${toName}.`);
+            onChanged();
+          }}
+        />
+      )}
+      {replacing && (
+        <ReplaceDocumentModal
+          document={replacing}
+          actor={{ uid: uploader.uid, name: uploader.name }}
+          onClose={() => setReplacing(null)}
+          onReplaced={(title) => {
+            onToast(`Replaced the file behind "${title}".`);
+            onChanged();
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function UploadDocumentModal({
-  patientId,
-  uploader,
+/** The grouped category list for every category <select> on this tab. */
+function CategoryOptions() {
+  return (
+    <>
+      {DOC_CATEGORY_GROUPS.map((g) => (
+        <optgroup key={g.label} label={g.label}>
+          {g.categories.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </optgroup>
+      ))}
+    </>
+  );
+}
+
+type EditField = 'title' | 'category' | 'docDate' | 'period';
+const EDIT_FIELD_ORDER: readonly EditField[] = ['title', 'category', 'docDate', 'period'];
+const editFieldId = (k: EditField) => `doc-edit-${k}`;
+
+/** Staff relabel: title, category, date, period covered. The file is untouched. */
+function EditDocumentModal({
+  document: d,
   onClose,
-  onUploaded,
+  onSaved,
 }: {
-  patientId: string;
-  uploader: DocUploader;
+  document: PatientDocument;
   onClose: () => void;
-  onUploaded: (title: string) => void;
+  onSaved: (title: string) => void;
+}) {
+  const [title, setTitle] = useState(d.title);
+  const [category, setCategory] = useState<DocCategory | ''>((DOC_CATEGORIES as readonly string[]).includes(d.category) ? (d.category as DocCategory) : '');
+  const [docDate, setDocDate] = useState(d.docDate || '');
+  const [period, setPeriod] = useState<DocumentPeriodDraft>(() => draftFromPeriod(d));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<EditField, string>>>({});
+
+  const save = async () => {
+    if (saving || !d.id) return;
+    const errs: Partial<Record<EditField, string>> = {};
+    if (!title.trim()) errs.title = 'Enter a title.';
+    if (!category) errs.category = 'Choose a document category.';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(docDate)) errs.docDate = 'Enter the date on the document.';
+    const covers = resolvePeriodDraft(period);
+    if (!covers.ok) errs.period = covers.error;
+    if (!applyFieldErrors(errs, EDIT_FIELD_ORDER, setFieldErrors, editFieldId)) return;
+    if (!category || !covers.ok) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await updateDocumentDetails(d.id, { title, category, docDate, periodStart: covers.period?.periodStart ?? '', periodEnd: covers.period?.periodEnd ?? '' });
+      onSaved(title.trim());
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the changes.');
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={backdropStyle} role="dialog" aria-modal="true" aria-label="Edit document details">
+      <div style={sheetStyle}>
+        <div style={sheetTitleStyle}>Edit Document Details</div>
+        <div style={{ ...hintStyle, marginBottom: 12 }}>File: {d.fileName}</div>
+        {isNoteFiledDocument(d) && (
+          <div style={{ ...hintStyle, marginBottom: 12, background: '#f6f9fc', border: '1px solid #dbe3ec', borderRadius: 6, padding: '8px 10px' }}>
+            This changes how the entry is listed here. The visit note keeps its own date and wording (use Amend Note to change those), and refreshing the PDF keeps the details you set here.
+          </div>
+        )}
+        <label style={fieldStyle} id={editFieldId('title')}>
+          <span style={fieldLabelStyle}>Title *</span>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => { setTitle(e.target.value); if (fieldErrors.title) setFieldErrors((f) => ({ ...f, title: undefined })); }}
+            style={{ ...inputStyle, ...(fieldErrors.title ? FIELD_ERROR_STYLE : null) }}
+            aria-invalid={!!fieldErrors.title}
+          />
+          <FieldError message={fieldErrors.title} />
+        </label>
+        <label style={fieldStyle} id={editFieldId('category')}>
+          <span style={fieldLabelStyle}>Category *</span>
+          <select
+            value={category}
+            onChange={(e) => { setCategory(e.target.value as DocCategory); if (fieldErrors.category) setFieldErrors((f) => ({ ...f, category: undefined })); }}
+            style={{ ...selectStyle, ...(fieldErrors.category ? FIELD_ERROR_STYLE : null) }}
+            aria-invalid={!!fieldErrors.category}
+          >
+            <option value="">Select a Category…</option>
+            <CategoryOptions />
+          </select>
+          <FieldError message={fieldErrors.category} />
+        </label>
+        <label style={fieldStyle} id={editFieldId('docDate')}>
+          <span style={fieldLabelStyle}>Date on the document *</span>
+          <input
+            type="date"
+            value={docDate}
+            onChange={(e) => { setDocDate(e.target.value); if (fieldErrors.docDate) setFieldErrors((f) => ({ ...f, docDate: undefined })); }}
+            style={{ ...inputStyle, ...(fieldErrors.docDate ? FIELD_ERROR_STYLE : null) }}
+            aria-invalid={!!fieldErrors.docDate}
+          />
+          <FieldError message={fieldErrors.docDate} />
+        </label>
+        <div style={{ ...fieldStyle, ...(fieldErrors.period ? FIELD_ERROR_WRAP_STYLE : null) }} id={editFieldId('period')}>
+          <DocumentPeriodFields draft={period} onChange={(next) => { setPeriod(next); if (fieldErrors.period) setFieldErrors((f) => ({ ...f, period: undefined })); }} labelStyle={periodLabelStyle} inputStyle={inputStyle} selectStyle={selectStyle} />
+          <span style={hintStyle}>What the document applies to: the month of an eligibility letter, the dates of an authorization, a plan&rsquo;s certification period.</span>
+          <FieldError message={fieldErrors.period} />
+        </div>
+        {error && <div style={errBoxStyle}>{error}</div>}
+        <div style={actionsStyle}>
+          <button type="button" className={btn} onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="button" className={btnPrimary} onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Admin: move a document uploaded to the wrong client. Title/date/category can be corrected on the way. */
+function MoveDocumentModal({
+  document: d,
+  currentPatientId,
+  onClose,
+  onMoved,
+}: {
+  document: PatientDocument;
+  currentPatientId: string;
+  onClose: () => void;
+  onMoved: (title: string, toName: string) => void;
+}) {
+  const [patients, setPatients] = useState<Patient[] | null>(null);
+  const [toPatientId, setToPatientId] = useState('');
+  const [title, setTitle] = useState(d.title);
+  const [category, setCategory] = useState<DocCategory | ''>((DOC_CATEGORIES as readonly string[]).includes(d.category) ? (d.category as DocCategory) : '');
+  const [docDate, setDocDate] = useState(d.docDate || '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getPatients().then((list) => { if (!cancelled) setPatients(list.filter((p) => p.id !== currentPatientId)); });
+    return () => { cancelled = true; };
+  }, [currentPatientId]);
+
+  const target = patients?.find((p) => p.id === toPatientId) || null;
+
+  const save = async () => {
+    if (saving || !d.id) return;
+    if (!toPatientId) { setError('Choose the client this document belongs to.'); return; }
+    if (!title.trim()) { setError('Enter a title.'); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(docDate)) { setError('Enter the date on the document.'); return; }
+    if (!window.confirm(`Move "${title.trim()}" to ${target?.name || 'the selected client'}?\n\nIt disappears from this client's documents and appears on theirs. The original entry is recorded in the deletion audit.`)) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await movePatientDocument(d.id, toPatientId, { title: title.trim(), docDate, ...(category ? { category } : {}) });
+      onMoved(title.trim(), target?.name || 'the other client');
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not move the document.');
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={backdropStyle} role="dialog" aria-modal="true" aria-label="Move document to another client">
+      <div style={sheetStyle}>
+        <div style={sheetTitleStyle}>Move to Another Client</div>
+        <div style={{ ...hintStyle, marginBottom: 12 }}>File: {d.fileName}. Fix the title, category, or date at the same time if they were wrong too.</div>
+        <label style={fieldStyle}>
+          <span style={fieldLabelStyle}>Move to *</span>
+          <select value={toPatientId} onChange={(e) => { setToPatientId(e.target.value); setError(null); }} style={selectStyle} disabled={!patients}>
+            <option value="">{patients ? 'Select a Client…' : 'Loading Clients…'}</option>
+            {(patients || []).map((p) => (
+              <option key={p.id} value={p.id}>{p.name}{p.mrn ? ` (#${p.mrn})` : ''}</option>
+            ))}
+          </select>
+        </label>
+        <label style={fieldStyle}>
+          <span style={fieldLabelStyle}>Title *</span>
+          <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} style={inputStyle} />
+        </label>
+        <div style={grid2Style}>
+          <label style={fieldStyle}>
+            <span style={fieldLabelStyle}>Category</span>
+            <select value={category} onChange={(e) => setCategory(e.target.value as DocCategory)} style={selectStyle}>
+              <option value="">Keep Current</option>
+              <CategoryOptions />
+            </select>
+          </label>
+          <label style={fieldStyle}>
+            <span style={fieldLabelStyle}>Date on the document *</span>
+            <input type="date" value={docDate} onChange={(e) => setDocDate(e.target.value)} style={inputStyle} />
+          </label>
+        </div>
+        {error && <div style={errBoxStyle}>{error}</div>}
+        <div style={actionsStyle}>
+          <button type="button" className={btn} onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="button" className={btnPrimary} onClick={save} disabled={saving || !patients}>{saving ? 'Moving…' : 'Move Document'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Staff: swap the file behind a document. Labeling stays; the old file is removed server-side. */
+function ReplaceDocumentModal({
+  document: d,
+  actor,
+  onClose,
+  onReplaced,
+}: {
+  document: PatientDocument;
+  actor: { uid: string; name: string };
+  onClose: () => void;
+  onReplaced: (title: string) => void;
 }) {
   const [file, setFile] = useState<File | null>(null);
-  const [category, setCategory] = useState<DocCategory | ''>('');
-  const [title, setTitle] = useState('');
-  const [docDate, setDocDate] = useState(todayISO());
   const [pct, setPct] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
-
-  const pickFile = (f: File | null) => {
-    setFile(f);
-    if (f && !title.trim()) setTitle(f.name.replace(/\.[^.]+$/, ''));
-    setError(null);
-  };
+  const uploading = pct !== null;
 
   const save = async () => {
-    if (!file) {
-      setError('Choose a file to upload.');
-      return;
-    }
-    if (!category) {
-      setError('Choose a document category.');
-      return;
-    }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(docDate)) {
-      setError('Enter the date on the document.');
-      return;
-    }
+    if (uploading) return;
+    if (!file) { setError('Choose the file to upload in its place.'); return; }
     setError(null);
     setPct(0);
     try {
-      await uploadPatientDocument(
-        { patientId, file, category, title, docDate, uploader },
-        (p) => setPct(p),
-      );
-      onUploaded(title.trim() || file.name);
+      await replaceDocumentFile(d, file, actor, (p) => setPct(p));
+      onReplaced(d.title);
       onClose();
     } catch (err) {
       setPct(null);
-      setError(err instanceof Error ? err.message : 'Upload failed. Please try again.');
+      setError(err instanceof Error ? err.message : 'Replace failed. Please try again.');
     }
   };
 
-  const uploading = pct !== null;
-
   return (
-    <div style={backdropStyle} role="dialog" aria-modal="true" aria-label="Upload a document">
+    <div style={backdropStyle} role="dialog" aria-modal="true" aria-label="Replace the document file">
       <div style={sheetStyle}>
-        <div style={sheetTitleStyle}>Upload a document</div>
-
+        <div style={sheetTitleStyle}>Replace the File</div>
+        <div style={{ ...hintStyle, marginBottom: 12 }}>
+          “{d.title}” keeps its title, category, and date. The current file ({d.fileName}) is removed once the new one is uploaded.
+        </div>
         <button
           type="button"
-          style={dropZoneStyle}
+          style={{ ...dropZoneStyle, ...(error && !file ? FIELD_ERROR_WRAP_STYLE : null) }}
           onClick={() => fileInput.current?.click()}
           onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault();
-            pickFile(e.dataTransfer.files?.[0] || null);
-          }}
+          onDrop={(e) => { e.preventDefault(); setFile(e.dataTransfer.files?.[0] || null); setError(null); }}
         >
           <FileUp size={20} color="#5c6b7a" />
-          {file ? (
-            <span style={{ fontWeight: 600, color: '#1f2937' }}>{file.name}</span>
-          ) : (
-            <span style={{ color: '#5c6b7a' }}>Click to choose a file (or drop one here)</span>
-          )}
+          {file ? <span style={{ fontWeight: 600, color: '#1f2937' }}>{file.name}</span> : <span style={{ color: '#5c6b7a' }}>Click to choose the new file (or drop it here)</span>}
           <span style={dropHintStyle}>PDF, image, or Word document · 20 MB max</span>
         </button>
         <input
@@ -285,33 +706,8 @@ function UploadDocumentModal({
           type="file"
           accept={Object.keys(ALLOWED_DOC_TYPES).join(',')}
           style={{ display: 'none' }}
-          onChange={(e) => pickFile(e.target.files?.[0] || null)}
+          onChange={(e) => { setFile(e.target.files?.[0] || null); setError(null); }}
         />
-
-        <label style={fieldStyle}>
-          <span style={fieldLabelStyle}>Category *</span>
-          <select value={category} onChange={(e) => setCategory(e.target.value as DocCategory)} style={selectStyle}>
-            <option value="">Select a category…</option>
-            {DOC_CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <div style={grid2Style}>
-          <label style={fieldStyle}>
-            <span style={fieldLabelStyle}>Date on the document *</span>
-            <input type="date" value={docDate} onChange={(e) => setDocDate(e.target.value)} style={inputStyle} />
-            <span style={hintStyle}>Drives the currency tracking (e.g. the supervisory visit date, the plan-of-care start date).</span>
-          </label>
-          <label style={fieldStyle}>
-            <span style={fieldLabelStyle}>Title</span>
-            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} style={inputStyle} placeholder="Defaults to the file name" />
-          </label>
-        </div>
-
         {uploading && (
           <div style={progressWrapStyle}>
             <div style={{ ...progressBarStyle, width: `${pct}%` }} />
@@ -319,35 +715,42 @@ function UploadDocumentModal({
           </div>
         )}
         {error && <div style={errBoxStyle}>{error}</div>}
-
         <div style={actionsStyle}>
-          <button type="button" style={cancelBtnStyle} onClick={onClose} disabled={uploading}>
-            Cancel
-          </button>
-          <button type="button" style={saveBtnStyle} onClick={save} disabled={uploading}>
-            {uploading ? 'Uploading…' : 'Upload'}
-          </button>
+          <button type="button" className={btn} onClick={onClose} disabled={uploading}>Cancel</button>
+          <button type="button" className={btnPrimary} onClick={save} disabled={uploading}>{uploading ? 'Uploading…' : 'Replace File'}</button>
         </div>
       </div>
     </div>
   );
 }
 
+function UploadDocumentModal({ patientId, uploader, onClose, onUploaded }: { patientId: string; uploader: DocUploader; onClose: () => void; onUploaded: (title: string) => void }) {
+  return <div style={backdropStyle} role="dialog" aria-modal="true" aria-label="Upload documents">
+    <div style={{ ...sheetStyle, maxWidth: 900, maxHeight: '90vh', overflowY: 'auto' }}>
+      <div style={sheetTitleStyle}>Upload Documents</div>
+      <BulkDocumentUpload onClose={onClose} upload={async (item, progress) => {
+        await uploadPatientDocument({ patientId, file: item.file, category: item.category, title: item.title, docDate: item.docDate, periodStart: item.periodStart, periodEnd: item.periodEnd, uploader }, progress);
+        onUploaded(item.title);
+      }} />
+    </div>
+  </div>;
+}
+
 const NAVY = '#1a3a5c';
 const toolbarStyle: CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap', marginBottom: 12 };
 const chipStyle: CSSProperties = { padding: '4px 10px', borderRadius: 999, border: '1px solid #d0d7de', background: 'white', color: '#374151', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
 const chipActiveStyle: CSSProperties = { ...chipStyle, background: NAVY, color: 'white', border: `1px solid ${NAVY}` };
-const archToggleStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#5c6b7a', cursor: 'pointer' };
-const uploadBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0e7c4a', color: 'white', border: 'none', padding: '7px 13px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
 const emptyStyle: CSSProperties = { padding: '20px 14px', color: '#7f8c8d', fontSize: 13, textAlign: 'center', background: '#f8fafc', borderRadius: 8, lineHeight: 1.5 };
 const listStyle: CSSProperties = { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 };
-const rowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 10 };
+const rowStyle: CSSProperties = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 10 };
 const docIconStyle: CSSProperties = { width: 30, height: 30, borderRadius: 8, background: '#e8eef4', color: NAVY, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
 const docTitleStyle: CSSProperties = { fontWeight: 600, fontSize: 13.5, color: '#1f2937', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
 const docMetaStyle: CSSProperties = { fontSize: 12, color: '#7f8c8d', marginTop: 2 };
 const categoryChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#e8eef4', color: NAVY, fontSize: 10.5, fontWeight: 700 };
+const periodChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontSize: 10.5, fontWeight: 700 };
+const periodLabelStyle: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, fontWeight: 600, color: '#5c6b7a', minWidth: 0 };
 const archivedChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#f1f5f9', color: '#64748b', fontSize: 10.5, fontWeight: 700 };
-const actionBtnStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'white', color: '#2c3e50', border: '1px solid #d0d7de', padding: '6px 10px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
+const autoChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#dbeafe', color: '#1d4ed8', border: '1px solid #bfdbfe', fontSize: 10.5, fontWeight: 700 };
 const backdropStyle: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 3200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '8vh 16px', overflowY: 'auto' };
 const sheetStyle: CSSProperties = { width: '100%', maxWidth: 520, background: 'white', borderRadius: 12, padding: 18, boxShadow: '0 10px 40px rgba(0,0,0,0.25)' };
 const sheetTitleStyle: CSSProperties = { fontWeight: 700, fontSize: 17, color: '#1f2937', marginBottom: 12 };
@@ -356,7 +759,7 @@ const dropHintStyle: CSSProperties = { fontSize: 11.5, color: '#8a949e' };
 const fieldStyle: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12, minWidth: 0 };
 const fieldLabelStyle: CSSProperties = { fontSize: 12, fontWeight: 600, color: '#5c6b7a' };
 const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', height: 38 };
-const selectStyle: CSSProperties = { ...inputStyle, cursor: 'pointer' };
+const selectStyle: CSSProperties = withSelectChevron(inputStyle);
 const hintStyle: CSSProperties = { fontSize: 11.5, color: '#8a949e', lineHeight: 1.4 };
 const grid2Style: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 };
 const progressWrapStyle: CSSProperties = { position: 'relative', height: 22, background: '#eef1f4', borderRadius: 999, overflow: 'hidden', marginBottom: 10 };
@@ -364,5 +767,3 @@ const progressBarStyle: CSSProperties = { position: 'absolute', inset: 0, width:
 const progressTextStyle: CSSProperties = { position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: 11.5, fontWeight: 700, color: '#1f2937' };
 const errBoxStyle: CSSProperties = { background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '8px 11px', fontSize: 13, marginBottom: 10 };
 const actionsStyle: CSSProperties = { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 };
-const cancelBtnStyle: CSSProperties = { background: 'white', color: '#374151', border: '1px solid #d0d7de', padding: '9px 16px', borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const saveBtnStyle: CSSProperties = { background: NAVY, color: 'white', border: `1px solid ${NAVY}`, padding: '9px 16px', borderRadius: 6, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };

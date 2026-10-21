@@ -1,17 +1,22 @@
 'use client';
 
 import { Suspense, useEffect, useState, type FormEvent } from 'react';
+import { btnPrimary } from '@/components/buttons';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { useAuth } from '@/components/AuthProvider';
+import { safeLoginRedirect } from '@/lib/loginRedirect';
+import { escortToField, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
+import { PortalLoading } from '@/components/PortalLoading';
 
 type Mode = 'signIn' | 'reset';
+const RESET_EMAIL_ID = 'login-field-reset-email';
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirect = searchParams.get('redirect') || '/admin';
+  const redirect = safeLoginRedirect(searchParams.get('redirect'));
   // Set when the /reset-password page couldn't auto-sign-in after a successful
   // reset (rare). Show a clear "you're all set, just sign in" banner.
   const justReset = searchParams.get('reset') === '1';
@@ -23,6 +28,8 @@ function LoginForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resetSentTo, setResetSentTo] = useState<string | null>(null);
+  // The reset flow's only input, so its problem sits on the field, not in a banner.
+  const [emailError, setEmailError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && user) {
@@ -33,6 +40,7 @@ function LoginForm() {
   const switchMode = (next: Mode) => {
     setMode(next);
     setError(null);
+    setEmailError(null);
     setResetSentTo(null);
   };
 
@@ -64,9 +72,15 @@ function LoginForm() {
 
   const handleReset = async (e: FormEvent) => {
     e.preventDefault();
-    setSubmitting(true);
     setError(null);
+    setEmailError(null);
     const target = email.trim();
+    if (!target || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(target)) {
+      setEmailError('Please enter a valid email address.');
+      escortToField(RESET_EMAIL_ID);
+      return;
+    }
+    setSubmitting(true);
     try {
       // Server route sends our own branded reset email pointing at the
       // /reset-password page. It always responds OK unless the email is
@@ -78,7 +92,8 @@ function LoginForm() {
       });
       if (res.status === 400) {
         const data = await res.json().catch(() => ({}));
-        setError(data.error || 'Please enter a valid email address.');
+        setEmailError(data.error || 'Please enter a valid email address.');
+        escortToField(RESET_EMAIL_ID);
         setSubmitting(false);
         return;
       }
@@ -90,12 +105,24 @@ function LoginForm() {
     setSubmitting(false);
   };
 
+  // Until Firebase has restored (or ruled out) a saved session, we don't know
+  // whether this visitor is signed in. Showing the form in that gap flashed it
+  // at people who were, just before the redirect above whisked them away. Hold
+  // the loading screen instead, and keep holding it while that redirect runs.
+  // Not during a submit: a fresh sign-in keeps the form (and its busy button)
+  // on screen until router.replace lands.
+  if ((loading || user) && !submitting) {
+    return <PortalLoading label={user ? 'Signing you in…' : 'Loading…'} />;
+  }
+
   return (
     <div style={containerStyle}>
       <div style={cardStyle}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/images/logo-2026.webp" alt="Heart and Soul Healthcare" width={200} height={53} style={logoStyle} />
         {mode === 'signIn' && (
           <>
-            <h1 style={titleStyle}>Sign in</h1>
+            <h1 style={titleStyle}>Sign In</h1>
             <p style={subtitleStyle}>Heart and Soul Healthcare staff portal</p>
 
             {justReset && (
@@ -131,8 +158,8 @@ function LoginForm() {
 
               {error && <div style={errorStyle}>{error}</div>}
 
-              <button type="submit" disabled={submitting} style={primaryBtnStyle}>
-                {submitting ? 'Signing in…' : 'Sign in'}
+              <button type="submit" disabled={submitting} className={btnPrimary} style={{ width: '100%' }}>
+                {submitting ? 'Signing in…' : 'Sign In'}
               </button>
             </form>
 
@@ -142,7 +169,7 @@ function LoginForm() {
                 onClick={() => switchMode('reset')}
                 style={linkBtnStyle}
               >
-                Forgot password?
+                Forgot Password?
               </button>
             </div>
 
@@ -155,30 +182,35 @@ function LoginForm() {
 
         {mode === 'reset' && !resetSentTo && (
           <>
-            <h1 style={titleStyle}>Reset password</h1>
+            <h1 style={titleStyle}>Reset Password</h1>
             <p style={subtitleStyle}>
               Enter the email for your staff account and we&apos;ll send you a
               link to set a new password.
             </p>
 
-            <form onSubmit={handleReset} style={formStyle}>
-              <label style={labelStyle}>
+            <form onSubmit={handleReset} style={formStyle} noValidate>
+              <label style={labelStyle} id={RESET_EMAIL_ID}>
                 Email
                 <input
                   type="email"
                   required
                   autoComplete="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  style={inputStyle}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (emailError) setEmailError(null);
+                  }}
+                  style={{ ...inputStyle, ...(emailError ? FIELD_ERROR_STYLE : {}) }}
+                  aria-invalid={!!emailError}
                   placeholder="you@heartandsoulhc.org"
                 />
+                <FieldError message={emailError} />
               </label>
 
               {error && <div style={errorStyle}>{error}</div>}
 
-              <button type="submit" disabled={submitting} style={primaryBtnStyle}>
-                {submitting ? 'Sending…' : 'Send reset link'}
+              <button type="submit" disabled={submitting} className={btnPrimary} style={{ width: '100%' }}>
+                {submitting ? 'Sending…' : 'Send Reset Link'}
               </button>
             </form>
 
@@ -188,7 +220,7 @@ function LoginForm() {
                 onClick={() => switchMode('signIn')}
                 style={linkBtnStyle}
               >
-                ← Back to sign in
+                ← Back to Sign In
               </button>
             </div>
           </>
@@ -196,7 +228,7 @@ function LoginForm() {
 
         {mode === 'reset' && resetSentTo && (
           <>
-            <h1 style={titleStyle}>Check your email</h1>
+            <h1 style={titleStyle}>Check Your Email</h1>
             <p style={subtitleStyle}>
               If an account exists for <strong>{resetSentTo}</strong>, a password-reset
               link is on the way. Links expire after about an hour — use it soon.
@@ -206,9 +238,9 @@ function LoginForm() {
             <button
               type="button"
               onClick={() => switchMode('signIn')}
-              style={primaryBtnStyle}
+              className={btnPrimary} style={{ width: '100%' }}
             >
-              Back to sign in
+              Back to Sign In
             </button>
 
             <div style={forgotRowStyle}>
@@ -220,7 +252,7 @@ function LoginForm() {
                 }}
                 style={linkBtnStyle}
               >
-                Send to a different email
+                Send to a Different Email
               </button>
             </div>
           </>
@@ -232,7 +264,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div style={containerStyle} />}>
+    <Suspense fallback={<PortalLoading />}>
       <LoginForm />
     </Suspense>
   );
@@ -246,6 +278,8 @@ const containerStyle: React.CSSProperties = {
   padding: 20,
   background: '#f5f7fa',
 };
+
+const logoStyle: React.CSSProperties = { display: 'block', width: 200, height: 'auto', margin: '0 auto 24px' };
 
 const cardStyle: React.CSSProperties = {
   width: '100%',
@@ -310,17 +344,6 @@ const successStyle: React.CSSProperties = {
   fontSize: 13,
   fontWeight: 500,
   marginBottom: 16,
-};
-
-const primaryBtnStyle: React.CSSProperties = {
-  background: '#27ae60',
-  color: 'white',
-  padding: '12px 16px',
-  borderRadius: 6,
-  border: 'none',
-  fontSize: 15,
-  fontWeight: 700,
-  cursor: 'pointer',
 };
 
 const forgotRowStyle: React.CSSProperties = {

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, use, useMemo, createContext, useContext } from 'react';
+import { btn, btnPrimary } from '@/components/buttons';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { CheckCircle2 } from 'lucide-react';
@@ -11,19 +12,28 @@ import {
   type ProgressNoteFormData,
   type EditHistoryEntry,
 } from '@/lib/submissions';
-import { needsCosign } from '@/lib/cosignClient';
+import { credentialRequiresCosign } from '@/lib/cosignClient';
 import { useSettings } from '@/components/SettingsProvider';
 import { pdfFilenameFor, triggerDownload } from '@/lib/batchExport';
+import { formatDateUS } from '@/lib/dateFormat';
+import { formatDuration, readSeizureEntries, seizureDurationSeconds, sortSeizuresByStart } from '@/lib/seizureShared';
+import { readVitalsRechecks, recheckAbnormalVitals, recheckBloodPressure, recheckWhen, vitalsRecheckAllKeys, MAX_VITALS_RECHECKS, collapseAddedRechecks, recheckAddedKey } from '@/lib/vitalsRecheck';
+import { assessVitalsFollowUp, followUpSummary, FOLLOW_UP_ACTION_KEY, FOLLOW_UP_BASELINE, FOLLOW_UP_KEYS } from '@/lib/vitalsFollowUp';
 import { authedFetch } from '@/lib/authedFetch';
-import { getVitalRanges, getAgeGroupLabel } from '@/lib/vitalRanges';
+import { getAgeGroupLabel, noteVitalRanges, readNoteBaselines } from '@/lib/vitalRanges';
+import { baselineCoversGroup, describeBaselines } from '@/lib/vitalsBaselines';
 import { parseCareTaskCharting } from '@/lib/careTaskCharting';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import RevisionHistory from '@/components/RevisionHistory';
 import CoSignModal from '@/components/CoSignModal';
 import ClarificationPanel from '@/components/ClarificationPanel';
 import type { SubmissionSummary } from '@/lib/submissions';
+import { clarificationTurn } from '@/lib/clarificationShared';
+import { readShiftChange } from '@/lib/shiftChange';
 import { buildFieldAmendments, type FieldVersion } from '@/lib/revisionFormat';
 import { programLabel } from '@/lib/programs';
+import { SUPERVISORY_NOTE_TYPE } from '@/lib/supervisoryVisit';
+import styles from './page.module.css';
 
 // Field key -> its prior values (oldest-first) for inline "struck old -> current"
 // rendering. Provided by the page; read by Field / TextBlock / VitalCard.
@@ -125,7 +135,8 @@ export default function SubmissionDetailPage({ params }: PageProps) {
   }, [authLoading, id, isNurse, user]);
 
   // Per-field prior values for the inline "struck old -> corrected" rendering.
-  const fieldAmendments = useMemo(() => buildFieldAmendments(editHistory), [editHistory]);
+  // Rechecks added while amending collapse to one "added" line per block.
+  const fieldAmendments = useMemo(() => collapseAddedRechecks(buildFieldAmendments(editHistory)), [editHistory]);
 
   /** Download a clean PDF of the note using the same server-side renderer as
       the bulk export (/api/progress-note/pdf → @react-pdf/renderer). The old
@@ -181,8 +192,8 @@ export default function SubmissionDetailPage({ params }: PageProps) {
 
   if (loading) {
     return (
-      <div style={containerStyle}>
-        <div style={wrapStyle}>
+      <div className={styles.container}>
+        <div className={styles.wrap}>
           <div style={{ textAlign: 'center', padding: '40px 20px' }}>
             <p>Loading submission...</p>
           </div>
@@ -193,13 +204,13 @@ export default function SubmissionDetailPage({ params }: PageProps) {
 
   if (notFound || !formData) {
     return (
-      <div style={containerStyle}>
-        <div style={wrapStyle}>
+      <div className={styles.container}>
+        <div className={styles.wrap}>
           <div style={{ textAlign: 'center', padding: '40px 20px' }}>
             <p style={{ fontSize: 18, fontWeight: 600, color: '#c62828' }}>
-              Submission not found
+              Submission Not Found
             </p>
-            <Link href={backHref} style={backLinkStyle}>
+            <Link href={backHref} className={styles.backLink}>
               &larr; Back to Submissions
             </Link>
           </div>
@@ -238,8 +249,14 @@ export default function SubmissionDetailPage({ params }: PageProps) {
   // clinical team wants e.g. a wider preschool resp range.
   const ageStr = data.q5_ageYears || '';
   const patientDob = data.q4_dateofBirth || '';
-  const vitalRanges = getVitalRanges(ageStr, patientDob, appSettings.vitals.rangesByAgeGroup);
-  const ageGroupLabel = getAgeGroupLabel(ageStr, patientDob);
+  // Plus the client-baseline snapshot the note carries (q16b_*), if any.
+  const vitalRanges = noteVitalRanges(data as unknown as Record<string, unknown>, appSettings.vitals.rangesByAgeGroup);
+  const noteBaselines = readNoteBaselines(data as unknown as Record<string, unknown>);
+  const baselineText = describeBaselines(noteBaselines);
+  const ageGroupLabel = getAgeGroupLabel(ageStr, patientDob) + (baselineText ? `; client baselines: ${baselineText}` : '');
+  const followUp = assessVitalsFollowUp(data as unknown as Record<string, unknown>, vitalRanges);
+  const baselineClaimedUnrecorded =
+    data[FOLLOW_UP_ACTION_KEY] === FOLLOW_UP_BASELINE && !followUp.stillAbnormal.every((g) => baselineCoversGroup(noteBaselines, g));
 
   const abnormalVitals: string[] = [];
   const parseNum = (v: string) => parseFloat((v || '').replace(/[^0-9.]/g, ''));
@@ -274,6 +291,19 @@ export default function SubmissionDetailPage({ params }: PageProps) {
     if (!isNaN(v) && (v < vitalRanges.oxygenSaturation.low || v > vitalRanges.oxygenSaturation.high))
       abnormalVitals.push(`SpO2: ${data.q20_oxygenSaturation}% (LOW)`);
   }
+  // Later readings in the same shift: each abnormal value names its reading
+  // and time so a recheck that stayed high is as visible as the first set.
+  const vitalRechecks = readVitalsRechecks(data as unknown as Record<string, unknown>);
+  for (const r of vitalRechecks) {
+    const ab = recheckAbnormalVitals(r, vitalRanges);
+    const tag = `Recheck ${r.index}${recheckWhen(r) ? ` ${recheckWhen(r)}` : ''}`;
+    if (ab.temperature) abnormalVitals.push(`${tag}: Temperature ${r.temperature}°F (${ab.temperature.toUpperCase()})`);
+    if (ab.systolic) abnormalVitals.push(`${tag}: Systolic BP ${r.systolic} mmHg (${ab.systolic.toUpperCase()})`);
+    if (ab.diastolic) abnormalVitals.push(`${tag}: Diastolic BP ${r.diastolic} mmHg (${ab.diastolic.toUpperCase()})`);
+    if (ab.pulse) abnormalVitals.push(`${tag}: Pulse ${r.pulse} bpm (${ab.pulse.toUpperCase()})`);
+    if (ab.respiration) abnormalVitals.push(`${tag}: Respirations ${r.respiration}/min (${ab.respiration.toUpperCase()})`);
+    if (ab.oxygenSaturation) abnormalVitals.push(`${tag}: SpO2 ${r.oxygenSaturation}% (LOW)`);
+  }
   // Build address string
   const addressParts = [
     data.q200_addr_line1,
@@ -282,6 +312,10 @@ export default function SubmissionDetailPage({ params }: PageProps) {
     data.q200_postal,
   ].filter(Boolean);
   const address = addressParts.join(', ');
+
+  const isSupervisory = data.noteType === SUPERVISORY_NOTE_TYPE;
+  /** Shift progress note: the only type that renders the shift groups. */
+  const isShift = data.noteType !== 'rn-oversight-visit' && !isSupervisory;
 
   // Helper: check if any field in a list has data
   const anyHasValue = (keys: string[]) => keys.some((k) => hasValue(data[k]));
@@ -417,30 +451,41 @@ export default function SubmissionDetailPage({ params }: PageProps) {
 
   return (
     <AmendmentContext.Provider value={fieldAmendments}>
-    <div style={containerStyle}>
-      <div style={wrapStyle}>
+    <div className={styles.container}>
+      <div className={styles.wrap}>
         {/* Actions bar - hidden on print */}
-        <div style={actionsBarStyle} className="no-print">
-          <Link href={backHref} style={backLinkStyle}>
+        <div className={`${styles.actionsBar} no-print`}>
+          <Link href={backHref} className={styles.backLink}>
             &larr; Back to Submissions
           </Link>
-          <div style={{ display: 'flex', gap: 10 }}>
+          <div className={styles.actions}>
             {canEdit && (
               <Link
                 href={
                   data.noteType === 'rn-oversight-visit'
                     ? `/oversight-note?edit=${id}`
-                    : `/progress-note?edit=${id}`
+                    : isSupervisory
+                      ? `/supervisory-visit?edit=${id}`
+                      : `/progress-note?edit=${id}`
                 }
-                style={editBtnStyle}
+                className={btn}
               >
                 Amend
+              </Link>
+            )}
+            {hasValue(data.patientId) && isShift && (
+              <Link
+                href={`/admin/records/${data.patientId}/mar`}
+                className={btn}
+                title="Open this client's MAR to check the orders against what the note reports"
+              >
+                MAR
               </Link>
             )}
             <button
               onClick={handleDownloadPdf}
               disabled={downloadingPdf}
-              style={{ ...primaryBtnStyle, opacity: downloadingPdf ? 0.6 : 1, cursor: downloadingPdf ? 'not-allowed' : 'pointer' }}
+              className={btnPrimary}
             >
               {downloadingPdf ? 'Generating PDF…' : 'Download PDF'}
             </button>
@@ -448,14 +493,14 @@ export default function SubmissionDetailPage({ params }: PageProps) {
               isArchivedForViewer ? (
                 <button
                   onClick={() => handleArchiveToggle('restore')}
-                  style={editBtnStyle}
+                  className={btn}
                 >
                   Restore
                 </button>
               ) : (
                 <button
                   onClick={() => handleArchiveToggle('archive')}
-                  style={editBtnStyle}
+                  className={btn}
                 >
                   Archive
                 </button>
@@ -471,12 +516,14 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           <h2 style={formTitleStyle}>
             {data.noteType === 'rn-oversight-visit'
               ? 'RN OVERSIGHT VISIT NOTE'
-              : 'HOME HEALTH PROGRESS NOTE'}
+              : isSupervisory
+                ? 'HOME SUPERVISORY VISIT'
+                : 'HOME HEALTH PROGRESS NOTE'}
           </h2>
           <p style={formDateStyle}>Form Date: {fmtDate(data.q6_dateofService) || data.q6_dateofService}</p>
           {(isNurse ? nurseArchived : staffArchived) && (
             <div style={archivedBadgeStyle} className="no-print">
-              Archived{isNurse ? ' from your view' : ''}
+              Archived{isNurse ? ' from Your View' : ''}
             </div>
           )}
           {!isNurse && nurseArchived && (
@@ -511,7 +558,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         )}
 
         {/* === GROUP 1: Client & Shift === */}
-        <GroupHeader title="Client & Shift" />
+        <GroupHeader title={isSupervisory ? 'Client' : 'Client & Shift'} />
 
         {/* 1. CLIENT INFORMATION */}
         <ConditionalSection
@@ -535,7 +582,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
 
         {/* 2. SHIFT INFORMATION (shift notes only — oversight notes carry
             their date in the header and times in Visit Details) */}
-        {data.noteType !== 'rn-oversight-visit' && (
+        {isShift && (
         <ConditionalSection
           title="Shift Information"
           keys={['q6_dateofService', 'q7_shiftStart', 'q62_shiftEndTime', 'q9_totalHours']}
@@ -550,7 +597,8 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         </ConditionalSection>
         )}
 
-        {/* 3. NURSE / CAREGIVER */}
+        {/* 3. NURSE / CAREGIVER (a supervisory visit names its supervisor in Visit Details) */}
+        {!isSupervisory && (
         <ConditionalSection
           title="Nurse / Caregiver"
           keys={['q11_nurseName', 'q12_credential']}
@@ -561,6 +609,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             <Field fieldKey="q12_credential" label="Credential" value={data.q12_credential} />
           </FieldRow>
         </ConditionalSection>
+        )}
 
         {/* === GROUP 2: Status & Vitals === */}
         {/* === RN OVERSIGHT VISIT (noteType 'rn-oversight-visit' only) === */}
@@ -570,8 +619,8 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             <ConditionalSection title="Visit Details" keys={['ov_visitType', 'ov_timeIn', 'ov_timeOut', 'ov_location']} data={data}>
               <FieldRow>
                 {hasValue(data.ov_visitType) && <Field fieldKey="ov_visitType" label="Visit Type" value={data.ov_visitType} />}
-                {hasValue(data.ov_timeIn) && <Field fieldKey="ov_timeIn" label="Time In" value={data.ov_timeIn} />}
-                {hasValue(data.ov_timeOut) && <Field fieldKey="ov_timeOut" label="Time Out" value={data.ov_timeOut} />}
+                {hasValue(data.ov_timeIn) && <Field fieldKey="ov_timeIn" label="Start Time" value={data.ov_timeIn} />}
+                {hasValue(data.ov_timeOut) && <Field fieldKey="ov_timeOut" label="End Time" value={data.ov_timeOut} />}
               </FieldRow>
               {hasValue(data.ov_location) && <Field fieldKey="ov_location" label="Location" value={data.ov_location} />}
             </ConditionalSection>
@@ -623,7 +672,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
                 anyHasValue([`ov_appt${n}_provider`, `ov_appt${n}_date`, `ov_appt${n}_outcome`, `ov_appt${n}_followup`]) ? (
                   <FieldRow key={n}>
                     <Field fieldKey={`ov_appt${n}_provider`} label={`Appointment ${n}`} value={data[`ov_appt${n}_provider`] || '(provider not recorded)'} />
-                    {hasValue(data[`ov_appt${n}_date`]) && <Field fieldKey={`ov_appt${n}_date`} label="Date" value={data[`ov_appt${n}_date`]} />}
+                    {hasValue(data[`ov_appt${n}_date`]) && <Field fieldKey={`ov_appt${n}_date`} label="Date" value={fmtDate(data[`ov_appt${n}_date`])} />}
                     {hasValue(data[`ov_appt${n}_outcome`]) && <Field fieldKey={`ov_appt${n}_outcome`} label="Outcome / Report" value={data[`ov_appt${n}_outcome`]} />}
                     {hasValue(data[`ov_appt${n}_followup`]) && <Field fieldKey={`ov_appt${n}_followup`} label="Follow-Up Needed" value={data[`ov_appt${n}_followup`]} />}
                   </FieldRow>
@@ -680,7 +729,80 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           </>
         )}
 
-        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Status & Vitals" />}
+        {/* === HOME SUPERVISORY VISIT (noteType 'home-supervisory-visit' only) === */}
+        {isSupervisory && (
+          <>
+            <GroupHeader title="Home Supervisory Visit" />
+            <ConditionalSection title="Visit Details" keys={['q6_dateofService', 'sv_timeIn', 'sv_timeOut', 'sv_address', 'sv_staffName', 'q11_nurseName']} data={data}>
+              <FieldRow>
+                <Field fieldKey="q6_dateofService" label="Date" value={fmtDate(data.q6_dateofService)} />
+                <Field fieldKey="sv_timeIn" label="Time In" value={data.sv_timeIn} />
+                <Field fieldKey="sv_timeOut" label="Time Out" value={data.sv_timeOut} />
+              </FieldRow>
+              {hasValue(data.sv_address) && <Field fieldKey="sv_address" label="Address" value={data.sv_address} />}
+              <FieldRow>
+                <Field fieldKey="sv_staffName" label="Staff Performing Duties" value={data.sv_staffName} />
+                <Field fieldKey="q11_nurseName" label="Supervisor" value={data.q11_nurseName} />
+                <Field fieldKey="q12_credential" label="Credential" value={data.q12_credential} />
+              </FieldRow>
+            </ConditionalSection>
+
+            <ConditionalSection title="Client Questions" keys={['sv_complaint', 'sv_anythingElse']} data={data}>
+              {hasValue(data.sv_complaint) && <TextBlock fieldKey="sv_complaint" label="What would you do if you had a complaint?" value={data.sv_complaint} />}
+              {hasValue(data.sv_anythingElse) && <TextBlock fieldKey="sv_anythingElse" label="Is there anything else you would like to tell me?" value={data.sv_anythingElse} />}
+            </ConditionalSection>
+
+            <ConditionalSection
+              title="Overall Assessment of Client"
+              keys={['sv_generalConditions', 'sv_clientProgress', 'sv_problems', 'sv_rightsInformed', 'sv_clientSatisfied']}
+              data={data}
+            >
+              {/* Vitals show once, in the full Vital Signs section below. */}
+              {hasValue(data.sv_generalConditions) && <TextBlock fieldKey="sv_generalConditions" label="General Conditions" value={data.sv_generalConditions} />}
+              {hasValue(data.sv_clientProgress) && <TextBlock fieldKey="sv_clientProgress" label="Client Progress" value={data.sv_clientProgress} />}
+              <Field fieldKey="sv_problems" label="Problems Encountered by Client" value={data.sv_problems} />
+              {hasValue(data.sv_problemsDetail) && <TextBlock fieldKey="sv_problemsDetail" label="Problems Encountered" value={data.sv_problemsDetail} />}
+              <Field fieldKey="sv_rightsInformed" label="Client Informed of Rights" value={data.sv_rightsInformed} />
+              <Field fieldKey="sv_clientSatisfied" label="Client Satisfied with the Services" value={data.sv_clientSatisfied} />
+              {hasValue(data.sv_dissatisfaction) && <TextBlock fieldKey="sv_dissatisfaction" label="Client's Dissatisfaction" value={data.sv_dissatisfaction} />}
+            </ConditionalSection>
+
+            <ConditionalSection
+              title="Interview with the Client"
+              keys={['sv_interviewMethod', 'sv_interviewNotes', 'sv_levelOfCare', 'sv_satisfiedWithStaff']}
+              data={data}
+            >
+              <Field fieldKey="sv_interviewMethod" label="Interview" value={data.sv_interviewMethod} />
+              {hasValue(data.sv_interviewNotes) && <TextBlock fieldKey="sv_interviewNotes" label="Interview Notes" value={data.sv_interviewNotes} />}
+              <Field fieldKey="sv_levelOfCare" label="Level of Care Appropriate for Client's Needs" value={data.sv_levelOfCare} />
+              {hasValue(data.sv_levelOfCareRecs) && <TextBlock fieldKey="sv_levelOfCareRecs" label="Level of Care Recommendations" value={data.sv_levelOfCareRecs} />}
+              <Field fieldKey="sv_satisfiedWithStaff" label="Client Satisfied with the Staff" value={data.sv_satisfiedWithStaff} />
+              {hasValue(data.sv_staffFeedback) && <TextBlock fieldKey="sv_staffFeedback" label="Client's Feedback on Staff Performance" value={data.sv_staffFeedback} />}
+            </ConditionalSection>
+
+            <ConditionalSection title="Recommendations" keys={['sv_recommendations']} data={data}>
+              <TextBlock fieldKey="sv_recommendations" label="Recommendations" value={data.sv_recommendations} />
+            </ConditionalSection>
+          </>
+        )}
+
+        {isShift && <GroupHeader title="Status & Vitals" />}
+
+        {/* 3b. SINCE YOUR LAST SHIFT (rev 3+) */}
+        <ConditionalSection
+          title="Since Your Last Shift"
+          keys={['q68_sinceHospitalAdmission', 'q68_sinceErUrgentCare', 'q68_sinceMedChange', 'q68_sinceDetails']}
+          data={data}
+        >
+          <FieldRow>
+            <Field fieldKey="q68_sinceHospitalAdmission" label="Hospital admission" value={data.q68_sinceHospitalAdmission} />
+            <Field fieldKey="q68_sinceErUrgentCare" label="Urgent care / ER visit" value={data.q68_sinceErUrgentCare} />
+            <Field fieldKey="q68_sinceMedChange" label="Medication started, changed, or stopped" value={data.q68_sinceMedChange} />
+          </FieldRow>
+          {hasValue(data.q68_sinceDetails) && (
+            <TextBlock fieldKey="q68_sinceDetails" label="Details" value={data.q68_sinceDetails} />
+          )}
+        </ConditionalSection>
 
         {/* 4. CLIENT STATUS */}
         <ConditionalSection
@@ -713,7 +835,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           )}
         </ConditionalSection>
 
-        {/* 5. VITAL SIGNS */}
+        {/* 5. VITAL SIGNS (every note type: the supervisory visit records the same full block) */}
         <ConditionalSection
           title="Vital Signs"
           keys={[
@@ -721,10 +843,12 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             'q16_temperature', 'q16_temperatureRoute', 'q17_bloodPressure',
             'q17_bpMethod', 'q17_bpSite', 'q18_pulse', 'q18_pulseSite', 'q19_respiration',
             'q20_oxygenSaturation', 'q21_oxygenSource', 'q22_additionalObservations',
+            ...vitalsRecheckAllKeys(MAX_VITALS_RECHECKS),
+            ...FOLLOW_UP_KEYS,
           ]}
           data={data}
         >
-          <div style={vitalsGridStyle}>
+          <div style={vitalsGridStyle} className={styles.vitalsGrid}>
             <VitalCard fieldKey="q16_temperature"
               label="Temperature"
               value={
@@ -762,6 +886,62 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             <VitalCard fieldKey="q20_oxygenSaturation" label="SpO2" value={data.q20_oxygenSaturation} />
             {hasValue(data.q21_oxygenSource) && <VitalCard fieldKey="q21_oxygenSource" label="Oxygen Source" value={data.q21_oxygenSource} />}
           </div>
+          {/* Later readings in the same shift (vitals rechecks): only the
+              vitals that were retaken, abnormal ones red, each with its own
+              amendment history. */}
+          {vitalRechecks.map((r) => {
+            const ab = recheckAbnormalVitals(r, vitalRanges);
+            const key = (f: string) => `q16r_reading${r.index}_${f}`;
+            const bp = recheckBloodPressure(r);
+            const ms = [r.bpMethod, r.bpSite].filter(Boolean).join(', ');
+            const when = recheckWhen(r);
+            return (
+              <div key={r.index} style={{ borderTop: '1px solid #ddd' }}>
+                <div style={recheckHeaderStyle}>
+                  Recheck {r.index}{when ? ` ${when}` : ''}
+                  <RecheckAddedLine index={r.index} />
+                  <AmendedVersions fieldKey={key('time')} />
+                </div>
+                <div style={vitalsGridStyle} className={styles.vitalsGrid}>
+                  {hasValue(r.temperature) && (
+                    <VitalCard fieldKey={key('temperature')} label="Temperature" alert={!!ab.temperature}
+                      value={`${r.temperature}${r.temperatureRoute ? ` (${r.temperatureRoute})` : ''}`} />
+                  )}
+                  {bp && (
+                    <VitalCard fieldKey={key('systolic')} label="Blood Pressure" alert={!!(ab.systolic || ab.diastolic)}
+                      value={`${bp}${ms ? ` (${ms})` : ''}`} />
+                  )}
+                  {hasValue(r.pulse) && (
+                    <VitalCard fieldKey={key('pulse')} label="Pulse" alert={!!ab.pulse}
+                      value={`${r.pulse}${r.pulseSite ? ` (${r.pulseSite})` : ''}`} />
+                  )}
+                  {hasValue(r.respiration) && <VitalCard fieldKey={key('respiration')} label="Respirations" alert={!!ab.respiration} value={r.respiration} />}
+                  {hasValue(r.oxygenSaturation) && (
+                    <VitalCard fieldKey={key('oxygenSaturation')} label="SpO2" alert={!!ab.oxygenSaturation}
+                      value={`${r.oxygenSaturation}${r.oxygenSource ? ` (${r.oxygenSource})` : ''}`} />
+                  )}
+                </div>
+                {hasValue(r.notes) && (
+                  <div style={{ padding: '8px 0' }}>
+                    <TextBlock fieldKey={key('notes')} label="Recheck notes" value={r.notes} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {hasValue(data[FOLLOW_UP_ACTION_KEY]) && (
+            <div style={{ padding: '8px 0', borderTop: '1px solid #ddd' }}>
+              {/* What was done about a vital still out of range after its recheck. */}
+              <TextBlock fieldKey={FOLLOW_UP_ACTION_KEY} label="Abnormal vitals follow-up" value={followUpSummary(data as unknown as Record<string, unknown>)} />
+              {baselineClaimedUnrecorded && (
+                <div className="no-print" style={{ marginTop: 6, padding: '8px 12px', background: '#fff7ed', border: '1px solid #f59e0b', borderRadius: 6, fontSize: 13, color: '#7c2d12' }}>
+                  The nurse cited a baseline that is not on this client&apos;s record. If it is correct, add it under the
+                  client&apos;s clinical details on the Clients page so future notes use it
+                  {hasValue(data.patientId) && <> (<Link href={`/admin/clients/${data.patientId}`}>open client</Link>)</>}.
+                </div>
+              )}
+            </div>
+          )}
           {hasValue(data.q16_vitalsNotObtainedReason) && (
             <div style={{ padding: '8px 0' }}>
               {/* Covers whichever vitals are blank in the grid above. */}
@@ -781,7 +961,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         </ConditionalSection>
 
         {/* === GROUP 3: Observations & Systems === */}
-        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Observations & Systems" />}
+        {isShift && <GroupHeader title="Observations & Systems" />}
 
         {/* 6. OBSERVATIONS */}
         <ConditionalSection
@@ -856,6 +1036,36 @@ export default function SubmissionDetailPage({ params }: PageProps) {
                         </div>
                       ) : null
                     )}
+                    {sys.name === 'Neurological' &&
+                      String(data.q30_seizureEvent || '') === 'Yes' &&
+                      sortSeizuresByStart(readSeizureEntries(data as unknown as Record<string, unknown>)).map((e, i) => {
+                        const dur = seizureDurationSeconds(e);
+                        const rows: Array<[string, string]> = [
+                          ['Time', `${e.startTime || '?'}${e.endTime ? ` to ${e.endTime}` : ''}${dur !== null ? ` (${formatDuration(dur)})` : ''}`],
+                          ['Type', e.seizureType],
+                          ['Witnessed by', e.witnessedBy],
+                          ['Observed', e.observations],
+                          ['Interventions', e.interventions],
+                          ['Rescue medication', e.rescueMed ? `${e.rescueMed}${e.rescueMedTime ? ` at ${e.rescueMedTime}` : ''}` : ''],
+                          ['Emergency response', e.response],
+                          ['After the seizure', `${e.postState}${e.minutesToBaseline ? ` (${e.minutesToBaseline} min to baseline)` : ''}`.trim()],
+                          ['Physician notified', e.physicianNotified ? `${e.physicianNotified}${e.physicianNotifiedTime ? ` at ${e.physicianNotifiedTime}` : ''}` : ''],
+                          ['Family notified', e.familyNotified],
+                          ['Notes', e.notes],
+                        ];
+                        return (
+                          <div key={e.index} style={{ marginTop: 8, paddingLeft: 10, borderLeft: '3px solid #ddd6fe' }}>
+                            <div style={{ fontWeight: 700, fontSize: 13, color: '#4c1d95' }}>Seizure {i + 1}</div>
+                            {rows.map(([label, value]) =>
+                              hasValue(value) ? (
+                                <div key={label} style={{ padding: '2px 0', fontSize: 14 }}>
+                                  <span style={fieldLabelStyle}>{label}:</span> {value}
+                                </div>
+                              ) : null,
+                            )}
+                          </div>
+                        );
+                      })}
                   </div>
                 </div>
               );
@@ -864,7 +1074,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         )}
 
         {/* === GROUP 4: Personal Care & Nutrition === */}
-        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Personal Care & Nutrition" />}
+        {isShift && <GroupHeader title="Personal Care & Nutrition" />}
 
         {/* 8b. CARE PLAN TASKS — rendered from the note's stored snapshot */}
         {(() => {
@@ -933,7 +1143,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         </ConditionalSection>
 
         {/* === GROUP 5: Meds & Interventions === */}
-        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Meds & Interventions" />}
+        {isShift && <GroupHeader title="Meds & Interventions" />}
 
         {/* 13. SKILLED NURSING INTERVENTIONS (LPN/RN only) */}
         {isLpnRn && anyHasValue(['q38_interventions', 'q39_interventionDetails', 'q39_individualResponse', 'q40_skillJustification']) && (
@@ -987,7 +1197,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         )}
 
         {/* === GROUP 6: Education & Notifications === */}
-        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Education & Notifications" />}
+        {isShift && <GroupHeader title="Education & Notifications" />}
 
         {/* 15. EDUCATION */}
         <ConditionalSection
@@ -1195,7 +1405,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         <Section title="Signature">
           <FieldRow>
             <Field fieldKey="q11_nurseName" label="Printed Name" value={data.q11_nurseName} />
-            <Field fieldKey="q12_credential" label="Credential" value={data.q12_credential} />
+            <Field fieldKey="q12_credential" label="Credential" value={isSupervisory && data.sv_credentialsPrinted ? data.sv_credentialsPrinted : data.q12_credential} />
             <Field fieldKey="q62_shiftEndDate" label="Date Signed" value={fmtDate(data.q62_shiftEndDate)} />
           </FieldRow>
           {hasValue(data.q61_signature) && (
@@ -1212,12 +1422,14 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           )}
         </Section>
 
-        {/* 25b. RN CO-SIGNATURE — only relevant for HHA/CNA/LPN notes. RN-authored
-            notes don't need a second signature, so we skip the section entirely.
-            cosignedAt is a Firestore Timestamp so we read it from rawData
-            (Record<string, unknown>) rather than the string-cast data view. */}
-        {data.q12_credential !== 'RN' && data.q12_credential !== '' && (() => {
+        {/* 25b. RN CO-SIGNATURE — only for credentials that require one per
+            settings (an RN written as "DNP, RN" is still an RN), or when a
+            co-signature exists. cosignedAt is a Firestore Timestamp so we read
+            it from rawData (Record<string, unknown>) rather than the
+            string-cast data view. */}
+        {(() => {
           const cosignedAt = rawData.cosignedAt as { toDate(): Date } | null | undefined;
+          if (!cosignedAt && !credentialRequiresCosign(data.q12_credential, appSettings.cosign.requiredCredentials)) return null;
           return (
             <Section title="RN Co-Signature">
               {cosignedAt ? (
@@ -1225,7 +1437,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
                   <FieldRow>
                     <Field label="Printed Name" value={data.cosignedByName || ''} />
                     <Field label="Credential" value={data.cosignedCredential || 'RN'} />
-                    <Field label="Date Signed" value={cosignedAt.toDate().toLocaleString()} />
+                    <Field label="Date Signed" value={cosignedAt.toDate().toLocaleString('en-US')} />
                   </FieldRow>
                   {hasValue(data.cosignedSignature) && (
                     <div style={{ marginTop: '12px' }}>
@@ -1261,7 +1473,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         {hasValue(data.q67_criticalFlags) && (
           <div style={{ border: '1px solid #fecaca', background: '#fef2f2', borderRadius: 8, padding: '12px 14px', marginTop: 20 }}>
             <div style={{ fontWeight: 700, color: '#b3261e', fontSize: 14, marginBottom: 6 }}>
-              ⚠ Critical vitals — escalation recorded
+              ⚠ Critical Vitals — Escalation Recorded
             </div>
             <div style={{ fontSize: 13, color: '#7a1f17', marginBottom: 4 }}>
               <strong>Threshold(s) crossed:</strong> {data.q67_criticalFlags}
@@ -1337,7 +1549,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
             <div style={stickyCosignInnerStyle}>
               <div>
                 <div style={{ fontWeight: 700, color: '#0f172a', fontSize: 15 }}>
-                  Reviewed this note?
+                  Reviewed This Note?
                 </div>
                 <div style={{ fontSize: 13, color: '#475569' }}>
                   Click below to add your RN co-signature.
@@ -1352,10 +1564,10 @@ export default function SubmissionDetailPage({ params }: PageProps) {
               <button
                 type="button"
                 onClick={() => setCosignModalOpen(true)}
-                style={stickyCosignBtnStyle}
+                className={btnPrimary}
               >
                 <CheckCircle2 size={16} />
-                Co-sign this note
+                Co-Sign This Note
               </button>
             </div>
           </div>
@@ -1372,6 +1584,7 @@ export default function SubmissionDetailPage({ params }: PageProps) {
       {/* Single-note co-sign modal. Built from the in-memory note so we can
           show the client/author summary without re-fetching anything. */}
       {cosignModalOpen && (() => {
+        const sinceLastShift = readShiftChange(data as Record<string, unknown>);
         const summary: SubmissionSummary = {
           id,
           clientName: data.q3_clientName || '',
@@ -1381,9 +1594,18 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           nurseId: (data as Record<string, string>).nurseId || '',
           diagnosis: data.q10_primaryDiagnosis || '',
           dateOfService: fmtDate(data.q6_dateofService) || data.q6_dateofService || '',
+          dateISO: data.q6_dateofService || '',
+          patientId: (data as Record<string, string>).patientId || '',
+          shiftStart: data.q7_shiftStart || '',
+          shiftEnd: data.q62_shiftEndTime || '',
+          shiftEndDate: data.q62_shiftEndDate || '',
+          totalHours: data.q9_totalHours || '',
           submittedAt: null,
           status: 'submitted',
           archivedAt: null,
+          hospitalAdmission: sinceLastShift.hospitalAdmission,
+          erUrgentCare: sinceLastShift.erUrgentCare,
+          medChangeReported: sinceLastShift.medChange,
           nurseArchivedAt: null,
           hasAbnormalVitals: false,
           hasCriticalVitals: false,
@@ -1395,6 +1617,10 @@ export default function SubmissionDetailPage({ params }: PageProps) {
           clarificationStatus: formData?.clarification?.status ?? null,
           clarificationKind: formData?.clarification?.kind ?? null,
           clarificationBlocksNotes: formData?.clarification?.blocksNotes === true,
+          clarificationTurn: clarificationTurn(
+            formData?.clarification ?? null,
+            (data as Record<string, string>).nurseId || undefined,
+          ),
         };
         return (
           <CoSignModal
@@ -1478,11 +1704,25 @@ function AmendedVersions({ fieldKey }: { fieldKey?: string }) {
   );
 }
 
+/** "Added by amendment <when> by <who>" on a recheck block created while
+ *  amending the note (see collapseAddedRechecks). Null otherwise. */
+function RecheckAddedLine({ index }: { index: number }) {
+  const amendments = useContext(AmendmentContext);
+  const v = amendments[recheckAddedKey(index)]?.[0];
+  if (!v) return null;
+  return (
+    <span style={{ ...correctedTagStyle, display: 'block', textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>
+      Added by amendment {fmtWhen(v.correctedAt)}
+      {v.correctedBy ? ` by ${v.correctedBy}` : ''}
+    </span>
+  );
+}
+
 /** Old value for the struck-through line. Never truncated (the record must stay
  *  legible); a blank prior shows as "(blank)" so an added field is clear. */
 function displayOld(v: unknown): string {
   if (v === null || v === undefined || v === '') return '(blank)';
-  if (typeof v === 'string') return v.startsWith('data:image/') ? '(signature image)' : v;
+  if (typeof v === 'string') return v.startsWith('data:image/') ? '(signature image)' : formatDateUS(v);
   try {
     return JSON.stringify(v);
   } catch {
@@ -1522,12 +1762,12 @@ function TextBlock({ label, value, fieldKey }: { label: string; value: string; f
   );
 }
 
-function VitalCard({ label, value, fieldKey }: { label: string; value: string; fieldKey?: string }) {
+function VitalCard({ label, value, fieldKey, alert }: { label: string; value: string; fieldKey?: string; alert?: boolean }) {
   return (
-    <div style={vitalCardStyle}>
+    <div style={alert ? { ...vitalCardStyle, background: '#fff3f0' } : vitalCardStyle}>
       <div style={vitalLabelStyle}>{label}</div>
       <AmendedVersions fieldKey={fieldKey} />
-      <div style={vitalValueStyle}>{value || '--'}</div>
+      <div style={alert ? { ...vitalValueStyle, color: '#c62828' } : vitalValueStyle}>{value || '--'}</div>
     </div>
   );
 }
@@ -1536,12 +1776,6 @@ function VitalCard({ label, value, fieldKey }: { label: string; value: string; f
 
 const NAVY = '#1a3a5c';
 const LIGHT_BLUE = '#e8eef4';
-
-const containerStyle: React.CSSProperties = {
-  maxWidth: 900,
-  margin: '0 auto',
-  padding: 20,
-};
 
 const stickyCosignBarStyle: React.CSSProperties = {
   position: 'fixed',
@@ -1565,20 +1799,6 @@ const stickyCosignInnerStyle: React.CSSProperties = {
   flexWrap: 'wrap',
 };
 
-const stickyCosignBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: '#27ae60',
-  color: 'white',
-  border: 'none',
-  padding: '10px 18px',
-  borderRadius: 6,
-  fontSize: 14,
-  fontWeight: 700,
-  cursor: 'pointer',
-};
-
 const cosignToastStyle: React.CSSProperties = {
   position: 'fixed',
   bottom: 80,
@@ -1593,53 +1813,6 @@ const cosignToastStyle: React.CSSProperties = {
   fontWeight: 600,
   zIndex: 60,
   boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-};
-
-const wrapStyle: React.CSSProperties = {
-  background: 'white',
-  padding: 30,
-  borderRadius: 8,
-  boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-};
-
-const actionsBarStyle: React.CSSProperties = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  marginBottom: 20,
-  paddingBottom: 16,
-  borderBottom: '1px solid #e0e0e0',
-};
-
-const backLinkStyle: React.CSSProperties = {
-  color: '#27ae60',
-  textDecoration: 'none',
-  fontWeight: 600,
-  fontSize: 14,
-};
-
-const primaryBtnStyle: React.CSSProperties = {
-  background: '#27ae60',
-  color: 'white',
-  border: 'none',
-  padding: '8px 20px',
-  borderRadius: 4,
-  cursor: 'pointer',
-  fontWeight: 600,
-  fontSize: 14,
-};
-
-const editBtnStyle: React.CSSProperties = {
-  display: 'inline-block',
-  background: '#34495e',
-  color: 'white',
-  border: 'none',
-  padding: '8px 20px',
-  borderRadius: 4,
-  cursor: 'pointer',
-  fontWeight: 600,
-  fontSize: 14,
-  textDecoration: 'none',
 };
 
 const headerStyle: React.CSSProperties = {
@@ -1807,6 +1980,16 @@ const vitalValueStyle: React.CSSProperties = {
   fontWeight: 700,
   color: '#1a1a1a',
   marginTop: 2,
+};
+
+const recheckHeaderStyle: React.CSSProperties = {
+  padding: '5px 12px',
+  background: '#f4f6f9',
+  fontSize: 11,
+  fontWeight: 700,
+  color: NAVY,
+  textTransform: 'uppercase',
+  letterSpacing: 0.3,
 };
 
 const systemSubsectionStyle: React.CSSProperties = {

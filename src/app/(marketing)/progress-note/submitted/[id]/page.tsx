@@ -2,6 +2,7 @@
 
 import { use } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { formatDateUS } from '@/lib/dateFormat';
 import { Check } from 'lucide-react';
 
 /**
@@ -22,8 +23,13 @@ export default function SubmittedPage({ params }: { params: Promise<{ id: string
   const clientName = searchParams.get('c') || '';
   const dateOfService = searchParams.get('d') || '';
   // 't=oversight' marks an RN oversight visit note (submitted by
-  // /oversight-note, which reuses this confirmation page).
+  // /oversight-note) and 't=supervisory' a home supervisory visit (from
+  // /supervisory-visit); both reuse this confirmation page.
   const isOversight = searchParams.get('t') === 'oversight';
+  const isSupervisory = searchParams.get('t') === 'supervisory';
+  // The next supervisory visit the portal put on the calendar (30 days out,
+  // assigned to the filer), so she leaves knowing when she is due back.
+  const nextVisit = searchParams.get('next') || '';
 
   return (
     <div
@@ -53,13 +59,23 @@ export default function SubmittedPage({ params }: { params: Promise<{ id: string
       </div>
 
       <h1 style={{ color: '#1a3a5c', fontSize: 24, margin: '0 0 8px' }}>
-        {isOversight ? 'Oversight note submitted' : 'Progress note submitted'}
+        {isOversight
+          ? 'Oversight Note Submitted'
+          : isSupervisory
+            ? 'Supervisory Visit Submitted'
+            : 'Progress Note Submitted'}
       </h1>
       <p style={{ color: '#555', lineHeight: 1.6, margin: '0 0 24px' }}>
         {clientName ? <><strong>{clientName}</strong>&apos;s note</> : 'The note'}
-        {dateOfService ? <> for <strong>{dateOfService}</strong></> : null} has been saved
+        {dateOfService ? <> for <strong>{formatDateUS(dateOfService)}</strong></> : null} has been saved
         successfully.
       </p>
+      {isSupervisory && /^\d{4}-\d{2}-\d{2}$/.test(nextVisit) && (
+        <p style={{ color: '#1a3a5c', lineHeight: 1.6, margin: '-12px 0 24px', fontSize: 14 }}>
+          The next supervisory visit was scheduled for <strong>{formatDateUS(nextVisit)}</strong> and assigned to you.
+          Move it or hand it to another supervisor on the client&apos;s Schedule tab if needed.
+        </p>
+      )}
 
       <div
         style={{
@@ -89,7 +105,9 @@ export default function SubmittedPage({ params }: { params: Promise<{ id: string
       <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
         <button
           type="button"
-          onClick={() => router.push(isOversight ? '/oversight-note' : '/progress-note')}
+          onClick={() =>
+            router.push(isOversight ? '/oversight-note' : isSupervisory ? '/supervisory-visit' : '/progress-note')
+          }
           style={{
             background: '#1a3a5c',
             color: '#fff',
@@ -101,7 +119,7 @@ export default function SubmittedPage({ params }: { params: Promise<{ id: string
             fontWeight: 600,
           }}
         >
-          Start another note
+          Start Another Note
         </button>
         <button
           type="button"
@@ -117,7 +135,7 @@ export default function SubmittedPage({ params }: { params: Promise<{ id: string
             fontWeight: 600,
           }}
         >
-          View submissions
+          View Submissions
         </button>
       </div>
     </div>

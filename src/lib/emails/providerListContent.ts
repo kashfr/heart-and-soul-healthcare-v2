@@ -14,6 +14,7 @@
 
 import { PROVIDER_LIST_URL } from '../shareLink';
 import { DEFAULT_SETTINGS, type ProviderListEmailSettings } from '../settings';
+import { emailLogoBlock } from './logo';
 
 function escapeHtml(str: string): string {
   return str
@@ -93,6 +94,7 @@ export function buildProviderListEmail(
 
   const html = `
     <div style="font-family:Arial,Helvetica,sans-serif;color:#111827;max-width:600px;line-height:1.55;">
+      ${emailLogoBlock()}
       <p style="margin:0 0 12px;">${greeting}</p>
       ${paragraphs(copy.intro, vars)}
       ${paragraphs(copy.explainer, vars)}

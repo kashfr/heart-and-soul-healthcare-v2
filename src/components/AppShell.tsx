@@ -2,26 +2,30 @@
 
 import { Suspense, useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
   HeartPulse,
-  Users,
   ClipboardList,
-  ListChecks,
   FileClock,
   UserCog,
+  FileSignature,
+  MessagesSquare,
   FileText,
-  Pill,
-  Stethoscope,
-  Tablets,
   Wrench,
   Settings,
+  Megaphone,
   Handshake,
+  ArrowLeftRight,
+  PhoneCall,
+  ShieldAlert,
+  Printer,
+  PenLine,
   Menu,
   X,
   PanelLeftClose,
   PanelLeftOpen,
+  ChevronDown,
 } from 'lucide-react';
 import { useEffectiveUser } from './AuthProvider';
 import { useViewAs } from './ImpersonationProvider';
@@ -30,10 +34,14 @@ import UserMenu from './UserMenu';
 import NotificationsBell from './NotificationsBell';
 import ClarificationGate from './ClarificationGate';
 import CorrectionsBlockGate from './CorrectionsBlockGate';
+import AnnouncementGate from './AnnouncementGate';
 import type { Role } from '@/lib/auth';
+import { canUseFax } from '@/lib/faxShared';
+import { canUseEdwp } from '@/lib/edwpAccess';
+import { getAssistantClientGrant } from '@/lib/assistantClientAccess';
 import { subscribePendingDupCount } from '@/lib/drafts';
-import { subscribeMyOpenClarifications } from '@/lib/clarifications';
-import { subscribePendingReviewCount } from '@/lib/mar';
+import { subscribeMyOpenClarifications, subscribeOpenFlagsAwaitingReviewer } from '@/lib/clarifications';
+import { subscribePendingHandoffs } from '@/lib/handoffs';
 
 const COLLAPSE_KEY = 'app-shell-collapsed';
 
@@ -42,48 +50,111 @@ interface NavItem {
   label: string;
   icon: React.ReactNode;
   allow?: Role[];
+  /** Also needs the Fax Center grant from Settings (see faxShared.canUseFax). */
+  requiresFax?: boolean;
+  /** Also needs the EDWP Consents grant from Settings (see edwpAccess.canUseEdwp). */
+  requiresEdwp?: boolean;
   disabled?: boolean;
 }
 
 const NAV: NavItem[] = [
   { href: '/admin', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
-  // Per-client dashboards for the whole care team: nurses see their assigned
-  // clients, staff see all. The client picker routes to /admin/clients/[id].
-  { href: '/admin/clients', label: 'Clients', icon: <HeartPulse size={18} />, allow: ['admin', 'supervisor', 'nurse'] },
-  // Always-on MAR and TAR. Open to staff as well as nurses: reaching a client's
-  // med or treatment record via Records -> client -> button is several clicks
-  // for a supervisor doing oversight across a caseload, and the TAR was
-  // effectively undiscoverable for staff because nothing in the sidebar named
-  // it. Both pickers already scope themselves — a nurse sees only her assigned
-  // clients, staff see the full roster — so widening the nav grants no access
-  // the role didn't already have.
-  {
-    href: '/admin/mar',
-    label: 'Medications',
-    icon: <Tablets size={18} />,
-    allow: ['admin', 'supervisor', 'nurse'],
-  },
-  // The TAR is the non-medication twin of the MAR, charting the ordered care on
-  // a client's plan (tube site care, wound care).
-  {
-    href: '/admin/treatments',
-    label: 'Treatments',
-    icon: <Stethoscope size={18} />,
-    allow: ['admin', 'supervisor', 'nurse'],
-  },
-  { href: '/admin/patients', label: 'Patients', icon: <Users size={18} />, allow: ['admin', 'supervisor'] },
-  { href: '/admin/records', label: 'Records', icon: <Pill size={18} />, allow: ['admin', 'supervisor'] },
-  // Per-client plan-of-care task lists (Option C): staff build the list, the
-  // RN supervisor approves it, progress notes chart against it (phase 2).
-  { href: '/admin/care-plan', label: 'Care Plans', icon: <ListChecks size={18} />, allow: ['admin', 'supervisor'] },
-  { href: '/admin/submissions', label: 'Submissions', icon: <ClipboardList size={18} /> },
+  // THE client entry point (nav consolidation, Aug 2026): one role-scoped
+  // roster — staff get the full table with the add/edit modal and record
+  // checks, a nurse gets her assigned clients — and every row opens the
+  // client dashboard at /admin/clients/[id]. MAR/TAR grids hang off each row
+  // as quick-open pills, the care-plan editor is a dashboard tab, and the
+  // med order book is the dashboard's "Manage record". The old Medications /
+  // Treatments / Patients / Care Plans tabs redirect here (their per-patient
+  // grid routes survive for nurse access + old bookmarks).
+  { href: '/admin/clients', label: 'Clients', icon: <HeartPulse size={18} />, allow: ['admin', 'supervisor', 'nurse', 'va'] },
+  { href: '/admin/activity', label: 'Activity Log', icon: <FileClock size={18} />, allow: ['admin'] },
+  // Notes are PHI and the VA role has no business need, so Submissions is
+  // gated to the clinical roles (and enforced by the route's own AuthGuard,
+  // not just hidden here). Revisit if a VA ever needs note access.
+  { href: '/admin/submissions', label: 'Submissions', icon: <ClipboardList size={18} />, allow: ['admin', 'supervisor', 'nurse'] },
+  // Nurse-to-nurse cross communication: a nurse's inbox of unacknowledged
+  // posts (badge = how many are waiting on her); staff see every post with
+  // its acknowledgment status.
+  { href: '/admin/handoffs', label: 'Handoffs', icon: <ArrowLeftRight size={18} />, allow: ['admin', 'supervisor', 'nurse'] },
+  // Telephone physician orders: a nurse takes one, the physician is faxed
+  // the authentication form, the office tracks it until the signed copy is
+  // on file.
+  { href: '/admin/verbal-orders', label: 'Verbal Orders', icon: <PhoneCall size={18} />, allow: ['admin', 'supervisor', 'nurse'] },
+  // Medication error reports: filed by any clinical credential, reviewed by
+  // the RN supervisor; the DBHDD incident-report flag lives here.
+  { href: '/admin/med-errors', label: 'Med Errors', icon: <ShieldAlert size={18} />, allow: ['admin', 'supervisor', 'nurse'] },
+  // What the portal told staff (visit notices and reminders, word for word,
+  // with delivery status) plus messages logged by hand.
+  { href: '/admin/communications', label: 'Communications', icon: <MessagesSquare size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/in-progress', label: 'In Progress', icon: <FileClock size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/users', label: 'Staff & Roles', icon: <UserCog size={18} />, allow: ['admin', 'supervisor'] },
   { href: '/admin/maintenance/link-notes', label: 'Maintenance', icon: <Wrench size={18} />, allow: ['admin'] },
   { href: '/admin/settings', label: 'Settings', icon: <Settings size={18} />, allow: ['admin'] },
+  // "What's new" announcements: publish to a role audience, see who clicked through.
+  { href: '/admin/announcements', label: 'Announcements', icon: <Megaphone size={18} />, allow: ['admin'] },
   { href: '/admin/referrals', label: 'Referrals', icon: <FileText size={18} />, allow: ['admin', 'va'] },
   { href: '/admin/agencies', label: 'Agencies', icon: <Handshake size={18} />, allow: ['admin', 'va'] },
+  // Signed EDWP consents (client PHI). Admins, plus the supervisors and VAs
+  // an admin checks in Settings (every VA until that list is first saved).
+  { href: '/admin/edwp-consents', label: 'EDWP Consents', icon: <FileSignature size={18} />, allow: ['admin', 'supervisor', 'va'], requiresEdwp: true },
+  // Send a PDF to a physician's office (or anyone) through SRFax with a cover
+  // sheet, and track delivery. Shown only to people an admin granted in
+  // Settings; the /api/fax routes enforce the same rule.
+  { href: '/admin/fax', label: 'Fax Center', icon: <Printer size={18} />, allow: ['admin', 'supervisor', 'va'], requiresFax: true },
+  // PandaDoc packets (onboarding by default) and where each stands, kept
+  // current by a PandaDoc webhook. Same access as the Fax Center.
+  { href: '/admin/esign', label: 'E-Signatures', icon: <PenLine size={18} />, allow: ['admin', 'supervisor', 'va'], requiresFax: true },
 ];
+
+// Group the existing links after their individual permission checks. A group
+// never grants access, and disappears when none of its links are available.
+const NAV_GROUPS = [
+  {
+    id: 'clinical', label: 'Clinical Work', icon: <ClipboardList size={18} />,
+    hrefs: ['/admin/submissions', '/admin/in-progress', '/admin/handoffs', '/admin/verbal-orders', '/admin/med-errors'],
+  },
+  {
+    id: 'intake', label: 'Referrals & Intake', icon: <FileText size={18} />,
+    hrefs: ['/admin/referrals', '/admin/agencies', '/admin/edwp-consents'],
+  },
+  {
+    id: 'office', label: 'Office Tools', icon: <MessagesSquare size={18} />,
+    hrefs: ['/admin/communications', '/admin/fax', '/admin/esign', '/admin/announcements'],
+  },
+  {
+    id: 'administration', label: 'Administration', icon: <Settings size={18} />,
+    hrefs: ['/admin/activity', '/admin/users', '/admin/settings', '/admin/maintenance/link-notes'],
+  },
+];
+
+function readOpenGroups(key: string | null): string[] {
+  if (!key) return [];
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(key) ?? '[]');
+    return Array.isArray(value)
+      ? value.filter((id): id is string => typeof id === 'string' && NAV_GROUPS.some((group) => group.id === id))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveOpenGroups(key: string | null, groups: string[]) {
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify(groups));
+  } catch {
+    // Navigation remains usable when browser storage is unavailable.
+  }
+}
+
+const VIEW_AS_ROLE_LABELS: Record<Role, string> = {
+  admin: 'Admin',
+  supervisor: 'Supervisor',
+  nurse: 'Nurse',
+  va: 'Virtual Assistant',
+};
 
 const viewAsBannerStyle: React.CSSProperties = {
   position: 'sticky',
@@ -122,31 +193,26 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { viewingAs, stopViewAs } = useViewAs();
   const { settings: appSettings } = useSettings();
   const pathname = usePathname();
+  const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
-  // Desktop sidebar collapse, persisted to localStorage so it survives
-  // refreshes. Read lazily on first render; SSR has no window so it defaults
-  // to expanded, and the <aside> uses suppressHydrationWarning so the
-  // client's persisted value can differ from the server markup without a
-  // hydration warning.
-  const [collapsed, setCollapsed] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
+  // Read preferences after hydration so server and client markup agree.
+  const [collapsed, setCollapsed] = useState(false);
+  const [openGroups, setOpenGroups] = useState<string[]>([]);
+  useEffect(() => {
     try {
-      return localStorage.getItem(COLLAPSE_KEY) === '1';
+      setCollapsed(localStorage.getItem(COLLAPSE_KEY) === '1');
     } catch {
-      return false;
+      // Browser storage may be unavailable.
     }
-  });
+  }, []);
 
-  const toggleCollapsed = () => {
-    setCollapsed((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0');
-      } catch {
-        /* ignore persistence failure */
-      }
-      return next;
-    });
+  const changeCollapsed = (next: boolean) => {
+    setCollapsed(next);
+    try {
+      localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0');
+    } catch {
+      // Navigation remains usable without persistence.
+    }
   };
 
   // Live count of pending duplicate-note approval requests, shown as a badge
@@ -157,16 +223,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     // count stays at its initial 0.
     if (role !== 'admin' && role !== 'supervisor') return;
     const unsub = subscribePendingDupCount(setPendingDup);
-    return () => unsub();
-  }, [role]);
-
-  // Live count of applied medication changes awaiting RN review, shown on the
-  // Records nav item. Admin + supervisor only (the tier that reviews them).
-  const [pendingMarReq, setPendingMarReq] = useState(0);
-  useEffect(() => {
-    if (role !== 'admin' && role !== 'supervisor') return;
-    const unsub = subscribePendingReviewCount(setPendingMarReq);
-    return () => unsub();
+    return () => {
+      unsub();
+      setPendingDup(0);
+    };
   }, [role]);
 
   // Live count of the signed-in nurse's OPEN clarification requests, shown as a
@@ -181,6 +241,32 @@ export function AppShell({ children }: { children: ReactNode }) {
       setOpenClarifications(items.filter((i) => i.awaitsNurse).length),
     );
     return () => unsub();
+  }, [role, effectiveUid]);
+
+  // Live count of OPEN flags waiting on a reviewer (the author replied or
+  // amended), shown on the Submissions nav item for admins + supervisors —
+  // the mirror image of the nurse's badge above. Reset in the cleanup so a
+  // supervisor previewing as a nurse (view-as) doesn't keep a stale count.
+  const [awaitingReview, setAwaitingReview] = useState(0);
+  useEffect(() => {
+    if (role !== 'admin' && role !== 'supervisor') return;
+    const unsub = subscribeOpenFlagsAwaitingReviewer(setAwaitingReview);
+    return () => {
+      unsub();
+      setAwaitingReview(0);
+    };
+  }, [role]);
+
+  // Live count of handoffs still waiting on the signed-in nurse (badge on
+  // the Handoffs nav item). Nurses only: staff are never recipients.
+  const [pendingHandoffs, setPendingHandoffs] = useState(0);
+  useEffect(() => {
+    if (role !== 'nurse' || !effectiveUid) return;
+    const unsub = subscribePendingHandoffs(effectiveUid, (items) => setPendingHandoffs(items.length));
+    return () => {
+      unsub();
+      setPendingHandoffs(0);
+    };
   }, [role, effectiveUid]);
 
   // Close the mobile drawer whenever the route changes.
@@ -199,16 +285,151 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
   }, [mobileOpen]);
 
-  const visibleNav = NAV.filter((item) => !item.allow || (role && item.allow.includes(role)));
+  const visibleNav = NAV.filter(
+    (item) =>
+      (!item.allow || (role && item.allow.includes(role))) &&
+      (item.href !== '/admin/clients' || role !== 'va' || !!getAssistantClientGrant(appSettings.assistantClients, effectiveUid, role)) &&
+      (!item.requiresFax || canUseFax(appSettings.fax, effectiveUid, role)) &&
+      (!item.requiresEdwp || canUseEdwp(appSettings.edwp, effectiveUid, role)),
+  );
 
+  // Client-scoped surfaces that lost their own sidebar slot in the nav
+  // consolidation still highlight the Clients item (and give the topbar a
+  // real title): the MAR/TAR grids, the med order book, and the legacy
+  // redirect stubs.
+  const CLIENT_SCOPED_PREFIXES = [
+    '/admin/clients',
+    '/admin/mar',
+    '/admin/treatments',
+    '/admin/records',
+    '/admin/care-plan',
+    '/admin/patients',
+  ];
   const isActive = (href: string) => {
     if (!pathname) return false;
     if (href === '/admin') return pathname === '/admin';
+    if (href === '/admin/clients') {
+      return CLIENT_SCOPED_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+    }
     return pathname === href || pathname.startsWith(`${href}/`);
   };
 
   const currentTitle =
     [...visibleNav].reverse().find((item) => isActive(item.href))?.label ?? 'Admin';
+
+  const visibleGroups = NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.hrefs.flatMap((href) => visibleNav.filter((item) => item.href === href)),
+  })).filter((group) => group.items.length > 0);
+  const activeGroupId = visibleGroups.find((group) => group.items.some((item) => isActive(item.href)))?.id;
+  // View-as previews have separate preferences, so they cannot overwrite a
+  // staff member's own saved navigation choices on a shared browser.
+  const groupsStorageKey = effectiveUid && role
+    ? `app-shell-open-groups:${isViewingAs ? 'preview' : 'user'}:${effectiveUid}:${role}`
+    : null;
+  useEffect(() => {
+    const saved = readOpenGroups(groupsStorageKey);
+    const next = activeGroupId && !saved.includes(activeGroupId) ? [...saved, activeGroupId] : saved;
+    setOpenGroups(next);
+    saveOpenGroups(groupsStorageKey, next);
+    // Only navigation/identity changes open a group automatically. Badge and
+    // settings rerenders must not override a person's manual collapse.
+  }, [groupsStorageKey, pathname, activeGroupId]);
+
+  const toggleGroup = (id: string) => {
+    // Clicking an icon in the narrow desktop rail reveals its links. Mobile
+    // uses the full drawer even when a desktop collapse preference is saved.
+    const revealRail = collapsed && !mobileOpen;
+    if (revealRail) changeCollapsed(false);
+    const next = revealRail
+      ? Array.from(new Set([...openGroups, id]))
+      : openGroups.includes(id) ? openGroups.filter((group) => group !== id) : [...openGroups, id];
+    setOpenGroups(next);
+    saveOpenGroups(groupsStorageKey, next);
+  };
+
+  const badgeCountFor = (item: NavItem) =>
+      item.href === '/admin/handoffs'
+        ? pendingHandoffs
+        : item.href === '/admin/in-progress'
+        ? pendingDup
+        : item.href === '/admin/submissions'
+          ? role === 'nurse'
+            ? openClarifications
+            : awaitingReview
+          : 0;
+
+  const renderNavItem = (item: NavItem) => {
+    const active = isActive(item.href);
+    const classes = [
+      'app-shell-nav-item',
+      active ? 'app-shell-nav-item--active' : '',
+      item.disabled ? 'app-shell-nav-item--disabled' : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const badgeCount = badgeCountFor(item);
+    const badgeTitle =
+      item.href === '/admin/handoffs'
+        ? `${badgeCount} handoff${badgeCount === 1 ? '' : 's'} waiting for your acknowledgment`
+        : item.href === '/admin/in-progress'
+        ? `${badgeCount} duplicate-note request${badgeCount === 1 ? '' : 's'} awaiting approval`
+        : role === 'nurse'
+          ? `${badgeCount} note${badgeCount === 1 ? '' : 's'} needing your clarification`
+          : `${badgeCount} flagged note${badgeCount === 1 ? '' : 's'} with a nurse reply or amendment awaiting review`;
+    // Where a click on the count itself lands: the Submissions list with
+    // the Flagged filter on, which shows every open flag (both sides of
+    // the thread) with a per-row hint of whose turn it is.
+    const badgeHref = item.href === '/admin/submissions' ? '/admin/submissions?flag=1' : '';
+    const inner = (
+      <>
+        <span className="app-shell-nav-icon" aria-hidden="true">{item.icon}</span>
+        <span className="app-shell-nav-label">{item.label}</span>
+        {item.disabled && <span className="app-shell-coming-soon">Soon</span>}
+        {badgeCount > 0 && (
+          <span
+            className={badgeHref ? 'app-shell-nav-badge app-shell-nav-badge--link' : 'app-shell-nav-badge'}
+            title={badgeHref ? `${badgeTitle}. Click to list them.` : badgeTitle}
+            onClick={
+              badgeHref
+                ? (e) => {
+                    // The badge sits inside the nav Link. Swallow the click
+                    // so the Link doesn't also navigate to the bare list,
+                    // then go straight to the pre-filtered view the count
+                    // refers to.
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setMobileOpen(false);
+                    router.push(badgeHref);
+                  }
+                : undefined
+            }
+          >
+            {badgeCount}
+          </span>
+        )}
+      </>
+    );
+    if (item.disabled) {
+      return (
+        <div key={item.href} className={classes} title={collapsed ? item.label : undefined}>
+          {inner}
+        </div>
+      );
+    }
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        aria-current={active ? 'page' : undefined}
+        onClick={() => setMobileOpen(false)}
+        className={classes}
+        title={collapsed ? item.label : undefined}
+      >
+        {inner}
+      </Link>
+    );
+  };
 
   return (
     <div className="app-shell">
@@ -217,6 +438,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div style={viewAsBannerStyle} className="no-print">
           <span>
             👁 Viewing as <strong>{viewingAs.displayName}</strong>
+            {/* Role always, credential when they have one, so an RN supervisor
+                preview ("Supervisor · RN") can't be mistaken for an RN nurse's
+                ("Nurse · RN"). */}
+            {` · ${VIEW_AS_ROLE_LABELS[viewingAs.role] ?? viewingAs.role}`}
             {viewingAs.credential ? ` · ${viewingAs.credential}` : ''} (read-only)
           </span>
           <button
@@ -224,7 +449,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             onClick={() => { stopViewAs(); window.location.href = '/admin/users'; }}
             style={viewAsExitBtnStyle}
           >
-            Exit view-as
+            Exit View-As
           </button>
         </div>
       )}
@@ -240,9 +465,12 @@ export function AppShell({ children }: { children: ReactNode }) {
       <Suspense fallback={null}>
         <CorrectionsBlockGate />
       </Suspense>
+      {/* "What's new": one-time read-and-acknowledge modal per announcement.
+          Below the two hard stops in z-order so a blocked nurse still sees
+          the block first. */}
+      <AnnouncementGate />
       <div className="app-shell-body">
       <aside
-        suppressHydrationWarning
         className={`app-shell-sidebar${mobileOpen ? ' app-shell-sidebar--open' : ''}${
           collapsed ? ' app-shell-sidebar--collapsed' : ''
         }`}
@@ -254,12 +482,12 @@ export function AppShell({ children }: { children: ReactNode }) {
                 {appSettings.branding.orgName}
               </div>
               <div style={{ fontSize: 11, color: '#94a3b8', lineHeight: 1.2 }}>
-                Staff portal
+                Staff Portal
               </div>
             </div>
           </Link>
           <button
-            onClick={toggleCollapsed}
+            onClick={() => changeCollapsed(!collapsed)}
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             className="app-shell-icon-btn app-shell-collapse-btn"
@@ -275,59 +503,38 @@ export function AppShell({ children }: { children: ReactNode }) {
           </button>
         </div>
 
-        <nav className="app-shell-nav">
-          {visibleNav.map((item) => {
-            const active = isActive(item.href);
-            const classes = [
-              'app-shell-nav-item',
-              active ? 'app-shell-nav-item--active' : '',
-              item.disabled ? 'app-shell-nav-item--disabled' : '',
-            ]
-              .filter(Boolean)
-              .join(' ');
-            const badgeCount =
-              item.href === '/admin/in-progress'
-                ? pendingDup
-                : item.href === '/admin/records'
-                  ? pendingMarReq
-                  : item.href === '/admin/submissions'
-                    ? openClarifications
-                    : 0;
-            const badgeTitle =
-              item.href === '/admin/in-progress'
-                ? `${badgeCount} duplicate-note request${badgeCount === 1 ? '' : 's'} awaiting approval`
-                : item.href === '/admin/records'
-                  ? `${badgeCount} medication change${badgeCount === 1 ? '' : 's'} awaiting review`
-                  : `${badgeCount} note${badgeCount === 1 ? '' : 's'} needing your clarification`;
-            const inner = (
-              <>
-                <span className="app-shell-nav-icon">{item.icon}</span>
-                <span className="app-shell-nav-label">{item.label}</span>
-                {item.disabled && <span className="app-shell-coming-soon">Soon</span>}
-                {badgeCount > 0 && (
-                  <span className="app-shell-nav-badge" title={badgeTitle}>
-                    {badgeCount}
-                  </span>
-                )}
-              </>
-            );
-            if (item.disabled) {
-              return (
-                <div key={item.href} className={classes} title={collapsed ? item.label : undefined}>
-                  {inner}
-                </div>
-              );
-            }
+        <nav className="app-shell-nav" aria-label="Main navigation">
+          {visibleNav.filter((item) => item.href === '/admin' || item.href === '/admin/clients').map(renderNavItem)}
+          {visibleGroups.map((group) => {
+            const open = openGroups.includes(group.id);
+            const active = group.items.some((item) => isActive(item.href));
+            const badgeCount = group.items.reduce((sum, item) => sum + badgeCountFor(item), 0);
+            const pendingSummary = group.items
+              .filter((item) => badgeCountFor(item) > 0)
+              .map((item) => `${item.label}: ${badgeCountFor(item)}`)
+              .join('; ');
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setMobileOpen(false)}
-                className={classes}
-                title={collapsed ? item.label : undefined}
-              >
-                {inner}
-              </Link>
+              <div className="app-shell-nav-group" key={group.id}>
+                <button
+                  type="button"
+                  className={`app-shell-nav-item app-shell-nav-group-toggle${active ? ' app-shell-nav-item--active' : ''}`}
+                  onClick={() => toggleGroup(group.id)}
+                  aria-expanded={open && (!collapsed || mobileOpen)}
+                  aria-controls={`sidebar-group-${group.id}`}
+                  aria-label={`${group.label}${badgeCount > 0 ? `, ${badgeCount} pending items` : ''}`}
+                  title={pendingSummary ? `${group.label} — ${pendingSummary}` : group.label}
+                >
+                  <span className="app-shell-nav-icon" aria-hidden="true">{group.icon}</span>
+                  <span className="app-shell-nav-label">{group.label}</span>
+                  {badgeCount > 0 && (
+                    <span className="app-shell-nav-badge" title={pendingSummary} aria-hidden="true">{badgeCount}</span>
+                  )}
+                  <ChevronDown size={16} aria-hidden="true" className={`app-shell-group-chevron${open ? ' app-shell-group-chevron--open' : ''}`} />
+                </button>
+                <div id={`sidebar-group-${group.id}`} className="app-shell-nav-children" hidden={!open}>
+                  {group.items.map(renderNavItem)}
+                </div>
+              </div>
             );
           })}
         </nav>
@@ -337,10 +544,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             href="/"
             className="app-shell-footer-link"
             onClick={() => setMobileOpen(false)}
-            title={collapsed ? 'Back to public site' : undefined}
+            title={collapsed ? 'Back to Public Site' : undefined}
           >
             <span aria-hidden="true">←</span>
-            <span className="app-shell-nav-label"> Back to public site</span>
+            <span className="app-shell-nav-label"> Back to Public Site</span>
           </Link>
         </div>
       </aside>
@@ -431,6 +638,42 @@ export function AppShell({ children }: { children: ReactNode }) {
           text-decoration: none;
           font-weight: 500;
         }
+        .app-shell-nav-group-toggle {
+          width: 100%;
+          border: 0;
+          background: transparent;
+          font-family: inherit;
+          text-align: left;
+          cursor: pointer;
+        }
+        .app-shell-nav-group-toggle.app-shell-nav-item--active {
+          background: #374151;
+        }
+        .app-shell-nav-item:focus-visible {
+          outline: 2px solid #93c5fd;
+          outline-offset: -2px;
+        }
+        .app-shell-nav-label {
+          flex: 1;
+        }
+        .app-shell-group-chevron {
+          flex-shrink: 0;
+          transform: rotate(-90deg);
+          transition: transform 0.18s ease;
+        }
+        .app-shell-group-chevron--open {
+          transform: rotate(0);
+        }
+        .app-shell-nav-children {
+          margin: 3px 0 7px 20px;
+          padding-left: 5px;
+          border-left: 1px solid #475569;
+        }
+        .app-shell-nav-children .app-shell-nav-item {
+          font-size: 13px;
+          padding: 8px;
+          gap: 8px;
+        }
         .app-shell-nav-item:hover:not(.app-shell-nav-item--disabled) {
           background: rgba(255,255,255,0.04);
           color: white;
@@ -447,6 +690,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         .app-shell-nav-icon {
           display: inline-flex;
           align-items: center;
+          flex-shrink: 0;
         }
         .app-shell-coming-soon {
           margin-left: auto;
@@ -474,16 +718,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           justify-content: center;
           line-height: 1;
         }
-        /* In the collapsed rail the label is hidden; pin the badge to the
-           icon's corner so the count still shows. */
-        .app-shell-sidebar--collapsed .app-shell-nav-badge {
-          position: absolute;
-          top: 4px;
-          right: 10px;
-          margin-left: 0;
+        .app-shell-nav-badge--link {
+          cursor: pointer;
         }
-        .app-shell-sidebar--collapsed .app-shell-nav-item {
-          position: relative;
+        .app-shell-nav-badge--link:hover {
+          background: #fbbf24;
         }
         .app-shell-sidebar-footer {
           padding: 12px 16px;
@@ -553,6 +792,21 @@ export function AppShell({ children }: { children: ReactNode }) {
             display: inline-flex;
           }
 
+        /* In the collapsed rail the label is hidden; pin the badge to the
+           icon's corner so the count still shows. */
+        .app-shell-sidebar--collapsed .app-shell-nav-badge {
+          position: absolute;
+          top: 4px;
+          right: 10px;
+          margin-left: 0;
+        }
+        .app-shell-sidebar--collapsed .app-shell-nav-item {
+          position: relative;
+        }
+          .app-shell-sidebar--collapsed .app-shell-nav-children,
+          .app-shell-sidebar--collapsed .app-shell-group-chevron {
+            display: none;
+          }
           /* Collapsed rail: icon-only, labels + brand text hidden.
              Compound selector (two classes) outranks the base
              .app-shell-sidebar width; min/max pin it so the flex row
@@ -593,10 +847,14 @@ export function AppShell({ children }: { children: ReactNode }) {
             height: 100vh;
             transform: translateX(-100%);
             transition: transform 0.22s ease;
-            box-shadow: 4px 0 24px rgba(0,0,0,0.3);
           }
+          /* Shadow only while open. The closed drawer is merely translated
+             off-screen, so a shadow on the base class bleeds its blur back
+             into the left edge of the viewport — and onto every page of a
+             PDF printout, since letter width falls under this breakpoint. */
           .app-shell-sidebar--open {
             transform: translateX(0);
+            box-shadow: 4px 0 24px rgba(0,0,0,0.3);
           }
           .app-shell-backdrop {
             display: block;

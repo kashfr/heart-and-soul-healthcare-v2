@@ -1,8 +1,22 @@
+import { clientAuditActor } from './clientAuditActor';
 import 'server-only';
 import { FieldValue, type DocumentData, type DocumentReference } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
 import type { AuthedCaller } from './adminAuthGuard';
-import { buildMarAdminFields, deriveInitials, parseValueOptions, regimenFieldsChanged } from './marShared';
+import {
+  amendCarryForwardFields,
+  buildMarAdminFields,
+  cleanTimeLabels,
+  decideNurseDoseGate,
+  deriveInitials,
+  inheritMeasurement,
+  isSameDayAmendable,
+  parseValueOptions,
+  regimenFields,
+  regimenFieldsChanged,
+} from './marShared';
+import { agencyDayISO } from './clientDashboardShared';
+import { parseSlidingScale, SLIDING_SCALE_DOSE_LABEL } from './slidingScale';
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** Return `value` if it is an ISO YYYY-MM-DD date string, else `fallback`. Both
@@ -10,6 +24,20 @@ const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
  *  applyChangeInBatch), so a crafted change request can't store a garbage date
  *  on a real order and silently mis-schedule a med (dates are compared as raw
  *  strings by orderAppliesOn / orderOverlapsRange). */
+/** Has any dose been charted against one of these orders? Read against the
+ *  append-only administrations collection, so a voided (entered-in-error) dose
+ *  still counts: it was charted under those terms, and the terms stay. */
+async function ordersHaveDoses(orderIds: string[]): Promise<boolean> {
+  const ids = orderIds.filter(Boolean);
+  if (ids.length === 0) return false;
+  const snap = await adminDb()
+    .collection('marAdministrations')
+    .where('orderId', 'in', ids.slice(0, 10))
+    .limit(1)
+    .get();
+  return !snap.empty;
+}
+
 function isoOr(value: unknown, fallback: string): string {
   const s = String(value || '');
   return ISO_DATE_RE.test(s) ? s : fallback;
@@ -21,15 +49,6 @@ export interface ApplyChangesResult {
   failed: number;
 }
 
-export type ReviewFailureReason = 'not-found' | 'already-reviewed';
-
-export interface ReviewResult {
-  ok: boolean;
-  reqId: string;
-  reason?: ReviewFailureReason;
-  message?: string;
-}
-
 interface ProposedMedShape {
   medName?: string;
   dose?: string;
@@ -37,7 +56,10 @@ interface ProposedMedShape {
   route?: string;
   frequencyLabel?: string;
   scheduledTimes?: string[];
+  timeLabels?: Record<string, string>;
+  slidingScale?: unknown;
   isPRN?: boolean;
+  prnFrequencyLabel?: string;
   indication?: string;
   valueLabel?: string;
   valueUnit?: string;
@@ -46,7 +68,35 @@ interface ProposedMedShape {
   orderSignedDate?: string;
   orderingPhysician?: string;
   physicianPending?: boolean;
+  parameters?: string;
   notes?: string;
+}
+
+/** Dose / units as stored: a sliding-scale order carries no fixed dose, so it
+ *  reads "Per sliding scale" no matter what the payload typed there. */
+function doseFields(p: ProposedMedShape): { dose: string; units: string } {
+  return parseSlidingScale(p.slidingScale).length > 0
+    ? { dose: SLIDING_SCALE_DOSE_LABEL, units: '' }
+    : { dose: String(p.dose || ''), units: String(p.units || '') };
+}
+
+/** The regimen half of a proposal, in the shape the comparison reads. One
+ *  place so the "did the regimen move?" check and the same-day amendment write
+ *  can never look at different field lists. */
+function regimenOf(p: ProposedMedShape) {
+  return {
+    medName: p.medName,
+    ...doseFields(p),
+    route: p.route,
+    frequencyLabel: p.frequencyLabel,
+    scheduledTimes: p.scheduledTimes,
+    timeLabels: p.timeLabels,
+    isPRN: p.isPRN,
+    prnFrequencyLabel: p.prnFrequencyLabel,
+    valueLabel: p.valueLabel,
+    valueUnit: p.valueUnit,
+    slidingScale: p.slidingScale,
+  };
 }
 
 function orderFromProposed(
@@ -56,15 +106,18 @@ function orderFromProposed(
   caller: AuthedCaller,
   extra: Record<string, unknown> = {},
 ) {
+  const scheduledTimes = p.isPRN ? [] : Array.isArray(p.scheduledTimes) ? p.scheduledTimes : [];
   return {
     patientId,
     medName: String(p.medName || ''),
-    dose: String(p.dose || ''),
-    units: String(p.units || ''),
+    ...doseFields(p),
     route: String(p.route || ''),
     frequencyLabel: String(p.frequencyLabel || ''),
-    scheduledTimes: p.isPRN ? [] : Array.isArray(p.scheduledTimes) ? p.scheduledTimes : [],
+    scheduledTimes,
+    timeLabels: cleanTimeLabels(p.timeLabels, scheduledTimes, !!p.isPRN),
+    slidingScale: parseSlidingScale(p.slidingScale),
     isPRN: !!p.isPRN,
+    prnFrequencyLabel: p.isPRN ? String(p.prnFrequencyLabel || '').trim() : '',
     indication: String(p.indication || ''),
     valueLabel: String(p.valueLabel || ''),
     valueUnit: String(p.valueUnit || ''),
@@ -74,6 +127,7 @@ function orderFromProposed(
     orderSignedDate: String(p.orderSignedDate || ''),
     orderingPhysician: String(p.orderingPhysician || ''),
     physicianPending: p.physicianPending === true,
+    parameters: String(p.parameters || '').trim(),
     notes: String(p.notes || ''),
     status: 'active',
     createdAt: FieldValue.serverTimestamp(),
@@ -88,11 +142,12 @@ function orderFromProposed(
  * The documentation half of an order: who ordered it, why, and how it reads —
  * everything a "change" may rewrite WITHOUT starting a new regimen. Used both
  * to apply a correction and (run over the pre-change order) to snapshot what it
- * replaced so the edit can be reverted.
+ * replaced, so the change history records what the order said before the edit.
  */
 function correctionFields(p: ProposedMedShape) {
   return {
     indication: String(p.indication || ''),
+    parameters: String(p.parameters || '').trim(),
     notes: String(p.notes || ''),
     orderingPhysician: String(p.orderingPhysician || ''),
     orderSignedDate: String(p.orderSignedDate || ''),
@@ -103,8 +158,10 @@ function correctionFields(p: ProposedMedShape) {
 
 /**
  * Apply ONE medication change in a single atomic batch and stamp its change
- * request applied + reviewStatus 'pending' (RN acknowledgment; there is NO
- * approval gate). Shared by the note flow (applyStagedChanges) and the
+ * request applied. There is no approval gate and no acknowledgment step:
+ * keeping the MAR current per a physician's order is within an LPN's scope.
+ * The record persists as the audit trail of what changed and who did it.
+ * Shared by the note flow (applyStagedChanges) and the
  * standalone MAR (applyStandaloneChange) so both behave identically:
  *   - add: create a new active order.
  *   - change: if the edit moves a REGIMEN field (dose, route, frequency,
@@ -123,13 +180,17 @@ function correctionFields(p: ProposedMedShape) {
  * target order is missing OR belongs to a different patient (a guard so a
  * client can't act on another client's order by id).
  */
+/** What a change actually did to the record, so the UI can say so truthfully. */
+export type ChangeKind = 'add' | 'correction' | 'amendment' | 'regimen' | 'discontinue';
+
 async function applyChangeInBatch(
   reqRef: DocumentReference,
   data: DocumentData,
   caller: AuthedCaller,
   today: string,
-): Promise<boolean> {
-  const reviewStamp = { status: 'applied', reviewStatus: 'pending', appliedAt: FieldValue.serverTimestamp() };
+): Promise<false | { changeKind: ChangeKind }> {
+  let outcome: ChangeKind;
+  const reviewStamp = { ...clientAuditActor(caller), status: 'applied', appliedAt: FieldValue.serverTimestamp() };
   const patientId = String(data.patientId || '');
   const patientRef = patientId ? adminDb().collection('patients').doc(patientId) : null;
   const batch = adminDb().batch();
@@ -141,8 +202,9 @@ async function applyChangeInBatch(
       orderRef,
       orderFromProposed(patientId, p, isoOr(p.startDate, today), caller, { fromChangeRequestId: reqRef.id }),
     );
-    if (patientRef) batch.set(patientRef, { requiresMar: true }, { merge: true });
-    batch.update(reqRef, { ...reviewStamp, createdOrderId: orderRef.id });
+    if (patientRef) batch.set(patientRef, { ...clientAuditActor(caller), requiresMar: true }, { merge: true });
+    batch.update(reqRef, { ...clientAuditActor(caller), ...reviewStamp, createdOrderId: orderRef.id });
+    outcome = 'add';
   } else if (data.type === 'change') {
     const oldId = String(data.targetOrderId || '');
     if (!oldId) return false;
@@ -154,42 +216,66 @@ async function applyChangeInBatch(
     if (!oldSnap.exists || String(old.patientId || '') !== patientId || String(old.status || '') !== 'active') {
       return false;
     }
-    const p = (data.proposedMed || {}) as ProposedMedShape;
+    // A proposal that carries no measurement (the note modal has no inputs for
+    // it) keeps the order's own, so it can never strip a check-style order.
+    const p = inheritMeasurement((data.proposedMed || {}) as ProposedMedShape, old);
 
     // Does this edit change HOW the med is given, or only who ordered it and
     // why? Re-derived here rather than trusted from the client, so a crafted
     // payload can't turn a dose change into a silent in-place edit.
-    const regimenChanges = regimenFieldsChanged(old, {
-      medName: p.medName,
-      dose: p.dose,
-      units: p.units,
-      route: p.route,
-      frequencyLabel: p.frequencyLabel,
-      scheduledTimes: p.scheduledTimes,
-      isPRN: p.isPRN,
-      valueLabel: p.valueLabel,
-      valueUnit: p.valueUnit,
-    });
+    const regimenChanges = regimenFieldsChanged(old, regimenOf(p));
 
     if (regimenChanges.length === 0) {
       // CORRECTION: nothing about the administration changed, so the order is
       // updated in place. No discontinue, no replacement, one unbroken MAR row
       // — a med whose ordering physician was finally filled in must not read as
       // though it was stopped.
-      batch.update(oldRef, {
+      batch.update(oldRef, { ...clientAuditActor(caller),
         ...correctionFields(p),
         lastEditedAt: FieldValue.serverTimestamp(),
         lastEditedBy: caller.uid,
         lastEditedByName: caller.profile.displayName || '',
       });
-      batch.update(reqRef, {
+      batch.update(reqRef, { ...clientAuditActor(caller),
         ...reviewStamp,
         changeKind: 'correction',
         updatedOrderId: oldId,
-        // Exactly the fields the correction overwrote, so a revert can put the
-        // order back without guessing what it looked like.
+        // Exactly the fields the correction overwrote, so the change history
+        // shows what the order said before the edit.
         previousValues: correctionFields(old as ProposedMedShape),
       });
+      outcome = 'correction';
+    } else if (
+      isSameDayAmendable({
+        createdDayISO: createdDayOf(old.createdAt),
+        today,
+        hasDoses: await ordersHaveDoses([oldId]),
+      })
+    ) {
+      // SAME-DAY AMENDMENT: the order was entered today and nothing has been
+      // charted against it, so the nurse is correcting her own entry rather
+      // than changing a regimen anyone was given. Rewrite the order in place.
+      // The request still records exactly which regimen fields moved and what
+      // they were before. See isSameDayAmendable for why both conditions are
+      // required.
+      batch.update(oldRef, { ...clientAuditActor(caller),
+        ...regimenFields(regimenOf(p)),
+        ...correctionFields(p),
+        lastEditedAt: FieldValue.serverTimestamp(),
+        lastEditedBy: caller.uid,
+        lastEditedByName: caller.profile.displayName || '',
+      });
+      batch.update(reqRef, { ...clientAuditActor(caller),
+        ...reviewStamp,
+        changeKind: 'amendment',
+        regimenFieldsChanged: regimenChanges,
+        updatedOrderId: oldId,
+        previousValues: {
+          ...regimenFields(old as ProposedMedShape),
+          ...correctionFields(old as ProposedMedShape),
+        },
+      });
+      outcome = 'amendment';
     } else {
       // REGIMEN CHANGE: the terms of administration moved, so the old order is
       // discontinued and a replacement starts on the effective date. Each
@@ -205,7 +291,7 @@ async function applyChangeInBatch(
           supersedesOrderId: oldId,
         }),
       );
-      batch.update(oldRef, {
+      batch.update(oldRef, { ...clientAuditActor(caller),
         status: 'discontinued',
         endDate: effective,
         discontinuedAt: FieldValue.serverTimestamp(),
@@ -214,13 +300,14 @@ async function applyChangeInBatch(
         discontinueReason: `Changed per physician order: ${String(data.reason || '').trim()}`.trim(),
         supersededByOrderId: newRef.id,
       });
-      if (patientRef) batch.set(patientRef, { requiresMar: true }, { merge: true });
-      batch.update(reqRef, {
+      if (patientRef) batch.set(patientRef, { ...clientAuditActor(caller), requiresMar: true }, { merge: true });
+      batch.update(reqRef, { ...clientAuditActor(caller),
         ...reviewStamp,
         changeKind: 'regimen',
         regimenFieldsChanged: regimenChanges,
         createdOrderId: newRef.id,
       });
+      outcome = 'regimen';
     }
   } else if (data.type === 'discontinue') {
     const orderId = String(data.targetOrderId || '');
@@ -233,7 +320,7 @@ async function applyChangeInBatch(
     if (!orderSnap.exists || String(ord.patientId || '') !== patientId || String(ord.status || '') !== 'active') {
       return false;
     }
-    batch.update(orderRef, {
+    batch.update(orderRef, { ...clientAuditActor(caller),
       status: 'discontinued',
       endDate: isoOr(data.effectiveDate, today),
       discontinuedAt: FieldValue.serverTimestamp(),
@@ -242,20 +329,29 @@ async function applyChangeInBatch(
       discontinueReason: String(data.reason || '').trim(),
     });
     batch.update(reqRef, reviewStamp);
+    outcome = 'discontinue';
   } else {
     return false;
   }
 
   await batch.commit();
-  return true;
+  return { changeKind: outcome };
+}
+
+/** Agency calendar day an order was created on, from its Firestore Timestamp. */
+function createdDayOf(createdAt: unknown): string | null {
+  const d =
+    createdAt && typeof (createdAt as { toDate?: () => Date }).toDate === 'function'
+      ? (createdAt as { toDate: () => Date }).toDate()
+      : null;
+  return d ? agencyDayISO(d) : null;
 }
 
 /**
  * Apply every change still STAGED on a note, in one batch. Called from the
  * apply-changes route when the nurse submits her note. There is NO approval
- * gate: maintaining the MAR per physician orders is within the nurse's scope,
- * so each change takes effect and is flagged reviewStatus 'pending' for the RN
- * to acknowledge afterward.
+ * gate and no acknowledgment step: maintaining the MAR per physician orders is
+ * within the nurse's scope, so each change simply takes effect and is recorded.
  *
  *  - add: create a new active order.
  *  - change: discontinue the old order (effective date) AND create a new order
@@ -294,12 +390,11 @@ export async function applyStagedChanges(
 }
 
 // ---------------------------------------------------------------------------
-// Standalone MAR med management. Same scope + acknowledgment model as the note
-// flow (add/change/discontinue is within an RN/LPN's scope; a supervisor may
-// also do it; nothing waits for approval), but made straight from the MAR grid
-// with no progress note. The change is applied immediately and recorded for the
-// RN to acknowledge afterward (reviewStatus 'pending' → shows in the existing
-// pending-review queue). All writes go through the Admin SDK, so the staff-only
+// Standalone MAR med management. Same scope model as the note flow
+// (add/change/discontinue is within an RN/LPN's scope; a supervisor may also do
+// it; nothing waits for approval), but made straight from the MAR grid with no
+// progress note. The change applies immediately and is recorded for audit —
+// nothing waits on a reviewer. All writes go through the Admin SDK, so the staff-only
 // marOrders/patients create-update rules and the note-required marChangeRequests
 // create rule don't apply here.
 // ---------------------------------------------------------------------------
@@ -322,6 +417,7 @@ export interface StandaloneChangeResult {
   ok: boolean;
   reqId?: string;
   createdOrderId?: string;
+  changeKind?: ChangeKind;
   reason?: StandaloneChangeFailure;
   message?: string;
 }
@@ -330,14 +426,19 @@ export interface StandaloneChangeResult {
  *  storage on the change-request doc (Firestore rejects undefined). The ORDER
  *  itself is still built by orderFromProposed, which coerces independently. */
 function cleanProposed(p: ProposedMedShape) {
+  const scheduledTimes = p.isPRN ? [] : Array.isArray(p.scheduledTimes) ? p.scheduledTimes.filter(Boolean) : [];
+  const { dose, units } = doseFields(p);
   return {
     medName: String(p.medName || '').trim(),
-    dose: String(p.dose || '').trim(),
-    units: String(p.units || '').trim(),
+    dose: dose.trim(),
+    units: units.trim(),
     route: String(p.route || '').trim(),
     frequencyLabel: String(p.frequencyLabel || '').trim(),
-    scheduledTimes: p.isPRN ? [] : Array.isArray(p.scheduledTimes) ? p.scheduledTimes.filter(Boolean) : [],
+    scheduledTimes,
+    timeLabels: cleanTimeLabels(p.timeLabels, scheduledTimes, !!p.isPRN),
+    slidingScale: parseSlidingScale(p.slidingScale),
     isPRN: !!p.isPRN,
+    prnFrequencyLabel: p.isPRN ? String(p.prnFrequencyLabel || '').trim() : '',
     indication: String(p.indication || '').trim(),
     valueLabel: String(p.valueLabel || '').trim(),
     valueUnit: String(p.valueUnit || '').trim(),
@@ -346,6 +447,7 @@ function cleanProposed(p: ProposedMedShape) {
     orderSignedDate: String(p.orderSignedDate || '').trim(),
     orderingPhysician: String(p.orderingPhysician || '').trim(),
     physicianPending: p.physicianPending === true,
+    parameters: String(p.parameters || '').trim(),
     notes: String(p.notes || '').trim(),
   };
 }
@@ -361,6 +463,7 @@ export async function applyStandaloneChange(
   // network retry can't mint two orders. Falls back to an auto id otherwise.
   const reqRef = input.clientRequestId ? col.doc(input.clientRequestId) : col.doc();
   const payload: Record<string, unknown> = {
+    ...clientAuditActor(caller),
     patientId: input.patientId,
     patientName: String(input.patientName || ''),
     type: input.type,
@@ -418,7 +521,15 @@ export async function applyStandaloneChange(
     return { ok: false, reason: 'error', message: 'Failed to apply the change. Please try again.' };
   }
   const fresh = await reqRef.get();
-  return { ok: true, reqId: reqRef.id, createdOrderId: String((fresh.data() || {}).createdOrderId || '') };
+  const f = fresh.data() || {};
+  return {
+    ok: true,
+    reqId: reqRef.id,
+    createdOrderId: String(f.createdOrderId || ''),
+    changeKind:
+      (f.changeKind as ChangeKind | undefined) ??
+      (f.type === 'add' ? 'add' : f.type === 'discontinue' ? 'discontinue' : undefined),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -454,7 +565,7 @@ const AMENDABLE_STATUS = new Set(['given', 'held', 'refused']);
  */
 export async function amendMarAdministration(
   adminId: string,
-  input: { status: string; actualTime?: string; reason?: string; outcome?: string; prescriberNotified?: boolean; amendmentReason: string },
+  input: { status: string; actualTime?: string; reason?: string; outcome?: string; prescriberNotified?: boolean; administeredByType?: string; administratorName?: string; amendmentReason: string },
   caller: AuthedCaller,
 ): Promise<AmendResult> {
   const col = adminDb().collection('marAdministrations');
@@ -483,6 +594,12 @@ export async function amendMarAdministration(
   if (!amendmentReason) {
     return { ok: false, reason: 'missing-reason', message: 'A reason for the correction is required.' };
   }
+  if (
+    input.administeredByType !== undefined &&
+    !['nurse', 'family', 'responsibleParty', 'self', 'proxy'].includes(String(input.administeredByType))
+  ) {
+    return { ok: false, reason: 'bad-status', message: 'Unknown "Administered by" value.' };
+  }
 
   const scheduledTime = String(orig.scheduledTime || '');
   // PRN-ness must survive the rebuild or buildMarAdminFields blanks the dose's
@@ -492,6 +609,101 @@ export async function amendMarAdministration(
   const isPRN = scheduledTime === 'PRN' || scheduledTime === 'unscheduled' || orig.isPRN === true;
   const amenderName = caller.profile.displayName || caller.email || '';
   const givenStatus = status === 'given';
+  const effectiveByType =
+    input.administeredByType !== undefined
+      ? String(input.administeredByType)
+      : String(orig.administeredByType || 'nurse');
+  const effectiveByName =
+    input.administratorName !== undefined
+      ? String(input.administratorName)
+      : String(orig.administratorName || '');
+  if (
+    givenStatus &&
+    effectiveByType !== 'nurse' &&
+    effectiveByType !== 'self' &&
+    !effectiveByName.trim()
+  ) {
+    return {
+      ok: false,
+      reason: 'missing-reason',
+      message: 'Enter the name of the person who administered it.',
+    };
+  }
+  if (givenStatus && !String(input.actualTime || '').trim()) {
+    return { ok: false, reason: 'missing-reason', message: 'Enter the time the dose was given.' };
+  }
+
+  // Server-side shift-window check — the one the browser can't skip. A
+  // NURSE-GIVEN time must fall inside the GIVING nurse's documented shift
+  // window(s) for the record's date. The giver is the chain ROOT's documenter
+  // (an amendment's documenter is whoever corrected it, e.g. the supervisor);
+  // her windows include any approved second note for the date and the
+  // next-day tail of her previous day's overnight note. Verdicts other than a
+  // provable 'outside' pass — no note on file or unparseable times fail open
+  // (capture-time controls own prevention; corrections must stay possible).
+  if (givenStatus && effectiveByType === 'nurse') {
+    try {
+      let rootData: DocumentData = orig;
+      for (let hop = 0; hop < 20 && rootData.amends; hop += 1) {
+        const prev = await col.doc(String(rootData.amends)).get();
+        if (!prev.exists) break;
+        rootData = prev.data() || {};
+      }
+      const giverUid = String(rootData.documentedBy || '');
+      const patientId = String(orig.patientId || '');
+      const dateISO = String(orig.date || '');
+      if (giverUid && patientId && /^\d{4}-\d{2}-\d{2}$/.test(dateISO)) {
+        const prevDt = new Date(dateISO + 'T12:00:00');
+        prevDt.setDate(prevDt.getDate() - 1);
+        const prevISO = `${prevDt.getFullYear()}-${String(prevDt.getMonth() + 1).padStart(2, '0')}-${String(prevDt.getDate()).padStart(2, '0')}`;
+        const notesCol = adminDb().collection('progressNotes');
+        const forDate = (d: string) =>
+          notesCol
+            .where('nurseId', '==', giverUid)
+            .where('patientId', '==', patientId)
+            .where('q6_dateofService', '==', d)
+            .get();
+        const [snapDay, snapPrev] = await Promise.all([forDate(dateISO), forDate(prevISO)]);
+        const windows: Array<{ start: string; end: string; endsNextDay: boolean; prevDayTail?: boolean }> = [];
+        for (const d of snapDay.docs) {
+          const n = d.data();
+          if (String(n.status || '') === 'archived' || n.archivedAt) continue;
+          const start = String(n.q7_shiftStart || '').trim();
+          const end = String(n.q62_shiftEndTime || '').trim();
+          if (!start || !end) continue;
+          const endDate = String(n.q62_shiftEndDate || '').trim();
+          windows.push({ start, end, endsNextDay: !!endDate && endDate > dateISO });
+        }
+        for (const d of snapPrev.docs) {
+          const n = d.data();
+          if (String(n.status || '') === 'archived' || n.archivedAt) continue;
+          const start = String(n.q7_shiftStart || '').trim();
+          const end = String(n.q62_shiftEndTime || '').trim();
+          if (!start || !end) continue;
+          const endDate = String(n.q62_shiftEndDate || '').trim();
+          const overnight =
+            (!!endDate && endDate > prevISO) ||
+            (/^\d{2}:\d{2}$/.test(start) && /^\d{2}:\d{2}$/.test(end) && end < start);
+          if (overnight) windows.push({ start: '00:00', end, endsNextDay: false, prevDayTail: true });
+        }
+        // Only a note DATED the record's own day can hard-reject; the prior
+        // night's tail admits but never vetoes (mirrors the capture modal).
+        if (decideNurseDoseGate(String(input.actualTime || ''), windows) === 'block') {
+          return {
+            ok: false,
+            reason: 'bad-status',
+            message:
+              'That time is outside the documenting nurse\'s shift window from her progress note. ' +
+              'A nurse-given dose must fall inside her shift. If a family member or caregiver gave it, ' +
+              'set "Administered by" accordingly; if the note\'s shift times are wrong, correct the note first.',
+          };
+        }
+      }
+    } catch (err) {
+      // Fail open: a lookup error must not block a legitimate correction.
+      console.error('Amend shift-window check failed (allowing):', err);
+    }
+  }
   const base = buildMarAdminFields(
     {
       orderId: String(orig.orderId || ''),
@@ -502,8 +714,11 @@ export async function amendMarAdministration(
       scheduledTime,
       status: status as 'given' | 'held' | 'refused',
       // Keep who physically gave it only when the corrected status is "given".
-      administeredByType: givenStatus ? String(orig.administeredByType || 'nurse') : 'nurse',
-      administratorName: givenStatus ? String(orig.administratorName || '') : '',
+      // An amendment may CHANGE it (the incident remediation: a dose wrongly
+      // attested as nurse-given is corrected to family-given, starring it on
+      // the MAR); omitted = carry the original forward.
+      administeredByType: givenStatus ? effectiveByType : 'nurse',
+      administratorName: givenStatus ? effectiveByName : '',
       actualTime: String(input.actualTime || ''),
       initials: deriveInitials(amenderName),
       reason: String(input.reason || ''),
@@ -519,6 +734,20 @@ export async function amendMarAdministration(
           : orig.prescriberNotified === true,
       isPRN,
       indication: String(orig.indicationSnapshot || ''),
+      noNoteAttestation: orig.noNoteAttestation === true,
+      // The amend form can't edit the parameters snapshot, the reading checked
+      // against them, or a check-style order's measurement, so they ride along
+      // from the original; otherwise the rebuild blanks them and the reading
+      // vanishes from the current record (grid cell, chart, printed MAR).
+      ...amendCarryForwardFields(orig),
+      // A correction changes status / time / who gave it, never the meter
+      // reading or what the scale called for, so the sliding-scale snapshot
+      // rides forward untouched. (A wrong reading is fixed by removing the
+      // entry as entered in error and charting it again.)
+      glucoseReading: String(orig.glucoseReading || ''),
+      scaleDose: String(orig.scaleDose || ''),
+      scaleRange: String(orig.scaleRangeSnapshot || ''),
+      scaleDeviationReason: String(orig.scaleDeviationReason || ''),
     },
     {
       patientId: String(orig.patientId || ''),
@@ -566,7 +795,7 @@ export async function amendMarAdministration(
           }
         : { outcomeBy: caller.uid, outcomeByName: amenderName, outcomeAt: FieldValue.serverTimestamp() };
 
-    tx.set(newRef, {
+    tx.set(newRef, { ...clientAuditActor(caller),
       ...base,
       outcome: kept,
       ...attribution,
@@ -599,8 +828,10 @@ export async function amendMarAdministration(
 // ---------------------------------------------------------------------------
 // Entered-in-error void. An amendment corrects WHAT a dose entry says; a void
 // says the entry should never have existed at all (mis-clicked slot or day,
-// wrong client). The dose twin of a voided ORDER (revertChange): the doc keeps
-// a who/when/why stamp for the audit trail, every live view drops it via
+// wrong client, a shift she didn't work). This is the nurse's own undo — the
+// documenting nurse may void her entry, and an RN/supervisor/admin may void
+// anyone's. The doc keeps a who/when/why stamp for the audit trail, every
+// live view drops it via
 // resolveCurrentAdministrations, and the slot reopens for correct charting.
 // Admin SDK only — the client-side update rule on marAdministrations stays
 // `false`, so this is the ONLY mutation path besides the write-once outcome.
@@ -662,7 +893,7 @@ export async function voidMarAdministration(
     // A superseded entry is already not the record; removing it would leave the
     // superseding correction standing on a voided base. Void the current entry.
     if (!successor.empty) return 'superseded';
-    tx.update(col.doc(adminId), {
+    tx.update(col.doc(adminId), { ...clientAuditActor(caller),
       voided: true,
       voidedAt: FieldValue.serverTimestamp(),
       voidedBy: caller.uid,
@@ -767,7 +998,7 @@ export async function recordPrnOutcome(
     if ((fresh.data() || {}).voided === true) return 'voided';
     if (!amended.empty) return 'superseded';
     if (String((fresh.data() || {}).outcome || '').trim()) return 'already-recorded';
-    tx.update(ref, {
+    tx.update(ref, { ...clientAuditActor(caller),
       outcome,
       outcomeBy: caller.uid,
       outcomeByName: caller.profile.displayName || caller.email || '',
@@ -803,208 +1034,3 @@ export async function recordPrnOutcome(
   return { ok: true };
 }
 
-/** Mark an applied change as reviewed (RN acknowledgment; no approval). */
-export async function acknowledgeReview(reqId: string, caller: AuthedCaller): Promise<ReviewResult> {
-  const ref = adminDb().collection('marChangeRequests').doc(reqId);
-  const snap = await ref.get();
-  if (!snap.exists) return { ok: false, reqId, reason: 'not-found', message: 'Change not found.' };
-  const data = snap.data() || {};
-  if (data.reviewStatus !== 'pending') {
-    return { ok: false, reqId, reason: 'already-reviewed', message: 'This change has already been reviewed.' };
-  }
-  await ref.update({
-    reviewStatus: 'reviewed',
-    reviewedBy: caller.uid,
-    reviewedByName: caller.profile.displayName || '',
-    reviewedAt: FieldValue.serverTimestamp(),
-  });
-  return { ok: true, reqId };
-}
-
-// ---------------------------------------------------------------------------
-// Undo an applied medication change.
-//
-// Applied changes take effect immediately with no approval gate, so a mistake
-// is live on the MAR the moment it is saved. This puts the orders back the way
-// they were and marks the change reverted; the change request itself is never
-// deleted, so the record still shows what was done, by whom, and that it was
-// undone (and why).
-//
-// The hard limit is charted doses: administrations are append-only and legally
-// immutable, so an order a nurse has already charted against cannot be unwound.
-// Those reverts are refused with an explanation rather than half-applied.
-// ---------------------------------------------------------------------------
-
-export type RevertFailureReason =
-  | 'not-found'
-  | 'not-applied'
-  | 'already-reverted'
-  | 'has-doses'
-  | 'order-missing'
-  | 'missing-reason';
-
-export interface RevertResult {
-  ok: boolean;
-  reqId: string;
-  reason?: RevertFailureReason;
-  message?: string;
-}
-
-/** True when any administration has been charted against one of these orders.
- *  Reverting would orphan it, so the revert is refused instead. */
-async function ordersHaveDoses(orderIds: string[]): Promise<boolean> {
-  const ids = orderIds.filter(Boolean);
-  if (ids.length === 0) return false;
-  const snap = await adminDb()
-    .collection('marAdministrations')
-    .where('orderId', 'in', ids.slice(0, 10))
-    .limit(1)
-    .get();
-  return !snap.empty;
-}
-
-/** Restore a discontinued order to active, clearing the stop stamps. Shared by
- *  the discontinue and regimen-change reverts. */
-function reactivateFields() {
-  return {
-    status: 'active',
-    endDate: null,
-    discontinuedAt: FieldValue.delete(),
-    discontinuedBy: FieldValue.delete(),
-    discontinuedByName: FieldValue.delete(),
-    discontinueReason: FieldValue.delete(),
-    supersededByOrderId: FieldValue.delete(),
-  };
-}
-
-/**
- * Undo an applied change request, putting the affected orders back.
- *
- *  - add                → void the created order (it never should have existed).
- *  - change/correction  → restore the documentation fields it overwrote.
- *  - change/regimen     → void the replacement, reactivate the original.
- *  - discontinue        → reactivate the order.
- *
- * A voided order is kept in Firestore for the audit trail but filtered out of
- * every MAR view, so an order added in error leaves no row behind — showing it
- * as "D/C" would be its own misstatement of the record.
- *
- * Older applied changes carry no `changeKind` (they predate the correction
- * path), and every one of those was a discontinue-and-replace, so an absent
- * kind is read as 'regimen'.
- */
-export async function revertChange(
-  reqId: string,
-  caller: AuthedCaller,
-  revertReason: string,
-): Promise<RevertResult> {
-  const reason = String(revertReason || '').trim();
-  if (!reason) {
-    return { ok: false, reqId, reason: 'missing-reason', message: 'A reason for the revert is required.' };
-  }
-
-  const ref = adminDb().collection('marChangeRequests').doc(reqId);
-  const snap = await ref.get();
-  if (!snap.exists) return { ok: false, reqId, reason: 'not-found', message: 'Change not found.' };
-  const data = snap.data() || {};
-  if (data.status !== 'applied') {
-    return { ok: false, reqId, reason: 'not-applied', message: 'Only an applied change can be reverted.' };
-  }
-  if (data.revertedAt) {
-    return { ok: false, reqId, reason: 'already-reverted', message: 'This change was already reverted.' };
-  }
-
-  const type = String(data.type || '');
-  const kind = String(data.changeKind || 'regimen');
-  const createdOrderId = String(data.createdOrderId || '');
-  const targetOrderId = String(data.targetOrderId || '');
-  const patientId = String(data.patientId || '');
-
-  const voidStamp = {
-    status: 'voided',
-    voidedAt: FieldValue.serverTimestamp(),
-    voidedBy: caller.uid,
-    voidedByName: caller.profile.displayName || '',
-    voidReason: reason,
-  };
-  const revertStamp = {
-    // Drops out of the pending-review queue: there is nothing left to
-    // acknowledge once the change has been undone.
-    reviewStatus: 'reverted',
-    revertedAt: FieldValue.serverTimestamp(),
-    revertedBy: caller.uid,
-    revertedByName: caller.profile.displayName || '',
-    revertReason: reason,
-  };
-
-  const batch = adminDb().batch();
-
-  if (type === 'add') {
-    if (!createdOrderId) {
-      return { ok: false, reqId, reason: 'order-missing', message: 'The order this change created is missing.' };
-    }
-    if (await ordersHaveDoses([createdOrderId])) {
-      return {
-        ok: false,
-        reqId,
-        reason: 'has-doses',
-        message:
-          'Doses have already been charted against this medication, so it can’t be removed. Discontinue it instead — the charted doses have to stay on the record.',
-      };
-    }
-    batch.update(adminDb().collection('marOrders').doc(createdOrderId), voidStamp);
-  } else if (type === 'change' && kind === 'correction') {
-    const orderId = String(data.updatedOrderId || targetOrderId || '');
-    const prev = (data.previousValues || null) as Record<string, unknown> | null;
-    if (!orderId || !prev) {
-      return {
-        ok: false,
-        reqId,
-        reason: 'order-missing',
-        message: 'The original values for this correction were not recorded, so it can’t be reverted.',
-      };
-    }
-    // Only text fields move back; administrations snapshot their own values, so
-    // nothing already charted is affected.
-    batch.update(adminDb().collection('marOrders').doc(orderId), {
-      ...prev,
-      lastEditedAt: FieldValue.serverTimestamp(),
-      lastEditedBy: caller.uid,
-      lastEditedByName: caller.profile.displayName || '',
-    });
-  } else if (type === 'change') {
-    if (!createdOrderId || !targetOrderId) {
-      return { ok: false, reqId, reason: 'order-missing', message: 'The orders this change touched are missing.' };
-    }
-    if (await ordersHaveDoses([createdOrderId])) {
-      return {
-        ok: false,
-        reqId,
-        reason: 'has-doses',
-        message:
-          'Doses have already been charted against the new order, so this change can’t be rolled back. Make a further change instead.',
-      };
-    }
-    const oldSnap = await adminDb().collection('marOrders').doc(targetOrderId).get();
-    if (!oldSnap.exists || String((oldSnap.data() || {}).patientId || '') !== patientId) {
-      return { ok: false, reqId, reason: 'order-missing', message: 'The original order is no longer available.' };
-    }
-    batch.update(adminDb().collection('marOrders').doc(createdOrderId), voidStamp);
-    batch.update(adminDb().collection('marOrders').doc(targetOrderId), reactivateFields());
-  } else if (type === 'discontinue') {
-    if (!targetOrderId) {
-      return { ok: false, reqId, reason: 'order-missing', message: 'The discontinued order is missing.' };
-    }
-    const ordSnap = await adminDb().collection('marOrders').doc(targetOrderId).get();
-    if (!ordSnap.exists || String((ordSnap.data() || {}).patientId || '') !== patientId) {
-      return { ok: false, reqId, reason: 'order-missing', message: 'That order is no longer available.' };
-    }
-    batch.update(adminDb().collection('marOrders').doc(targetOrderId), reactivateFields());
-  } else {
-    return { ok: false, reqId, reason: 'not-applied', message: 'This change cannot be reverted.' };
-  }
-
-  batch.update(ref, revertStamp);
-  await batch.commit();
-  return { ok: true, reqId };
-}

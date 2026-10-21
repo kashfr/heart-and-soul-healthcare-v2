@@ -7,8 +7,15 @@ import {
   Image,
   StyleSheet,
 } from '@react-pdf/renderer';
-import { getVitalRanges, getAgeGroupLabel, type VitalRangesOverride } from '@/lib/vitalRanges';
+import { getVitalRanges, getAgeGroupLabel, noteVitalRanges, readNoteBaselines, type VitalRangesOverride } from '@/lib/vitalRanges';
+import { describeBaselines } from '@/lib/vitalsBaselines';
+import { readVitalsRechecks, recheckAbnormalVitals, recheckBloodPressure, recheckWhen, vitalsRecheckAllKeys, MAX_VITALS_RECHECKS, recheckAddedKey, type VitalsRecheck } from '@/lib/vitalsRecheck';
+import { formatDuration, readSeizureEntries, seizureDurationSeconds, sortSeizuresByStart } from '../seizureShared';
 import { parseCareTaskCharting } from '@/lib/careTaskCharting';
+import { SUPERVISORY_NOTE_TYPE } from '@/lib/supervisoryVisit';
+import { servicePlanStatusLabel } from '@/lib/servicePlanShared';
+import { followUpSummary, FOLLOW_UP_ACTION_KEY } from '@/lib/vitalsFollowUp';
+import { credentialRequiresCosign } from '@/lib/cosignClient';
 
 /**
  * Raw form data stored on a progress-note document. Every field is a string
@@ -36,6 +43,11 @@ export interface ProgressNotePDFProps {
     orgName?: string;
     tagline?: string;
   };
+  /**
+   * Credentials whose notes need an RN co-signature (from /admin/settings
+   * via the PDF route). Falls back to the built-in default list.
+   */
+  cosignRequiredCredentials?: readonly string[];
   /**
    * Post-submission edit history (the audit trail / amendments), already
    * formatted for display by the PDF route. When present and non-empty, an
@@ -288,6 +300,19 @@ const s = StyleSheet.create({
     color: RED,
     marginTop: 1,
   },
+  recheckHeader: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: '#f4f6f9',
+    borderTopWidth: 1,
+    borderTopColor: '#ddd',
+  },
+  recheckHeaderText: {
+    fontFamily: 'Helvetica-Bold',
+    fontSize: 8.5,
+    color: '#1a3a5c',
+    textTransform: 'uppercase',
+  },
   systemSubsection: {
     borderBottomWidth: 1,
     borderBottomColor: LIGHT_GRAY,
@@ -527,8 +552,10 @@ function readCosignedDate(v: unknown): Date | null {
 function checkVitals(data: ProgressNoteFormData, overrides?: VitalRangesOverride) {
   const ageStr = data.q5_ageYears || '';
   const dob = data.q4_dateofBirth || '';
-  const ranges = getVitalRanges(ageStr, dob, overrides);
-  const ageGroupLabel = getAgeGroupLabel(ageStr, dob);
+  // Age range (admin overrides) plus the client-baseline snapshot on the note.
+  const ranges = noteVitalRanges(data as unknown as Record<string, unknown>, overrides);
+  const baselineText = describeBaselines(readNoteBaselines(data as unknown as Record<string, unknown>));
+  const ageGroupLabel = getAgeGroupLabel(ageStr, dob) + (baselineText ? `; client baselines: ${baselineText}` : '');
   const alerts: string[] = [];
   const temp = parseNumeric(data.q16_temperature);
   const tempAbnormal = !isNaN(temp) && (temp < ranges.temperature.low || temp > ranges.temperature.high);
@@ -556,9 +583,25 @@ function checkVitals(data: ProgressNoteFormData, overrides?: VitalRangesOverride
   // How each reading was taken, appended in parentheses (e.g. "98.6 (Temporal)").
   const bpMethodSite = [data.q17_bpMethod, data.q17_bpSite].filter(Boolean).join(', ');
 
+  // Later readings in the same shift: each abnormal value gets its own alert
+  // line naming the reading and time, so a recheck that was still high is as
+  // visible in the banner as the first set. (Printed deliverable: no dashes.)
+  const rechecks = readVitalsRechecks(data as unknown as Record<string, unknown>);
+  for (const r of rechecks) {
+    const ab = recheckAbnormalVitals(r, ranges);
+    const tag = `Recheck ${r.index}${recheckWhen(r) ? ` ${recheckWhen(r)}` : ''}`;
+    if (ab.temperature) alerts.push(`${tag}: Temperature ${r.temperature}\u00b0F (${ab.temperature.toUpperCase()})`);
+    if (ab.systolic || ab.diastolic) alerts.push(`${tag}: Blood Pressure ${recheckBloodPressure(r) || `${r.systolic}/${r.diastolic}`} mmHg`);
+    if (ab.pulse) alerts.push(`${tag}: Pulse ${r.pulse} bpm (${ab.pulse.toUpperCase()})`);
+    if (ab.respiration) alerts.push(`${tag}: Respirations ${r.respiration}/min (${ab.respiration.toUpperCase()})`);
+    if (ab.oxygenSaturation) alerts.push(`${tag}: SpO2 ${r.oxygenSaturation}% (LOW)`);
+  }
+
   return {
     alerts,
     ageGroupLabel,
+    rechecks,
+    ranges,
     cells: [
       {
         label: 'Temperature',
@@ -662,13 +705,33 @@ function AmendedVersions({ fieldKey }: { fieldKey?: string }) {
   );
 }
 
+/**
+ * Multi-paragraph text, one <Text> per line. react-pdf under-measures blank
+ * lines inside a single <Text> (each one leaves the box about a line short),
+ * so a long answer with paragraph breaks spilled its last paragraph over the
+ * next field (Ricky Y.'s 10/08/2026 oversight note: six blank lines in
+ * Actions, the last line printed on top of Communication). Each blank line
+ * becomes a fixed-height spacer instead.
+ */
+function Paragraphs({ value, style, blankHeight }: { value: string; style: (typeof s)[keyof typeof s]; blankHeight: number }) {
+  const lines = value.replace(/\r\n?/g, '\n').split('\n');
+  if (lines.length === 1) return <Text style={style}>{value}</Text>;
+  return (
+    <>
+      {lines.map((line, i) =>
+        line.trim() === '' ? <View key={i} style={{ height: blankHeight }} /> : <Text key={i} style={style}>{line}</Text>,
+      )}
+    </>
+  );
+}
+
 function Field({ label, value, fieldKey }: { label: string; value: string | undefined; fieldKey?: string }) {
   return (
     <View style={s.fieldRow}>
       <Text style={s.fieldLabel}>{label}:</Text>
       <View style={s.fieldValueWrap}>
         <AmendedVersions fieldKey={fieldKey} />
-        <Text style={s.fieldValue}>{hasValue(value) ? value : '--'}</Text>
+        <Paragraphs style={s.fieldValue} blankHeight={12} value={hasValue(value) ? String(value) : '--'} />
       </View>
     </View>
   );
@@ -687,7 +750,104 @@ function TextBlock({ label, value, fieldKey }: { label: string; value: string | 
     <View style={s.textBlock}>
       <Text style={s.textBlockLabel}>{label}:</Text>
       <AmendedVersions fieldKey={fieldKey} />
-      <Text style={s.textBlockValue}>{hasValue(value) ? value : '--'}</Text>
+      <Paragraphs style={s.textBlockValue} blankHeight={14} value={hasValue(value) ? String(value) : '--'} />
+    </View>
+  );
+}
+
+/**
+ * One later-in-shift vitals reading (q16r_reading{n}_*), printed under the
+ * first set as a labeled strip of cells: only the vitals that were retaken,
+ * abnormal ones in red, each cell carrying its own amendment history.
+ */
+function VitalsRecheckBlock({ reading: r, ranges }: { reading: VitalsRecheck; ranges: ReturnType<typeof getVitalRanges> }) {
+  const ab = recheckAbnormalVitals(r, ranges);
+  const key = (f: keyof Omit<VitalsRecheck, 'index'>) => `q16r_reading${r.index}_${f}`;
+  const cells: Array<{ label: string; fieldKey: string; value: string; abnormal: boolean }> = [];
+  if (hasValue(r.temperature)) {
+    cells.push({ label: 'Temperature', fieldKey: key('temperature'), value: `${r.temperature}${r.temperatureRoute ? ` (${r.temperatureRoute})` : ''}`, abnormal: !!ab.temperature });
+  }
+  const bp = recheckBloodPressure(r);
+  if (bp) {
+    const ms = [r.bpMethod, r.bpSite].filter(Boolean).join(', ');
+    cells.push({ label: 'Blood Pressure', fieldKey: key('systolic'), value: `${bp}${ms ? ` (${ms})` : ''}`, abnormal: !!(ab.systolic || ab.diastolic) });
+  }
+  if (hasValue(r.pulse)) cells.push({ label: 'Pulse', fieldKey: key('pulse'), value: `${r.pulse}${r.pulseSite ? ` (${r.pulseSite})` : ''}`, abnormal: !!ab.pulse });
+  if (hasValue(r.respiration)) cells.push({ label: 'Respirations', fieldKey: key('respiration'), value: r.respiration, abnormal: !!ab.respiration });
+  if (hasValue(r.oxygenSaturation)) {
+    cells.push({ label: 'SpO2', fieldKey: key('oxygenSaturation'), value: `${r.oxygenSaturation}${r.oxygenSource ? ` (${r.oxygenSource})` : ''}`, abnormal: !!ab.oxygenSaturation });
+  }
+  const when = recheckWhen(r);
+  const added = currentFieldAmendments[recheckAddedKey(r.index)]?.[0];
+  return (
+    <View wrap={false}>
+      <View style={s.recheckHeader}>
+        <Text style={s.recheckHeaderText}>
+          Recheck {r.index}{when ? ` ${when}` : ''}
+        </Text>
+        {added && (
+          // Printed deliverable: parentheses, no em dash.
+          <Text style={s.amendTag}>
+            {`(added by amendment ${added.correctedAt}${added.correctedBy ? ` by ${added.correctedBy}` : ''})`}
+          </Text>
+        )}
+        <AmendedVersions fieldKey={key('time')} />
+      </View>
+      <View style={s.vitalsGrid}>
+        {cells.map((v) => (
+          <View key={v.label} style={v.abnormal ? s.vitalCellAlert : s.vitalCell}>
+            <Text style={s.vitalLabel}>{v.label}</Text>
+            <AmendedVersions fieldKey={v.fieldKey} />
+            <Text style={v.abnormal ? s.vitalValueAlert : s.vitalValue}>{v.value}</Text>
+          </View>
+        ))}
+      </View>
+      {hasValue(r.notes) && (
+        <View style={s.sectionBody}>
+          <TextBlock fieldKey={key('notes')} label="Recheck notes" value={r.notes} />
+        </View>
+      )}
+    </View>
+  );
+}
+
+/** Seizure log entries (q69_seizure{n}_*), one numbered block per seizure,
+ *  chronological. Prints nothing for notes that used the legacy single block
+ *  (those fields print through the Neurological field list above). */
+function SeizureLogBlock({ data }: { data: ProgressNoteFormData }) {
+  if (String(data.q30_seizureEvent || '') !== 'Yes') return null;
+  const entries = sortSeizuresByStart(readSeizureEntries(data as unknown as Record<string, unknown>));
+  if (entries.length === 0) return null;
+  const line = (label: string, value: string) =>
+    hasValue(value) ? (
+      <View style={s.systemFieldRow}>
+        <Text style={s.systemFieldLabel}>{label}:</Text>
+        <View style={s.fieldValueWrap}>
+          <Text style={s.systemFieldValue}>{value}</Text>
+        </View>
+      </View>
+    ) : null;
+  return (
+    <View>
+      <Text style={[s.systemFieldLabel, { marginTop: 4, fontFamily: 'Helvetica-Bold' }]}>
+        Seizure log: {entries.length} seizure{entries.length === 1 ? '' : 's'} this shift
+      </Text>
+      {entries.map((e, i) => (
+        <View key={e.index} style={{ marginLeft: 8, marginTop: 3 }} wrap={false}>
+          <Text style={[s.systemFieldLabel, { fontFamily: 'Helvetica-Bold' }]}>Seizure {i + 1}</Text>
+          {line('Time', `${e.startTime || '?'}${e.endTime ? ` to ${e.endTime}` : ''}${seizureDurationSeconds(e) !== null ? ` (${formatDuration(seizureDurationSeconds(e))})` : ''}`)}
+          {line('Type', e.seizureType)}
+          {line('Witnessed by', e.witnessedBy)}
+          {line('Observed', e.observations)}
+          {line('Interventions', e.interventions)}
+          {line('Rescue medication', e.rescueMed ? `${e.rescueMed}${e.rescueMedTime ? ` at ${e.rescueMedTime}` : ''}` : '')}
+          {line('Emergency response', e.response)}
+          {line('After the seizure', `${e.postState}${e.minutesToBaseline ? ` (${e.minutesToBaseline} min to baseline)` : ''}`.trim())}
+          {line('Physician notified', e.physicianNotified ? `${e.physicianNotified}${e.physicianNotifiedTime ? ` at ${e.physicianNotifiedTime}` : ''}` : '')}
+          {line('Family notified', e.familyNotified)}
+          {line('Notes', e.notes)}
+        </View>
+      ))}
     </View>
   );
 }
@@ -853,7 +1013,7 @@ function auditActionLabel(action: string): string {
   return map[action] || action;
 }
 
-export default function ProgressNotePDF({ data, vitalsOverride, branding, editHistory, fieldAmendments }: ProgressNotePDFProps) {
+export default function ProgressNotePDF({ data, vitalsOverride, branding, editHistory, fieldAmendments, cosignRequiredCredentials }: ProgressNotePDFProps) {
   const orgName = branding?.orgName || 'Heart and Soul Healthcare';
   const tagline = branding?.tagline ?? 'Compassionate Care, Professional Excellence';
   const credential = data.q12_credential || '';
@@ -863,11 +1023,18 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
     .filter((p) => hasValue(p))
     .join(', ');
 
-  const { alerts: abnormalVitals, cells: vitalCells, ageGroupLabel } = checkVitals(data, vitalsOverride);
+  const { alerts: abnormalVitals, cells: vitalCells, ageGroupLabel, rechecks: vitalRechecks, ranges: vitalRangeSet } = checkVitals(data, vitalsOverride);
 
   // Set the render-scoped amendment index before the tree renders (children read
   // it synchronously during this same render).
   currentFieldAmendments = fieldAmendments || {};
+
+  const isOversight = data.noteType === 'rn-oversight-visit';
+  const isSupervisory = data.noteType === SUPERVISORY_NOTE_TYPE;
+  // Supervisory-only keys not on the shared note type.
+  const svRaw = data as unknown as Record<string, string | undefined>;
+  /** Shift progress note: the only type that renders the shift groups. */
+  const isShift = !isOversight && !isSupervisory;
 
   return (
     <Document>
@@ -876,9 +1043,11 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
           <Text style={s.companyName}>{orgName}</Text>
           <Text style={s.companyTagline}>{tagline}</Text>
           <Text style={s.formTitle}>
-            {data.noteType === 'rn-oversight-visit'
+            {isOversight
               ? 'RN Oversight Visit Note'
-              : 'Home Health Progress Note'}
+              : isSupervisory
+                ? 'Home Supervisory Visit'
+                : 'Home Health Progress Note'}
           </Text>
           <Text style={s.formDate}>
             Form Date: {fmtDate(data.q6_dateofService) || data.q6_dateofService || ''}
@@ -896,7 +1065,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         )}
 
         {/* === GROUP 1: Client & Shift === */}
-        <GroupHeader title="Client & Shift" />
+        <GroupHeader title={isSupervisory ? 'Client' : 'Client & Shift'} />
 
         {/* 1. Client Information */}
         {anyHasValue(data, ['q3_clientName', 'q4_dateofBirth', 'q5_ageYears', 'q10_primaryDiagnosis', 'q200_addr_line1']) && (
@@ -914,7 +1083,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         )}
 
         {/* 2. Shift Information (shift notes only; oversight notes carry times in Visit Details) */}
-        {data.noteType !== 'rn-oversight-visit' && anyHasValue(data, ['q6_dateofService', 'q7_shiftStart', 'q62_shiftEndTime', 'q9_totalHours']) && (
+        {isShift && anyHasValue(data, ['q6_dateofService', 'q7_shiftStart', 'q62_shiftEndTime', 'q9_totalHours']) && (
           <Section title="Shift Information">
             <FieldRow>
               <FieldCol><Field fieldKey="q6_dateofService" label="Date of Service" value={fmtDate(data.q6_dateofService)} /></FieldCol>
@@ -926,7 +1095,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         )}
 
         {/* 3. Nurse / Caregiver */}
-        {anyHasValue(data, ['q11_nurseName', 'q12_credential']) && (
+        {!isSupervisory && anyHasValue(data, ['q11_nurseName', 'q12_credential']) && (
           <Section title="Nurse / Caregiver">
             <FieldRow>
               <FieldCol><Field fieldKey="q11_nurseName" label="Name" value={data.q11_nurseName} /></FieldCol>
@@ -943,8 +1112,11 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
             {anyHasValue(data, ['ov_visitType', 'ov_timeIn', 'ov_timeOut', 'ov_location']) && (
               <Section title="Visit Details">
                 {hasValue(data.ov_visitType) && <Field fieldKey="ov_visitType" label="Visit Type" value={data.ov_visitType} />}
-                {hasValue(data.ov_timeIn) && <Field fieldKey="ov_timeIn" label="Time In" value={data.ov_timeIn} />}
-                {hasValue(data.ov_timeOut) && <Field fieldKey="ov_timeOut" label="Time Out" value={data.ov_timeOut} />}
+                {hasValue(data.ov_timeIn) && <Field fieldKey="ov_timeIn" label="Start Time" value={data.ov_timeIn} />}
+                {hasValue(data.ov_timeOut) && <Field fieldKey="ov_timeOut" label="End Time" value={data.ov_timeOut} />}
+                {(data as unknown as Record<string, unknown>).ov_nonBillable === 'Yes' && (
+                  <Field label="Billing" value="Non-billable visit (the month's authorized RN hours bill with an earlier visit)" />
+                )}
                 {hasValue(data.ov_location) && <Field fieldKey="ov_location" label="Location" value={data.ov_location} />}
               </Section>
             )}
@@ -984,7 +1156,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
                       label={`Appointment ${n}`}
                       value={[
                         data[`ov_appt${n}_provider`] || '(provider not recorded)',
-                        data[`ov_appt${n}_date`] && `on ${data[`ov_appt${n}_date`]}`,
+                        data[`ov_appt${n}_date`] && `on ${fmtDate(data[`ov_appt${n}_date`])}`,
                         data[`ov_appt${n}_outcome`] && `outcome: ${data[`ov_appt${n}_outcome`]}`,
                         data[`ov_appt${n}_followup`] && `follow-up: ${data[`ov_appt${n}_followup`]}`,
                       ]
@@ -1038,7 +1210,75 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
           </>
         )}
 
-        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Status & Vitals" />}
+        {/* Home Supervisory Visit sections (noteType 'home-supervisory-visit' only) */}
+        {isSupervisory && (
+          <>
+            <GroupHeader title="Home Supervisory Visit" />
+            <Section title="Visit Details">
+              <FieldRow>
+                <FieldCol><Field fieldKey="q6_dateofService" label="Date" value={fmtDate(data.q6_dateofService)} /></FieldCol>
+                <FieldCol><Field fieldKey="sv_timeIn" label="Time In" value={data.sv_timeIn} /></FieldCol>
+                <FieldCol><Field fieldKey="sv_timeOut" label="Time Out" value={data.sv_timeOut} /></FieldCol>
+              </FieldRow>
+              {hasValue(data.sv_address) && <Field fieldKey="sv_address" label="Address" value={data.sv_address} />}
+              <Field fieldKey="sv_staffName" label="Staff Performing Duties" value={data.sv_staffName} />
+              <Field fieldKey="q11_nurseName" label="Supervisor" value={data.q11_nurseName} />
+            </Section>
+            {anyHasValue(data, ['sv_complaint', 'sv_anythingElse']) && (
+              <SectionBreakable title="Client Questions">
+                {hasValue(data.sv_complaint) && <TextBlock fieldKey="sv_complaint" label="What would you do if you had a complaint?" value={data.sv_complaint} />}
+                {hasValue(data.sv_anythingElse) && <TextBlock fieldKey="sv_anythingElse" label="Is there anything else you would like to tell me?" value={data.sv_anythingElse} />}
+              </SectionBreakable>
+            )}
+            {/* Vitals print once, in the full Vital Signs block below (with
+                abnormal highlighting and rechecks), not here as well. */}
+            <SectionBreakable title="Overall Assessment of Client">
+              {hasValue(data.sv_generalConditions) && <TextBlock fieldKey="sv_generalConditions" label="General Conditions" value={data.sv_generalConditions} />}
+              {hasValue(data.sv_clientProgress) && <TextBlock fieldKey="sv_clientProgress" label="Client Progress" value={data.sv_clientProgress} />}
+              <Field fieldKey="sv_problems" label="Problems Encountered by Client" value={data.sv_problems} />
+              {hasValue(data.sv_problemsDetail) && <TextBlock fieldKey="sv_problemsDetail" label="Problems Encountered" value={data.sv_problemsDetail} />}
+              <Field fieldKey="sv_rightsInformed" label="Client Informed of Rights" value={data.sv_rightsInformed} />
+              <Field fieldKey="sv_clientSatisfied" label="Client Satisfied with the Services" value={data.sv_clientSatisfied} />
+              {hasValue(data.sv_dissatisfaction) && <TextBlock fieldKey="sv_dissatisfaction" label="Client's Dissatisfaction" value={data.sv_dissatisfaction} />}
+            </SectionBreakable>
+            <SectionBreakable title="Interview with the Client">
+              <Field fieldKey="sv_interviewMethod" label="Interview" value={data.sv_interviewMethod} />
+              {hasValue(data.sv_interviewNotes) && <TextBlock fieldKey="sv_interviewNotes" label="Interview Notes" value={data.sv_interviewNotes} />}
+              <Field fieldKey="sv_levelOfCare" label="Level of Care Appropriate for Client's Needs" value={data.sv_levelOfCare} />
+              {hasValue(data.sv_levelOfCareRecs) && <TextBlock fieldKey="sv_levelOfCareRecs" label="Level of Care Recommendations" value={data.sv_levelOfCareRecs} />}
+              <Field fieldKey="sv_satisfiedWithStaff" label="Client Satisfied with the Staff" value={data.sv_satisfiedWithStaff} />
+              {hasValue(data.sv_staffFeedback) && <TextBlock fieldKey="sv_staffFeedback" label="Client's Feedback on Staff Performance" value={data.sv_staffFeedback} />}
+            </SectionBreakable>
+            {hasValue(data.sv_recommendations) && (
+              <SectionBreakable title="Recommendations">
+                <TextBlock fieldKey="sv_recommendations" label="Recommendations" value={data.sv_recommendations} />
+              </SectionBreakable>
+            )}
+            {hasValue(svRaw.sv_servicePlanStatus) && (
+              <SectionBreakable title="Service Plan">
+                <Field label="Status at This Visit" value={servicePlanStatusLabel(String(svRaw.sv_servicePlanStatus), String(svRaw.sv_servicePlanDue || ''))} />
+                {hasValue(svRaw.sv_servicePlanAction) && <Field fieldKey="sv_servicePlanAction" label="Action" value={String(svRaw.sv_servicePlanAction)} />}
+                {hasValue(svRaw.sv_servicePlanReason) && <TextBlock fieldKey="sv_servicePlanReason" label="Reason Not Done Today" value={String(svRaw.sv_servicePlanReason)} />}
+              </SectionBreakable>
+            )}
+          </>
+        )}
+
+        {isShift && <GroupHeader title="Status & Vitals" />}
+
+        {/* 3b. Since Your Last Shift (rev 3+) */}
+        {anyHasValue(data, ['q68_sinceHospitalAdmission', 'q68_sinceErUrgentCare', 'q68_sinceMedChange', 'q68_sinceDetails']) && (
+          <Section title="Since Your Last Shift">
+            <FieldRow>
+              <FieldCol><Field fieldKey="q68_sinceHospitalAdmission" label="Hospital admission" value={data.q68_sinceHospitalAdmission} /></FieldCol>
+              <FieldCol><Field fieldKey="q68_sinceErUrgentCare" label="Urgent care / ER visit" value={data.q68_sinceErUrgentCare} /></FieldCol>
+              <FieldCol><Field fieldKey="q68_sinceMedChange" label="Medication started, changed, or stopped" value={data.q68_sinceMedChange} /></FieldCol>
+            </FieldRow>
+            {hasValue(data.q68_sinceDetails) && (
+              <TextBlock fieldKey="q68_sinceDetails" label="Details" value={data.q68_sinceDetails} />
+            )}
+          </Section>
+        )}
 
         {/* 4. Client Status */}
         {anyHasValue(data, [
@@ -1067,12 +1307,14 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
           </Section>
         )}
 
-        {/* 5. Vital Signs */}
+        {/* 5. Vital Signs (every note type: the supervisory visit records
+            the same full block, see #234) */}
         {anyHasValue(data, [
           'q16_vitalsNotObtainedReason',
           'q16_temperature', 'q16_temperatureRoute', 'q17_bloodPressure',
           'q17_bpMethod', 'q17_bpSite', 'q18_pulse', 'q18_pulseSite', 'q19_respiration',
           'q20_oxygenSaturation', 'q21_oxygenSource', 'q22_additionalObservations',
+          ...vitalsRecheckAllKeys(MAX_VITALS_RECHECKS),
         ]) && (
           <View style={s.section} wrap={false}>
             <View style={s.sectionHeader}>
@@ -1094,6 +1336,15 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
                 </View>
               )}
             </View>
+            {vitalRechecks.map((r) => (
+              <VitalsRecheckBlock key={r.index} reading={r} ranges={vitalRangeSet} />
+            ))}
+            {hasValue(data[FOLLOW_UP_ACTION_KEY]) && (
+              <View style={s.sectionBody}>
+                {/* What was done about a vital still out of range after its recheck. */}
+                <TextBlock fieldKey={FOLLOW_UP_ACTION_KEY} label="Abnormal Vitals Follow-Up" value={followUpSummary(data as unknown as Record<string, unknown>)} />
+              </View>
+            )}
             {(hasValue(data.q16_vitalsNotObtainedReason) || hasValue(data.q22_additionalObservations)) && (
               <View style={s.sectionBody}>
                 {hasValue(data.q16_vitalsNotObtainedReason) && (
@@ -1115,7 +1366,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         )}
 
         {/* === GROUP 3: Observations & Systems === */}
-        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Observations & Systems" />}
+        {isShift && <GroupHeader title="Observations & Systems" />}
 
         {/* 6. Observations */}
         {anyHasValue(data, [
@@ -1167,6 +1418,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
                   {sys.fields.map((f) => (
                     <SystemField key={f.key} fieldKey={f.key} label={f.label} value={data[f.key]} />
                   ))}
+                  {sys.name === 'Neurological' && <SeizureLogBlock data={data} />}
                 </View>
               );
             })}
@@ -1174,7 +1426,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         )}
 
         {/* === GROUP 4: Personal Care & Nutrition === */}
-        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Personal Care & Nutrition" />}
+        {isShift && <GroupHeader title="Personal Care & Nutrition" />}
 
         {/* 8b. Care Plan Tasks — plan-of-care charting. Renders from the
             careTasksMeta snapshot stored on the note, so it prints exactly
@@ -1237,7 +1489,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         )}
 
         {/* === GROUP 5: Meds & Interventions === */}
-        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Meds & Interventions" />}
+        {isShift && <GroupHeader title="Meds & Interventions" />}
 
         {/* 13. Skilled Nursing Interventions (LPN/RN only) */}
         {isLpnRn && anyHasValue(data, ['q38_interventions', 'q39_interventionDetails', 'q39_individualResponse', 'q40_skillJustification']) && (
@@ -1292,7 +1544,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         )}
 
         {/* === GROUP 6: Education & Notifications === */}
-        {data.noteType !== 'rn-oversight-visit' && <GroupHeader title="Education & Notifications" />}
+        {isShift && <GroupHeader title="Education & Notifications" />}
 
         {/* 15. Education */}
         {anyHasValue(data, [
@@ -1477,7 +1729,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
           <View style={s.signatureGrid}>
             <View style={{ flex: 1 }}>
               <Field fieldKey="q11_nurseName" label="Printed Name" value={data.q11_nurseName} />
-              <Field fieldKey="q12_credential" label="Credential" value={data.q12_credential} />
+              <Field fieldKey="q12_credential" label="Credential" value={isSupervisory && data.sv_credentialsPrinted ? data.sv_credentialsPrinted : data.q12_credential} />
               <Field fieldKey="q62_shiftEndDate" label="Date Signed" value={fmtDate(data.q62_shiftEndDate)} />
             </View>
             <View style={{ flex: 1 }}>
@@ -1495,13 +1747,16 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
           </View>
         </Section>
 
-        {/* 25b. RN Co-Signature — only relevant for HHA/CNA/LPN notes. Always
-            rendered for those credentials (even when pending) so the printed
-            PDF shows the compliance status at a glance. `cosignedAt` reach
-            the renderer in multiple shapes (Timestamp / POJO / string), so
-            `readCosignedDate` normalizes them — see the helper above. */}
-        {data.q12_credential !== 'RN' && data.q12_credential !== '' && (() => {
+        {/* 25b. RN Co-Signature — only for credentials that require one
+            (HHA/CNA/LPN per settings; an RN written as "DNP, RN" is still an
+            RN). Rendered even when pending so the printed PDF shows the
+            compliance status at a glance, and always when a co-signature
+            exists. `cosignedAt` reaches the renderer in multiple shapes
+            (Timestamp / POJO / string), so `readCosignedDate` normalizes
+            them — see the helper above. */}
+        {(() => {
           const cosignedDate = readCosignedDate(data.cosignedAt);
+          if (!cosignedDate && !credentialRequiresCosign(data.q12_credential, cosignRequiredCredentials)) return null;
           return (
             <Section title="RN Co-Signature">
               {cosignedDate ? (
@@ -1509,7 +1764,7 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
                   <View style={{ flex: 1 }}>
                     <Field label="Printed Name" value={data.cosignedByName || ''} />
                     <Field label="Credential" value={data.cosignedCredential || 'RN'} />
-                    <Field label="Date Signed" value={cosignedDate.toLocaleDateString()} />
+                    <Field label="Date Signed" value={cosignedDate.toLocaleDateString('en-US')} />
                   </View>
                   <View style={{ flex: 1 }}>
                     {hasValue(data.cosignedSignature) ? (

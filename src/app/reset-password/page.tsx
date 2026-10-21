@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useState, type FormEvent } from 'react';
+import { btnPrimary } from '@/components/buttons';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -9,8 +10,12 @@ import {
   signInWithEmailAndPassword,
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
+import { escortToField, FieldError, FIELD_ERROR_STYLE, firstErrorKey } from '@/lib/formEscort';
 
 type Status = 'verifying' | 'ready' | 'invalid' | 'saving' | 'done';
+type ResetField = 'password' | 'confirm';
+const FIELD_ORDER: ResetField[] = ['password', 'confirm'];
+const fieldId = (k: ResetField) => `rp-field-${k}`;
 
 function ResetPasswordForm() {
   const router = useRouter();
@@ -26,6 +31,7 @@ function ResetPasswordForm() {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<ResetField, string>>>({});
 
   // Validate the one-time code up front so we can greet the user by account
   // and fail fast on an expired/used link.
@@ -52,12 +58,13 @@ function ResetPasswordForm() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.');
-      return;
-    }
-    if (password !== confirm) {
-      setError('The two passwords do not match.');
+    const errs: Partial<Record<ResetField, string>> = {};
+    if (password.length < 8) errs.password = 'Password must be at least 8 characters.';
+    if (password !== confirm) errs.confirm = 'Passwords do not match.';
+    setFieldErrors(errs);
+    const first = firstErrorKey(FIELD_ORDER, errs);
+    if (first) {
+      escortToField(fieldId(first));
       return;
     }
     setStatus('saving');
@@ -86,23 +93,23 @@ function ResetPasswordForm() {
       <div style={cardStyle}>
         {status === 'verifying' && (
           <>
-            <h1 style={titleStyle}>Set your password</h1>
+            <h1 style={titleStyle}>Set Your Password</h1>
             <p style={subtitleStyle}>Checking your link…</p>
           </>
         )}
 
         {status === 'invalid' && (
           <>
-            <h1 style={titleStyle}>Link expired</h1>
+            <h1 style={titleStyle}>Link Expired</h1>
             <p style={subtitleStyle}>
               This password link is invalid or has already been used. Reset links expire about an
               hour after they&apos;re sent.
             </p>
-            <Link href="/login" style={{ ...primaryBtnStyle, display: 'block', textAlign: 'center', textDecoration: 'none' }}>
-              Go to sign in
+            <Link href="/login" className={btnPrimary} style={{ width: '100%' }}>
+              Go to Sign In
             </Link>
             <p style={footerStyle}>
-              On the sign-in page, click <strong>Forgot password?</strong> to send yourself a fresh
+              On the sign-in page, click <strong>Forgot Password?</strong> to send yourself a fresh
               link, or ask your administrator to resend one.
             </p>
           </>
@@ -110,13 +117,13 @@ function ResetPasswordForm() {
 
         {(status === 'ready' || status === 'saving' || status === 'done') && (
           <>
-            <h1 style={titleStyle}>Set your password</h1>
+            <h1 style={titleStyle}>Set Your Password</h1>
             <p style={subtitleStyle}>
               Choose a new password for <strong>{email}</strong>. We&apos;ll sign you in right after.
             </p>
 
-            <form onSubmit={handleSubmit} style={formStyle}>
-              <label style={labelStyle}>
+            <form onSubmit={handleSubmit} style={formStyle} noValidate>
+              <label style={labelStyle} id={fieldId('password')}>
                 New password
                 <input
                   type="password"
@@ -124,22 +131,32 @@ function ResetPasswordForm() {
                   autoComplete="new-password"
                   autoFocus
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  style={inputStyle}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setFieldErrors((prev) => (prev.password ? { ...prev, password: undefined } : prev));
+                  }}
+                  style={{ ...inputStyle, ...(fieldErrors.password ? FIELD_ERROR_STYLE : {}) }}
+                  aria-invalid={!!fieldErrors.password}
                   placeholder="At least 8 characters"
                 />
+                <FieldError message={fieldErrors.password} />
               </label>
 
-              <label style={labelStyle}>
+              <label style={labelStyle} id={fieldId('confirm')}>
                 Confirm new password
                 <input
                   type="password"
                   required
                   autoComplete="new-password"
                   value={confirm}
-                  onChange={(e) => setConfirm(e.target.value)}
-                  style={inputStyle}
+                  onChange={(e) => {
+                    setConfirm(e.target.value);
+                    setFieldErrors((prev) => (prev.confirm ? { ...prev, confirm: undefined } : prev));
+                  }}
+                  style={{ ...inputStyle, ...(fieldErrors.confirm ? FIELD_ERROR_STYLE : {}) }}
+                  aria-invalid={!!fieldErrors.confirm}
                 />
+                <FieldError message={fieldErrors.confirm} />
               </label>
 
               {error && <div style={errorStyle}>{error}</div>}
@@ -147,9 +164,10 @@ function ResetPasswordForm() {
               <button
                 type="submit"
                 disabled={status === 'saving' || status === 'done'}
-                style={primaryBtnStyle}
+                className={btnPrimary}
+                style={{ width: '100%' }}
               >
-                {status === 'saving' || status === 'done' ? 'Saving…' : 'Save password & sign in'}
+                {status === 'saving' || status === 'done' ? 'Saving…' : 'Save Password & Sign In'}
               </button>
             </form>
           </>
@@ -189,5 +207,4 @@ const formStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column
 const labelStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, fontWeight: 600, color: '#2c3e50' };
 const inputStyle: React.CSSProperties = { padding: '10px 12px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontWeight: 400 };
 const errorStyle: React.CSSProperties = { background: '#fdecea', color: '#b3261e', padding: '10px 12px', borderRadius: 6, fontSize: 13 };
-const primaryBtnStyle: React.CSSProperties = { background: '#27ae60', color: 'white', padding: '12px 16px', borderRadius: 6, border: 'none', fontSize: 15, fontWeight: 700, cursor: 'pointer' };
 const footerStyle: React.CSSProperties = { marginTop: 20, fontSize: 12.5, color: '#7f8c8d', textAlign: 'center', lineHeight: 1.5 };

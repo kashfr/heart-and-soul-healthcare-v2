@@ -3,6 +3,7 @@
  * (/api/mar/pdf route). Keep this file free of any Firebase import; the PDF
  * route must not pull the client SDK into the server bundle.
  */
+import { parseSlidingScale, slidingScaleKey, type SlidingScaleRow } from './slidingScale';
 
 export interface MarOrderSortable {
   medName?: string;
@@ -67,6 +68,18 @@ export interface MarAdminFieldInput {
   reason: string;
   isPRN?: boolean;
   indication?: string;
+  // The order's administration parameters (hold / check-before-giving
+  // criteria), snapshotted so the record shows what the nurse was told to
+  // check even if the order is later edited. parametersChecked is the
+  // documenter's acknowledgment that she checked them before a GIVEN dose;
+  // meaningless (forced false) on held/refused doses and when the order has
+  // no parameters.
+  parameters?: string;
+  parametersChecked?: boolean;
+  // The reading checked against the parameters ("BP 116/74"). Kept for any
+  // status when the order has parameters (a held dose's reading is the
+  // justification for holding); blanked when there are no parameters.
+  parametersReading?: string;
   // The PRN effectiveness follow-up ("what happened"): pain 6/10 to 2/10, fever
   // down, etc. Meaningful only for a GIVEN PRN dose; blanked otherwise.
   outcome?: string;
@@ -81,6 +94,19 @@ export interface MarAdminFieldInput {
   value?: string;
   valueLabel?: string;
   valueUnit?: string;
+  // Sliding-scale dose (see slidingScale.ts). The meter reading the dose was
+  // looked up from, what the scale called for at that reading, and the matched
+  // row in words. For a GIVEN sliding-scale dose the caller passes the units
+  // actually given as `dose`; if that differs from the scale, the reason.
+  glucoseReading?: string;
+  scaleDose?: string;
+  scaleRange?: string;
+  scaleDeviationReason?: string;
+  // The nurse checked the explicit "no note on file — I personally
+  // administered this" attestation in the grid modal. Persisted so the record
+  // shows which control path admitted it. Meaningful only for a nurse-given
+  // dose; forced false otherwise.
+  noNoteAttestation?: boolean;
 }
 
 export interface MarAdminFieldMeta {
@@ -108,6 +134,8 @@ export interface MarAdminFieldMeta {
 export function buildMarAdminFields(r: MarAdminFieldInput, meta: MarAdminFieldMeta) {
   const isNurse = !r.administeredByType || r.administeredByType === 'nurse';
   const isPRN = !!r.isPRN || r.scheduledTime === 'PRN';
+  const glucose = (r.glucoseReading || '').trim();
+  const scaleDose = (r.scaleDose || '').trim();
   return {
     patientId: meta.patientId,
     orderId: r.orderId,
@@ -116,6 +144,10 @@ export function buildMarAdminFields(r: MarAdminFieldInput, meta: MarAdminFieldMe
     unitsSnapshot: r.units,
     routeSnapshot: r.route,
     indicationSnapshot: (r.indication || '').trim(),
+    parametersSnapshot: (r.parameters || '').trim(),
+    parametersChecked:
+      r.status === 'given' && !!(r.parameters || '').trim() && r.parametersChecked === true,
+    parametersReading: (r.parameters || '').trim() ? (r.parametersReading || '').trim() : '',
     date: meta.date,
     scheduledTime: r.scheduledTime,
     // Persisted so later flows (amend rebuilds, displays) can tell an
@@ -134,16 +166,55 @@ export function buildMarAdminFields(r: MarAdminFieldInput, meta: MarAdminFieldMe
     reason: r.status === 'given' && !isPRN ? '' : r.reason.trim(),
     outcome: r.status === 'given' && isPRN ? (r.outcome || '').trim() : '',
     prescriberNotified: r.status !== 'given' && r.prescriberNotified === true,
+    noNoteAttestation: r.status === 'given' && isNurse && r.noNoteAttestation === true,
     // A reading exists only where the check was actually performed. The label
     // and unit ride along so the number stays interpretable if the order that
     // defined them is later edited.
     value: r.status === 'given' ? (r.value || '').trim() : '',
     valueLabelSnapshot: (r.valueLabel || '').trim(),
     valueUnitSnapshot: (r.valueUnit || '').trim(),
+    // Sliding scale: the reading is a measured fact, so it is kept for any
+    // status (a held or refused dose may still have a fingerstick behind it).
+    // What the scale called for rides with it; the deviation reason exists
+    // only when a GIVEN amount differs from the scale.
+    glucoseReading: glucose,
+    scaleDose: glucose ? scaleDose : '',
+    scaleRangeSnapshot: glucose ? (r.scaleRange || '').trim() : '',
+    scaleDeviationReason:
+      r.status === 'given' && glucose && scaleDose && Number(r.dose) !== Number(scaleDose)
+        ? (r.scaleDeviationReason || '').trim()
+        : '',
     sourceNoteId: meta.sourceNoteId,
     documentedBy: meta.documenter.uid,
     documentedByName: meta.documenter.name,
     documentedByCredential: meta.documenter.credential,
+  };
+}
+
+/**
+ * The inputs an amendment carries forward UNCHANGED from the stored doc it
+ * supersedes: the order's parameters snapshot, the documenter's "I checked
+ * them" acknowledgment and the reading she checked, and a check-style order's
+ * measurement with its label and unit. The amend form cannot edit any of
+ * these, and buildMarAdminFields blanks whatever it is not handed, so a
+ * correction (say, fixing the time given) that omitted them would leave the
+ * CURRENT record of the chain with no reading. Maps stored field names back to
+ * builder inputs; the builder's status rules still apply to the rebuilt doc
+ * (value only on given, parametersChecked only on given).
+ */
+export function amendCarryForwardFields(
+  orig: Record<string, unknown>,
+): Pick<
+  MarAdminFieldInput,
+  'parameters' | 'parametersChecked' | 'parametersReading' | 'value' | 'valueLabel' | 'valueUnit'
+> {
+  return {
+    parameters: String(orig.parametersSnapshot || ''),
+    parametersChecked: orig.parametersChecked === true,
+    parametersReading: String(orig.parametersReading || ''),
+    value: String(orig.value || ''),
+    valueLabel: String(orig.valueLabelSnapshot || ''),
+    valueUnit: String(orig.valueUnitSnapshot || ''),
   };
 }
 
@@ -163,10 +234,164 @@ export function parseValueOptions(input: string[] | string | undefined): string[
   return out;
 }
 
+/** What makes an order a check-style row (see MarOrder.valueLabel): the
+ *  measurement, its unit, and the readings the nurse picks from. */
+export interface MeasurementConfig {
+  valueLabel?: string;
+  valueUnit?: string;
+  valueOptions?: string[] | string;
+}
+
+/**
+ * The measurement half of a proposal as it is stored, or nothing at all when
+ * the proposal does not speak to it. A missing `valueLabel` means the form
+ * that built the proposal has no measurement inputs (the progress note's
+ * modal), which is different from a blank one: blank is the standalone form
+ * saying "this order is not a check". Keeping the keys off the record is what
+ * lets inheritMeasurement tell the two apart.
+ */
+export function measurementFields(
+  p: MeasurementConfig,
+): { valueLabel: string; valueUnit: string; valueOptions: string[] } | Record<string, never> {
+  if (p.valueLabel === undefined || p.valueLabel === null) return {};
+  return {
+    valueLabel: String(p.valueLabel).trim(),
+    valueUnit: String(p.valueUnit || '').trim(),
+    valueOptions: parseValueOptions(p.valueOptions),
+  };
+}
+
+/**
+ * A change that says nothing about the measurement leaves the order's
+ * measurement exactly as it is. Without this, a check-style order (a gastric
+ * residual check) edited from a form with no measurement inputs would be read
+ * as "measurement removed": a regimen change that turns the row into an
+ * ordinary dose row with no dose.
+ *
+ * Shared: the note modal calls it so the staged change carries the config, and
+ * the server calls it again when applying, so a change staged by an older page
+ * (or a draft staged before this existed) cannot strip it either.
+ */
+export function inheritMeasurement<T extends object>(proposed: T, current: MeasurementConfig): T & MeasurementConfig {
+  const own = (proposed as MeasurementConfig).valueLabel;
+  if (own !== undefined && own !== null) return proposed;
+  return { ...proposed, ...measurementFields({ ...current, valueLabel: current.valueLabel || '' }) };
+}
+
+/** The order's administration parameters, trimmed ('' when none). One place
+ *  to read them so every charting surface agrees on what "has parameters"
+ *  means (whitespace-only is none). */
+export function orderParameters(order: { parameters?: string } | null | undefined): string {
+  return (order?.parameters || '').trim();
+}
+
 /** Sensible default scale for a volume reading, used to pre-fill the order form. */
 export const DEFAULT_ML_VALUE_OPTIONS = [
   '0', '5', '10', '15', '20', '25', '30', '40', '50', '75', '100', '150', '200', '250', 'More than 250',
 ];
+
+// ---------------------------------------------------------------------------
+// Meal-anchored scheduled times ("before breakfast").
+// ---------------------------------------------------------------------------
+
+/**
+ * A scheduled time may be tied to an event in the client's day instead of
+ * being a bare clock time: "Before Breakfast", not "07:30". The order still
+ * stores a clock time for that slot (the client's USUAL time for the meal),
+ * because everything downstream runs on it: the due / late colors, the
+ * shift-window gates, the required-dose check, row order on the MAR, and the
+ * slot key each charted dose is filed under. The anchor is a label on top of
+ * that time (MarOrder.timeLabels, keyed by the 'HH:MM' slot), shown wherever
+ * the time is shown so the nurse reads the instruction, not just the clock.
+ */
+export const TIME_ANCHORS = [
+  { label: 'Before Breakfast', defaultTime: '07:30' },
+  { label: 'Before Lunch', defaultTime: '11:30' },
+  { label: 'Before Dinner', defaultTime: '17:00' },
+  { label: 'At Bedtime', defaultTime: '21:00' },
+] as const;
+
+export type TimeAnchorLabel = (typeof TIME_ANCHORS)[number]['label'];
+
+const TIME_ANCHOR_LABELS = new Set<string>(TIME_ANCHORS.map((a) => a.label));
+
+/** The usual clock time to suggest for an anchor ('' for a plain clock time). */
+export function anchorDefaultTime(label: string): string {
+  return TIME_ANCHORS.find((a) => a.label === label)?.defaultTime || '';
+}
+
+/**
+ * The stored label map for a set of scheduled times: only known anchors, only
+ * for times actually on the schedule, nothing for a PRN order. Every write
+ * path runs the labels through this, so junk can never reach an order.
+ */
+export function cleanTimeLabels(
+  labels: unknown,
+  times: unknown,
+  isPRN: boolean,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (isPRN || !labels || typeof labels !== 'object' || Array.isArray(labels)) return out;
+  const onSchedule = new Set(Array.isArray(times) ? times.map((t) => String(t).trim()) : []);
+  for (const [time, label] of Object.entries(labels as Record<string, unknown>)) {
+    const l = String(label ?? '').trim();
+    if (onSchedule.has(time) && TIME_ANCHOR_LABELS.has(l)) out[time] = l;
+  }
+  return out;
+}
+
+/** The label map from an order form's parallel rows (times[i] goes with
+ *  anchors[i]); rows without a time or an anchor contribute nothing. */
+export function timeLabelsFromRows(times: string[], anchors: string[]): Record<string, string> {
+  const raw: Record<string, string> = {};
+  times.forEach((t, i) => {
+    if (t && anchors[i]) raw[t] = anchors[i];
+  });
+  return cleanTimeLabels(raw, times, false);
+}
+
+/** The anchor for one slot of an order ('' for a plain clock time or PRN). */
+export function slotAnchor(
+  order: { timeLabels?: Record<string, string> } | null | undefined,
+  slot: string,
+): string {
+  const l = order?.timeLabels?.[slot];
+  return typeof l === 'string' && TIME_ANCHOR_LABELS.has(l) ? l : '';
+}
+
+/** A slot as it should read: "Before Breakfast (07:30)", or just the time. */
+export function describeSlot(
+  order: { timeLabels?: Record<string, string> } | null | undefined,
+  slot: string,
+): string {
+  const anchor = slotAnchor(order, slot);
+  return anchor ? `${anchor} (${slot})` : slot;
+}
+
+/**
+ * The schedule to pre-fill when a frequency implies one, or null when it does
+ * not. Only ever applied to an untouched schedule (see isPristineSchedule), so
+ * it can never overwrite times someone typed.
+ */
+export function suggestedScheduleFor(frequencyLabel: string): { times: string[]; anchors: string[] } | null {
+  const pick = (labels: string[]) => ({
+    times: labels.map((l) => anchorDefaultTime(l)),
+    anchors: labels,
+  });
+  if (frequencyLabel === 'Before meals (AC)') {
+    return pick(['Before Breakfast', 'Before Lunch', 'Before Dinner']);
+  }
+  if (frequencyLabel === 'Before meals and at bedtime') {
+    return pick(['Before Breakfast', 'Before Lunch', 'Before Dinner', 'At Bedtime']);
+  }
+  if (frequencyLabel === 'At bedtime') return pick(['At Bedtime']);
+  return null;
+}
+
+/** True while the scheduled-times editor still shows only its default row. */
+export function isPristineSchedule(times: string[], anchors: string[]): boolean {
+  return times.length === 1 && (times[0] === '08:00' || times[0] === '') && !anchors.some(Boolean);
+}
 
 // ---------------------------------------------------------------------------
 // Correction vs. new regimen: what a "change" actually does to the order.
@@ -196,8 +421,10 @@ export const REGIMEN_FIELDS = [
   'frequencyLabel',
   'scheduledTimes',
   'isPRN',
+  'prnFrequencyLabel',
   'valueLabel',
   'valueUnit',
+  'slidingScale',
 ] as const;
 
 export type RegimenField = (typeof REGIMEN_FIELDS)[number];
@@ -207,7 +434,7 @@ export type RegimenField = (typeof REGIMEN_FIELDS)[number];
 export type MarChangeKind = 'correction' | 'regimen';
 
 /** Human labels for the regimen fields, for the "this will start a new order
- *  because X changed" hint and the review queue. */
+ *  because X changed" hint. */
 export const REGIMEN_FIELD_LABELS: Record<RegimenField, string> = {
   medName: 'medication',
   dose: 'dose',
@@ -216,8 +443,10 @@ export const REGIMEN_FIELD_LABELS: Record<RegimenField, string> = {
   frequencyLabel: 'frequency',
   scheduledTimes: 'scheduled times',
   isPRN: 'PRN/scheduled',
+  prnFrequencyLabel: 'PRN frequency',
   valueLabel: 'measurement',
   valueUnit: 'measurement unit',
+  slidingScale: 'sliding scale',
 };
 
 /** The subset of an order (or a proposal) the regimen comparison reads. */
@@ -229,8 +458,16 @@ export interface RegimenComparable {
   frequencyLabel?: string;
   scheduledTimes?: string[];
   isPRN?: boolean;
+  prnFrequencyLabel?: string;
   valueLabel?: string;
   valueUnit?: string;
+  /** Meal anchors for the scheduled times, keyed by 'HH:MM'. Compared as part
+   *  of the schedule: "08:00" and "before breakfast at 08:00" are different
+   *  instructions for when to give the med. */
+  timeLabels?: Record<string, string>;
+  /** Sliding-scale rows (see slidingScale.ts); unknown because it is compared
+   *  straight off a Firestore doc or a posted payload. */
+  slidingScale?: unknown;
 }
 
 function normText(v: unknown): string {
@@ -239,10 +476,14 @@ function normText(v: unknown): string {
 
 /** Scheduled times compared as a set: order and duplicates are storage detail,
  *  and a PRN order carries none, so re-saving must not read as a change. */
-function normTimes(times: unknown, isPRN: boolean): string {
+function normTimes(times: unknown, isPRN: boolean, labels?: unknown): string {
   if (isPRN) return '';
   const arr = Array.isArray(times) ? times.map((t) => String(t).trim()).filter(Boolean) : [];
-  return Array.from(new Set(arr)).sort().join(',');
+  const clean = cleanTimeLabels(labels, arr, false);
+  return Array.from(new Set(arr))
+    .sort()
+    .map((t) => (clean[t] ? `${t}=${clean[t]}` : t))
+    .join(',');
 }
 
 /**
@@ -272,12 +513,111 @@ export function regimenFieldsChanged(
     changed.push('frequencyLabel');
   }
   if (currentPRN !== proposedPRN) changed.push('isPRN');
-  if (normTimes(current.scheduledTimes, currentPRN) !== normTimes(proposed.scheduledTimes, proposedPRN)) {
+  // How often a PRN med MAY be given (Q4H PRN vs Q6H PRN) is a term of the
+  // physician's order, so moving it starts a new regimen. Compared only when
+  // both sides are PRN: a switch to or from PRN is already carried by isPRN,
+  // and a scheduled order never carries a sub-frequency.
+  if (currentPRN && proposedPRN && normText(current.prnFrequencyLabel) !== normText(proposed.prnFrequencyLabel)) {
+    changed.push('prnFrequencyLabel');
+  }
+  if (
+    normTimes(current.scheduledTimes, currentPRN, current.timeLabels) !==
+    normTimes(proposed.scheduledTimes, proposedPRN, proposed.timeLabels)
+  ) {
     changed.push('scheduledTimes');
   }
   if (normText(current.valueLabel) !== normText(proposed.valueLabel)) changed.push('valueLabel');
   if (normText(current.valueUnit) !== normText(proposed.valueUnit)) changed.push('valueUnit');
+  // The scale IS the dose on a sliding-scale order, so editing any range or
+  // amount is a dose change and starts a new regimen like one.
+  if (slidingScaleKey(current.slidingScale) !== slidingScaleKey(proposed.slidingScale)) {
+    changed.push('slidingScale');
+  }
   return changed;
+}
+
+/**
+ * The frequency as it should read on the MAR, the order book, and the printed
+ * record. A PRN order with a sub-frequency reads the way the order is written —
+ * "Every 4 hours (Q4H) as needed (PRN)" — so the interval isn't lost off the
+ * label. Everything else is the stored label as-is.
+ */
+export function describeFrequency(o: {
+  frequencyLabel?: string;
+  isPRN?: boolean;
+  prnFrequencyLabel?: string;
+}): string {
+  const sub = normText(o.prnFrequencyLabel);
+  if (o.isPRN === true && sub) return `${sub} as needed (PRN)`;
+  return normText(o.frequencyLabel);
+}
+
+/**
+ * The regimen half of an order, as a plain snapshot. The counterpart of the
+ * server's correctionFields(): together they are everything a change request
+ * must remember about an order to be able to put it back.
+ */
+export function regimenFields(o: RegimenComparable): {
+  medName: string;
+  dose: string;
+  units: string;
+  route: string;
+  frequencyLabel: string;
+  scheduledTimes: string[];
+  timeLabels: Record<string, string>;
+  isPRN: boolean;
+  prnFrequencyLabel: string;
+  valueLabel: string;
+  valueUnit: string;
+  slidingScale: SlidingScaleRow[];
+} {
+  const isPRN = o.isPRN === true;
+  const scheduledTimes = isPRN ? [] : Array.from(new Set((o.scheduledTimes || []).filter(Boolean))).sort();
+  return {
+    medName: String(o.medName || ''),
+    dose: String(o.dose || ''),
+    units: String(o.units || ''),
+    route: String(o.route || ''),
+    frequencyLabel: String(o.frequencyLabel || ''),
+    scheduledTimes,
+    timeLabels: cleanTimeLabels(o.timeLabels, scheduledTimes, isPRN),
+    isPRN,
+    // Blank on a scheduled order, the same as every write path stores it.
+    prnFrequencyLabel: isPRN ? String(o.prnFrequencyLabel || '').trim() : '',
+    valueLabel: String(o.valueLabel || ''),
+    valueUnit: String(o.valueUnit || ''),
+    slidingScale: parseSlidingScale(o.slidingScale),
+  };
+}
+
+/**
+ * SAME-DAY AMENDMENT. A regimen change normally discontinues the order and
+ * starts a replacement, so each charted dose stays tied to the terms it was
+ * given under. That is the right record when the terms genuinely moved. It is
+ * the wrong record when the nurse is still standing at the desk fixing her own
+ * entry: an order entered at 3:11 with the wrong route and corrected at 3:12
+ * would otherwise read, forever, as a medication that was discontinued.
+ *
+ * So a regimen change AMENDS the order in place when the order was entered
+ * today (agency calendar day) and nothing has been charted against it yet. Both
+ * conditions are load-bearing. "Today" is the boundary a surveyor will accept
+ * without a second question; and once a dose exists, the terms it was given
+ * under are part of that dose's record and can no longer be rewritten.
+ *
+ * The change request is still logged either way. What changes is only whether
+ * the MAR shows one corrected row or a stopped row and a new one.
+ */
+export function isSameDayAmendable(args: {
+  /** Agency-day the order was created on ('YYYY-MM-DD'), or null if unknown. */
+  createdDayISO: string | null;
+  /** Agency-day the change is being made on. */
+  today: string;
+  /** Whether any administration has been charted against the order. */
+  hasDoses: boolean;
+}): boolean {
+  if (args.hasDoses) return false;
+  if (!args.createdDayISO || !/^\d{4}-\d{2}-\d{2}$/.test(args.createdDayISO)) return false;
+  return args.createdDayISO === args.today;
 }
 
 /** Whether a proposed change edits documentation only, leaving the order (and
@@ -429,6 +769,9 @@ export function physicianAttributionPending(order: {
  * said "use the date on the physician's order"). When a renewal comes in, the
  * RN updates orderSignedDate; the readiness tile stops counting it.
  */
+/** Canonical administration routes (same list the MAR order forms offer). */
+export const MED_ROUTES = ['PO (by mouth)', 'SL (sublingual)', 'Topical', 'Inhalation', 'Subcutaneous', 'IM', 'IV', 'Rectal', 'G-tube', 'J-tube', 'NG tube', 'Ophthalmic', 'Otic', 'Nasal'] as const;
+
 export const PHYSICIAN_ORDER_MAX_AGE_DAYS = 365;
 
 /** Days since the order was last signed (per orderSignedDate, falling back to
@@ -503,4 +846,102 @@ export function computeRequiredDoseGaps(opts: {
     gaps.push({ orderId: r.orderId, medName: r.medName, slot: r.slot });
   }
   return gaps;
+}
+
+/**
+ * Dose-vs-shift-window classifier (owner request after a real incident: a
+ * nurse working ~08:45-14:45 repeatedly charted 22:00 doses as nurse-given —
+ * attesting she administered meds at a time she was not in the home; the
+ * evening doses are in fact given by family, for which administeredByType
+ * 'family'/'responsibleParty' with the MAR star is the correct record).
+ *
+ * A dose time is judged against the nurse's shift [start - grace, end + grace]
+ * on the date of service. Overnight shifts (explicit next-day end, or
+ * end < start) have no upper bound on the service-day side, mirroring
+ * computeRequiredDoseGaps: the tail of an overnight shift falls on the NEXT
+ * calendar day, whose doses are charted under that next date.
+ *
+ * 'unknown' (any time unparseable) is NOT treated as outside — callers fail
+ * open, because a half-filled form must not block unrelated charting; the
+ * required-field and shift-sanity gates own missing/invalid times.
+ */
+export type DoseWindowVerdict = 'inside' | 'outside' | 'unknown';
+export const SHIFT_WINDOW_GRACE_MINUTES = 60;
+
+export function classifyDoseAgainstShift(opts: {
+  doseTime: string; // 'HH:MM' — the actual time when known, else the slot
+  shiftStart: string;
+  shiftEnd: string;
+  shiftEndsNextDay: boolean;
+  graceMinutes?: number;
+}): DoseWindowVerdict {
+  const dose = parseHHMM(opts.doseTime);
+  const start = parseHHMM(opts.shiftStart);
+  const end = parseHHMM(opts.shiftEnd);
+  if (dose === null || start === null) return 'unknown';
+  const grace = opts.graceMinutes ?? SHIFT_WINDOW_GRACE_MINUTES;
+  const lo = start - grace;
+  // A dose before the shift even starts is outside under BOTH the overnight
+  // and same-day interpretations, so the verdict doesn't need the end time.
+  // This lets the Page 5 warning fire during the normal forward fill, before
+  // the nurse has reached the shift-end fields on the last page.
+  if (dose < lo) return 'outside';
+  if (end === null) return 'unknown';
+  const overnight = opts.shiftEndsNextDay || end < start;
+  if (overnight) return 'inside';
+  return dose <= end + grace ? 'inside' : 'outside';
+}
+
+/**
+ * Verdict for a dose against a SET of shift windows (a nurse may have more
+ * than one for a date: an approved split-shift second note, or the next-day
+ * tail of the previous day's overnight note). 'inside' if ANY window contains
+ * the dose; 'unknown' if none does but any window is unparseable (fail open);
+ * 'outside' only when every window parsed and excluded it. Empty set is
+ * 'unknown' — the caller owns no-note handling.
+ */
+export function classifyDoseAgainstShiftSet(
+  doseTime: string,
+  windows: Array<{ start: string; end: string; endsNextDay: boolean }>,
+  graceMinutes?: number,
+): DoseWindowVerdict {
+  if (windows.length === 0) return 'unknown';
+  const verdicts = windows.map((w) =>
+    classifyDoseAgainstShift({
+      doseTime,
+      shiftStart: w.start,
+      shiftEnd: w.end,
+      shiftEndsNextDay: w.endsNextDay,
+      graceMinutes,
+    }),
+  );
+  if (verdicts.includes('inside')) return 'inside';
+  if (verdicts.includes('unknown')) return 'unknown';
+  return 'outside';
+}
+
+/**
+ * The capture-time decision for a NURSE-GIVEN dose, given every window we
+ * know about for its date. Principle: only a note DATED that same day is
+ * authoritative enough to hard-block; the previous night's tail is evidence
+ * that can ADMIT a dose (overnight back-charting) but never veto one — a
+ * nurse mid-way through tonight's shift hasn't written tonight's note yet,
+ * and her having worked last night must not leave her worse off than having
+ * no note at all.
+ *  - 'allow':  some window contains the dose, or a same-date window exists
+ *              but times are unparseable (fail open).
+ *  - 'block':  a same-date note exists and every parsed window excludes it.
+ *  - 'attest': no note dated this day (tails-only or nothing) and the tails
+ *              don't cover it — require the explicit personal attestation.
+ */
+export function decideNurseDoseGate(
+  doseTime: string,
+  windows: Array<{ start: string; end: string; endsNextDay: boolean; prevDayTail?: boolean }>,
+  graceMinutes?: number,
+): 'allow' | 'block' | 'attest' {
+  const verdict = classifyDoseAgainstShiftSet(doseTime, windows, graceMinutes);
+  if (verdict === 'inside') return 'allow';
+  const hasSameDateNote = windows.some((w) => !w.prevDayTail);
+  if (hasSameDateNote) return verdict === 'outside' ? 'block' : 'allow';
+  return 'attest';
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { needsCosign } from './cosignClient';
+import { credentialRequiresCosign, isRnCredential, licensureFromCredential, needsCosign } from './cosignClient';
 
 describe('needsCosign', () => {
   // The helper takes a Pick<SubmissionSummary, ...> so these literal objects
@@ -64,5 +64,32 @@ describe('needsCosign', () => {
     expect(
       needsCosign({ credential: 'CNA', status: 'submitted', cosignedAt: null }, []),
     ).toBe(false);
+  });
+});
+
+describe('credentials written in full', () => {
+  it('an RN written as "DNP, RN" is an RN and never needs a co-signature', () => {
+    expect(needsCosign({ credential: 'DNP, RN', status: 'submitted', cosignedAt: null })).toBe(false);
+    expect(needsCosign({ credential: 'BSN RN', status: 'submitted', cosignedAt: null })).toBe(false);
+    expect(credentialRequiresCosign('DNP, RN')).toBe(false);
+    expect(isRnCredential('rn')).toBe(true);
+  });
+
+  it('an LPN written in full still needs one', () => {
+    expect(needsCosign({ credential: 'LPN, CPR', status: 'submitted', cosignedAt: null })).toBe(true);
+    expect(credentialRequiresCosign('lpn', ['LPN'])).toBe(true);
+  });
+
+  it('a blank or unknown credential never needs one', () => {
+    expect(credentialRequiresCosign('')).toBe(false);
+    expect(credentialRequiresCosign('DNP')).toBe(false);
+  });
+
+  it('reduces a credential to its licensure', () => {
+    expect(licensureFromCredential('DNP, RN')).toBe('RN');
+    expect(licensureFromCredential('LPN')).toBe('LPN');
+    expect(licensureFromCredential('RN, LPN')).toBe('RN');
+    expect(licensureFromCredential('HHA')).toBeNull();
+    expect(licensureFromCredential('')).toBeNull();
   });
 });

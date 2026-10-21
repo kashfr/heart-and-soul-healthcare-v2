@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { btn, btnDanger, btnIcon, btnPrimary, btnSm } from '@/components/buttons';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, Plus, Pencil, Ban, Clock, X, Pill, CalendarDays } from 'lucide-react';
-import { useAuth } from '@/components/AuthProvider';
+import { ArrowLeft, Plus, Pencil, Ban, Pill, CalendarDays } from 'lucide-react';
+import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import {
   getPatient,
   getPatientClinical,
@@ -21,8 +22,27 @@ import {
   type MarOrder,
   type MarActor,
 } from '@/lib/mar';
-import { MED_FREQUENCIES, PRN_FREQUENCY } from '@/lib/medFrequencies';
-import { looksLikeUnknownPhysician, physicianAttributionPending } from '@/lib/marShared';
+import { MED_FREQUENCIES, PRN_FREQUENCY, PRN_SUB_FREQUENCIES } from '@/lib/medFrequencies';
+import {
+  looksLikeUnknownPhysician,
+  physicianAttributionPending,
+  describeFrequency,
+  describeSlot,
+  isPristineSchedule,
+  suggestedScheduleFor,
+  timeLabelsFromRows,
+} from '@/lib/marShared';
+import {
+  parseSlidingScale,
+  slidingScaleFromForm,
+  slidingScaleToForm,
+  starterSlidingScaleForm,
+  validateSlidingScaleForm,
+  type SlidingScaleFormRow,
+} from '@/lib/slidingScale';
+import ScheduledTimesEditor from '@/components/mar/ScheduledTimesEditor';
+import SlidingScaleEditor from '@/components/mar/SlidingScaleEditor';
+import SlidingScaleTable from '@/components/mar/SlidingScaleTable';
 
 interface OrderForm {
   medName: string;
@@ -30,7 +50,14 @@ interface OrderForm {
   units: string;
   route: string;
   frequencyLabel: string;
+  /** PRN only: how often it may be given, e.g. "Every 4 hours (Q4H)". */
+  prnFrequencyLabel: string;
   scheduledTimes: string[];
+  /** Meal anchor per scheduled-time row ("Before Breakfast"); '' = clock time. */
+  timeAnchors: string[];
+  /** Sliding-scale order: the dose comes from a blood glucose table. */
+  scaleOn: boolean;
+  scaleRows: SlidingScaleFormRow[];
   isPRN: boolean;
   indication: string;
   // Check-style order: records a measurement instead of an amount given.
@@ -45,6 +72,8 @@ interface OrderForm {
   orderSignedDate: string;
   orderingPhysician: string;
   physicianUnknown: boolean;
+  /** Hold / check-before-giving criteria (see MarOrder.parameters). */
+  parameters: string;
   notes: string;
 }
 
@@ -63,7 +92,11 @@ function emptyForm(): OrderForm {
     units: '',
     route: '',
     frequencyLabel: '',
+    prnFrequencyLabel: '',
     scheduledTimes: ['08:00'],
+    timeAnchors: [''],
+    scaleOn: false,
+    scaleRows: starterSlidingScaleForm(),
     isPRN: false,
     indication: '',
     valueLabel: '',
@@ -74,6 +107,7 @@ function emptyForm(): OrderForm {
     orderSignedDate: '',
     orderingPhysician: '',
     physicianUnknown: false,
+    parameters: '',
     notes: '',
   };
 }
@@ -87,13 +121,17 @@ function formatDate(d?: string | null): string {
 function scheduleSummary(o: MarOrder): string {
   if (o.isPRN) return 'PRN (as needed)';
   if (!o.scheduledTimes || o.scheduledTimes.length === 0) return '-';
-  return o.scheduledTimes.join(', ');
+  return o.scheduledTimes.map((t) => describeSlot(o, t)).join(', ');
 }
 
 export default function RecordDetailPage() {
   const params = useParams();
   const patientId = String(params.patientId);
   const { user, profile } = useAuth();
+  // "View as" is read-only: a supervisor preview may reach this order book
+  // (it's in the supervisor's real workflow), but building/editing orders is
+  // a direct-Firestore clinical write, so those affordances are withheld.
+  const { isViewingAs } = useEffectiveUser();
 
   const actor: MarActor | null = useMemo(
     () =>
@@ -162,13 +200,21 @@ export default function RecordDetailPage() {
   };
 
   const openEdit = (o: MarOrder) => {
+    const orderTimes = o.scheduledTimes && o.scheduledTimes.length > 0 ? [...o.scheduledTimes] : ['08:00'];
+    const scale = parseSlidingScale(o.slidingScale);
     setForm({
       medName: o.medName || '',
-      dose: o.dose || '',
+      // A sliding-scale order's stored dose is only the "Per sliding scale"
+      // label, not something to edit.
+      dose: scale.length > 0 ? '' : o.dose || '',
       units: o.units || '',
       route: o.route || '',
       frequencyLabel: o.isPRN ? PRN_FREQUENCY : o.frequencyLabel || '',
-      scheduledTimes: o.scheduledTimes && o.scheduledTimes.length > 0 ? [...o.scheduledTimes] : ['08:00'],
+      prnFrequencyLabel: o.isPRN ? o.prnFrequencyLabel || '' : '',
+      scheduledTimes: orderTimes,
+      timeAnchors: orderTimes.map((t) => o.timeLabels?.[t] || ''),
+      scaleOn: scale.length > 0,
+      scaleRows: scale.length > 0 ? slidingScaleToForm(scale) : starterSlidingScaleForm(),
       // Legacy rows could hold the PRN frequency label with isPRN false (the
       // old independent checkbox); trust the label so a re-save heals them.
       isPRN: !!o.isPRN || o.frequencyLabel === PRN_FREQUENCY,
@@ -181,35 +227,37 @@ export default function RecordDetailPage() {
       orderSignedDate: o.orderSignedDate || '',
       orderingPhysician: o.orderingPhysician || '',
       physicianUnknown: o.physicianPending === true,
+      parameters: o.parameters || '',
       notes: o.notes || '',
     });
     setEditingId(o.id || null);
     setFormOpen(true);
   };
 
-  // Scheduled-times editor helpers
-  const setTimeAt = (i: number, value: string) =>
-    setForm((f) => ({ ...f, scheduledTimes: f.scheduledTimes.map((t, idx) => (idx === i ? value : t)) }));
-  const addTime = () => setForm((f) => ({ ...f, scheduledTimes: [...f.scheduledTimes, ''] }));
-  const removeTime = (i: number) =>
-    setForm((f) => ({ ...f, scheduledTimes: f.scheduledTimes.filter((_, idx) => idx !== i) }));
-
   const handleSaveOrder = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isViewingAs) return;
     if (!actor) {
       showToast('Not signed in.');
       return;
     }
     // A check records a reading rather than an amount, so it needs no dose or
     // units — requiring them would force junk values onto the order.
-    const isCheck = !!form.valueLabel.trim();
+    const isCheck = !form.scaleOn && !!form.valueLabel.trim();
     if (!form.medName.trim() || !form.route.trim() || !form.startDate) {
       showToast('Medication, route, and start date are required.');
       return;
     }
-    if (!isCheck && (!form.dose.trim() || !form.units.trim())) {
+    if (!isCheck && !form.scaleOn && (!form.dose.trim() || !form.units.trim())) {
       showToast('Medication, dose, units, route, and start date are required.');
       return;
+    }
+    if (form.scaleOn) {
+      const scaleError = validateSlidingScaleForm(form.scaleRows);
+      if (scaleError) {
+        showToast(scaleError);
+        return;
+      }
     }
     if (isCheck && parseValueOptions(form.valueOptions).length < 2) {
       showToast('Add at least two allowed readings so the nurse picks from a list instead of typing.');
@@ -243,7 +291,10 @@ export default function RecordDetailPage() {
         units: form.units,
         route: form.route,
         frequencyLabel: form.frequencyLabel,
+        prnFrequencyLabel: form.prnFrequencyLabel,
         scheduledTimes: form.scheduledTimes,
+        timeLabels: timeLabelsFromRows(form.scheduledTimes, form.timeAnchors),
+        slidingScale: form.scaleOn ? slidingScaleFromForm(form.scaleRows) || [] : [],
         isPRN: form.isPRN,
         indication: form.indication,
         valueLabel: form.valueLabel,
@@ -254,6 +305,7 @@ export default function RecordDetailPage() {
         orderSignedDate: form.orderSignedDate,
         orderingPhysician: form.orderingPhysician,
         physicianPending: form.physicianUnknown && looksLikeUnknownPhysician(form.orderingPhysician),
+        parameters: form.parameters,
         notes: form.notes,
       };
       if (editingId) {
@@ -281,7 +333,7 @@ export default function RecordDetailPage() {
 
   const handleDiscontinue = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!actor || !dcTarget?.id) return;
+    if (isViewingAs || !actor || !dcTarget?.id) return;
     if (!dcReason.trim()) {
       showToast('A reason is required to discontinue.');
       return;
@@ -303,8 +355,11 @@ export default function RecordDetailPage() {
     <div style={containerStyle}>
       <div style={wrapStyle}>
         <div style={{ marginBottom: 16 }}>
-          <Link href="/admin/records" style={backLinkStyle}>
-            <ArrowLeft size={14} /> Back to Records
+          {/* The Records roster merged into the Clients tab; this order book
+              is reached from the client dashboard's "Manage record" button,
+              so back goes to the dashboard. */}
+          <Link href={`/admin/clients/${patientId}`} style={backLinkStyle}>
+            <ArrowLeft size={14} /> Back to Client Dashboard
           </Link>
         </div>
 
@@ -315,7 +370,8 @@ export default function RecordDetailPage() {
         ) : (
           <>
             {/* MAR header; demographics from the roster, clinical PHI from the
-                care-team-gated sub-record. Edited on the Patients screen. */}
+                care-team-gated sub-record. Edited via the Clients roster's
+                edit modal (the ?edit deep link below). */}
             <header style={headerCardStyle}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
                 <div style={headerIconStyle}>
@@ -330,14 +386,14 @@ export default function RecordDetailPage() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0, flexWrap: 'wrap' }}>
-                  <Link href={`/admin/records/${patientId}/mar`} style={marLinkStyle}>
+                  <Link href={`/admin/records/${patientId}/mar`} className={btn} style={{ flexShrink: 0 }}>
                     <CalendarDays size={14} /> Monthly MAR
                   </Link>
-                  <Link href={`/admin/records/${patientId}/tar`} style={marLinkStyle}>
+                  <Link href={`/admin/records/${patientId}/tar`} className={btn} style={{ flexShrink: 0 }}>
                     <CalendarDays size={14} /> Monthly TAR
                   </Link>
-                  <Link href={`/admin/patients?edit=${patientId}`} style={editHeaderLinkStyle}>
-                    <Pencil size={13} /> Edit client details
+                  <Link href={`/admin/clients?edit=${patientId}`} style={editHeaderLinkStyle}>
+                    <Pencil size={13} /> Edit Client Details
                   </Link>
                 </div>
               </div>
@@ -345,9 +401,9 @@ export default function RecordDetailPage() {
               {!patient.requiresMar && (
                 <div style={notFlaggedStyle}>
                   This client isn&apos;t marked <strong>Requires MAR</strong> yet. You can still build orders, but
-                  flag them on the{' '}
-                  <Link href="/admin/patients" style={inlineLinkStyle}>Patients</Link> screen so they appear in the
-                  Records list.
+                  flag them via{' '}
+                  <Link href={`/admin/clients?edit=${patientId}`} style={inlineLinkStyle}>Edit Client Details</Link>{' '}
+                  so the MAR badge shows on the roster.
                 </div>
               )}
 
@@ -363,23 +419,25 @@ export default function RecordDetailPage() {
             </header>
 
             <div style={sectionHeaderRowStyle}>
-              <h2 style={sectionTitleStyle}>Medication orders</h2>
-              <button onClick={openAdd} style={primaryBtnStyle}>
-                <Plus size={16} /> Add medication
-              </button>
+              <h2 style={sectionTitleStyle}>Medication Orders</h2>
+              {!isViewingAs && (
+                <button onClick={openAdd} className={btnPrimary}>
+                  <Plus size={16} /> Add Medication
+                </button>
+              )}
             </div>
 
             {activeOrders.length === 0 && discontinuedOrders.length === 0 ? (
               <div style={emptyStyle}>
-                No medications yet. Click &ldquo;Add medication&rdquo; to build this client&apos;s regimen.
+                No medications yet. Click &ldquo;Add Medication&rdquo; to build this client&apos;s regimen.
               </div>
             ) : (
               <>
                 <OrderTable
                   title={`Active (${activeOrders.length})`}
                   orders={activeOrders}
-                  onEdit={openEdit}
-                  onDiscontinue={openDiscontinue}
+                  onEdit={isViewingAs ? undefined : openEdit}
+                  onDiscontinue={isViewingAs ? undefined : openDiscontinue}
                   onView={setViewOrder}
                 />
                 {discontinuedOrders.length > 0 && (
@@ -402,7 +460,7 @@ export default function RecordDetailPage() {
           <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
             <div style={modalHeaderStyle}>
               <h2 style={{ margin: 0, fontSize: 18, color: '#2c3e50' }}>
-                {editingId ? 'Edit medication order' : 'Add medication order'}
+                {editingId ? 'Edit Medication Order' : 'Add Medication Order'}
               </h2>
               <button onClick={() => setFormOpen(false)} style={closeBtnStyle} aria-label="Close">
                 ✕
@@ -421,6 +479,34 @@ export default function RecordDetailPage() {
                 />
               </Field>
 
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 12, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={form.scaleOn}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      scaleOn: e.target.checked,
+                      // Sliding-scale insulin goes under the skin; pre-fill
+                      // the route only when nothing was chosen yet.
+                      route: e.target.checked && !f.route ? 'Subcutaneous' : f.route,
+                    }))
+                  }
+                  style={{ marginTop: 2 }}
+                />
+                <span style={{ fontSize: 13, color: '#2c3e50', lineHeight: 1.4 }}>
+                  <strong>Sliding scale.</strong> The dose depends on a blood glucose reading (insulin).
+                </span>
+              </label>
+              {form.scaleOn ? (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ ...fieldLabelStyle, marginBottom: 4 }}>Sliding scale from the order *</div>
+                  <SlidingScaleEditor
+                    rows={form.scaleRows}
+                    onChange={(rows) => setForm((f) => ({ ...f, scaleRows: rows }))}
+                  />
+                </div>
+              ) : (
               <div style={gridTwoStyle}>
                 <Field label={form.valueLabel.trim() ? 'Dose' : 'Dose *'}>
                   <input
@@ -449,6 +535,7 @@ export default function RecordDetailPage() {
                   </datalist>
                 </Field>
               </div>
+              )}
 
               <div style={gridTwoStyle}>
                 <Field label="Route *">
@@ -458,7 +545,7 @@ export default function RecordDetailPage() {
                     onChange={(e) => setForm((f) => ({ ...f, route: e.target.value }))}
                     style={selectStyle}
                   >
-                    <option value="">Select route…</option>
+                    <option value="">Select Route…</option>
                     {ROUTES.map((r) => (
                       <option key={r} value={r}>
                         {r}
@@ -472,20 +559,31 @@ export default function RecordDetailPage() {
                     onChange={(e) =>
                       setForm((f) => ({
                         ...f,
+                        // A frequency that implies a schedule ("Before meals")
+                        // fills the times in, but only while the schedule is
+                        // still the untouched default.
+                        ...(() => {
+                          const suggested = suggestedScheduleFor(e.target.value);
+                          return suggested && isPristineSchedule(f.scheduledTimes, f.timeAnchors)
+                            ? { scheduledTimes: suggested.times, timeAnchors: suggested.anchors }
+                            : {};
+                        })(),
                         frequencyLabel: e.target.value,
                         // Single PRN control (PR #77): the "As needed (PRN)"
                         // frequency IS the PRN switch; no separate checkbox.
                         isPRN: e.target.value === PRN_FREQUENCY,
+                        // The sub-frequency only qualifies a PRN order.
+                        prnFrequencyLabel: e.target.value === PRN_FREQUENCY ? f.prnFrequencyLabel : '',
                       }))
                     }
                     style={selectStyle}
                   >
-                    <option value="">Select frequency…</option>
+                    <option value="">Select Frequency…</option>
                     {/* Preserve a pre-existing free-text value that isn't one of
                         the standard options, so editing an old order doesn't
                         silently blank or change its frequency. */}
                     {form.frequencyLabel && !MED_FREQUENCIES.includes(form.frequencyLabel as (typeof MED_FREQUENCIES)[number]) && (
-                      <option value={form.frequencyLabel}>{form.frequencyLabel} (current)</option>
+                      <option value={form.frequencyLabel}>{form.frequencyLabel} (Current)</option>
                     )}
                     {MED_FREQUENCIES.map((freq) => (
                       <option key={freq} value={freq}>
@@ -496,35 +594,34 @@ export default function RecordDetailPage() {
                 </Field>
               </div>
 
+              {form.isPRN && (
+                <Field label="PRN frequency (how often it may be given)">
+                  <select
+                    value={form.prnFrequencyLabel}
+                    onChange={(e) => setForm((f) => ({ ...f, prnFrequencyLabel: e.target.value }))}
+                    style={selectStyle}
+                  >
+                    <option value="">No Set Interval</option>
+                    {PRN_SUB_FREQUENCIES.map((freq) => (
+                      <option key={freq} value={freq}>
+                        {freq}
+                      </option>
+                    ))}
+                  </select>
+                  <span style={indicationHintStyle}>
+                    Optional. Take it from the order: “Q4H PRN” is Every 4 hours (Q4H); “BID PRN” is Twice daily (BID).
+                  </span>
+                </Field>
+              )}
+
               {!form.isPRN && (
                 <div style={{ marginBottom: 12 }}>
-                  <div style={fieldLabelStyle}>Scheduled times *</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {form.scheduledTimes.map((t, i) => (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <Clock size={15} color="#7f8c8d" />
-                        <input
-                          type="time"
-                          value={t}
-                          onChange={(e) => setTimeAt(i, e.target.value)}
-                          style={{ ...inputStyle, maxWidth: 150 }}
-                        />
-                        {form.scheduledTimes.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => removeTime(i)}
-                            style={removeTimeBtnStyle}
-                            aria-label="Remove time"
-                          >
-                            <X size={14} />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  <button type="button" onClick={addTime} style={addTimeBtnStyle}>
-                    <Plus size={13} /> Add time
-                  </button>
+                  <div style={{ ...fieldLabelStyle, marginBottom: 4 }}>Scheduled times *</div>
+                  <ScheduledTimesEditor
+                    times={form.scheduledTimes}
+                    anchors={form.timeAnchors}
+                    onChange={(t, a) => setForm((f) => ({ ...f, scheduledTimes: t, timeAnchors: a }))}
+                  />
                 </div>
               )}
 
@@ -547,6 +644,7 @@ export default function RecordDetailPage() {
                   confirming an amount given. Naming a measurement is what turns
                   this row into a check, so dose and units stop being required.
                   Used for gastric residual on tube-fed clients. */}
+              {!form.scaleOn && (
               <div style={gridTwoStyle}>
                 <Field label="Measurement recorded (optional)">
                   <input
@@ -572,7 +670,8 @@ export default function RecordDetailPage() {
                   />
                 </Field>
               </div>
-              {form.valueLabel.trim() && (
+              )}
+              {!form.scaleOn && form.valueLabel.trim() && (
                 <>
                   {/* The nurse PICKS a reading rather than typing one: a
                       mistyped clinical value (300 for 30 on a residual) is a
@@ -596,7 +695,7 @@ export default function RecordDetailPage() {
                           }
                           style={{ background: 'none', border: 'none', padding: 0, color: '#1a73c4', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit' }}
                         >
-                          Use the standard mL scale
+                          Use the Standard mL Scale
                         </button>
                       )}
                     </span>
@@ -666,21 +765,31 @@ export default function RecordDetailPage() {
                 </span>
               </label>
 
+              <Field label="Parameters (hold / check before giving)">
+                <textarea
+                  value={form.parameters}
+                  onChange={(e) => setForm((f) => ({ ...f, parameters: e.target.value }))}
+                  style={textareaStyle}
+                  placeholder="e.g., Hold if SBP > 140 mmHg or HR < 60. Check BP and HR before each dose."
+                />
+                <span style={indicationHintStyle}>Conditions to check before giving and when to hold, exactly as the physician wrote them. Nurses see this every time they chart a dose and must confirm they checked it.</span>
+              </Field>
+
               <Field label="Notes">
                 <textarea
                   value={form.notes}
                   onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
                   style={textareaStyle}
-                  placeholder="Special instructions, hold parameters, etc."
+                  placeholder="Special instructions (anything that is not a hold / check parameter)."
                 />
               </Field>
 
               <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
-                <button type="button" onClick={() => setFormOpen(false)} disabled={submitting} style={secondaryBtnStyle}>
+                <button type="button" onClick={() => setFormOpen(false)} disabled={submitting} className={btn}>
                   Cancel
                 </button>
-                <button type="submit" disabled={submitting} style={primaryBtnStyle}>
-                  {submitting ? 'Saving…' : editingId ? 'Update order' : 'Save order'}
+                <button type="submit" disabled={submitting} className={btnPrimary}>
+                  {submitting ? 'Saving…' : editingId ? 'Update Order' : 'Save Order'}
                 </button>
               </div>
             </form>
@@ -693,7 +802,7 @@ export default function RecordDetailPage() {
         <div style={modalBackdropStyle} onClick={() => !submitting && setDcTarget(null)}>
           <div style={{ ...modalStyle, maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
             <div style={modalHeaderStyle}>
-              <h2 style={{ margin: 0, fontSize: 18, color: '#2c3e50' }}>Discontinue medication</h2>
+              <h2 style={{ margin: 0, fontSize: 18, color: '#2c3e50' }}>Discontinue Medication</h2>
               <button onClick={() => setDcTarget(null)} style={closeBtnStyle} aria-label="Close">
                 ✕
               </button>
@@ -722,10 +831,10 @@ export default function RecordDetailPage() {
                 />
               </Field>
               <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
-                <button type="button" onClick={() => setDcTarget(null)} disabled={submitting} style={secondaryBtnStyle}>
+                <button type="button" onClick={() => setDcTarget(null)} disabled={submitting} className={btn}>
                   Cancel
                 </button>
-                <button type="submit" disabled={submitting} style={dangerBtnStyle}>
+                <button type="submit" disabled={submitting} className={btnDanger}>
                   {submitting ? 'Saving…' : 'Discontinue'}
                 </button>
               </div>
@@ -739,7 +848,7 @@ export default function RecordDetailPage() {
         <div style={modalBackdropStyle} onClick={() => setViewOrder(null)}>
           <div style={{ ...modalStyle, maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
             <div style={modalHeaderStyle}>
-              <h2 style={{ margin: 0, fontSize: 18, color: '#2c3e50' }}>Medication order</h2>
+              <h2 style={{ margin: 0, fontSize: 18, color: '#2c3e50' }}>Medication Order</h2>
               <button onClick={() => setViewOrder(null)} style={closeBtnStyle} aria-label="Close">
                 ✕
               </button>
@@ -754,7 +863,7 @@ export default function RecordDetailPage() {
               <div style={detailGridStyle}>
                 <DetailRow label="Dose" value={`${viewOrder.dose}${viewOrder.units ? ` ${viewOrder.units}` : ''}`} />
                 <DetailRow label="Route" value={viewOrder.route} />
-                <DetailRow label="Frequency" value={viewOrder.frequencyLabel} />
+                <DetailRow label="Frequency" value={describeFrequency(viewOrder)} />
                 <DetailRow label="Schedule" value={scheduleSummary(viewOrder)} />
                 <DetailRow label="Start date" value={formatDate(viewOrder.startDate)} />
                 <DetailRow
@@ -772,6 +881,20 @@ export default function RecordDetailPage() {
                   }
                 />
               </div>
+
+              {parseSlidingScale(viewOrder.slidingScale).length > 0 && (
+                <div style={{ marginTop: 14, background: '#f5f9fe', border: '1px solid #c8def5', borderRadius: 8, padding: '10px 12px' }}>
+                  <div style={{ ...detailLabelStyle, color: '#1a3a5c' }}>Sliding scale</div>
+                  <SlidingScaleTable rows={parseSlidingScale(viewOrder.slidingScale)} />
+                </div>
+              )}
+
+              {viewOrder.parameters && (
+                <div style={{ marginTop: 14, background: '#fff7e6', border: '1px solid #f5d9a8', borderRadius: 8, padding: '10px 12px' }}>
+                  <div style={{ ...detailLabelStyle, color: '#8a5a0d' }}>Parameters (check before giving)</div>
+                  <div style={{ ...detailValueStyle, whiteSpace: 'pre-wrap' }}>{viewOrder.parameters}</div>
+                </div>
+              )}
 
               {viewOrder.notes && (
                 <div style={{ marginTop: 14 }}>
@@ -791,16 +914,16 @@ export default function RecordDetailPage() {
               )}
 
               <div style={{ display: 'flex', gap: 10, marginTop: 18, justifyContent: 'flex-end' }}>
-                <button type="button" onClick={() => setViewOrder(null)} style={secondaryBtnStyle}>
+                <button type="button" onClick={() => setViewOrder(null)} className={btn}>
                   Close
                 </button>
-                {viewOrder.status === 'active' && (
+                {viewOrder.status === 'active' && !isViewingAs && (
                   <button
                     type="button"
                     onClick={() => { const o = viewOrder; setViewOrder(null); openEdit(o); }}
-                    style={primaryBtnStyle}
+                    className={btnPrimary}
                   >
-                    <Pencil size={14} /> Edit order
+                    <Pencil size={14} /> Edit Order
                   </button>
                 )}
               </div>
@@ -877,11 +1000,21 @@ function OrderTable({
               >
                 <td style={tdStyle}>
                   <div style={{ fontWeight: 600, color: '#2c3e50' }}>{o.medName}</div>
-                  {o.frequencyLabel && <div style={subTextStyle}>{o.frequencyLabel}</div>}
+                  {describeFrequency(o) && <div style={subTextStyle}>{describeFrequency(o)}</div>}
                   {o.isPRN && <span style={prnBadgeStyle}>PRN</span>}
+                  {!discontinued && o.verbalOrderPending && (
+                    <span style={physicianNeededBadgeStyle} title="Taken as a verbal order; the physician's signed copy has not come back yet.">
+                      Verbal, Awaiting Signature
+                    </span>
+                  )}
+                  {!discontinued && o.verbalOrderCancelled && !o.verbalOrderPending && !o.orderSignedDate && (
+                    <span style={physicianNeededBadgeStyle} title="The verbal order behind this med was cancelled before the physician signed it. Review whether it should stay on the MAR.">
+                      Verbal Order Cancelled
+                    </span>
+                  )}
                   {!discontinued && physicianAttributionPending(o) && (
                     <span style={physicianNeededBadgeStyle} title="No ordering physician on this order yet; edit the order to add the name.">
-                      Physician needed
+                      Physician Needed
                     </span>
                   )}
                 </td>
@@ -895,12 +1028,13 @@ function OrderTable({
                 {!discontinued && (
                   // Stop row-click (view) from firing when using the action buttons.
                   <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
-                    <button onClick={() => onEdit?.(o)} style={iconBtnStyle} aria-label={`Edit ${o.medName}`} title="Edit">
+                    <button onClick={() => onEdit?.(o)} className={`${btn} ${btnIcon} ${btnSm}`} aria-label={`Edit ${o.medName}`} title="Edit">
                       <Pencil size={14} />
                     </button>
                     <button
                       onClick={() => onDiscontinue?.(o)}
-                      style={{ ...iconBtnStyle, color: '#c44' }}
+                      className={`${btnDanger} ${btnIcon} ${btnSm}`}
+                      style={{ marginLeft: 6 }}
                       aria-label={`Discontinue ${o.medName}`}
                       title="Discontinue"
                     >
@@ -939,7 +1073,6 @@ const headerIconStyle: React.CSSProperties = { width: 46, height: 46, borderRadi
 const titleStyle: React.CSSProperties = { fontSize: 24, color: '#2c3e50', margin: 0 };
 const headerMetaStyle: React.CSSProperties = { fontSize: 13, color: '#7f8c8d', marginTop: 4 };
 const editHeaderLinkStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, color: '#1a73c4', textDecoration: 'none', fontSize: 13, fontWeight: 600, flexShrink: 0 };
-const marLinkStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#1a3a5c', color: 'white', textDecoration: 'none', fontSize: 13, fontWeight: 600, padding: '8px 12px', borderRadius: 6, flexShrink: 0 };
 const notFlaggedStyle: React.CSSProperties = { marginTop: 14, background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: 8, padding: '10px 14px', fontSize: 13, lineHeight: 1.5 };
 const headerGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginTop: 16, paddingTop: 16, borderTop: '1px solid #f1f3f5' };
 const headerFieldLabelStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: '#9aa6b2', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 };
@@ -961,10 +1094,6 @@ const dcBadgeStyle: React.CSSProperties = { display: 'inline-block', background:
 const detailGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 14 };
 const detailLabelStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: '#9aa6b2', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 };
 const detailValueStyle: React.CSSProperties = { fontSize: 14.5, color: '#2c3e50' };
-const primaryBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#27ae60', color: 'white', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
-const secondaryBtnStyle: React.CSSProperties = { background: '#eef1f4', color: '#2c3e50', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
-const dangerBtnStyle: React.CSSProperties = { background: '#c0392b', color: 'white', padding: '10px 14px', borderRadius: 6, border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
-const iconBtnStyle: React.CSSProperties = { background: 'transparent', border: 'none', padding: 6, margin: '0 2px', borderRadius: 4, cursor: 'pointer', color: '#5c6b7a' };
 const modalBackdropStyle: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 };
 const modalStyle: React.CSSProperties = { background: 'white', borderRadius: 10, width: '100%', maxWidth: 600, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 12px 40px rgba(0,0,0,0.25)' };
 const modalHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #f1f3f5' };
@@ -985,6 +1114,4 @@ const selectStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 const gridTwoStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 };
-const removeTimeBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', color: '#c44', border: 'none', padding: 4, borderRadius: 4, cursor: 'pointer' };
-const addTimeBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, background: 'white', color: '#0e7c4a', border: '1px dashed #0e7c4a', padding: '7px 12px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', marginTop: 8 };
 const toastStyle: React.CSSProperties = { position: 'fixed', bottom: 20, right: 20, background: '#2c3e50', color: 'white', padding: '10px 16px', borderRadius: 8, fontSize: 13, boxShadow: '0 8px 20px rgba(0,0,0,0.2)', zIndex: 1100 };

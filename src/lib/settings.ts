@@ -1,3 +1,4 @@
+import { isAssistantClientGrant, mergeAssistantClients, type AssistantClientsSettings } from './assistantClientAccess';
 /**
  * Org-wide settings stored in a single Firestore document at
  * `settings/global`. Edited via /admin/settings (admin-only) and read
@@ -25,6 +26,7 @@ export const RN_COSIGN_SESSION_KEY = 'rn-cosign-default-applied';
 
 // georgia.ts is pure data (no Firebase), so importing it preserves this
 // module's unit-testability.
+import { validPpotSchedule } from './ppotSchedule';
 import { normalizeCounty, SERVICE_KEYS, type GappServiceKey } from './georgia';
 
 /**
@@ -268,13 +270,137 @@ export interface CorrectionsSettings {
   reviewerPhone: string;
 }
 
+export interface ShiftChangeAlertsSettings {
+  /**
+   * Who is alerted (email + bell, plus a PHI-free text when they have a phone
+   * on file) when a nurse answers Yes to any "since your last shift" question
+   * on a progress note: hospital admission, urgent care / ER visit, or a
+   * medication started / changed / stopped. Staff uids. When EMPTY the alert
+   * falls back to the corrections reviewer, so it works before anyone has
+   * opened this section of Settings.
+   */
+  recipientUids: string[];
+}
+
+/**
+ * Verbal (telephone) physician orders. An order the physician has not signed
+ * shows as overdue on the queue after overdueDays and rings the admin bell
+ * after escalateDays; the cron re-faxes once at overdueDays. returnFax is
+ * the number printed on the authentication form for the physician to fax
+ * the signed copy back to (the SRFax number the portal polls); blank falls
+ * back to the SRFAX_FAX_NUMBER env var.
+ */
+export interface VerbalOrdersSettings {
+  overdueDays: number;
+  escalateDays: number;
+  returnFax: string;
+}
+
+/**
+ * Fax Center (/admin/fax): send any PDF to a fax number through SRFax, with a
+ * cover sheet, and track delivery. Off until an admin turns it on. Admins can
+ * always use it once it is on; anyone else needs to be on userUids (the
+ * picker offers supervisors and the virtual assistant). Every fax route
+ * checks this server-side (src/lib/faxAccess.ts); hiding the nav item is
+ * only the convenience half.
+ */
+export interface FaxSettings {
+  enabled: boolean;
+  userUids: string[];
+  /** GAPP clients whose authorization ends within this many days, with no
+   *  PPOT request sent yet this cycle, are flagged for recertification and
+   *  everyone with Fax Center access is notified. */
+  recertLeadDays: number;
+  /** Independent PPOT follow-up thresholds. Legacy settings inherit Verbal Orders until saved. */
+  ppotOverdueDays?: number;
+  /** Sorted calendar-day offsets. Empty disables automatic follow-up faxes. */
+  ppotFollowupDays?: number[];
+  ppotEscalateDays?: number;
+  /** Print the member's name and Medicaid ID (when on file) on the Appendix T
+   *  identity line. Off by default: the GAPP manual (913.3) says providers
+   *  cannot complete the PPOT, so turn this on only once DCH / the GAPP
+   *  program confirms identity fields are acceptable. Never anything else. */
+  ppotPrefillIdentity: boolean;
+}
+
+/**
+ * PandaDoc tracking (webhook only; see src/lib/pandadocShared.ts). A PandaDoc
+ * document is tracked when its document or template name contains one of
+ * these words. Start of care packets carry client information and PandaDoc has
+ * no BAA with the agency yet, so they are deliberately not tracked by default.
+ */
+export interface EsignSettings {
+  trackKeywords: string[];
+}
+
+/**
+ * EDWP Consents (/admin/edwp-consents): who besides admins may read signed
+ * EDWP consent forms (client names, contact details, signatures) and email
+ * the form to clients. null means "not set yet", which keeps the original
+ * rule of every virtual assistant; the first save from Settings turns it into
+ * an explicit list. Checked server-side on every route (edwpAccessServer.ts).
+ */
+export interface EdwpSettings {
+  userUids: string[] | null;
+}
+
+/**
+ * Support coordination agencies (NOW/COMP SC / ISC providers and case
+ * management agencies). The Agency field on a client's Support coordinator
+ * card picks from this list, so an agency is typed once, spelled the same
+ * everywhere, and its office address comes along. Managed in Settings.
+ */
+export interface SupportCoordinationAgency {
+  id: string;
+  name: string;
+  address: string;
+  /** Main office line, (XXX) XXX-XXXX or blank. */
+  phone: string;
+  fax: string;
+  /** After-hours / emergency line, e.g. a pager. */
+  afterHours: string;
+  notes: string;
+  /** DBHDD regions (1-6) the agency serves, ascending. Empty = not recorded. */
+  regions: number[];
+}
+
+/** Georgia DBHDD field office regions. */
+export const DBHDD_REGIONS = [1, 2, 3, 4, 5, 6] as const;
+
+/** "Regions 1, 3, 5, 6", "Region 1", "All regions", or '' when none are recorded. */
+export function formatRegions(regions: readonly number[] | undefined): string {
+  const r = (regions || []).filter((n) => (DBHDD_REGIONS as readonly number[]).includes(n));
+  if (r.length === 0) return '';
+  if (r.length === DBHDD_REGIONS.length) return 'All regions';
+  return `${r.length === 1 ? 'Region' : 'Regions'} ${r.join(', ')}`;
+}
+
+export interface SupportCoordinationSettings {
+  agencies: SupportCoordinationAgency[];
+}
+
+export interface ReferralConversionSettings {
+  /** Individual VAs permitted to create client records from referrals. */
+  userUids: string[];
+  /** Explicit revocations override role-based access and VA grants. */
+  excludedUserUids?: string[];
+}
+
 export interface AppSettings {
+  assistantClients: AssistantClientsSettings;
+  referralConversion: ReferralConversionSettings;
+  supportCoordination: SupportCoordinationSettings;
+  verbalOrders: VerbalOrdersSettings;
+  fax: FaxSettings;
+  edwp: EdwpSettings;
+  esign: EsignSettings;
   submissions: SubmissionsSettings;
   cosign: CosignSettings;
   patient: PatientSettings;
   vitals: VitalsSettings;
   criticalVitals: CriticalVitalsSettings;
   corrections: CorrectionsSettings;
+  shiftChangeAlerts: ShiftChangeAlertsSettings;
   branding: BrandingSettings;
   emails: EmailsSettings;
   intake: IntakeSettings;
@@ -288,6 +414,13 @@ export interface AppSettings {
  * refactor for anyone who hasn't customized.
  */
 export const DEFAULT_SETTINGS: AppSettings = {
+  assistantClients: { grants: [] },
+  referralConversion: { userUids: [], excludedUserUids: [] },
+  supportCoordination: { agencies: [] },
+  verbalOrders: { overdueDays: 14, escalateDays: 30, returnFax: '' },
+  fax: { enabled: false, userUids: [], recertLeadDays: 45, ppotPrefillIdentity: false, ppotOverdueDays: 14, ppotEscalateDays: 30 },
+  edwp: { userUids: null },
+  esign: { trackKeywords: ['onboarding'] },
   submissions: {
     defaultSort: 'dateOfService',
     defaultDir: 'desc',
@@ -314,6 +447,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
     reviewerName: '',
     reviewerPhone: '',
   },
+  shiftChangeAlerts: {
+    recipientUids: [],
+  },
   branding: {
     orgName: 'Heart and Soul Healthcare',
     tagline: 'Compassionate Care, Professional Excellence',
@@ -321,16 +457,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   emails: {
     subjects: {
-      staffInviteWelcome: 'Welcome to Heart and Soul Healthcare — set up your account',
-      staffInviteResend: 'Your Heart and Soul Healthcare password reset link',
-      emailChanged: 'Your Heart and Soul Healthcare account email was changed',
+      staffInviteWelcome: 'Welcome to Heart and Soul Healthcare: Set Up Your Account',
+      staffInviteResend: 'Your Heart and Soul Healthcare Password Reset Link',
+      emailChanged: 'Your Heart and Soul Healthcare Account Email Was Changed',
     },
     // The copy that shipped in PR #108, moved here verbatim so switching to
     // settings-driven copy changes nothing about what families receive. NOTE:
     // no em or en dashes in any of this — it goes out under the org's name, and
     // providerListContent.test.ts fails the build if one appears.
     providerList: {
-      subject: 'A list of GAPP providers for your family',
+      subject: 'A List of GAPP Providers for Your Family',
       phone: '(470) 635-5774',
       intro:
         'Thank you for reaching out to Heart & Soul Healthcare about {{childName}}. After reviewing your referral, we are not able to take it on at this time.',
@@ -408,6 +544,17 @@ export function mergeWithDefaults(partial: unknown): AppSettings {
           : DEFAULT_SETTINGS.criticalVitals.enabled,
     },
     corrections: mergeCorrections(p.corrections),
+    shiftChangeAlerts: mergeShiftChangeAlerts(p.shiftChangeAlerts),
+    verbalOrders: mergeVerbalOrders(p.verbalOrders),
+    fax: mergeFax(p.fax, mergeVerbalOrders(p.verbalOrders)),
+    edwp: mergeEdwp(p.edwp),
+    assistantClients: mergeAssistantClients(p.assistantClients),
+    referralConversion: {
+      userUids: mergeEdwp(p.referralConversion).userUids ?? [],
+      excludedUserUids: mergeEdwp({ userUids: (p.referralConversion as Partial<ReferralConversionSettings> | undefined)?.excludedUserUids }).userUids ?? [],
+    },
+    esign: mergeEsign(p.esign),
+    supportCoordination: mergeSupportCoordination(p.supportCoordination),
     branding: mergeBranding(p.branding),
     emails: mergeEmails(p.emails),
     intake: mergeIntake(p.intake),
@@ -425,6 +572,88 @@ function mergeCorrections(input: unknown): CorrectionsSettings {
     reviewerName: typeof src.reviewerName === 'string' ? src.reviewerName.trim() : '',
     reviewerPhone: typeof src.reviewerPhone === 'string' ? src.reviewerPhone.trim() : '',
   };
+}
+
+function mergeVerbalOrders(input: unknown): VerbalOrdersSettings {
+  const src = (input ?? {}) as Partial<VerbalOrdersSettings>;
+  const d = DEFAULT_SETTINGS.verbalOrders;
+  const clampDays = (v: unknown, fallback: number) => {
+    const n = typeof v === 'number' ? Math.round(v) : Number.NaN;
+    return Number.isFinite(n) && n >= 1 && n <= 365 ? n : fallback;
+  };
+  const overdueDays = clampDays(src.overdueDays, d.overdueDays);
+  const escalateDays = Math.max(overdueDays, clampDays(src.escalateDays, d.escalateDays));
+  const returnFax = typeof src.returnFax === 'string' ? src.returnFax.replace(/\D/g, '').slice(-10) : '';
+  return { overdueDays, escalateDays, returnFax: returnFax.length === 10 ? returnFax : '' };
+}
+
+const SC_AGENCY_MAX = 40;
+const SC_TEXT_MAX: Record<Exclude<keyof SupportCoordinationAgency, 'id' | 'regions'>, number> = { name: 120, address: 200, phone: 40, fax: 40, afterHours: 60, notes: 500 };
+
+function mergeSupportCoordination(input: unknown): SupportCoordinationSettings {
+  const src = (input ?? {}) as Partial<SupportCoordinationSettings>;
+  if (!Array.isArray(src.agencies)) return { agencies: [] };
+  const seen = new Set<string>();
+  const agencies: SupportCoordinationAgency[] = [];
+  for (const raw of src.agencies) {
+    if (!raw || typeof raw !== 'object') continue;
+    const r = raw as Partial<SupportCoordinationAgency>;
+    const text = (k: keyof typeof SC_TEXT_MAX) => (typeof r[k] === 'string' ? (r[k] as string).trim().slice(0, SC_TEXT_MAX[k]) : '');
+    const name = text('name');
+    // Blank rows (an "Add agency" never filled in) and duplicate names drop out.
+    if (!name || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    const id = typeof r.id === 'string' && /^[a-z0-9-]{1,40}$/.test(r.id) ? r.id : name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'agency';
+    const regions = Array.isArray(r.regions)
+      ? Array.from(new Set(r.regions.filter((n): n is number => (DBHDD_REGIONS as readonly number[]).includes(n as number)))).sort((a, b) => a - b)
+      : [];
+    agencies.push({ id, name, address: text('address'), phone: text('phone'), fax: text('fax'), afterHours: text('afterHours'), notes: text('notes'), regions });
+    if (agencies.length >= SC_AGENCY_MAX) break;
+  }
+  agencies.sort((a, b) => a.name.localeCompare(b.name));
+  return { agencies };
+}
+
+function mergeEsign(input: unknown): EsignSettings {
+  const src = (input ?? {}) as Partial<EsignSettings>;
+  if (!Array.isArray(src.trackKeywords)) return { trackKeywords: [...DEFAULT_SETTINGS.esign.trackKeywords] };
+  const words = src.trackKeywords
+    .filter((w): w is string => typeof w === 'string')
+    .map((w) => w.trim().slice(0, 60))
+    .filter(Boolean);
+  return { trackKeywords: Array.from(new Set(words.map((w) => w.toLowerCase()))).slice(0, 20) };
+}
+
+function mergeEdwp(input: unknown): EdwpSettings {
+  const src = (input ?? {}) as Partial<EdwpSettings>;
+  if (!Array.isArray(src.userUids)) return { userUids: null };
+  const uids = src.userUids.filter((u): u is string => typeof u === 'string').map((u) => u.trim()).filter(Boolean);
+  return { userUids: Array.from(new Set(uids)) };
+}
+
+function mergeFax(input: unknown, legacy: VerbalOrdersSettings): FaxSettings {
+  const src = (input ?? {}) as Partial<FaxSettings>;
+  const uids = Array.isArray(src.userUids)
+    ? src.userUids.filter((u): u is string => typeof u === 'string').map((u) => u.trim()).filter(Boolean)
+    : [];
+  const lead = typeof src.recertLeadDays === 'number' ? Math.round(src.recertLeadDays) : Number.NaN;
+  return {
+    enabled: src.enabled === true,
+    userUids: Array.from(new Set(uids)),
+    recertLeadDays: Number.isFinite(lead) && lead >= 7 && lead <= 180 ? lead : DEFAULT_SETTINGS.fax.recertLeadDays,
+    ppotPrefillIdentity: src.ppotPrefillIdentity === true,
+    ...(validPpotSchedule(src.ppotFollowupDays) ? { ppotFollowupDays: src.ppotFollowupDays } : {}),
+    ppotOverdueDays: Number.isInteger(src.ppotOverdueDays) && src.ppotOverdueDays! >= 1 && src.ppotOverdueDays! <= 365 ? src.ppotOverdueDays : legacy.overdueDays,
+    ppotEscalateDays: Number.isInteger(src.ppotEscalateDays) && src.ppotEscalateDays! >= 1 && src.ppotEscalateDays! <= 365 ? src.ppotEscalateDays : legacy.escalateDays,
+  };
+}
+
+function mergeShiftChangeAlerts(input: unknown): ShiftChangeAlertsSettings {
+  const src = (input ?? {}) as Partial<ShiftChangeAlertsSettings>;
+  const uids = Array.isArray(src.recipientUids)
+    ? src.recipientUids.filter((u): u is string => typeof u === 'string').map((u) => u.trim()).filter(Boolean)
+    : [];
+  return { recipientUids: Array.from(new Set(uids)) };
 }
 
 function mergeIntake(input: unknown): IntakeSettings {
@@ -563,6 +792,93 @@ export function validateSettings(payload: unknown): AppSettings {
   const cos = (p.cosign ?? {}) as Partial<CosignSettings>;
   const pat = (p.patient ?? {}) as Partial<PatientSettings>;
   const vit = (p.vitals ?? {}) as Partial<VitalsSettings>;
+  const sca = (p.shiftChangeAlerts ?? {}) as Partial<ShiftChangeAlertsSettings>;
+  const fax = (p.fax ?? {}) as Partial<FaxSettings>;
+  const esign = (p.esign ?? {}) as Partial<EsignSettings>;
+  const scs = (p.supportCoordination ?? {}) as Partial<SupportCoordinationSettings>;
+  if (scs.agencies !== undefined) {
+    if (!Array.isArray(scs.agencies)) throw new SettingsValidationError('supportCoordination.agencies', 'Agencies must be a list.');
+    const names = new Set<string>();
+    scs.agencies.forEach((raw, i) => {
+      const r = (raw ?? {}) as Partial<SupportCoordinationAgency>;
+      const name = typeof r.name === 'string' ? r.name.trim() : '';
+      const hasOther = ['address', 'phone', 'fax', 'afterHours', 'notes'].some((k) => typeof (r as Record<string, unknown>)[k] === 'string' && ((r as Record<string, string>)[k]).trim());
+      if (!name && hasOther) throw new SettingsValidationError(`supportCoordination.agencies.${i}.name`, 'Enter the agency name, or remove this row.');
+      if (name && names.has(name.toLowerCase())) throw new SettingsValidationError(`supportCoordination.agencies.${i}.name`, 'This agency is already on the list.');
+      if (name) names.add(name.toLowerCase());
+      if (r.regions !== undefined && (!Array.isArray(r.regions) || r.regions.some((n) => !(DBHDD_REGIONS as readonly number[]).includes(n as number)))) {
+        throw new SettingsValidationError(`supportCoordination.agencies.${i}.regions`, 'Regions must be numbers 1 through 6.');
+      }
+    });
+  }
+  if (
+    esign.trackKeywords !== undefined &&
+    (!Array.isArray(esign.trackKeywords) || esign.trackKeywords.some((w) => typeof w !== 'string'))
+  ) {
+    throw new SettingsValidationError('esign.trackKeywords', 'trackKeywords must be a list of words.');
+  }
+
+  if (p.assistantClients !== undefined) {
+    const grants = (p.assistantClients as Partial<AssistantClientsSettings> | null)?.grants;
+    if (!Array.isArray(grants) || !grants.every(isAssistantClientGrant)
+        || new Set(grants.map((g) => g.uid.trim())).size !== grants.length) {
+      throw new SettingsValidationError('assistantClients.grants', 'Choose a valid, unique assistant and client scope for each grant.');
+    }
+  }
+
+  const referralConversion = (p.referralConversion ?? {}) as Partial<ReferralConversionSettings>;
+  if (referralConversion.excludedUserUids !== undefined &&
+      (!Array.isArray(referralConversion.excludedUserUids) || referralConversion.excludedUserUids.some((u) => typeof u !== 'string'))) {
+    throw new SettingsValidationError('referralConversion.excludedUserUids', 'Choose staff members for referral client creation.');
+  }
+  if (referralConversion.userUids !== undefined &&
+      (!Array.isArray(referralConversion.userUids) || referralConversion.userUids.some((u) => typeof u !== 'string'))) {
+    throw new SettingsValidationError('referralConversion.userUids', 'Choose staff members for referral client creation.');
+  }
+
+  const edwp = (p.edwp ?? {}) as Partial<EdwpSettings>;
+  if (
+    edwp.userUids !== undefined &&
+    edwp.userUids !== null &&
+    (!Array.isArray(edwp.userUids) || edwp.userUids.some((u) => typeof u !== 'string'))
+  ) {
+    throw new SettingsValidationError('edwp.userUids', 'edwp.userUids must be a list of staff uids.');
+  }
+
+  if (fax.ppotFollowupDays !== undefined && !validPpotSchedule(fax.ppotFollowupDays)) throw new SettingsValidationError('fax.ppotFollowupDays', 'Enter up to 12 unique days in increasing order, from 1 to 365.');
+  for (const field of ['ppotOverdueDays', 'ppotEscalateDays'] as const) {
+    const value = fax[field];
+    if (value !== undefined && (!Number.isInteger(value) || value < 1 || value > 365)) throw new SettingsValidationError(`fax.${field}`, 'Enter a whole number of days from 1 to 365.');
+  }
+  if (fax.ppotFollowupDays === undefined && fax.ppotOverdueDays !== undefined && fax.ppotEscalateDays !== undefined && fax.ppotEscalateDays < fax.ppotOverdueDays) throw new SettingsValidationError('fax.ppotEscalateDays', 'Escalation must come at or after the PPOT follow-up.');
+  if (fax.ppotPrefillIdentity !== undefined && typeof fax.ppotPrefillIdentity !== 'boolean') {
+    throw new SettingsValidationError('fax.ppotPrefillIdentity', 'fax.ppotPrefillIdentity must be true or false.');
+  }
+  if (fax.enabled !== undefined && typeof fax.enabled !== 'boolean') {
+    throw new SettingsValidationError('fax.enabled', 'fax.enabled must be true or false.');
+  }
+  if (
+    fax.userUids !== undefined &&
+    (!Array.isArray(fax.userUids) || fax.userUids.some((u) => typeof u !== 'string'))
+  ) {
+    throw new SettingsValidationError('fax.userUids', 'fax.userUids must be an array of staff uids.');
+  }
+  if (
+    fax.recertLeadDays !== undefined &&
+    (typeof fax.recertLeadDays !== 'number' || !Number.isFinite(fax.recertLeadDays) || fax.recertLeadDays < 7 || fax.recertLeadDays > 180)
+  ) {
+    throw new SettingsValidationError('fax.recertLeadDays', 'Enter a whole number of days from 7 to 180.');
+  }
+
+  if (
+    sca.recipientUids !== undefined &&
+    (!Array.isArray(sca.recipientUids) || sca.recipientUids.some((u) => typeof u !== 'string'))
+  ) {
+    throw new SettingsValidationError(
+      'shiftChangeAlerts.recipientUids',
+      'recipientUids must be an array of staff uids.',
+    );
+  }
 
   if (sub.defaultSort !== undefined && !VALID_SORT_KEYS.includes(sub.defaultSort)) {
     throw new SettingsValidationError('submissions.defaultSort', 'Invalid sort key.');

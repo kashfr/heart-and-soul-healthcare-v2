@@ -18,6 +18,22 @@ import {
   diagnosisLabels,
   diagnosisPicture,
   inferService,
+  combinedDiagnosisPicture,
+  highBehaviorPaidFlag,
+  paidCareBasisLabel,
+  relationshipLabel,
+  RELATIONSHIP_OPTIONS,
+  screenCaregiverRelationship,
+  screenAgencyStaff,
+  highAcuityNeeds,
+  highAcuityPromptParagraphs,
+  shouldPromptHighAcuityNurse,
+  HIGH_ACUITY_PROMPT_TITLE,
+  HIGH_ACUITY_PROMPT_ACCEPT,
+  HIGH_ACUITY_PROMPT_KEEP,
+  screenBehavioralPaidCaregiver,
+  screenMixedPaidCaregiver,
+  screenYoungPaidCaregiver,
   serviceFromCareNeed,
 } from './diagnosisCatalog';
 
@@ -217,5 +233,269 @@ describe('serviceFromCareNeed', () => {
     expect(serviceFromCareNeed('unsure')).toBeNull();
     expect(serviceFromCareNeed('')).toBeNull();
     expect(serviceFromCareNeed(undefined)).toBeNull();
+  });
+});
+
+describe('screenMixedPaidCaregiver (the Chance case)', () => {
+  // Autism + ADHD + developmental delay alongside seizures, a feeding problem,
+  // and a G-tube; parent seeking pay. The form cannot tell which diagnosis the
+  // hands-on care is for, so the family has to say.
+  const chance = {
+    diagnoses: ['autism', 'adhd', 'dev_delay', 'seizures', 'feeding_growth'],
+    equipment: ['feeding_tube', 'help_feeding', 'help_hygiene'],
+    seekingPaidCaregiver: 'yes',
+  };
+
+  it('asks the follow-up for a mixed picture with a paid request', () => {
+    const r = screenMixedPaidCaregiver(chance);
+    expect(r.asks).toBe(true);
+    expect(r.block).toBeNull();
+    expect(r.flag).toContain('the form did not capture');
+  });
+
+  it('refuses when the family says the care is for the autism/developmental diagnosis', () => {
+    const r = screenMixedPaidCaregiver({ ...chance, paidCareBasis: 'behavioral' });
+    expect(r.block).toContain('paid family hours will be denied');
+    expect(r.block).toContain('paid-caregiver answer set to No');
+    expect(r.flag).toBeNull();
+  });
+
+  it('lets a medical attestation through and records it for the assessment', () => {
+    const r = screenMixedPaidCaregiver({ ...chance, paidCareBasis: 'medical' });
+    expect(r.block).toBeNull();
+    expect(r.flag).toContain('family attests');
+    expect(r.flag).toContain('Hold them to this');
+  });
+
+  it('lets "not sure" through with a settle-it-first note', () => {
+    const r = screenMixedPaidCaregiver({ ...chance, paidCareBasis: 'unsure' });
+    expect(r.block).toBeNull();
+    expect(r.flag).toContain('not sure');
+  });
+
+  it('does not ask when the picture is not mixed or pay is not sought', () => {
+    expect(screenMixedPaidCaregiver({ ...chance, seekingPaidCaregiver: 'no' }).asks).toBe(false);
+    expect(
+      screenMixedPaidCaregiver({ diagnoses: ['seizures'], seekingPaidCaregiver: 'yes' }).asks
+    ).toBe(false);
+    expect(
+      screenMixedPaidCaregiver({ diagnoses: ['autism'], seekingPaidCaregiver: 'yes' }).asks
+    ).toBe(false);
+  });
+
+  it('treats a mixed free-text description the same as mixed checkboxes', () => {
+    const r = screenMixedPaidCaregiver({
+      freeText: 'autism and a g-tube, needs help bathing',
+      seekingPaidCaregiver: 'yes',
+      paidCareBasis: 'behavioral',
+    });
+    expect(r.asks).toBe(true);
+    expect(r.block).not.toBeNull();
+  });
+
+  it('has labels for every basis and no dashes in any copy', () => {
+    for (const code of ['medical', 'behavioral', 'unsure'] as const) {
+      expect(paidCareBasisLabel(code)).not.toBe('');
+      const r = screenMixedPaidCaregiver({ ...chance, paidCareBasis: code });
+      expect(r.block ?? r.flag).not.toMatch(/[—–]/);
+    }
+    expect(paidCareBasisLabel('')).toBe('');
+  });
+});
+
+describe('screenYoungPaidCaregiver (the Legacy case)', () => {
+  const NOW = new Date('2026-09-20T12:00:00Z').getTime();
+
+  it('refuses a paid request for a 2-month-old needing help with feeding', () => {
+    const r = screenYoungPaidCaregiver(
+      { dob: '2026-07-18', seekingPaidCaregiver: 'yes', equipment: ['help_feeding'] },
+      NOW
+    );
+    expect(r.block).toContain('an infant (2 months old)');
+  });
+
+  it('clears on skilled equipment, or a mobility need at 18+ months', () => {
+    expect(
+      screenYoungPaidCaregiver(
+        { dob: '2026-07-18', seekingPaidCaregiver: 'yes', equipment: ['feeding_tube'] },
+        NOW
+      ).cleared
+    ).toContain('skilled needs');
+    expect(
+      screenYoungPaidCaregiver(
+        { dob: '2022-03-01', seekingPaidCaregiver: 'yes', equipment: ['wheelchair'] },
+        NOW
+      ).cleared
+    ).toContain('mobility need');
+    expect(
+      screenYoungPaidCaregiver(
+        { dob: '2025-09-01', seekingPaidCaregiver: 'yes', equipment: ['wheelchair'] },
+        NOW
+      ).block
+    ).not.toBeNull();
+  });
+});
+
+describe('screenBehavioralPaidCaregiver (the Kehlani case)', () => {
+  // Autism + developmental delay + speech delay, no medical diagnosis, no
+  // equipment, "needs help with feeding / bathing" checked, parent seeking
+  // pay. The daily-care boxes make the service inference say PSS, which used
+  // to slip past the paid + behavioral block.
+  const kehlani = {
+    diagnoses: ['autism', 'dev_delay', 'speech'],
+    equipment: ['help_feeding', 'help_hygiene'],
+    behaviorRisk: 'managed',
+    currentServices: ['aba', 'speech', 'ot_pt'],
+    careNeeds: 'personal',
+    seekingPaidCaregiver: 'yes',
+  };
+
+  it('refuses a behavioral-only picture even with daily-care boxes checked', () => {
+    expect(inferService(kehlani).service).toBe('pss');
+    expect(screenBehavioralPaidCaregiver(kehlani)).not.toBeNull();
+  });
+
+  it('still refuses the plain behavioral inference cases', () => {
+    expect(
+      screenBehavioralPaidCaregiver({ diagnoses: ['autism'], equipment: ['equip_none'], seekingPaidCaregiver: 'yes' })
+    ).not.toBeNull();
+    expect(
+      screenBehavioralPaidCaregiver({ diagnoses: ['seizures'], behaviorRisk: 'high', seekingPaidCaregiver: 'yes' })
+    ).not.toBeNull();
+  });
+
+  it('does not refuse when a medical diagnosis or skilled equipment is present', () => {
+    // Mixed picture: the mixed screen asks the follow-up instead.
+    expect(
+      screenBehavioralPaidCaregiver({ ...kehlani, diagnoses: ['autism', 'seizures'] })
+    ).toBeNull();
+    // Skilled equipment settles it: the child needs nursing.
+    expect(
+      screenBehavioralPaidCaregiver({ ...kehlani, equipment: ['feeding_tube', 'help_feeding'] })
+    ).toBeNull();
+    // Medical-only picture.
+    expect(
+      screenBehavioralPaidCaregiver({ ...kehlani, diagnoses: ['cerebral_palsy'] })
+    ).toBeNull();
+  });
+
+  it('never refuses when pay is not sought', () => {
+    expect(screenBehavioralPaidCaregiver({ ...kehlani, seekingPaidCaregiver: 'no' })).toBeNull();
+  });
+
+  it('reads free text like the checkboxes', () => {
+    expect(
+      screenBehavioralPaidCaregiver({ freeText: 'autism, needs help bathing', seekingPaidCaregiver: 'yes' })
+    ).not.toBeNull();
+    // Structured medical + prose autism = mixed, not behavioral-only.
+    expect(combinedDiagnosisPicture(['seizures'], '', 'he has autism')).toBe('mixed');
+    expect(
+      screenBehavioralPaidCaregiver({ diagnoses: ['seizures'], freeText: 'he has autism', seekingPaidCaregiver: 'yes' })
+    ).toBeNull();
+  });
+});
+
+describe('screenCaregiverRelationship', () => {
+  const NOW = new Date('2026-09-23T12:00:00Z').getTime();
+  const screen = (relationship: string, dob: string, hasGuardianship = '', seeking = 'yes') =>
+    screenCaregiverRelationship({ relationship, dob, hasGuardianship, seekingPaidCaregiver: seeking }, NOW);
+
+  it('refuses a paid request from a foster parent, at any age', () => {
+    expect(screen('foster', '2018-01-01').block).toContain('Foster parents are not eligible');
+    expect(screen('foster', '2006-10-23').block).not.toBeNull();
+    expect(screen('foster', '2018-01-01', '', 'no').block).toBeNull();
+  });
+
+  it('asks a parent about guardianship only when the member is 18 or older (the Demetrius case)', () => {
+    expect(screen('parent', '2012-03-14').asksGuardianship).toBe(false);
+    expect(screen('parent', '2012-03-14').flag).toBeNull();
+    const d = screen('parent', '2006-10-23', 'no');
+    expect(d.asksGuardianship).toBe(true);
+    expect(d.block).toBeNull();
+    expect(d.flag).toContain('WITHOUT legal guardianship');
+    expect(d.flag).toContain('18 or older');
+    expect(screen('parent', '2006-10-23', 'yes').flag).toContain('Collect the guardianship order');
+    expect(screen('parent', '2006-10-23').flag).toContain('did not capture guardianship');
+  });
+
+  it('asks grandparents and other relatives at any age', () => {
+    expect(screen('grandparent', '2018-01-01').asksGuardianship).toBe(true);
+    expect(screen('relative', '2018-01-01', 'no').flag).toContain('other relative WITHOUT');
+  });
+
+  it('never asks a legal guardian', () => {
+    expect(screen('guardian', '2006-10-23')).toEqual({ block: null, asksGuardianship: false, flag: null });
+  });
+
+  it('flags a paid request submitted by a professional, the member, or other', () => {
+    for (const rel of ['professional', 'self', 'other']) {
+      expect(screen(rel, '2012-01-01').flag).toContain('someone other than the family member');
+    }
+  });
+
+  it('has a label for every option and no dashes in any copy', () => {
+    for (const o of RELATIONSHIP_OPTIONS) expect(relationshipLabel(o.code)).toBe(o.label);
+    const copy = [
+      screen('foster', '2018-01-01').block,
+      screen('parent', '2006-10-23', 'no').flag,
+      screen('parent', '2006-10-23', 'yes').flag,
+      screen('grandparent', '2018-01-01').flag,
+      screen('other', '2018-01-01').flag,
+    ];
+    for (const c of copy) expect(c).not.toMatch(/[—–]/);
+  });
+});
+
+describe('highBehaviorPaidFlag', () => {
+  it('flags paid + behaviors that need help to manage, naming ABA when present', () => {
+    const f = highBehaviorPaidFlag({ behaviorRisk: 'high', currentServices: ['aba'], seekingPaidCaregiver: 'yes' });
+    expect(f).toContain('with ABA already in place');
+    expect(f).not.toMatch(/[—–]/);
+  });
+
+  it('stays quiet otherwise', () => {
+    expect(highBehaviorPaidFlag({ behaviorRisk: 'managed', seekingPaidCaregiver: 'yes' })).toBeNull();
+    expect(highBehaviorPaidFlag({ behaviorRisk: 'high', seekingPaidCaregiver: 'no' })).toBeNull();
+  });
+});
+
+describe('screenAgencyStaff', () => {
+  it('refuses every No: GAPP requires skilled nursing for every member (§604.2, Rev. 10/2026)', () => {
+    // The Morse case (10/05): age 7, personal-care needs listed, paid Yes.
+    // Used to be let through with a note; the Q4 2026 manual closed that.
+    const r = screenAgencyStaff({ wantsAgencyStaff: 'no' });
+    expect(r).toContain('section 604.2');
+    expect(r).toContain('cannot be accepted');
+    expect(r).not.toMatch(/[—–]/);
+  });
+
+  it('does nothing when the family accepts staff, or was never asked (older form builds)', () => {
+    expect(screenAgencyStaff({ wantsAgencyStaff: 'yes' })).toBeNull();
+    expect(screenAgencyStaff({})).toBeNull();
+    expect(screenAgencyStaff({ wantsAgencyStaff: '' })).toBeNull();
+  });
+});
+
+describe('high-acuity nurse prompt (trach / vent)', () => {
+  it('prompts only when trach or vent is checked and the family declines a nurse', () => {
+    expect(shouldPromptHighAcuityNurse({ equipment: ['trach'], wantsAgencyStaff: 'no' })).toBe(true);
+    expect(shouldPromptHighAcuityNurse({ equipment: ['vent', 'help_feeding'], wantsAgencyStaff: 'no' })).toBe(true);
+    expect(shouldPromptHighAcuityNurse({ equipment: ['trach'], wantsAgencyStaff: 'yes' })).toBe(false);
+    expect(shouldPromptHighAcuityNurse({ equipment: ['feeding_tube', 'oxygen'], wantsAgencyStaff: 'no' })).toBe(false);
+    expect(shouldPromptHighAcuityNurse({ wantsAgencyStaff: 'no' })).toBe(false);
+  });
+
+  it('names what was checked in plain words', () => {
+    expect(highAcuityNeeds(['trach', 'help_feeding'])).toEqual(['a tracheostomy']);
+    const [first] = highAcuityPromptParagraphs(highAcuityNeeds(['trach', 'vent']));
+    expect(first).toContain('your child has a tracheostomy and a ventilator, BiPAP or CPAP.');
+    expect(highAcuityPromptParagraphs(['a tracheostomy'], 'the child')[2]).toMatch(/^The child can still/);
+  });
+
+  it('has no dashes and Title Case buttons', () => {
+    const all = [HIGH_ACUITY_PROMPT_TITLE, HIGH_ACUITY_PROMPT_ACCEPT, HIGH_ACUITY_PROMPT_KEEP,
+      ...highAcuityPromptParagraphs(['a tracheostomy', 'a ventilator, BiPAP or CPAP'])];
+    for (const t of all) expect(t).not.toMatch(/[—–]/);
+    expect(HIGH_ACUITY_PROMPT_ACCEPT).toBe('Yes, I Will Accept a Nurse');
   });
 });

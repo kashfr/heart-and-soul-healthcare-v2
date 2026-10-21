@@ -1,12 +1,26 @@
 'use client';
 
+import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Printer } from 'lucide-react';
+import { btn, btnPrimary } from '@/components/buttons';
+import { formatDateUS } from '@/lib/dateFormat';
+import { callSheetFileName } from './callSheetFileName';
 import { fieldRows, formatDate, SOURCE_LABEL, STAGE_LABEL, type Referral } from './types';
 
 /**
  * Full-screen print preview. Each referral renders as a one-per-page call sheet
  * (contact info, all fields, and a blank outreach log the nurse fills in by
  * hand). The @media print block hides everything else on the page.
+ *
+ * Rendered into a portal on <body> so print CSS can remove the rest of the
+ * app with display:none (a direct-child selector). On screen the preview is a
+ * fixed, scrolling layer; when printing it must become ordinary flowing
+ * content. Printed as-is, Chrome repeats a position:fixed element on every
+ * page and clips it to its one-screen scroll box, which produced call sheets
+ * cut off at the bottom with the first page duplicated. Hiding the app with
+ * visibility:hidden (the old approach) also kept its full height in the
+ * layout, adding blank or repeated pages.
  */
 export default function PrintOverlay({
   printList,
@@ -15,20 +29,34 @@ export default function PrintOverlay({
   printList: Referral[];
   onClose: () => void;
 }) {
-  return (
-    <div style={printOverlayStyle}>
+  // Chrome names a saved PDF after the page title, which was the site title
+  // for every referral, so each save collided with the last. Title the page
+  // after the sheet(s) while the preview is open; restore it on close.
+  const fileName = callSheetFileName(printList);
+  useEffect(() => {
+    const previous = document.title;
+    document.title = fileName;
+    return () => {
+      document.title = previous;
+    };
+  }, [fileName]);
+
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div className="referral-print-portal">
+    <div className="referral-print-overlay" style={printOverlayStyle}>
       <div className="referral-print-toolbar" style={printToolbarStyle}>
         <span style={{ fontWeight: 700 }}>
-          Print preview — {printList.length} referral{printList.length === 1 ? '' : 's'}
+          Print Preview — {printList.length} Referral{printList.length === 1 ? '' : 's'}
         </span>
         <span style={{ fontSize: 12, opacity: 0.8 }}>
           Each referral prints on its own page with a call log.
         </span>
         <div style={{ flex: 1 }} />
-        <button onClick={() => window.print()} style={printNowBtnStyle}>
+        <button onClick={() => window.print()} className={btnPrimary}>
           <Printer size={15} /> Print
         </button>
-        <button onClick={onClose} style={printCloseBtnStyle}>
+        <button onClick={onClose} className={btn}>
           Close
         </button>
       </div>
@@ -41,28 +69,44 @@ export default function PrintOverlay({
       <style>{`
         @media print {
           @page { margin: 0.5in; }
-          body * { visibility: hidden !important; }
-          .referral-print-root, .referral-print-root * { visibility: visible !important; }
-          .referral-print-root {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
-            padding: 0 !important;
+          html, body {
+            height: auto !important;
+            min-height: 0 !important;
+            overflow: visible !important;
             background: #fff !important;
           }
+          body > *:not(.referral-print-portal) { display: none !important; }
+          .referral-print-overlay {
+            position: static !important;
+            inset: auto !important;
+            height: auto !important;
+            overflow: visible !important;
+            background: #fff !important;
+            z-index: auto !important;
+          }
           .referral-print-toolbar { display: none !important; }
+          .referral-print-root { padding: 0 !important; background: #fff !important; }
           .referral-print-sheet {
             box-shadow: none !important;
             border: none !important;
+            border-radius: 0 !important;
             margin: 0 !important;
+            padding: 0 !important;
             max-width: none !important;
+            break-after: page;
             page-break-after: always;
           }
-          .referral-print-sheet:last-child { page-break-after: auto; }
+          .referral-print-sheet:last-child { break-after: auto; page-break-after: auto; }
+          .referral-print-sheet tr,
+          .referral-print-sheet h2,
+          .referral-print-sheet h3 { break-inside: avoid; page-break-inside: avoid; }
+          .referral-print-sheet h2,
+          .referral-print-sheet h3 { break-after: avoid; page-break-after: avoid; }
         }
       `}</style>
     </div>
+    </div>,
+    document.body
   );
 }
 
@@ -102,7 +146,7 @@ function ReferralPrintSheet({ referral }: { referral: Referral }) {
           {fieldRows(referral).map((d, i) => (
             <tr key={i}>
               <td style={printLabelCell}>{d.label}</td>
-              <td style={printValueCell}>{d.value || ''}</td>
+              <td style={printValueCell}>{d.value ? formatDateUS(d.value) : ''}</td>
             </tr>
           ))}
         </tbody>
@@ -124,7 +168,7 @@ function ReferralPrintSheet({ referral }: { referral: Referral }) {
               <td style={logCell}>{n}</td>
               <td style={logCell} />
               <td style={logCell} />
-              <td style={logCell}>{'☐'} Reached&nbsp;&nbsp; {'☐'} Voicemail&nbsp;&nbsp; {'☐'} No answer</td>
+              <td style={logCell}>{'☐'} Reached&nbsp;&nbsp; {'☐'} Voicemail&nbsp;&nbsp; {'☐'} No Answer</td>
             </tr>
           ))}
         </tbody>
@@ -132,7 +176,7 @@ function ReferralPrintSheet({ referral }: { referral: Referral }) {
 
       <div style={{ marginTop: 12, fontSize: 13, color: '#111' }}>
         <strong>Follow-up date:</strong> ____________________ &nbsp;&nbsp;
-        <strong>Result:</strong> {'☐'} Scheduled&nbsp;&nbsp; {'☐'} Needs info&nbsp;&nbsp; {'☐'} Not interested
+        <strong>Result:</strong> {'☐'} Scheduled&nbsp;&nbsp; {'☐'} Needs Info&nbsp;&nbsp; {'☐'} Not Interested
       </div>
 
       <div style={{ marginTop: 14, fontSize: 13, fontWeight: 700, color: '#111' }}>Notes</div>
@@ -162,31 +206,6 @@ const printToolbarStyle: React.CSSProperties = {
   background: '#1f2937',
   color: 'white',
   flexWrap: 'wrap',
-};
-const printNowBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: '#27ae60',
-  color: 'white',
-  border: 'none',
-  borderRadius: 8,
-  padding: '8px 16px',
-  fontSize: 14,
-  fontWeight: 700,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-const printCloseBtnStyle: React.CSSProperties = {
-  background: 'rgba(255,255,255,0.14)',
-  color: 'white',
-  border: '1px solid rgba(255,255,255,0.35)',
-  borderRadius: 8,
-  padding: '8px 14px',
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
 };
 const printRootStyle: React.CSSProperties = {
   padding: '24px 16px',

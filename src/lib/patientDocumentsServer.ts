@@ -1,0 +1,347 @@
+import { clientAuditActor } from './clientAuditActor';
+import { DOC_CATEGORIES } from './docCategories';
+import { parseDocumentPeriod } from './documentPeriod';
+import { noteDocDetails } from './noteDocLinks';
+import 'server-only';
+import { FieldValue } from 'firebase-admin/firestore';
+import { adminBucket, adminDb } from './firebaseAdmin';
+import type { AuthedCaller } from './adminAuthGuard';
+import { renderNotePdf, notePdfFilename, isoFromAnyDate } from './notePdfServer';
+import type { ProgressNoteFormData } from './pdf/ProgressNotePDF';
+import { formatDateUS } from './dateFormat';
+
+/**
+ * Privileged (Admin SDK) side of client documents:
+ *
+ *  - fileNoteAsDocument: render a submitted note to PDF and file it under the
+ *    client's Documents tab, keyed by sourceNoteId so a re-run (amendment,
+ *    sync) replaces the bytes in place instead of adding a second copy.
+ *  - syncNoteDocumentsForPatient: file every eligible note that has no
+ *    document yet (backfill + self-heal when an auto-file failed); in
+ *    refresh mode, also re-render every note already on file.
+ *  - deleteDocumentWithAudit: admin hard-delete of a document (bytes +
+ *    metadata) with a deletedDocuments snapshot, like deleted notes.
+ *  - cleanupReplacedFiles: after a client-side Replace, remove every object in
+ *    the document's folder other than the current one so a wrongly uploaded
+ *    file (possibly another client's PHI) does not linger.
+ *
+ * Firestore/Storage rules deny client deletes and file overwrites entirely;
+ * these helpers are the only path, and the routes gate them by role.
+ */
+
+/** Note types that file themselves into Documents, and where. */
+export const NOTE_DOC_CATEGORY: Record<string, string> = {
+  'rn-oversight-visit': 'RN Oversight',
+  'home-supervisory-visit': 'Supervisory Visit',
+};
+
+/** Title prefix per note type, e.g. "RN Oversight Visit, 09/07/2026, …". */
+const NOTE_DOC_TITLE: Record<string, string> = {
+  'rn-oversight-visit': 'RN Oversight Visit',
+  'home-supervisory-visit': 'Home Supervisory Visit',
+};
+
+export function noteDocTitle(data: Record<string, unknown>): string {
+  const kind = NOTE_DOC_TITLE[String(data.noteType || '')] || 'Note';
+  const date = formatDateUS(isoFromAnyDate(String(data.q6_dateofService || '')));
+  const nurse = String(data.q11_nurseName || '').trim();
+  return `${kind}, ${date}${nurse ? `, ${nurse}` : ''}`;
+}
+
+export type FileNoteResult =
+  | { ok: true; documentId: string; replaced: boolean }
+  | { ok: false; reason: 'not-found' | 'not-eligible' | 'no-patient' | 'forbidden'; message: string };
+
+
+/**
+ * Render + file one note. Caller must be staff or the note's author. The
+ * document is owned by the note's author (uploadedBy = nurseId) so the
+ * Documents list reads "uploaded by <nurse>", matching who documented it.
+ */
+export async function fileNoteAsDocument(noteId: string, caller: AuthedCaller): Promise<FileNoteResult> {
+  const noteSnap = await adminDb().collection('progressNotes').doc(noteId).get();
+  if (!noteSnap.exists) return { ok: false, reason: 'not-found', message: 'Note not found.' };
+  const data = noteSnap.data() as Record<string, unknown>;
+  const category = NOTE_DOC_CATEGORY[String(data.noteType || '')];
+  if (!category) return { ok: false, reason: 'not-eligible', message: 'Only RN oversight visit notes and home supervisory visits file into Documents.' };
+  const patientId = String(data.patientId || '');
+  if (!patientId) return { ok: false, reason: 'no-patient', message: 'The note is not linked to a client on the roster.' };
+  const isStaff = caller.role === 'admin' || caller.role === 'supervisor';
+  if (!isStaff && String(data.nurseId || '') !== caller.uid) {
+    return { ok: false, reason: 'forbidden', message: 'Only the author or staff can file this note.' };
+  }
+  if ((data.status as string) === 'archived' || data.archivedAt) {
+    return { ok: false, reason: 'not-eligible', message: 'Archived notes are not filed.' };
+  }
+
+  // Firestore Timestamps and other non-string values are not part of the
+  // rendered form; keep the strings the renderer reads.
+  const form: ProgressNoteFormData = {};
+  for (const [k, v] of Object.entries(data)) {
+    if (typeof v === 'string') form[k] = v;
+  }
+  const buffer = await renderNotePdf(form, noteId);
+  const fileName = notePdfFilename(form);
+
+  // One document per note: reuse the existing metadata doc when present.
+  const existing = await adminDb().collection('patientDocuments').where('sourceNoteId', '==', noteId).limit(1).get();
+  const docRef = existing.empty ? adminDb().collection('patientDocuments').doc() : existing.docs[0].ref;
+  const storagePath = `patients/${patientId}/documents/${docRef.id}/${fileName}`;
+
+  await adminBucket().file(storagePath).save(buffer, {
+    contentType: 'application/pdf',
+    resumable: false,
+    metadata: { metadata: { sourceNoteId: noteId } },
+  });
+  // Drop any earlier rendering that lived under a different file name (a
+  // date or client-name amendment changes the PDF file name).
+  await cleanupFolderExcept(patientId, docRef.id, storagePath);
+
+  const docDate = isoFromAnyDate(String(data.q6_dateofService || ''));
+  // Staff may retitle, recategorize or redate a filed note by hand (the
+  // Documents tab's Edit). Re-filing then refreshes the PDF and keeps their
+  // title, category and date instead of putting the note's back.
+  const details = noteDocDetails(existing.empty ? null : existing.docs[0].data(), {
+    title: noteDocTitle(data),
+    category,
+    docDate: /^\d{4}-\d{2}-\d{2}$/.test(docDate) ? docDate : '',
+  });
+  const base = {
+    ...clientAuditActor(caller),
+    patientId,
+    ...details,
+    fileName,
+    storagePath,
+    contentType: 'application/pdf',
+    size: buffer.length,
+    sourceNoteId: noteId,
+    // Which form amends it (the Documents tab's "Amend Note" button).
+    sourceNoteType: String(data.noteType || ''),
+    autoFiled: true,
+    autoFiledAt: FieldValue.serverTimestamp(),
+  };
+  if (existing.empty) {
+    await docRef.set({
+      ...base,
+      uploadedBy: String(data.nurseId || caller.uid),
+      uploadedByName: String(data.q11_nurseName || caller.profile.displayName || ''),
+      uploadedByRole: 'nurse',
+      uploadedAt: FieldValue.serverTimestamp(),
+      archived: false,
+    });
+  } else {
+    await docRef.set(base, { merge: true });
+  }
+  return { ok: true, documentId: docRef.id, replaced: !existing.empty };
+}
+
+export interface SyncNoteDocumentsResult {
+  /** Notes that had no document and were filed. */
+  filed: number;
+  /** Notes already on file whose PDF was re-rendered (refresh mode only). */
+  refreshed: number;
+  /** Notes already on file and left alone. */
+  skipped: number;
+  errors: string[];
+}
+
+/**
+ * File every eligible, unfiled note for one client. With `refresh`, also
+ * re-render the PDF of every note already on file, so the stored copies
+ * catch up with the current renderer (a co-sign rule fix, a layout change)
+ * without anyone re-submitting or amending the notes. Returns what happened.
+ */
+export async function syncNoteDocumentsForPatient(
+  patientId: string,
+  caller: AuthedCaller,
+  opts: { refresh?: boolean } = {},
+): Promise<SyncNoteDocumentsResult> {
+  const notes = await adminDb().collection('progressNotes').where('patientId', '==', patientId).get();
+  const filedDocs = await adminDb().collection('patientDocuments').where('patientId', '==', patientId).get();
+  const already = new Set(filedDocs.docs.map((d) => String(d.data().sourceNoteId || '')).filter(Boolean));
+  let filed = 0;
+  let refreshed = 0;
+  let skipped = 0;
+  const errors: string[] = [];
+  for (const n of notes.docs) {
+    const d = n.data();
+    if (!NOTE_DOC_CATEGORY[String(d.noteType || '')]) continue;
+    if ((d.status as string) === 'archived' || d.archivedAt) continue;
+    const onFile = already.has(n.id);
+    if (onFile && !opts.refresh) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      const r = await fileNoteAsDocument(n.id, caller);
+      if (!r.ok) errors.push(`${n.id}: ${r.message}`);
+      else if (onFile) refreshed += 1;
+      else filed += 1;
+    } catch (err) {
+      errors.push(`${n.id}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return { filed, refreshed, skipped, errors };
+}
+
+/** Remove the auto-filed document for a note (used when the note is hard-deleted). */
+export async function deleteNoteDocument(noteId: string, caller: AuthedCaller): Promise<void> {
+  const snap = await adminDb().collection('patientDocuments').where('sourceNoteId', '==', noteId).get();
+  for (const d of snap.docs) {
+    await deleteDocumentWithAudit(d.id, caller, `note ${noteId} deleted`);
+  }
+}
+
+async function cleanupFolderExcept(patientId: string, docId: string, keepPath: string): Promise<number> {
+  const [files] = await adminBucket().getFiles({ prefix: `patients/${patientId}/documents/${docId}/` });
+  let removed = 0;
+  for (const f of files) {
+    if (f.name === keepPath) continue;
+    await f.delete({ ignoreNotFound: true });
+    removed += 1;
+  }
+  return removed;
+}
+
+/**
+ * After a Replace, delete the previous file(s). The metadata doc already
+ * points at the new object; anything else in the folder is the old upload.
+ */
+export async function cleanupReplacedFiles(documentId: string): Promise<{ ok: boolean; removed: number }> {
+  const snap = await adminDb().collection('patientDocuments').doc(documentId).get();
+  if (!snap.exists) return { ok: false, removed: 0 };
+  const d = snap.data() as { patientId?: string; storagePath?: string };
+  if (!d.patientId || !d.storagePath) return { ok: false, removed: 0 };
+  const removed = await cleanupFolderExcept(d.patientId, documentId, d.storagePath);
+  return { ok: true, removed };
+}
+
+export type MoveDocumentResult =
+  | { ok: true; documentId: string }
+  | { ok: false; reason: 'not-found' | 'no-target' | 'same-client' | 'auto-filed'; message: string };
+
+/**
+ * Move a document to another client (a file uploaded to the wrong chart).
+ * The Storage path embeds the client and patientId is immutable in rules,
+ * so a move is copy-then-delete: copy the object into a NEW document folder
+ * under the target client, write fresh metadata there (ownership and upload
+ * time carried over, plus where it came from), then delete the original
+ * through the audited delete. Auto-filed notes cannot be moved; the note
+ * itself would have to be re-linked.
+ */
+export async function moveDocumentToPatient(
+  documentId: string,
+  toPatientId: string,
+  caller: AuthedCaller,
+  opts: { title?: string; docDate?: string; category?: string } = {},
+): Promise<MoveDocumentResult> {
+  const ref = adminDb().collection('patientDocuments').doc(documentId);
+  const snap = await ref.get();
+  if (!snap.exists) return { ok: false, reason: 'not-found', message: 'Document not found.' };
+  const data = snap.data() as Record<string, unknown>;
+  if (data.autoFiled) return { ok: false, reason: 'auto-filed', message: 'This document was filed from a note; move the note instead.' };
+  const fromPatientId = String(data.patientId || '');
+  if (fromPatientId === toPatientId) return { ok: false, reason: 'same-client', message: 'The document is already on that client.' };
+  const target = await adminDb().collection('patients').doc(toPatientId).get();
+  if (!target.exists) return { ok: false, reason: 'no-target', message: 'Target client not found.' };
+
+  const fileName = String(data.fileName || 'document');
+  const newRef = adminDb().collection('patientDocuments').doc();
+  const newPath = `patients/${toPatientId}/documents/${newRef.id}/${fileName}`;
+  await adminBucket().file(String(data.storagePath)).copy(adminBucket().file(newPath));
+
+  // Carry everything over except the archive state (a moved document starts
+  // active on the target chart).
+  const rest: Record<string, unknown> = { ...data };
+  for (const k of ['archived', 'archivedBy', 'archivedByName', 'archivedAt']) delete rest[k];
+  await newRef.set({
+    ...rest,
+    ...clientAuditActor(caller),
+    patientId: toPatientId,
+    storagePath: newPath,
+    ...(opts.title?.trim() ? { title: opts.title.trim() } : {}),
+    ...(opts.docDate && /^\d{4}-\d{2}-\d{2}$/.test(opts.docDate) ? { docDate: opts.docDate } : {}),
+    ...(opts.category ? { category: opts.category } : {}),
+    archived: false,
+    movedFrom: { patientId: fromPatientId, documentId },
+    movedAt: FieldValue.serverTimestamp(),
+    movedBy: caller.uid,
+    movedByName: caller.profile.displayName || caller.email || '',
+  });
+
+  const targetName = String(target.data()?.name || toPatientId);
+  await deleteDocumentWithAudit(documentId, caller, `moved to ${targetName} (${newRef.id})`);
+  return { ok: true, documentId: newRef.id };
+}
+
+/**
+ * Hard-delete a document: snapshot the metadata into deletedDocuments (with
+ * who/when/why), delete the metadata doc, then remove every file in its
+ * folder. Metadata first so the list never shows a document whose bytes are
+ * gone; an orphaned file after a failed storage delete is invisible.
+ */
+export async function deleteDocumentWithAudit(
+  documentId: string,
+  caller: AuthedCaller,
+  reason?: string,
+): Promise<{ ok: true } | { ok: false; reason: 'not-found' }> {
+  const ref = adminDb().collection('patientDocuments').doc(documentId);
+  const snap = await ref.get();
+  if (!snap.exists) return { ok: false, reason: 'not-found' };
+  const data = snap.data() as Record<string, unknown>;
+  const batch = adminDb().batch();
+  batch.set(adminDb().collection('deletedDocuments').doc(documentId), {
+    document: data,
+    originalId: documentId,
+    deletedAt: FieldValue.serverTimestamp(),
+    deletedBy: caller.uid,
+    deletedByName: caller.profile.displayName || caller.email || '',
+    deletedByRole: caller.role,
+    ...(reason ? { reason } : {}),
+  });
+  batch.delete(ref);
+  await batch.commit();
+  const patientId = String(data.patientId || '');
+  if (patientId) {
+    try {
+      await cleanupFolderExcept(patientId, documentId, '');
+    } catch (err) {
+      console.error('Document file cleanup failed (metadata already deleted):', err);
+    }
+  }
+  return { ok: true };
+}
+
+/**
+ * Staff edit of a document's title, category and date. Validates the same
+ * way the edit dialog does. Stamps detailsEditedAt/By so a later re-file of
+ * a note-filed entry keeps these details (fileNoteAsDocument).
+ */
+export async function updateDocumentDetailsServer(
+  id: string,
+  patch: { title: string; category: string; docDate: string; periodStart?: unknown; periodEnd?: unknown },
+  caller: AuthedCaller,
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  const title = patch.title.trim().slice(0, 200);
+  if (!title) return { ok: false, status: 400, error: 'Enter a title.' };
+  if (!(DOC_CATEGORIES as readonly string[]).includes(patch.category)) return { ok: false, status: 400, error: 'Choose a category from the list.' };
+  if (patch.docDate && !/^\d{4}-\d{2}-\d{2}$/.test(patch.docDate)) return { ok: false, status: 400, error: 'The date must be YYYY-MM-DD.' };
+  const period = parseDocumentPeriod(patch);
+  if (!period.ok) return { ok: false, status: 400, error: period.error };
+  const ref = adminDb().collection('patientDocuments').doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) return { ok: false, status: 404, error: 'Document not found.' };
+  await ref.update({
+    ...clientAuditActor(caller),
+    title,
+    category: patch.category,
+    docDate: patch.docDate,
+    // Clearing the period removes the fields so the card stops showing it.
+    periodStart: period.period?.periodStart ?? FieldValue.delete(),
+    periodEnd: period.period?.periodEnd ?? FieldValue.delete(),
+    detailsEditedAt: FieldValue.serverTimestamp(),
+    detailsEditedBy: caller.uid,
+    detailsEditedByName: caller.profile.displayName || caller.email || '',
+  });
+  return { ok: true };
+}

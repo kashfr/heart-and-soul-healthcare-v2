@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Users, ClipboardList, UserCog, FileText, Pill, FilePlus, FileEdit, ShieldAlert, MessageCircleQuestion, Stethoscope } from 'lucide-react';
+import { Users, ClipboardList, UserCog, FileText, FilePlus, FileEdit, ShieldAlert, MessageCircleQuestion, Stethoscope, PhoneCall, HomeIcon } from 'lucide-react';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { loadDraft, subscribePendingDupCount, type NoteDraft } from '@/lib/drafts';
 import { subscribeMyOpenClarifications } from '@/lib/clarifications';
 import type { Role } from '@/lib/auth';
+import { canAuthorSupervisoryVisit } from '@/lib/supervisoryVisit';
+import HandoffInbox, { HandoffInboxTitle } from '@/components/HandoffInbox';
 
 interface Card {
   href: string;
@@ -23,29 +25,25 @@ const CARDS: Card[] = [
   {
     href: '/admin/submissions',
     icon: <ClipboardList size={22} />,
-    title: 'My notes',
+    title: 'My Notes',
     description: 'View and amend your submitted progress notes.',
     allow: ['nurse'],
   },
+  // One card for everything client-scoped (nav consolidation, Aug 2026): the
+  // roster opens each client's dashboard, with MAR/TAR pills per row; the
+  // add/edit modal and the med order book hang off it for staff.
   {
-    href: '/admin/patients',
+    href: '/admin/clients',
     icon: <Users size={22} />,
-    title: 'Patient Roster',
-    description: 'Add, edit, and remove patients. Nurses pick from this roster on the progress-note form.',
-    allow: ['admin', 'supervisor'],
+    title: 'Clients',
+    description: 'Open a client’s dashboard and jump to their MAR or TAR. Staff manage the roster here too.',
+    allow: ['admin', 'supervisor', 'nurse'],
   },
   {
     href: '/admin/submissions',
     icon: <ClipboardList size={22} />,
     title: 'Progress Note Submissions',
     description: 'View and manage all submitted progress notes across staff.',
-    allow: ['admin', 'supervisor'],
-  },
-  {
-    href: '/admin/records',
-    icon: <Pill size={22} />,
-    title: 'Records (MAR)',
-    description: 'Build and manage Medication Administration Records for clients who require one.',
     allow: ['admin', 'supervisor'],
   },
   {
@@ -80,8 +78,11 @@ export default function AdminDashboardPage() {
   const [myDraft, setMyDraft] = useState<NoteDraft | null>(null);
   const [pendingDup, setPendingDup] = useState(0);
   const [openClarifications, setOpenClarifications] = useState(0);
+  const [pendingHandoffs, setPendingHandoffs] = useState(0);
 
-  // Pending duplicate-note approvals (admin + supervisor only — real role).
+  // Pending duplicate-note approvals. Keyed to the EFFECTIVE role: a
+  // supervisor preview shows the banner the supervisor sees (the subscription
+  // itself runs with the real admin's read permissions either way).
   useEffect(() => {
     if (role !== 'admin' && role !== 'supervisor') return;
     const unsub = subscribePendingDupCount(setPendingDup);
@@ -126,7 +127,7 @@ export default function AdminDashboardPage() {
     ? {
         href: '/progress-note?resume=1',
         icon: <FileEdit size={22} />,
-        title: 'Resume your draft',
+        title: 'Resume Your Draft',
         description: myDraft.clientName
           ? `Pick up where you left off on ${myDraft.clientName}'s note.`
           : 'Pick up where you left off on your unfinished note.',
@@ -135,7 +136,7 @@ export default function AdminDashboardPage() {
     : {
         href: '/progress-note',
         icon: <FilePlus size={22} />,
-        title: 'Submit a progress note',
+        title: 'Submit a Progress Note',
         description: 'Fill out a new shift note. The form auto-fills your name and credential.',
         allow: ['nurse', 'admin', 'supervisor'],
       };
@@ -147,14 +148,52 @@ export default function AdminDashboardPage() {
   const oversightCard: Card = {
     href: '/oversight-note',
     icon: <Stethoscope size={22} />,
-    title: 'RN oversight visit note',
+    title: 'RN Oversight Visit Note',
     description: 'Document a monthly RN oversight visit for a NOW/COMP client.',
+    allow: ['nurse', 'admin', 'supervisor'],
+  };
+
+  // Home supervisory visit: nurse supervisors and admins, like the form.
+  const canAuthorSupervisory = !isViewingAs && canAuthorSupervisoryVisit(role);
+  const supervisoryCard: Card = {
+    href: '/supervisory-visit',
+    icon: <HomeIcon size={22} />,
+    title: 'Home Supervisory Visit',
+    description: "Document a supervisory visit at a client's home: vitals, client interview, satisfaction, and recommendations.",
+    allow: ['admin', 'supervisor'],
+  };
+
+  // Verbal orders: taking one needs an RN/LPN credential (or staff); the
+  // queue itself is readable by every clinical role.
+  const canTakeVerbalOrder =
+    !isViewingAs && (effectiveCredential === 'RN' || effectiveCredential === 'LPN' || role === 'admin' || role === 'supervisor');
+  const verbalOrderCard: Card = {
+    href: canTakeVerbalOrder ? '/admin/verbal-orders/new' : '/admin/verbal-orders',
+    icon: <PhoneCall size={22} />,
+    title: canTakeVerbalOrder ? 'Take a Verbal Order' : 'Verbal Orders',
+    description: canTakeVerbalOrder
+      ? 'Record a physician\'s telephone order, sign it, and fax the physician for signature in one step.'
+      : 'See the verbal orders you have taken and whether the physician has signed them.',
+    allow: ['nurse', 'admin', 'supervisor'],
+  };
+
+  const canFileMedError = !isViewingAs && (!!effectiveCredential || role === 'admin' || role === 'supervisor');
+  const medErrorCard: Card = {
+    href: canFileMedError ? '/admin/med-errors/new' : '/admin/med-errors',
+    icon: <ShieldAlert size={22} />,
+    title: canFileMedError ? 'Report a Medication Error' : 'Medication Errors',
+    description: canFileMedError
+      ? 'Report any medication error you discover, whether or not you were involved. The nursing supervisor reviews it.'
+      : 'Medication error reports and their reviews.',
     allow: ['nurse', 'admin', 'supervisor'],
   };
 
   const visibleCards = [
     ...(canAuthorNote ? [noteCard] : []),
     ...(canAuthorOversight ? [oversightCard] : []),
+    ...(canAuthorSupervisory ? [supervisoryCard] : []),
+    ...(role !== 'va' ? [verbalOrderCard] : []),
+    ...(role !== 'va' ? [medErrorCard] : []),
     ...CARDS.filter((c) => role && c.allow.includes(role)),
   ];
   const kicker = role ? ROLE_KICKER[role] : '';
@@ -203,6 +242,18 @@ export default function AdminDashboardPage() {
               </div>
             </div>
           </Link>
+        )}
+
+        {/* Handoff inbox: the first thing a nurse sees after signing in.
+            Hidden entirely when nothing is waiting (compact mode). */}
+        {role === 'nurse' && effectiveUid && (
+          <section style={{ ...handoffPanelStyle, display: pendingHandoffs > 0 ? 'block' : 'none' }}>
+            <div style={handoffPanelTitleStyle}>
+              <HandoffInboxTitle count={pendingHandoffs} />
+              <Link href="/admin/handoffs" style={handoffAllLinkStyle}>All Handoffs</Link>
+            </div>
+            <HandoffInbox uid={effectiveUid} readOnly={isViewingAs} compact onCountChange={setPendingHandoffs} />
+          </section>
         )}
 
         <section style={gridStyle}>
@@ -308,6 +359,31 @@ const clarificationBannerStyle: React.CSSProperties = {
   borderRadius: 10,
   padding: '14px 18px',
   marginBottom: 16,
+};
+
+const handoffPanelStyle: React.CSSProperties = {
+  background: 'white',
+  border: '1px solid #dbe3ec',
+  borderRadius: 12,
+  padding: '16px 18px',
+  marginBottom: 20,
+};
+
+const handoffPanelTitleStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 10,
+  fontWeight: 700,
+  fontSize: 15,
+  color: '#1a3a5c',
+  marginBottom: 12,
+};
+
+const handoffAllLinkStyle: React.CSSProperties = {
+  fontSize: 12.5,
+  fontWeight: 700,
+  color: '#1a3a5c',
 };
 
 const cardStyle: React.CSSProperties = {

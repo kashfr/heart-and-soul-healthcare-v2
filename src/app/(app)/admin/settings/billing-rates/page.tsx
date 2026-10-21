@@ -1,0 +1,370 @@
+'use client';
+
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { btn, btnDanger, btnIcon, btnPrimary, btnSm } from '@/components/buttons';
+import Link from 'next/link';
+import { ArrowLeft, DollarSign, Pencil, Plus, Trash2 } from 'lucide-react';
+import { AuthGuard } from '@/components/AuthGuard';
+import { useAuth } from '@/components/AuthProvider';
+import { withSelectChevron } from '@/lib/selectChevron';
+import { PROGRAMS, getProgram } from '@/lib/programs';
+import { formatDateUS } from '@/lib/dateFormat';
+import { bucketLabel, fmtDollars, type HoursBucket } from '@/lib/shiftHours';
+import { RATE_CREDENTIALS } from '@/lib/billingRatesShared';
+import {
+  addBillingRate,
+  deleteBillingRate,
+  getBillingRates,
+  updateBillingRate,
+  type BillingRate,
+  type BillingRateInput,
+} from '@/lib/billingRates';
+
+const NAVY = '#1a3a5c';
+
+/**
+ * Owner-only billing rate table: what each payer program pays per 15-minute
+ * unit for shift nursing and RN oversight, with the claim code + modifier and
+ * an effective window. A rate change is a NEW row with a new effective date
+ * (end the old one), so past months keep pricing at the rate that applied.
+ * Read by the $ views on the Shift Notes list and every client's Hours tab.
+ */
+export default function BillingRatesPage() {
+  return (
+    <AuthGuard allow={['admin']}>
+      <BillingRatesInner />
+    </AuthGuard>
+  );
+}
+
+function BillingRatesInner() {
+  const { user } = useAuth();
+  const [rates, setRates] = useState<BillingRate[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<BillingRate | 'new' | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const reload = async () => {
+    try {
+      const list = await getBillingRates();
+      setRates(list);
+    } catch (err) {
+      console.error('Billing rates load failed:', err);
+      setError('Could not load the billing rates.');
+    }
+  };
+  useEffect(() => {
+    let cancelled = false;
+    getBillingRates()
+      .then((list) => { if (!cancelled) setRates(list); })
+      .catch((err) => { console.error('Billing rates load failed:', err); if (!cancelled) setError('Could not load the billing rates.'); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2500);
+  };
+
+  const remove = async (r: BillingRate) => {
+    if (!r.id) return;
+    if (!window.confirm(`Delete the ${getProgram(r.program)?.label || r.program} ${bucketLabel(r.bucket).toLowerCase()} rate of ${fmtDollars(r.ratePerUnit)} per unit (from ${formatDateUS(r.effectiveFrom)})?\n\nDollar views for those dates will show "—" until another row covers them. To change a rate going forward, end this row and add a new one instead.`)) return;
+    try {
+      await deleteBillingRate(r.id);
+      showToast('Rate deleted.');
+      await reload();
+    } catch (err) {
+      console.error('Delete rate failed:', err);
+      setError('Could not delete the rate.');
+    }
+  };
+
+  // Grouped by program, and within a program ordered the way the fee
+  // schedules read: shift nursing before RN oversight, then by skill level
+  // (RN, LPN, CNA, HHA) with the catch-all "any nurse" row last, newest
+  // effective window first.
+  const grouped = useMemo(() => {
+    const credRank = (c: string) => ({ RN: 0, LPN: 1, CNA: 2, HHA: 3 }[c] ?? 4);
+    const m = new Map<string, BillingRate[]>();
+    for (const r of rates || []) {
+      const list = m.get(r.program) ?? [];
+      list.push(r);
+      m.set(r.program, list);
+    }
+    for (const list of m.values()) {
+      list.sort(
+        (a, b) =>
+          (a.bucket === b.bucket ? 0 : a.bucket === 'shift' ? -1 : 1) ||
+          credRank(a.credential) - credRank(b.credential) ||
+          b.effectiveFrom.localeCompare(a.effectiveFrom),
+      );
+    }
+    return m;
+  }, [rates]);
+
+  const todayISO = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }, []);
+
+  return (
+    <div style={pageStyle}>
+      <Link href="/admin/settings" style={backLinkStyle}>
+        <ArrowLeft size={14} /> Back to Settings
+      </Link>
+      <div style={headerStyle}>
+        <div>
+          <h1 style={titleStyle}><DollarSign size={20} /> Billing Rates</h1>
+          <p style={subStyle}>
+            Dollars per 15-minute unit by program, for shift nursing (LPN / HHA / CNA shift notes) and RN oversight visits,
+            with the claim code and modifier. Limit a row to a nurse type when the payer pays LPN and RN shifts differently
+            (GAPP): the note author&apos;s credential picks the matching row, and a row for &quot;any nurse&quot; is the fallback.
+            When a rate changes, end the current row and add a new one with the new effective date so earlier months keep
+            pricing at the rate that applied. These feed the $ views on the Shift
+            Notes list and each client&apos;s Hours tab. Only you can see this.
+          </p>
+        </div>
+        {editing === null && (
+          <button type="button" onClick={() => setEditing('new')} className={btnPrimary}><Plus size={14} /> Add Rate</button>
+        )}
+      </div>
+
+      {error && <div style={errBox}>{error}</div>}
+      {toast && <div style={toastStyle} role="status">{toast}</div>}
+
+      {editing !== null && user && (
+        <RateForm
+          existing={editing === 'new' ? null : editing}
+          uid={user.uid}
+          onCancel={() => setEditing(null)}
+          onSaved={async (msg) => { setEditing(null); showToast(msg); await reload(); }}
+        />
+      )}
+
+      {rates === null && !error && <div style={muted}>Loading…</div>}
+      {rates && rates.length === 0 && (
+        <div style={emptyStyle}>No rates yet. Add the NOW/COMP LPN and RN rates from the Therap lines, then each GAPP rate from the fee schedule.</div>
+      )}
+
+      {PROGRAMS.filter((p) => grouped.has(p.id)).map((p) => (
+        <section key={p.id} style={card}>
+          <div style={{ ...cardTitle, color: p.fg }}>
+            <span style={{ ...programChip, background: p.bg, color: p.fg, border: `1px solid ${p.border}` }}>{p.label}</span>
+            <span style={{ fontWeight: 500, color: '#5c6b7a', fontSize: 13 }}>{p.full}</span>
+            <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 500, color: '#94a3b8' }}>
+              {(grouped.get(p.id) || []).length} {(grouped.get(p.id) || []).length === 1 ? 'rate' : 'rates'}
+            </span>
+          </div>
+          <table style={table}>
+            <thead>
+              <tr>
+                <th style={th}>Service</th>
+                <th style={{ ...th, width: 110 }}>Nurse Type</th>
+                <th style={{ ...th, width: 120 }}>Code</th>
+                <th style={{ ...th, textAlign: 'right', width: 130 }}>Rate</th>
+                <th style={{ ...th, width: 190 }}>Effective</th>
+                <th style={{ ...th, textAlign: 'right', width: 90 }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(grouped.get(p.id) || []).map((r) => {
+                const active = r.effectiveFrom <= todayISO && (!r.effectiveTo || r.effectiveTo >= todayISO);
+                const future = r.effectiveFrom > todayISO;
+                return (
+                  <tr key={r.id} style={active ? undefined : inactiveRow}>
+                    <td style={td}>
+                      <span style={r.bucket === 'oversight' ? rnChip : shiftChip}>{bucketLabel(r.bucket)}</span>
+                      {r.description && <div style={descStyle}>{r.description}</div>}
+                      {r.note && <div style={noteStyle}>{r.note}</div>}
+                    </td>
+                    <td style={td}>
+                      <span style={r.credential ? credChip : anyChip}>{r.credential || 'Any Nurse'}</span>
+                    </td>
+                    <td style={td}>
+                      <span style={codeStyle}>{r.serviceCode || '—'}</span>
+                      {r.modifier && <span style={modifierStyle}>{r.modifier}</span>}
+                    </td>
+                    <td style={{ ...td, textAlign: 'right' }}>
+                      <div style={rateStyle}>{fmtDollars(r.ratePerUnit)}</div>
+                      <div style={perHourStyle}>{fmtDollars(r.ratePerUnit * 4)} / hour</div>
+                    </td>
+                    <td style={td}>
+                      <div style={{ whiteSpace: 'nowrap', color: '#334155' }}>
+                        {formatDateUS(r.effectiveFrom)} <span style={{ color: '#94a3b8' }}>to</span> {r.effectiveTo ? formatDateUS(r.effectiveTo) : <span style={{ color: '#94a3b8' }}>open</span>}
+                      </div>
+                      <span style={active ? okBadge : future ? futureBadge : endedBadge}>{active ? 'Active' : future ? 'Upcoming' : 'Ended'}</span>
+                    </td>
+                    <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <button type="button" onClick={() => setEditing(r)} className={`${btn} ${btnIcon} ${btnSm}`} aria-label="Edit rate" title="Edit this rate"><Pencil size={14} /></button>
+                      <button type="button" onClick={() => remove(r)} className={`${btnDanger} ${btnIcon} ${btnSm}`} style={{ marginLeft: 6 }} aria-label="Delete rate" title="Delete this rate"><Trash2 size={14} /></button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function RateForm({ existing, uid, onCancel, onSaved }: {
+  existing: BillingRate | null;
+  uid: string;
+  onCancel: () => void;
+  onSaved: (msg: string) => Promise<void>;
+}) {
+  const [program, setProgram] = useState(existing?.program ?? '');
+  const [bucket, setBucket] = useState<HoursBucket>(existing?.bucket ?? 'shift');
+  const [credential, setCredential] = useState(existing?.credential ?? '');
+  const [serviceCode, setServiceCode] = useState(existing?.serviceCode ?? '');
+  const [modifier, setModifier] = useState(existing?.modifier ?? '');
+  const [description, setDescription] = useState(existing?.description ?? '');
+  const [rate, setRate] = useState(existing ? String(existing.ratePerUnit) : '');
+  const [from, setFrom] = useState(existing?.effectiveFrom ?? '');
+  const [to, setTo] = useState(existing?.effectiveTo ?? '');
+  const [note, setNote] = useState(existing?.note ?? '');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [fieldErr, setFieldErr] = useState<'program' | 'rate' | 'from' | 'to' | null>(null);
+
+  const rateNum = Number(rate);
+  const submit = async () => {
+    setErr(null);
+    if (!program) { setFieldErr('program'); setErr('Choose the program.'); return; }
+    if (rate.trim() === '' || !Number.isFinite(rateNum) || rateNum < 0 || rateNum > 1000) { setFieldErr('rate'); setErr('Enter the rate per 15-minute unit in dollars.'); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) { setFieldErr('from'); setErr('Enter the effective date.'); return; }
+    if (to && (!/^\d{4}-\d{2}-\d{2}$/.test(to) || to < from)) { setFieldErr('to'); setErr('The end date must be on or after the effective date (or blank for open-ended).'); return; }
+    setFieldErr(null);
+    const input: BillingRateInput = {
+      program,
+      bucket,
+      credential,
+      serviceCode: serviceCode.trim(),
+      modifier: modifier.trim(),
+      description: description.trim(),
+      ratePerUnit: Math.round(rateNum * 100) / 100,
+      effectiveFrom: from,
+      effectiveTo: to,
+      note: note.trim(),
+    };
+    setSaving(true);
+    try {
+      if (existing?.id) await updateBillingRate(existing.id, input, uid);
+      else await addBillingRate(input, uid);
+      await onSaved(existing ? 'Rate updated.' : 'Rate added.');
+    } catch (e) {
+      console.error('Save rate failed:', e);
+      setErr('Could not save the rate. Please try again.');
+      setSaving(false);
+    }
+  };
+  const es = (k: typeof fieldErr): CSSProperties | undefined => (fieldErr === k ? { borderColor: '#b3261e', boxShadow: '0 0 0 2px rgba(179,38,30,0.15)' } : undefined);
+
+  return (
+    <div style={formCard}>
+      <div style={{ fontWeight: 700, color: NAVY, marginBottom: 10 }}>{existing ? 'Edit Rate' : 'New Rate'}</div>
+      <div style={grid}>
+        <label style={field}>
+          <span style={label}>Program *</span>
+          <select value={program} onChange={(e) => setProgram(e.target.value)} style={{ ...select, ...es('program') }}>
+            <option value="">Select…</option>
+            {PROGRAMS.map((p) => (
+              <option key={p.id} value={p.id}>{p.label} — {p.full}</option>
+            ))}
+          </select>
+        </label>
+        <label style={field}>
+          <span style={label}>Covers *</span>
+          <select value={bucket} onChange={(e) => setBucket(e.target.value as HoursBucket)} style={select}>
+            <option value="shift">Shift Hours (LPN / HHA / CNA Shift Notes)</option>
+            <option value="oversight">RN Oversight Visits</option>
+          </select>
+        </label>
+        <label style={field}>
+          <span style={label} title="Limit this rate to notes written by this nurse type. Leave on Any when the payer pays the same regardless.">Nurse type</span>
+          <select value={credential} onChange={(e) => setCredential(e.target.value)} style={select}>
+            {RATE_CREDENTIALS.map((c) => (
+              <option key={c || 'any'} value={c}>{c || 'Any Nurse'}</option>
+            ))}
+          </select>
+        </label>
+        <label style={field}>
+          <span style={label}>Procedure code</span>
+          <input value={serviceCode} onChange={(e) => setServiceCode(e.target.value)} style={input} placeholder="T1003" />
+        </label>
+        <label style={field}>
+          <span style={label}>Modifier</span>
+          <input value={modifier} onChange={(e) => setModifier(e.target.value)} style={input} placeholder="U1" />
+        </label>
+        <label style={field}>
+          <span style={label}>Rate per 15-minute unit ($) *</span>
+          <input type="number" min={0} step="0.01" value={rate} onChange={(e) => setRate(e.target.value)} style={{ ...input, ...es('rate') }} placeholder="24.36" />
+        </label>
+        <label style={field}>
+          <span style={label}>Effective from *</span>
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ ...input, ...es('from') }} />
+        </label>
+        <label style={field}>
+          <span style={label}>Effective to (blank = open)</span>
+          <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} style={{ ...input, ...es('to') }} />
+        </label>
+        <label style={{ ...field, gridColumn: '1 / -1' }}>
+          <span style={label}>Description</span>
+          <input value={description} onChange={(e) => setDescription(e.target.value)} style={input} placeholder="Nursing Services - LPN" />
+        </label>
+        <label style={{ ...field, gridColumn: '1 / -1' }}>
+          <span style={label}>Note (optional)</span>
+          <input value={note} onChange={(e) => setNote(e.target.value)} style={input} placeholder="Source: Therap service authorization, 07/16/2026" />
+        </label>
+      </div>
+      {rate && Number.isFinite(rateNum) && <div style={{ ...muted, marginTop: 6 }}>{fmtDollars(rateNum)} per unit = {fmtDollars(rateNum * 4)} per hour.</div>}
+      {err && <div style={{ ...errBox, marginTop: 10 }}>{err}</div>}
+      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+        <button type="button" onClick={submit} disabled={saving} className={btnPrimary}>{saving ? 'Saving…' : existing ? 'Save Changes' : 'Add Rate'}</button>
+        <button type="button" onClick={onCancel} disabled={saving} className={btn}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+const pageStyle: CSSProperties = { maxWidth: 1100, margin: '0 auto', padding: '24px 20px 60px' };
+const backLinkStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, color: NAVY, fontSize: 13, fontWeight: 600, textDecoration: 'none', marginBottom: 12 };
+const headerStyle: CSSProperties = { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 16 };
+const titleStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 22, color: '#2c3e50', margin: 0 };
+const subStyle: CSSProperties = { fontSize: 13, color: '#7f8c8d', margin: '6px 0 0', lineHeight: 1.5, maxWidth: 760 };
+const muted: CSSProperties = { fontSize: 13, color: '#5c6b7a', lineHeight: 1.45 };
+const errBox: CSSProperties = { background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '8px 11px', fontSize: 13, marginBottom: 12 };
+const toastStyle: CSSProperties = { position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: '#1f2937', color: 'white', padding: '10px 18px', borderRadius: 8, fontSize: 13.5, zIndex: 4000 };
+const emptyStyle: CSSProperties = { padding: '20px 14px', color: '#7f8c8d', fontSize: 13, textAlign: 'center', background: '#f8fafc', borderRadius: 8, lineHeight: 1.5 };
+const card: CSSProperties = { background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '16px 18px 6px', marginBottom: 14 };
+const cardTitle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, fontSize: 15, fontWeight: 700, marginBottom: 14 };
+const programChip: CSSProperties = { display: 'inline-flex', alignItems: 'center', height: 24, padding: '0 11px', borderRadius: 999, fontSize: 12, fontWeight: 700 };
+const table: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13, tableLayout: 'fixed' };
+const th: CSSProperties = { textAlign: 'left', padding: '0 10px 8px', borderBottom: '1px solid #e5e7eb', color: '#94a3b8', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, whiteSpace: 'nowrap' };
+const td: CSSProperties = { padding: '12px 10px', borderBottom: '1px solid #f1f5f9', verticalAlign: 'middle' };
+const inactiveRow: CSSProperties = { background: '#fcfcfd', color: '#94a3b8' };
+const descStyle: CSSProperties = { marginTop: 5, fontSize: 12.5, color: '#334155', lineHeight: 1.4 };
+const noteStyle: CSSProperties = { marginTop: 3, fontSize: 11.5, color: '#94a3b8', lineHeight: 1.35 };
+const codeStyle: CSSProperties = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12.5, fontWeight: 600, color: '#334155' };
+const modifierStyle: CSSProperties = { marginLeft: 6, padding: '1px 6px', borderRadius: 4, background: '#f1f5f9', border: '1px solid #e2e8f0', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11.5, color: '#475569' };
+const rateStyle: CSSProperties = { fontSize: 16, fontWeight: 700, color: '#166534', fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 };
+const perHourStyle: CSSProperties = { fontSize: 11.5, color: '#94a3b8', fontVariantNumeric: 'tabular-nums', marginTop: 2 };
+// Chips: one line always (the old uppercase + letter-spacing wrapped
+// "RN OVERSIGHT" onto two lines in a narrow column), consistent height.
+const badgeBase: CSSProperties = { display: 'inline-flex', alignItems: 'center', height: 22, padding: '0 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap' };
+const statusBadge: CSSProperties = { ...badgeBase, height: 19, padding: '0 8px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, marginTop: 5 };
+const okBadge: CSSProperties = { ...statusBadge, background: '#e9f6f2', color: '#14544a', border: '1px solid #b9e3d8' };
+const futureBadge: CSSProperties = { ...statusBadge, background: '#eef4fb', color: NAVY, border: '1px solid #c8def5' };
+const endedBadge: CSSProperties = { ...statusBadge, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0' };
+const rnChip: CSSProperties = { ...badgeBase, background: '#dbeafe', color: '#1d4ed8', border: '1px solid #bfdbfe' };
+const shiftChip: CSSProperties = { ...badgeBase, background: '#e9f6f2', color: '#14544a', border: '1px solid #b9e3d8' };
+const credChip: CSSProperties = { ...badgeBase, background: '#eef4fb', color: NAVY, border: '1px solid #c8def5' };
+const anyChip: CSSProperties = { ...badgeBase, background: '#f8fafc', color: '#64748b', border: '1px solid #e2e8f0', fontWeight: 600 };
+const formCard: CSSProperties = { border: '1px solid #c8def5', background: '#f8fbff', borderRadius: 10, padding: 14, marginBottom: 14 };
+const grid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 };
+const field: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 };
+const label: CSSProperties = { fontSize: 11.5, fontWeight: 700, color: '#5c6b7a', textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap' };
+const input: CSSProperties = { padding: '7px 10px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 13, fontFamily: 'inherit', color: '#2c3e50', background: 'white', width: '100%', boxSizing: 'border-box' };
+const select: CSSProperties = withSelectChevron(input);

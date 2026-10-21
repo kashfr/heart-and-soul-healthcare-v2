@@ -2,6 +2,7 @@ import 'server-only';
 import { initializeApp, getApps, cert, type App } from 'firebase-admin/app';
 import { getAuth, type Auth } from 'firebase-admin/auth';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
+import { getStorage } from 'firebase-admin/storage';
 
 let cached: { app: App; auth: Auth; db: Firestore } | null = null;
 
@@ -50,4 +51,10 @@ export function adminAuth(): Auth {
 
 export function adminDb(): Firestore {
   return init().db;
+}
+
+/** The client-documents bucket (same one the browser uploads to). */
+export function adminBucket() {
+  const name = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || 'heart-and-soul-hc.firebasestorage.app';
+  return getStorage(init().app).bucket(name);
 }

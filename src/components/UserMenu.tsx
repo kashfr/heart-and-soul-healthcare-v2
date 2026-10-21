@@ -75,12 +75,12 @@ export default function UserMenu() {
 
           <Link href="/admin/profile" onClick={() => setOpen(false)} style={menuItemStyle}>
             <UserCog size={16} />
-            My profile
+            My Profile
           </Link>
 
           <button onClick={handleSignOut} style={{ ...menuItemStyle, color: '#c44', width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}>
             <LogOut size={16} />
-            Sign out
+            Sign Out
           </button>
         </div>
       )}

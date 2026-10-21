@@ -211,11 +211,11 @@ function MapContents({
             </div>
             <div className={styles.legendItem}>
               <span className={`${styles.legendDot} ${styles.primary}`}></span>
-              <span>Primary Service (10 counties)</span>
+              <span>Primary Service (10 Counties)</span>
             </div>
             <div className={styles.legendItem}>
               <span className={`${styles.legendDot} ${styles.secondary}`}></span>
-              <span>Extended Service (10 counties)</span>
+              <span>Extended Service (10 Counties)</span>
             </div>
           </div>
         </div>

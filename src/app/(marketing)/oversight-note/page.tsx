@@ -3,7 +3,9 @@
 /**
  * RN Oversight Visit Note — the in-app "one consistent oversight template"
  * from the QEPR 18119 exit report. A single scrolling form (an oversight
- * visit is visit-shaped, not shift-shaped: no vitals pages, no handoff).
+ * visit is visit-shaped, not shift-shaped: no handoff). Rev 3 (10/2026)
+ * added the shift note's vitals block, the same as the supervisory visit,
+ * and a location dropdown.
  *
  * Storage: same `progressNotes` collection as shift notes, discriminated by
  * noteType (see src/lib/oversightNote.ts for the key scheme and rules).
@@ -12,10 +14,13 @@
  * shift-note form.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { ViewAsWriteBlock } from '@/components/ImpersonationProvider';
 import { useForm } from 'react-hook-form';
-import { getPatients, type Patient } from '@/lib/patients';
+import { getPatients, getPatientClinical, type Patient } from '@/lib/patients';
+import { baselinesToNoteFields } from '@/lib/vitalsBaselines';
+import { isBpRoutinelyRequired } from '@/lib/vitalRanges';
 import { computeAgeString } from '@/lib/age';
 import { formatDateUS } from '@/lib/dateFormat';
 import {
@@ -35,16 +40,32 @@ import {
   OVERSIGHT_NOTE_TYPE,
   OVERSIGHT_APPT_ROWS,
   OVERSIGHT_RADIO_KEYS,
+  OVERSIGHT_FORM_REV,
+  OVERSIGHT_LOCATIONS,
+  OVERSIGHT_LOCATION_OTHER,
+  MAR_REVIEWED_OPTIONS,
+  MED_REVIEW_LEGACY_NO,
+  ORDERS_VERIFIED_OPTIONS,
   getOversightIncomplete,
+  medReviewNeedsNotes,
+  locationChoiceFor,
+  locationFromChoice,
 } from '@/lib/oversightNote';
 import { useAuth } from '@/components/AuthProvider';
 import { authedFetch } from '@/lib/authedFetch';
+import { fileNoteDocument } from '@/lib/patientDocuments';
+import { fmtH, monthLabel, previewOversightVisit, type OversightAllotment } from '@/lib/shiftHours';
+import { escortToField, FieldError, FIELD_ERROR_STYLE, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
 import SignatureCanvas, { type SignatureCanvasHandle } from '@/components/SignatureCanvas';
 import DeselectableRadio, {
   radioState,
   setRadio,
   clearRadioStorage,
+  radioSubscribe,
+  radioGetSnapshot,
 } from '../progress-note/components/DeselectableRadio';
+import VitalSignsFields from '../progress-note/components/VitalSignsFields';
+import VitalsRecheckSection from '../progress-note/components/VitalsRecheckSection';
 import type { FormValues } from '../progress-note/types';
 import styles from '../progress-note/page.module.css';
 
@@ -66,14 +87,27 @@ function joinedValueIncludes(joined: string, optionValue: string): boolean {
 
 /** Radio row rendered from an option list; the wrapper id is the rule key so
  *  the required-field scroll can find radio groups as well as inputs. */
-function RadioRow({ name, options }: { name: string; options: string[] }) {
+function RadioRow({
+  name,
+  options,
+  error,
+  onPick,
+}: {
+  name: string;
+  options: string[];
+  error?: string;
+  onPick?: () => void;
+}) {
   return (
-    <div className={styles.radioRow} id={name}>
-      {options.map((o) => (
-        <label key={o}>
-          <DeselectableRadio name={name} value={o} /> {o}
-        </label>
-      ))}
+    <div id={name} onClickCapture={onPick}>
+      <div className={styles.radioRow} style={error ? FIELD_ERROR_WRAP_STYLE : undefined}>
+        {options.map((o) => (
+          <label key={o}>
+            <DeselectableRadio name={name} value={o} /> {o}
+          </label>
+        ))}
+      </div>
+      <FieldError message={error} />
     </div>
   );
 }
@@ -86,6 +120,7 @@ function Area({
   required = false,
   placeholder,
   topGap = false,
+  error,
 }: {
   id: string;
   label: string;
@@ -96,6 +131,7 @@ function Area({
   /** Extra space above — use when a checkbox row sits directly above this
    *  field, since .checkRow has no bottom margin and .row has no top one. */
   topGap?: boolean;
+  error?: string;
 }) {
   return (
     <div className={styles.row} style={topGap ? { marginTop: 16 } : undefined}>
@@ -109,14 +145,58 @@ function Area({
           id={id}
           rows={rows}
           placeholder={placeholder}
+          style={error ? FIELD_ERROR_STYLE : undefined}
+          aria-invalid={!!error}
           {...register(id)}
         />
+        <FieldError message={error} />
       </div>
     </div>
   );
 }
 
-export default function OversightNotePage() {
+/** Per-field wording for a blocked submit. Anything not listed falls back to
+ *  "<rule label> is required." so a new rule still gets a message. */
+const OVERSIGHT_FIELD_MESSAGES: Record<string, string> = {
+  q3_clientName: 'Select the individual from the roster.',
+  q6_dateofService: 'Enter the date of the visit.',
+  ov_timeIn: 'Enter the time you arrived.',
+  ov_timeOut: 'Enter the time you left.',
+  ov_locationChoice: 'Choose where the visit took place.',
+  ov_locationOther: 'Describe where the visit took place.',
+  ov_visitType: 'Choose the visit type.',
+  q11_nurseName: 'Your staff profile has no display name. Ask the administrator to set it under Staff & Roles.',
+  ov_generalCondition: 'Describe the general condition and any changes since the last visit.',
+  ov_interactions: "Describe the conversations and the individual's responses during this visit.",
+  q16_temperature: 'Enter the temperature, or choose why vitals could not be obtained.',
+  q16_temperatureRoute: 'Choose how the temperature was taken.',
+  q17_bloodPressure: 'Enter both blood pressure numbers, or choose why it could not be obtained.',
+  q18_pulse: 'Enter the pulse, or choose why vitals could not be obtained.',
+  q19_respiration: 'Enter the respirations, or choose why vitals could not be obtained.',
+  q20_oxygenSaturation: 'Enter the O2 saturation, or choose why vitals could not be obtained.',
+  q21_oxygenSource: 'Choose the oxygen source for the recorded SpO2.',
+  ov_hcpStatus: 'Choose whether the HCP is current or needs updates.',
+  ov_hcpStaffTrained: 'Choose whether staff were trained on the HCP.',
+  ov_ordersVerified: 'Choose whether every medication has a current physician order.',
+  ov_marReviewed: 'Choose whether the MAR was reviewed.',
+  ov_medsNotes: 'Describe the discrepancies found, or why the review was not done.',
+  ov_equipOrders: 'Choose whether adaptive equipment orders are current.',
+  ov_preventiveReviewed: 'Choose whether preventive care was reviewed.',
+  ov_aims: 'Choose the AIMS assessment status.',
+  ov_hospitalization: 'Choose the hospitalization / ER status.',
+  ov_logsReviewed: 'Choose whether tracking logs were reviewed.',
+  ov_hrst: 'Choose the HRST status.',
+  ov_educationResponse: "Describe the individual's response to the education provided.",
+  ov_choicesMade: 'Describe the choices the individual made or declined this visit.',
+  ov_goalProgress: 'Describe progress on the HCP / plan of care goals.',
+  ov_quarterly: 'Choose whether the quarterly review was completed this visit.',
+  ov_quarterlySummary: 'Write the quarterly data summary; it is required for a quarterly review.',
+  ov_actions: 'Describe the actions taken, orders requested, or referrals made.',
+  ov_nextVisit: 'Enter the plan and target date for the next visit.',
+  q61_signature: 'Sign the note before submitting.',
+};
+
+function OversightNotePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editId = searchParams.get('edit');
@@ -130,7 +210,7 @@ export default function OversightNotePage() {
   if (!submissionIdRef.current && typeof crypto !== 'undefined') {
     submissionIdRef.current = crypto.randomUUID();
   }
-  const { register, watch, setValue, getValues } = useForm<FormValues>();
+  const { register, watch, setValue, getValues, trigger, formState: { errors: rhfErrors } } = useForm<FormValues>();
 
   const [patients, setPatients] = useState<Patient[]>([]);
   const [showAllClients, setShowAllClients] = useState(false);
@@ -142,6 +222,9 @@ export default function OversightNotePage() {
   const [initialSignature, setInitialSignature] = useState('');
   const editReasonRef = useRef('');
   const hydratedRef = useRef(false);
+  // Re-render on radio changes: the orders / MAR answers decide the options
+  // shown for a legacy "No".
+  useSyncExternalStore(radioSubscribe, radioGetSnapshot, radioGetSnapshot);
   const isNurse = role === 'nurse';
 
   // Fresh form: the radio store is a module-level singleton shared with the
@@ -187,6 +270,17 @@ export default function OversightNotePage() {
       setValue('q10_primaryDiagnosis', p?.diagnosis || '');
       setValue('q2_program', p?.program || '');
       setValue('q2_serviceLevel', p?.serviceLevel || '');
+      // Baseline snapshot (q16b_*): the client's own vitals ranges, if any,
+      // so the vitals here are judged the same way as on a shift note.
+      const applyBaselines = (fields: Record<string, string>) => {
+        for (const [k, v] of Object.entries(fields)) setValue(k, v);
+      };
+      applyBaselines(baselinesToNoteFields());
+      if (id) {
+        getPatientClinical(id)
+          .then((c) => applyBaselines(baselinesToNoteFields(c?.vitalsBaselines, c?.vitalsBaselinesNote)))
+          .catch(() => {});
+      }
     },
     [patients, setValue],
   );
@@ -205,6 +299,20 @@ export default function OversightNotePage() {
       }
       if (typeof flat.q61_signature === 'string' && flat.q61_signature) {
         setInitialSignature(flat.q61_signature);
+      }
+      // A note written before the location dropdown holds free text: pick
+      // the matching choice, or "Other" with the text kept.
+      if (!flat.ov_locationChoice && typeof flat.ov_location === 'string') {
+        const { choice, other } = locationChoiceFor(flat.ov_location);
+        setValue('ov_locationChoice', choice);
+        setValue('ov_locationOther', other);
+      }
+      // A stored "S/D" string without its two parts still fills both BP inputs.
+      const bp = typeof flat.q17_bloodPressure === 'string' ? flat.q17_bloodPressure : '';
+      if (bp && !flat.q17_systolic && !flat.q17_diastolic) {
+        const [sys, dia] = bp.split('/');
+        setValue('q17_systolic', (sys || '').trim());
+        setValue('q17_diastolic', (dia || '').trim());
       }
       clearRadioStorage();
       const radioSource =
@@ -295,6 +403,96 @@ export default function OversightNotePage() {
     if (user?.uid) void clearOversightDraft(user.uid);
   }, [user?.uid]);
 
+  // --- Documented time vs. billed time --------------------------------------
+  // The nurse records the visit's real Start time and End time; the portal never
+  // fills or adjusts them. Billing is separate: the month's first visit bills
+  // the RN authorization, and a later visit that month is non-billable, which
+  // the form says up front (shiftHours.oversightVisitBilling).
+  const visitPatientId = watch('patientId');
+  const visitDate = watch('q6_dateofService');
+  const visitTimeIn = watch('ov_timeIn');
+  const [allotment, setAllotment] = useState<OversightAllotment | null>(null);
+  const [allotmentKey, setAllotmentKey] = useState('');
+  useEffect(() => {
+    const pid = String(visitPatientId || '');
+    const date = String(visitDate || '');
+    if (!pid || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+    const key = `${pid}|${date}`;
+    let cancelled = false;
+    const qs = new URLSearchParams({ patientId: pid, date, ...(editId ? { exclude: editId } : {}) });
+    authedFetch(`/api/oversight/allotment?${qs.toString()}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: OversightAllotment | null) => {
+        if (cancelled) return;
+        setAllotment(data);
+        setAllotmentKey(key);
+      })
+      .catch((err) => console.warn('Oversight allotment lookup failed:', err));
+    return () => { cancelled = true; };
+  }, [visitPatientId, visitDate, editId]);
+  const allotmentCurrent =
+    allotmentKey === `${String(visitPatientId || '')}|${String(visitDate || '')}` ? allotment : null;
+  const visitTimeOut = watch('ov_timeOut');
+  const visitProgram = watch('q2_program');
+  const visitMonthName = visitDate ? monthLabel(String(visitDate).slice(0, 7)).split(' ')[0] : '';
+  const visitPreview = allotmentCurrent ? previewOversightVisit(allotmentCurrent, String(visitTimeIn || ''), String(visitTimeOut || '')) : null;
+  const otherVisitDates = (allotmentCurrent?.otherVisits || []).filter((v) => v.billableHours > 0).map((v) => formatDateUS(v.dateISO));
+  /** NOW/COMP pays RN oversight from an authorization; without one on file
+   *  for the visit's month the office has to enter it before a new visit is filed. */
+  const authorizationMissing = !!allotmentCurrent && allotmentCurrent.monthlyHours == null && visitProgram === 'now-comp';
+  /** The month's hours are already documented: this visit is recorded, not billed. */
+  const monthUsedUp = !!allotmentCurrent && allotmentCurrent.monthlyHours != null && (allotmentCurrent.remainingHours ?? 0) <= 0;
+  const timeOutHint: { tone: 'info' | 'warn'; text: string } | null = !allotmentCurrent
+    ? null
+    : allotmentCurrent.monthlyHours == null
+      ? authorizationMissing
+        ? { tone: 'warn', text: `No RN oversight authorization is on file for ${visitMonthName}. Ask the office to enter this client's RN hours before filing this visit.` }
+        : { tone: 'info', text: 'No RN oversight authorization is on file for this month. Enter the actual times.' }
+      : monthUsedUp
+        ? { tone: 'warn', text: `Non-billable visit: ${visitMonthName}'s ${fmtH(allotmentCurrent.monthlyHours)} RN hours already bill with the ${otherVisitDates.join(' and ') || 'earlier'} visit. Enter the actual times.` }
+        : !visitPreview
+          ? { tone: 'info', text: `${visitMonthName}: this visit bills the month's ${fmtH(allotmentCurrent.monthlyHours)} authorized RN hours. Enter the actual times.` }
+          : { tone: 'info', text: `${visitMonthName}'s ${fmtH(allotmentCurrent.monthlyHours)} authorized RN hours bill with this visit. The visit itself is documented as ${fmtH(visitPreview.documentedHours)} h.` };
+
+  // --- Leaving the form ---------------------------------------------------
+  const [showDiscard, setShowDiscard] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const stopAutosave = () => {
+    hasSubmittedRef.current = true; // blocks any further autosave writes
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+  };
+  /** Keep the draft and go back to Submissions. */
+  const saveAndExit = async () => {
+    if (leaving) return;
+    setLeaving(true);
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    try {
+      await persistDraftRef.current();
+    } finally {
+      stopAutosave();
+      clearRadioStorage();
+      router.push('/admin/submissions?draftSaved=oversight');
+    }
+  };
+  /** Throw the draft away and go back to Submissions. */
+  const discardAndExit = async () => {
+    if (leaving) return;
+    setLeaving(true);
+    stopAutosave();
+    try {
+      if (user?.uid) await clearOversightDraft(user.uid);
+    } catch (err) {
+      console.warn('Clearing the oversight draft failed:', err);
+    }
+    clearRadioStorage();
+    router.push('/admin/submissions?discarded=oversight');
+  };
+  /** Amend mode: leave without saving any changes. */
+  const cancelAmend = () => {
+    clearRadioStorage();
+    router.push(editId ? `/admin/submissions/${editId}` : '/admin/submissions');
+  };
+
   // Autosave. Driven by RHF's change SUBSCRIPTION, never by render identity:
   // no-arg watch() returns a fresh object every render, so using it as an
   // effect dependency (with setDraftSavedAt re-rendering on success) produced
@@ -308,15 +506,12 @@ export default function OversightNotePage() {
     pendingDraftRef.current = !!pendingDraft;
   }, [pendingDraft]);
 
-  const scheduleAutosave = useCallback(() => {
+  // Write the current form state as this RN's oversight draft. Used by the
+  // autosave above and by "Save & exit" (which can't wait for the debounce).
+  const persistDraftRef = useRef<() => Promise<void>>(async () => {});
+  const persistDraft = useCallback(async () => {
     if (isEditMode || !user?.uid) return;
-    // Never before the stored-draft lookup resolves (we'd overwrite it with a
-    // blank form), never after submit (we'd resurrect the note we just
-    // filed), and never while the resume banner is still a live question.
-    if (!draftLookupDoneRef.current || pendingDraftRef.current || hasSubmittedRef.current) return;
-    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-    autosaveTimerRef.current = setTimeout(() => {
-      if (hasSubmittedRef.current) return;
+    {
       const values = getValues();
       const filled = Object.entries(values).filter(
         ([, v]) => typeof v === 'string' && v.trim() !== '',
@@ -329,7 +524,7 @@ export default function OversightNotePage() {
         if (!checkboxState[cb.name]) checkboxState[cb.name] = [];
         if (cb.checked) checkboxState[cb.name].push(cb.value);
       });
-      void saveOversightDraft(user.uid, {
+      await saveOversightDraft(user.uid, {
         clientName: String(values.q3_clientName || ''),
         dateOfService: String(values.q6_dateofService || ''),
         submissionId: submissionIdRef.current || undefined,
@@ -342,8 +537,25 @@ export default function OversightNotePage() {
       })
         .then(() => setDraftSavedAt(new Date()))
         .catch((err) => console.warn('Oversight draft autosave failed:', err));
-    }, 2500);
+    }
   }, [isEditMode, user?.uid, getValues]);
+  useEffect(() => {
+    persistDraftRef.current = persistDraft;
+  }, [persistDraft]);
+
+
+  const scheduleAutosave = useCallback(() => {
+    if (isEditMode || !user?.uid) return;
+    // Never before the stored-draft lookup resolves (we'd overwrite it with a
+    // blank form), never after submit (we'd resurrect the note we just
+    // filed), and never while the resume banner is still a live question.
+    if (!draftLookupDoneRef.current || pendingDraftRef.current || hasSubmittedRef.current) return;
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => {
+      if (hasSubmittedRef.current) return;
+      void persistDraftRef.current();
+    }, 2500);
+  }, [isEditMode, user?.uid]);
 
   useEffect(() => {
     if (isEditMode) return;
@@ -363,10 +575,34 @@ export default function OversightNotePage() {
   const rnGateBlocked = isNurse && profile?.credential !== 'RN';
 
   const [missing, setMissing] = useState<string[]>([]);
+  /** Per-field messages from the last blocked submit, keyed by rule key / DOM id. */
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  /** A rejection from the server (duplicate, network) shown beside the buttons. */
+  const [submitError, setSubmitError] = useState('');
+  const [editReasonError, setEditReasonError] = useState('');
+
+  const clearFieldError = useCallback((key: string) => {
+    setFieldErrors((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }, []);
+
+  // Editing a field clears its message right away (RHF text inputs and the
+  // signature, which lands through setValue; radios clear from RadioRow).
+  useEffect(() => {
+    const sub = watch((_values, info) => {
+      if (info.name) clearFieldError(String(info.name));
+    });
+    return () => sub.unsubscribe();
+  }, [watch, clearFieldError]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!formRef.current || submitting) return;
+    setSubmitError('');
 
     // Merge the three stores into the flat record, shift-note style.
     const values = getValues();
@@ -388,7 +624,13 @@ export default function OversightNotePage() {
     }
 
     values.noteType = OVERSIGHT_NOTE_TYPE;
-    values.q1_formRev = '2';
+    // Rev 3 (10/2026): vitals + location dropdown. An amendment keeps the
+    // note's own revision, so a visit filed before vitals existed is never
+    // made to invent them.
+    values.q1_formRev = isEditMode && values.q1_formRev ? String(values.q1_formRev) : OVERSIGHT_FORM_REV;
+    // The printed location is the dropdown answer, or the typed place for "Other".
+    if (values.ov_locationChoice !== OVERSIGHT_LOCATION_OTHER) values.ov_locationOther = '';
+    values.ov_location = locationFromChoice(String(values.ov_locationChoice || ''), String(values.ov_locationOther || ''));
     // The signature is applied at the end of the visit; stamp the signed date
     // from the visit date so the signature block never renders "Date Signed: --".
     values.q62_shiftEndDate = String(values.q6_dateofService || '');
@@ -396,32 +638,53 @@ export default function OversightNotePage() {
     const issues = getOversightIncomplete(values as Record<string, string>);
     if (issues.length > 0) {
       setMissing(issues.map((i) => i.label));
-      const target = document.getElementById(issues[0].key);
-      target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      alert(
-        'Please complete the required fields:\n\n' +
-          issues
-            .slice(0, 8)
-            .map((i) => '• ' + i.label)
-            .join('\n') +
-          (issues.length > 8 ? `\n…and ${issues.length - 8} more` : ''),
-      );
+      const errs: Record<string, string> = {};
+      for (const i of issues) errs[i.key] = OVERSIGHT_FIELD_MESSAGES[i.key] || `${i.label} is required.`;
+      setFieldErrors(errs);
+      escortToField(issues[0].key);
       return;
     }
     setMissing([]);
 
+    // Typo guard on the vitals (the same bounds as the shift note).
+    const VITAL_INPUTS = ['q16_temperature', 'q17_systolic', 'q17_diastolic', 'q18_pulse', 'q19_respiration', 'q20_oxygenSaturation'] as const;
+    const vitalsOk = await trigger([...VITAL_INPUTS]);
+    if (!vitalsOk) {
+      const firstBad = VITAL_INPUTS.find((k) => rhfErrors[k]);
+      escortToField(firstBad === 'q17_systolic' || firstBad === 'q17_diastolic' ? 'q17_bloodPressure' : firstBad || 'q16_temperature');
+      return;
+    }
+
     // A 12h/24h time-picker slip is the usual cause of an out-before-in
     // window; oversight visits never span midnight, so hard-stop it.
     if (String(values.ov_timeOut) <= String(values.ov_timeIn)) {
-      const target = document.getElementById('ov_timeOut');
-      target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      alert('Time out must be after time in. Please check the visit times.');
+      setFieldErrors({ ov_timeOut: 'End time must be after start time. Check the visit times.' });
+      escortToField('ov_timeOut');
       return;
+    }
+    // A NOW/COMP visit bills against the month's RN authorization. With none
+    // on file the office enters it first (new visits only; an amendment to an
+    // older note is never blocked by a line that was entered later or lapsed).
+    if (!isEditMode && authorizationMissing) {
+      setFieldErrors({ q6_dateofService: `No RN oversight authorization is on file for ${visitMonthName}. Ask the office to enter this client's RN hours, then file the visit.` });
+      escortToField('q6_dateofService');
+      return;
+    }
+    setFieldErrors({});
+
+    // Stamp what this visit bills, as the form showed it, so the note, its
+    // PDF and the Submissions list can label a non-billable or trimmed visit
+    // for people who cannot read the authorizations. The owner's hours views
+    // recompute from the authorizations and do not rely on this stamp.
+    if (allotmentCurrent && visitPreview) {
+      values.ov_billableHours = String(visitPreview.billableHours);
+      values.ov_nonBillable = visitPreview.nonBillable ? 'Yes' : '';
     }
 
     if (isEditMode && editId) {
       // An edit needs a reason for the audit trail, same as the shift note.
       if (!editReasonRef.current.trim()) {
+        setEditReasonError('');
         setShowEditReason(true);
         return;
       }
@@ -440,19 +703,27 @@ export default function OversightNotePage() {
         );
         editReasonRef.current = '';
         // Tell the corrections workflow an amendment landed, exactly as the
-        // shift form does; without this a note blocking its author stays
-        // blocked. Non-fatal: an unblocked note answers 409.
+        // shift form does: if the note has an open flag, whoever raised it (plus
+        // the corrections reviewer) is notified. A block is lifted only by a
+        // reviewer. Non-fatal: a note with no open flag answers 409.
         try {
           await authedFetch(`/api/admin/submissions/${editId}/amended`, { method: 'POST' });
         } catch (err) {
           console.warn('Correction-amended event failed (non-fatal):', err);
+        }
+        // Re-file the amended note into the client's Documents so the PDF on
+        // file matches the record. Non-fatal: staff can Sync from the tab.
+        try {
+          await fileNoteDocument(editId);
+        } catch (err) {
+          console.warn('Re-filing the amended oversight note failed (non-fatal):', err);
         }
         clearRadioStorage();
         alert('Oversight note updated.');
         window.location.href = `/admin/submissions/${editId}`;
       } catch (err) {
         console.error('Oversight note update failed:', err);
-        alert('The note could not be updated. Please check your connection and try again.');
+        setSubmitError('The note could not be updated. Please check your connection and try again.');
         setSubmitting(false);
       }
       return;
@@ -480,7 +751,7 @@ export default function OversightNotePage() {
       if (dup) {
         setSubmitting(false);
         hasSubmittedRef.current = false; // she stays on the form; keep saving
-        alert(
+        setSubmitError(
           `An oversight note for ${values.q3_clientName} on this date already exists. ` +
             'Open it from Submissions instead of filing a second note. If this is intentional ' +
             '(a second visit the same day), contact the administrator.',
@@ -494,16 +765,38 @@ export default function OversightNotePage() {
       });
       clearRadioStorage();
       if (user?.uid) await clearOversightDraft(user.uid).catch(() => {});
+      // File the note into the client's Documents tab (RN Oversight) so the
+      // office never has to download and re-upload it. Non-fatal: the note is
+      // the record; staff can Sync from the tab if this ever fails.
+      try {
+        await fileNoteDocument(docId);
+      } catch (err) {
+        console.warn('Auto-filing the oversight note failed (non-fatal):', err);
+      }
       const c = encodeURIComponent(String(values.q3_clientName || ''));
       const d = encodeURIComponent(String(values.q6_dateofService || ''));
       router.push(`/progress-note/submitted/${docId}?c=${c}&d=${d}&t=oversight`);
     } catch (err) {
       console.error('Oversight note submit failed:', err);
-      alert('The note could not be submitted. Please check your connection and try again.');
+      setSubmitError('The note could not be submitted. Please check your connection and try again.');
       hasSubmittedRef.current = false; // failed: resume protecting her work
       setSubmitting(false);
     }
   };
+
+  const fe = (k: string) => fieldErrors[k] || (rhfErrors[k]?.message ? String(rhfErrors[k]?.message) : undefined);
+  const bpRequired = isBpRoutinelyRequired(String(watch('q5_ageYears') || ''), String(watch('q4_dateofBirth') || ''));
+  // Rev 3 rules (vitals, notes for a discrepancy answer) bind new notes; an
+  // amendment of an older visit shows the fields but does not demand them.
+  const storedRev = String(watch('q1_formRev') || '');
+  const isRev3 = !isEditMode || Number(storedRev || OVERSIGHT_FORM_REV) >= 3;
+  const vitalsRequired = isRev3;
+  const locationChoice = String(watch('ov_locationChoice') || '');
+  // A note filed before rev 3 may hold a bare "No"; keep it on screen when
+  // amending so the stored answer is visible and can be changed.
+  const withLegacyNo = (options: string[], key: string) =>
+    radioState[key] === MED_REVIEW_LEGACY_NO ? [options[0], MED_REVIEW_LEGACY_NO, ...options.slice(1)] : options;
+  const hi = (k: string) => (fieldErrors[k] ? FIELD_ERROR_STYLE : undefined);
 
   if (rnGateBlocked) {
     return (
@@ -520,9 +813,35 @@ export default function OversightNotePage() {
 
   return (
     <div className={`${styles.container} ${styles.wrap}`}>
-      <h1 style={{ textAlign: 'center', fontSize: 22, marginBottom: 2 }}>
-        RN Oversight Visit Note{isEditMode ? ' — Amend' : ''}
-      </h1>
+      <div style={{ position: 'relative' }}>
+        {/* Close: amend mode leaves without saving; a new note asks whether
+            to keep the draft or throw it away. */}
+        <button
+          type="button"
+          onClick={() => (isEditMode ? cancelAmend() : setShowDiscard(true))}
+          aria-label={isEditMode ? 'Cancel changes and close' : 'Close this note'}
+          title={isEditMode ? 'Cancel changes' : 'Close (save or discard)'}
+          style={{
+            position: 'absolute',
+            top: -4,
+            right: 0,
+            width: 34,
+            height: 34,
+            borderRadius: 8,
+            border: '1px solid #d0d7de',
+            background: 'white',
+            color: '#475569',
+            fontSize: 18,
+            lineHeight: 1,
+            cursor: 'pointer',
+          }}
+        >
+          ✕
+        </button>
+        <h1 style={{ textAlign: 'center', fontSize: 22, marginBottom: 2, padding: '0 40px' }}>
+          RN Oversight Visit Note{isEditMode ? ' — Amend' : ''}
+        </h1>
+      </div>
       <p style={{ textAlign: 'center', color: '#5c6b7a', fontSize: 13, marginTop: 0 }}>
         NOW/COMP nursing services, RN oversight model. One note per oversight visit.
       </p>
@@ -548,20 +867,20 @@ export default function OversightNotePage() {
           <span style={{ fontSize: 14, color: '#7c3a00', flex: '1 1 260px' }}>
             You have an unfinished oversight note
             {pendingDraft.clientName ? ` for ${pendingDraft.clientName}` : ''}
-            {pendingDraft.updatedAt ? `, last saved ${pendingDraft.updatedAt.toLocaleString()}` : ''}.
+            {pendingDraft.updatedAt ? `, last saved ${pendingDraft.updatedAt.toLocaleString('en-US')}` : ''}.
           </span>
           <button type="button" className={styles.navBtn} onClick={resumeDraft}>
-            Resume draft
+            Resume Draft
           </button>
           <button type="button" className={styles.navBtn} onClick={discardDraft}>
-            Start fresh
+            Start Fresh
           </button>
         </div>
       )}
 
       {!isEditMode && draftSavedAt && !pendingDraft && (
         <p style={{ textAlign: 'center', color: '#7f8c8d', fontSize: 12, marginTop: 0 }}>
-          Draft saved {draftSavedAt.toLocaleTimeString()}
+          Draft saved {draftSavedAt.toLocaleTimeString('en-US')}
         </p>
       )}
 
@@ -588,8 +907,10 @@ export default function OversightNotePage() {
                   id="q3_clientName"
                   value={selectedPatientId || ''}
                   onChange={(e) => handleSelectPatient(e.target.value)}
+                  style={hi('q3_clientName')}
+                  aria-invalid={!!fe('q3_clientName')}
                 >
-                  <option value="">Select a client…</option>
+                  <option value="">Select a Client…</option>
                   {selectablePatients.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
@@ -597,6 +918,7 @@ export default function OversightNotePage() {
                     </option>
                   ))}
                 </select>
+                <FieldError message={fe('q3_clientName')} />
                 <label
                   style={{
                     fontSize: 12,
@@ -635,38 +957,79 @@ export default function OversightNotePage() {
                   className={styles.input}
                   type="date"
                   id="q6_dateofService"
+                  style={hi('q6_dateofService')}
+                  aria-invalid={!!fe('q6_dateofService')}
                   {...register('q6_dateofService')}
                 />
+                <FieldError message={fe('q6_dateofService')} />
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="ov_timeIn">
-                  Time in *
+                  Start time *
                 </label>
-                <input className={styles.input} type="time" id="ov_timeIn" {...register('ov_timeIn')} />
+                <input className={styles.input} type="time" id="ov_timeIn" style={hi('ov_timeIn')} aria-invalid={!!fe('ov_timeIn')} {...register('ov_timeIn')} />
+                <FieldError message={fe('ov_timeIn')} />
               </div>
               <div className={styles.f}>
                 <label className={styles.label} htmlFor="ov_timeOut">
-                  Time out *
+                  End time *
                 </label>
-                <input className={styles.input} type="time" id="ov_timeOut" {...register('ov_timeOut')} />
+                <input className={styles.input} type="time" id="ov_timeOut" style={hi('ov_timeOut')} aria-invalid={!!fe('ov_timeOut')} {...register('ov_timeOut')} />
+                <FieldError message={fe('ov_timeOut')} />
               </div>
             </div>
+            {timeOutHint && (
+              <div
+                id="ov_billing"
+                role={timeOutHint.tone === 'warn' ? 'alert' : undefined}
+                style={{
+                  fontSize: 13, lineHeight: 1.45, marginTop: 2, marginBottom: 12, padding: '8px 12px', borderRadius: 6,
+                  border: `1px solid ${timeOutHint.tone === 'warn' ? '#f3d9a4' : '#dbe3ec'}`,
+                  background: timeOutHint.tone === 'warn' ? '#fff4e0' : '#f6f9fc',
+                  color: timeOutHint.tone === 'warn' ? '#7a4a00' : '#475569',
+                  fontWeight: timeOutHint.tone === 'warn' ? 600 : 400,
+                }}
+              >
+                {timeOutHint.text}
+              </div>
+            )}
 
             <div className={styles.row}>
               <div className={styles.f} style={{ flex: '1 1 55%' }}>
-                <label className={styles.label} htmlFor="ov_location">
+                <label className={styles.label} htmlFor="ov_locationChoice">
                   Location *
                 </label>
-                <input
-                  className={styles.input}
-                  id="ov_location"
-                  placeholder="e.g. individual's home"
-                  {...register('ov_location')}
-                />
+                <select
+                  className={styles.select}
+                  id="ov_locationChoice"
+                  style={hi('ov_locationChoice')}
+                  aria-invalid={!!fe('ov_locationChoice')}
+                  {...register('ov_locationChoice')}
+                >
+                  <option value="">Select&hellip;</option>
+                  {OVERSIGHT_LOCATIONS.map((o) => (
+                    <option key={o} value={o}>{o}</option>
+                  ))}
+                </select>
+                <FieldError message={fe('ov_locationChoice')} />
+                {locationChoice === OVERSIGHT_LOCATION_OTHER && (
+                  <>
+                    <input
+                      className={styles.input}
+                      id="ov_locationOther"
+                      aria-label="Where the visit took place"
+                      placeholder="Where the visit took place"
+                      style={{ marginTop: 6, ...hi('ov_locationOther') }}
+                      aria-invalid={!!fe('ov_locationOther')}
+                      {...register('ov_locationOther')}
+                    />
+                    <FieldError message={fe('ov_locationOther')} />
+                  </>
+                )}
               </div>
               <div className={styles.f} style={{ flex: '1 1 40%' }}>
                 <label className={styles.label}>Visit type *</label>
-                <RadioRow name="ov_visitType" options={['Routine oversight', 'Quarterly review']} />
+                <RadioRow name="ov_visitType" error={fe('ov_visitType')} onPick={() => clearFieldError('ov_visitType')} options={['Routine oversight', 'Quarterly review']} />
               </div>
             </div>
 
@@ -675,12 +1038,18 @@ export default function OversightNotePage() {
                 <label className={styles.label} htmlFor="q11_nurseName">
                   RN name *
                 </label>
+                {/* The signed-in RN, from the staff profile; never typed. */}
                 <input
                   className={styles.input}
                   id="q11_nurseName"
-                  readOnly={isNurse}
+                  readOnly
+                  tabIndex={-1}
+                  title="Locked to your staff profile."
+                  style={{ background: '#f1f5f9', color: '#334155', cursor: 'not-allowed' }}
+                  aria-invalid={!!fe('q11_nurseName')}
                   {...register('q11_nurseName')}
                 />
+                <FieldError message={fe('q11_nurseName')} />
               </div>
               <div className={styles.f} style={{ flex: '1 1 35%' }}>
                 <label className={styles.label}>Credential</label>
@@ -694,13 +1063,33 @@ export default function OversightNotePage() {
             <span className={styles.sectionLabel}>1. INDIVIDUAL STATUS AND OBSERVATIONS</span>
             <Area
               id="ov_generalCondition"
+              error={fe('ov_generalCondition')}
               label="General condition and any changes since last visit:"
               register={register}
               required
               rows={3}
             />
+            {/* Vital signs: the shift note's block, unchanged (the owner's rule:
+                every form captures vitals the same way). DBHDD 02-808 A.1.a.ii
+                requires a monthly face-to-face physical assessment with
+                objective data. */}
+            <VitalSignsFields
+              register={register}
+              watch={watch}
+              setValue={setValue}
+              ageStr={String(watch('q5_ageYears') || '')}
+              dob={String(watch('q4_dateofBirth') || '')}
+              required={vitalsRequired}
+              notObtainedReason
+              bpNotObtainedReason={bpRequired}
+              bpOptional={!bpRequired}
+              details
+              errorFor={fe}
+            />
+            <VitalsRecheckSection register={register} watch={watch} setValue={setValue} />
             <Area
               id="ov_interactions"
+              error={fe('ov_interactions')}
               label="Conversations, interactions, and the individual's responses during this visit:"
               register={register}
               required
@@ -709,6 +1098,7 @@ export default function OversightNotePage() {
             />
             <Area
               id="ov_concerns"
+              error={fe('ov_concerns')}
               label="Concerns voiced by the individual, family, or staff:"
               register={register}
             />
@@ -722,6 +1112,8 @@ export default function OversightNotePage() {
                 <label className={styles.label}>HCP reviewed *</label>
                 <RadioRow
                   name="ov_hcpStatus"
+                  error={fe('ov_hcpStatus')}
+                  onPick={() => clearFieldError('ov_hcpStatus')}
                   options={['Current; reflects present condition', 'Updates needed (describe in notes)']}
                 />
               </div>
@@ -731,6 +1123,8 @@ export default function OversightNotePage() {
                 <label className={styles.label}>Staff trained on the HCP before implementation *</label>
                 <RadioRow
                   name="ov_hcpStaffTrained"
+                  error={fe('ov_hcpStaffTrained')}
+                  onPick={() => clearFieldError('ov_hcpStaffTrained')}
                   options={['Yes; training dates verified in record', 'Training needed', 'N/A']}
                 />
               </div>
@@ -740,10 +1134,10 @@ export default function OversightNotePage() {
                 <label className={styles.label}>
                   Detailed teaching plan and skills checklist for proxy caregivers
                 </label>
-                <RadioRow name="ov_proxyPlan" options={['In place', 'Needed', 'N/A']} />
+                <RadioRow name="ov_proxyPlan" error={fe('ov_proxyPlan')} onPick={() => clearFieldError('ov_proxyPlan')} options={['In place', 'Needed', 'N/A']} />
               </div>
             </div>
-            <Area id="ov_hcpNotes" label="HCP notes:" register={register} />
+            <Area id="ov_hcpNotes" error={fe('ov_hcpNotes')} label="HCP notes:" register={register} />
           </div>
 
           {/* 3. ORDERS & MEDICATIONS */}
@@ -755,7 +1149,7 @@ export default function OversightNotePage() {
                   Current physician order or prescription verified for EVERY medication (each dated
                   within the last 12 months) *
                 </label>
-                <RadioRow name="ov_ordersVerified" options={['Yes', 'No', 'N/A (no medications)']} />
+                <RadioRow name="ov_ordersVerified" error={fe('ov_ordersVerified')} onPick={() => clearFieldError('ov_ordersVerified')} options={withLegacyNo(ORDERS_VERIFIED_OPTIONS, 'ov_ordersVerified')} />
               </div>
             </div>
             <div className={styles.row}>
@@ -763,6 +1157,8 @@ export default function OversightNotePage() {
                 <label className={styles.label}>Orders needing renewal</label>
                 <RadioRow
                   name="ov_ordersRenewals"
+                  error={fe('ov_ordersRenewals')}
+                  onPick={() => clearFieldError('ov_ordersRenewals')}
                   options={['None needed', 'Identified and requested (list in notes)']}
                 />
               </div>
@@ -772,13 +1168,13 @@ export default function OversightNotePage() {
                 <label className={styles.label}>
                   MAR reviewed for accuracy and completion against each physician order *
                 </label>
-                <RadioRow name="ov_marReviewed" options={['Yes', 'No', 'N/A (no MAR)']} />
+                <RadioRow name="ov_marReviewed" error={fe('ov_marReviewed')} onPick={() => clearFieldError('ov_marReviewed')} options={withLegacyNo(MAR_REVIEWED_OPTIONS, 'ov_marReviewed')} />
               </div>
             </div>
             <div className={styles.row}>
               <div className={styles.f} style={{ flex: '1 1 100%' }}>
                 <label className={styles.label}>Medications filled and refilled timely; no gaps</label>
-                <RadioRow name="ov_refillsTimely" options={['Yes', 'Concern (describe in notes)', 'N/A']} />
+                <RadioRow name="ov_refillsTimely" error={fe('ov_refillsTimely')} onPick={() => clearFieldError('ov_refillsTimely')} options={['Yes', 'Concern (describe in notes)', 'N/A']} />
               </div>
             </div>
             <div className={styles.row}>
@@ -786,6 +1182,8 @@ export default function OversightNotePage() {
                 <label className={styles.label}>Side effects and effectiveness monitored</label>
                 <RadioRow
                   name="ov_sideEffects"
+                  error={fe('ov_sideEffects')}
+                  onPick={() => clearFieldError('ov_sideEffects')}
                   options={['Monitored; none observed', 'Concern communicated to physician', 'N/A']}
                 />
               </div>
@@ -796,13 +1194,15 @@ export default function OversightNotePage() {
                   Adaptive equipment / protective device orders current, with rationale and
                   instructions; use still justified *
                 </label>
-                <RadioRow name="ov_equipOrders" options={['Yes', 'No', 'N/A (no adaptive equipment)']} />
+                <RadioRow name="ov_equipOrders" error={fe('ov_equipOrders')} onPick={() => clearFieldError('ov_equipOrders')} options={['Yes', 'No', 'N/A (no adaptive equipment)']} />
               </div>
             </div>
             <Area
               id="ov_medsNotes"
-              label="Medication and order notes (renewals requested, gaps found, physician contacts):"
+              error={fe('ov_medsNotes')}
+              label="Medication and order notes (renewals requested, discrepancies found and what was requested from whom, physician contacts):"
               register={register}
+              required={isRev3 && (medReviewNeedsNotes(radioState.ov_ordersVerified) || medReviewNeedsNotes(radioState.ov_marReviewed))}
             />
           </div>
 
@@ -847,6 +1247,8 @@ export default function OversightNotePage() {
                 </label>
                 <RadioRow
                   name="ov_preventiveReviewed"
+                  error={fe('ov_preventiveReviewed')}
+                  onPick={() => clearFieldError('ov_preventiveReviewed')}
                   options={['Reviewed; current or requested', 'Gaps identified (describe in notes)']}
                 />
               </div>
@@ -856,7 +1258,7 @@ export default function OversightNotePage() {
                 <label className={styles.label}>
                   AIMS assessment within the last 6 months (antipsychotic medication) *
                 </label>
-                <RadioRow name="ov_aims" options={['Completed', 'Due (requested)', 'N/A']} />
+                <RadioRow name="ov_aims" error={fe('ov_aims')} onPick={() => clearFieldError('ov_aims')} options={['Completed', 'Due (requested)', 'N/A']} />
               </div>
             </div>
             <div className={styles.row}>
@@ -864,11 +1266,13 @@ export default function OversightNotePage() {
                 <label className={styles.label}>Hospitalization or ER visit since last visit *</label>
                 <RadioRow
                   name="ov_hospitalization"
+                  error={fe('ov_hospitalization')}
+                  onPick={() => clearFieldError('ov_hospitalization')}
                   options={['None', 'Yes; discharge follow-up completed', 'Yes; follow-up in progress']}
                 />
               </div>
             </div>
-            <Area id="ov_apptsNotes" label="Appointment notes:" register={register} />
+            <Area id="ov_apptsNotes" error={fe('ov_apptsNotes')} label="Appointment notes:" register={register} />
           </div>
 
           {/* 5. HEALTH DATA */}
@@ -879,16 +1283,16 @@ export default function OversightNotePage() {
                 <label className={styles.label}>
                   Tracking logs reviewed this month (seizure, bowel, intake/output, other per HCP) *
                 </label>
-                <RadioRow name="ov_logsReviewed" options={['Yes', 'N/A (no logs in place)']} />
+                <RadioRow name="ov_logsReviewed" error={fe('ov_logsReviewed')} onPick={() => clearFieldError('ov_logsReviewed')} options={['Yes', 'N/A (no logs in place)']} />
               </div>
             </div>
             <div className={styles.row}>
               <div className={styles.f} style={{ flex: '1 1 100%' }}>
                 <label className={styles.label}>HRST *</label>
-                <RadioRow name="ov_hrst" options={['Current', 'Updated this visit', 'N/A']} />
+                <RadioRow name="ov_hrst" error={fe('ov_hrst')} onPick={() => clearFieldError('ov_hrst')} options={['Current', 'Updated this visit', 'N/A']} />
               </div>
             </div>
-            <Area id="ov_dataFindings" label="Findings / trends:" register={register} />
+            <Area id="ov_dataFindings" error={fe('ov_dataFindings')} label="Findings / trends:" register={register} />
           </div>
 
           {/* 6. EDUCATION */}
@@ -933,9 +1337,10 @@ export default function OversightNotePage() {
                 <input type="checkbox" name="ov_educationRecipients" value="Staff" /> Staff
               </label>
             </div>
-            <Area id="ov_educationOther" label="Other topics / details:" register={register} topGap />
+            <Area id="ov_educationOther" error={fe('ov_educationOther')} label="Other topics / details:" register={register} topGap />
             <Area
               id="ov_educationResponse"
+              error={fe('ov_educationResponse')}
               label="Individual's response / understanding:"
               register={register}
               required
@@ -948,6 +1353,7 @@ export default function OversightNotePage() {
             <span className={styles.sectionLabel}>7. CHOICE AND PERSON-CENTERED CARE</span>
             <Area
               id="ov_choicesMade"
+              error={fe('ov_choicesMade')}
               label="Choices offered, and choices the individual made or declined this visit:"
               register={register}
               required
@@ -955,11 +1361,13 @@ export default function OversightNotePage() {
             />
             <Area
               id="ov_preferencesHonored"
+              error={fe('ov_preferencesHonored')}
               label="How known preferences were honored; strengths observed:"
               register={register}
             />
             <Area
               id="ov_goalsSupport"
+              error={fe('ov_goalsSupport')}
               label="Support toward the individual's health-related goals, hopes, and dreams:"
               register={register}
             />
@@ -970,6 +1378,7 @@ export default function OversightNotePage() {
             <span className={styles.sectionLabel}>8. GOAL PROGRESS</span>
             <Area
               id="ov_goalProgress"
+              error={fe('ov_goalProgress')}
               label="Progress on HCP / plan of care goals observed this visit:"
               register={register}
               required
@@ -979,12 +1388,15 @@ export default function OversightNotePage() {
                 <label className={styles.label}>Quarterly review *</label>
                 <RadioRow
                   name="ov_quarterly"
+                  error={fe('ov_quarterly')}
+                  onPick={() => clearFieldError('ov_quarterly')}
                   options={['Completed this visit', 'Not due this visit']}
                 />
               </div>
             </div>
             <Area
               id="ov_quarterlySummary"
+              error={fe('ov_quarterlySummary')}
               label="Quarterly data summary (data reviewed, trends, progress toward goals; required when completed this visit):"
               register={register}
               rows={3}
@@ -996,6 +1408,7 @@ export default function OversightNotePage() {
             <span className={styles.sectionLabel}>9. RECOMMENDATIONS, FOLLOW-UP, AND COMMUNICATION</span>
             <Area
               id="ov_actions"
+              error={fe('ov_actions')}
               label="Actions taken, orders or records requested, referrals made:"
               register={register}
               required
@@ -1015,6 +1428,7 @@ export default function OversightNotePage() {
             </div>
             <Area
               id="ov_nextVisit"
+              error={fe('ov_nextVisit')}
               label="Plan for next visit and target date:"
               register={register}
               required
@@ -1029,12 +1443,18 @@ export default function OversightNotePage() {
             <div className={styles.row}>
               <div className={styles.f} style={{ flex: '1 1 100%' }} id="q61_signature">
                 <label className={styles.label}>Sign below *</label>
-                <SignatureCanvas
-                  ref={sigRef}
-                  className={styles.signaturePad}
-                  initialSignature={initialSignature}
-                  onChange={(dataUrl) => setValue('q61_signature', dataUrl)}
-                />
+                <div style={fe('q61_signature') ? FIELD_ERROR_WRAP_STYLE : undefined}>
+                  <SignatureCanvas
+                    ref={sigRef}
+                    className={styles.signaturePad}
+                    initialSignature={initialSignature}
+                    onChange={(dataUrl) => {
+                      setValue('q61_signature', dataUrl);
+                      if (dataUrl) clearFieldError('q61_signature');
+                    }}
+                  />
+                </div>
+                <FieldError message={fe('q61_signature')} />
                 <div className={styles.signaturePadControls}>
                   <button
                     type="button"
@@ -1043,7 +1463,7 @@ export default function OversightNotePage() {
                       setValue('q61_signature', '');
                     }}
                   >
-                    Clear signature
+                    Clear Signature
                   </button>
                 </div>
               </div>
@@ -1055,8 +1475,27 @@ export default function OversightNotePage() {
               Missing required fields: {missing.join('; ')}
             </p>
           )}
+          {submitError && (
+            <p role="alert" style={{ color: '#b3261e', fontSize: 13, background: '#fdeaea', borderRadius: 6, padding: '8px 11px' }}>
+              {submitError}
+            </p>
+          )}
 
-          <div className={styles.navigationControls}>
+          <div className={styles.navigationControls} style={{ gap: 10, flexWrap: 'wrap' }}>
+            {isEditMode ? (
+              <button type="button" className={styles.navBtn} onClick={cancelAmend} disabled={submitting}>
+                Cancel changes
+              </button>
+            ) : (
+              <>
+                <button type="button" className={`${styles.navBtn} ${styles.navBtnDanger}`} onClick={() => setShowDiscard(true)} disabled={submitting || leaving}>
+                  Discard
+                </button>
+                <button type="button" className={styles.navBtn} onClick={saveAndExit} disabled={submitting || leaving}>
+                  {leaving ? 'Saving…' : 'Save & Exit'}
+                </button>
+              </>
+            )}
             <button
               type="submit"
               className={styles.submitBtn}
@@ -1074,41 +1513,81 @@ export default function OversightNotePage() {
         </div>
       </form>
 
+      {showDiscard && (
+        <div className={`${styles.confirmModal} ${styles.active}`} role="dialog" aria-modal="true" aria-label="Discard this oversight note">
+          <div className={styles.modalContent}>
+            <h2 style={{ color: '#1f2937', marginTop: 0 }}>Leave This Oversight Note?</h2>
+            <p style={{ color: '#555', lineHeight: 1.6 }}>
+              <strong>Save &amp; Exit</strong> keeps a draft you can resume from New Oversight Note.{' '}
+              <strong>Discard Note</strong> deletes everything entered so far, including the draft. Nothing is submitted
+              either way.
+            </p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <button type="button" className={styles.navBtn} onClick={() => setShowDiscard(false)} disabled={leaving}>
+                Keep Editing
+              </button>
+              <button type="button" className={styles.navBtn} onClick={saveAndExit} disabled={leaving}>
+                Save &amp; Exit
+              </button>
+              <button
+                type="button"
+                className={styles.submitBtn}
+                style={{ background: '#b3261e', borderColor: '#b3261e' }}
+                onClick={discardAndExit}
+                disabled={leaving}
+              >
+                {leaving ? 'Discarding…' : 'Discard Note'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showEditReason && (
         <div className={`${styles.confirmModal} ${styles.active}`}>
           <div className={styles.modalContent}>
-            <h2 style={{ color: '#7c3a00', marginTop: 0 }}>Why is this note being amended?</h2>
+            <h2 style={{ color: '#7c3a00', marginTop: 0 }}>Why Is This Note Being Amended?</h2>
             <p style={{ color: '#555', lineHeight: 1.6 }}>
               The reason is recorded in the note&apos;s audit history alongside what changed.
             </p>
-            <textarea
-              className={styles.textarea}
-              rows={3}
-              placeholder="e.g. corrected the visit time; added the physician's response"
-              onChange={(e) => {
-                editReasonRef.current = e.target.value;
-              }}
-            />
+            <div id="ov_editReason">
+              <textarea
+                className={styles.textarea}
+                rows={3}
+                placeholder="e.g. corrected the visit time; added the physician's response"
+                autoFocus
+                style={editReasonError ? FIELD_ERROR_STYLE : undefined}
+                aria-invalid={!!editReasonError}
+                onChange={(e) => {
+                  editReasonRef.current = e.target.value;
+                  if (editReasonError) setEditReasonError('');
+                }}
+              />
+              <FieldError message={editReasonError} />
+            </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
               <button
                 type="button"
                 className={styles.submitBtn}
                 onClick={() => {
                   if (!editReasonRef.current.trim()) {
-                    alert('Please enter a reason for the amendment.');
+                    setEditReasonError('Enter the reason for the amendment.');
+                    escortToField('ov_editReason');
                     return;
                   }
+                  setEditReasonError('');
                   setShowEditReason(false);
                   formRef.current?.requestSubmit();
                 }}
               >
-                Save amendment
+                Save Amendment
               </button>
               <button
                 type="button"
                 className={styles.navBtn}
                 onClick={() => {
                   editReasonRef.current = '';
+                  setEditReasonError('');
                   setShowEditReason(false);
                 }}
               >
@@ -1119,5 +1598,13 @@ export default function OversightNotePage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function OversightNotePage() {
+  return (
+    <ViewAsWriteBlock>
+      <OversightNotePageInner />
+    </ViewAsWriteBlock>
   );
 }

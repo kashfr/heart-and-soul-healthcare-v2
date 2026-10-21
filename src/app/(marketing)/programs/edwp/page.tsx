@@ -110,7 +110,7 @@ const services = [
     description: 'Support and training for family members serving as primary caregivers for their loved ones.',
   },
   {
-    title: 'Home-delivered Meals',
+    title: 'Home-Delivered Meals',
     description: 'Nutritionally balanced meals delivered to the home for individuals unable to prepare their own meals.',
   },
   {
@@ -192,6 +192,7 @@ export default function EDWPPage() {
         goalImage="/images/edwp-goal.png"
         goalImageAlt="Senior staying safely at home with CCSP and SOURCE services through the EDWP program in Georgia"
         imageAspectRatio="1/1"
+        extraCta={{ href: '/programs/edwp/consent', label: 'Sign the Consent Form' }}
       />
     </>
   );

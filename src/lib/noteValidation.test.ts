@@ -4,6 +4,7 @@ import {
   getIncompleteRequired,
   getDraftIncompleteRequired,
 } from './noteValidation';
+import { SHIFT_CHANGE_KEYS } from './shiftChange';
 
 // A fully-complete RN note as a flat map. Helpers below clone + mutate it.
 function completeRN(): Record<string, string> {
@@ -315,4 +316,59 @@ describe('QEPR rev-2 required fields', () => {
     expect(keys({ ...d, q2_program: '' })).not.toContain('q42_choicesMade');
   });
 
+});
+
+// --- Since your last shift (rev 3) ---
+const SC = SHIFT_CHANGE_KEYS;
+const SINCE_SECTION_KEYS = new Set<string>(Object.values(SC));
+
+/** Only the "since your last shift" issues, so the always-required Tab 1/7
+ *  fields (client name, signature, …) don't drown the assertions. */
+function sinceIssues(flat: Record<string, string>) {
+  return getIncompleteRequired(flat).filter((i) => SINCE_SECTION_KEYS.has(i.key));
+}
+const sinceKeys = (flat: Record<string, string>) => sinceIssues(flat).map((i) => i.key);
+
+describe('since-your-last-shift rules', () => {
+  it('requires all three Yes/No answers on a rev-3 note, for every credential', () => {
+    for (const cred of ['HHA', 'CNA', 'LPN', 'RN']) {
+      expect(sinceKeys({ q12_credential: cred, q1_formRev: '3' })).toEqual([SC.hospitalAdmission, SC.erUrgentCare, SC.medChange]);
+    }
+  });
+
+  it('does not depend on the program', () => {
+    for (const program of ['now-comp', 'gapp', 'edwp', 'icwp', '']) {
+      expect(sinceKeys({ q12_credential: 'RN', q1_formRev: '3', q2_program: program })).toHaveLength(3);
+    }
+  });
+
+  it('is satisfied by explicit answers and requires Details only once an answer is Yes', () => {
+    const allNo = { q12_credential: 'RN', q1_formRev: '3', [SC.hospitalAdmission]: 'No', [SC.erUrgentCare]: 'No', [SC.medChange]: 'No' };
+    expect(sinceKeys(allNo)).toEqual([]);
+    expect(sinceKeys({ ...allNo, [SC.medChange]: 'Yes' })).toEqual([SC.details]);
+    expect(sinceKeys({ ...allNo, [SC.medChange]: 'Yes', [SC.details]: 'Started amoxicillin per ER discharge 9/2.' })).toEqual([]);
+    // Whitespace-only details don't count.
+    expect(sinceKeys({ ...allNo, [SC.hospitalAdmission]: 'Yes', [SC.details]: '   ' })).toEqual([SC.details]);
+  });
+
+  it('never flags notes written before revision 3, so amending an old note is not blocked', () => {
+    expect(sinceKeys({ q12_credential: 'RN', q1_formRev: '2' })).toEqual([]);
+    expect(sinceKeys({ q12_credential: 'RN' })).toEqual([]);
+    // Even a stray Yes on an old note does not demand Details.
+    expect(sinceKeys({ q12_credential: 'RN', q1_formRev: '2', [SC.medChange]: 'Yes' })).toEqual([]);
+  });
+
+  it('reports the section on tab 2 with readable labels', () => {
+    const issues = sinceIssues({ q12_credential: 'HHA', q1_formRev: '3' });
+    expect(issues.every((i) => i.tab === 2 && i.tabName === 'Status & Vitals')).toBe(true);
+    expect(issues.map((i) => i.label)).toEqual([
+      'Since your last shift: hospital admission (Yes/No)',
+      'Since your last shift: urgent care or ER visit (Yes/No)',
+      'Since your last shift: medication started, changed, or stopped (Yes/No)',
+    ]);
+  });
+
+  it('leaves RN oversight visit notes alone (they have their own rules)', () => {
+    expect(getIncompleteRequired({ noteType: 'rn-oversight-visit', q1_formRev: '3', q12_credential: 'RN' })).toEqual([]);
+  });
 });
