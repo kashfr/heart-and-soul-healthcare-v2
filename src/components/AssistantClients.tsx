@@ -78,21 +78,25 @@ const clientUrl = (id: string) => `/api/assistant/clients/${encodeURIComponent(i
 const message = (err: unknown) => err instanceof Error ? err.message : 'Could not complete this request. Please try again.';
 
 /** Keep the VA workspace separate so the clinical dashboard never mounts or
- * starts clinical reads. The API checks the live grant again for every call. */
+ * starts clinical reads. The API checks the live grant again for every call.
+ * Under View As the effective identity is the previewed assistant, so the
+ * gate, the roster and the client pages render exactly her access: the
+ * reads carry her uid to the server (authedFetch), which re-derives her grant
+ * from her live profile, and every write is refused on both sides. */
 function AssistantGate({ children }: { children: ReactNode }) {
   const { uid, role, isViewingAs } = useEffectiveUser();
   const { settings, ready, refresh } = useSettings();
   useEffect(() => {
-    if (isViewingAs) return;
     const updateAccess = () => { void refresh(); };
     window.addEventListener('focus', updateAccess);
     return () => window.removeEventListener('focus', updateAccess);
-  }, [isViewingAs, refresh]);
+  }, [refresh]);
   const grant = getAssistantClientGrant(settings.assistantClients, uid, role);
   if (!ready) return <div style={page}><div style={card}>Loading client access…</div></div>;
-  if (isViewingAs) return <div style={page}><div style={card}>Client access preview is unavailable in View As. Exit View As to manage client access in Settings.</div></div>;
   if (!grant) {
-    return <div style={page}><div style={card}>Client access has not been enabled for your account. Ask your administrator to enable Assistant Client Access in Settings.</div></div>;
+    return <div style={page}><div style={card}>{isViewingAs
+      ? 'Client access has not been enabled for this assistant. Exit View As and enable it under Settings > Assistant Client Access.'
+      : 'Client access has not been enabled for your account. Ask your administrator to enable Assistant Client Access in Settings.'}</div></div>;
   }
   // A settings refresh that narrows scope clears any already-loaded client
   // immediately, even before the server rejects the next request.
@@ -147,7 +151,13 @@ export function AssistantClientDetails({ patientId }: { patientId: string }) {
   return <AssistantGate><Details key={patientId} patientId={patientId} /></AssistantGate>;
 }
 
+const VIEW_AS_HINT = 'Read-only in View As. Exit View As to make changes.';
+
 function Details({ patientId }: { patientId: string }) {
+  // Write affordances stay visible under View As (the admin is here to see
+  // what the assistant sees) but inert: authedFetch refuses the request and
+  // the server refuses it again, so a disabled control is the honest state.
+  const { isViewingAs } = useEffectiveUser();
   const [data, setData] = useState<DetailData | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -193,7 +203,7 @@ function Details({ patientId }: { patientId: string }) {
           <header style={card}>
             <div style={{ ...row, justifyContent: 'space-between' }}>
               <div><h1 style={heading}>{data.client.name}</h1><p style={muted}>DOB {formatDateUS(data.client.dob)} · {getProgram(data.client.program)?.label || data.client.program}</p></div>
-              {data.grant.editInfo && !editing && <button className={btn} onClick={() => setEditing(true)}><Pencil size={15} /> Edit client information</button>}
+              {data.grant.editInfo && !editing && <button className={btn} disabled={isViewingAs} title={isViewingAs ? VIEW_AS_HINT : undefined} onClick={() => setEditing(true)}><Pencil size={15} /> Edit client information</button>}
             </div>
             <div style={{ ...row, marginTop: 12 }}>
               <span style={muted}>Medicaid ID</span><strong style={{ fontSize: 18, color: NAVY, overflowWrap: 'anywhere' }}>{data.client.medicaidId || 'Not on file'}</strong>
@@ -221,7 +231,7 @@ function Details({ patientId }: { patientId: string }) {
           </section>}
           <section style={{ ...card, marginTop: 18 }}>
             <h2 style={subheading}>Documents</h2>
-            {data.grant.uploadDocuments && <UploadForm patientId={patientId} onError={accessError} onUploaded={(document) => {
+            {data.grant.uploadDocuments && <UploadForm patientId={patientId} disabled={isViewingAs} onError={accessError} onUploaded={(document) => {
               setData((current) => current ? { ...current, documents: [document, ...current.documents] } : null);
               setNotice('Document uploaded.');
             }} />}
@@ -311,9 +321,9 @@ function InfoForm({ client, patientId, onCancel, onSaved, onError }: {
   </form>;
 }
 
-function UploadForm({ patientId, onUploaded, onError }: { patientId: string; onUploaded: (doc: DocumentInfo) => void; onError: (err: unknown) => void }) {
+function UploadForm({ patientId, disabled, onUploaded, onError }: { patientId: string; disabled?: boolean; onUploaded: (doc: DocumentInfo) => void; onError: (err: unknown) => void }) {
   const [open, setOpen] = useState(false);
-  if (!open) return <button className={btnPrimary} onClick={() => setOpen(true)}><FileUp size={15} /> Upload documents</button>;
+  if (!open) return <button className={btnPrimary} disabled={disabled} title={disabled ? VIEW_AS_HINT : undefined} onClick={() => setOpen(true)}><FileUp size={15} /> Upload documents</button>;
   return <div style={contactCard}><BulkDocumentUpload onClose={() => setOpen(false)} upload={async (item) => {
     const body = new FormData(); body.set('file', item.file); body.set('title', item.title); body.set('category', item.category); body.set('docDate', item.docDate);
     try {
