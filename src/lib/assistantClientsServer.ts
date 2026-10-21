@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { FieldValue, type DocumentSnapshot, type Transaction } from 'firebase-admin/firestore';
 import { adminBucket, adminDb } from './firebaseAdmin';
 import { AdminAuthError, requireRole, type AuthedCaller } from './adminAuthGuard';
+import type { UserProfile } from './auth';
 import { getServerSettings } from './settingsServer';
 import { mergeWithDefaults } from './settings';
 import { getAssistantClientGrant, type AssistantClientGrant } from './assistantClientAccess';
@@ -19,7 +20,19 @@ const DIRECTORY_FIELDS = ['name', 'dob', 'street', 'city', 'state', 'zip'] as co
 const PROFILE_FIELDS = ['medicaidId', 'physicianName', 'physicianPhone', 'physicianFax'] as const;
 const CONTACT_FIELDS = ['id', 'role', 'name', 'relationship', 'phone', 'email', 'address'] as const;
 type Data = Record<string, unknown>;
-export interface AssistantContext { caller: AuthedCaller; grant: AssistantClientGrant }
+export interface AssistantContext {
+  /** The assistant whose grant is in force: the signed-in VA, or the VA an
+   *  admin is previewing through View As. */
+  caller: AuthedCaller;
+  grant: AssistantClientGrant;
+  /** Set when an admin is previewing an assistant's workspace. Every write
+   *  refuses while this is present: the preview is read-only by contract. */
+  preview?: { adminUid: string };
+}
+/** Matches VIEW_AS_HEADER in authedFetch (kept apart: that module imports the
+ *  browser Firebase SDK, which has no place in a server-only file). */
+const VIEW_AS_HEADER = 'x-view-as';
+const VIEW_AS_READ_ONLY = 'View As is read-only. Exit View As to make changes.';
 export class AssistantClientError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
@@ -29,13 +42,30 @@ export function assertAssistantId(id: string): void {
 }
 
 export async function requireAssistant(request: Request): Promise<AssistantContext> {
-  const caller = await requireRole(request, ['va']);
+  const signedIn = await requireRole(request, ['va', 'admin']);
+  let caller: AuthedCaller = signedIn;
+  let preview: AssistantContext['preview'];
+  if (signedIn.role === 'admin') {
+    // An admin's own token can never be an assistant, so the only way in is
+    // View As: the browser names the previewed assistant and the server
+    // re-derives everything (role, active, grant) from that person's live
+    // profile, exactly as it would for the assistant herself.
+    const targetUid = (request.headers.get(VIEW_AS_HEADER) || '').trim();
+    if (!targetUid) throw new AdminAuthError(403, 'This workspace belongs to assistants. Use View As to preview an assistant\'s client access.');
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(targetUid) || targetUid === signedIn.uid) throw new AdminAuthError(403, 'That account cannot be previewed here.');
+    if (request.method !== 'GET' && request.method !== 'HEAD') throw new AdminAuthError(403, VIEW_AS_READ_ONLY);
+    const snap = await adminDb().collection('users').doc(targetUid).get();
+    const profile = snap.data() as UserProfile | undefined;
+    if (!profile || profile.role !== 'va') throw new AdminAuthError(403, 'That account is not an assistant, so there is no assistant client access to preview.');
+    caller = { uid: targetUid, email: profile.email ?? null, role: profile.role, profile };
+    preview = { adminUid: signedIn.uid };
+  }
   // Older shared guards tolerate profiles missing active; delegated access does not.
-  if (caller.profile.active !== true) throw new AdminAuthError(403, 'Your account is not active.');
+  if (caller.profile.active !== true) throw new AdminAuthError(403, preview ? 'That assistant\'s account is not active.' : 'Your account is not active.');
   const settings = await getServerSettings();
   const grant = getAssistantClientGrant(settings.assistantClients, caller.uid, caller.role);
-  if (!grant) throw new AdminAuthError(403, 'Client assistance access has not been enabled for your account.');
-  return { caller, grant };
+  if (!grant) throw new AdminAuthError(403, preview ? 'Client access has not been enabled for that assistant. Enable it under Settings > Assistant Client Access.' : 'Client assistance access has not been enabled for your account.');
+  return preview ? { caller, grant, preview } : { caller, grant };
 }
 function assertScope(grant: AssistantClientGrant, patient: Data | undefined): asserts patient is Data {
   if (!patient || (grant.scope !== 'all' && patient.program !== 'gapp')) {
@@ -148,6 +178,7 @@ export function validateAdministrativePatch(input: unknown): { revision: string;
 }
 export async function updateAssistantClient(context: AssistantContext, id: string, input: unknown) {
   assertAssistantId(id);
+  if (context.preview) throw new AssistantClientError(403, VIEW_AS_READ_ONLY);
   if (!context.grant.editInfo) throw new AssistantClientError(403, 'Editing client information is not enabled for your account.');
   const patch = validateAdministrativePatch(input);
   const db = adminDb(), patientRef = db.collection('patients').doc(id);
@@ -201,6 +232,7 @@ export function validateAssistantUpload(file: File, title: string, category: str
 }
 export async function uploadAssistantDocument(context: AssistantContext, id: string, file: File, input: { title: string; category: string; docDate: string }) {
   assertAssistantId(id);
+  if (context.preview) throw new AssistantClientError(403, VIEW_AS_READ_ONLY);
   if (!context.grant.uploadDocuments) throw new AssistantClientError(403, 'Document uploads are not enabled for your account.');
   const details = validateAssistantUpload(file, input.title, input.category, input.docDate);
   const db = adminDb(), patientRef = db.collection('patients').doc(id);

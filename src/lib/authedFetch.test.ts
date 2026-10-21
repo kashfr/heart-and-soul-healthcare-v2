@@ -16,6 +16,18 @@ describe('authedFetch upload headers', () => {
     expect(init.headers.get('Authorization')).toBe('Bearer test-token');
     expect(init.body).toBe(body);
   });
+  it('names the previewed staff member on View As reads only', async () => {
+    await authedFetch('/api/assistant/clients');
+    expect(fetchMock.mock.calls[0][1].headers.get('X-View-As')).toBeNull();
+    fetchMock.mockClear();
+    sessionStorage.setItem('view-as-target', JSON.stringify({ uid: 'assistant-1', displayName: 'Rosita', credential: null, role: 'va' }));
+    await authedFetch('/api/assistant/clients');
+    expect(fetchMock.mock.calls[0][1].headers.get('X-View-As')).toBe('assistant-1');
+    expect(fetchMock.mock.calls[0][1].headers.get('Authorization')).toBe('Bearer test-token');
+    fetchMock.mockClear();
+    await authedFetch('/api/progress-note/pdf', { method: 'POST', body: '{}' });
+    expect(fetchMock.mock.calls[0][1].headers.get('X-View-As')).toBeNull();
+  });
   it('preserves JSON defaults and refuses multipart writes during View As', async () => {
     await authedFetch('/api/test', { method: 'PATCH', body: '{}' });
     expect(fetchMock.mock.calls[0][1].headers.get('Content-Type')).toBe('application/json');

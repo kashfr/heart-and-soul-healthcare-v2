@@ -30,6 +30,20 @@ Document uploads always create new files and
 metadata; the assistant cannot replace, archive, move, or delete existing files.
 Downloads are authenticated byte responses with no shared token URL.
 
+## Admin preview through View As
+
+An admin previewing an assistant through View As sees the assistant's own
+Clients workspace: the roster, each client page, and documents, scoped by the
+assistant's live grant. The admin's token can never be an assistant, so
+`authedFetch` adds an `X-View-As` header naming the previewed uid on GET and
+HEAD requests only, and `requireAssistant` honors it only from an active admin.
+The server reloads the target's profile (must be an active `va`) and
+re-derives the grant from current settings, exactly as it would for the
+assistant herself. Every write path refuses while a preview context is
+present, in addition to the browser-side View As refusal, and the Edit and
+Upload controls render disabled with a read-only hint. Without a grant the
+preview says so and points to Settings > Assistant Client Access.
+
 ## Validation and deployment
 
 Run TypeScript, Vitest, and the production build. Run

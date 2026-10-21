@@ -66,12 +66,38 @@ beforeEach(() => {
 describe('assistant client authorization and projections', () => {
   it('requires active VA and checks fresh permission on every request', async () => {
     expect((await requireAssistant(new Request('https://example.com'))).grant).toEqual(grant);
-    expect(requireRole).toHaveBeenCalledWith(expect.any(Request), ['va']);
+    expect(requireRole).toHaveBeenCalledWith(expect.any(Request), ['va', 'admin']);
     vi.mocked(getServerSettings).mockResolvedValue({ ...DEFAULT_SETTINGS, assistantClients: { grants: [] } });
     await expect(requireAssistant(new Request('https://example.com'))).rejects.toMatchObject({ status: 403 });
     vi.mocked(getServerSettings).mockResolvedValue(settings());
     vi.mocked(requireRole).mockResolvedValue({ ...caller, profile: { ...caller.profile, active: undefined } } as unknown as AuthedCaller);
     await expect(requireAssistant(new Request('https://example.com'))).rejects.toMatchObject({ status: 403 });
+  });
+  it('lets an admin preview an assistant read-only through the View As header, from her live profile', async () => {
+    const admin = { uid: 'owner', role: 'admin', email: 'owner@example.com', profile: { active: true, role: 'admin', displayName: 'Owner' } } as AuthedCaller;
+    vi.mocked(requireRole).mockResolvedValue(admin);
+    const preview = (method = 'GET', uid = 'assistant') => new Request('https://example.com', { method, headers: { 'X-View-As': uid } });
+    // No header: an admin token on its own is not an assistant.
+    await expect(requireAssistant(new Request('https://example.com'))).rejects.toMatchObject({ status: 403 });
+    const context = await requireAssistant(preview());
+    expect(context).toEqual({ caller: expect.objectContaining({ uid: 'assistant', role: 'va' }), grant, preview: { adminUid: 'owner' } });
+    expect((await listAssistantClients(context)).clients.map(c => c.id)).toEqual(['gapp1']);
+    // Reads only: the header never unlocks a write, on the guard or the services.
+    await expect(requireAssistant(preview('PATCH'))).rejects.toMatchObject({ status: 403 });
+    await expect(updateAssistantClient(context, 'gapp1', await patch({ name: 'Renamed' }))).rejects.toMatchObject({ status: 403 });
+    await expect(uploadAssistantDocument(context, 'gapp1', new File(['x'], 'a.pdf', { type: 'application/pdf' }), { title: 'T', category: 'Other', docDate: '' })).rejects.toMatchObject({ status: 403 });
+    expect(fake.writes).toEqual([]);
+    expect(fake.object.save).not.toHaveBeenCalled();
+    // The previewed account must be a live, active, granted assistant.
+    await expect(requireAssistant(preview('GET', 'owner'))).rejects.toMatchObject({ status: 403 });
+    await expect(requireAssistant(preview('GET', 'nobody'))).rejects.toMatchObject({ status: 403 });
+    fake.records.set('users/nurse', { active: true, role: 'nurse', displayName: 'Nurse' });
+    await expect(requireAssistant(preview('GET', 'nurse'))).rejects.toMatchObject({ status: 403 });
+    fake.records.set('users/assistant', { ...caller.profile, active: false });
+    await expect(requireAssistant(preview())).rejects.toMatchObject({ status: 403 });
+    fake.records.set('users/assistant', caller.profile as unknown as Record<string, unknown>);
+    vi.mocked(getServerSettings).mockResolvedValue({ ...DEFAULT_SETTINGS, assistantClients: { grants: [] } });
+    await expect(requireAssistant(preview())).rejects.toMatchObject({ status: 403, message: expect.stringContaining('Assistant Client Access') });
   });
   it('lists only GAPP clients and never projects diagnoses, clinical instructions or contact notes', async () => {
     expect((await listAssistantClients(context)).clients.map(c => c.id)).toEqual(['gapp1']);

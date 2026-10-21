@@ -32,17 +32,35 @@ beforeEach(() => {
 });
 
 describe('assistant client workspace', () => {
-  it('does not load clients for an ungranted assistant or a View As session', () => {
+  it('does not load clients for an ungranted assistant, and tells a previewing admin where to grant access', () => {
     state.enabled = false;
     const { unmount } = render(<AssistantClientsRoster />);
-    expect(screen.getByText(/Client access has not been enabled/)).toBeInTheDocument();
+    expect(screen.getByText(/Client access has not been enabled for your account/)).toBeInTheDocument();
     expect(state.fetch).not.toHaveBeenCalled();
     unmount();
-    state.enabled = true;
     state.user.isViewingAs = true;
     render(<AssistantClientDetails patientId="client-1" />);
-    expect(screen.getByText(/preview is unavailable in View As/)).toBeInTheDocument();
+    expect(screen.getByText(/has not been enabled for this assistant.*Settings > Assistant Client Access/)).toBeInTheDocument();
     expect(state.fetch).not.toHaveBeenCalled();
+  });
+
+  it('renders the assistant\'s roster and client under View As with the write controls inert', async () => {
+    state.user.isViewingAs = true;
+    state.fetch.mockResolvedValueOnce(response({ clients: [client], grant: state.grant }));
+    const { unmount } = render(<AssistantClientsRoster />);
+    expect(await screen.findByRole('link', { name: /Test Client/ })).toHaveAttribute('href', '/admin/clients/client-1');
+    unmount();
+    state.fetch.mockResolvedValueOnce(response(detail()));
+    render(<AssistantClientDetails patientId="client-1" />);
+    expect(await screen.findByText('123456789012')).toBeInTheDocument();
+    const edit = screen.getByRole('button', { name: 'Edit client information' });
+    const upload = screen.getByRole('button', { name: 'Upload documents' });
+    expect(edit).toBeDisabled();
+    expect(upload).toBeDisabled();
+    expect(edit).toHaveAttribute('title', expect.stringMatching(/Read-only in View As/));
+    fireEvent.click(edit);
+    expect(screen.queryByRole('button', { name: 'Save client information' })).not.toBeInTheDocument();
+    expect(state.fetch).toHaveBeenCalledTimes(2);
   });
 
   it('shows granted clients with US dates and the ordinary client link', async () => {
