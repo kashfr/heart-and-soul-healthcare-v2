@@ -131,6 +131,10 @@ function ClientsRosterInner() {
   const [clinical, setClinical] = useState<PatientClinical>({});
   // Vitals baselines as typed (text), parsed and validated on save.
   const [baselineDraft, setBaselineDraft] = useState<BaselineDraft>(() => baselinesToDraft());
+  // True while that sub-record is being fetched for the edit modal; the
+  // clinical inputs are disabled until it lands so nothing typed early gets
+  // clobbered when the fetch resolves.
+  const [clinicalLoading, setClinicalLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<ClientField, string>>>({});
@@ -247,20 +251,28 @@ function ClientsRosterInner() {
 
   // Load the sensitive clinical sub-record when editing; reset to blank for a
   // brand-new patient (it gets written after the patient doc is created).
+  // The clinical fields stay disabled until the fetch lands: on a slow
+  // connection an enabled-but-empty Allergies box invites typing over a record
+  // the editor hasn't seen yet, and the resolving fetch would wipe their input.
+  // They're also blanked first, because Cancel doesn't clear them — without
+  // this, the previously opened client's record shows under this client's
+  // name until the fetch resolves.
   useEffect(() => {
     if (!formOpen) return;
+    setClinical({});
+    setBaselineDraft(baselinesToDraft());
     if (!editingId) {
-      setClinical({});
-      setBaselineDraft(baselinesToDraft());
+      setClinicalLoading(false);
       return;
     }
     let cancelled = false;
+    setClinicalLoading(true);
     (async () => {
       const data = await getPatientClinical(editingId);
-      if (!cancelled) {
-        setClinical(data ?? {});
-        setBaselineDraft(baselinesToDraft(data?.vitalsBaselines));
-      }
+      if (cancelled) return;
+      setClinical(data ?? {});
+      setBaselineDraft(baselinesToDraft(data?.vitalsBaselines));
+      setClinicalLoading(false);
     })();
     return () => {
       cancelled = true;
@@ -463,8 +475,13 @@ function ClientsRosterInner() {
         savedId = await addPatient(formData as Patient);
         setPatients((prev) => [...prev, { ...(formData as Patient), id: savedId as string }]);
       }
-      // Persist the sensitive clinical fields to the care-team-gated sub-record.
-      if (savedId) {
+      // Persist the sensitive clinical fields to the care-team-gated
+      // sub-record — always the second write, after the patient doc. Skipped
+      // while the clinical fetch is still in flight: the fields were disabled,
+      // so there is nothing new to write, and clinicalToSave always carries
+      // vitalsBaselines + vitalsBaselinesNote, so writing the blank
+      // placeholder would wipe the stored baselines.
+      if (savedId && !clinicalLoading) {
         await savePatientClinical(savedId, clinicalToSave);
       }
       showToast(`${formData.name} ${editingId ? 'updated' : 'added'}`);
@@ -882,6 +899,11 @@ function ClientsRosterInner() {
                 <div style={careTeamHelpStyle}>
                   The clinical fields below feed this client&apos;s Medication Administration Record and are visible only to staff and the client&apos;s assigned care team.
                 </div>
+                {clinicalLoading && (
+                  <div style={clinicalLoadingNoteStyle} role="status">
+                    Loading this client&apos;s clinical record… the fields below unlock once it arrives.
+                  </div>
+                )}
 
                 {/* Program gets its own full-width line (its option labels are
                     long); Service level + start date share the next row. */}
@@ -969,7 +991,8 @@ function ClientsRosterInner() {
                     <select
                       value={clinical.sex || ''}
                       onChange={(e) => setClinical((c) => ({ ...c, sex: e.target.value }))}
-                      style={selectStyle}
+                      disabled={clinicalLoading}
+                      style={{ ...selectStyle, ...(clinicalLoading ? clinicalBusyStyle : null) }}
                     >
                       <option value="">—</option>
                       <option value="Female">Female</option>
@@ -983,8 +1006,9 @@ function ClientsRosterInner() {
                   <textarea
                     value={clinical.allergies || ''}
                     onChange={(e) => setClinical((c) => ({ ...c, allergies: e.target.value }))}
-                    style={textareaStyle}
-                    placeholder="e.g., Penicillin (rash). Write NKDA if no known drug allergies."
+                    disabled={clinicalLoading}
+                    style={{ ...textareaStyle, ...(clinicalLoading ? clinicalBusyStyle : null) }}
+                    placeholder={clinicalLoading ? 'Loading…' : 'e.g., Penicillin (rash). Write NKDA if no known drug allergies.'}
                   />
                 </Field>
 
@@ -994,8 +1018,9 @@ function ClientsRosterInner() {
                       type="text"
                       value={clinical.physicianName || ''}
                       onChange={(e) => setClinical((c) => ({ ...c, physicianName: e.target.value }))}
-                      style={inputStyle}
-                      placeholder="Dr. Jane Smith"
+                      disabled={clinicalLoading}
+                      style={{ ...inputStyle, ...(clinicalLoading ? clinicalBusyStyle : null) }}
+                      placeholder={clinicalLoading ? 'Loading…' : 'Dr. Jane Smith'}
                     />
                   </Field>
                   <Field label="Physician phone">
@@ -1003,8 +1028,9 @@ function ClientsRosterInner() {
                       type="tel"
                       value={clinical.physicianPhone || ''}
                       onChange={(e) => setClinical((c) => ({ ...c, physicianPhone: formatUSPhone(e.target.value) }))}
-                      style={inputStyle}
-                      placeholder="(555) 123-4567"
+                      disabled={clinicalLoading}
+                      style={{ ...inputStyle, ...(clinicalLoading ? clinicalBusyStyle : null) }}
+                      placeholder={clinicalLoading ? 'Loading…' : '(555) 123-4567'}
                     />
                   </Field>
                 </div>
@@ -1015,8 +1041,9 @@ function ClientsRosterInner() {
                       type="tel"
                       value={clinical.physicianFax ? formatUSPhone(clinical.physicianFax) : ''}
                       onChange={(e) => setClinical((c) => ({ ...c, physicianFax: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
-                      style={inputStyle}
-                      placeholder="(555) 123-4568"
+                      disabled={clinicalLoading}
+                      style={{ ...inputStyle, ...(clinicalLoading ? clinicalBusyStyle : null) }}
+                      placeholder={clinicalLoading ? 'Loading…' : '(555) 123-4568'}
                     />
                   </Field>
                   <Field label="Medicaid ID">
@@ -1024,8 +1051,9 @@ function ClientsRosterInner() {
                       type="text"
                       value={clinical.medicaidId || ''}
                       onChange={(e) => setClinical((c) => ({ ...c, medicaidId: e.target.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 20) }))}
-                      style={inputStyle}
-                      placeholder="Member ID from the Medicaid card"
+                      disabled={clinicalLoading}
+                      style={{ ...inputStyle, ...(clinicalLoading ? clinicalBusyStyle : null) }}
+                      placeholder={clinicalLoading ? 'Loading…' : 'Member ID from the Medicaid card'}
                     />
                   </Field>
                 </div>
@@ -1034,8 +1062,9 @@ function ClientsRosterInner() {
                   <textarea
                     value={clinical.diet || ''}
                     onChange={(e) => setClinical((c) => ({ ...c, diet: e.target.value }))}
-                    style={textareaStyle}
-                    placeholder="e.g., Mechanical soft, thickened liquids, upright positioning"
+                    disabled={clinicalLoading}
+                    style={{ ...textareaStyle, ...(clinicalLoading ? clinicalBusyStyle : null) }}
+                    placeholder={clinicalLoading ? 'Loading…' : 'e.g., Mechanical soft, thickened liquids, upright positioning'}
                   />
                 </Field>
 
@@ -1067,7 +1096,8 @@ function ClientsRosterInner() {
                           aria-label={`${BASELINE_LABELS[k]} baseline low`}
                           value={baselineDraft[k]?.low ?? ''}
                           onChange={(e) => setBaselineDraft((d) => ({ ...d, [k]: { low: e.target.value, high: d[k]?.high ?? '' } }))}
-                          style={inputStyle}
+                          disabled={clinicalLoading}
+                          style={{ ...inputStyle, ...(clinicalLoading ? clinicalBusyStyle : null) }}
                           placeholder="age range"
                         />
                         <input
@@ -1077,7 +1107,8 @@ function ClientsRosterInner() {
                           aria-label={`${BASELINE_LABELS[k]} baseline high`}
                           value={baselineDraft[k]?.high ?? ''}
                           onChange={(e) => setBaselineDraft((d) => ({ ...d, [k]: { low: d[k]?.low ?? '', high: e.target.value } }))}
-                          style={inputStyle}
+                          disabled={clinicalLoading}
+                          style={{ ...inputStyle, ...(clinicalLoading ? clinicalBusyStyle : null) }}
                           placeholder="age range"
                         />
                       </React.Fragment>
@@ -1088,8 +1119,9 @@ function ClientsRosterInner() {
                       <input
                         value={clinical.vitalsBaselinesNote || ''}
                         onChange={(e) => setClinical((c) => ({ ...c, vitalsBaselinesNote: e.target.value }))}
-                        style={inputStyle}
-                        placeholder="e.g., care plan dated 03/2026; Dr. Patel order 08/12/2026"
+                        disabled={clinicalLoading}
+                        style={{ ...inputStyle, ...(clinicalLoading ? clinicalBusyStyle : null) }}
+                        placeholder={clinicalLoading ? 'Loading…' : 'e.g., care plan dated 03/2026; Dr. Patel order 08/12/2026'}
                       />
                     </Field>
                   </div>
@@ -1300,6 +1332,11 @@ const modalHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'ce
 const closeBtnStyle: React.CSSProperties = { background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#7f8c8d' };
 const inputStyle: React.CSSProperties = { padding: '10px 12px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit' };
 const textareaStyle: React.CSSProperties = { ...inputStyle, minHeight: 60, resize: 'vertical', lineHeight: 1.4 };
+// Clinical inputs while the sub-record fetch is in flight — visibly dimmed so
+// "disabled" reads as "still loading", not "not applicable". The flat
+// background also drops selectStyle's chevron, which is fine while disabled.
+const clinicalBusyStyle: React.CSSProperties = { background: '#f5f7fa', color: '#9aa4ae', cursor: 'wait' };
+const clinicalLoadingNoteStyle: React.CSSProperties = { fontSize: 12.5, color: '#7f8c8d', fontStyle: 'italic', marginBottom: 12 };
 const requiresMarRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, cursor: 'pointer' };
 const marBadgeStyle: React.CSSProperties = { display: 'inline-block', background: '#eef4fb', color: '#1a3a5c', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4, border: '1px solid #c8def5' };
 const seizureBadgeStyle: React.CSSProperties = { display: 'inline-block', background: '#ede9fe', color: '#4c1d95', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4, border: '1px solid #ddd6fe', whiteSpace: 'nowrap' };
