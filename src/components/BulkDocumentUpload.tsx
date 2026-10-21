@@ -4,16 +4,19 @@ import { parseUSDate } from '@/lib/usDateInput';
 import { DOC_CATEGORIES, type DocCategory } from '@/lib/docCategories';
 import { EMPTY_PERIOD_DRAFT, resolvePeriodDraft, type DocumentPeriodDraft } from '@/lib/documentPeriod';
 import { withSelectChevron } from '@/lib/selectChevron';
-import { btn, btnPrimary } from './buttons';
+import { btn, btnPrimary, btnSm } from './buttons';
 import DocumentPeriodFields from './DocumentPeriodFields';
 /** periodStart/periodEnd are ISO, or '' when the file is not tied to a period. */
 export type DocumentUploadItem = { id: string; file: File; title: string; category: DocCategory; docDate: string; periodStart: string; periodEnd: string };
 type Row = Omit<DocumentUploadItem, 'periodStart' | 'periodEnd'> & { period: DocumentPeriodDraft; status: 'ready' | 'uploading' | 'uploaded' | 'failed'; error?: string };
+/**
+ * One compact card per file: title, category, date, and the period covered.
+ * There is no separate "defaults" block: a newly chosen file inherits the
+ * previous file's category, date and period (a batch is usually alike), and
+ * with several files each card offers "Apply to all files" for its labeling.
+ */
 export default function BulkDocumentUpload({ upload, onClose, onComplete }: { upload: (item: DocumentUploadItem, progress: (pct: number) => void) => Promise<void>; onClose: () => void; onComplete?: () => void }) {
   const [rows, setRows] = useState<Row[]>([]);
-  const [category, setCategory] = useState<DocCategory>('Other');
-  const [date, setDate] = useState(new Date().toLocaleDateString('en-US'));
-  const [period, setPeriod] = useState<DocumentPeriodDraft>(EMPTY_PERIOD_DRAFT);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
@@ -23,8 +26,14 @@ export default function BulkDocumentUpload({ upload, onClose, onComplete }: { up
     if (rows.length + files.length > 20) { setError('Choose up to 20 files per batch.'); return; }
     const bad = files.find((file) => !file.size || file.size >= 20 * 1024 * 1024 || !/\.(pdf|jpe?g|png|heic|docx?)$/i.test(file.name));
     if (bad) { setError(`${bad.name}: choose a nonempty PDF, JPEG, PNG, HEIC, or Word file under 20 MB.`); return; }
-    setError(''); setRows((current) => [...current, ...files.map((file): Row => ({ id: crypto.randomUUID(), file, title: file.name.replace(/\.[^.]+$/, ''), category, docDate: date, period, status: 'ready' }))]);
+    setError('');
+    setRows((current) => {
+      const last = current[current.length - 1];
+      const seed = last ? { category: last.category, docDate: last.docDate, period: last.period } : { category: 'Other' as DocCategory, docDate: new Date().toLocaleDateString('en-US'), period: EMPTY_PERIOD_DRAFT };
+      return [...current, ...files.map((file): Row => ({ id: crypto.randomUUID(), file, title: file.name.replace(/\.[^.]+$/, ''), ...seed, status: 'ready' }))];
+    });
   };
+  const applyToAll = (from: Row) => setRows((current) => current.map((r) => r.status === 'uploaded' || r.id === from.id ? r : { ...r, category: from.category, docDate: from.docDate, period: from.period }));
   const save = async () => {
     if (busy) return;
     const pending = rows.filter((r) => r.status !== 'uploaded');
@@ -45,35 +54,56 @@ export default function BulkDocumentUpload({ upload, onClose, onComplete }: { up
     }
     setBusy(false); onComplete?.();
   };
+  const several = rows.filter((r) => r.status !== 'uploaded').length > 1;
   return <div>
-    <p>Select documents or photos together. Each file is saved separately. Review its title, category, and date before uploading. Up to 20 files, under 20 MB each.</p>
-    <fieldset disabled={busy} style={{ border: 0, padding: 0 }}>
-      <label style={label}>Default category <select style={select} value={category} onChange={(e) => setCategory(e.target.value as DocCategory)}>{DOC_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></label>{' '}
-      <label style={label}>Default document date (MM/DD/YYYY) <input type="text" placeholder="MM/DD/YYYY" inputMode="numeric" style={input} value={date} onChange={(e) => setDate(e.target.value)} /></label>{' '}
-      <DocumentPeriodFields draft={period} onChange={setPeriod} name="pending files" labelStyle={label} inputStyle={input} selectStyle={select} />
-      <button type="button" className={btn} onClick={() => setRows((current) => current.map((r) => r.status === 'uploaded' ? r : { ...r, category, docDate: date, period }))}>Apply defaults to pending files</button>
-      <p style={hint}>The document date is the date printed on the document. The period covered is what it applies to, such as the month of an eligibility letter or the dates of an authorization.</p>
-      <div onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); add(Array.from(e.dataTransfer.files)); }} style={{ padding: 16, border: '1px dashed #94a3b8', margin: '12px 0' }}>
-        <label style={label}>Choose documents or photos <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.heic,.doc,.docx" onChange={(e) => { add(Array.from(e.target.files || [])); e.target.value = ''; }} /></label>
+    <p style={intro}>Each file is saved separately with its own title, category, and date. Up to 20 files, under 20 MB each.</p>
+    <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0 }}>
+      <div onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); add(Array.from(e.dataTransfer.files)); }} style={dropZone}>
+        <label style={{ display: 'inline-grid', gap: 6, fontWeight: 600, color: '#334155' }}>Choose documents or photos <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.heic,.doc,.docx" onChange={(e) => { add(Array.from(e.target.files || [])); e.target.value = ''; }} /></label>
+        <span style={dropHint}>or drag files here</span>
       </div>
-      {rows.map((r) => <fieldset disabled={r.status === 'uploaded' || busy} key={r.id} style={{ border: '1px solid #dbe2ea', borderRadius: 8, margin: '10px 0', padding: 12 }}>
-        <legend>{r.file.name}</legend>
-        <label style={label}>Title <input aria-label={`Title for ${r.file.name}`} style={input} value={r.title} maxLength={200} onChange={(e) => patch(r.id, { title: e.target.value })} /></label>{' '}
-        <label style={label}>Category <select aria-label={`Category for ${r.file.name}`} style={select} value={r.category} onChange={(e) => patch(r.id, { category: e.target.value as DocCategory })}>{DOC_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></label>{' '}
-        <label style={label}>Date (MM/DD/YYYY) <input aria-label={`Date for ${r.file.name}`} type="text" placeholder="MM/DD/YYYY" inputMode="numeric" style={input} value={r.docDate} onChange={(e) => patch(r.id, { docDate: e.target.value })} /></label>{' '}
-        <DocumentPeriodFields draft={r.period} onChange={(next) => patch(r.id, { period: next })} name={r.file.name} labelStyle={label} inputStyle={input} selectStyle={select} />
-        <p role="status">{r.status === 'uploaded' ? 'Uploaded' : r.status === 'uploading' ? `Uploading ${progress}%` : r.status === 'failed' ? `Failed: ${r.error}` : 'Ready'}</p>
-        {r.status !== 'uploaded' && <button type="button" className={btn} onClick={() => setRows((current) => current.filter((x) => x.id !== r.id))}>Remove</button>}
+      {rows.map((r) => <fieldset disabled={r.status === 'uploaded' || busy} key={r.id} style={card}>
+        <div style={cardHead}>
+          <span style={fileName}>{r.file.name}</span>
+          <span role="status" style={{ ...status, ...(r.status === 'failed' ? { color: '#b3261e' } : r.status === 'uploaded' ? { color: '#0e7c4a' } : null) }}>
+            {r.status === 'uploaded' ? 'Uploaded' : r.status === 'uploading' ? `Uploading ${progress}%` : r.status === 'failed' ? `Failed: ${r.error}` : ''}
+          </span>
+          {r.status !== 'uploaded' && <span style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
+            {several && <button type="button" className={`${btn} ${btnSm}`} title="Give every other file this category, date, and period" onClick={() => applyToAll(r)}>Apply to all files</button>}
+            <button type="button" className={`${btn} ${btnSm}`} onClick={() => setRows((current) => current.filter((x) => x.id !== r.id))}>Remove</button>
+          </span>}
+        </div>
+        <div style={grid}>
+          <label style={{ ...label, ...titleCell }}>Title <input aria-label={`Title for ${r.file.name}`} style={input} value={r.title} maxLength={200} onChange={(e) => patch(r.id, { title: e.target.value })} /></label>
+          <label style={{ ...label, ...categoryCell }}>Category <select aria-label={`Category for ${r.file.name}`} style={select} value={r.category} onChange={(e) => patch(r.id, { category: e.target.value as DocCategory })}>{DOC_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></label>
+          <label style={{ ...label, ...dateCell }}>Date on document <input aria-label={`Date for ${r.file.name}`} type="text" placeholder="MM/DD/YYYY" inputMode="numeric" style={input} value={r.docDate} onChange={(e) => patch(r.id, { docDate: e.target.value })} /></label>
+        </div>
+        <div style={periodRow}>
+          <DocumentPeriodFields draft={r.period} onChange={(next) => patch(r.id, { period: next })} name={r.file.name} labelStyle={label} inputStyle={{ ...input, width: 130 }} selectStyle={select} />
+        </div>
       </fieldset>)}
     </fieldset>
-    {error && <p role="alert">{error}</p>}
+    {error && <p role="alert" style={{ color: '#b3261e', margin: '10px 0 0' }}>{error}</p>}
     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
       <button className={btn} disabled={busy} type="button" onClick={onClose}>Close</button>
       <button className={btnPrimary} disabled={busy || !rows.some((r) => r.status !== 'uploaded')} type="button" onClick={() => void save()}>{busy ? 'Uploading…' : 'Upload pending files'}</button>
     </div>
   </div>;
 }
-const label: CSSProperties = { display: 'inline-grid', gap: 5, margin: '8px 12px 8px 0', maxWidth: '100%', verticalAlign: 'top' };
-const input: CSSProperties = { padding: 8, border: '1px solid #cbd5e1', borderRadius: 6, maxWidth: '100%', font: 'inherit', boxSizing: 'border-box' };
+const intro: CSSProperties = { margin: '0 0 12px', color: '#475569', fontSize: 13.5, lineHeight: 1.5 };
+const dropZone: CSSProperties = { display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '14px 16px', border: '1.5px dashed #94a3b8', borderRadius: 10, background: '#f8fafc', margin: '0 0 12px' };
+const dropHint: CSSProperties = { fontSize: 12.5, color: '#8a949e' };
+const card: CSSProperties = { border: '1px solid #dbe2ea', borderRadius: 10, margin: '10px 0 0', padding: '10px 12px 12px', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box' };
+const cardHead: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 };
+const fileName: CSSProperties = { fontWeight: 700, fontSize: 13.5, color: '#1f2937', overflowWrap: 'anywhere' };
+const status: CSSProperties = { fontSize: 12.5, color: '#64748b' };
+// Title, category and date side by side when there is room; they wrap to
+// full-width rows on a phone instead of pushing the card off screen.
+const grid: CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'end' };
+const titleCell: CSSProperties = { flex: '2 1 220px', minWidth: 0 };
+const categoryCell: CSSProperties = { flex: '1.4 1 200px', minWidth: 0 };
+const dateCell: CSSProperties = { flex: '0 1 140px', minWidth: 120 };
+const periodRow: CSSProperties = { display: 'flex', alignItems: 'end', gap: 10, flexWrap: 'wrap', marginTop: 8 };
+const label: CSSProperties = { display: 'grid', gap: 4, fontSize: 12, fontWeight: 600, color: '#5c6b7a', minWidth: 0 };
+const input: CSSProperties = { padding: '7px 9px', border: '1px solid #cbd5e1', borderRadius: 6, width: '100%', minWidth: 0, font: 'inherit', fontSize: 13.5, fontWeight: 400, color: '#1f2937', boxSizing: 'border-box' };
 const select: CSSProperties = withSelectChevron(input);
-const hint: CSSProperties = { fontSize: 12.5, color: '#64748b', margin: '6px 0 0', lineHeight: 1.5 };
