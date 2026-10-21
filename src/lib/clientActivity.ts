@@ -2,6 +2,7 @@ export const ACTIVITY_FIELD_LABELS: Record<string, string> = {
   name: 'Client name', dob: 'Date of birth', street: 'Street address', city: 'City',
   state: 'State', zip: 'ZIP code', medicaidId: 'Medicaid ID', physicianName: 'Attending physician',
   physicianPhone: 'Physician phone', physicianFax: 'Physician fax', guardianContacts: 'Parent / guardian contacts', contacts: 'Parent / guardian contacts',
+  diagnosis: 'Diagnosis', allergies: 'Allergies',
 };
 export interface ClientActivity {
   id: string;
@@ -38,9 +39,12 @@ export function activityChangedFields(entry: Pick<ClientActivity, 'before' | 'af
     && Object.hasOwn(entry.after, k) && !sameActivityValue(entry.before[k], entry.after[k]));
 }
 
+/** Assistant card and authorization saves, review-only: whole records, so every field shows. */
+export const ASSISTANT_RECORD_ACTIONS = ['assistant-record-update', 'assistant-authorization-create', 'assistant-authorization-update'];
 /** Captured records include changed fields beyond the administrative undo allowlist. */
 export function activityDisplayFields(entry: ClientActivity): string[] {
-  return entry.action.startsWith('record-') || entry.action === 'admin-undo' ? [...new Set([...Object.keys(entry.before), ...Object.keys(entry.after)])] : activityChangedFields(entry);
+  return entry.action.startsWith('record-') || entry.action === 'admin-undo' || ASSISTANT_RECORD_ACTIONS.includes(entry.action)
+    ? [...new Set([...Object.keys(entry.before || {}), ...Object.keys(entry.after || {})])] : activityChangedFields(entry);
 }
 export function activityFieldLabel(key: string): string {
   return ACTIVITY_FIELD_LABELS[key] || key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase());

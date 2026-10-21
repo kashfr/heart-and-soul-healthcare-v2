@@ -17,6 +17,7 @@ import {
   type GuardianErrors,
   type GuardianRecord,
 } from '@/lib/guardianShared';
+import { UserFacingError, type RecordStore } from '@/lib/recordStore';
 import { FieldError, FIELD_ERROR_STYLE, escortToField } from '@/lib/formEscort';
 import { withSelectChevron } from '@/lib/selectChevron';
 import { formatUSPhoneExt } from '@/lib/phone';
@@ -29,6 +30,8 @@ interface Props {
   canEdit: boolean;
   actorName: string;
   onToast: (msg: string) => void;
+  /** Defaults to Firestore; the assistant workspace routes through its API. */
+  store?: RecordStore<GuardianRecord, GuardianRecord>;
 }
 
 const DM_ID = 'gd-decision-maker';
@@ -43,7 +46,7 @@ const emptyErrors: GuardianErrors = { rows: {} };
  * person to call for consents and signatures (releases of information, ISP
  * signature pages, service agreements).
  */
-export default function GuardianSection({ patientId, canEdit, actorName, onToast }: Props) {
+export default function GuardianSection({ patientId, canEdit, actorName, onToast, store }: Props) {
   const [record, setRecord] = useState<GuardianRecord | null | undefined>(undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -57,11 +60,11 @@ export default function GuardianSection({ patientId, canEdit, actorName, onToast
     let cancelled = false;
     setRecord(undefined);
     setEditing(false);
-    getGuardian(patientId)
+    (store ? store.load() : getGuardian(patientId))
       .then((d) => { if (!cancelled) setRecord(d); })
       .catch((err) => { console.error('Guardian load failed:', err); if (!cancelled) setLoadError('Could not load guardian information.'); });
     return () => { cancelled = true; };
-  }, [patientId]);
+  }, [patientId, store]);
 
   const contacts = record?.contacts || [];
   const hasRecord = !!record?.decisionMaker;
@@ -111,13 +114,13 @@ export default function GuardianSection({ patientId, canEdit, actorName, onToast
     setSaving(true);
     setSaveError(null);
     try {
-      await saveGuardian(patientId, rec, actorName);
-      setRecord(await getGuardian(patientId));
+      if (store) { await store.save(rec); setRecord(await store.load()); }
+      else { await saveGuardian(patientId, rec, actorName); setRecord(await getGuardian(patientId)); }
       setEditing(false);
       onToast('Guardian information saved.');
     } catch (err) {
       console.error('Guardian save failed:', err);
-      setSaveError('Could not save. Check your connection and try again.');
+      setSaveError(err instanceof UserFacingError ? err.message : 'Could not save. Check your connection and try again.');
     } finally {
       setSaving(false);
     }

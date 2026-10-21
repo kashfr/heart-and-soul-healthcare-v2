@@ -13,6 +13,7 @@ import {
   type PhysicianErrors,
   type PhysicianList,
 } from '@/lib/physiciansShared';
+import { UserFacingError, type RecordStore } from '@/lib/recordStore';
 import { FieldError, FIELD_ERROR_STYLE, escortToField } from '@/lib/formEscort';
 import { withSelectChevron } from '@/lib/selectChevron';
 import { formatUSPhone, formatUSPhoneExt } from '@/lib/phone';
@@ -25,6 +26,8 @@ interface Props {
   canEdit: boolean;
   actorName: string;
   onToast: (msg: string) => void;
+  /** Defaults to Firestore; the assistant workspace routes through its API. */
+  store?: RecordStore<PhysicianList, Physician[]>;
 }
 
 const fieldId = (rowId: string, k: PhysicianErrorKey) => `ph-${rowId}-${k}`;
@@ -35,7 +38,7 @@ const newId = () => Math.random().toString(36).slice(2, 10);
  * practice's phone and fax. Reference directory; the attending physician
  * used for verbal orders and PPOT stays on the clinical profile.
  */
-export default function PhysiciansSection({ patientId, canEdit, actorName, onToast }: Props) {
+export default function PhysiciansSection({ patientId, canEdit, actorName, onToast, store }: Props) {
   const [record, setRecord] = useState<PhysicianList | null | undefined>(undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -48,11 +51,11 @@ export default function PhysiciansSection({ patientId, canEdit, actorName, onToa
     let cancelled = false;
     setRecord(undefined);
     setEditing(false);
-    getPhysicians(patientId)
+    (store ? store.load() : getPhysicians(patientId))
       .then((d) => { if (!cancelled) setRecord(d); })
       .catch((err) => { console.error('Physicians load failed:', err); if (!cancelled) setLoadError('Could not load the physician list.'); });
     return () => { cancelled = true; };
-  }, [patientId]);
+  }, [patientId, store]);
 
   const list = record?.list || [];
 
@@ -86,13 +89,13 @@ export default function PhysiciansSection({ patientId, canEdit, actorName, onToa
     setSaving(true);
     setSaveError(null);
     try {
-      await savePhysicians(patientId, draft, actorName);
-      setRecord(await getPhysicians(patientId));
+      if (store) { await store.save(draft); setRecord(await store.load()); }
+      else { await savePhysicians(patientId, draft, actorName); setRecord(await getPhysicians(patientId)); }
       setEditing(false);
       onToast('Physicians saved.');
     } catch (err) {
       console.error('Physicians save failed:', err);
-      setSaveError('Could not save. Check your connection and try again.');
+      setSaveError(err instanceof UserFacingError ? err.message : 'Could not save. Check your connection and try again.');
     } finally {
       setSaving(false);
     }

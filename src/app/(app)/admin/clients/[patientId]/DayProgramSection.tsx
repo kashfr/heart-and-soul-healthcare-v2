@@ -12,6 +12,7 @@ import {
   type DayProgram,
   type DayProgramErrorKey,
 } from '@/lib/dayProgramShared';
+import { UserFacingError, type RecordStore } from '@/lib/recordStore';
 import { FieldError, FIELD_ERROR_STYLE, applyFieldErrors } from '@/lib/formEscort';
 import { withSelectChevron } from '@/lib/selectChevron';
 import { formatUSPhone, formatUSPhoneExt } from '@/lib/phone';
@@ -24,6 +25,8 @@ interface Props {
   canEdit: boolean;
   actorName: string;
   onToast: (msg: string) => void;
+  /** Defaults to Firestore; the assistant workspace routes through its API. */
+  store?: RecordStore<DayProgram, DayProgram>;
 }
 
 const fieldId = (k: DayProgramErrorKey) => `dp-field-${k}`;
@@ -32,7 +35,7 @@ const fieldId = (k: DayProgramErrorKey) => `dp-field-${k}`;
  * Client-dashboard card: the day program this client attends and who to
  * contact there. Read by the care team; edited by staff.
  */
-export default function DayProgramSection({ patientId, canEdit, actorName, onToast }: Props) {
+export default function DayProgramSection({ patientId, canEdit, actorName, onToast, store }: Props) {
   const [record, setRecord] = useState<DayProgram | null | undefined>(undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -45,11 +48,11 @@ export default function DayProgramSection({ patientId, canEdit, actorName, onToa
     let cancelled = false;
     setRecord(undefined);
     setEditing(false);
-    getDayProgram(patientId)
+    (store ? store.load() : getDayProgram(patientId))
       .then((d) => { if (!cancelled) setRecord(d); })
       .catch((err) => { console.error('Day program load failed:', err); if (!cancelled) setLoadError('Could not load the day program.'); });
     return () => { cancelled = true; };
-  }, [patientId]);
+  }, [patientId, store]);
 
   const startEdit = () => {
     setDraft({ ...(record || {}) });
@@ -75,13 +78,13 @@ export default function DayProgramSection({ patientId, canEdit, actorName, onToa
     setSaving(true);
     setSaveError(null);
     try {
-      await saveDayProgram(patientId, draft, actorName);
-      setRecord(await getDayProgram(patientId));
+      if (store) { await store.save(draft); setRecord(await store.load()); }
+      else { await saveDayProgram(patientId, draft, actorName); setRecord(await getDayProgram(patientId)); }
       setEditing(false);
       onToast('Day program saved.');
     } catch (err) {
       console.error('Day program save failed:', err);
-      setSaveError('Could not save. Check your connection and try again.');
+      setSaveError(err instanceof UserFacingError ? err.message : 'Could not save. Check your connection and try again.');
     } finally {
       setSaving(false);
     }

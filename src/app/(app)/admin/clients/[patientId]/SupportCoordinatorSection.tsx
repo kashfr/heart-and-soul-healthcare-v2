@@ -12,6 +12,7 @@ import {
   type CoordinatorErrorKey,
   type SupportCoordinator,
 } from '@/lib/supportCoordinatorShared';
+import { UserFacingError, type RecordStore } from '@/lib/recordStore';
 import { FieldError, FIELD_ERROR_STYLE, applyFieldErrors } from '@/lib/formEscort';
 import { withSelectChevron } from '@/lib/selectChevron';
 import { useSettings } from '@/components/SettingsProvider';
@@ -26,6 +27,8 @@ interface Props {
   canEdit: boolean;
   actorName: string;
   onToast: (msg: string) => void;
+  /** Defaults to Firestore; the assistant workspace routes through its API. */
+  store?: RecordStore<SupportCoordinator, SupportCoordinator>;
 }
 
 const fieldId = (k: CoordinatorErrorKey) => `sc-field-${k}`;
@@ -34,7 +37,7 @@ const fieldId = (k: CoordinatorErrorKey) => `sc-field-${k}`;
  * Client-dashboard card: the support coordinator or case manager, the
  * person to call about the ISP, authorizations, and the annual meeting.
  */
-export default function SupportCoordinatorSection({ patientId, canEdit, actorName, onToast }: Props) {
+export default function SupportCoordinatorSection({ patientId, canEdit, actorName, onToast, store }: Props) {
   const [record, setRecord] = useState<SupportCoordinator | null | undefined>(undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -52,11 +55,11 @@ export default function SupportCoordinatorSection({ patientId, canEdit, actorNam
     let cancelled = false;
     setRecord(undefined);
     setEditing(false);
-    getSupportCoordinator(patientId)
+    (store ? store.load() : getSupportCoordinator(patientId))
       .then((d) => { if (!cancelled) setRecord(d); })
       .catch((err) => { console.error('Support coordinator load failed:', err); if (!cancelled) setLoadError('Could not load the support coordinator.'); });
     return () => { cancelled = true; };
-  }, [patientId]);
+  }, [patientId, store]);
 
   const hasRecord = !!record?.name;
 
@@ -112,13 +115,13 @@ export default function SupportCoordinatorSection({ patientId, canEdit, actorNam
     setSaving(true);
     setSaveError(null);
     try {
-      await saveSupportCoordinator(patientId, draft, actorName);
-      setRecord(await getSupportCoordinator(patientId));
+      if (store) { await store.save(draft); setRecord(await store.load()); }
+      else { await saveSupportCoordinator(patientId, draft, actorName); setRecord(await getSupportCoordinator(patientId)); }
       setEditing(false);
       onToast('Support coordinator saved.');
     } catch (err) {
       console.error('Support coordinator save failed:', err);
-      setSaveError('Could not save. Check your connection and try again.');
+      setSaveError(err instanceof UserFacingError ? err.message : 'Could not save. Check your connection and try again.');
     } finally {
       setSaving(false);
     }

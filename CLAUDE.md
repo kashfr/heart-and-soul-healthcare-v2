@@ -17,7 +17,7 @@ conflicts and review comments).
 
 Read the matching note before changing one of these features.
 
-- Assistant client access (individual VA grants, GAPP scope, administrative edits, documents):
+- Assistant client access (individual VA grants, GAPP scope, administrative edits, Overview cards, hours authorizations without dollars, documents):
   docs/features/assistant-client-access.md
 - Home Supervisory Visit form, shared vitals component, abnormal-vitals
   follow-up: docs/features/supervisory-visit.md
