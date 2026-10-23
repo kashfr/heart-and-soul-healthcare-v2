@@ -2,6 +2,7 @@
 import type { CSSProperties } from 'react';
 import MonthPicker from './MonthPicker';
 import { currentMonth, type DocumentPeriodDraft } from '@/lib/documentPeriod';
+import { formatUSDateInput } from '@/lib/usDateInput';
 
 /**
  * "Period covered" picker for a client document: none, one calendar month
@@ -32,8 +33,8 @@ export default function DocumentPeriodFields({ draft, onChange, name, labelStyle
     </select></label>
     {draft.mode === 'month' && <span style={labelStyle}>Month <MonthPicker label={`Month covered${suffix}`} value={draft.month} onChange={(month) => onChange({ ...draft, month })} style={{ ...selectStyle, ...(disabled ? { pointerEvents: 'none', opacity: 0.6 } : null) }} /></span>}
     {draft.mode === 'range' && <>
-      <label style={labelStyle}>From (MM/DD/YYYY) <input aria-label={`Period start${suffix}`} type="text" placeholder="MM/DD/YYYY" inputMode="numeric" style={inputStyle} disabled={disabled} value={draft.from} onChange={(e) => onChange({ ...draft, from: e.target.value })} /></label>{' '}
-      <label style={labelStyle}>To (MM/DD/YYYY) <input aria-label={`Period end${suffix}`} type="text" placeholder="MM/DD/YYYY" inputMode="numeric" style={inputStyle} disabled={disabled} value={draft.to} onChange={(e) => onChange({ ...draft, to: e.target.value })} /></label>
+      <label style={labelStyle}>From (MM/DD/YYYY) <input aria-label={`Period start${suffix}`} type="text" placeholder="MM/DD/YYYY" inputMode="numeric" maxLength={10} style={inputStyle} disabled={disabled} value={draft.from} onChange={(e) => onChange({ ...draft, from: formatUSDateInput(e.target.value) })} /></label>{' '}
+      <label style={labelStyle}>To (MM/DD/YYYY) <input aria-label={`Period end${suffix}`} type="text" placeholder="MM/DD/YYYY" inputMode="numeric" maxLength={10} style={inputStyle} disabled={disabled} value={draft.to} onChange={(e) => onChange({ ...draft, to: formatUSDateInput(e.target.value) })} /></label>
     </>}
   </>;
 }

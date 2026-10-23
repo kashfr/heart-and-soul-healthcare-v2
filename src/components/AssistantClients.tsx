@@ -1,5 +1,5 @@
 'use client';
-import { parseUSDate } from '@/lib/usDateInput';
+import { formatUSDateInput, parseUSDate } from '@/lib/usDateInput';
 import BulkDocumentUpload from './BulkDocumentUpload';
 import { withSelectChevron } from '@/lib/selectChevron';
 
@@ -266,7 +266,7 @@ function InfoForm({ client, patientId, onCancel, onSaved, onError }: {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const field = (key: keyof Omit<InfoDraft, 'guardianContacts'>, label: string, props: { required?: boolean; placeholder?: string; maxLength?: number; type?: string } = {}) => (
-    <Field key={key} label={label}><input style={input} value={draft[key]} onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))} {...props} /></Field>
+    <Field key={key} label={label}><input style={input} value={draft[key]} onChange={(e) => { const value = key === 'dob' ? formatUSDateInput(e.target.value) : e.target.value; setDraft((d) => ({ ...d, [key]: value })); }} {...(key === 'dob' ? { inputMode: 'numeric' as const } : null)} {...props} /></Field>
   );
   const contactField = (index: number, key: keyof Contact, label: string, props: { required?: boolean; type?: string } = {}) => (
     <Field label={label}><input style={input} value={draft.guardianContacts[index][key] || ''} maxLength={key === 'address' ? 300 : 200} onChange={(e) => setDraft((d) => ({ ...d, guardianContacts: d.guardianContacts.map((c, i) => i === index ? { ...c, [key]: e.target.value } : c) }))} {...props} /></Field>
