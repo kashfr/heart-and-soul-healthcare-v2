@@ -8,7 +8,7 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { getBlob, ref, uploadBytesResumable } from 'firebase/storage';
+import { getBlob, ref, uploadBytesResumable, type UploadTask } from 'firebase/storage';
 import { db, storage } from './firebase';
 import { authedFetch } from './authedFetch';
 
@@ -134,6 +134,49 @@ function resolveContentType(file: File): string {
  * (invisible, harmless); the reverse order could show metadata for bytes that
  * never arrived.
  */
+/** How long an upload may go without moving a single byte before it is
+ *  abandoned. The SDK otherwise retries a blocked connection silently for 10
+ *  minutes, leaving the modal frozen at 0% with nothing to tell the user. */
+export const UPLOAD_STALL_MS = 60_000;
+
+/**
+ * Waits for a resumable upload, reporting percent progress, and cancels it
+ * with a plain-language error when it stalls (no bytes moving for
+ * UPLOAD_STALL_MS) or the SDK gives up. The caller marks the file Failed, so
+ * the user can retry instead of watching a frozen bar.
+ */
+export function awaitUpload(task: UploadTask, onProgress?: (pct: number) => void): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    let sent = -1;
+    let stalled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const arm = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => { stalled = true; task.cancel(); }, UPLOAD_STALL_MS);
+    };
+    arm();
+    task.on(
+      'state_changed',
+      (snap) => {
+        if (snap.bytesTransferred > sent) { sent = snap.bytesTransferred; arm(); }
+        onProgress?.(Math.round((snap.bytesTransferred / Math.max(1, snap.totalBytes)) * 100));
+      },
+      (err) => {
+        clearTimeout(timer);
+        const code = (err as { code?: string }).code;
+        if (stalled || code === 'storage/retry-limit-exceeded') {
+          reject(new Error('The upload could not reach the file server. Check your internet connection, and if you use a VPN, ad blocker, or strict tracking protection, turn it off for this site or try another browser, then retry.'));
+        } else if (code === 'storage/unauthorized') {
+          reject(new Error('You do not have permission to upload documents for this client.'));
+        } else {
+          reject(err);
+        }
+      },
+      () => { clearTimeout(timer); resolve(); },
+    );
+  });
+}
+
 export async function uploadPatientDocument(
   params: {
     patientId: string;
@@ -164,14 +207,7 @@ export async function uploadPatientDocument(
   const storagePath = `patients/${patientId}/documents/${docRef.id}/${fileName}`;
 
   const task = uploadBytesResumable(ref(storage, storagePath), file, { contentType });
-  await new Promise<void>((resolve, reject) => {
-    task.on(
-      'state_changed',
-      (snap) => onProgress?.(Math.round((snap.bytesTransferred / Math.max(1, snap.totalBytes)) * 100)),
-      reject,
-      () => resolve(),
-    );
-  });
+  await awaitUpload(task, onProgress);
 
   await setDoc(docRef, {
     patientId,
@@ -418,14 +454,7 @@ export async function replaceDocumentFile(
   const fileName = sanitizeFileName(`replaced-${tag}-${file.name}`);
   const storagePath = `patients/${d.patientId}/documents/${d.id}/${fileName}`;
   const task = uploadBytesResumable(ref(storage, storagePath), file, { contentType });
-  await new Promise<void>((resolve, reject) => {
-    task.on(
-      'state_changed',
-      (snap) => onProgress?.(Math.round((snap.bytesTransferred / Math.max(1, snap.totalBytes)) * 100)),
-      reject,
-      () => resolve(),
-    );
-  });
+  await awaitUpload(task, onProgress);
   await updateDoc(doc(db, 'patientDocuments', d.id), {
     fileName,
     storagePath,
