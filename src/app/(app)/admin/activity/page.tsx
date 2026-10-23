@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { AuthGuard } from '@/components/AuthGuard';
 import { ClientActivityLog, type ActivityClient, type ActivityStaff } from '@/components/ClientActivityLog';
 import { formatDateUS } from '@/lib/dateFormat';
+import { formatUSDateInput } from '@/lib/usDateInput';
 import { ACTIVITY_TYPES, activityDateBounds, parseActivityUSDate } from '@/lib/activityFilters';
 function ActivityOverview() {
   const [staff, setStaff] = useState<ActivityStaff[]>([]);
@@ -49,8 +50,8 @@ function ActivityOverview() {
     </label>
     </div>
     <form onSubmit={applyDates} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'end', gap: 12, marginTop: 16 }}>
-      <label style={{ display: 'grid', gap: 6 }}>From (MM/DD/YYYY)<input value={fromText} onChange={e => setFromText(e.target.value)} placeholder="MM/DD/YYYY" maxLength={10} style={inputStyle} /></label>
-      <label style={{ display: 'grid', gap: 6 }}>Through (MM/DD/YYYY)<input value={throughText} onChange={e => setThroughText(e.target.value)} placeholder="MM/DD/YYYY" maxLength={10} style={inputStyle} /></label>
+      <label style={{ display: 'grid', gap: 6 }}>From (MM/DD/YYYY)<input value={fromText} onChange={e => setFromText(formatUSDateInput(e.target.value))} placeholder="MM/DD/YYYY" inputMode="numeric" maxLength={10} style={inputStyle} /></label>
+      <label style={{ display: 'grid', gap: 6 }}>Through (MM/DD/YYYY)<input value={throughText} onChange={e => setThroughText(formatUSDateInput(e.target.value))} placeholder="MM/DD/YYYY" inputMode="numeric" maxLength={10} style={inputStyle} /></label>
       <button type="submit" style={inputStyle}>Apply dates</button>
       <button type="button" style={inputStyle} onClick={() => { setActorUid(''); setClient(''); setChangeType(''); setFromText(''); setThroughText(''); setRange({ from: '', through: '' }); setError(''); }}>Clear filters</button>
     </form>

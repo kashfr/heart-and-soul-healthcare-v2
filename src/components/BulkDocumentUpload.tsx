@@ -1,6 +1,6 @@
 'use client';
 import { useState, type CSSProperties } from 'react';
-import { parseUSDate } from '@/lib/usDateInput';
+import { formatUSDateInput, parseUSDate } from '@/lib/usDateInput';
 import { DOC_CATEGORIES, type DocCategory } from '@/lib/docCategories';
 import { EMPTY_PERIOD_DRAFT, resolvePeriodDraft, type DocumentPeriodDraft } from '@/lib/documentPeriod';
 import { withSelectChevron } from '@/lib/selectChevron';
@@ -95,7 +95,7 @@ export default function BulkDocumentUpload({ upload, onClose, onComplete }: { up
         <div style={grid}>
           <label style={{ ...label, ...titleCell }}>Title <input aria-label={`Title for ${r.file.name}`} style={input} value={r.title} maxLength={200} onChange={(e) => patch(r.id, { title: e.target.value })} /></label>
           <label style={{ ...label, ...categoryCell }}>Category <select aria-label={`Category for ${r.file.name}`} style={select} value={r.category} onChange={(e) => patch(r.id, { category: e.target.value as DocCategory })}>{DOC_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></label>
-          <label style={{ ...label, ...dateCell }}>Date on document <input aria-label={`Date for ${r.file.name}`} type="text" placeholder="MM/DD/YYYY" inputMode="numeric" style={input} value={r.docDate} onChange={(e) => patch(r.id, { docDate: e.target.value })} /></label>
+          <label style={{ ...label, ...dateCell }}>Date on document <input aria-label={`Date for ${r.file.name}`} type="text" placeholder="MM/DD/YYYY" inputMode="numeric" maxLength={10} style={input} value={r.docDate} onChange={(e) => patch(r.id, { docDate: formatUSDateInput(e.target.value) })} /></label>
         </div>
         <div style={periodRow}>
           <DocumentPeriodFields draft={r.period} onChange={(next) => patch(r.id, { period: next })} name={r.file.name} labelStyle={label} inputStyle={{ ...input, width: 130 }} selectStyle={select} />
