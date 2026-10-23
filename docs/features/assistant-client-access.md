@@ -15,14 +15,36 @@ Direct Firestore patient reads are reserved for active care staff, so VAs cannot
 bypass the program scope using the browser SDK. Existing referral APIs continue
 to work independently. Clinical and Storage rules are not broadened.
 
-Editable information is explicitly limited to name, birth date, address, Medicaid
-ID, physician contact information, and parent/guardian contact details. Clinical
-instructions, diagnoses, vital baselines, care teams, program classification,
-billing authorizations, and client deletion are unavailable. Guardianship decisions
-and existing contact records cannot be removed through this workspace.
+Editable information is name, birth date, address, Medicaid ID, attending
+physician contact information, diagnosis (on the roster record), and allergies
+(on the clinical profile). Clinical instructions (diet), vital baselines, care
+teams, program classification, billing rates, hours worked, and client deletion
+are unavailable.
 
-Updates use a revision of the directory, clinical profile, and guardian records
-to reject stale forms. Every write rechecks role, grant, and program inside its
+## Overview cards and hours authorizations (October 2026)
+
+With `editInfo`, the assistant also sees and edits the staff Overview cards:
+Physicians, Guardian (including the legal decision maker and removing
+contacts), Support Coordinator, and Day Program. They are the same components
+the staff dashboard uses, given a `store` prop that routes through
+`/api/assistant/clients/[id]/records/[kind]` instead of Firestore. The server
+validates with the same shared `validate*`/`normalize*` functions, full-replaces
+the document as the staff card does, refuses a stale revision (document update
+time), and audits before/after as `assistant-record-update`.
+
+The Hours Authorizations list from the owner-only Hours tab is available too
+(`/api/assistant/clients/[id]/authorizations`): add and edit lines transcribed
+from a Letter of Notification or Therap line. No hours worked, units used,
+billing rates, or dollars are ever returned, and there is no delete. A line id
+belonging to another client is "not found". Audited as
+`assistant-authorization-create` / `-update`.
+
+In the admin Activity Log, card and authorization saves display every field and
+are review-only (no Undo). Diagnosis and allergy edits undo like the other
+information fields.
+
+Updates use a revision of the directory and clinical profile records to reject
+stale forms. Every write rechecks role, grant, and program inside its
 transaction, and records the actor and before/after administrative values under
 `patients/{id}/administrativeAudit`. Only active admins can read this audit;
 browser writes are always denied, so the history remains server-managed.

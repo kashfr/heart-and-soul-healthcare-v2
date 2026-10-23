@@ -1,3 +1,4 @@
+import { ASSISTANT_RECORD_ACTIONS } from './clientActivity';
 export interface ActivityFilters { client?: string; from?: string; through?: string; type?: string }
 export function parseActivityUSDate(value: string): string | null {
   const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(value.trim());
@@ -41,7 +42,7 @@ export const ACTIVITY_TYPES = [
 export function activityTypeActions(type?: string): string[] | undefined {
   if (!type) return undefined;
   if (type === 'uploads') return ['assistant-document-upload', 'record-created'];
-  if (type === 'information') return ['assistant-information-update', 'record-updated'];
+  if (type === 'information') return ['assistant-information-update', 'record-updated', ...ASSISTANT_RECORD_ACTIONS];
   if (type === 'undo') return ['admin-undo'];
   throw new Error('Invalid activity change type.');
 }
@@ -50,7 +51,7 @@ export function matchesActivityType(entry: { action?: string; sourcePath?: strin
   if (type === 'undo') return entry.action === 'admin-undo';
   if (type === 'uploads') return entry.action === 'assistant-document-upload' ||
     (entry.action === 'record-created' && /^patientDocuments\/[^/]+$/.test(entry.sourcePath || ''));
-  if (type === 'information') return entry.action === 'assistant-information-update' ||
+  if (type === 'information') return entry.action === 'assistant-information-update' || ASSISTANT_RECORD_ACTIONS.includes(entry.action || '') ||
     (entry.action === 'record-updated' && /^patients\/[^/]+(?:\/clinical\/(?:profile|guardian))?$/.test(entry.sourcePath || ''));
   return false;
 }

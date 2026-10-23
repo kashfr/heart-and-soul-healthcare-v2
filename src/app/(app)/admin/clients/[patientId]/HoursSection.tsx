@@ -7,6 +7,7 @@ import { btn, btnDanger, btnIcon, btnPrimary, btnSm } from '@/components/buttons
 import Link from 'next/link';
 import { AlertTriangle, ChevronLeft, ChevronRight, Clock, Copy, FileText, Pencil, Plus, Stethoscope, Trash2 } from 'lucide-react';
 import { formatDateUS } from '@/lib/dateFormat';
+import { UserFacingError } from '@/lib/recordStore';
 import { withSelectChevron } from '@/lib/selectChevron';
 import { getBillingRates, type BillingRate } from '@/lib/billingRates';
 import { resolveRate } from '@/lib/billingRatesShared';
@@ -576,7 +577,7 @@ export default function HoursSection({ patientId, patientName, program, notes, u
         {editing !== null && (
           <AuthorizationForm
             patientId={patientId}
-            uid={uid}
+            save={(input, id) => (id ? updateHoursAuthorization(id, input, uid) : addHoursAuthorization(input, uid).then(() => undefined))}
             existing={editing === 'new' ? null : editing}
             onCancel={() => setEditing(null)}
             onSaved={async () => { setEditing(null); await reload(); }}
@@ -790,15 +791,112 @@ function MonthTable({ title: heading, bucket, months, list, dayHours, month, tod
 
 // ---------------------------------------------------------------------------
 
+/**
+ * The authorization lines alone, for the assistant workspace: what the payer
+ * approved, transcribed from the Letter of Notification or Therap line. No
+ * hours worked, no billing rates, no dollars, and no delete (a wrong line is
+ * corrected in place, and the owner can remove one from the Hours tab).
+ */
+export function AuthorizationsOnFile({ patientId, todayISO, canEdit, editHint, load, save }: {
+  patientId: string;
+  todayISO: string;
+  canEdit: boolean;
+  /** When editing is off: with a hint (View As) the buttons stay, disabled,
+   *  so the preview shows what the assistant sees; without one they hide. */
+  editHint?: string;
+  load: () => Promise<HoursAuthorization[]>;
+  save: FormProps['save'];
+}) {
+  const [auths, setAuths] = useState<HoursAuthorization[] | null>(null);
+  const [error, setError] = useState('');
+  const [editing, setEditing] = useState<HoursAuthorization | 'new' | null>(null);
+  const showControls = canEdit || !!editHint;
+  const reload = async () => {
+    try { setAuths(await load()); setError(''); }
+    catch (e) { console.error('Authorizations load failed:', e); setError(e instanceof UserFacingError ? e.message : 'Could not load the authorizations.'); }
+  };
+  useEffect(() => {
+    let cancelled = false;
+    load()
+      .then((list) => { if (!cancelled) setAuths(list); })
+      .catch((e) => { console.error('Authorizations load failed:', e); if (!cancelled) setError(e instanceof UserFacingError ? e.message : 'Could not load the authorizations.'); });
+    return () => { cancelled = true; };
+  }, [load]);
+
+  return (
+    <section style={card}>
+      <div style={head}>
+        <div style={title}><FileText size={16} /> Hours Authorizations</div>
+        {showControls && editing === null && auths !== null && (
+          <button type="button" onClick={() => setEditing('new')} disabled={!canEdit} title={!canEdit ? editHint : undefined} className={btnPrimary}><Plus size={14} /> Add Authorization</button>
+        )}
+      </div>
+      <div style={{ ...muted, marginBottom: 12 }}>
+        GAPP: transcribe the Letter of Notification (hours per week; type each month&apos;s block hours where they differ).
+      </div>
+      {error && <div style={errBox}>{error}</div>}
+      {editing !== null && (
+        <AuthorizationForm
+          patientId={patientId}
+          save={save}
+          existing={editing === 'new' ? null : editing}
+          onCancel={() => setEditing(null)}
+          onSaved={async () => { setEditing(null); await reload(); }}
+        />
+      )}
+      {auths === null && !error && <div style={muted}>Loading…</div>}
+      {auths !== null && auths.length === 0 && editing === null && <div style={muted}>No authorizations on file.</div>}
+      {(auths || []).map((a) => {
+        const daysLeft = Math.round((Date.parse(`${a.to}T00:00:00Z`) - Date.parse(`${todayISO}T00:00:00Z`)) / 86400000);
+        const status = daysLeft < 0 ? 'Expired' : a.from > todayISO ? 'Upcoming' : daysLeft <= HOURS_AUTH_EXPIRY_WARN_DAYS ? `Ends in ${daysLeft} Day${daysLeft === 1 ? '' : 's'}` : 'Active';
+        return (
+          <div key={a.id} style={authCard}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 220 }}>
+                <div style={{ fontWeight: 700, color: NAVY, fontSize: 14 }}>
+                  <span style={a.covers === 'oversight' ? rnChip : shiftChip}>{bucketLabel(a.covers)}</span>
+                  PA {a.paNumber || '—'}{a.serviceCode ? ` · ${a.serviceCode}` : ''} · {a.kind === 'unskilled' ? 'Unskilled' : 'Skilled'}
+                  <span style={daysLeft < 0 ? expiredBadge : a.from > todayISO ? nowBadge : daysLeft <= HOURS_AUTH_EXPIRY_WARN_DAYS ? warnBadge : okBadge}>{status}</span>
+                </div>
+                <div style={muted}>
+                  {formatDateUS(a.from)} to {formatDateUS(a.to)}
+                  {a.rateHours != null && ` · ${fmtH(a.rateHours)} hours per ${a.rateBasis}`}
+                  {a.totalUnits != null && ` · ${fmtUnits(a.totalUnits)} units (${fmtH(a.totalUnits / UNITS_PER_HOUR)} h)`}
+                  {a.note && ` · ${a.note}`}
+                </div>
+              </div>
+              {showControls && editing === null && (
+                <button type="button" onClick={() => setEditing(a)} disabled={!canEdit} className={`${btn} ${btnIcon} ${btnSm}`} aria-label="Edit" title={canEdit ? 'Edit' : editHint}><Pencil size={14} /></button>
+              )}
+            </div>
+            <div style={monthChips}>
+              {monthsBetween(a.from, a.to).map((ym) => {
+                const c = monthCap(a, ym);
+                const src = monthCapSource(a, ym);
+                return (
+                  <span key={ym} style={{ ...chip, ...(src === 'override' ? chipOverride : null) }} title={src === 'override' ? 'Block hours from the letter' : `${rateLabel(a)} default`}>
+                    {monthLabel(ym).replace(/(\w{3})\w* (\d{4})/, '$1 $2')}: <strong>{c == null ? '—' : fmtH(c)}</strong>
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
 interface FormProps {
   patientId: string;
-  uid: string;
+  /** Writes the line: an update when the existing line's id is passed, else a new line. */
+  save: (input: HoursAuthorizationInput, existingId?: string) => Promise<void>;
   existing: HoursAuthorization | null;
   onCancel: () => void;
   onSaved: () => Promise<void>;
 }
 
-function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: FormProps) {
+function AuthorizationForm({ patientId, save, existing, onCancel, onSaved }: FormProps) {
   const [covers, setCovers] = useState<HoursBucket>(existing?.covers ?? 'shift');
   const [paNumber, setPaNumber] = useState(existing?.paNumber ?? '');
   const [serviceCode, setServiceCode] = useState(existing?.serviceCode ?? '');
@@ -870,12 +968,11 @@ function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: Form
     };
     setSaving(true);
     try {
-      if (existing?.id) await updateHoursAuthorization(existing.id, input, uid);
-      else await addHoursAuthorization(input, uid);
+      await save(input, existing?.id);
       await onSaved();
     } catch (e) {
       console.error('Save authorization failed:', e);
-      setErr('Could not save the authorization. Please try again.');
+      setErr(e instanceof UserFacingError ? e.message : 'Could not save the authorization. Please try again.');
     } finally {
       setSaving(false);
     }

@@ -107,3 +107,17 @@ it('uses the audit commit timestamp rather than the displayed server timestamp',
  await undoClientActivity('client','change',caller);
  expect(fake.records.get('patients/client')?.name).toBe('Old name');
 });
+it('undoes an assistant diagnosis edit on the roster record and an allergy edit on the profile',async()=>{
+ fake.records.set('patients/client',{...fake.records.get('patients/client'),diagnosis:'F84.0'});
+ fake.records.set('patients/client/clinical/profile',{medicaidId:'222',allergies:'Penicillin'});
+ fake.records.set(path,{action:'assistant-information-update',actorUid:'rosita',at,before:{diagnosis:'',allergies:'NKDA'},after:{diagnosis:'F84.0',allergies:'Penicillin'}});
+ await undoClientActivity('client','change',caller);
+ expect(fake.records.get('patients/client')).toMatchObject({diagnosis:''});
+ expect(fake.records.get('patients/client/clinical/profile')).toMatchObject({allergies:'NKDA'});
+ expect(fake.records.get('patients/client/clinical/profile')).not.toHaveProperty('diagnosis');
+});
+it('keeps assistant card and authorization saves review-only',async()=>{
+ fake.records.set(path,{action:'assistant-record-update',record:'physicians',actorUid:'rosita',at,before:{list:[]},after:{list:[{id:'p1',name:'Dr. Soto'}]}});
+ await expect(undoClientActivity('client','change',caller)).rejects.toMatchObject({status:400});
+ expect(fake.writes).toHaveLength(0);
+});

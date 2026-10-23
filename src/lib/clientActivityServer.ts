@@ -7,7 +7,7 @@ import { assertAssistantId, AssistantClientError } from './assistantClientsServe
 import { capturedUndoFields, isCapturedUpload, activityChangedFields, sameActivityValue, type ClientActivity } from './clientActivity';
 import { hasGuardianErrors, validateGuardian, type GuardianContact, type GuardianRecord } from './guardianShared';
 
-const DIRECTORY = ['name', 'dob', 'street', 'city', 'state', 'zip'];
+const DIRECTORY = ['name', 'dob', 'street', 'city', 'state', 'zip', 'diagnosis'];
 const CONTACT = ['id', 'role', 'name', 'relationship', 'phone', 'email', 'address'];
 type Data = Record<string, unknown>;
 const data = (v: unknown): Data => v && typeof v === 'object' && !Array.isArray(v) ? v as Data : {};

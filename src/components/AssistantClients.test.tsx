@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AssistantClientDetails, AssistantClientsRoster, parseUSDate } from './AssistantClients';
 
@@ -7,23 +7,31 @@ const state = vi.hoisted(() => ({
   grant: { uid: 'assistant', scope: 'gapp', editInfo: true, uploadDocuments: true },
   enabled: true,
   fetch: vi.fn(),
+  // The Overview cards' own requests (records and authorizations), kept apart
+  // so the client/document request sequence in each test stays exact.
+  cards: vi.fn(),
 }));
 vi.mock('./AuthProvider', () => ({ useEffectiveUser: () => state.user }));
 vi.mock('./SettingsProvider', () => ({ useSettings: () => ({ ready: true, refresh: vi.fn(), settings: { assistantClients: { grants: state.enabled ? [state.grant] : [] } } }) }));
-vi.mock('@/lib/authedFetch', () => ({ authedFetch: state.fetch }));
+vi.mock('@/lib/authedFetch', () => ({
+  authedFetch: (url: string, init?: RequestInit) => (/\/(records|authorizations)(\/|$)/.test(url) ? state.cards(url, init) : state.fetch(url, init)),
+}));
+vi.mock('@/lib/firebase', () => ({ db: {}, auth: {}, storage: {} }));
 vi.mock('@/lib/patientDocuments', () => ({ ALLOWED_DOC_TYPES: { 'application/pdf': 'PDF' }, MAX_DOC_BYTES: 20 * 1024 * 1024, renderDocumentInWindow: vi.fn() }));
 
 const client = {
   id: 'client-1', name: 'Test Client', dob: '2015-02-28', program: 'gapp',
   street: '100 Main Street', city: 'Atlanta', state: 'GA', zip: '30301',
   medicaidId: '123456789012', physicianName: 'Dr. Test', physicianPhone: '', physicianFax: '',
-  guardianContacts: [], revision: 'revision-1',
+  diagnosis: 'Autism spectrum disorder (F84.0)', allergies: 'NKDA', revision: 'revision-1',
 };
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 const detail = () => ({ client, grant: state.grant, documents: [] });
 
 beforeEach(() => {
   state.fetch.mockReset();
+  state.cards.mockReset();
+  state.cards.mockImplementation(async (url: string) => response(url.includes('/authorizations') ? { authorizations: [] } : { record: null, revision: 'new' }));
   state.enabled = true;
   state.user.isViewingAs = false;
   state.grant.editInfo = true;
@@ -113,7 +121,8 @@ describe('assistant client workspace', () => {
     expect(init.method).toBe('PATCH');
     expect(JSON.parse(init.body)).toEqual({
       name: client.name, dob: client.dob, street: client.street, city: client.city, state: client.state, zip: client.zip,
-      medicaidId: client.medicaidId, physicianName: client.physicianName, physicianPhone: '', physicianFax: '', guardianContacts: [], revision: 'revision-1',
+      medicaidId: client.medicaidId, physicianName: client.physicianName, physicianPhone: '', physicianFax: '',
+      diagnosis: client.diagnosis, allergies: client.allergies, revision: 'revision-1',
     });
   });
 
@@ -155,5 +164,38 @@ describe('fixed US date input', () => {
     expect(parseUSDate('13/01/2026')).toBeNull();
     expect(parseUSDate('2026-10-15')).toBeNull();
     expect(parseUSDate('04/31/2026')).toBeNull();
+  });
+  it('shows the Overview cards and saves a card through the audited API with its revision', async () => {
+    state.cards.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/records/physicians') && init?.method === 'PUT') return response({ record: { list: [] }, revision: 'r2' });
+      if (url.endsWith('/records/physicians')) return response({ record: { list: [{ id: 'p1', name: 'Dr. Maria Soto', specialty: 'Primary Care', phone: '(678) 407-4489' }], updatedAt: '2026-10-21T20:00:00.000Z', updatedByName: 'Rose' }, revision: 'r1' });
+      return response(url.includes('/authorizations') ? { authorizations: [] } : { record: null, revision: 'new' });
+    });
+    state.fetch.mockResolvedValueOnce(response(detail()));
+    render(<AssistantClientDetails patientId="client-1" />);
+    expect(await screen.findByText('Dr. Maria Soto')).toBeInTheDocument();
+    expect(screen.getByText('Autism spectrum disorder (F84.0)')).toBeInTheDocument();
+    for (const title of ['Physicians', 'Guardian', 'Support Coordinator', 'Day Program', 'Hours Authorizations']) {
+      expect(screen.getAllByText(new RegExp(title)).length).toBeGreaterThan(0);
+    }
+    expect(screen.queryByText(/\$|Dollars|Billing|Hours worked/)).not.toBeInTheDocument();
+    const physiciansCard = screen.getByText('Dr. Maria Soto').closest('section')!;
+    fireEvent.click(within(physiciansCard).getByRole('button', { name: /Edit/ }));
+    fireEvent.click(within(physiciansCard).getByRole('button', { name: /Save/ }));
+    await waitFor(() => expect(state.cards).toHaveBeenCalledWith('/api/assistant/clients/client-1/records/physicians', expect.objectContaining({ method: 'PUT' })));
+    const put = state.cards.mock.calls.find(([, init]) => init?.method === 'PUT')!;
+    expect(JSON.parse(put[1].body)).toMatchObject({ revision: 'r1', record: { list: [expect.objectContaining({ name: 'Dr. Maria Soto' })] } });
+  });
+
+  it('hides card edit controls without the edit grant', async () => {
+    state.grant.editInfo = false;
+    state.cards.mockImplementation(async (url: string) => response(url.includes('/authorizations')
+      ? { authorizations: [{ id: 'a1', revision: 'r1', patientId: 'client-1', paNumber: '126101100192', kind: 'skilled', covers: 'shift', rateBasis: 'week', rateHours: 16, from: '2026-10-20', to: '2027-03-31', monthOverrides: { '2026-11': 69 }, totalUnits: null, serviceCode: '', note: '' }] }
+      : { record: null, revision: 'new' }));
+    state.fetch.mockResolvedValueOnce(response(detail()));
+    render(<AssistantClientDetails patientId="client-1" />);
+    expect(await screen.findByText(/PA 126101100192/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Add|Edit/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
   });
 });

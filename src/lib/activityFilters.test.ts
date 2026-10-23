@@ -24,5 +24,6 @@ it('classifies change types independently of staff role and undo eligibility',as
  expect(matchesActivityType({action:'record-updated',sourcePath:'patients/client/clinical/profile'},'information')).toBe(true);
  expect(matchesActivityType({action:'record-updated',sourcePath:'progressNotes/note'},'information')).toBe(false);
  expect(matchesActivityType({action:'admin-undo'},'undo')).toBe(true);
+ for(const action of ['assistant-record-update','assistant-authorization-create','assistant-authorization-update']){expect(matchesActivityType({action},'information')).toBe(true);expect(activityTypeActions('information')).toContain(action);}
  expect(()=>activityTypeActions('bad')).toThrow();
 });

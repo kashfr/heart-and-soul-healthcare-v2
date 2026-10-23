@@ -1,11 +1,10 @@
 'use client';
 import { formatUSDateInput, parseUSDate } from '@/lib/usDateInput';
 import BulkDocumentUpload from './BulkDocumentUpload';
-import { withSelectChevron } from '@/lib/selectChevron';
 
-import { Fragment, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Copy, ExternalLink, FileUp, Pencil, Plus, Search } from 'lucide-react';
+import { ArrowLeft, Copy, ExternalLink, FileUp, Pencil, Search } from 'lucide-react';
 import { useEffectiveUser } from './AuthProvider';
 import { useSettings } from './SettingsProvider';
 import { btn, btnPrimary, btnSm } from './buttons';
@@ -13,9 +12,20 @@ import { getAssistantClientGrant, type AssistantClientGrant } from '@/lib/assist
 import { authedFetch } from '@/lib/authedFetch';
 import { formatDateUS } from '@/lib/dateFormat';
 import { getProgram } from '@/lib/programs';
-import { GUARDIAN_ROLES } from '@/lib/guardianShared';
 import { formatDocumentPeriod } from '@/lib/documentPeriod';
 import { ALLOWED_DOC_TYPES, renderDocumentInWindow } from '@/lib/patientDocuments';
+import { UserFacingError, type RecordStore } from '@/lib/recordStore';
+import type { HoursAuthorization } from '@/lib/shiftHours';
+import type { HoursAuthorizationInput } from '@/lib/hoursAuthorizations';
+import type { Physician, PhysicianList } from '@/lib/physiciansShared';
+import type { GuardianRecord } from '@/lib/guardianShared';
+import type { SupportCoordinator } from '@/lib/supportCoordinatorShared';
+import type { DayProgram } from '@/lib/dayProgramShared';
+import DayProgramSection from '@/app/(app)/admin/clients/[patientId]/DayProgramSection';
+import PhysiciansSection from '@/app/(app)/admin/clients/[patientId]/PhysiciansSection';
+import GuardianSection from '@/app/(app)/admin/clients/[patientId]/GuardianSection';
+import SupportCoordinatorSection from '@/app/(app)/admin/clients/[patientId]/SupportCoordinatorSection';
+import { AuthorizationsOnFile } from '@/app/(app)/admin/clients/[patientId]/HoursSection';
 
 interface ClientSummary {
   id: string;
@@ -26,16 +36,6 @@ interface ClientSummary {
   state: string;
 }
 
-interface Contact {
-  id: string;
-  role: string;
-  name: string;
-  relationship: string;
-  phone: string;
-  email: string;
-  address: string;
-}
-
 interface ClientInfo extends ClientSummary {
   street: string;
   zip: string;
@@ -43,7 +43,8 @@ interface ClientInfo extends ClientSummary {
   physicianName: string;
   physicianPhone: string;
   physicianFax: string;
-  guardianContacts: Contact[];
+  diagnosis: string;
+  allergies: string;
   revision: string;
 }
 
@@ -224,13 +225,11 @@ function Details({ patientId }: { patientId: string }) {
               <Value label="Attending physician" value={data.client.physicianName} />
               <Value label="Physician phone" value={data.client.physicianPhone} />
               <Value label="Physician fax" value={data.client.physicianFax} />
+              <Value label="Diagnosis" value={data.client.diagnosis} />
+              <Value label="Allergies" value={data.client.allergies} />
             </div>
-            <h3 style={{ ...subheading, marginTop: 24 }}>Parent, guardian, and responsible contacts</h3>
-            {data.client.guardianContacts?.length ? <div style={grid}>{data.client.guardianContacts.map((c) => <div key={c.id} style={contactCard}>
-              <strong>{c.name}</strong><div style={muted}>{[c.role, c.relationship].filter(Boolean).join(' · ')}</div>
-              {c.phone && <div>{c.phone}</div>}{c.email && <div style={{ overflowWrap: 'anywhere' }}>{c.email}</div>}{c.address && <div>{c.address}</div>}
-            </div>)}</div> : <p style={muted}>No contacts on file.</p>}
           </section>}
+          <OverviewCards patientId={patientId} canEdit={data.grant.editInfo && !isViewingAs} editHint={isViewingAs ? VIEW_AS_HINT : undefined} onToast={setNotice} />
           <section style={{ ...card, marginTop: 18 }}>
             <h2 style={subheading}>Documents</h2>
             {data.grant.uploadDocuments && <UploadForm patientId={patientId} disabled={isViewingAs} onError={accessError} onUploaded={(document) => {
@@ -252,24 +251,90 @@ function Details({ patientId }: { patientId: string }) {
   );
 }
 
-const EDITABLE_FIELDS = ['name', 'dob', 'street', 'city', 'state', 'zip', 'medicaidId', 'physicianName', 'physicianPhone', 'physicianFax'] as const;
-type InfoDraft = Pick<ClientInfo, (typeof EDITABLE_FIELDS)[number]> & { guardianContacts: Contact[] };
+type RecordKind = 'physicians' | 'guardian' | 'supportCoordinator' | 'dayProgram';
+
+/** One Overview card's record through the assistant API. The revision from
+ *  the last load rides along on save so a stale form is refused, and the
+ *  ISO update time comes back as the {toDate} shape the cards expect. */
+function useRecordStore<T, S = T>(patientId: string, kind: RecordKind, wrap: (data: S) => unknown = (d) => d): RecordStore<T, S> {
+  const revision = useRef('new');
+  const wrapRef = useRef(wrap);
+  return useMemo(() => {
+    const url = `${clientUrl(patientId)}/records/${kind}`;
+    return {
+      load: async () => {
+        const body = await asUserFacing(async () => readResponse<{ record: (Record<string, unknown> & { updatedAt?: string | null }) | null; revision: string }>(await authedFetch(url, { cache: 'no-store' })));
+        revision.current = body.revision;
+        if (!body.record) return null;
+        const at = body.record.updatedAt;
+        return { ...body.record, updatedAt: at ? { toDate: () => new Date(at) } : undefined } as T;
+      },
+      save: async (data: S) => {
+        await asUserFacing(async () => readResponse(await authedFetch(url, { method: 'PUT', body: JSON.stringify({ record: wrapRef.current(data), revision: revision.current }) })));
+      },
+    };
+  }, [patientId, kind]);
+}
+
+async function asUserFacing<T>(run: () => Promise<T>): Promise<T> {
+  try { return await run(); } catch (err) { throw err instanceof ClientRequestError ? new UserFacingError(err.message) : err; }
+}
+
+/** The staff Overview cards, fed through the assistant API (grant, program,
+ *  and staleness rechecked on every save; every save audited), plus the
+ *  authorization lines from the Hours tab without hours worked or dollars. */
+function OverviewCards({ patientId, canEdit, editHint, onToast }: { patientId: string; canEdit: boolean; editHint?: string; onToast: (msg: string) => void }) {
+  const physicians = useRecordStore<PhysicianList, Physician[]>(patientId, 'physicians', (list) => ({ list }));
+  const guardian = useRecordStore<GuardianRecord>(patientId, 'guardian');
+  const coordinator = useRecordStore<SupportCoordinator>(patientId, 'supportCoordinator');
+  const dayProgram = useRecordStore<DayProgram>(patientId, 'dayProgram');
+  const authUrl = `${clientUrl(patientId)}/authorizations`;
+  const revisions = useRef(new Map<string, string>());
+  const loadAuths = useCallback(async () => {
+    const body = await asUserFacing(async () => readResponse<{ authorizations: (HoursAuthorization & { id: string; revision: string })[] }>(await authedFetch(authUrl, { cache: 'no-store' })));
+    revisions.current = new Map(body.authorizations.map((a) => [a.id, a.revision]));
+    return body.authorizations.map((a) => ({ ...a, monthOverrides: a.monthOverrides || {} }));
+  }, [authUrl]);
+  const saveAuth = useCallback(async (input: HoursAuthorizationInput, existingId?: string) => {
+    // The patient comes from the URL; the server never takes it from the body.
+    const authorization: Partial<HoursAuthorizationInput> = { ...input };
+    delete authorization.patientId;
+    await asUserFacing(async () => readResponse(await authedFetch(existingId ? `${authUrl}/${encodeURIComponent(existingId)}` : authUrl, {
+      method: existingId ? 'PUT' : 'POST', body: JSON.stringify({ authorization, revision: existingId ? revisions.current.get(existingId) : undefined }),
+    })));
+  }, [authUrl]);
+  const common = { patientId, canEdit, actorName: '', onToast };
+  return <div style={{ marginTop: 18 }}>
+    <PhysiciansSection {...common} store={physicians} />
+    <GuardianSection {...common} store={guardian} />
+    <SupportCoordinatorSection {...common} store={coordinator} />
+    <DayProgramSection {...common} store={dayProgram} />
+    <AuthorizationsOnFile patientId={patientId} todayISO={localToday()} canEdit={canEdit} editHint={editHint} load={loadAuths} save={saveAuth} />
+  </div>;
+}
+
+function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const EDITABLE_FIELDS = ['name', 'dob', 'street', 'city', 'state', 'zip', 'medicaidId', 'physicianName', 'physicianPhone', 'physicianFax', 'diagnosis', 'allergies'] as const;
+type InfoDraft = Pick<ClientInfo, (typeof EDITABLE_FIELDS)[number]>;
 
 function InfoForm({ client, patientId, onCancel, onSaved, onError }: {
   client: ClientInfo; patientId: string; onCancel: () => void;
   onSaved: (data: { client: ClientInfo; grant: AssistantClientGrant }) => void; onError: (err: unknown) => void;
 }) {
-  const [draft, setDraft] = useState<InfoDraft>(() => ({
-    ...Object.fromEntries(EDITABLE_FIELDS.map((key) => [key, key === 'dob' ? formatDateUS(client[key]) : client[key] || ''])) as Omit<InfoDraft, 'guardianContacts'>,
-    guardianContacts: (client.guardianContacts || []).map((c) => ({ ...c })),
-  }));
+  const [draft, setDraft] = useState<InfoDraft>(() => (
+    Object.fromEntries(EDITABLE_FIELDS.map((key) => [key, key === 'dob' ? formatDateUS(client[key]) : client[key] || ''])) as InfoDraft
+  ));
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
-  const field = (key: keyof Omit<InfoDraft, 'guardianContacts'>, label: string, props: { required?: boolean; placeholder?: string; maxLength?: number; type?: string } = {}) => (
+  const field = (key: keyof InfoDraft, label: string, props: { required?: boolean; placeholder?: string; maxLength?: number; type?: string } = {}) => (
     <Field key={key} label={label}><input style={input} value={draft[key]} onChange={(e) => { const value = key === 'dob' ? formatUSDateInput(e.target.value) : e.target.value; setDraft((d) => ({ ...d, [key]: value })); }} {...(key === 'dob' ? { inputMode: 'numeric' as const } : null)} {...props} /></Field>
   );
-  const contactField = (index: number, key: keyof Contact, label: string, props: { required?: boolean; type?: string } = {}) => (
-    <Field label={label}><input style={input} value={draft.guardianContacts[index][key] || ''} maxLength={key === 'address' ? 300 : 200} onChange={(e) => setDraft((d) => ({ ...d, guardianContacts: d.guardianContacts.map((c, i) => i === index ? { ...c, [key]: e.target.value } : c) }))} {...props} /></Field>
+  const area = (key: 'diagnosis' | 'allergies', label: string, placeholder: string) => (
+    <Field key={key} label={label}><textarea style={{ ...input, minHeight: 72, resize: 'vertical' }} value={draft[key]} maxLength={1000} placeholder={placeholder} onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))} /></Field>
   );
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -299,24 +364,10 @@ function InfoForm({ client, patientId, onCancel, onSaved, onError }: {
         {field('physicianPhone', 'Physician phone', { type: 'tel', maxLength: 60 })}
         {field('physicianFax', 'Physician fax', { type: 'tel', maxLength: 60 })}
       </div>
-      <h3 style={{ ...subheading, marginTop: 24 }}>Parent, guardian, and responsible contacts</h3>
-      <div style={{ display: 'grid', gap: 16 }}>
-        {draft.guardianContacts.map((c, index) => <fieldset key={c.id} style={contactCard}>
-          <legend>Contact {index + 1}</legend>
-          <div style={grid}>
-            {contactField(index, 'name', `Contact ${index + 1} name`, { required: true })}
-            <Field label={`Contact ${index + 1} role`}><select style={select} value={c.role} onChange={(e) => setDraft((d) => ({ ...d, guardianContacts: d.guardianContacts.map((entry, i) => i === index ? { ...entry, role: e.target.value } : entry) }))}>
-              {GUARDIAN_ROLES.map((role) => <option key={role}>{role}</option>)}
-            </select></Field>
-            {contactField(index, 'relationship', `Contact ${index + 1} relationship`)}
-            {contactField(index, 'phone', `Contact ${index + 1} phone`, { type: 'tel' })}
-            {contactField(index, 'email', `Contact ${index + 1} email`, { type: 'email' })}
-            {contactField(index, 'address', `Contact ${index + 1} address`)}
-          </div>
-          {!(client.guardianContacts || []).some((saved) => saved.id === c.id) && <button type="button" className={`${btn} ${btnSm}`} style={{ marginTop: 12 }} onClick={() => setDraft((d) => ({ ...d, guardianContacts: d.guardianContacts.filter((contact) => contact.id !== c.id) }))}>Remove unsaved contact</button>}
-        </fieldset>)}
+      <div style={{ ...grid, marginTop: 18 }}>
+        {area('diagnosis', 'Diagnosis', 'As written on the referral or physician plan of treatment, with ICD-10 codes')}
+        {area('allergies', 'Allergies', 'NKDA, or each allergy and reaction')}
       </div>
-      <button type="button" className={btn} style={{ marginTop: 12 }} onClick={() => setDraft((d) => ({ ...d, guardianContacts: [...d.guardianContacts, { id: crypto.randomUUID(), role: 'Parent', name: '', relationship: '', phone: '', email: '', address: '' }] }))}><Plus size={15} /> Add contact</button>
       {error && <div role="alert" style={errorBox}>{error}</div>}
       <div style={{ ...row, marginTop: 20 }}><button className={btnPrimary} type="submit">{saving ? 'Saving…' : 'Save client information'}</button><button className={btn} type="button" onClick={onCancel}>Cancel</button></div>
     </fieldset>
@@ -356,4 +407,3 @@ const fieldset: CSSProperties = { border: 0, padding: 0, margin: 0, minWidth: 0 
 const errorBox: CSSProperties = { margin: '16px 0', padding: 14, borderRadius: 8, background: '#fef2f2', color: '#991b1b' };
 const noticeBox: CSSProperties = { margin: '0 0 16px', padding: 14, borderRadius: 8, background: '#eff6ff', color: NAVY };
 
-const select: CSSProperties = withSelectChevron(input);

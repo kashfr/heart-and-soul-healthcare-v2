@@ -9,7 +9,6 @@ import { mergeWithDefaults } from './settings';
 import { getAssistantClientGrant, type AssistantClientGrant } from './assistantClientAccess';
 import { DOC_CATEGORIES } from './docCategories';
 import { parseDocumentPeriod, type DocumentPeriod } from './documentPeriod';
-import { GUARDIAN_ROLES, hasGuardianErrors, validateGuardian, type DecisionMaker, type GuardianContact } from './guardianShared';
 
 const MAX_BYTES = 20 * 1024 * 1024;
 const TYPES: Record<string, string> = {
@@ -17,9 +16,10 @@ const TYPES: Record<string, string> = {
   'application/msword': 'doc',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
 };
-const DIRECTORY_FIELDS = ['name', 'dob', 'street', 'city', 'state', 'zip'] as const;
-const PROFILE_FIELDS = ['medicaidId', 'physicianName', 'physicianPhone', 'physicianFax'] as const;
-const CONTACT_FIELDS = ['id', 'role', 'name', 'relationship', 'phone', 'email', 'address'] as const;
+const DIRECTORY_FIELDS = ['name', 'dob', 'street', 'city', 'state', 'zip', 'diagnosis'] as const;
+const PROFILE_FIELDS = ['medicaidId', 'physicianName', 'physicianPhone', 'physicianFax', 'allergies'] as const;
+/** Free-text fields typed from intake paperwork run longer than an address line. */
+const LONG_FIELDS: readonly string[] = ['diagnosis', 'allergies'];
 type Data = Record<string, unknown>;
 export interface AssistantContext {
   /** The assistant whose grant is in force: the signed-in VA, or the VA an
@@ -33,7 +33,7 @@ export interface AssistantContext {
 /** Matches VIEW_AS_HEADER in authedFetch (kept apart: that module imports the
  *  browser Firebase SDK, which has no place in a server-only file). */
 const VIEW_AS_HEADER = 'x-view-as';
-const VIEW_AS_READ_ONLY = 'View As is read-only. Exit View As to make changes.';
+export const VIEW_AS_READ_ONLY = 'View As is read-only. Exit View As to make changes.';
 export class AssistantClientError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
@@ -68,7 +68,7 @@ export async function requireAssistant(request: Request): Promise<AssistantConte
   if (!grant) throw new AdminAuthError(403, preview ? 'Client access has not been enabled for that assistant. Enable it under Settings > Assistant Client Access.' : 'Client assistance access has not been enabled for your account.');
   return preview ? { caller, grant, preview } : { caller, grant };
 }
-function assertScope(grant: AssistantClientGrant, patient: Data | undefined): asserts patient is Data {
+export function assertScope(grant: AssistantClientGrant, patient: Data | undefined): asserts patient is Data {
   if (!patient || (grant.scope !== 'all' && patient.program !== 'gapp')) {
     throw new AssistantClientError(404, 'Client not found or outside your assigned access.');
   }
@@ -76,12 +76,11 @@ function assertScope(grant: AssistantClientGrant, patient: Data | undefined): as
 function revision(...snapshots: DocumentSnapshot[]): string {
   return createHash('sha256').update(snapshots.map(s => `${s.id}:${s.updateTime?.seconds ?? 0}:${s.updateTime?.nanoseconds ?? 0}`).join('|')).digest('hex');
 }
-export function administrativeClient(id: string, patient: Data, clinical: Data, guardian: Data, version: string) {
+export function administrativeClient(id: string, patient: Data, clinical: Data, version: string) {
   return {
     id, ...Object.fromEntries(DIRECTORY_FIELDS.map(k => [k, text(patient[k])])),
     program: text(patient.program),
     ...Object.fromEntries(PROFILE_FIELDS.map(k => [k, text(clinical[k])])),
-    guardianContacts: Array.isArray(guardian.contacts) ? guardian.contacts.map(c => Object.fromEntries(CONTACT_FIELDS.map(k => [k, text(c?.[k])]))) : [],
     revision: version,
   };
 }
@@ -109,19 +108,19 @@ export async function getAssistantClient(context: AssistantContext, id: string) 
   const ref = adminDb().collection('patients').doc(id);
   const patient = await ref.get();
   assertScope(context.grant, patient.data());
-  const [clinical, guardian, docs] = await Promise.all([
-    ref.collection('clinical').doc('profile').get(), ref.collection('clinical').doc('guardian').get(),
+  const [clinical, docs] = await Promise.all([
+    ref.collection('clinical').doc('profile').get(),
     adminDb().collection('patientDocuments').where('patientId', '==', id).get(),
   ]);
   return {
-    client: administrativeClient(id, patient.data()!, clinical.data() || {}, guardian.data() || {}, revision(patient, clinical, guardian)),
+    client: administrativeClient(id, patient.data()!, clinical.data() || {}, revision(patient, clinical)),
     documents: docs.docs.filter(d => d.data().archived !== true).map(d => documentMetadata(d.id, d.data())).sort((a, b) => b.docDate.localeCompare(a.docDate) || String(b.uploadedAt).localeCompare(String(a.uploadedAt))),
     grant: context.grant,
   };
 }
 
 /** Recheck role, grant and program in the same transaction as every mutation. */
-async function currentWriteGrant(tx: Transaction, context: AssistantContext, patientId: string, permission: 'editInfo' | 'uploadDocuments') {
+export async function currentWriteGrant(tx: Transaction, context: AssistantContext, patientId: string, permission: 'editInfo' | 'uploadDocuments') {
   const db = adminDb();
   const [profile, settings, patient] = await Promise.all([
     tx.get(db.collection('users').doc(context.caller.uid)), tx.get(db.doc('settings/global')),
@@ -134,21 +133,21 @@ async function currentWriteGrant(tx: Transaction, context: AssistantContext, pat
   return { patient, grant };
 }
 function object(value: unknown): value is Data { return !!value && typeof value === 'object' && !Array.isArray(value); }
-function agencyToday(): string {
+export function agencyToday(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 }
-function validDate(value: string): boolean {
+export function validDate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T12:00:00Z`)) && new Date(`${value}T12:00:00Z`).toISOString().slice(0, 10) === value;
 }
-export function validateAdministrativePatch(input: unknown): { revision: string; directory: Data; clinical: Data; contacts?: GuardianContact[] } {
+export function validateAdministrativePatch(input: unknown): { revision: string; directory: Data; clinical: Data } {
   if (!object(input)) throw new AssistantClientError(400, 'Invalid client information.');
-  const allowed = new Set<string>(['revision', 'guardianContacts', ...DIRECTORY_FIELDS, ...PROFILE_FIELDS]);
+  const allowed = new Set<string>(['revision', ...DIRECTORY_FIELDS, ...PROFILE_FIELDS]);
   if (Object.keys(input).some(k => !allowed.has(k))) throw new AssistantClientError(400, 'This form can only change administrative client information.');
   if (typeof input.revision !== 'string' || !/^[a-f0-9]{64}$/.test(input.revision)) throw new AssistantClientError(409, 'Reload the client before saving.');
   const directory: Data = {}, clinical: Data = {};
   for (const field of [...DIRECTORY_FIELDS, ...PROFILE_FIELDS]) {
     if (!(field in input)) continue;
-    if (typeof input[field] !== 'string' || (input[field] as string).length > 200) throw new AssistantClientError(400, `Invalid ${field}.`);
+    if (typeof input[field] !== 'string' || (input[field] as string).length > (LONG_FIELDS.includes(field) ? 1000 : 200)) throw new AssistantClientError(400, `Invalid ${field}.`);
     const value = (input[field] as string).trim();
     if (field === 'name' && !value) throw new AssistantClientError(400, 'Enter the client name.');
     if (field === 'dob' && (!validDate(value) || value > agencyToday())) throw new AssistantClientError(400, 'Enter a valid birth date.');
@@ -158,25 +157,8 @@ export function validateAdministrativePatch(input: unknown): { revision: string;
     const target = (DIRECTORY_FIELDS as readonly string[]).includes(field) ? directory : clinical;
     target[field] = field === 'state' ? value.toUpperCase() : value;
   }
-  let contacts: GuardianContact[] | undefined;
-  if ('guardianContacts' in input) {
-    if (!Array.isArray(input.guardianContacts) || input.guardianContacts.length > 30) throw new AssistantClientError(400, 'Invalid guardian contacts.');
-    const seen = new Set<string>();
-    contacts = input.guardianContacts.map(c => {
-      if (!object(c) || Object.keys(c).some(k => !(CONTACT_FIELDS as readonly string[]).includes(k))) throw new AssistantClientError(400, 'Only contact details may be changed.');
-      const row: Record<string, string> = {};
-      for (const field of CONTACT_FIELDS) {
-        if (c[field] !== undefined && (typeof c[field] !== 'string' || (c[field] as string).length > 300)) throw new AssistantClientError(400, 'Invalid guardian contact details.');
-        row[field] = text(c[field]).trim();
-      }
-      if (!/^[A-Za-z0-9_-]{1,128}$/.test(row.id) || seen.has(row.id)) throw new AssistantClientError(400, 'Each guardian contact needs a unique identifier.');
-      seen.add(row.id);
-      if (!(GUARDIAN_ROLES as readonly string[]).includes(row.role) || !row.name || (!row.phone && !row.email) || (row.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email))) throw new AssistantClientError(400, 'Each contact needs a role, name, and valid phone or email.');
-      return row as unknown as GuardianContact;
-    });
-  }
-  if (!Object.keys(directory).length && !Object.keys(clinical).length && !contacts) throw new AssistantClientError(400, 'No changes were supplied.');
-  return { revision: input.revision, directory, clinical, contacts };
+  if (!Object.keys(directory).length && !Object.keys(clinical).length) throw new AssistantClientError(400, 'No changes were supplied.');
+  return { revision: input.revision, directory, clinical };
 }
 export async function updateAssistantClient(context: AssistantContext, id: string, input: unknown) {
   assertAssistantId(id);
@@ -184,33 +166,21 @@ export async function updateAssistantClient(context: AssistantContext, id: strin
   if (!context.grant.editInfo) throw new AssistantClientError(403, 'Editing client information is not enabled for your account.');
   const patch = validateAdministrativePatch(input);
   const db = adminDb(), patientRef = db.collection('patients').doc(id);
-  const clinicalRef = patientRef.collection('clinical').doc('profile'), guardianRef = patientRef.collection('clinical').doc('guardian');
+  const clinicalRef = patientRef.collection('clinical').doc('profile');
   await db.runTransaction(async tx => {
     const { patient } = await currentWriteGrant(tx, context, id, 'editInfo');
-    const [clinical, guardian] = await Promise.all([tx.get(clinicalRef), tx.get(guardianRef)]);
-    if (revision(patient, clinical, guardian) !== patch.revision) throw new AssistantClientError(409, 'Someone updated this client. Reload and review the latest information before saving.');
-    const oldPatient = patient.data() || {}, oldClinical = clinical.data() || {}, oldGuardian = guardian.data() || {};
+    const clinical = await tx.get(clinicalRef);
+    if (revision(patient, clinical) !== patch.revision) throw new AssistantClientError(409, 'Someone updated this client. Reload and review the latest information before saving.');
+    const oldPatient = patient.data() || {}, oldClinical = clinical.data() || {};
     const before: Data = {}, after: Data = {};
     for (const [key, value] of Object.entries({ ...patch.directory, ...patch.clinical })) {
       before[key] = (key in patch.directory ? oldPatient : oldClinical)[key] ?? '';
       after[key] = value;
     }
-    let contacts: GuardianContact[] | undefined;
-    if (patch.contacts) {
-      const existing: GuardianContact[] = Array.isArray(oldGuardian.contacts) ? oldGuardian.contacts : [];
-      if (existing.some(c => !patch.contacts!.some(next => next.id === c.id))) throw new AssistantClientError(400, 'Existing contacts cannot be removed here. Ask an administrator to remove a contact.');
-      contacts = patch.contacts.map(c => ({ ...(existing.find(old => old.id === c.id) || {}), ...c }));
-      if (oldGuardian.decisionMaker && hasGuardianErrors(validateGuardian({ decisionMaker: oldGuardian.decisionMaker as DecisionMaker, contacts }))) {
-        throw new AssistantClientError(400, 'Keep the required parent or legal guardian contact on this record.');
-      }
-      before.guardianContacts = existing.map(c => Object.fromEntries(CONTACT_FIELDS.map(k => [k, text(c[k])])));
-      after.guardianContacts = patch.contacts;
-    }
     const auditRef = patientRef.collection('administrativeAudit').doc();
     const stamp = { auditEventId: auditRef.id, updatedAt: FieldValue.serverTimestamp(), updatedBy: context.caller.uid, updatedByName: context.caller.profile.displayName || context.caller.email || '' };
     if (Object.keys(patch.directory).length) tx.update(patientRef, { ...patch.directory, ...stamp });
     if (Object.keys(patch.clinical).length) tx.set(clinicalRef, { ...patch.clinical, ...stamp }, { merge: true });
-    if (contacts) tx.set(guardianRef, { contacts, ...stamp }, { merge: true });
     tx.set(auditRef, {
       action: 'assistant-information-update', before, after, actorUid: context.caller.uid,
       actorName: context.caller.profile.displayName || context.caller.email || '', actorRole: context.caller.role, at: FieldValue.serverTimestamp(),
