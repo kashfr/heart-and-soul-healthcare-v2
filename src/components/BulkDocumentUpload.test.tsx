@@ -71,3 +71,14 @@ it('seeds a new file from the previous one, applies one file\'s labeling to all,
   expect(upload.mock.calls[0][0]).not.toHaveProperty('period');
   expect(upload.mock.calls[0][0]).not.toHaveProperty('status');
 });
+it('shows how many files are queued instead of the browser\'s cleared-input text', () => {
+  render(<BulkDocumentUpload upload={vi.fn()} onClose={() => {}} />);
+  expect(screen.getByText('No files chosen yet')).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText(/Choose documents/), { target: { files: [new File(['pdf'], 'rights.pdf', { type: 'application/pdf' })] } });
+  expect(screen.getByText('1 file ready to upload')).toBeInTheDocument();
+  expect(screen.getByText('Add More Files')).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText(/Choose documents/), { target: { files: [new File(['jpg'], 'card.jpg', { type: 'image/jpeg' })] } });
+  expect(screen.getByText('2 files ready to upload')).toBeInTheDocument();
+  fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0]);
+  expect(screen.getByText('1 file ready to upload')).toBeInTheDocument();
+});

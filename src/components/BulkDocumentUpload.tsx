@@ -1,6 +1,6 @@
 'use client';
 import { useState, type CSSProperties } from 'react';
-import { parseUSDate } from '@/lib/usDateInput';
+import { formatUSDateInput, parseUSDate } from '@/lib/usDateInput';
 import { DOC_CATEGORIES, type DocCategory } from '@/lib/docCategories';
 import { EMPTY_PERIOD_DRAFT, resolvePeriodDraft, type DocumentPeriodDraft } from '@/lib/documentPeriod';
 import { withSelectChevron } from '@/lib/selectChevron';
@@ -62,12 +62,23 @@ export default function BulkDocumentUpload({ upload, onClose, onComplete }: { up
     const saved = resolved.length - failed;
     setError(`${saved ? `${saved} uploaded, ` : ''}${failed} failed. Check the ${failed === 1 ? 'file' : 'files'} marked Failed below, then choose Upload pending files to retry.`);
   };
-  const several = rows.filter((r) => r.status !== 'uploaded').length > 1;
+  const pending = rows.filter((r) => r.status !== 'uploaded').length;
+  const several = pending > 1;
   return <div>
     <p style={intro}>Each file is saved separately with its own title, category, and date. Up to 20 files, under 20 MB each.</p>
     <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0 }}>
       <div onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); add(Array.from(e.dataTransfer.files)); }} style={dropZone}>
-        <label style={{ display: 'inline-grid', gap: 6, fontWeight: 600, color: '#334155' }}>Choose documents or photos <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.heic,.doc,.docx" onChange={(e) => { add(Array.from(e.target.files || [])); e.target.value = ''; }} /></label>
+        {/* The native input is hidden: it is cleared after each pick (so the
+            same file can be chosen again), and the browser then printed "No
+            files selected" beside a file that was in fact queued. The count
+            below comes from our own list instead. */}
+        <label className={`${btn} focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-blue-600`} style={{ cursor: 'pointer' }}>
+          {rows.length ? 'Add More Files' : 'Choose Files'}
+          <input className="sr-only" aria-label="Choose documents or photos" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.heic,.doc,.docx" onChange={(e) => { add(Array.from(e.target.files || [])); e.target.value = ''; }} />
+        </label>
+        <span aria-live="polite" style={{ ...chosen, ...(pending ? { color: '#0e7c4a' } : null) }}>
+          {pending ? `${pending} ${pending === 1 ? 'file' : 'files'} ready to upload` : rows.length ? 'Every file is uploaded' : 'No files chosen yet'}
+        </span>
         <span style={dropHint}>or drag files here</span>
       </div>
       {rows.map((r) => <fieldset disabled={r.status === 'uploaded' || busy} key={r.id} style={card}>
@@ -84,7 +95,7 @@ export default function BulkDocumentUpload({ upload, onClose, onComplete }: { up
         <div style={grid}>
           <label style={{ ...label, ...titleCell }}>Title <input aria-label={`Title for ${r.file.name}`} style={input} value={r.title} maxLength={200} onChange={(e) => patch(r.id, { title: e.target.value })} /></label>
           <label style={{ ...label, ...categoryCell }}>Category <select aria-label={`Category for ${r.file.name}`} style={select} value={r.category} onChange={(e) => patch(r.id, { category: e.target.value as DocCategory })}>{DOC_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></label>
-          <label style={{ ...label, ...dateCell }}>Date on document <input aria-label={`Date for ${r.file.name}`} type="text" placeholder="MM/DD/YYYY" inputMode="numeric" style={input} value={r.docDate} onChange={(e) => patch(r.id, { docDate: e.target.value })} /></label>
+          <label style={{ ...label, ...dateCell }}>Date on document <input aria-label={`Date for ${r.file.name}`} type="text" placeholder="MM/DD/YYYY" inputMode="numeric" maxLength={10} style={input} value={r.docDate} onChange={(e) => patch(r.id, { docDate: formatUSDateInput(e.target.value) })} /></label>
         </div>
         <div style={periodRow}>
           <DocumentPeriodFields draft={r.period} onChange={(next) => patch(r.id, { period: next })} name={r.file.name} labelStyle={label} inputStyle={{ ...input, width: 130 }} selectStyle={select} />
@@ -101,6 +112,7 @@ export default function BulkDocumentUpload({ upload, onClose, onComplete }: { up
 const intro: CSSProperties = { margin: '0 0 12px', color: '#475569', fontSize: 13.5, lineHeight: 1.5 };
 const dropZone: CSSProperties = { display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '14px 16px', border: '1.5px dashed #94a3b8', borderRadius: 10, background: '#f8fafc', margin: '0 0 12px' };
 const dropHint: CSSProperties = { fontSize: 12.5, color: '#8a949e' };
+const chosen: CSSProperties = { fontSize: 13.5, fontWeight: 600, color: '#475569' };
 const card: CSSProperties = { border: '1px solid #dbe2ea', borderRadius: 10, margin: '10px 0 0', padding: '10px 12px 12px', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box' };
 const cardHead: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 };
 const fileName: CSSProperties = { fontWeight: 700, fontSize: 13.5, color: '#1f2937', overflowWrap: 'anywhere' };

@@ -200,6 +200,33 @@ export async function PATCH(
     await adminAuth().revokeRefreshTokens(uid);
   }
 
+  // Deactivation also scrubs the uid from every patient's care team. Rules
+  // already deny chart reads to inactive accounts, so this is data hygiene:
+  // a uid left in assignedNurseIds silently regains chart access the moment
+  // the account is reactivated. Scrubbing here makes reactivation grant
+  // nothing by default — the admin re-adds the nurse per client. Best-effort:
+  // the deactivation itself has already succeeded, and any entries this pass
+  // misses now surface as "Inactive" chips in the client edit modal.
+  let careTeamsCleaned = 0;
+  if (body.active === false) {
+    try {
+      const assigned = await adminDb()
+        .collection('patients')
+        .where('assignedNurseIds', 'array-contains', uid)
+        .get();
+      if (!assigned.empty) {
+        const batch = adminDb().batch();
+        for (const d of assigned.docs) {
+          batch.update(d.ref, { assignedNurseIds: FieldValue.arrayRemove(uid) });
+        }
+        await batch.commit();
+        careTeamsCleaned = assigned.size;
+      }
+    } catch (err) {
+      console.error('Care-team scrub on deactivation failed:', err);
+    }
+  }
+
   // Best-effort security notification to the OLD address. Non-fatal: the
   // change has already succeeded, the user just won't get the heads-up
   // email. We swallow the result here (logged inside the helper) so a
@@ -227,6 +254,9 @@ export async function PATCH(
     credential: fresh.credential ?? null,
     phone: fresh.phone ?? null,
     active: fresh.active !== false,
+    // How many patients' care teams this uid was scrubbed from (deactivation
+    // only; 0 otherwise).
+    careTeamsCleaned,
     emailChangeRequest:
       freshEcr && freshEcr.status === 'pending' && freshEcr.newEmail
         ? { newEmail: freshEcr.newEmail, reason: freshEcr.reason ?? '', status: 'pending' as const }

@@ -1,5 +1,5 @@
 'use client';
-import { parseUSDate } from '@/lib/usDateInput';
+import { formatUSDateInput, parseUSDate } from '@/lib/usDateInput';
 import BulkDocumentUpload from './BulkDocumentUpload';
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
@@ -331,7 +331,7 @@ function InfoForm({ client, patientId, onCancel, onSaved, onError }: {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const field = (key: keyof InfoDraft, label: string, props: { required?: boolean; placeholder?: string; maxLength?: number; type?: string } = {}) => (
-    <Field key={key} label={label}><input style={input} value={draft[key]} onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))} {...props} /></Field>
+    <Field key={key} label={label}><input style={input} value={draft[key]} onChange={(e) => { const value = key === 'dob' ? formatUSDateInput(e.target.value) : e.target.value; setDraft((d) => ({ ...d, [key]: value })); }} {...(key === 'dob' ? { inputMode: 'numeric' as const } : null)} {...props} /></Field>
   );
   const area = (key: 'diagnosis' | 'allergies', label: string, placeholder: string) => (
     <Field key={key} label={label}><textarea style={{ ...input, minHeight: 72, resize: 'vertical' }} value={draft[key]} maxLength={1000} placeholder={placeholder} onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))} /></Field>

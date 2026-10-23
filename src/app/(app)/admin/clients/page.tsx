@@ -48,25 +48,11 @@ import { authedFetch } from '@/lib/authedFetch';
 import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
 import { baselinesToDraft, parseBaselineDraft, hasAnyBaseline, BASELINE_LABELS, BASELINE_LIMITS, type BaselineDraft } from '@/lib/vitalsBaselines';
 import { VITAL_KEYS } from '@/lib/vitalRanges';
+import { resolveCareTeamMembers, type CareTeamStaff } from '@/lib/careTeam';
 
 type ClientField = 'name' | 'dob';
 const CLIENT_FIELD_ORDER: readonly ClientField[] = ['name', 'dob'];
 const clientFieldId = (k: ClientField) => `client-form-${k}`;
-
-// Shape returned by GET /api/admin/users — only the fields the care
-// team picker actually consumes.
-interface CareTeamStaff {
-  uid: string;
-  displayName: string | null;
-  email: string | null;
-  role: string;
-  credential: string | null;
-  active: boolean;
-  /** Declared test/QA login, not a real workforce member. A test account on a
-      real client's care team can read that chart's PHI with no business need,
-      so the picker badges it and confirms before adding. */
-  isTestAccount?: boolean;
-}
 
 const emptyPatient: Partial<Patient> = {
   name: '',
@@ -145,6 +131,10 @@ function ClientsRosterInner() {
   const [clinical, setClinical] = useState<PatientClinical>({});
   // Vitals baselines as typed (text), parsed and validated on save.
   const [baselineDraft, setBaselineDraft] = useState<BaselineDraft>(() => baselinesToDraft());
+  // True while that sub-record is being fetched for the edit modal; the
+  // clinical inputs are disabled until it lands so nothing typed early gets
+  // clobbered when the fetch resolves.
+  const [clinicalLoading, setClinicalLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<ClientField, string>>>({});
@@ -261,20 +251,28 @@ function ClientsRosterInner() {
 
   // Load the sensitive clinical sub-record when editing; reset to blank for a
   // brand-new patient (it gets written after the patient doc is created).
+  // The clinical fields stay disabled until the fetch lands: on a slow
+  // connection an enabled-but-empty Allergies box invites typing over a record
+  // the editor hasn't seen yet, and the resolving fetch would wipe their input.
+  // They're also blanked first, because Cancel doesn't clear them — without
+  // this, the previously opened client's record shows under this client's
+  // name until the fetch resolves.
   useEffect(() => {
     if (!formOpen) return;
+    setClinical({});
+    setBaselineDraft(baselinesToDraft());
     if (!editingId) {
-      setClinical({});
-      setBaselineDraft(baselinesToDraft());
+      setClinicalLoading(false);
       return;
     }
     let cancelled = false;
+    setClinicalLoading(true);
     (async () => {
       const data = await getPatientClinical(editingId);
-      if (!cancelled) {
-        setClinical(data ?? {});
-        setBaselineDraft(baselinesToDraft(data?.vitalsBaselines));
-      }
+      if (cancelled) return;
+      setClinical(data ?? {});
+      setBaselineDraft(baselinesToDraft(data?.vitalsBaselines));
+      setClinicalLoading(false);
     })();
     return () => {
       cancelled = true;
@@ -347,17 +345,18 @@ function ClientsRosterInner() {
   // they share editingId + patients state.
   // Anyone who can author a note is a valid care-team member: that's
   // staff with a credential set (RN/LPN/CNA/HHA) plus admins. Filters
-  // out inactive accounts so demoted users don't surface as options.
+  // out inactive accounts so demoted users don't surface as options —
+  // this list gates ADDING only. The chip list below resolves against
+  // the full staffList so already-assigned-but-deactivated members
+  // stay visible and removable instead of lingering unseen in
+  // assignedNurseIds.
   const eligibleStaff = useMemo(
     () => staffList.filter((s) => s.active && (!!s.credential || s.role === 'admin')),
     [staffList],
   );
   const careTeamMembers = useMemo(
-    () =>
-      careTeam
-        .map((uid) => eligibleStaff.find((s) => s.uid === uid))
-        .filter((s): s is CareTeamStaff => !!s),
-    [careTeam, eligibleStaff],
+    () => resolveCareTeamMembers(careTeam, staffList),
+    [careTeam, staffList],
   );
   const addableStaff = useMemo(() => {
     const onTeam = new Set(careTeam);
@@ -476,8 +475,13 @@ function ClientsRosterInner() {
         savedId = await addPatient(formData as Patient);
         setPatients((prev) => [...prev, { ...(formData as Patient), id: savedId as string }]);
       }
-      // Persist the sensitive clinical fields to the care-team-gated sub-record.
-      if (savedId) {
+      // Persist the sensitive clinical fields to the care-team-gated
+      // sub-record — always the second write, after the patient doc. Skipped
+      // while the clinical fetch is still in flight: the fields were disabled,
+      // so there is nothing new to write, and clinicalToSave always carries
+      // vitalsBaselines + vitalsBaselinesNote, so writing the blank
+      // placeholder would wipe the stored baselines.
+      if (savedId && !clinicalLoading) {
         await savePatientClinical(savedId, clinicalToSave);
       }
       showToast(`${formData.name} ${editingId ? 'updated' : 'added'}`);
@@ -895,6 +899,11 @@ function ClientsRosterInner() {
                 <div style={careTeamHelpStyle}>
                   The clinical fields below feed this client&apos;s Medication Administration Record and are visible only to staff and the client&apos;s assigned care team.
                 </div>
+                {clinicalLoading && (
+                  <div style={clinicalLoadingNoteStyle} role="status">
+                    Loading this client&apos;s clinical record… the fields below unlock once it arrives.
+                  </div>
+                )}
 
                 {/* Program gets its own full-width line (its option labels are
                     long); Service level + start date share the next row. */}
@@ -982,7 +991,8 @@ function ClientsRosterInner() {
                     <select
                       value={clinical.sex || ''}
                       onChange={(e) => setClinical((c) => ({ ...c, sex: e.target.value }))}
-                      style={selectStyle}
+                      disabled={clinicalLoading}
+                      style={{ ...selectStyle, ...(clinicalLoading ? clinicalBusyStyle : null) }}
                     >
                       <option value="">—</option>
                       <option value="Female">Female</option>
@@ -996,8 +1006,9 @@ function ClientsRosterInner() {
                   <textarea
                     value={clinical.allergies || ''}
                     onChange={(e) => setClinical((c) => ({ ...c, allergies: e.target.value }))}
-                    style={textareaStyle}
-                    placeholder="e.g., Penicillin (rash). Write NKDA if no known drug allergies."
+                    disabled={clinicalLoading}
+                    style={{ ...textareaStyle, ...(clinicalLoading ? clinicalBusyStyle : null) }}
+                    placeholder={clinicalLoading ? 'Loading…' : 'e.g., Penicillin (rash). Write NKDA if no known drug allergies.'}
                   />
                 </Field>
 
@@ -1007,8 +1018,9 @@ function ClientsRosterInner() {
                       type="text"
                       value={clinical.physicianName || ''}
                       onChange={(e) => setClinical((c) => ({ ...c, physicianName: e.target.value }))}
-                      style={inputStyle}
-                      placeholder="Dr. Jane Smith"
+                      disabled={clinicalLoading}
+                      style={{ ...inputStyle, ...(clinicalLoading ? clinicalBusyStyle : null) }}
+                      placeholder={clinicalLoading ? 'Loading…' : 'Dr. Jane Smith'}
                     />
                   </Field>
                   <Field label="Physician phone">
@@ -1016,8 +1028,9 @@ function ClientsRosterInner() {
                       type="tel"
                       value={clinical.physicianPhone || ''}
                       onChange={(e) => setClinical((c) => ({ ...c, physicianPhone: formatUSPhone(e.target.value) }))}
-                      style={inputStyle}
-                      placeholder="(555) 123-4567"
+                      disabled={clinicalLoading}
+                      style={{ ...inputStyle, ...(clinicalLoading ? clinicalBusyStyle : null) }}
+                      placeholder={clinicalLoading ? 'Loading…' : '(555) 123-4567'}
                     />
                   </Field>
                 </div>
@@ -1028,8 +1041,9 @@ function ClientsRosterInner() {
                       type="tel"
                       value={clinical.physicianFax ? formatUSPhone(clinical.physicianFax) : ''}
                       onChange={(e) => setClinical((c) => ({ ...c, physicianFax: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
-                      style={inputStyle}
-                      placeholder="(555) 123-4568"
+                      disabled={clinicalLoading}
+                      style={{ ...inputStyle, ...(clinicalLoading ? clinicalBusyStyle : null) }}
+                      placeholder={clinicalLoading ? 'Loading…' : '(555) 123-4568'}
                     />
                   </Field>
                   <Field label="Medicaid ID">
@@ -1037,8 +1051,9 @@ function ClientsRosterInner() {
                       type="text"
                       value={clinical.medicaidId || ''}
                       onChange={(e) => setClinical((c) => ({ ...c, medicaidId: e.target.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 20) }))}
-                      style={inputStyle}
-                      placeholder="Member ID from the Medicaid card"
+                      disabled={clinicalLoading}
+                      style={{ ...inputStyle, ...(clinicalLoading ? clinicalBusyStyle : null) }}
+                      placeholder={clinicalLoading ? 'Loading…' : 'Member ID from the Medicaid card'}
                     />
                   </Field>
                 </div>
@@ -1047,8 +1062,9 @@ function ClientsRosterInner() {
                   <textarea
                     value={clinical.diet || ''}
                     onChange={(e) => setClinical((c) => ({ ...c, diet: e.target.value }))}
-                    style={textareaStyle}
-                    placeholder="e.g., Mechanical soft, thickened liquids, upright positioning"
+                    disabled={clinicalLoading}
+                    style={{ ...textareaStyle, ...(clinicalLoading ? clinicalBusyStyle : null) }}
+                    placeholder={clinicalLoading ? 'Loading…' : 'e.g., Mechanical soft, thickened liquids, upright positioning'}
                   />
                 </Field>
 
@@ -1080,7 +1096,8 @@ function ClientsRosterInner() {
                           aria-label={`${BASELINE_LABELS[k]} baseline low`}
                           value={baselineDraft[k]?.low ?? ''}
                           onChange={(e) => setBaselineDraft((d) => ({ ...d, [k]: { low: e.target.value, high: d[k]?.high ?? '' } }))}
-                          style={inputStyle}
+                          disabled={clinicalLoading}
+                          style={{ ...inputStyle, ...(clinicalLoading ? clinicalBusyStyle : null) }}
                           placeholder="age range"
                         />
                         <input
@@ -1090,7 +1107,8 @@ function ClientsRosterInner() {
                           aria-label={`${BASELINE_LABELS[k]} baseline high`}
                           value={baselineDraft[k]?.high ?? ''}
                           onChange={(e) => setBaselineDraft((d) => ({ ...d, [k]: { low: d[k]?.low ?? '', high: e.target.value } }))}
-                          style={inputStyle}
+                          disabled={clinicalLoading}
+                          style={{ ...inputStyle, ...(clinicalLoading ? clinicalBusyStyle : null) }}
                           placeholder="age range"
                         />
                       </React.Fragment>
@@ -1101,8 +1119,9 @@ function ClientsRosterInner() {
                       <input
                         value={clinical.vitalsBaselinesNote || ''}
                         onChange={(e) => setClinical((c) => ({ ...c, vitalsBaselinesNote: e.target.value }))}
-                        style={inputStyle}
-                        placeholder="e.g., care plan dated 03/2026; Dr. Patel order 08/12/2026"
+                        disabled={clinicalLoading}
+                        style={{ ...inputStyle, ...(clinicalLoading ? clinicalBusyStyle : null) }}
+                        placeholder={clinicalLoading ? 'Loading…' : 'e.g., care plan dated 03/2026; Dr. Patel order 08/12/2026'}
                       />
                     </Field>
                   </div>
@@ -1130,8 +1149,17 @@ function ClientsRosterInner() {
                       <span style={emptyCareTeamStyle}>No nurses assigned yet.</span>
                     ) : (
                       careTeamMembers.map((s) => (
-                        <span key={s.uid} style={chipStyle}>
+                        <span
+                          key={s.uid}
+                          style={s.active ? chipStyle : chipInactiveStyle}
+                          title={
+                            s.active
+                              ? undefined
+                              : 'This account is deactivated. It keeps no chart access while inactive, but the assignment persists — remove it unless they are expected back on this team.'
+                          }
+                        >
                           {s.displayName || s.email || '(no name)'}
+                          {!s.active && <span style={chipInactiveBadgeStyle}>Inactive</span>}
                           {s.isTestAccount && <span style={chipTestStyle}>Test</span>}
                           {s.credential && (
                             <span style={chipCredStyle}>{s.credential}</span>
@@ -1304,6 +1332,11 @@ const modalHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'ce
 const closeBtnStyle: React.CSSProperties = { background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#7f8c8d' };
 const inputStyle: React.CSSProperties = { padding: '10px 12px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit' };
 const textareaStyle: React.CSSProperties = { ...inputStyle, minHeight: 60, resize: 'vertical', lineHeight: 1.4 };
+// Clinical inputs while the sub-record fetch is in flight — visibly dimmed so
+// "disabled" reads as "still loading", not "not applicable". The flat
+// background also drops selectStyle's chevron, which is fine while disabled.
+const clinicalBusyStyle: React.CSSProperties = { background: '#f5f7fa', color: '#9aa4ae', cursor: 'wait' };
+const clinicalLoadingNoteStyle: React.CSSProperties = { fontSize: 12.5, color: '#7f8c8d', fontStyle: 'italic', marginBottom: 12 };
 const requiresMarRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, cursor: 'pointer' };
 const marBadgeStyle: React.CSSProperties = { display: 'inline-block', background: '#eef4fb', color: '#1a3a5c', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4, border: '1px solid #c8def5' };
 const seizureBadgeStyle: React.CSSProperties = { display: 'inline-block', background: '#ede9fe', color: '#4c1d95', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4, border: '1px solid #ddd6fe', whiteSpace: 'nowrap' };
@@ -1423,6 +1456,8 @@ const baselineHeadStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, 
 const chipsRowStyle: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 };
 const emptyCareTeamStyle: React.CSSProperties = { fontSize: 13, color: '#7f8c8d', fontStyle: 'italic' };
 const chipStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#eef4fb', color: '#1a3a5c', padding: '6px 6px 6px 12px', borderRadius: 999, fontSize: 13, border: '1px solid #c8def5' };
+const chipInactiveStyle: React.CSSProperties = { ...chipStyle, background: '#f4f5f6', color: '#5c6b7a', border: '1px dashed #b8c2cc' };
+const chipInactiveBadgeStyle: React.CSSProperties = { fontSize: 10, fontWeight: 700, background: '#5c6b7a', color: 'white', padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4, textTransform: 'uppercase' };
 const chipCredStyle: React.CSSProperties = { fontSize: 10, fontWeight: 700, background: '#1a3a5c', color: 'white', padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4 };
 const chipTestStyle: React.CSSProperties = { fontSize: 10, fontWeight: 700, background: '#fdecea', color: '#a3261c', padding: '2px 6px', borderRadius: 999, letterSpacing: 0.4, textTransform: 'uppercase' };
 const chipRemoveBtnStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', color: '#1a3a5c', border: 'none', padding: 2, borderRadius: 999, cursor: 'pointer' };
