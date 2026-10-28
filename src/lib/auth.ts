@@ -32,6 +32,10 @@ export interface UserProfile {
   /** Present when the user has an open self-service email-change request
       awaiting admin approval. Cleared when an admin approves or dismisses it. */
   emailChangeRequest?: EmailChangeRequest;
+  /** Virtual assistants only: the Settings > Assistant Client Access grant,
+      mirrored here by the settings route so the Firestore and Storage rules
+      can read it from the profile. Absent when she has no client access. */
+  clientAccess?: { scope: 'gapp' | 'all'; editInfo: boolean; uploadDocuments: boolean };
 }
 
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {

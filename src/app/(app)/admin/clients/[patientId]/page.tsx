@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { AuthGuard } from '@/components/AuthGuard';
 import { ClientActivityLog } from '@/components/ClientActivityLog';
-import { AssistantClientDetails } from '@/components/AssistantClients';
+import { AssistantAccessGate, useAssistantGrant } from '@/components/AssistantAccessGate';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import { useSettings } from '@/components/SettingsProvider';
 import { getPatient, getPatientClinical, type Patient, type PatientClinical } from '@/lib/patients';
@@ -184,14 +184,22 @@ function ClientDashboardInner() {
   // can't forge authorship.
   const { user, profile } = useAuth();
   const realRole = profile?.role || '';
-  const realStaff = realRole === 'admin' || realRole === 'supervisor';
-  // The Hours tab is the owner's alone (hoursAuthorizations is admin-only in
-  // rules too), and it stays hidden while previewing another user's view.
-  const showHoursTab = realRole === 'admin' && !isViewingAs;
+  // Core staff (admin, supervisor) do everything, including clinical work and
+  // deletes. A virtual assistant the owner granted client access (Settings >
+  // Assistant Client Access) maintains the record like staff; the rules stop
+  // her short of deleting, and clinical charting stays with clinicians.
+  const { grant: assistantGrant } = useAssistantGrant();
+  const coreStaff = realRole === 'admin' || realRole === 'supervisor';
+  const realStaff = coreStaff || (realRole === 'va' && !!assistantGrant?.editInfo);
+  // Hours: the owner and a granted assistant (who transcribes the letters);
+  // dollars inside stay owner-only. The Activity Log (audit + undo) is the
+  // owner's alone. Both hide while previewing another user's view.
+  const showHoursTab = (realRole === 'admin' || (realRole === 'va' && !!assistantGrant)) && !isViewingAs;
+  const showActivityTab = realRole === 'admin' && !isViewingAs;
   // Care plan is a staff surface; a nurse deep-linking ?tab=careplan lands on
   // Overview instead of an editor she isn't meant to drive.
   const tab: TabKey =
-    isTabKey(tabParam) && !((tabParam === 'careplan' || tabParam === 'communications') && isNurse) && !((tabParam === 'hours' || tabParam === 'activity') && !showHoursTab)
+    isTabKey(tabParam) && !((tabParam === 'careplan' || tabParam === 'communications') && isNurse) && !(tabParam === 'hours' && !showHoursTab) && !(tabParam === 'activity' && !showActivityTab)
       ? tabParam
       : 'overview';
   const setTab = (next: TabKey) => {
@@ -636,7 +644,7 @@ function ClientDashboardInner() {
 
           {/* Tab bar */}
           <div style={tabBarStyle} role="tablist" aria-label="Dashboard sections">
-            {TABS.filter((t) => ((t.key !== 'careplan' && t.key !== 'communications') || !isNurse) && ((t.key !== 'hours' && t.key !== 'activity') || showHoursTab)).map((t) => (
+            {TABS.filter((t) => ((t.key !== 'careplan' && t.key !== 'communications') || !isNurse) && (t.key !== 'hours' || showHoursTab) && (t.key !== 'activity' || showActivityTab)).map((t) => (
               <button
                 key={t.key}
                 type="button"
@@ -714,50 +722,42 @@ function ClientDashboardInner() {
               </section>
 
               {/* Day program: where the client spends the day and who to call
-                  there. Clinical sub-record, so VAs (no clinical read) skip it. */}
-              {realRole !== 'va' && (
-                <DayProgramSection
-                  key={`dp-${patientId}`}
-                  patientId={patientId}
-                  canEdit={realStaff && !isViewingAs}
-                  actorName={profile?.displayName || user?.email || ''}
-                  onToast={showToast}
-                />
-              )}
+                  there. */}
+              <DayProgramSection
+                key={`dp-${patientId}`}
+                patientId={patientId}
+                canEdit={realStaff && !isViewingAs}
+                actorName={profile?.displayName || user?.email || ''}
+                onToast={showToast}
+              />
               {/* Physicians: every doctor with phone and fax (reference
                   directory; the attending on the clinical profile drives
                   verbal orders and PPOT). */}
-              {realRole !== 'va' && (
-                <PhysiciansSection
-                  key={`ph-${patientId}`}
-                  patientId={patientId}
-                  canEdit={realStaff && !isViewingAs}
-                  actorName={profile?.displayName || user?.email || ''}
-                  onToast={showToast}
-                />
-              )}
+              <PhysiciansSection
+                key={`ph-${patientId}`}
+                patientId={patientId}
+                canEdit={realStaff && !isViewingAs}
+                actorName={profile?.displayName || user?.email || ''}
+                onToast={showToast}
+              />
               {/* Guardian and responsible parties: who signs consents and
                   releases, plus payee/conservator contacts. */}
-              {realRole !== 'va' && (
-                <GuardianSection
-                  key={`gd-${patientId}`}
-                  patientId={patientId}
-                  canEdit={realStaff && !isViewingAs}
-                  actorName={profile?.displayName || user?.email || ''}
-                  onToast={showToast}
-                />
-              )}
+              <GuardianSection
+                key={`gd-${patientId}`}
+                patientId={patientId}
+                canEdit={realStaff && !isViewingAs}
+                actorName={profile?.displayName || user?.email || ''}
+                onToast={showToast}
+              />
               {/* Support coordinator: who writes the ISP and handles
                   authorizations and the annual meeting. */}
-              {realRole !== 'va' && (
-                <SupportCoordinatorSection
-                  key={`sc-${patientId}`}
-                  patientId={patientId}
-                  canEdit={realStaff && !isViewingAs}
-                  actorName={profile?.displayName || user?.email || ''}
-                  onToast={showToast}
-                />
-              )}
+              <SupportCoordinatorSection
+                key={`sc-${patientId}`}
+                patientId={patientId}
+                canEdit={realStaff && !isViewingAs}
+                actorName={profile?.displayName || user?.email || ''}
+                onToast={showToast}
+              />
               {/* Quick notes — the lightweight jot-it-down sibling of the
                   progress note (author/time auto-captured, immutable). Keyed
                   by patient so NOTHING (esp. an open modal with typed text)
@@ -769,26 +769,20 @@ function ClientDashboardInner() {
                 onToast={showToast}
               />
               {/* Handoff board: nurse-to-nurse messages on this client, with
-                  read receipts. Posting is for staff or an assigned nurse (the
-                  API re-checks); acknowledging is the real user's own action. */}
-              {realRole !== 'va' && (
+                  read receipts. Posting is for core staff or an assigned nurse
+                  (the API re-checks); acknowledging is the real user's own action. */}
               <HandoffBoardSection
                 key={`ho-${patientId}`}
                 patientId={patientId}
                 actor={{ uid: isViewingAs ? '' : user?.uid || '', name: profile?.displayName || user?.email || '' }}
-                canPost={!isViewingAs && canUploadDocs}
+                canPost={!isViewingAs && (coreStaff || (realRole === 'nurse' && canUploadDocs))}
                 onToast={showToast}
               />
-              )}
               {/* Verbal orders: telephone orders and their signature status. Taking
                   one needs an RN/LPN credential (the form and API both re-check). */}
-              {realRole !== 'va' && (
-                <VerbalOrdersSection key={`vo-${patientId}`} patientId={patientId} canTake={!isViewingAs && (realStaff || ['RN', 'LPN'].includes(profile?.credential || ''))} />
-              )}
-              {/* Medication error reports: anyone with a clinical credential (or staff) can file. */}
-              {realRole !== 'va' && (
-                <MedErrorsSection key={`me-${patientId}`} patientId={patientId} canFile={!isViewingAs && (realStaff || !!profile?.credential)} />
-              )}
+              <VerbalOrdersSection key={`vo-${patientId}`} patientId={patientId} canTake={!isViewingAs && (coreStaff || ['RN', 'LPN'].includes(profile?.credential || ''))} />
+              {/* Medication error reports: anyone with a clinical credential (or core staff) can file. */}
+              <MedErrorsSection key={`me-${patientId}`} patientId={patientId} canFile={!isViewingAs && (coreStaff || !!profile?.credential)} />
               {/* Seizure log: only for clients flagged hasSeizureDisorder. */}
               {patient?.hasSeizureDisorder && (
                 <SeizureLogSection key={`sz-${patientId}`} patientId={patientId} patientName={patient.name} patientDob={patient.dob || ''} />
@@ -796,7 +790,7 @@ function ClientDashboardInner() {
             </>
           )}
 
-          {tab === 'activity' && showHoursTab && <ClientActivityLog key={patientId} patientId={patientId} onUndone={() => {
+          {tab === 'activity' && showActivityTab && <ClientActivityLog key={patientId} patientId={patientId} onUndone={() => {
             void Promise.all([getPatient(patientId), getPatientClinical(patientId), getPatientDocuments(patientId)]).then(([nextPatient, nextClinical, nextDocuments]) => {
               setPatient(nextPatient); setClinical(nextClinical); setDocuments(nextDocuments);
             });
@@ -1065,7 +1059,7 @@ function ClientDashboardInner() {
             <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
               <ClipboardList size={16} /> Service Plan
             </div>
-            <ServicePlanSection key={`sp-${patientId}`} patientId={patientId} canAuthor={realStaff && !isViewingAs} />
+            <ServicePlanSection key={`sp-${patientId}`} patientId={patientId} canAuthor={coreStaff && !isViewingAs} />
           </section>
           )}
 
@@ -1090,13 +1084,13 @@ function ClientDashboardInner() {
           </section>
           )}
 
-          {/* Hours (owner-only tab) */}
+          {/* Hours (owner, plus a granted assistant without the dollar side) */}
           {tab === 'hours' && showHoursTab && user && (
           <section style={{ ...sectionCardStyle, background: 'transparent', border: 'none', padding: 0 }}>
             <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
               <Clock size={16} /> Hours
             </div>
-            <HoursSection patientId={patientId} patientName={patient.name} program={patient.program || ''} notes={notes} uid={user.uid} todayISO={today} />
+            <HoursSection patientId={patientId} patientName={patient.name} program={patient.program || ''} notes={notes} uid={user.uid} todayISO={today} canSeeDollars={realRole === 'admin'} canDelete={realRole === 'admin'} />
           </section>
           )}
 
@@ -1155,11 +1149,11 @@ function ClientDashboardInner() {
 }
 
 export default function ClientDashboardPage() {
-  const { role } = useEffectiveUser();
-  const params = useParams();
+  // An assistant reaches the same dashboard as staff once the owner grants
+  // her client access; the gate explains the closed door otherwise.
   return (
     <AuthGuard allow={['admin', 'supervisor', 'nurse', 'va']}>
-      {role === 'va' ? <AssistantClientDetails patientId={String(params.patientId)} /> : <ClientDashboardInner />}
+      <AssistantAccessGate><ClientDashboardInner /></AssistantAccessGate>
     </AuthGuard>
   );
 }

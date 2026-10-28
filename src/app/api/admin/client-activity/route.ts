@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireActivityAdmin, listAllClientActivity } from '@/lib/clientActivityServer';
 import { AdminAuthError } from '@/lib/adminAuthGuard';
-import { AssistantClientError } from '@/lib/assistantClientsServer';
+import { AssistantClientError } from '@/lib/assistantClientError';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {

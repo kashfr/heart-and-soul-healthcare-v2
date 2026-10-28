@@ -119,6 +119,24 @@ export async function getPatients(): Promise<Patient[]> {
 }
 
 /**
+ * The roster for one payer program, for an assistant whose client access is
+ * scoped to GAPP: the patients read rule only proves a list query for her
+ * when it is filtered to that program. Sorted client-side (no composite
+ * index needed).
+ */
+export async function getPatientsForProgram(program: string): Promise<Patient[]> {
+  try {
+    const q = query(collection(db, 'patients'), where('program', '==', program));
+    const snapshot = await getDocs(q);
+    const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Patient[];
+    return list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  } catch (error) {
+    console.error('Error fetching program patients:', error);
+    return [];
+  }
+}
+
+/**
  * Patients a nurse is assigned to (her uid is in assignedNurseIds), for the
  * standalone Medications / MAR picker. array-contains only (no orderBy) so it
  * needs no composite index; sorted by name client-side.

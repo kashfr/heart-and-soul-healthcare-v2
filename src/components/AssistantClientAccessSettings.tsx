@@ -15,9 +15,11 @@ export function AssistantClientAccessSettings({ value, staff, onChange }: {
   return <section style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 24, marginBottom: 20 }}>
     <h2 style={{ fontSize: 19, fontWeight: 700, color: '#1a3a5c', marginBottom: 8 }}>Assistant Client Access</h2>
     <p style={{ color: '#5c6b7a', fontSize: 14, marginBottom: 16 }}>
-      Give individual virtual assistants access to client information and documents. Choose their client scope,
-      then enable editing and uploads as needed. Save settings to apply changes. Clinical charting, medications,
-      care plans, client deletion, and staff permissions remain restricted. New clients in the chosen scope are included automatically.
+      Give individual virtual assistants the client roster and dashboard. Choose their client scope, then enable
+      editing and uploads as needed; with editing on, an assistant maintains client records the way staff do.
+      Save settings to apply changes. Deleting anything, dollar amounts and billing rates, clinical charting,
+      medication orders, the Activity Log, and staff permissions remain restricted. New clients in the chosen
+      scope are included automatically.
     </p>
     {assistants.map((person) => {
       const grant = value.grants.find((g) => g.uid === person.uid);

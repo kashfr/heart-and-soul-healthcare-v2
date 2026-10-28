@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
+import { AdminAuthError, requireStaffOrAssistant } from '@/lib/adminAuthGuard';
 import { refreshServicePlanDocument } from '@/lib/servicePlanServer';
 
 export const runtime = 'nodejs';
@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
  *  plan or review PDF in place with the current layout. Staff only. */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireRole(request, ['admin', 'supervisor']);
+    await requireStaffOrAssistant(request, { write: true });
   } catch (err) {
     if (err instanceof AdminAuthError) return NextResponse.json({ error: err.message }, { status: err.status });
     throw err;

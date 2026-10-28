@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
+import { requireRole, AdminAuthError, requireStaffOrAssistant } from '@/lib/adminAuthGuard';
 import { deleteDocumentWithAudit, updateDocumentDetailsServer } from '@/lib/patientDocumentsServer';
 
 /**
@@ -36,7 +36,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { id } = await params;
   let caller;
   try {
-    caller = await requireRole(request, ['admin', 'supervisor']);
+    caller = await requireStaffOrAssistant(request, { write: true });
   } catch (err) {
     if (err instanceof AdminAuthError) return NextResponse.json({ error: err.message }, { status: err.status });
     throw err;

@@ -46,7 +46,7 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), replace: 
 vi.mock('@/components/AuthGuard', () => ({
   AuthGuard: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
-vi.mock('@/components/AssistantClients', () => ({ AssistantClientsRoster: () => null }));
+vi.mock('@/components/SettingsProvider', () => ({ useSettings: () => ({ settings: { assistantClients: { grants: [] } }, ready: true, refresh: vi.fn() }) }));
 // A supervisor: manages the roster, but isn't the hours-badge owner, so the
 // page skips the admin-only hours fetch.
 vi.mock('@/components/AuthProvider', () => ({

@@ -3,7 +3,7 @@ import { activityTypeActions, matchesActivityType, activityDateBounds, type Acti
 import { FieldValue, type DocumentSnapshot } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin';
 import { AdminAuthError, requireRole, type AuthedCaller } from './adminAuthGuard';
-import { assertAssistantId, AssistantClientError } from './assistantClientsServer';
+import { assertAssistantId, AssistantClientError } from './assistantClientError';
 import { capturedUndoFields, isCapturedUpload, activityChangedFields, sameActivityValue, type ClientActivity } from './clientActivity';
 import { hasGuardianErrors, validateGuardian, type GuardianContact, type GuardianRecord } from './guardianShared';
 

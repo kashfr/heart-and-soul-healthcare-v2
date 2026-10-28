@@ -1,6 +1,8 @@
 import 'server-only';
 import { adminAuth, adminDb } from './firebaseAdmin';
 import type { Role, UserProfile } from './auth';
+import { getAssistantClientGrant } from './assistantClientAccess';
+import { getServerSettings } from './settingsServer';
 
 export interface AuthedCaller {
   uid: string;
@@ -60,4 +62,30 @@ export async function requireRole(
     role: profile.role,
     profile,
   };
+}
+
+/**
+ * Staff (admin, supervisor) or a virtual assistant the owner granted client
+ * access under Settings > Assistant Client Access. The grant is read live
+ * from settings on every call; `write` also requires its editInfo flag. A
+ * DELETE is never an assistant's, whatever the grant says: she maintains
+ * records, she does not erase them.
+ */
+export async function requireStaffOrAssistant(
+  request: Request,
+  options: { write?: boolean } = {},
+): Promise<AuthedCaller> {
+  const caller = await requireRole(request, ['admin', 'supervisor', 'va']);
+  if (caller.role !== 'va') return caller;
+  if (request.method.toUpperCase() === 'DELETE') {
+    throw new AdminAuthError(403, 'Assistants cannot delete records.');
+  }
+  const grant = getAssistantClientGrant((await getServerSettings()).assistantClients, caller.uid, caller.role);
+  if (!grant) {
+    throw new AdminAuthError(403, 'Client access has not been enabled for your account.');
+  }
+  if (options.write && !grant.editInfo) {
+    throw new AdminAuthError(403, 'Editing client information is not enabled for your account.');
+  }
+  return caller;
 }
