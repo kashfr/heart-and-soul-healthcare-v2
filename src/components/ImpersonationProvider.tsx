@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { btnPrimary } from '@/components/buttons';
 import type { Role } from '@/lib/auth';
 
@@ -30,6 +30,11 @@ interface ImpersonationContextValue {
   viewingAs: ViewAsTarget | null;
   startViewAs: (target: ViewAsTarget) => void;
   stopViewAs: () => void;
+  /** Call at the top of any handler that would write. Outside View As it
+   *  returns false and the handler proceeds; during View As it shows the
+   *  read-only notice and returns true so the handler stops before the
+   *  write (which would otherwise land as the real admin). */
+  blockWrite: () => boolean;
 }
 
 const STORAGE_KEY = 'view-as-target';
@@ -38,10 +43,13 @@ const ImpersonationContext = createContext<ImpersonationContextValue>({
   viewingAs: null,
   startViewAs: () => {},
   stopViewAs: () => {},
+  blockWrite: () => false,
 });
 
 export function ImpersonationProvider({ children }: { children: ReactNode }) {
   const [viewingAs, setViewingAs] = useState<ViewAsTarget | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Hydrate from sessionStorage on mount (survives reloads, clears on new tab/session).
   useEffect(() => {
@@ -77,11 +85,37 @@ export function ImpersonationProvider({ children }: { children: ReactNode }) {
     setViewingAs(null);
   };
 
+  // October 2026: the owner wants a preview to show every control the person
+  // sees, so he can tell her exactly what to click. Controls therefore stay
+  // visible during View As and the write itself is what gets stopped.
+  const blockWrite = () => {
+    if (!viewingAs) return false;
+    setNotice(`Read-only preview of ${viewingAs.displayName}: nothing was saved. Exit View-As to make this change as yourself.`);
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(null), 5000);
+    return true;
+  };
+
   return (
-    <ImpersonationContext.Provider value={{ viewingAs, startViewAs, stopViewAs }}>
+    <ImpersonationContext.Provider value={{ viewingAs, startViewAs, stopViewAs, blockWrite }}>
       {children}
+      {notice && (
+        <div role="status" style={noticeStyle}>{notice}</div>
+      )}
     </ImpersonationContext.Provider>
   );
+}
+
+const noticeStyle: CSSProperties = {
+  position: 'fixed', left: '50%', bottom: 24, transform: 'translateX(-50%)', zIndex: 10000,
+  background: '#1a3a5c', color: 'white', padding: '12px 18px', borderRadius: 10, fontSize: 14, lineHeight: 1.4,
+  maxWidth: 'min(560px, calc(100vw - 32px))', boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+};
+
+/** The View As write guard for components with their own save handlers. */
+export function useViewAsGuard(): { isViewingAs: boolean; blockWrite: () => boolean } {
+  const { viewingAs, blockWrite } = useContext(ImpersonationContext);
+  return { isViewingAs: !!viewingAs, blockWrite };
 }
 
 export function useViewAs() {

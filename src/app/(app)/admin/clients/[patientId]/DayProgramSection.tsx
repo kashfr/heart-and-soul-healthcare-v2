@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useViewAsGuard } from '@/components/ImpersonationProvider';
 import { btn, btnPrimary } from '@/components/buttons';
 import { Building2, Pencil } from 'lucide-react';
 import { formatDateUS } from '@/lib/dateFormat';
@@ -33,6 +34,7 @@ const fieldId = (k: DayProgramErrorKey) => `dp-field-${k}`;
  * contact there. Read by the care team; edited by staff.
  */
 export default function DayProgramSection({ patientId, canEdit, actorName, onToast }: Props) {
+  const { blockWrite } = useViewAsGuard();
   const [record, setRecord] = useState<DayProgram | null | undefined>(undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -71,6 +73,7 @@ export default function DayProgramSection({ patientId, canEdit, actorName, onToa
   };
 
   const save = async () => {
+    if (blockWrite()) return;
     if (!applyFieldErrors(validateDayProgram(draft), DAY_PROGRAM_ERROR_ORDER, setErrors, fieldId)) return;
     setSaving(true);
     setSaveError(null);

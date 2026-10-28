@@ -64,9 +64,16 @@ through the capture function's auth context (actor role `va`), review-only.
 ## Admin preview through View As
 
 View As an assistant renders her roster and dashboard with the admin's own
-token (reads succeed as the admin) and the usual View As write block, with
-`useAssistantGrant` reading the previewed assistant's grant so the gate and
-the roster scope match what she sees.
+token (reads succeed as the admin), with `useAssistantGrant` reading the
+previewed assistant's grant so the gate, roster scope, and Hours tab match
+what she sees. Since October 2026 a preview shows EVERY control the person
+sees (the owner uses it to tell staff what to click); the save itself is what
+View As stops. Components with their own write handlers call
+`useViewAsGuard().blockWrite()` first, which shows the read-only notice and
+returns true during a preview; `authedFetch` still refuses API writes as a
+backstop. The note, oversight, supervisory-visit, and service-plan authoring
+pages keep their whole-page `ViewAsWriteBlock`, and dose/treatment charting
+cells stay hidden in a preview.
 
 ## Validation and deployment
 

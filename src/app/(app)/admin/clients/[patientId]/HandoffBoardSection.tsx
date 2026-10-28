@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useViewAsGuard } from '@/components/ImpersonationProvider';
 import { btn, btnPrimary, btnSm } from '@/components/buttons';
 import { AlertTriangle, ArrowLeftRight, Check, Clock, Plus, ChevronDown, ChevronUp } from 'lucide-react';
 import { acknowledgeHandoff, getHandoffsForPatient, postHandoff, type Handoff } from '@/lib/handoffs';
@@ -31,6 +32,7 @@ export default function HandoffBoardSection({
   canPost: boolean;
   onToast: (msg: string) => void;
 }) {
+  const { blockWrite } = useViewAsGuard();
   const [items, setItems] = useState<Handoff[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -68,7 +70,7 @@ export default function HandoffBoardSection({
   }, []);
 
   const ack = async (h: Handoff) => {
-    if (!h.id || !actor.uid || busyId) return;
+    if (!h.id || !actor.uid || busyId || blockWrite()) return;
     setBusyId(h.id);
     try {
       await acknowledgeHandoff(h.id, actor.uid);
@@ -188,6 +190,7 @@ function PostHandoffModal({
   onClose: () => void;
   onSaved: (recipients: number, sms: number, urgent: boolean) => void;
 }) {
+  const { blockWrite } = useViewAsGuard();
   const [text, setText] = useState('');
   const [urgent, setUrgent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -200,7 +203,7 @@ function PostHandoffModal({
   }, []);
 
   const save = async () => {
-    if (busy) return;
+    if (busy || blockWrite()) return;
     if (!text.trim()) {
       setTextError('Write the handoff before posting.');
       escortToField('handoff-post-text');

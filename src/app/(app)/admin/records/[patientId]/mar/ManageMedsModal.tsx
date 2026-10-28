@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useViewAsGuard } from '@/components/ImpersonationProvider';
 import { btn, btnDanger, btnPrimary } from '@/components/buttons';
 import { createPortal } from 'react-dom';
 import { authedFetch } from '@/lib/authedFetch';
@@ -75,6 +76,7 @@ interface Props {
  * chart doses by clicking the grid cell).
  */
 export default function ManageMedsModal({ patientId, patientName, activeOrders, orderIdsWithDoses, onClose, onSaved, verbalOrder }: Props) {
+  const { blockWrite } = useViewAsGuard();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -218,6 +220,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
   };
 
   const handleSubmit = async () => {
+    if (blockWrite()) return;
     setSubmitError('');
     // The same gates the server enforces, collected per field so every
     // problem is outlined at once and the first one is scrolled into view.

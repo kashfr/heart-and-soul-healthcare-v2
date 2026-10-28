@@ -1,6 +1,7 @@
 'use client';
 
 import MonthPicker from '@/components/MonthPicker';
+import { useViewAsGuard } from '@/components/ImpersonationProvider';
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { btn, btnDanger, btnIcon, btnPrimary, btnSm } from '@/components/buttons';
@@ -97,6 +98,7 @@ interface DayRow {
  * the hours worked on it).
  */
 export default function HoursSection({ patientId, patientName, program, notes, uid, todayISO, canSeeDollars = true, canDelete = true, readOnly = false }: Props) {
+  const { blockWrite } = useViewAsGuard();
   const [auths, setAuths] = useState<HoursAuthorization[] | null>(null);
   const [rates, setRates] = useState<BillingRate[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -301,7 +303,7 @@ export default function HoursSection({ patientId, patientName, program, notes, u
   };
 
   const remove = async (a: HoursAuthorization) => {
-    if (!a.id) return;
+    if (!a.id || blockWrite()) return;
     if (!window.confirm(`Delete the ${bucketLabelLower(a.covers)} line ${a.paNumber || '(no PA #)'} (${formatDateUS(a.from)} to ${formatDateUS(a.to)})? The hours history stays; only the cap is removed.`)) return;
     try {
       await deleteHoursAuthorization(a.id);
@@ -809,6 +811,7 @@ interface FormProps {
 }
 
 function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: FormProps) {
+  const { blockWrite } = useViewAsGuard();
   const [covers, setCovers] = useState<HoursBucket>(existing?.covers ?? 'shift');
   const [paNumber, setPaNumber] = useState(existing?.paNumber ?? '');
   const [serviceCode, setServiceCode] = useState(existing?.serviceCode ?? '');
@@ -848,6 +851,7 @@ function AuthorizationForm({ patientId, uid, existing, onCancel, onSaved }: Form
   const impliedHours = unitsNum != null && Number.isFinite(unitsNum) ? unitsNum / UNITS_PER_HOUR : null;
 
   const submit = async () => {
+    if (blockWrite()) return;
     setErr(null);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) { setFieldErr('from'); setErr('Enter the effective date.'); return; }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(to)) { setFieldErr('to'); setErr('Enter the end date.'); return; }

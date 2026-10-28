@@ -194,11 +194,11 @@ function ClientDashboardInner() {
   // Hours: the owner and a granted assistant (who transcribes the letters);
   // dollars inside stay owner-only. The Activity Log (audit + undo) is the
   // owner's alone. Both hide while previewing another user's view.
-  // Previewing a granted assistant shows her Hours tab too (read-only, no
-  // dollars) so the preview matches what she sees.
+  // Previewing a granted assistant shows her Hours tab as she sees it (no
+  // dollars; Add and Edit visible, with the save itself blocked by View As).
   const showHoursTab = (realRole === 'admin' && !isViewingAs) || (role === 'va' && !!assistantGrant);
   const hoursOwnerView = realRole === 'admin' && !isViewingAs;
-  const hoursReadOnly = isViewingAs || (realRole === 'va' && !assistantGrant?.editInfo);
+  const hoursReadOnly = realRole === 'va' && !assistantGrant?.editInfo;
   const showActivityTab = realRole === 'admin' && !isViewingAs;
   // Care plan is a staff surface; a nurse deep-linking ?tab=careplan lands on
   // Overview instead of an editor she isn't meant to drive.
@@ -600,11 +600,9 @@ function ClientDashboardInner() {
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {/* Hidden during view-as: the note form blocks the session
                     anyway (ViewAsWriteBlock), so don't offer a dead door. */}
-                {!isViewingAs && (
-                  <Link href={`/progress-note?patient=${patientId}`} className={btn}>
-                    <FileText size={15} /> New Progress Note
-                  </Link>
-                )}
+                <Link href={`/progress-note?patient=${patientId}`} className={btn}>
+                  <FileText size={15} /> New Progress Note
+                </Link>
                 <Link href={marHref} className={btnPrimary}>
                   <Pill size={15} /> Open MAR
                 </Link>
@@ -730,7 +728,7 @@ function ClientDashboardInner() {
               <DayProgramSection
                 key={`dp-${patientId}`}
                 patientId={patientId}
-                canEdit={realStaff && !isViewingAs}
+                canEdit={realStaff}
                 actorName={profile?.displayName || user?.email || ''}
                 onToast={showToast}
               />
@@ -740,7 +738,7 @@ function ClientDashboardInner() {
               <PhysiciansSection
                 key={`ph-${patientId}`}
                 patientId={patientId}
-                canEdit={realStaff && !isViewingAs}
+                canEdit={realStaff}
                 actorName={profile?.displayName || user?.email || ''}
                 onToast={showToast}
               />
@@ -749,7 +747,7 @@ function ClientDashboardInner() {
               <GuardianSection
                 key={`gd-${patientId}`}
                 patientId={patientId}
-                canEdit={realStaff && !isViewingAs}
+                canEdit={realStaff}
                 actorName={profile?.displayName || user?.email || ''}
                 onToast={showToast}
               />
@@ -758,7 +756,7 @@ function ClientDashboardInner() {
               <SupportCoordinatorSection
                 key={`sc-${patientId}`}
                 patientId={patientId}
-                canEdit={realStaff && !isViewingAs}
+                canEdit={realStaff}
                 actorName={profile?.displayName || user?.email || ''}
                 onToast={showToast}
               />
@@ -778,15 +776,15 @@ function ClientDashboardInner() {
               <HandoffBoardSection
                 key={`ho-${patientId}`}
                 patientId={patientId}
-                actor={{ uid: isViewingAs ? '' : user?.uid || '', name: profile?.displayName || user?.email || '' }}
-                canPost={!isViewingAs && (coreStaff || (realRole === 'nurse' && canUploadDocs))}
+                actor={{ uid: user?.uid || '', name: profile?.displayName || user?.email || '' }}
+                canPost={coreStaff || (realRole === 'nurse' && canUploadDocs)}
                 onToast={showToast}
               />
               {/* Verbal orders: telephone orders and their signature status. Taking
                   one needs an RN/LPN credential (the form and API both re-check). */}
-              <VerbalOrdersSection key={`vo-${patientId}`} patientId={patientId} canTake={!isViewingAs && (coreStaff || ['RN', 'LPN'].includes(profile?.credential || ''))} />
+              <VerbalOrdersSection key={`vo-${patientId}`} patientId={patientId} canTake={coreStaff || ['RN', 'LPN'].includes(profile?.credential || '')} />
               {/* Medication error reports: anyone with a clinical credential (or core staff) can file. */}
-              <MedErrorsSection key={`me-${patientId}`} patientId={patientId} canFile={!isViewingAs && (coreStaff || !!profile?.credential)} />
+              <MedErrorsSection key={`me-${patientId}`} patientId={patientId} canFile={coreStaff || !!profile?.credential} />
               {/* Seizure log: only for clients flagged hasSeizureDisorder. */}
               {patient?.hasSeizureDisorder && (
                 <SeizureLogSection key={`sz-${patientId}`} patientId={patientId} patientName={patient.name} patientDob={patient.dob || ''} />
@@ -1040,7 +1038,7 @@ function ClientDashboardInner() {
               documents={documents}
               canUpload={canUploadDocs}
               isStaff={realStaff}
-              isAdmin={realRole === 'admin' && !isViewingAs}
+              isAdmin={realRole === 'admin'}
               uploader={{
                 uid: user?.uid || '',
                 name: profile?.displayName || user?.email || '',
@@ -1063,7 +1061,7 @@ function ClientDashboardInner() {
             <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
               <ClipboardList size={16} /> Service Plan
             </div>
-            <ServicePlanSection key={`sp-${patientId}`} patientId={patientId} canAuthor={coreStaff && !isViewingAs} />
+            <ServicePlanSection key={`sp-${patientId}`} patientId={patientId} canAuthor={coreStaff} />
           </section>
           )}
 
@@ -1074,7 +1072,7 @@ function ClientDashboardInner() {
             <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
               <MessagesSquare size={16} /> Communications
             </div>
-            <CommunicationsLog key={`comm-${patientId}`} patientId={patientId} readOnly={isViewingAs} onToast={showToast} />
+            <CommunicationsLog key={`comm-${patientId}`} patientId={patientId} onToast={showToast} />
           </section>
           )}
 

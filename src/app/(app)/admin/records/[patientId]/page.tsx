@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useViewAsGuard } from '@/components/ImpersonationProvider';
 import { btn, btnDanger, btnIcon, btnPrimary, btnSm } from '@/components/buttons';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { ArrowLeft, Plus, Pencil, Ban, Pill, CalendarDays } from 'lucide-react';
-import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
+import { useAuth } from '@/components/AuthProvider';
 import {
   getPatient,
   getPatientClinical,
@@ -131,7 +132,7 @@ export default function RecordDetailPage() {
   // "View as" is read-only: a supervisor preview may reach this order book
   // (it's in the supervisor's real workflow), but building/editing orders is
   // a direct-Firestore clinical write, so those affordances are withheld.
-  const { isViewingAs } = useEffectiveUser();
+  const { blockWrite } = useViewAsGuard();
 
   const actor: MarActor | null = useMemo(
     () =>
@@ -236,7 +237,7 @@ export default function RecordDetailPage() {
 
   const handleSaveOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isViewingAs) return;
+    if (blockWrite()) return;
     if (!actor) {
       showToast('Not signed in.');
       return;
@@ -333,7 +334,7 @@ export default function RecordDetailPage() {
 
   const handleDiscontinue = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isViewingAs || !actor || !dcTarget?.id) return;
+    if (blockWrite() || !actor || !dcTarget?.id) return;
     if (!dcReason.trim()) {
       showToast('A reason is required to discontinue.');
       return;
@@ -420,11 +421,9 @@ export default function RecordDetailPage() {
 
             <div style={sectionHeaderRowStyle}>
               <h2 style={sectionTitleStyle}>Medication Orders</h2>
-              {!isViewingAs && (
-                <button onClick={openAdd} className={btnPrimary}>
-                  <Plus size={16} /> Add Medication
-                </button>
-              )}
+              <button onClick={openAdd} className={btnPrimary}>
+                <Plus size={16} /> Add Medication
+              </button>
             </div>
 
             {activeOrders.length === 0 && discontinuedOrders.length === 0 ? (
@@ -436,8 +435,8 @@ export default function RecordDetailPage() {
                 <OrderTable
                   title={`Active (${activeOrders.length})`}
                   orders={activeOrders}
-                  onEdit={isViewingAs ? undefined : openEdit}
-                  onDiscontinue={isViewingAs ? undefined : openDiscontinue}
+                  onEdit={openEdit}
+                  onDiscontinue={openDiscontinue}
                   onView={setViewOrder}
                 />
                 {discontinuedOrders.length > 0 && (
@@ -917,7 +916,7 @@ export default function RecordDetailPage() {
                 <button type="button" onClick={() => setViewOrder(null)} className={btn}>
                   Close
                 </button>
-                {viewOrder.status === 'active' && !isViewingAs && (
+                {viewOrder.status === 'active' && (
                   <button
                     type="button"
                     onClick={() => { const o = viewOrder; setViewOrder(null); openEdit(o); }}

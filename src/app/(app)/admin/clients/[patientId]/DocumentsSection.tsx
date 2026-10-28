@@ -1,5 +1,6 @@
 'use client';
 import BulkDocumentUpload from '@/components/BulkDocumentUpload';
+import { useViewAsGuard } from '@/components/ImpersonationProvider';
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
@@ -83,6 +84,7 @@ export default function DocumentsSection({
   onChanged,
   onToast,
 }: Props) {
+  const { blockWrite } = useViewAsGuard();
   const [filters, setFilters] = useState<DocumentFilters>(DEFAULT_DOCUMENT_FILTERS);
   const toggleCategory = (category: string) => setFilters((current) => ({
     ...current, categories: current.categories.includes(category)
@@ -143,6 +145,7 @@ export default function DocumentsSection({
   };
 
   const toggleArchived = async (d: PatientDocument) => {
+    if (blockWrite()) return;
     if (!d.id) return;
     setBusyId(d.id);
     try {
@@ -157,7 +160,7 @@ export default function DocumentsSection({
   };
 
   const remove = async (d: PatientDocument) => {
-    if (!d.id || !isAdmin) return;
+    if (!d.id || !isAdmin || blockWrite()) return;
     const what = d.servicePlanReviewId
       ? `Delete "${d.title}"?\n\nThis is the PDF filed for a service plan review. The review itself stays on the Service plan tab, where its PDF can still be opened, but the readiness clock counts from the newest Service Plan document. The file and its entry are removed (a snapshot is kept in the deletion audit).`
       : d.servicePlanId
@@ -179,6 +182,7 @@ export default function DocumentsSection({
   };
 
   const refreshPdf = async (d: PatientDocument) => {
+    if (blockWrite()) return;
     if (!d.id || (!d.sourceNoteId && !d.servicePlanId)) return;
     setBusyId(d.id);
     try {
@@ -198,6 +202,7 @@ export default function DocumentsSection({
   };
 
   const sync = async (refresh: boolean) => {
+    if (blockWrite()) return;
     if (
       refresh &&
       !window.confirm(
@@ -473,6 +478,7 @@ function EditDocumentModal({
   onClose: () => void;
   onSaved: (title: string) => void;
 }) {
+  const { blockWrite } = useViewAsGuard();
   const [title, setTitle] = useState(d.title);
   const [category, setCategory] = useState<DocCategory | ''>((DOC_CATEGORIES as readonly string[]).includes(d.category) ? (d.category as DocCategory) : '');
   const [docDate, setDocDate] = useState(d.docDate || '');
@@ -482,7 +488,7 @@ function EditDocumentModal({
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<EditField, string>>>({});
 
   const save = async () => {
-    if (saving || !d.id) return;
+    if (saving || !d.id || blockWrite()) return;
     const errs: Partial<Record<EditField, string>> = {};
     if (!title.trim()) errs.title = 'Enter a title.';
     if (!category) errs.category = 'Choose a document category.';
@@ -575,6 +581,7 @@ function MoveDocumentModal({
   onClose: () => void;
   onMoved: (title: string, toName: string) => void;
 }) {
+  const { blockWrite } = useViewAsGuard();
   const [patients, setPatients] = useState<Patient[] | null>(null);
   const [toPatientId, setToPatientId] = useState('');
   const [title, setTitle] = useState(d.title);
@@ -592,7 +599,7 @@ function MoveDocumentModal({
   const target = patients?.find((p) => p.id === toPatientId) || null;
 
   const save = async () => {
-    if (saving || !d.id) return;
+    if (saving || !d.id || blockWrite()) return;
     if (!toPatientId) { setError('Choose the client this document belongs to.'); return; }
     if (!title.trim()) { setError('Enter a title.'); return; }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(docDate)) { setError('Enter the date on the document.'); return; }
@@ -662,6 +669,7 @@ function ReplaceDocumentModal({
   onClose: () => void;
   onReplaced: (title: string) => void;
 }) {
+  const { blockWrite } = useViewAsGuard();
   const [file, setFile] = useState<File | null>(null);
   const [pct, setPct] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -669,7 +677,7 @@ function ReplaceDocumentModal({
   const uploading = pct !== null;
 
   const save = async () => {
-    if (uploading) return;
+    if (uploading || blockWrite()) return;
     if (!file) { setError('Choose the file to upload in its place.'); return; }
     setError(null);
     setPct(0);
@@ -725,10 +733,12 @@ function ReplaceDocumentModal({
 }
 
 function UploadDocumentModal({ patientId, uploader, onClose, onUploaded }: { patientId: string; uploader: DocUploader; onClose: () => void; onUploaded: (title: string) => void }) {
+  const { blockWrite } = useViewAsGuard();
   return <div style={backdropStyle} role="dialog" aria-modal="true" aria-label="Upload documents">
     <div style={{ ...sheetStyle, maxWidth: 900, maxHeight: '90vh', overflowY: 'auto' }}>
       <div style={sheetTitleStyle}>Upload Documents</div>
       <BulkDocumentUpload onClose={onClose} upload={async (item, progress) => {
+        if (blockWrite()) throw new Error('Read-only preview: nothing was uploaded.');
         await uploadPatientDocument({ patientId, file: item.file, category: item.category, title: item.title, docDate: item.docDate, periodStart: item.periodStart, periodEnd: item.periodEnd, uploader }, progress);
         onUploaded(item.title);
       }} />

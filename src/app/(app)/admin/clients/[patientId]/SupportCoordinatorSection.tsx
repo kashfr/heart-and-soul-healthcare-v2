@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useViewAsGuard } from '@/components/ImpersonationProvider';
 import { btn, btnPrimary } from '@/components/buttons';
 import { Briefcase, Pencil } from 'lucide-react';
 import { formatDateUS } from '@/lib/dateFormat';
@@ -35,6 +36,7 @@ const fieldId = (k: CoordinatorErrorKey) => `sc-field-${k}`;
  * person to call about the ISP, authorizations, and the annual meeting.
  */
 export default function SupportCoordinatorSection({ patientId, canEdit, actorName, onToast }: Props) {
+  const { blockWrite } = useViewAsGuard();
   const [record, setRecord] = useState<SupportCoordinator | null | undefined>(undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -108,6 +110,7 @@ export default function SupportCoordinatorSection({ patientId, canEdit, actorNam
   };
 
   const save = async () => {
+    if (blockWrite()) return;
     if (!applyFieldErrors(validateCoordinator(draft), COORDINATOR_ERROR_ORDER, setErrors, fieldId)) return;
     setSaving(true);
     setSaveError(null);

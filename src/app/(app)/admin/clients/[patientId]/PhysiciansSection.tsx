@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useViewAsGuard } from '@/components/ImpersonationProvider';
 import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
 import { Stethoscope, Pencil, Plus, Trash2 } from 'lucide-react';
 import { formatDateUS } from '@/lib/dateFormat';
@@ -36,6 +37,7 @@ const newId = () => Math.random().toString(36).slice(2, 10);
  * used for verbal orders and PPOT stays on the clinical profile.
  */
 export default function PhysiciansSection({ patientId, canEdit, actorName, onToast }: Props) {
+  const { blockWrite } = useViewAsGuard();
   const [record, setRecord] = useState<PhysicianList | null | undefined>(undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -75,6 +77,7 @@ export default function PhysiciansSection({ patientId, canEdit, actorName, onToa
   };
 
   const save = async () => {
+    if (blockWrite()) return;
     const errs = validatePhysicians(draft);
     setErrors(errs);
     for (const p of draft) {

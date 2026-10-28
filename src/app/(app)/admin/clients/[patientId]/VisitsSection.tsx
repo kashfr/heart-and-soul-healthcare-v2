@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useViewAsGuard } from '@/components/ImpersonationProvider';
 import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
 import { CalendarClock, CalendarPlus, Check, HandHelping, History, Undo2, UserCheck, X } from 'lucide-react';
 import {
@@ -59,6 +60,7 @@ interface Props {
  * than hidden — a silent hole in the schedule is how supervision lapses.
  */
 export default function VisitsSection({ patientId, visits, isStaff, actor, careTeam, onChanged, onToast }: Props) {
+  const { blockWrite } = useViewAsGuard();
   const [addOpen, setAddOpen] = useState(false);
   const [addDate, setAddDate] = useState<string | null>(null); // day preset when adding from the calendar grid
   const [showHistory, setShowHistory] = useState(false);
@@ -93,7 +95,7 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
   const resolved = useMemo(() => recentResolvedVisits(visits, 5), [visits]);
 
   const mark = async (v: PatientVisit, status: 'completed' | 'cancelled' | 'scheduled') => {
-    if (!v.id) return;
+    if (!v.id || blockWrite()) return;
     setBusyId(v.id);
     try {
       await setVisitStatus(v.id, status, actor);
@@ -344,6 +346,7 @@ function AddVisitModal({
   onClose: () => void;
   onAdded: (added: { visitId: string; assigneeUid: string; assigneeName: string; offerToAll: boolean }) => void;
 }) {
+  const { blockWrite } = useViewAsGuard();
   const [date, setDate] = useState(initialDate || todayISO());
   const [startTime, setStartTime] = useState('');
   const [type, setType] = useState<VisitType>('shift');
@@ -374,7 +377,7 @@ function AddVisitModal({
   const assignPool: AssigneeOption[] = supervisory ? (supervisors ?? []) : careTeam;
 
   const save = async () => {
-    if (busy) return;
+    if (busy || blockWrite()) return;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       setDateError('Pick the visit date.');
       escortToField('visit-date');
@@ -517,6 +520,7 @@ function AddVisitModal({
  * (the server re-checks); the reason travels with the notice.
  */
 function HandOffModal({ visit, actorUid, onClose, onDone }: { visit: PatientVisit; actorUid: string; onClose: () => void; onDone: (msg: string) => void }) {
+  const { blockWrite } = useViewAsGuard();
   const [supervisors, setSupervisors] = useState<AssigneeOption[] | null>(null);
   const [toUid, setToUid] = useState('');
   const [reason, setReason] = useState('');
@@ -535,7 +539,7 @@ function HandOffModal({ visit, actorUid, onClose, onDone }: { visit: PatientVisi
   const mine = visit.nurseId === actorUid;
 
   const save = async () => {
-    if (busy || !visit.id) return;
+    if (busy || !visit.id || blockWrite()) return;
     if (!reason.trim()) {
       setReasonError('Say why, so whoever takes it knows (e.g., out that week).');
       escortToField('handoff-reason');

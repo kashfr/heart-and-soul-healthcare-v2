@@ -442,7 +442,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 preview ("Supervisor · RN") can't be mistaken for an RN nurse's
                 ("Nurse · RN"). */}
             {` · ${VIEW_AS_ROLE_LABELS[viewingAs.role] ?? viewingAs.role}`}
-            {viewingAs.credential ? ` · ${viewingAs.credential}` : ''} (read-only)
+            {viewingAs.credential ? ` · ${viewingAs.credential}` : ''} (preview: saves are blocked)
           </span>
           <button
             type="button"

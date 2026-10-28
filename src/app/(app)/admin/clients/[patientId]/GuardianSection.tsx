@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useViewAsGuard } from '@/components/ImpersonationProvider';
 import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
 import { Scale, Pencil, Plus, Trash2 } from 'lucide-react';
 import { formatDateUS } from '@/lib/dateFormat';
@@ -44,6 +45,7 @@ const emptyErrors: GuardianErrors = { rows: {} };
  * signature pages, service agreements).
  */
 export default function GuardianSection({ patientId, canEdit, actorName, onToast }: Props) {
+  const { blockWrite } = useViewAsGuard();
   const [record, setRecord] = useState<GuardianRecord | null | undefined>(undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -96,6 +98,7 @@ export default function GuardianSection({ patientId, canEdit, actorName, onToast
   };
 
   const save = async () => {
+    if (blockWrite()) return;
     const rec: GuardianRecord = { decisionMaker: dm, contacts: draft };
     const errs = validateGuardian(rec);
     setErrors(errs);
