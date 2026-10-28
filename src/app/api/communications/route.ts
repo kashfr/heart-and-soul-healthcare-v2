@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
+import { AdminAuthError, requireStaffOrAssistant } from '@/lib/adminAuthGuard';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { listCommunications, recordCommunication } from '@/lib/communicationsServer';
 import { agencyLocalToISO, agencyNowLocal, channelLabel, sanitizeManualComm, validateManualComm } from '@/lib/communicationsShared';
@@ -12,7 +12,7 @@ const MAX_BODY_BYTES = 100_000;
 
 async function guard(request: Request) {
   try {
-    return { caller: await requireRole(request, ['admin', 'supervisor']) };
+    return { caller: await requireStaffOrAssistant(request, { write: request.method !== 'GET' }) };
   } catch (err) {
     if (err instanceof AdminAuthError) return { res: NextResponse.json({ error: err.message }, { status: err.status }) };
     throw err;

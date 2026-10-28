@@ -60,6 +60,11 @@ interface Props {
   notes: DashboardNote[];
   uid: string;
   todayISO: string;
+  /** Owner only: billing rates and the dollar views. A granted assistant
+   *  sees hours and units without them. Default true. */
+  canSeeDollars?: boolean;
+  /** Owner only: removing an authorization line. Default true. */
+  canDelete?: boolean;
 }
 
 interface DayRow {
@@ -89,7 +94,7 @@ interface DayRow {
  * worksheet (shifts split at midnight, so each calendar day carries exactly
  * the hours worked on it).
  */
-export default function HoursSection({ patientId, patientName, program, notes, uid, todayISO }: Props) {
+export default function HoursSection({ patientId, patientName, program, notes, uid, todayISO, canSeeDollars = true, canDelete = true }: Props) {
   const [auths, setAuths] = useState<HoursAuthorization[] | null>(null);
   const [rates, setRates] = useState<BillingRate[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -111,12 +116,13 @@ export default function HoursSection({ patientId, patientName, program, notes, u
   };
 
   useEffect(() => {
+    if (!canSeeDollars) return;
     let cancelled = false;
     getBillingRates()
       .then((list) => { if (!cancelled) setRates(list); })
       .catch((err) => console.error('Billing rates load failed:', err));
     return () => { cancelled = true; };
-  }, []);
+  }, [canSeeDollars]);
 
   useEffect(() => {
     let cancelled = false;
@@ -370,20 +376,20 @@ export default function HoursSection({ patientId, patientName, program, notes, u
           />
         )}
 
-        {/* Billing line: the month's used hours as units and dollars. */}
+        {/* Billing line: the month's used hours as units and, for the owner, dollars. */}
         <div style={billingLine}>
           <span>
             <strong>Shift:</strong> {fmtH(shiftUsage.used)} h = {fmtUnits(monthUnits('shift'))} units
-            {shiftDollars != null && monthRateLabel('shift')
+            {canSeeDollars && (shiftDollars != null && monthRateLabel('shift')
               ? <> = <strong>{fmtDollars(shiftDollars)}</strong> at {monthRateLabel('shift')}</>
-              : <span style={{ color: '#b45309' }}> · no billing rate for this program / nurse type (Settings → Billing Rates)</span>}
+              : <span style={{ color: '#b45309' }}> · no billing rate for this program / nurse type (Settings → Billing Rates)</span>)}
           </span>
           {hasOversight && (
             <span style={{ color: '#1d4ed8' }}>
               <strong>RN oversight:</strong> {fmtH(rnUsage.used)} h = {fmtUnits(monthUnits('oversight'))} units
-              {rnDollars != null && monthRateLabel('oversight')
+              {canSeeDollars && (rnDollars != null && monthRateLabel('oversight')
                 ? <> = <strong>{fmtDollars(rnDollars)}</strong> at {monthRateLabel('oversight')}</>
-                : <span style={{ color: '#b45309' }}> · no billing rate for this program</span>}
+                : <span style={{ color: '#b45309' }}> · no billing rate for this program</span>)}
             </span>
           )}
         </div>
@@ -421,15 +427,17 @@ export default function HoursSection({ patientId, patientName, program, notes, u
                 </button>
               ))}
             </span>
-            <button
-              type="button"
-              onClick={() => setShowDollars((v) => !v)}
-              style={showDollars ? dollarsActive : smallBtn}
-              title="Show dollars alongside: units × the rate on this client's line"
-              aria-pressed={showDollars}
-            >
-              $ {showDollars ? 'On' : 'Off'}
-            </button>
+            {canSeeDollars && (
+              <button
+                type="button"
+                onClick={() => setShowDollars((v) => !v)}
+                style={showDollars ? dollarsActive : smallBtn}
+                title="Show dollars alongside: units × the rate on this client's line"
+                aria-pressed={showDollars}
+              >
+                $ {showDollars ? 'On' : 'Off'}
+              </button>
+            )}
           </span>
         </div>
         <div style={{ ...muted, marginBottom: 10 }}>Shifts crossing midnight are split; a row marked “From Prior Day” is the tail of an overnight shift. Each day with more than one entry gets a day total. RN visits are listed but never added to shift hours.</div>
@@ -570,7 +578,7 @@ export default function HoursSection({ patientId, patientName, program, notes, u
         <div style={{ ...muted, marginBottom: 12 }}>
           GAPP: transcribe the Letter of Notification (hours per week; type each month&apos;s block hours where they differ).
           NOW/COMP: one line per Therap Service Authorization, LPN hours daily for shift hours and RN hours monthly for oversight,
-          with the Total Units (15-minute units) so the annual ceiling is tracked too. Only you can see this.
+          with the Total Units (15-minute units) so the annual ceiling is tracked too. Only the owner and a granted assistant see this.
         </div>
 
         {editing !== null && (
@@ -623,7 +631,7 @@ export default function HoursSection({ patientId, patientName, program, notes, u
                 {editing === null && (
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button type="button" onClick={() => setEditing(a)} className={`${btn} ${btnIcon} ${btnSm}`} aria-label="Edit" title="Edit"><Pencil size={14} /></button>
-                    <button type="button" onClick={() => remove(a)} className={`${btnDanger} ${btnIcon} ${btnSm}`} aria-label="Delete" title="Delete"><Trash2 size={14} /></button>
+                    {canDelete && <button type="button" onClick={() => remove(a)} className={`${btnDanger} ${btnIcon} ${btnSm}`} aria-label="Delete" title="Delete"><Trash2 size={14} /></button>}
                   </div>
                 )}
               </div>

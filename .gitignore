@@ -49,3 +49,4 @@ GROOMING-DEFECT-INCIDENT-*.md
 
 /functions/node_modules/
 firebase-debug.log
+firestore-debug.log

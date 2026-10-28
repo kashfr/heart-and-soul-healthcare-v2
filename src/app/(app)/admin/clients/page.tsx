@@ -19,7 +19,7 @@ import {
 import { formatUSPhone } from '@/lib/phone';
 import { arrayUnion, arrayRemove, doc, updateDoc } from 'firebase/firestore';
 import { AuthGuard } from '@/components/AuthGuard';
-import { AssistantClientsRoster } from '@/components/AssistantClients';
+import { AssistantAccessGate, useAssistantGrant } from '@/components/AssistantAccessGate';
 import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
 import {
   Patient,
@@ -27,6 +27,7 @@ import {
   addPatient,
   getPatients,
   getPatientsForNurse,
+  getPatientsForProgram,
   getPatientClinical,
   removePatient,
   savePatientClinical,
@@ -109,17 +110,22 @@ function ClientsRosterInner() {
   const router = useRouter();
   const { uid, role, isViewingAs } = useEffectiveUser();
   const isNurse = role === 'nurse';
-  // Staff = the tier that manages the roster (add/edit/delete, record checks).
-  const isStaff = role === 'admin' || role === 'supervisor';
+  // Staff = the tier that manages the roster (add/edit, record checks): admin,
+  // supervisor, and a virtual assistant whose client-access grant includes
+  // editing (Settings > Assistant Client Access). Removing a client stays
+  // with admin and supervisor; an assistant never erases a record.
+  const { isAssistant, grant: assistantGrant } = useAssistantGrant();
+  const isStaff = role === 'admin' || role === 'supervisor' || (isAssistant && !!assistantGrant?.editInfo);
   // "View as" is read-only by contract: a supervisor preview shows the staff
   // table (faithful) but none of the write affordances — add/edit/delete and
   // the care-team chips commit real Firestore writes as the real admin, so
   // they must not be one accidental click away under a "(read-only)" banner.
   const canManageRoster = isStaff && !isViewingAs;
-  // Hours caps + usage are the owner's alone (admin-only collection) and stay
-  // hidden while previewing another user's view.
+  const canRemoveClient = canManageRoster && !isAssistant;
+  // Hours caps + usage: the owner and a granted assistant (dollars live
+  // elsewhere); hidden while previewing another user's view.
   const { profile } = useAuth();
-  const showHours = profile?.role === 'admin' && !isViewingAs;
+  const showHours = (profile?.role === 'admin' || (profile?.role === 'va' && !!assistantGrant)) && !isViewingAs;
   const [patients, setPatients] = useState<Patient[]>([]);
   const [hoursAuths, setHoursAuths] = useState<Map<string, HoursAuthorization[]>>(new Map());
   const [dayHoursByPatient, setDayHoursByPatient] = useState<Map<string, BucketDayHours>>(new Map());
@@ -189,7 +195,11 @@ function ClientsRosterInner() {
     let cancelled = false;
     (async () => {
       try {
-        const data = isNurse ? await getPatientsForNurse(uid) : await getPatients();
+        // A GAPP-scoped assistant's list query must carry the program filter
+        // for the read rule to prove it.
+        const data = isNurse ? await getPatientsForNurse(uid)
+          : isAssistant && assistantGrant?.scope === 'gapp' ? await getPatientsForProgram('gapp')
+          : await getPatients();
         if (cancelled) return;
         setPatients(data);
         // Deep link: /admin/clients?edit=<patientId> opens that client's edit
@@ -213,7 +223,7 @@ function ClientsRosterInner() {
     return () => {
       cancelled = true;
     };
-  }, [uid, isNurse]);
+  }, [uid, isNurse, isAssistant, assistantGrant?.scope]);
 
   // Fetch the staff list lazily the first time the modal opens — it's
   // only needed by the care team picker, which only renders in the
@@ -766,18 +776,20 @@ function ClientsRosterInner() {
                         >
                           <Pencil size={14} />
                         </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRemove(p);
-                          }}
-                          className={`${btnDanger} ${btnIcon} ${btnSm}`}
-                          style={{ marginLeft: 6 }}
-                          aria-label={`Remove ${p.name}`}
-                          title="Remove"
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                        {canRemoveClient && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemove(p);
+                            }}
+                            className={`${btnDanger} ${btnIcon} ${btnSm}`}
+                            style={{ marginLeft: 6 }}
+                            aria-label={`Remove ${p.name}`}
+                            title="Remove"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
                       </td>
                     )}
                   </tr>
@@ -1278,10 +1290,9 @@ function cappedDayHours(auths: HoursAuthorization[], days: BucketDayHours | unde
 }
 
 export default function ClientsRosterPage() {
-  const { role } = useEffectiveUser();
   return (
     <AuthGuard allow={['admin', 'supervisor', 'nurse', 'va']}>
-      {role === 'va' ? <AssistantClientsRoster /> : <ClientsRosterInner />}
+      <AssistantAccessGate><ClientsRosterInner /></AssistantAccessGate>
     </AuthGuard>
   );
 }

@@ -19,6 +19,22 @@ service firebase.storage {
         && userDoc().get('role', '') in ['admin', 'supervisor'];
     }
 
+    // A virtual assistant with a client-access grant (mirrored onto her
+    // profile as clientAccess by the settings route; see firestore.rules).
+    // She reads client files, and uploads when the grant says so. Files stay
+    // immutable for everyone.
+    function isGrantedAssistant() {
+      return request.auth != null
+        && userDoc().get('active', false) == true
+        && userDoc().get('role', '') == 'va'
+        && userDoc().get('clientAccess', null) != null;
+    }
+
+    function assistantCanUpload() {
+      return isGrantedAssistant()
+        && userDoc().get('clientAccess', {}).get('uploadDocuments', false) == true;
+    }
+
     function isAssignedNurse(patientId) {
       return request.auth != null
         && userDoc().get('active', false) == true
@@ -28,8 +44,8 @@ service firebase.storage {
     }
 
     match /patients/{patientId}/documents/{docId}/{fileName} {
-      allow read: if isActiveStaff() || isAssignedNurse(patientId);
-      allow create: if (isActiveStaff() || isAssignedNurse(patientId))
+      allow read: if isActiveStaff() || isGrantedAssistant() || isAssignedNurse(patientId);
+      allow create: if (isActiveStaff() || assistantCanUpload() || isAssignedNurse(patientId))
         && request.resource.size < 20 * 1024 * 1024
         && request.resource.contentType.matches(
              'application/pdf|image/jpeg|image/png|image/heic|application/msword|application/vnd\\.openxmlformats-officedocument\\.wordprocessingml\\.document'

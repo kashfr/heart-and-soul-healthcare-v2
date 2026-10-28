@@ -29,8 +29,45 @@ service cloud.firestore {
       return hasActiveProfile() && getRole() == 'admin';
     }
 
-    function isStaff() {
+    // Staff who may also DELETE: admin and supervisor. Everything isStaff()
+    // grants to an assistant stops short of erasing a record.
+    function isCoreStaff() {
       return hasActiveProfile() && (getRole() == 'admin' || getRole() == 'supervisor');
+    }
+
+    // A virtual assistant the owner granted client access under Settings >
+    // Assistant Client Access (October 2026: she maintains client records
+    // like the owner, minus deletes, dollars, and clinical charting). The
+    // grant is mirrored by the settings route onto users/{uid}.clientAccess
+    // ({scope, editInfo, uploadDocuments}), so these rules read it from the
+    // profile doc they already load for the role (one cached get).
+    function assistantAccess() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clientAccess', null);
+    }
+    function isGrantedAssistant() {
+      return hasActiveProfile() && getRole() == 'va' && assistantAccess() != null;
+    }
+    function assistantCanEdit() {
+      return isGrantedAssistant() && assistantAccess().get('editInfo', false) == true;
+    }
+    function assistantCanUpload() {
+      return isGrantedAssistant() && assistantAccess().get('uploadDocuments', false) == true;
+    }
+    // Her roster is scoped by program ('gapp' or 'all') on the client record;
+    // sub-records and per-client collections inherit the app's scoping only.
+    function assistantSeesProgram(program) {
+      return assistantAccess().get('scope', '') == 'all' || program == 'gapp';
+    }
+
+    // Staff-level READS: core staff plus any granted assistant.
+    function isStaffReader() {
+      return isCoreStaff() || isGrantedAssistant();
+    }
+
+    // Staff-level CREATES and UPDATES: core staff plus an assistant whose
+    // grant includes editing. Deletes use isCoreStaff() throughout.
+    function isStaff() {
+      return isCoreStaff() || assistantCanEdit();
     }
 
     function isNurse() {
@@ -100,7 +137,8 @@ service cloud.firestore {
     // Sensitive clinical PHI (sex, allergies, attending physician, diet) does
     // NOT live here — it's in the care-team-gated /clinical sub-record below.
     match /patients/{patientId} {
-      allow read: if isActiveCareStaff();
+      allow read: if isActiveCareStaff()
+        || (isGrantedAssistant() && assistantSeesProgram(resource.data.get('program', '')));
       allow create: if isStaff() &&
         incomingData().name is string && incomingData().name.size() > 0 &&
         incomingData().dob is string && incomingData().dob.size() > 0 &&
@@ -108,7 +146,7 @@ service cloud.firestore {
       allow update: if isStaff() &&
         incomingData().name is string && incomingData().name.size() > 0 &&
         incomingData().dob is string && incomingData().dob.size() > 0;
-      allow delete: if isStaff();
+      allow delete: if isCoreStaff();
 
       // Sensitive clinical profile — single doc at clinical/profile.
       // Holds sex, allergies, attending physician name/phone, and diet /
@@ -118,12 +156,13 @@ service cloud.firestore {
       // clients she's actually assigned to. Writes are staff-only (managed from
       // the admin Patients screen).
       match /clinical/{clinicalId} {
-        allow read: if isStaff()
+        allow read: if isStaffReader()
           || isLicensedNurse()
           || (isNurse()
               && get(/databases/$(database)/documents/patients/$(patientId))
                    .data.get('assignedNurseIds', []).hasAny([request.auth.uid]));
-        allow write: if isStaff();
+        allow create, update: if isStaff();
+        allow delete: if isCoreStaff();
       }
 
       // Delegated administrative changes: append-only history written by the
@@ -138,14 +177,13 @@ service cloud.firestore {
     // of Notification (GAPP weekly rate + per-month block hours) or Therap
     // Service Authorization lines (NOW/COMP: LPN daily + RN monthly, annual
     // 15-minute units). Each line says which bucket it caps (shift hours vs
-    // RN oversight visit hours; never summed together). OWNER-ONLY on
-    // purpose: the caps and how close a client is to them are billing and
-    // parent-facing numbers the owner answers personally, so admin is the only
-    // role that can read or write them. Top-level (keyed by patientId) so the
+    // RN oversight visit hours; never summed together). Owner plus a granted
+    // assistant, who transcribes the letters (10/2026); the DOLLAR side stays
+    // owner-only in billingRates below. Top-level (keyed by patientId) so the
     // roster loads every client's lines in one query. Math in shiftHours.ts.
     match /hoursAuthorizations/{authId} {
-      allow read: if isAdmin();
-      allow create, update: if isAdmin()
+      allow read: if isAdmin() || isGrantedAssistant();
+      allow create, update: if (isAdmin() || assistantCanEdit())
         && incomingData().patientId is string && incomingData().patientId.size() > 0
         && incomingData().paNumber is string && incomingData().paNumber.size() <= 60
         && incomingData().kind in ['skilled', 'unskilled']
@@ -190,7 +228,8 @@ service cloud.firestore {
     // patient creation, which consumes the counter inside a transaction, is
     // already staff-gated. Numbers only ever increment (never reused).
     match /counters/{counterId} {
-      allow read, write: if isStaff();
+      allow read, create, update: if isStaff();
+      allow delete: if isCoreStaff();
     }
 
     // MAR — standing medication orders (the regimen for a client's Medication
@@ -202,22 +241,22 @@ service cloud.firestore {
     // + endDate) plus a new order — so create pins createdBy/At and update
     // pins patientId/createdBy/createdAt to their original values.
     match /marOrders/{orderId} {
-      allow read: if isStaff()
+      allow read: if isStaffReader()
         || isLicensedNurse()
         || (isNurse()
             && resource.data.get('patientId', null) != null
             && get(/databases/$(database)/documents/patients/$(resource.data.patientId))
                  .data.get('assignedNurseIds', []).hasAny([request.auth.uid]));
-      allow create: if isStaff()
+      allow create: if isCoreStaff()
         && incomingData().patientId is string && incomingData().patientId.size() > 0
         && incomingData().createdBy == request.auth.uid
         && incomingData().createdAt == request.time
         && incomingData().status == 'active';
-      allow update: if isStaff()
+      allow update: if isCoreStaff()
         && incomingData().patientId == resource.data.patientId
         && incomingData().get('createdBy', null) == resource.data.get('createdBy', null)
         && incomingData().get('createdAt', null) == resource.data.get('createdAt', null);
-      allow delete: if isStaff();
+      allow delete: if isCoreStaff();
     }
 
     // Care tasks — a client's plan-of-care task list (mirrors marOrders).
@@ -234,7 +273,7 @@ service cloud.firestore {
     // caller so nobody can chart under another clinician's name — the same
     // invariant the MAR write path enforces.
     match /careTaskAdministrations/{entryId} {
-      allow read: if isStaff()
+      allow read: if isStaffReader()
         || isActiveCareStaff()
         || (isNurse()
             && resource.data.get('patientId', null) != null
@@ -251,7 +290,7 @@ service cloud.firestore {
     }
 
     match /careTasks/{taskId} {
-      allow read: if isStaff()
+      allow read: if isStaffReader()
         || isActiveCareStaff()
         || (isNurse()
             && resource.data.get('patientId', null) != null
@@ -266,7 +305,7 @@ service cloud.firestore {
         && incomingData().patientId == resource.data.patientId
         && incomingData().get('createdBy', null) == resource.data.get('createdBy', null)
         && incomingData().get('createdAt', null) == resource.data.get('createdAt', null);
-      allow delete: if isStaff();
+      allow delete: if isCoreStaff();
     }
 
     // MAR — administration events (append-only). One doc per dose a nurse
@@ -278,14 +317,14 @@ service cloud.firestore {
     // view-as session can't forge authorship. Read is scoped to staff, the
     // documenter, or a nurse on the client's care team.
     match /marAdministrations/{adminId} {
-      allow read: if isStaff()
+      allow read: if isStaffReader()
         || isLicensedNurse()
         || (isNurse() && resource.data.get('documentedBy', null) == request.auth.uid)
         || (isNurse()
             && resource.data.get('patientId', null) != null
             && get(/databases/$(database)/documents/patients/$(resource.data.patientId))
                  .data.get('assignedNurseIds', []).hasAny([request.auth.uid]));
-      allow create: if (isStaff()
+      allow create: if (isCoreStaff()
             || (hasActiveProfile()
                 && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('credential', '') in ['RN', 'LPN']))
         && incomingData().documentedBy == request.auth.uid
@@ -305,9 +344,9 @@ service cloud.firestore {
     // and review are server-only (Admin SDK), so client updates are denied and
     // a delete is only allowed on a still-staged record.
     match /marChangeRequests/{reqId} {
-      allow read: if isStaff()
+      allow read: if isStaffReader()
         || (isNurse() && resource.data.get('performedBy', null) == request.auth.uid);
-      allow create: if (isStaff()
+      allow create: if (isCoreStaff()
             || (hasActiveProfile()
                 && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('credential', '') in ['RN', 'LPN']))
         && incomingData().performedBy == request.auth.uid
@@ -317,7 +356,7 @@ service cloud.firestore {
         && incomingData().sourceNoteId is string && incomingData().sourceNoteId.size() > 0
         && incomingData().type in ['add', 'change', 'discontinue'];
       allow delete: if resource.data.get('status', '') == 'staged'
-        && (isStaff() || resource.data.get('performedBy', null) == request.auth.uid);
+        && (isCoreStaff() || resource.data.get('performedBy', null) == request.auth.uid);
       allow update: if false;
     }
 
@@ -361,7 +400,7 @@ service cloud.firestore {
       // so the precheck resolves cleanly; staff already short-circuit via
       // isStaff(). Same non-existent-doc hazard the noteDrafts rule calls out.
       allow read: if (hasActiveProfile() && resource == null)
-        || isStaff()
+        || isStaffReader()
         || (isNurse() && resource.data.nurseId == request.auth.uid)
         || (isNurse()
             && resource.data.get('patientId', null) != null
@@ -377,7 +416,7 @@ service cloud.firestore {
       // submissions view can't quietly forge a co-sign.
       // Using get('field', null) so the rule works whether the field exists
       // yet or not.
-      allow update: if (isStaff()
+      allow update: if (isCoreStaff()
             && incomingData().get('cosignedAt', null) == resource.data.get('cosignedAt', null)
             && incomingData().get('cosignedBy', null) == resource.data.get('cosignedBy', null)
             && incomingData().get('cosignedByName', null) == resource.data.get('cosignedByName', null)
@@ -413,12 +452,12 @@ service cloud.firestore {
       // Update/delete: denied for everyone, including via Admin SDK console
       // edits (those bypass rules anyway — that's fine, we trust admins).
       match /editHistory/{entryId} {
-        allow create: if (isStaff()
+        allow create: if (isCoreStaff()
               || (isNurse() && get(/databases/$(database)/documents/progressNotes/$(noteId)).data.nurseId == request.auth.uid))
             && incomingData().editedBy == request.auth.uid
             && incomingData().editedAt == request.time
             && incomingData().changes is map;
-        allow read: if isStaff()
+        allow read: if isStaffReader()
             || (isNurse()
                 && get(/databases/$(database)/documents/progressNotes/$(noteId)).data.nurseId == request.auth.uid);
         allow update, delete: if false;
@@ -435,7 +474,7 @@ service cloud.firestore {
         && request.auth.uid == draftId
         && incomingData().nurseId == request.auth.uid;
       allow read, delete: if isSignedIn()
-        && (request.auth.uid == draftId || isStaff());
+        && (request.auth.uid == draftId || isCoreStaff());
     }
 
     // Staff profiles (role lookup)
@@ -445,7 +484,7 @@ service cloud.firestore {
     // so the server can enforce the finer-grained "supervisor cannot touch
     // admin" rules.
     match /users/{userId} {
-      allow read: if isSignedIn() && (request.auth.uid == userId || isStaff());
+      allow read: if isSignedIn() && (request.auth.uid == userId || isStaffReader());
       allow write: if false;
     }
 
@@ -454,7 +493,7 @@ service cloud.firestore {
     // review all audit entries. Nothing is ever updated or deleted from the
     // client — the audit log is append-only by design.
     match /exportAudits/{auditId} {
-      allow create: if isStaff()
+      allow create: if isCoreStaff()
         && incomingData().userId == request.auth.uid
         && incomingData().exportedAt == request.time
         && incomingData().submissionIds is list
@@ -500,12 +539,13 @@ service cloud.firestore {
     // Create pins the uploader identity and the storagePath to THIS doc's id
     // under THIS patient, so metadata can't point at another client's file.
     match /patientDocuments/{docId} {
-      allow read: if isStaff()
+      allow read: if isStaffReader()
         || (isNurse()
             && resource.data.get('patientId', null) != null
             && get(/databases/$(database)/documents/patients/$(resource.data.patientId))
                  .data.get('assignedNurseIds', []).hasAny([request.auth.uid]));
-      allow create: if (isStaff()
+      allow create: if (isCoreStaff()
+            || assistantCanUpload()
             || (isNurse()
                 && get(/databases/$(database)/documents/patients/$(incomingData().patientId))
                      .data.get('assignedNurseIds', []).hasAny([request.auth.uid])))
@@ -557,7 +597,7 @@ service cloud.firestore {
     // history. Create pins the author and starts life 'scheduled'; updates
     // can't rewrite ownership or move the visit to another client.
     match /patientVisits/{visitId} {
-      allow read: if isStaff()
+      allow read: if isStaffReader()
         || (isNurse()
             && resource.data.get('patientId', null) != null
             && get(/databases/$(database)/documents/patients/$(resource.data.patientId))
@@ -590,7 +630,7 @@ service cloud.firestore {
     // as part of the record without an amendment system. Staff read all;
     // nurses read/create only for clients on their care team.
     match /quickNotes/{noteId} {
-      allow read: if isStaff()
+      allow read: if isStaffReader()
         || (isNurse()
             && resource.data.get('patientId', null) != null
             && get(/databases/$(database)/documents/patients/$(resource.data.patientId))
@@ -641,7 +681,7 @@ service cloud.firestore {
       // recipientIds; each needs its OWN clause here because the rules engine
       // proves list queries from the query's constraints alone (it can't know
       // pendingIds is a subset of recipientIds).
-      allow read: if isStaff()
+      allow read: if isStaffReader()
         || (isNurse()
             && (request.auth.uid in resource.data.pendingIds
                 || request.auth.uid in resource.data.recipientIds
@@ -670,7 +710,7 @@ service cloud.firestore {
     // the nurse who took it, or a nurse on the client's care team. The e-sign
     // token map and the inbound-fax ledger are server-only.
     match /verbalOrders/{orderId} {
-      allow read: if isStaff()
+      allow read: if isStaffReader()
         || (isNurse()
             && (resource.data.nurseId == request.auth.uid
                 || (resource.data.get('patientId', null) != null
@@ -682,7 +722,7 @@ service cloud.firestore {
       allow read, write: if false;
     }
     match /verbalOrderInbound/{faxId} {
-      allow read: if isStaff();
+      allow read: if isStaffReader();
       allow write: if false;
     }
 
@@ -695,7 +735,7 @@ service cloud.firestore {
     // reviewer; both clauses are independent of resource.data, so the staff
     // style orderBy-only query is provable for them too.
     match /medErrorReports/{reportId} {
-      allow read: if isStaff()
+      allow read: if isStaffReader()
         || (isNurse()
             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('credential', '') == 'RN')
         || (isNurse()
@@ -709,12 +749,12 @@ service cloud.firestore {
     }
 
     match /seizureEvents/{eventId} {
-      allow read: if isStaff()
+      allow read: if isStaffReader()
         || (isNurse()
             && resource.data.get('patientId', null) != null
             && get(/databases/$(database)/documents/patients/$(resource.data.patientId))
                  .data.get('assignedNurseIds', []).hasAny([request.auth.uid]));
-      allow create: if (isStaff()
+      allow create: if (isCoreStaff()
               || (isNurse()
                   && get(/databases/$(database)/documents/patients/$(incomingData().patientId))
                        .data.get('assignedNurseIds', []).hasAny([request.auth.uid])))

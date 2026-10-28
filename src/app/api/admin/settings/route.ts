@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
+import { mirrorAssistantClientAccess } from '@/lib/assistantClientAccessServer';
 import {
   mergeWithDefaults,
   validateSettings,
@@ -100,6 +101,10 @@ export async function PUT(request: Request) {
       },
       { merge: false }, // overwrite — we just merged client-side via validateSettings
     );
+
+  // The Firestore and Storage rules read an assistant's grant from her own
+  // profile, so keep that copy in step with what was just saved.
+  await mirrorAssistantClientAccess(next.assistantClients);
 
   return NextResponse.json({ settings: next });
 }

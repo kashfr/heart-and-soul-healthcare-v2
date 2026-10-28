@@ -1,61 +1,88 @@
 # Assistant client access
 
-Settings > Assistant Client Access grants individual active VAs access to a client
-workspace at the existing `/admin/clients` URLs. Each grant has a `gapp` or `all`
-scope and separate `editInfo` and `uploadDocuments` permissions. Viewing client
-information and active documents is included. Missing settings grant no access.
-New GAPP clients are automatically included in a GAPP grant. Referral conversion
-permission remains a separate setting.
+Settings > Assistant Client Access grants individual active virtual assistants
+(role `va`) the client roster and the client dashboard: the same screens staff
+use. Each grant has a `gapp` or `all` scope and separate `editInfo` and
+`uploadDocuments` permissions. Missing settings grant no access, and an
+assistant without a grant sees a notice on the client pages instead
+(`AssistantAccessGate`). Referral conversion permission remains a separate
+setting.
 
-The VA branch mounts before the clinical dashboard or staff roster, so it never
-loads the clinical chart, medication records, or staff management controls. All
-assistant client operations go through `/api/assistant/clients`; these endpoints
-verify the active VA, current grant, and actual client program server-side.
-Direct Firestore patient reads are reserved for active care staff, so VAs cannot
-bypass the program scope using the browser SDK. Existing referral APIs continue
-to work independently. Clinical and Storage rules are not broadened.
+## How the grant reaches the rules (October 2026)
 
-Editable information is explicitly limited to name, birth date, address, Medicaid
-ID, physician contact information, and parent/guardian contact details. Clinical
-instructions, diagnoses, vital baselines, care teams, program classification,
-billing authorizations, and client deletion are unavailable. Guardianship decisions
-and existing contact records cannot be removed through this workspace.
+Saving settings mirrors every grant onto the assistant's own profile as
+`users/{uid}.clientAccess` (`mirrorAssistantClientAccess`), and clears it from
+any VA no longer granted. `firestore.rules` and `storage.rules` read that field
+from the profile document they already load for the role:
 
-Updates use a revision of the directory, clinical profile, and guardian records
-to reject stale forms. Every write rechecks role, grant, and program inside its
-transaction, and records the actor and before/after administrative values under
-`patients/{id}/administrativeAudit`. Only active admins can read this audit;
-browser writes are always denied, so the history remains server-managed.
-Document uploads always create new files and
-metadata; the assistant cannot replace, archive, move, or delete existing files.
-Downloads are authenticated byte responses with no shared token URL.
+- `isStaffReader()` (core staff or any granted assistant) gates staff-level
+  reads: client records, clinical sub-records, documents, visits, notes,
+  MAR, care tasks, handoffs, verbal orders, medication error reports.
+- `isStaff()` (core staff or an assistant with `editInfo`) gates creates and
+  updates on the records staff maintain: the client directory, clinical
+  sub-records (physicians, guardian, support coordinator, day program,
+  profile), care tasks, visits, quick notes, document metadata, counters.
+- `isCoreStaff()` (admin and supervisor only) gates every delete, plus
+  clinical documentation and the clinical regimen: MAR orders, dose and
+  treatment charting, medication change requests, seizure events, progress
+  note edits, drafts, export audits.
+- `hoursAuthorizations`: owner plus a granted assistant (create and update
+  with `editInfo`); delete stays owner-only. `billingRates` and the
+  `administrativeAudit` stay owner-only.
+- The `patients` read rule applies the program scope: a `gapp` grant proves a
+  single read or a list query filtered to `program == 'gapp'`
+  (`getPatientsForProgram`); `all` proves the unfiltered roster. Sub-records
+  and per-client collections are not program-scoped at the rules level; the
+  scope is enforced where the roster is listed.
+- Storage: a granted assistant reads client files; `uploadDocuments` allows
+  uploads. Files stay immutable for everyone.
+
+Server routes the dashboard calls use `requireStaffOrAssistant` from
+`adminAuthGuard`: core staff pass; an assistant needs a live grant, `write`
+needs `editInfo`, and a DELETE is refused regardless. Opened this way:
+communications (read/log), document metadata edit and replace cleanup,
+service plan PDF refresh, and visit notifications. Document delete and
+move-to-client, service plan authoring, handoff posting, verbal orders, and
+medication error reports keep their staff or clinician gates.
+
+## What the assistant sees
+
+The real dashboard: Overview (every card editable with `editInfo`),
+Schedule, Trends, Survey Readiness, Documents (upload with
+`uploadDocuments`; edit, replace, archive and restore with `editInfo`; no
+permanent delete or move), Service Plan (view), Communications, Care Plan,
+and Hours. The Hours tab hides the dollar toggle, the billing line amounts,
+and the delete button (`canSeeDollars`/`canDelete` props on `HoursSection`),
+and never loads billing rates. The Activity Log tab is admin-only. On the
+roster she adds and edits clients and sees the hours badges, but has no
+Remove button. The records tree (`/admin/records/...`) opens for viewing;
+medication management and charting stay with clinicians and admin.
+
+Her edits are ordinary browser writes, so the Activity Log attributes them
+through the capture function's auth context (actor role `va`), review-only.
 
 ## Admin preview through View As
 
-An admin previewing an assistant through View As sees the assistant's own
-Clients workspace: the roster, each client page, and documents, scoped by the
-assistant's live grant. The admin's token can never be an assistant, so
-`authedFetch` adds an `X-View-As` header naming the previewed uid on GET and
-HEAD requests only, and `requireAssistant` honors it only from an active admin.
-The server reloads the target's profile (must be an active `va`) and
-re-derives the grant from current settings, exactly as it would for the
-assistant herself. Every write path refuses while a preview context is
-present, in addition to the browser-side View As refusal, and the Edit and
-Upload controls render disabled with a read-only hint. Without a grant the
-preview says so and points to Settings > Assistant Client Access.
+View As an assistant renders her roster and dashboard with the admin's own
+token (reads succeed as the admin) and the usual View As write block, with
+`useAssistantGrant` reading the previewed assistant's grant so the gate and
+the roster scope match what she sees.
 
 ## Validation and deployment
 
 Run TypeScript, Vitest, and the production build. Run
-`scripts/test-patient-roster-rules.mjs` against a local Firestore emulator (the
-script refuses non-local hosts and non-demo projects). It checks nurse/staff
-roster access and VA, inactive, anonymous, and missing-profile denials. It also
-checks admin-only audit reads and rejects every browser audit mutation.
+`scripts/test-patient-roster-rules.mjs` against a local Firestore emulator
+(the script refuses non-local hosts and non-demo projects). It checks the
+staff and nurse roster tiers, the assistant grant (program scope, edit versus
+view-only, uploads, hours lines, no deletes, no billing rates, no MAR
+writes), and the owner-only audit.
 
-Deploy `firestore.rules` separately after the application, as documented in
-`DEPLOY-CHECKLIST.md`. No index or Storage rule change is needed. Use a synthetic
-client for any write/upload smoke tests; never alter a real clinical chart just
-to test access. Enable real staff grants only for the user-requested scope.
+Deploy BOTH `firestore.rules` and `storage.rules` separately after the
+application, as documented in `DEPLOY-CHECKLIST.md`. No index change. After
+the first deploy, re-save Settings > Assistant Client Access once (or run
+`mirrorAssistantClientAccess`) so existing grants are mirrored onto the
+profiles; until then a granted assistant is denied by the rules. Use a
+synthetic client for any write smoke test.
 
 ## Admin activity log and undo
 

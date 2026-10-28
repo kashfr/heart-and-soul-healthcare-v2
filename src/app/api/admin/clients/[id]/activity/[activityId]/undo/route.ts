@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireActivityAdmin, undoClientActivity } from '@/lib/clientActivityServer';
 import { AdminAuthError } from '@/lib/adminAuthGuard';
-import { AssistantClientError } from '@/lib/assistantClientsServer';
+import { AssistantClientError } from '@/lib/assistantClientError';
 export const runtime = 'nodejs';
 export async function POST(request: Request, { params }: { params: Promise<{ id: string; activityId: string }> }) {
   try {

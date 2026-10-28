@@ -36,7 +36,7 @@ const fake = vi.hoisted(() => {
 });
 vi.mock('server-only', () => ({}));
 vi.mock('./firebaseAdmin', () => ({ adminDb: () => fake.db }));
-vi.mock('./assistantClientsServer', () => ({ assertAssistantId: (id: string) => { if (!/^[A-Za-z0-9_-]+$/.test(id)) throw new Error('Invalid identifier'); }, AssistantClientError: class extends Error { constructor(public status: number, message: string) { super(message); } } }));
+vi.mock('./assistantClientError', () => ({ assertAssistantId: (id: string) => { if (!/^[A-Za-z0-9_-]+$/.test(id)) throw new Error('Invalid identifier'); }, AssistantClientError: class extends Error { constructor(public status: number, message: string) { super(message); } } }));
 vi.mock('./adminAuthGuard', () => ({ requireRole: vi.fn(), AdminAuthError: class extends Error { constructor(public status: number, message: string) { super(message); } } }));
 import { type AuthedCaller, requireRole } from './adminAuthGuard';
 import { undoClientActivity, requireActivityAdmin } from './clientActivityServer';

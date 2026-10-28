@@ -9,13 +9,12 @@ const fixture='undo-'+randomUUID();const app=initializeApp({projectId:'demo-clie
 const mocks=vi.hoisted(()=>({db:null as unknown}));
 vi.mock('server-only',()=>({}));
 vi.mock('@/lib/firebaseAdmin',()=>({adminDb:()=>mocks.db,adminBucket:()=>{throw new Error('No Storage access');}}));
-import {getAssistantClient,updateAssistantClient,type AssistantContext} from '@/lib/assistantClientsServer';
 import {listClientActivity,listAllClientActivity,undoClientActivity} from '@/lib/clientActivityServer';
 import type {AuthedCaller} from '@/lib/adminAuthGuard';
 mocks.db=db;
 const admin={uid:fixture+'-owner',email:'owner@example.invalid',role:'admin',profile:{active:true,role:'admin',displayName:'Emulator Owner'}} as AuthedCaller;
 const grant={uid:fixture,scope:'gapp' as const,editInfo:true,uploadDocuments:true};
-const assistant={caller:{uid:fixture,email:'va@example.invalid',role:'va',profile:{active:true,role:'va',displayName:'Emulator VA'}},grant} as AssistantContext;
+const assistant={caller:{uid:fixture,email:'va@example.invalid',role:'va',profile:{active:true,role:'va',displayName:'Emulator VA'}},grant};
 const patient=db.doc('patients/'+fixture);let oldSettings:unknown;
 beforeAll(async()=>{
  oldSettings=(await db.doc('settings/global').get()).data();
@@ -29,8 +28,18 @@ afterAll(async()=>{
  if(oldSettings)await db.doc('settings/global').set(oldSettings);else await db.doc('settings/global').delete();await deleteApp(app);
 });
 it('lists real audit events, safely reverses values and upload metadata, and blocks stale/repeated undo',async()=>{
- let loaded=await getAssistantClient(assistant,fixture);
- await updateAssistantClient(assistant,fixture,{revision:loaded.client.revision,name:'Changed',medicaidId:'222'});
+ // The assistant's edit, as the retired assistant API recorded it: the change
+ // and its audit entry in one commit, stamped with the entry's id.
+ const assistantEdit=async(before:Record<string,unknown>,after:Record<string,unknown>)=>{
+  const entry=patient.collection('administrativeAudit').doc();
+  await db.runTransaction(async(tx: import('firebase-admin/firestore').Transaction)=>{
+   const stamp={auditEventId:entry.id,updatedAt:FieldValue.serverTimestamp(),updatedBy:fixture,updatedByName:'Emulator VA'};
+   if('name' in after)tx.update(patient,{name:String(after.name),...stamp});
+   if('medicaidId' in after)tx.set(patient.collection('clinical').doc('profile'),{medicaidId:String(after.medicaidId),...stamp},{merge:true});
+   tx.set(entry,{action:'assistant-information-update',before,after,actorUid:fixture,actorName:'Emulator VA',actorRole:'va',at:FieldValue.serverTimestamp()});
+  });
+ };
+ await assistantEdit({name:'Original',medicaidId:'111'},{name:'Changed',medicaidId:'222'});
  let log=await listClientActivity(fixture);expect(log.entries).toHaveLength(1);
  const id=log.entries[0].id;expect(log.entries[0].actorName).toBe('Emulator VA');
  await undoClientActivity(fixture,id,admin);
@@ -38,8 +47,7 @@ it('lists real audit events, safely reverses values and upload metadata, and blo
  expect((await patient.collection('clinical').doc('profile').get()).data()).toMatchObject({medicaidId:'111',allergies:'Keep'});
  expect((await listClientActivity(fixture)).entries).toHaveLength(2);
  await expect(undoClientActivity(fixture,id,admin)).rejects.toMatchObject({status:409});
- loaded=await getAssistantClient(assistant,fixture);
- await updateAssistantClient(assistant,fixture,{revision:loaded.client.revision,name:'Changed again'});
+ await assistantEdit({name:'Original'},{name:'Changed again'});
  log=await listClientActivity(fixture);const second=log.entries.find(x=>x.action==='assistant-information-update'&&!x.revertedAt)!;
  await patient.update({name:'Newer'});await patient.update({name:'Changed again'});
  await expect(undoClientActivity(fixture,second.id,admin)).rejects.toMatchObject({status:409});

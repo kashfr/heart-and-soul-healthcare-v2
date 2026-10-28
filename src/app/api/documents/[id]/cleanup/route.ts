@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
+import { AdminAuthError, requireStaffOrAssistant } from '@/lib/adminAuthGuard';
 import { cleanupReplacedFiles } from '@/lib/patientDocumentsServer';
 
 /**
@@ -12,7 +12,7 @@ import { cleanupReplacedFiles } from '@/lib/patientDocumentsServer';
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   try {
-    await requireRole(request, ['admin', 'supervisor']);
+    await requireStaffOrAssistant(request, { write: true });
   } catch (err) {
     if (err instanceof AdminAuthError) return NextResponse.json({ error: err.message }, { status: err.status });
     throw err;

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { recordCommunication } from '@/lib/communicationsServer';
 import { FieldValue } from 'firebase-admin/firestore';
-import { requireRole, AdminAuthError } from '@/lib/adminAuthGuard';
+import { AdminAuthError, requireStaffOrAssistant } from '@/lib/adminAuthGuard';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { sendSms } from '@/lib/sms/sendSms';
 import { sendVisitNotice } from '@/lib/emails/visitNotice';
@@ -28,7 +28,7 @@ const EVENTS: VisitNotifyEvent[] = ['assigned', 'cancelled', 'restored'];
 export async function POST(request: Request) {
   let caller;
   try {
-    caller = await requireRole(request, ['admin', 'supervisor']);
+    caller = await requireStaffOrAssistant(request, { write: true });
   } catch (err) {
     if (err instanceof AdminAuthError) {
       return NextResponse.json({ error: err.message }, { status: err.status });
