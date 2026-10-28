@@ -65,6 +65,8 @@ interface Props {
   canSeeDollars?: boolean;
   /** Owner only: removing an authorization line. Default true. */
   canDelete?: boolean;
+  /** No Add or Edit (View As preview, or an assistant without editing). */
+  readOnly?: boolean;
 }
 
 interface DayRow {
@@ -94,7 +96,7 @@ interface DayRow {
  * worksheet (shifts split at midnight, so each calendar day carries exactly
  * the hours worked on it).
  */
-export default function HoursSection({ patientId, patientName, program, notes, uid, todayISO, canSeeDollars = true, canDelete = true }: Props) {
+export default function HoursSection({ patientId, patientName, program, notes, uid, todayISO, canSeeDollars = true, canDelete = true, readOnly = false }: Props) {
   const [auths, setAuths] = useState<HoursAuthorization[] | null>(null);
   const [rates, setRates] = useState<BillingRate[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -571,7 +573,7 @@ export default function HoursSection({ patientId, patientName, program, notes, u
       <section style={card}>
         <div style={head}>
           <div style={title}><FileText size={16} /> Hours Authorizations</div>
-          {editing === null && (
+          {editing === null && !readOnly && (
             <button type="button" onClick={() => setEditing('new')} className={btnPrimary}><Plus size={14} /> Add Authorization</button>
           )}
         </div>
@@ -628,7 +630,7 @@ export default function HoursSection({ patientId, patientName, program, notes, u
                     </div>
                   )}
                 </div>
-                {editing === null && (
+                {editing === null && !readOnly && (
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button type="button" onClick={() => setEditing(a)} className={`${btn} ${btnIcon} ${btnSm}`} aria-label="Edit" title="Edit"><Pencil size={14} /></button>
                     {canDelete && <button type="button" onClick={() => remove(a)} className={`${btnDanger} ${btnIcon} ${btnSm}`} aria-label="Delete" title="Delete"><Trash2 size={14} /></button>}
