@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { btn, btnDanger, btnIcon, btnPrimary, btnSm } from '@/components/buttons';
-import { Search, X, RefreshCw, Plus, Pencil, Trash2, Mail, Phone } from 'lucide-react';
+import { Search, X, RefreshCw, Plus, Pencil, Trash2, Mail, Phone, ChevronRight } from 'lucide-react';
+import styles from './Agencies.module.css';
 import { authedFetch } from '@/lib/authedFetch';
 import { formatUSPhone, isValidUSPhone } from '@/lib/phone';
 import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
@@ -98,18 +99,18 @@ export default function AgenciesPage() {
   };
 
   return (
-    <div style={containerStyle}>
+    <div style={containerStyle} className={styles.page}>
       <div style={wrapStyle}>
-        <header style={headerStyle}>
+        <header style={headerStyle} className={styles.header}>
           <div>
             <p style={kickerStyle}>Admin</p>
-            <h1 style={titleStyle}>Agencies</h1>
+            <h1 style={titleStyle} className={styles.title}>Agencies</h1>
             <p style={subtitleStyle}>
               Partner agencies you share referrals with. Saved here so the share box can autocomplete
               instead of retyping.
             </p>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8 }} className={styles.actions}>
             <button onClick={load} className={btn} title="Refresh">
               <RefreshCw size={15} /> Refresh
             </button>
@@ -120,7 +121,7 @@ export default function AgenciesPage() {
         </header>
 
         <div style={{ marginBottom: 14 }}>
-          <div style={searchWrapStyle}>
+          <div style={searchWrapStyle} className={styles.search}>
             <Search size={15} style={{ color: '#94a3b8', flexShrink: 0 }} />
             <input
               value={q}
@@ -150,7 +151,13 @@ export default function AgenciesPage() {
             {q ? 'No agencies match your search.' : 'No partner agencies yet. Add one, or share a referral and it will be saved here automatically.'}
           </div>
         ) : (
-          <div style={tableWrapStyle}>
+          <>
+          <div className={styles.cards}>
+            {filtered.map((a) => (
+              <AgencyCard key={a.id} agency={a} onOpen={() => setEditing(a)} onRemove={() => remove(a)} />
+            ))}
+          </div>
+          <div style={tableWrapStyle} className={styles.table}>
             <table style={tableStyle}>
               <thead>
                 <tr>
@@ -189,6 +196,7 @@ export default function AgenciesPage() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
 
@@ -200,6 +208,35 @@ export default function AgenciesPage() {
         />
       )}
     </div>
+  );
+}
+
+/** One agency on a phone: tap the header to open its details (the edit
+ *  form), tap the email or phone to write or call, and full-size Edit and
+ *  Remove buttons instead of the table's tiny icons. */
+function AgencyCard({ agency: a, onOpen, onRemove }: { agency: PartnerAgency; onOpen: () => void; onRemove: () => void }) {
+  return (
+    <article className={styles.card}>
+      <button type="button" className={styles.cardHeader} onClick={onOpen} aria-label={`Open ${a.name}`}>
+        <span className={styles.cardName}>{a.name}</span>
+        <ChevronRight size={20} className={styles.chevron} aria-hidden />
+      </button>
+      <div className={styles.cardBody}>
+        <ServesLine agency={a} />
+        <a href={`mailto:${a.email}`} className={styles.contactLink}><Mail size={16} /> {a.email}</a>
+        {a.phone && <a href={`tel:${a.phone}`} className={styles.contactLink}><Phone size={16} /> {formatUSPhone(a.phone)}</a>}
+        <div className={styles.meta}>
+          <span className={styles.metaLabel}>Contact</span><span>{a.contactName || '—'}</span>
+          <span className={styles.metaLabel}>Shares</span><span>{a.shareCount}</span>
+          <span className={styles.metaLabel}>Last shared</span><span>{formatDate(a.lastSharedAt)}</span>
+        </div>
+        {a.notes && <div className={styles.cardNotes}>{a.notes}</div>}
+      </div>
+      <div className={styles.cardActions}>
+        <button type="button" onClick={onOpen} className={`${btn} ${btnSm}`}><Pencil size={15} /> Edit</button>
+        <button type="button" onClick={onRemove} className={`${btnDanger} ${btnSm}`} aria-label={`Remove ${a.name}`}><Trash2 size={15} /> Remove</button>
+      </div>
+    </article>
   );
 }
 
@@ -320,14 +357,14 @@ function AgencyForm({
           </div>
           <button onClick={onClose} style={closeBtnStyle} aria-label="Close"><X size={18} /></button>
         </div>
-        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }} className={styles.modalBody}>
           <Field label="Agency name *" id={agencyFieldId('name')} error={fieldErrors.name}>
             <input value={name} onChange={(e) => { setName(e.target.value); clearFieldError('name'); }} style={{ ...inp, ...(fieldErrors.name ? FIELD_ERROR_STYLE : null) }} aria-invalid={!!fieldErrors.name} autoFocus />
           </Field>
           <Field label="Email *" id={agencyFieldId('email')} error={fieldErrors.email}>
             <input value={email} onChange={(e) => { setEmail(e.target.value); clearFieldError('email'); }} type="email" style={{ ...inp, ...(fieldErrors.email ? FIELD_ERROR_STYLE : null) }} aria-invalid={!!fieldErrors.email} />
           </Field>
-          <div style={{ display: 'flex', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 12 }} className={styles.formRow}>
             <Field label="Phone" id={agencyFieldId('phone')} error={fieldErrors.phone}>
               <input type="tel" value={phone} onChange={(e) => { setPhone(formatUSPhone(e.target.value)); clearFieldError('phone'); }} placeholder="(XXX) XXX-XXXX" style={{ ...inp, ...(fieldErrors.phone ? FIELD_ERROR_STYLE : null) }} aria-invalid={!!fieldErrors.phone} />
             </Field>
