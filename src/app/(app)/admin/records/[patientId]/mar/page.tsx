@@ -132,10 +132,9 @@ export default function MonthlyMarPage() {
   // supervisors + admins may do it too; the med goes live immediately, with no
   // approval or acknowledgment step. Admins get the button for visibility
   // (parity with what supervisors see); the server permits staff anyway. Uses
-  // the REAL signed-in user, and is view-as guarded for the same reason
-  // charting is: impersonation is read-only, so it must not reach a write.
+  // the REAL signed-in user. Visible during View As so a preview shows what
+  // the person sees; the modal's save is what View As blocks.
   const canManageMeds =
-    !isViewingAs &&
     (profile?.role === 'admin' ||
       profile?.role === 'supervisor' ||
       (profile?.role === 'nurse' && (profile?.credential === 'RN' || profile?.credential === 'LPN')));

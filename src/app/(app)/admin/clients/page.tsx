@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { useViewAsGuard } from '@/components/ImpersonationProvider';
 import { btn, btnDanger, btnIcon, btnPrimary, btnSm } from '@/components/buttons';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -109,6 +110,7 @@ function formatDOB(dob: string): string {
 function ClientsRosterInner() {
   const router = useRouter();
   const { uid, role, isViewingAs } = useEffectiveUser();
+  const { blockWrite } = useViewAsGuard();
   const isNurse = role === 'nurse';
   // Staff = the tier that manages the roster (add/edit, record checks): admin,
   // supervisor, and a virtual assistant whose client-access grant includes
@@ -116,16 +118,15 @@ function ClientsRosterInner() {
   // with admin and supervisor; an assistant never erases a record.
   const { isAssistant, grant: assistantGrant } = useAssistantGrant();
   const isStaff = role === 'admin' || role === 'supervisor' || (isAssistant && !!assistantGrant?.editInfo);
-  // "View as" is read-only by contract: a supervisor preview shows the staff
-  // table (faithful) but none of the write affordances — add/edit/delete and
-  // the care-team chips commit real Firestore writes as the real admin, so
-  // they must not be one accidental click away under a "(read-only)" banner.
-  const canManageRoster = isStaff && !isViewingAs;
+  // "View as" shows every control the person sees (so the owner can point
+  // her to the right button); the saves themselves are stopped by blockWrite,
+  // since they would otherwise commit as the real admin.
+  const canManageRoster = isStaff;
   const canRemoveClient = canManageRoster && !isAssistant;
   // Hours caps + usage: the owner and a granted assistant (dollars live
   // elsewhere); hidden while previewing another user's view.
   const { profile } = useAuth();
-  const showHours = (profile?.role === 'admin' || (profile?.role === 'va' && !!assistantGrant)) && !isViewingAs;
+  const showHours = (profile?.role === 'admin' && !isViewingAs) || (role === 'va' && !!assistantGrant);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [hoursAuths, setHoursAuths] = useState<Map<string, HoursAuthorization[]>>(new Map());
   const [dayHoursByPatient, setDayHoursByPatient] = useState<Map<string, BucketDayHours>>(new Map());
@@ -336,7 +337,7 @@ function ClientsRosterInner() {
   };
 
   const handleRemove = async (patient: Patient) => {
-    if (!canManageRoster || !patient.id) return;
+    if (!canManageRoster || !patient.id || blockWrite()) return;
     if (!window.confirm(`Remove ${patient.name} from the roster?`)) return;
     try {
       await removePatient(patient.id);
@@ -394,6 +395,7 @@ function ClientsRosterInner() {
       );
       if (!ok) return;
     }
+    if (blockWrite()) return;
     setSavingCareTeam(true);
     try {
       await updateDoc(doc(db, 'patients', editingId), {
@@ -421,6 +423,7 @@ function ClientsRosterInner() {
 
   const handleRemoveNurse = async (uid: string) => {
     if (!canManageRoster || !editingId) return;
+    if (blockWrite()) return;
     setSavingCareTeam(true);
     try {
       await updateDoc(doc(db, 'patients', editingId), {
@@ -447,7 +450,7 @@ function ClientsRosterInner() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canManageRoster || submitting) return;
+    if (!canManageRoster || submitting || blockWrite()) return;
     const errs: Partial<Record<ClientField, string>> = {};
     if (!(formData.name || '').trim()) errs.name = 'Enter the client\'s full name.';
     const dob = formData.dob || '';

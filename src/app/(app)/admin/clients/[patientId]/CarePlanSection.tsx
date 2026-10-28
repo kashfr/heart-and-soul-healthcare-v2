@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useViewAsGuard } from '@/components/ImpersonationProvider';
 import { btn, btnDanger, btnIcon, btnPrimary, btnSm } from '@/components/buttons';
 import { Plus, ShieldCheck, Pencil, Ban } from 'lucide-react';
-import { useAuth, useEffectiveUser } from '@/components/AuthProvider';
+import { useAuth } from '@/components/AuthProvider';
 import {
   getCareTasks,
   addCareTask,
@@ -41,7 +42,7 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
   // as the supervisor sees it, but approving/editing/discontinuing are live
   // clinical writes (approved tasks render on progress notes and the TAR),
   // so the action buttons are withheld and withBusy refuses to run.
-  const { isViewingAs } = useEffectiveUser();
+  const { blockWrite } = useViewAsGuard();
 
   const [tasks, setTasks] = useState<CareTask[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -123,7 +124,7 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
   }, [active]);
 
   const withBusy = async (fn: () => Promise<void>) => {
-    if (!actor || isViewingAs) return;
+    if (!actor || blockWrite()) return;
     setBusy(true);
     setError('');
     try {
@@ -259,7 +260,6 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
             <span style={pendingBannerStyle}> {pending.length} task{pending.length === 1 ? '' : 's'} pending RN approval.</span>
           )}
         </p>
-        {!isViewingAs && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {pending.length > 0 && (
               <button type="button" className={btn} onClick={handleApprove} disabled={busy} title="Stamps your name, role, and the time on each pending task. Intended for the RN supervisor.">
@@ -270,7 +270,6 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
               <Plus size={15} /> Add Tasks
             </button>
           </div>
-        )}
       </div>
 
       {error && <div style={errorStyle}>{error}</div>}
@@ -309,7 +308,6 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
                       )}
                     </div>
                   </div>
-                  {!isViewingAs && (
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                       {!t.approvedAt && (
                         <button type="button" className={`${btn} ${btnSm}`} onClick={() => handleApproveOne(t)} disabled={busy} title="Approve this task (stamps your name, role, and the time)">
@@ -323,7 +321,6 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
                         <Ban size={14} />
                       </button>
                     </div>
-                  )}
                 </li>
               ))}
             </ul>

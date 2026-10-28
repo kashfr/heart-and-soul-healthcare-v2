@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useViewAsGuard } from './ImpersonationProvider';
 import { btn, btnPrimary } from '@/components/buttons';
 import Link from 'next/link';
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, MessageSquarePlus, X, XCircle } from 'lucide-react';
@@ -190,6 +191,7 @@ function StatusChip({ status }: { status: 'delivered' | 'partial' | 'failed' | '
 }
 
 function LogMessageModal({ data, patientId, onClose, onLogged }: { data: CommsPayload; patientId?: string; onClose: () => void; onLogged: () => void }) {
+  const { blockWrite } = useViewAsGuard();
   const [form, setForm] = useState<ManualCommInput>(() => ({ ...EMPTY_MANUAL_COMM, patientId: patientId || '', occurredAt: agencyNowLocal() }));
   const [errors, setErrors] = useState<Partial<Record<ManualCommErrorKey, string>>>({});
   const [saving, setSaving] = useState(false);
@@ -202,6 +204,7 @@ function LogMessageModal({ data, patientId, onClose, onLogged }: { data: CommsPa
   };
 
   const save = async () => {
+    if (blockWrite()) return;
     if (!applyFieldErrors(validateManualComm(form, agencyNowLocal(10 * 60 * 1000)), MANUAL_COMM_ERROR_ORDER, setErrors, fieldId)) return;
     setSaving(true);
     setSaveError('');

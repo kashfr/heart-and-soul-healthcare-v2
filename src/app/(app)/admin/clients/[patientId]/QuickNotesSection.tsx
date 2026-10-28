@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useViewAsGuard } from '@/components/ImpersonationProvider';
 import { btn, btnPrimary, btnSm } from '@/components/buttons';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { StickyNote, Plus, ChevronDown, ChevronUp, ChevronRight, AlertTriangle, X } from 'lucide-react';
@@ -311,6 +312,7 @@ function AddQuickNoteModal({
   onClose: () => void;
   onSaved: (concern: boolean, alertOk: boolean) => void;
 }) {
+  const { blockWrite } = useViewAsGuard();
   const [text, setText] = useState('');
   const [category, setCategory] = useState<QuickNoteCategory | ''>('');
   const [aboutDate, setAboutDate] = useState('');
@@ -324,7 +326,7 @@ function AddQuickNoteModal({
   }, []);
 
   const save = async () => {
-    if (busy) return;
+    if (busy || blockWrite()) return;
     if (!text.trim()) {
       setTextError('Write the note before saving.');
       escortToField('quick-note-text');
