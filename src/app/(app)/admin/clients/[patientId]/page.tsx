@@ -194,7 +194,11 @@ function ClientDashboardInner() {
   // Hours: the owner and a granted assistant (who transcribes the letters);
   // dollars inside stay owner-only. The Activity Log (audit + undo) is the
   // owner's alone. Both hide while previewing another user's view.
-  const showHoursTab = (realRole === 'admin' || (realRole === 'va' && !!assistantGrant)) && !isViewingAs;
+  // Previewing a granted assistant shows her Hours tab too (read-only, no
+  // dollars) so the preview matches what she sees.
+  const showHoursTab = (realRole === 'admin' && !isViewingAs) || (role === 'va' && !!assistantGrant);
+  const hoursOwnerView = realRole === 'admin' && !isViewingAs;
+  const hoursReadOnly = isViewingAs || (realRole === 'va' && !assistantGrant?.editInfo);
   const showActivityTab = realRole === 'admin' && !isViewingAs;
   // Care plan is a staff surface; a nurse deep-linking ?tab=careplan lands on
   // Overview instead of an editor she isn't meant to drive.
@@ -1090,7 +1094,7 @@ function ClientDashboardInner() {
             <div style={{ ...sectionTitleStyle, marginBottom: 12 }}>
               <Clock size={16} /> Hours
             </div>
-            <HoursSection patientId={patientId} patientName={patient.name} program={patient.program || ''} notes={notes} uid={user.uid} todayISO={today} canSeeDollars={realRole === 'admin'} canDelete={realRole === 'admin'} />
+            <HoursSection patientId={patientId} patientName={patient.name} program={patient.program || ''} notes={notes} uid={user.uid} todayISO={today} canSeeDollars={hoursOwnerView} canDelete={hoursOwnerView} readOnly={hoursReadOnly} />
           </section>
           )}
 
