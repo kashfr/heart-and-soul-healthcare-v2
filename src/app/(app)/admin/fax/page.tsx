@@ -1,5 +1,6 @@
 'use client';
 
+import { backdropDismiss } from '@/lib/backdropDismiss';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { btn, btnPrimary, btnSm } from '@/components/buttons';
 import { AlertTriangle, Archive, ArchiveRestore, BellOff, CalendarClock, CheckCircle2, Clock, Eye, FileSignature, FileUp, RefreshCw, RotateCw, Search, Send, ShieldCheck, X } from 'lucide-react';
@@ -518,7 +519,7 @@ function SendModal({ onClose, onSent, onDone }: { onClose: () => void; onSent: (
   };
 
   return (
-    <div style={backdropStyle} onClick={busy ? undefined : onClose}>
+    <div style={backdropStyle} {...backdropDismiss(busy ? undefined : onClose)}>
       <div style={modalStyle} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="fax-send-title">
         <div style={modalHeaderStyle}>
           <strong id="fax-send-title" style={{ fontSize: 16, color: '#1a3a5c' }}>Send a Fax</strong>

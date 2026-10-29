@@ -1,5 +1,6 @@
 'use client';
 
+import { backdropDismiss } from '@/lib/backdropDismiss';
 import { useEffect, useRef, type CSSProperties, type KeyboardEvent } from 'react';
 import {
   HIGH_ACUITY_PROMPT_ACCEPT,
@@ -50,7 +51,7 @@ export default function HighAcuityNursePrompt({
   };
 
   return (
-    <div style={backdrop} onClick={onKeep}>
+    <div style={backdrop} {...backdropDismiss(onKeep)}>
       <div
         role="dialog"
         aria-modal="true"

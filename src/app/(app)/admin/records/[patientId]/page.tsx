@@ -1,5 +1,6 @@
 'use client';
 
+import { backdropDismiss } from '@/lib/backdropDismiss';
 import { useEffect, useMemo, useState } from 'react';
 import { useViewAsGuard } from '@/components/ImpersonationProvider';
 import { btn, btnDanger, btnIcon, btnPrimary, btnSm } from '@/components/buttons';
@@ -455,7 +456,7 @@ export default function RecordDetailPage() {
 
       {/* Add / edit order modal */}
       {formOpen && (
-        <div style={modalBackdropStyle} onClick={() => !submitting && setFormOpen(false)}>
+        <div style={modalBackdropStyle} {...backdropDismiss(() => !submitting && setFormOpen(false))}>
           <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
             <div style={modalHeaderStyle}>
               <h2 style={{ margin: 0, fontSize: 18, color: '#2c3e50' }}>
@@ -798,7 +799,7 @@ export default function RecordDetailPage() {
 
       {/* Discontinue modal */}
       {dcTarget && (
-        <div style={modalBackdropStyle} onClick={() => !submitting && setDcTarget(null)}>
+        <div style={modalBackdropStyle} {...backdropDismiss(() => !submitting && setDcTarget(null))}>
           <div style={{ ...modalStyle, maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
             <div style={modalHeaderStyle}>
               <h2 style={{ margin: 0, fontSize: 18, color: '#2c3e50' }}>Discontinue Medication</h2>
@@ -844,7 +845,7 @@ export default function RecordDetailPage() {
 
       {/* Read-only order detail (click a medication row to open) */}
       {viewOrder && (
-        <div style={modalBackdropStyle} onClick={() => setViewOrder(null)}>
+        <div style={modalBackdropStyle} {...backdropDismiss(() => setViewOrder(null))}>
           <div style={{ ...modalStyle, maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
             <div style={modalHeaderStyle}>
               <h2 style={{ margin: 0, fontSize: 18, color: '#2c3e50' }}>Medication Order</h2>

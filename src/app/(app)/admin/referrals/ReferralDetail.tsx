@@ -1,5 +1,6 @@
 'use client';
 
+import { backdropDismiss } from '@/lib/backdropDismiss';
 import { useCallback, useEffect, useState } from 'react';
 import {
   X, Phone, Mail, Printer, MessageSquare, ArrowRightLeft, UserCheck,
@@ -157,7 +158,7 @@ export default function ReferralDetail({
   );
 
   return (
-    <div style={backdropStyle} onClick={onClose}>
+    <div style={backdropStyle} {...backdropDismiss(onClose)}>
       <aside
         style={drawerStyle}
         onClick={(e) => e.stopPropagation()}

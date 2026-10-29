@@ -1,5 +1,6 @@
 'use client';
 
+import { backdropDismiss } from '@/lib/backdropDismiss';
 import { useState } from 'react';
 import { btn, btnPrimary } from '@/components/buttons';
 import { FileUp, X } from 'lucide-react';
@@ -102,7 +103,7 @@ export default function UploadReferralDocumentModal({
   };
 
   return (
-    <div style={backdrop} onClick={busy ? undefined : onClose}>
+    <div style={backdrop} {...backdropDismiss(busy ? undefined : onClose)}>
       <div style={modal} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="referral-upload-title">
         <div style={header}>
           <strong id="referral-upload-title" style={{ fontSize: 16, color: '#1a3a5c', display: 'inline-flex', alignItems: 'center', gap: 8 }}>

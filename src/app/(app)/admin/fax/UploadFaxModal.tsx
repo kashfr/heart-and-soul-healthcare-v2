@@ -1,5 +1,6 @@
 'use client';
 
+import { backdropDismiss } from '@/lib/backdropDismiss';
 import { useState } from 'react';
 import { FileUp, X } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
@@ -63,7 +64,7 @@ export default function UploadFaxModal({ today, onClose, onAdded }: { today: str
   };
 
   return (
-    <div style={backdrop} onClick={busy ? undefined : onClose}>
+    <div style={backdrop} {...backdropDismiss(busy ? undefined : onClose)}>
       <div style={modal} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="upload-fax-title">
         <div style={header}>
           <strong id="upload-fax-title" style={{ fontSize: 16, color: '#1a3a5c' }}>Add a Received Fax</strong>

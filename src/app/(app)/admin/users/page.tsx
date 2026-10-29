@@ -1,5 +1,6 @@
 'use client';
 
+import { backdropDismiss } from '@/lib/backdropDismiss';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
 import {
@@ -573,7 +574,7 @@ function AddStaffModal({
   };
 
   return (
-    <div style={modalBackdropStyle} onClick={() => !submitting && onClose()}>
+    <div style={modalBackdropStyle} {...backdropDismiss(() => !submitting && onClose())}>
       <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
         <div style={modalHeaderStyle}>
           <h2 style={modalTitleStyle}>Add Staff</h2>
@@ -885,7 +886,7 @@ function EditStaffModal({
   };
 
   return (
-    <div style={modalBackdropStyle} onClick={close}>
+    <div style={modalBackdropStyle} {...backdropDismiss(close)}>
       <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
         <div style={modalHeaderStyle}>
           <h2 style={modalTitleStyle}>Edit Staff</h2>
@@ -1129,7 +1130,7 @@ function SuccessModal({ result, onClose }: { result: CreateResult; onClose: () =
   const title = typeof result.orphansClaimed === 'number' ? 'Account Created' : 'Password-Reset Link Generated';
 
   return (
-    <div style={modalBackdropStyle} onClick={onClose}>
+    <div style={modalBackdropStyle} {...backdropDismiss(onClose)}>
       <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
         <div style={modalHeaderStyle}>
           <h2 style={modalTitleStyle}>

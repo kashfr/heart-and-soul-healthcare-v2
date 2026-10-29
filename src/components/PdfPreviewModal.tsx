@@ -1,5 +1,6 @@
 'use client';
 
+import { backdropDismiss } from '@/lib/backdropDismiss';
 import { useEffect, useState } from 'react';
 import { btn } from '@/components/buttons';
 import { Download, ExternalLink, X } from 'lucide-react';
@@ -51,7 +52,7 @@ export default function PdfPreviewModal({ title, url, onClose }: { title: string
   }, [onClose]);
 
   return (
-    <div style={backdropStyle} onClick={onClose}>
+    <div style={backdropStyle} {...backdropDismiss(onClose)}>
       <div style={modalStyle} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={title}>
         <div style={headerStyle}>
           <strong style={{ fontSize: 15, color: '#1a3a5c', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</strong>

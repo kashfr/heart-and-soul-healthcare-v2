@@ -1,4 +1,5 @@
 'use client';
+import { backdropDismiss } from '@/lib/backdropDismiss';
 import FaxSupportingSendModal from '@/components/FaxSupportingSendModal';
 
 import { useCallback, useEffect, useState } from 'react';
@@ -426,7 +427,7 @@ function FileModal({
   };
 
   return (
-    <div style={backdropStyle} onClick={busy ? undefined : onClose}>
+    <div style={backdropStyle} {...backdropDismiss(busy ? undefined : onClose)}>
       <div style={modalStyle} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="ppot-file-title">
         <div style={modalHeaderStyle}>
           <strong id="ppot-file-title" style={{ fontSize: 16, color: '#1a3a5c' }}>File as Signed Appendix T</strong>

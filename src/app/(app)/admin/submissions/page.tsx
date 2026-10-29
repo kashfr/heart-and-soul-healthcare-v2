@@ -1,5 +1,6 @@
 'use client';
 
+import { backdropDismiss } from '@/lib/backdropDismiss';
 import MonthPicker from '@/components/MonthPicker';
 
 import { useCallback, useMemo, useState, useEffect } from 'react';
@@ -2332,7 +2333,7 @@ export default function SubmissionsPage() {
       </div>
 
       {modalOpen && (
-        <div style={modalBackdropStyle} onClick={closeExportModal}>
+        <div style={modalBackdropStyle} {...backdropDismiss(closeExportModal)}>
           <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
             <div style={modalHeaderStyle}>
               <h2 style={{ margin: 0, fontSize: 18, color: '#2c3e50' }}>Export Progress Notes</h2>
