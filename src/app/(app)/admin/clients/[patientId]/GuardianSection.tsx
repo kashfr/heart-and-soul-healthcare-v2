@@ -66,7 +66,9 @@ export default function GuardianSection({ patientId, canEdit, actorName, onToast
   }, [patientId]);
 
   const contacts = record?.contacts || [];
-  const hasRecord = !!record?.decisionMaker;
+  // Contacts can exist without a decision-maker (the retired assistant
+  // workspace saved them that way), so either one counts as on file.
+  const hasRecord = !!record?.decisionMaker || contacts.length > 0;
 
   const startEdit = () => {
     setDm(record?.decisionMaker || undefined);
@@ -153,7 +155,11 @@ export default function GuardianSection({ patientId, canEdit, actorName, onToast
             <div style={muted}>No guardian information on file.{canEdit ? ' Add who signs consents and releases for this client.' : ''}</div>
           ) : (
             <>
-              <div style={statusLine}>{DECISION_MAKER_LABELS[record!.decisionMaker as DecisionMaker]}</div>
+              {record?.decisionMaker ? (
+                <div style={statusLine}>{DECISION_MAKER_LABELS[record.decisionMaker as DecisionMaker]}</div>
+              ) : (
+                <div style={warnLine}>Who makes legal decisions is not recorded yet.{canEdit ? ' Click Edit to choose.' : ''}</div>
+              )}
               {contacts.length > 0 && (
                 <ul style={rows}>
                   {contacts.map((c) => (
@@ -270,6 +276,7 @@ const choiceBtn: CSSProperties = { background: 'white', border: '1px solid #d0d7
 const choiceBtnOn: CSSProperties = { background: NAVY, color: 'white', border: '1px solid ' + NAVY };
 const errBox: CSSProperties = { background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '8px 11px', fontSize: 13 };
 const muted: CSSProperties = { fontSize: 13, color: '#5c6b7a' };
+const warnLine: CSSProperties = { fontSize: 13, fontWeight: 600, color: '#8a5a00', background: '#fff6e0', borderRadius: 6, padding: '6px 10px', marginBottom: 8 };
 const statusLine: CSSProperties = { fontSize: 13.5, fontWeight: 600, color: '#2c3e50', marginBottom: 8 };
 const rows: CSSProperties = { listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 10 };
 const rowItem: CSSProperties = { borderTop: '1px solid #eef1f4', paddingTop: 10, fontSize: 13.5, color: '#2c3e50', overflowWrap: 'anywhere' };
