@@ -221,7 +221,7 @@ function Field({ id, label: l, error, wide, children }: { id?: string; label: st
 }
 
 const card: CSSProperties = { background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: 18, marginBottom: 14 };
-const head: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 };
+const head: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 12 };
 const title: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 700, color: NAVY };
 const errBox: CSSProperties = { background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '8px 11px', fontSize: 13 };
 const muted: CSSProperties = { fontSize: 13, color: '#5c6b7a' };
@@ -233,8 +233,8 @@ const contactLine: CSSProperties = { display: 'flex', flexWrap: 'wrap', columnGa
 const link: CSSProperties = { color: '#1d5fa8', textDecoration: 'none' };
 const stamp: CSSProperties = { fontSize: 11.5, color: '#7f8c8d', marginTop: 12 };
 const editRow: CSSProperties = { border: '1px solid #e5e7eb', borderRadius: 8, padding: 12, marginBottom: 10, background: '#fbfcfd' };
-const editRowHead: CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 };
-const formGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 };
+const editRowHead: CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 };
+const formGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: 10 };
 const label: CSSProperties = { fontSize: 12, fontWeight: 600, color: '#2c3e50', marginBottom: 4 };
 const input: CSSProperties = { width: '100%', boxSizing: 'border-box', border: '1px solid #d0d7de', borderRadius: 6, padding: '7px 9px', fontSize: 13.5, fontFamily: 'inherit', color: '#2c3e50', background: 'white' };
 const select: CSSProperties = withSelectChevron(input);

@@ -1,0 +1,75 @@
+/* Phone layout for the client dashboard. The page is styled inline, so the
+   few things a phone needs to change (padding, how the header actions stack,
+   the tab strip's scroll cue, input sizing) live here as overrides. Desktop
+   is unchanged: nothing outside the media queries alters layout. */
+
+.page {
+  min-width: 0;
+}
+
+/* The tab strip scrolls sideways; the fade on its right edge shows there are
+   more tabs when the strip is wider than the screen (data-more is kept in
+   sync from a scroll listener in page.tsx). */
+.tabsWrap {
+  position: relative;
+}
+.tabsFade {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .page {
+    padding: 14px 12px !important;
+  }
+  .headerCard {
+    padding: 14px !important;
+  }
+  /* The action buttons take their own full-width row under the name. */
+  .actions {
+    width: 100%;
+  }
+  .actions > * {
+    flex: 1 1 calc(50% - 4px);
+  }
+  .tabs {
+    gap: 2px !important;
+    scrollbar-width: none;
+    scroll-padding-inline: 12px;
+  }
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .tabs > [role='tab'] {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+  .tabsWrap[data-more='true'] .tabsFade {
+    display: block;
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 1px;
+    width: 44px;
+    pointer-events: none;
+    background: linear-gradient(to right, rgba(245, 247, 250, 0), #f5f7fa 65%);
+  }
+  /* 16px keeps iOS Safari from zooming the page when a field is tapped. */
+  .page input,
+  .page textarea,
+  .page select {
+    font-size: 16px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .actions {
+    flex-direction: column;
+  }
+  .actions > * {
+    width: 100%;
+  }
+  /* Two tiles per row instead of four single tiles stacked. */
+  .tileGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
