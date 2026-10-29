@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { btn, btnPrimary, btnSm } from '@/components/buttons';
+import styles from './ClientDashboard.module.css';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -221,6 +222,10 @@ function ClientDashboardInner() {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Phone: the tab strip scrolls sideways. Keep the active tab in view and
+  // show a fade on the right edge while more tabs are hidden past it.
+  const tabBarRef = useRef<HTMLDivElement | null>(null);
+  const [tabsMore, setTabsMore] = useState(false);
   // Tracks the patient currently on screen so a slow refetch for a previous
   // client can never land its documents under this one's URL.
   const patientIdRef = useRef(patientId);
@@ -230,6 +235,33 @@ function ClientDashboardInner() {
     setToast(msg);
     toastTimer.current = setTimeout(() => setToast(null), 3200);
   };
+
+  useEffect(() => {
+    const bar = tabBarRef.current;
+    if (!bar) return;
+    const update = () => setTabsMore(bar.scrollLeft + bar.clientWidth < bar.scrollWidth - 1);
+    update();
+    bar.addEventListener('scroll', update, { passive: true });
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
+    ro?.observe(bar);
+    return () => {
+      bar.removeEventListener('scroll', update);
+      ro?.disconnect();
+    };
+    // The bar only exists once the client has loaded.
+  }, [loading, patient]);
+
+  useEffect(() => {
+    // Scroll the strip (never the page) so the active tab is visible and
+    // clear of the right-edge fade, with the next tab peeking past it.
+    const bar = tabBarRef.current;
+    const active = bar?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+    if (!bar || !active) return;
+    const left = active.offsetLeft - bar.offsetLeft;
+    const right = left + active.offsetWidth;
+    if (left < bar.scrollLeft) bar.scrollLeft = Math.max(0, left - 12);
+    else if (right > bar.scrollLeft + bar.clientWidth - 48) bar.scrollLeft = right - bar.clientWidth + 48;
+  }, [tab, loading, patient]);
 
   const today = todayISO();
   const start90 = shiftISO(today, -89);
@@ -528,7 +560,7 @@ function ClientDashboardInner() {
   ].filter((s) => s === 'bad').length;
 
   return (
-    <div style={containerStyle}>
+    <div style={containerStyle} className={styles.page}>
       <div style={{ marginBottom: 14 }}>
         <Link href="/admin/clients" style={backLinkStyle}>
           <ArrowLeft size={14} /> Back to Clients
@@ -552,10 +584,10 @@ function ClientDashboardInner() {
       ) : (
         <>
           {/* Identity header */}
-          <header style={headerCardStyle}>
+          <header style={headerCardStyle} className={styles.headerCard}>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap' }}>
               <div style={avatarStyle}>{initialsOf(patient.name)}</div>
-              <div style={{ flex: 1, minWidth: 220 }}>
+              <div style={{ flex: '1 1 220px', minWidth: 0 }}>
                 <h1 style={titleStyle}>{patient.name}</h1>
                 <div style={identityLineStyle}>
                   {age !== null ? `${age} yrs · ` : ''}
@@ -597,7 +629,7 @@ function ClientDashboardInner() {
                   </div>
                 )}
               </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }} className={styles.actions}>
                 {/* Hidden during view-as: the note form blocks the session
                     anyway (ViewAsWriteBlock), so don't offer a dead door. */}
                 <Link href={`/progress-note?patient=${patientId}`} className={btn}>
@@ -645,7 +677,8 @@ function ClientDashboardInner() {
           </header>
 
           {/* Tab bar */}
-          <div style={tabBarStyle} role="tablist" aria-label="Dashboard sections">
+          <div className={styles.tabsWrap} data-more={tabsMore ? 'true' : 'false'}>
+          <div ref={tabBarRef} style={tabBarStyle} className={styles.tabs} role="tablist" aria-label="Dashboard sections">
             {TABS.filter((t) => ((t.key !== 'careplan' && t.key !== 'communications') || !isNurse) && (t.key !== 'hours' || showHoursTab) && (t.key !== 'activity' || showActivityTab)).map((t) => (
               <button
                 key={t.key}
@@ -659,6 +692,8 @@ function ClientDashboardInner() {
                 {t.key === 'readiness' && readinessBadge > 0 && <span style={tabBadgeStyle}>{readinessBadge}</span>}
               </button>
             ))}
+          </div>
+          <div className={styles.tabsFade} aria-hidden="true" />
           </div>
 
           {tab === 'overview' && (
@@ -678,7 +713,7 @@ function ClientDashboardInner() {
               )}
 
           {/* Stat tiles */}
-          <div style={tileGridStyle}>
+          <div style={tileGridStyle} className={styles.tileGrid}>
             <StatTile
               label="Last Visit"
               value={lastVisit ? (daysSinceVisit === 0 ? 'Today' : `${daysSinceVisit}d ago`) : 'None yet'}
@@ -1227,17 +1262,17 @@ const emptyCardStyle: React.CSSProperties = { padding: '32px 16px', textAlign: '
 const headerCardStyle: React.CSSProperties = { background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: 18, marginBottom: 14 };
 const avatarStyle: React.CSSProperties = { width: 52, height: 52, borderRadius: 14, background: '#e8eef4', color: NAVY, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 18, flexShrink: 0 };
 const titleStyle: React.CSSProperties = { fontSize: 22, color: '#1f2937', margin: 0, lineHeight: 1.2 };
-const identityLineStyle: React.CSSProperties = { fontSize: 13.5, color: '#5c6b7a', marginTop: 4 };
-const addressLineStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 5, fontSize: 13, color: '#5c6b7a', marginTop: 4 };
-const headerGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginTop: 14, paddingTop: 14, borderTop: '1px solid #f1f3f5' };
+const identityLineStyle: React.CSSProperties = { fontSize: 13.5, color: '#5c6b7a', marginTop: 4, overflowWrap: 'anywhere' };
+const addressLineStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 5, fontSize: 13, color: '#5c6b7a', marginTop: 4, overflowWrap: 'anywhere' };
+const headerGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: 12, marginTop: 14, paddingTop: 14, borderTop: '1px solid #f1f3f5' };
 const headerFieldLabelStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: '#8a949e', textTransform: 'uppercase', letterSpacing: 0.4 };
-const headerFieldValueStyle: React.CSSProperties = { fontSize: 13.5, marginTop: 3, lineHeight: 1.4 };
+const headerFieldValueStyle: React.CSSProperties = { fontSize: 13.5, marginTop: 3, lineHeight: 1.4, overflowWrap: 'anywhere' };
 const teamRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 14, paddingTop: 12, borderTop: '1px solid #f1f3f5' };
 const teamLabelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: '#8a949e', textTransform: 'uppercase', letterSpacing: 0.4 };
-const teamChipStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 999, padding: '3px 10px 3px 4px', fontSize: 12.5, color: '#2c3e50', fontWeight: 600 };
+const teamChipStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%', overflowWrap: 'anywhere', background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 999, padding: '3px 10px 3px 4px', fontSize: 12.5, color: '#2c3e50', fontWeight: 600 };
 const teamInitialsStyle: React.CSSProperties = { width: 22, height: 22, borderRadius: 999, background: '#e8eef4', color: NAVY, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800 };
-const tileGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 14 };
-const tileStyle: React.CSSProperties = { background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 16px' };
+const tileGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: 12, marginBottom: 14 };
+const tileStyle: React.CSSProperties = { background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 16px', minWidth: 0 };
 const tileLabelStyle: React.CSSProperties = { fontSize: 11.5, fontWeight: 700, color: '#8a949e', textTransform: 'uppercase', letterSpacing: 0.4 };
 const tileValueStyle: React.CSSProperties = { fontSize: 24, fontWeight: 800, color: '#1f2937', marginTop: 4, lineHeight: 1.1 };
 const tileSubStyle: React.CSSProperties = { fontSize: 12.5, color: '#7f8c8d', marginTop: 3 };
@@ -1296,7 +1331,7 @@ const miniVisitRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'b
 const jumpLinkStyle: React.CSSProperties = { background: 'transparent', border: 'none', color: '#1a3a5c', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', padding: '8px 2px 0', textDecoration: 'underline' };
 const sectionTitleStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 700, color: NAVY };
 const sectionSubStyle: React.CSSProperties = { fontSize: 12.5, color: '#7f8c8d', margin: '6px 0 12px', lineHeight: 1.5 };
-const readinessGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 10 };
+const readinessGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 230px), 1fr))', gap: 10 };
 const readinessCardStyle: React.CSSProperties = { border: '1px solid', borderRadius: 10, padding: '12px 14px', height: '100%' };
 const readinessTitleStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3 };
 const readinessValueStyle: React.CSSProperties = { fontSize: 15.5, fontWeight: 700, marginTop: 6 };
@@ -1321,6 +1356,8 @@ const toastStyle: React.CSSProperties = {
   fontWeight: 600,
   boxShadow: '0 6px 24px rgba(0,0,0,0.25)',
   zIndex: 3300,
+  maxWidth: 'calc(100vw - 24px)',
+  boxSizing: 'border-box',
 };
 
 function activityIconStyle(kind: 'note' | 'med' | 'dose'): React.CSSProperties {

@@ -100,7 +100,8 @@ const emptyStyle: CSSProperties = { padding: '16px 14px', color: '#7f8c8d', font
 const listStyle: CSSProperties = { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 };
 const rowStyle: CSSProperties = { background: 'white', borderWidth: 1, borderStyle: 'solid', borderColor: '#e5e7eb', borderLeftWidth: 4, borderRadius: 10, padding: '10px 12px' };
 const rowHeadStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 };
-const metaStyle: CSSProperties = { fontSize: 12, color: '#5c6b7a', flex: 1, minWidth: 0 };
+// 160px basis: on a phone the description wraps onto its own line under the chips instead of squeezing beside them.
+const metaStyle: CSSProperties = { fontSize: 12, color: '#5c6b7a', flex: '1 1 160px', minWidth: 0 };
 const openLinkStyle: CSSProperties = { fontSize: 12.5, fontWeight: 700, color: NAVY, textDecoration: 'none' };
 const textStyle: CSSProperties = { fontSize: 13.5, color: '#1f2937', lineHeight: 1.5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' };
 const chip = (bg: string, fg: string): CSSProperties => ({ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 999, background: bg, color: fg, fontSize: 11.5, fontWeight: 700 });

@@ -129,7 +129,7 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
         <span style={{ fontSize: 11, fontWeight: 700 }}>{fmtDate(v.date)}</span>
         {v.startTime && <span style={{ fontSize: 10.5 }}>{fmtTime(v.startTime)}</span>}
       </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ flex: '1 1 150px', minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={v.type === 'supervisory' ? supChipStyle : shiftChipStyle}>
             {v.type === 'supervisory' ? 'Supervisory Visit' : 'Shift'}
@@ -144,7 +144,7 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
         )}
       </div>
       {isStaff && (
-        <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end', marginLeft: 'auto' }}>
           {isOpen(v) && canTake && (
             <button type="button" onClick={() => accept(v)} disabled={busyId === v.id} className={`${btnPrimary} ${btnSm}`} title="Take this visit">
               <UserCheck size={13} /> Accept
@@ -251,7 +251,7 @@ export default function VisitsSection({ patientId, visits, isStaff, actor, careT
                     <span style={{ fontSize: 11, fontWeight: 700 }}>{fmtDate(v.date)}</span>
                     {v.startTime && <span style={{ fontSize: 10.5 }}>{fmtTime(v.startTime)}</span>}
                   </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ flex: '1 1 150px', minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <span style={v.type === 'supervisory' ? supChipStyle : shiftChipStyle}>
                         {v.type === 'supervisory' ? 'Supervisory Visit' : 'Shift'}
@@ -614,7 +614,8 @@ const viewToggleStyle: CSSProperties = { display: 'inline-flex', background: '#e
 const viewPillStyle: CSSProperties = { background: 'transparent', border: 'none', padding: '5px 12px', borderRadius: 6, fontSize: 12.5, fontWeight: 600, color: '#5c6b7a', cursor: 'pointer', fontFamily: 'inherit' };
 const viewPillActiveStyle: CSSProperties = { background: 'white', color: NAVY, boxShadow: '0 1px 2px rgba(0,0,0,0.08)' };
 const listStyle: CSSProperties = { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 };
-const rowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'white', borderWidth: 1, borderStyle: 'solid', borderColor: '#e5e7eb', borderRadius: 10 };
+// flexWrap + the 150px basis on the text block: on a phone the Done / Cancel buttons drop under the text instead of squeezing it.
+const rowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 12px', background: 'white', borderWidth: 1, borderStyle: 'solid', borderColor: '#e5e7eb', borderRadius: 10 };
 const overdueRowStyle: CSSProperties = { background: '#fff7e6', borderColor: '#f5d9a8' };
 const supChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#e0e7ff', color: '#3730a3', fontSize: 10.5, fontWeight: 700 };
 const shiftChipStyle: CSSProperties = { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#e8eef4', color: NAVY, fontSize: 10.5, fontWeight: 700 };
@@ -638,7 +639,7 @@ const selectStyle: CSSProperties = {
   background: "white url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\") no-repeat right 11px center",
   backgroundSize: '13px',
 };
-const grid2Style: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 };
+const grid2Style: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: 12 };
 const errBoxStyle: CSSProperties = { background: '#fdeaea', color: '#b3261e', borderRadius: 6, padding: '8px 11px', fontSize: 13, marginBottom: 10 };
 const actionsStyle: CSSProperties = { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 };
 

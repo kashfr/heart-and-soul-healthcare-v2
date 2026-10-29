@@ -448,6 +448,7 @@ export default function HoursSection({ patientId, patientName, program, notes, u
         {monthRows.length === 0 ? (
           <div style={muted}>Nothing documented for this month.</div>
         ) : (
+          <div style={{ overflowX: 'auto' }}>
           <table style={table}>
             <thead>
               <tr>
@@ -560,6 +561,7 @@ export default function HoursSection({ patientId, patientName, program, notes, u
               )}
             </tfoot>
           </table>
+          </div>
         )}
       </section>
 
@@ -761,6 +763,8 @@ function MonthTable({ title: heading, bucket, months, list, dayHours, month, tod
       <div style={head}>
         <div style={title}>{heading}</div>
       </div>
+      {/* Phone: the table scrolls sideways inside the card instead of widening the page. */}
+      <div style={{ overflowX: 'auto' }}>
       <table style={table}>
         <thead>
           <tr>
@@ -796,6 +800,7 @@ function MonthTable({ title: heading, bucket, months, list, dayHours, month, tod
           })}
         </tbody>
       </table>
+      </div>
     </section>
   );
 }
@@ -1036,7 +1041,7 @@ const monthChips: CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 6, m
 const chip: CSSProperties = { fontSize: 12, padding: '3px 8px', borderRadius: 6, background: '#f8fafc', border: '1px solid #e2e8f0', color: '#334155' };
 const chipOverride: CSSProperties = { background: '#eef4fb', border: '1px solid #c8def5', color: NAVY };
 const formCard: CSSProperties = { border: '1px solid #c8def5', background: '#f8fbff', borderRadius: 10, padding: 14, marginBottom: 14 };
-const formGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 };
+const formGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: 10 };
 const field: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 };
 const label: CSSProperties = { fontSize: 11.5, fontWeight: 700, color: '#5c6b7a', textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap' };
 const billingLine: CSSProperties = { display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 12, padding: '8px 12px', background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 13, color: '#334155' };
