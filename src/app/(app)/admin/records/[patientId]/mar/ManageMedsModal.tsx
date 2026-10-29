@@ -1,5 +1,6 @@
 'use client';
 
+import { backdropDismiss } from '@/lib/backdropDismiss';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useViewAsGuard } from '@/components/ImpersonationProvider';
 import { btn, btnDanger, btnPrimary } from '@/components/buttons';
@@ -337,7 +338,7 @@ export default function ManageMedsModal({ patientId, patientName, activeOrders, 
   const showMedFields = mode === 'add' || mode === 'change';
 
   return createPortal(
-    <div style={backdrop} onClick={() => !submitting && onClose()}>
+    <div style={backdrop} {...backdropDismiss(() => !submitting && onClose())}>
       <div style={modal} onClick={(e) => e.stopPropagation()}>
         <div style={head}>
           <h2 style={{ margin: 0, fontSize: 17, color: '#2c3e50' }}>Manage Medications</h2>

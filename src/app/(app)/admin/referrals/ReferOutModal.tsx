@@ -1,5 +1,6 @@
 'use client';
 
+import { backdropDismiss } from '@/lib/backdropDismiss';
 import { useState } from 'react';
 import { btn, btnPrimary, btnSm } from '@/components/buttons';
 import { X, Copy, Check, FileText } from 'lucide-react';
@@ -137,7 +138,7 @@ export default function ReferOutModal({
   };
 
   return (
-    <div style={backdrop} onClick={onClose}>
+    <div style={backdrop} {...backdropDismiss(onClose)}>
       <div style={card} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div style={header}>
           <div style={{ fontSize: 17, fontWeight: 700, color: '#2c3e50' }}>Refer Out</div>

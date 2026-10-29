@@ -1,5 +1,6 @@
 'use client';
 
+import { backdropDismiss } from '@/lib/backdropDismiss';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { btn, btnDanger, btnIcon, btnPrimary, btnSm } from '@/components/buttons';
 import { Search, X, RefreshCw, Plus, Pencil, Trash2, Mail, Phone, ChevronRight } from 'lucide-react';
@@ -349,7 +350,7 @@ function AgencyForm({
   };
 
   return (
-    <div style={backdropStyle} onClick={onClose}>
+    <div style={backdropStyle} {...backdropDismiss(onClose)}>
       <div style={modalStyle} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div style={modalHeaderStyle}>
           <div style={{ fontSize: 18, fontWeight: 700, color: '#2c3e50' }}>

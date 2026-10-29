@@ -1,5 +1,6 @@
 'use client';
 
+import { backdropDismiss } from '@/lib/backdropDismiss';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useViewAsGuard } from '@/components/ImpersonationProvider';
 import { btn, btnDanger, btnIcon, btnPrimary, btnSm } from '@/components/buttons';
@@ -804,7 +805,7 @@ function ClientsRosterInner() {
       </div>
 
       {formOpen && canManageRoster && (
-        <div style={modalBackdropStyle} onClick={() => !submitting && setFormOpen(false)}>
+        <div style={modalBackdropStyle} {...backdropDismiss(() => !submitting && setFormOpen(false))}>
           <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
             <div style={modalHeaderStyle}>
               <h2 style={{ margin: 0, fontSize: 18, color: '#2c3e50' }}>

@@ -1,5 +1,6 @@
 'use client';
 
+import { backdropDismiss } from '@/lib/backdropDismiss';
 import { useState, type CSSProperties } from 'react';
 import { btn, btnPrimary } from '@/components/buttons';
 import { X } from 'lucide-react';
@@ -122,7 +123,7 @@ export default function RecordTreatmentModal({
   };
 
   return (
-    <div style={overlay} role="dialog" aria-modal="true" onClick={onClose}>
+    <div style={overlay} role="dialog" aria-modal="true" {...backdropDismiss(onClose)}>
       <div style={panel} onClick={(e) => e.stopPropagation()}>
         <div style={headRow}>
           <div>

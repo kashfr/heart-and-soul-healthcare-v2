@@ -1,5 +1,6 @@
 'use client';
 
+import { backdropDismiss } from '@/lib/backdropDismiss';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useViewAsGuard } from '@/components/ImpersonationProvider';
 import { btn, btnDanger, btnIcon, btnPrimary, btnSm } from '@/components/buttons';
@@ -349,7 +350,7 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
 
       {/* Add-tasks modal */}
       {addOpen && (
-        <div style={backdropStyle} onClick={() => !busy && setAddOpen(false)}>
+        <div style={backdropStyle} {...backdropDismiss(() => !busy && setAddOpen(false))}>
           <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
             <h2 style={modalTitleStyle}>Add Care Tasks</h2>
             <p style={modalSubStyle}>
@@ -436,7 +437,7 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
 
       {/* Edit modal */}
       {editTarget && (
-        <div style={backdropStyle} onClick={() => !busy && setEditTarget(null)}>
+        <div style={backdropStyle} {...backdropDismiss(() => !busy && setEditTarget(null))}>
           <div style={{ ...modalStyle, maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
             <h2 style={modalTitleStyle}>Edit Task</h2>
             {editTarget.catalogKey ? (
@@ -519,7 +520,7 @@ export default function CarePlanSection({ patientId }: { patientId: string }) {
 
       {/* Discontinue modal */}
       {dcTarget && (
-        <div style={backdropStyle} onClick={() => !busy && setDcTarget(null)}>
+        <div style={backdropStyle} {...backdropDismiss(() => !busy && setDcTarget(null))}>
           <div style={{ ...modalStyle, maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
             <h2 style={modalTitleStyle}>Discontinue Task</h2>
             <p style={modalSubStyle}>{dcTarget.name}</p>

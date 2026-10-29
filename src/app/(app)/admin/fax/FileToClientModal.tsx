@@ -1,5 +1,6 @@
 'use client';
 
+import { backdropDismiss } from '@/lib/backdropDismiss';
 import { useEffect, useMemo, useState } from 'react';
 import { FolderInput, Search, X } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
@@ -138,7 +139,7 @@ export default function FileToClientModal({ fax, today, onView, onClose, onFiled
   const sender = inboundFaxSender(fax.callerId, fax.remoteId).from || 'an unknown sender';
 
   return (
-    <div style={backdrop} onClick={busy ? undefined : onClose}>
+    <div style={backdrop} {...backdropDismiss(busy ? undefined : onClose)}>
       <div style={modal} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="fax-to-client-title">
         <div style={header}>
           <strong id="fax-to-client-title" style={{ fontSize: 16, color: '#1a3a5c' }}>File to a Client or Referral</strong>

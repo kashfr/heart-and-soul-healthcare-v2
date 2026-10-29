@@ -1,5 +1,6 @@
 'use client';
 
+import { backdropDismiss } from '@/lib/backdropDismiss';
 import { useEffect, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { orderRecordsValue, stageChangeRequest, type MarOrder, type MarDocumenter, type MarChangeRequestType } from '@/lib/mar';
@@ -320,7 +321,7 @@ export default function MedChangeRequestModal({
   if (!mounted) return null;
 
   return createPortal(
-    <div style={backdrop} onClick={() => !submitting && onClose()}>
+    <div style={backdrop} {...backdropDismiss(() => !submitting && onClose())}>
       <div
         style={modal}
         onClick={(e) => e.stopPropagation()}

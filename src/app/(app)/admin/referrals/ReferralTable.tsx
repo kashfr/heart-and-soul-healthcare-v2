@@ -1,5 +1,6 @@
 'use client';
 
+import { backdropDismiss } from '@/lib/backdropDismiss';
 import { useMemo, useState } from 'react';
 import { btn, btnDanger, btnPrimary } from '@/components/buttons';
 import { Printer, Download, Trash2, Share2, X, Check } from 'lucide-react';
@@ -430,7 +431,7 @@ function BulkShareModal({
 
   const n = referrals.length;
   return (
-    <div style={modalBackdropStyle} onClick={onClose}>
+    <div style={modalBackdropStyle} {...backdropDismiss(onClose)}>
       <div style={modalCardStyle} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div style={modalHeaderStyle}>
           <div style={{ fontSize: 17, fontWeight: 700, color: '#2c3e50' }}>

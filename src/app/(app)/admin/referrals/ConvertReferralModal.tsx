@@ -1,5 +1,6 @@
 'use client';
 
+import { backdropDismiss } from '@/lib/backdropDismiss';
 import { useEffect, useState } from 'react';
 import { btn, btnPrimary } from '@/components/buttons';
 import { UserPlus, X } from 'lucide-react';
@@ -78,7 +79,7 @@ export default function ConvertReferralModal({
   const address = plan ? [plan.street, plan.city, [plan.state, plan.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ') : '';
 
   return (
-    <div style={backdrop} onClick={busy ? undefined : onClose}>
+    <div style={backdrop} {...backdropDismiss(busy ? undefined : onClose)}>
       <div style={modal} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="convert-title">
         <div style={header}>
           <strong id="convert-title" style={{ fontSize: 16, color: '#1a3a5c' }}>Create Client Record</strong>

@@ -1,5 +1,6 @@
 'use client';
 
+import { backdropDismiss } from '@/lib/backdropDismiss';
 import { useMemo, useRef, useState } from 'react';
 import { btn, btnPrimary } from '@/components/buttons';
 import { CheckCircle2, ExternalLink, X } from 'lucide-react';
@@ -129,7 +130,7 @@ export default function CoSignModal({ notes, onClose, onSuccess }: CoSignModalPr
   };
 
   return (
-    <div style={backdropStyle} onClick={submitting ? undefined : onClose}>
+    <div style={backdropStyle} {...backdropDismiss(submitting ? undefined : onClose)}>
       <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
         <div style={headerStyle}>
           <h2 style={titleStyle}>{isBatch ? `Co-Sign ${notes.length} Notes` : 'Co-Sign This Note'}</h2>

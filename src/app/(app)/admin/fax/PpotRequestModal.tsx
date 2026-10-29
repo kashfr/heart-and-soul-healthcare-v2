@@ -1,4 +1,5 @@
 'use client';
+import { backdropDismiss } from '@/lib/backdropDismiss';
 import FaxAttachmentsPicker, { encodeFaxAttachments } from '@/components/FaxAttachmentsPicker';
 
 import { useMemo, useState } from 'react';
@@ -124,7 +125,7 @@ export default function PpotRequestModal({
   };
 
   return (
-    <div style={backdropStyle} onClick={busy ? undefined : onClose}>
+    <div style={backdropStyle} {...backdropDismiss(busy ? undefined : onClose)}>
       <div style={modalStyle} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="ppot-title">
         <div style={modalHeaderStyle}>
           <strong id="ppot-title" style={{ fontSize: 16, color: '#1a3a5c' }}>Request a Plan of Treatment (Appendix T)</strong>

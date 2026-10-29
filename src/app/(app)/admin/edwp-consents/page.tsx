@@ -1,5 +1,6 @@
 'use client';
 
+import { backdropDismiss } from '@/lib/backdropDismiss';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { btn, btnPrimary, btnSm } from '@/components/buttons';
 import { Check, Copy, Download, RefreshCw, Search, Send, X } from 'lucide-react';
@@ -320,7 +321,7 @@ function SendModal({ onClose, onSent }: { onClose: () => void; onSent: (invite: 
   };
 
   return (
-    <div style={backdropStyle} onClick={onClose}>
+    <div style={backdropStyle} {...backdropDismiss(onClose)}>
       <div style={modalStyle} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div style={modalHeaderStyle}>
           <strong style={{ fontSize: 16, color: '#1a3a5c' }}>Send Consent Form</strong>

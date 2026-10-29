@@ -1,4 +1,5 @@
 'use client';
+import { backdropDismiss } from '@/lib/backdropDismiss';
 import FaxAttachmentsPicker, { encodeFaxAttachments } from '@/components/FaxAttachmentsPicker';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -995,7 +996,7 @@ export function EditRoiModal({ roi, today, onClose, onSaved }: { roi: RoiRecord;
 
 function Modal({ title, onClose, busy, children }: { title: string; onClose: () => void; busy: boolean; children: React.ReactNode }) {
   return (
-    <div style={backdropStyle} onClick={(e) => { e.stopPropagation(); if (!busy) onClose(); }}>
+    <div style={backdropStyle} {...backdropDismiss(busy ? undefined : onClose, { stopPropagation: true })}>
       <div style={modalStyle} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={title}>
         <div style={modalHeaderStyle}>
           <strong style={{ fontSize: 16, color: '#1a3a5c' }}>{title}</strong>
