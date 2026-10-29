@@ -16,7 +16,10 @@ export const DOC_CATEGORY_GROUPS = [
   },
   {
     label: 'Medical events',
-    categories: ['Hospital Discharge', 'ER / Urgent Care Visit', 'Specialist / Physician Visit', 'Lab & Diagnostic Results', 'Incident Report'],
+    // Outside Medical Records: a chart copy another provider releases to us
+    // (often answering an ROI), which can bundle visit notes, labs and history
+    // that would otherwise be split across the categories beside it.
+    categories: ['Outside Medical Records', 'Hospital Discharge', 'ER / Urgent Care Visit', 'Specialist / Physician Visit', 'Lab & Diagnostic Results', 'Incident Report'],
   },
   {
     label: 'Program & payer',

@@ -37,4 +37,9 @@ describe('isDocCategory', () => {
   it('includes Provider Correspondence for updates from residential providers', () => {
     expect(isDocCategory('Provider Correspondence')).toBe(true);
   });
+
+  it('includes Outside Medical Records for chart copies released by other providers', () => {
+    expect(isDocCategory('Outside Medical Records')).toBe(true);
+    expect(validateFileFaxToClient({ ...ok, category: 'Outside Medical Records' }, '2026-09-29')).toEqual({});
+  });
 });
