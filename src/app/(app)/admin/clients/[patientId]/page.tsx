@@ -252,14 +252,15 @@ function ClientDashboardInner() {
   }, [loading, patient]);
 
   useEffect(() => {
-    // Scroll the strip (never the page) so the active tab is visible.
+    // Scroll the strip (never the page) so the active tab is visible and
+    // clear of the right-edge fade, with the next tab peeking past it.
     const bar = tabBarRef.current;
     const active = bar?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
     if (!bar || !active) return;
     const left = active.offsetLeft - bar.offsetLeft;
     const right = left + active.offsetWidth;
     if (left < bar.scrollLeft) bar.scrollLeft = Math.max(0, left - 12);
-    else if (right > bar.scrollLeft + bar.clientWidth) bar.scrollLeft = right - bar.clientWidth + 12;
+    else if (right > bar.scrollLeft + bar.clientWidth - 48) bar.scrollLeft = right - bar.clientWidth + 48;
   }, [tab, loading, patient]);
 
   const today = todayISO();
