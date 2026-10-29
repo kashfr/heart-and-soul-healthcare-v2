@@ -28,6 +28,16 @@ describe('GuardianSection', () => {
     expect(screen.queryByRole('button', { name: /edit/i })).toBeNull();
   });
 
+  it('shows contacts saved without a decision-maker instead of hiding them', async () => {
+    store.data = { contacts: [{ id: 'm', role: 'Parent', name: 'Tara Le Roux', relationship: 'Mother', phone: '(404) 555-0100' }] };
+    render(<GuardianSection patientId="p1" canEdit actorName="" onToast={() => {}} />);
+    expect(await screen.findByText('Tara Le Roux')).toBeInTheDocument();
+    expect(screen.getByText('(404) 555-0100')).toBeInTheDocument();
+    expect(screen.getByText(/who makes legal decisions is not recorded/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no guardian information on file/i)).toBeNull();
+    expect(screen.getByRole('button', { name: /edit/i })).toBeInTheDocument();
+  });
+
   it('adds a guardian row when "Has a legal guardian" is picked, and blocks until it is filled', async () => {
     const toast = vi.fn();
     render(<GuardianSection patientId="p1" canEdit actorName="Kaheem Freeman" onToast={toast} />);
