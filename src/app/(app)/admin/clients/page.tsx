@@ -4,6 +4,8 @@ import { backdropDismiss } from '@/lib/backdropDismiss';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useViewAsGuard } from '@/components/ImpersonationProvider';
 import { btn, btnDanger, btnIcon, btnPrimary, btnSm } from '@/components/buttons';
+import { PHONE_QUERY, useMediaQuery } from '@/lib/useMediaQuery';
+import styles from './Clients.module.css';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -17,6 +19,7 @@ import {
   AlertTriangle,
   Pill,
   Stethoscope,
+  ChevronRight,
 } from 'lucide-react';
 import { formatUSPhone } from '@/lib/phone';
 import { arrayUnion, arrayRemove, doc, updateDoc } from 'firebase/firestore';
@@ -110,6 +113,8 @@ function formatDOB(dob: string): string {
  */
 function ClientsRosterInner() {
   const router = useRouter();
+  // Phones get a card per client instead of the 7-column table.
+  const isPhone = useMediaQuery(PHONE_QUERY);
   const { uid, role, isViewingAs } = useEffectiveUser();
   const { blockWrite } = useViewAsGuard();
   const isNurse = role === 'nurse';
@@ -579,7 +584,7 @@ function ClientsRosterInner() {
   const tarHrefFor = (p: Patient) => `/admin/treatments/${p.id}`;
 
   return (
-    <div style={containerStyle}>
+    <div style={containerStyle} className={styles.page}>
       <div style={wrapStyle}>
         <div style={{ marginBottom: 16 }}>
           <Link href="/admin" style={backLinkStyle}>
@@ -589,7 +594,7 @@ function ClientsRosterInner() {
 
         <header style={headerStyle}>
           <div>
-            <h1 style={titleStyle}>Clients</h1>
+            <h1 style={titleStyle} className={styles.title}>Clients</h1>
             <p style={subtitleStyle}>
               {isNurse
                 ? 'Your assigned clients. Click a client to open their dashboard, or jump straight to their MAR or TAR.'
@@ -597,14 +602,14 @@ function ClientsRosterInner() {
             </p>
           </div>
           {canManageRoster && (
-            <button onClick={handleOpenAdd} className={btnPrimary}>
+            <button onClick={handleOpenAdd} className={`${btnPrimary} ${styles.addBtn}`}>
               <Plus size={16} /> Add Patient
             </button>
           )}
         </header>
 
         <div style={toolbarStyle}>
-          <div style={searchWrapStyle}>
+          <div style={searchWrapStyle} className={styles.search}>
             <Search size={16} color="#7f8c8d" />
             <input
               type="text"
@@ -620,6 +625,7 @@ function ClientsRosterInner() {
                 value={programFilter}
                 onChange={(e) => setProgramFilter(e.target.value)}
                 style={filterSelectStyle}
+                className={styles.filter}
                 aria-label="Filter by program"
               >
                 <option value="">All Programs</option>
@@ -631,6 +637,7 @@ function ClientsRosterInner() {
                 value={levelFilter}
                 onChange={(e) => setLevelFilter(e.target.value)}
                 style={filterSelectStyle}
+                className={styles.filter}
                 aria-label="Filter by service level"
               >
                 <option value="">All Service Levels</option>
@@ -677,6 +684,21 @@ function ClientsRosterInner() {
                 ? 'You have no assigned clients yet. Ask your supervisor to add you to a care team.'
                 : 'No clients yet. Click "Add Patient" to create your first record.'
               : 'No clients match that search.'}
+          </div>
+        ) : isPhone ? (
+          <div className={styles.cards}>
+            {filtered.map((p) => (
+              <ClientCard
+                key={p.id}
+                patient={p}
+                findings={isStaff ? (findings.get(p.id || '') ?? []).filter((f) => f.severity !== 'info') : []}
+                marHref={marHrefFor(p)}
+                tarHref={tarHrefFor(p)}
+                onOpen={() => openDashboard(p)}
+                onEdit={canManageRoster ? () => handleEdit(p) : undefined}
+                onRemove={canRemoveClient ? () => handleRemove(p) : undefined}
+              />
+            ))}
           </div>
         ) : (
           <div style={tableWrapStyle}>
@@ -817,7 +839,7 @@ function ClientsRosterInner() {
             </div>
 
             <form onSubmit={handleSave} noValidate style={{ padding: 20 }}>
-              <div style={gridTwoStyle}>
+              <div style={gridTwoStyle} className={styles.grid2}>
                 <Field label="Full name *" id={clientFieldId('name')} error={fieldErrors.name}>
                   <input
                     type="text"
@@ -846,7 +868,7 @@ function ClientsRosterInner() {
                 </Field>
               </div>
 
-              <div style={gridTwoStyle}>
+              <div style={gridTwoStyle} className={styles.grid2}>
                 <Field label="Primary diagnosis">
                   <input
                     type="text"
@@ -873,7 +895,7 @@ function ClientsRosterInner() {
                 />
               </Field>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr)', gap: 12 }}>
                 <Field label="City">
                   <input
                     type="text"
@@ -936,7 +958,7 @@ function ClientsRosterInner() {
                   </select>
                 </Field>
 
-                <div style={gridTwoStyle}>
+                <div style={gridTwoStyle} className={styles.grid2}>
                   <Field label="Service level">
                     <select
                       value={formData.serviceLevel || ''}
@@ -997,7 +1019,7 @@ function ClientsRosterInner() {
                   </span>
                 </label>
 
-                <div style={gridTwoStyle}>
+                <div style={gridTwoStyle} className={styles.grid2}>
                   <Field label="Record # (auto-assigned)">
                     <div style={{ padding: '10px 0', fontWeight: 600, color: '#4a7cf7' }}>
                       {formData.mrn || (editingId ? '-' : 'Assigned on save')}
@@ -1028,7 +1050,7 @@ function ClientsRosterInner() {
                   />
                 </Field>
 
-                <div style={gridTwoStyle}>
+                <div style={gridTwoStyle} className={styles.grid2}>
                   <Field label="Attending physician">
                     <input
                       type="text"
@@ -1051,7 +1073,7 @@ function ClientsRosterInner() {
                   </Field>
                 </div>
 
-                <div style={gridTwoStyle}>
+                <div style={gridTwoStyle} className={styles.grid2}>
                   <Field label="Physician fax">
                     <input
                       type="tel"
@@ -1311,6 +1333,85 @@ function Field({ label, children, id, error }: { label: string; children: React.
   );
 }
 
+/** One client on a phone: tap the header to open the dashboard, with the
+ *  program / level / chart chips under the name, DOB and age, the diagnosis
+ *  (clamped to two lines) and the city, then full-size MAR / TAR buttons and,
+ *  for staff, Edit and Remove. Record-check findings show under the name as
+ *  in the table. */
+function ClientCard({
+  patient: p,
+  findings,
+  marHref,
+  tarHref,
+  onOpen,
+  onEdit,
+  onRemove,
+}: {
+  patient: Patient;
+  findings: Finding[];
+  marHref: string;
+  tarHref: string;
+  onOpen: () => void;
+  onEdit?: () => void;
+  onRemove?: () => void;
+}) {
+  const program = getProgram(p.program);
+  const level = getServiceLevel(p.serviceLevel);
+  return (
+    <article className={styles.card}>
+      <button type="button" className={styles.cardHeader} onClick={onOpen} aria-label={`Open ${p.name}`}>
+        <span>
+          <span className={styles.cardName}>{p.name}</span>
+          {(program || level?.badge || p.requiresMar || p.hasFeedingTube || p.hasSeizureDisorder) && (
+            <span className={styles.chips}>
+              {program && <span style={programBadgeStyle(p.program)} title={program.full}>{program.label}</span>}
+              {level?.badge && <span style={serviceLevelBadgeStyle(p.serviceLevel)} title={level.full}>{level.badge}</span>}
+              {p.requiresMar && <span style={marBadgeStyle} title="Requires a Medication Administration Record">MAR</span>}
+              {p.hasFeedingTube && <span style={tubeBadgeStyle} title="Has a feeding tube (G-tube / GJ / J / NG)">FEEDING TUBE</span>}
+              {p.hasSeizureDisorder && <span style={seizureBadgeStyle} title="Has a seizure disorder: seizure log and per-shift seizure attestation apply">SEIZURE</span>}
+            </span>
+          )}
+        </span>
+        <ChevronRight size={20} className={styles.chevron} aria-hidden />
+      </button>
+      <div className={styles.cardBody}>
+        {findings.map((f) => (
+          <div key={f.rule} style={{ ...findingStyle(f.severity), marginTop: 0 }}>
+            <AlertTriangle size={11} style={{ flexShrink: 0, marginTop: 2 }} />
+            <span>{f.message}</span>
+          </div>
+        ))}
+        {p.dob && (
+          <div className={styles.cardLine}>
+            <span className={styles.muted}>DOB {formatDOB(p.dob)}</span>
+            <span style={ageBadgeStyle}>{calculateAge(p.dob)}</span>
+          </div>
+        )}
+        {p.diagnosis && <div className={styles.diagnosis}>{p.diagnosis}</div>}
+        {p.city && p.state && <div className={styles.muted}>{p.city}, {p.state}</div>}
+      </div>
+      <div className={styles.cardActions}>
+        <Link href={marHref} className={btn} title={`Open ${p.name}'s monthly MAR${p.requiresMar ? '' : ' (no MAR on file)'}`}>
+          <Pill size={14} /> MAR
+        </Link>
+        <Link href={tarHref} className={btn} title={`Open ${p.name}'s monthly TAR`}>
+          <Stethoscope size={14} /> TAR
+        </Link>
+        {onEdit && (
+          <button type="button" onClick={onEdit} className={btn} aria-label={`Edit ${p.name}`}>
+            <Pencil size={14} /> Edit
+          </button>
+        )}
+        {onRemove && (
+          <button type="button" onClick={onRemove} className={btnDanger} aria-label={`Remove ${p.name}`}>
+            <Trash2 size={14} /> Remove
+          </button>
+        )}
+      </div>
+    </article>
+  );
+}
+
 const saveErrorStyle: React.CSSProperties = { marginTop: 16, padding: '10px 12px', borderRadius: 8, background: '#fdecea', border: '1px solid #f3b6b0', color: '#b3261e', fontSize: 13, fontWeight: 600 };
 
 const containerStyle: React.CSSProperties = { minHeight: '70vh', background: '#f5f7fa', padding: '32px 20px' };
@@ -1345,7 +1446,8 @@ const modalBackdropStyle: React.CSSProperties = { position: 'fixed', inset: 0, b
 const modalStyle: React.CSSProperties = { background: 'white', borderRadius: 10, width: '100%', maxWidth: 640, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 12px 40px rgba(0,0,0,0.25)' };
 const modalHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #f1f3f5' };
 const closeBtnStyle: React.CSSProperties = { background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#7f8c8d' };
-const inputStyle: React.CSSProperties = { padding: '10px 12px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit' };
+// minWidth 0: a text input's default size would otherwise hold its grid column open past a phone's width.
+const inputStyle: React.CSSProperties = { padding: '10px 12px', border: '1px solid #d0d7de', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', minWidth: 0 };
 const textareaStyle: React.CSSProperties = { ...inputStyle, minHeight: 60, resize: 'vertical', lineHeight: 1.4 };
 // Clinical inputs while the sub-record fetch is in flight — visibly dimmed so
 // "disabled" reads as "still loading", not "not applicable". The flat
