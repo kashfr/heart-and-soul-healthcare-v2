@@ -11,29 +11,10 @@
 // Safe to re-run: it skips any client already carrying the intended values, and
 // it hard-aborts if it sees a name it has no mapping for rather than guessing.
 
-const fs = require('fs');
-const path = require('path');
 const admin = require('firebase-admin');
 
-const ROOT = path.join(__dirname, '..');
-const raw = fs.readFileSync(path.join(ROOT, '.env.local'), 'utf8');
-const env = {};
-raw.replace(/^([A-Z_]+)=(?:"((?:[^"\\]|\\.)*)"|(.*))$/gm, (_, k, q, plain) => {
-  env[k] = q !== undefined ? q.replace(/\\n/g, '\n') : plain;
-});
-
 const PROJECT = 'heart-and-soul-hc';
-if (env.FIREBASE_ADMIN_PROJECT_ID !== PROJECT) {
-  throw new Error(`ABORT: expected project ${PROJECT}, got ${env.FIREBASE_ADMIN_PROJECT_ID}`);
-}
-
-admin.initializeApp({
-  credential: admin.credential.cert({
-    projectId: env.FIREBASE_ADMIN_PROJECT_ID,
-    clientEmail: env.FIREBASE_ADMIN_CLIENT_EMAIL,
-    privateKey: env.FIREBASE_ADMIN_PRIVATE_KEY,
-  }),
-});
+admin.initializeApp({ credential: admin.credential.applicationDefault(), projectId: PROJECT });
 const db = admin.firestore();
 
 /** Georgia Pediatric Program members. Everyone else on the roster is NOW/COMP. */

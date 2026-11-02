@@ -3,19 +3,14 @@
 // storage.rules read. The settings route does this on every save; run this
 // after the first rules deploy, or whenever a profile looks out of step.
 //
-//   node --env-file=.env.local scripts/mirror-assistant-client-access.mjs
+//   node scripts/mirror-assistant-client-access.mjs
 //
-// Prints what it granted; writes nothing else.
-import { initializeApp, cert } from 'firebase-admin/app';
+// Needs `gcloud auth application-default login`. Prints what it granted;
+// writes nothing else.
+import { initializeApp, applicationDefault } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 
-initializeApp({
-  credential: cert({
-    projectId: process.env.FIREBASE_ADMIN_PROJECT_ID,
-    clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
-    privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY.replace(/\\n/g, '\n'),
-  }),
-});
+initializeApp({ credential: applicationDefault(), projectId: 'heart-and-soul-hc' });
 const db = getFirestore();
 const settings = (await db.doc('settings/global').get()).data() || {};
 const grants = Array.isArray(settings.assistantClients?.grants) ? settings.assistantClients.grants : [];
