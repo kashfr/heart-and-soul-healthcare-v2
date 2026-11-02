@@ -10,35 +10,18 @@
 // deactivated nurse's notes: care-team nurses read a note because THEY are on
 // the note's patient's team, not because its author is.
 //
-// Needs .env.local with the FIREBASE_ADMIN_* service-account vars.
+// Needs `gcloud auth application-default login` (an account with Firestore
+// access to heart-and-soul-hc).
 //
 // Dry run:  node scripts/audit-stale-care-team.js
 // Apply:    node scripts/audit-stale-care-team.js --apply
 
-const fs = require('fs');
-const path = require('path');
 const admin = require('firebase-admin');
 
-const ROOT = path.join(__dirname, '..');
 const APPLY = process.argv.includes('--apply');
 
-const raw = fs.readFileSync(path.join(ROOT, '.env.local'), 'utf8');
-const env = {};
-raw.replace(/^([A-Z_]+)=(?:"((?:[^"\\]|\\.)*)"|(.*))$/gm, (_, k, q, plain) => {
-  env[k] = q !== undefined ? q.replace(/\\n/g, '\n') : plain;
-});
-
 const PROJECT = 'heart-and-soul-hc';
-if (env.FIREBASE_ADMIN_PROJECT_ID !== PROJECT) {
-  throw new Error(`ABORT: expected project ${PROJECT}, got ${env.FIREBASE_ADMIN_PROJECT_ID}`);
-}
-admin.initializeApp({
-  credential: admin.credential.cert({
-    projectId: env.FIREBASE_ADMIN_PROJECT_ID,
-    clientEmail: env.FIREBASE_ADMIN_CLIENT_EMAIL,
-    privateKey: env.FIREBASE_ADMIN_PRIVATE_KEY,
-  }),
-});
+admin.initializeApp({ credential: admin.credential.applicationDefault(), projectId: PROJECT });
 const db = admin.firestore();
 
 async function main() {
