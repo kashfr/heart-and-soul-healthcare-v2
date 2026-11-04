@@ -119,3 +119,29 @@ describe('updateWebsiteReferralDetails: screened answers', () => {
     expect(store.updates).toHaveLength(0);
   });
 });
+
+describe('updateWebsiteReferralDetails: date of birth on an old referral', () => {
+  const old = () => ({
+    source: 'gapp-website', clientName: 'Cannon Dix', referrerName: 'Torrace Dix', clientPhone: '(470) 624-1780', clientEmail: '', county: 'Clayton',
+    details: [{ label: 'Seeking paid caregiver', value: 'No' }, { label: 'Diagnosis', value: 'Open heart surgery' }],
+  });
+  it('adds a missing date of birth and logs it', async () => {
+    store.doc = old();
+    expect(await updateWebsiteReferralDetails('r1', {}, caller, {}, '2015-06-01')).toEqual({ ok: true, changed: 1 });
+    const details = store.updates[0].details as { label: string; value: string }[];
+    expect(details.find((d) => d.label === 'Date of birth')?.value).toBe('06/01/2015');
+    expect(details.find((d) => d.label === 'Age')?.value).toMatch(/years/);
+    expect(store.activity[0].text).toBe('Details edited: Date of birth (blank) → "06/01/2015".');
+  });
+  it('never changes one already on the card or on a referral that kept its answers', async () => {
+    store.doc = { ...old(), details: [...old().details, { label: 'Date of birth', value: '06/01/2015' }] };
+    expect(await updateWebsiteReferralDetails('r1', {}, caller, {}, '2016-06-01')).toMatchObject({ ok: false, status: 409 });
+    store.doc = { ...old(), intakeAnswers: { dob: '' } };
+    expect(await updateWebsiteReferralDetails('r1', {}, caller, {}, '2016-06-01')).toMatchObject({ ok: false, status: 409 });
+    expect(store.updates).toHaveLength(0);
+  });
+  it('rejects a future date', async () => {
+    store.doc = old();
+    expect(await updateWebsiteReferralDetails('r1', {}, caller, {}, '2999-01-01')).toMatchObject({ ok: false, status: 400, fieldErrors: { legacyDob: 'The date of birth can’t be in the future.' } });
+  });
+});

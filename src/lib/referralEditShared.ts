@@ -177,3 +177,71 @@ export function describeEdits(changes: EditChange[]): string {
   const q = (v: string) => (v ? `"${v.length > 120 ? `${v.slice(0, 117)}…` : v}"` : '(blank)');
   return `Details edited: ${changes.map((c) => `${c.label} ${q(c.from)} → ${q(c.to)}`).join('; ')}.`;
 }
+
+/**
+ * A date of birth on an old referral. Referrals from before the websites
+ * saved their answers (intakeAnswers) can't have screened answers edited,
+ * but many from before June 2026 never asked for a date of birth at all, and
+ * staff need it to answer a facility's call before the referral becomes a
+ * client. So a MISSING date of birth can be filled in once on those cards;
+ * one already on the card stays locked (changing it would change what the
+ * screening saw). Referrals that kept their answers add or change it under
+ * Screened Answers instead, where the website's checks re-run.
+ */
+export const DOB_ROW = 'Date of birth';
+
+export function canAddLegacyDob(r: { details: { label: string; value: string }[]; intakeAnswers?: unknown }): boolean {
+  if (r.intakeAnswers) return false;
+  return !String(r.details.find((d) => d.label === DOB_ROW)?.value ?? '').trim();
+}
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** `today` is YYYY-MM-DD in agency time. Empty means "not adding one". */
+export function validateLegacyDob(dob: string, today: string): string | null {
+  const v = dob.trim();
+  if (!v) return null;
+  if (!ISO_DATE_RE.test(v) || Number.isNaN(Date.parse(`${v}T00:00:00Z`)) || new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) !== v) return 'Enter a valid date.';
+  if (v > today) return 'The date of birth can’t be in the future.';
+  if (v < '1900-01-01') return 'Enter a valid date.';
+  return null;
+}
+
+/** Whole years between two YYYY-MM-DD dates. */
+function yearsBetween(dob: string, today: string): number {
+  const [by, bm, bd] = dob.split('-').map(Number);
+  const [ty, tm, td] = today.split('-').map(Number);
+  return ty - by - (tm < bm || (tm === bm && td < bd) ? 1 : 0);
+}
+
+export const LEGACY_DOB_FLAG_LABEL = '⚠ Young child';
+
+/**
+ * The card's rows with the date of birth added (and Age, on GAPP cards, as
+ * the website prints it). When the card says the family wants a paid
+ * caregiver and the child is under 6, the website's young-child check never
+ * ran on this referral, so the card says so instead of passing silently.
+ */
+export function addLegacyDob(
+  source: EditableSource,
+  details: { label: string; value: string }[],
+  dob: string,
+  today: string,
+  formatUS: (iso: string) => string,
+  ageText: (iso: string) => string,
+): { label: string; value: string }[] {
+  const out = details.filter((d) => d.label !== DOB_ROW && !(source === 'gapp-website' && d.label === 'Age'));
+  out.push({ label: DOB_ROW, value: formatUS(dob) });
+  if (source === 'gapp-website') {
+    const age = ageText(dob);
+    if (age) out.push({ label: 'Age', value: age });
+  }
+  const paid = /^yes/i.test(String(details.find((d) => d.label === 'Seeking paid caregiver')?.value ?? '').trim());
+  if (paid && yearsBetween(dob, today) < 6 && !out.some((d) => d.label === LEGACY_DOB_FLAG_LABEL)) {
+    out.unshift({
+      label: LEGACY_DOB_FLAG_LABEL,
+      value: 'Date of birth added after intake: the family is asking for a paid caregiver for a child under 6, and this referral came in before the website’s young-child check. Confirm the child has a skilled nursing or mobility need before going further.',
+    });
+  }
+  return out;
+}

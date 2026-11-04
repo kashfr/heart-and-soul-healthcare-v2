@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { applyEdits, currentEditValues, describeEdits, editFieldsFor, isEditableSource, validateEdits } from './referralEditShared';
+import {
+  addLegacyDob, applyEdits, canAddLegacyDob, currentEditValues, describeEdits, editFieldsFor, isEditableSource, LEGACY_DOB_FLAG_LABEL, validateEdits, validateLegacyDob,
+} from './referralEditShared';
 
 const gapp = {
   clientName: 'Jazz King',
@@ -72,4 +74,44 @@ describe('validateEdits', () => {
 it('describes old and new values for the timeline', () => {
   expect(describeEdits([{ label: 'Medicaid ID', from: 'Will provide later', to: '222120339644' }, { label: 'Email', from: '', to: 'a@b.co' }]))
     .toBe('Details edited: Medicaid ID "Will provide later" → "222120339644"; Email (blank) → "a@b.co".');
+});
+
+describe('date of birth on an old referral', () => {
+  const fmt = (iso: string) => `${iso.slice(5, 7)}/${iso.slice(8, 10)}/${iso.slice(0, 4)}`;
+  const age = () => '3 years';
+
+  it('can be added only when missing and the answers were not kept', () => {
+    expect(canAddLegacyDob({ details: [] })).toBe(true);
+    expect(canAddLegacyDob({ details: [{ label: 'Date of birth', value: '' }] })).toBe(true);
+    expect(canAddLegacyDob({ details: [{ label: 'Date of birth', value: '05/14/2019' }] })).toBe(false);
+    expect(canAddLegacyDob({ details: [], intakeAnswers: { dob: '' } })).toBe(false);
+  });
+
+  it('rejects bad and future dates', () => {
+    expect(validateLegacyDob('', '2026-11-04')).toBeNull();
+    expect(validateLegacyDob('2019-05-14', '2026-11-04')).toBeNull();
+    expect(validateLegacyDob('2019-02-30', '2026-11-04')).toBe('Enter a valid date.');
+    expect(validateLegacyDob('2026-11-05', '2026-11-04')).toBe('The date of birth can’t be in the future.');
+  });
+
+  it('adds the date and Age on a GAPP card, replacing a blank row', () => {
+    const out = addLegacyDob('gapp-website', [{ label: 'Date of birth', value: '' }, { label: 'Seeking paid caregiver', value: 'No' }], '2023-01-02', '2026-11-04', fmt, age);
+    expect(out).toEqual([
+      { label: 'Seeking paid caregiver', value: 'No' },
+      { label: 'Date of birth', value: '01/02/2023' },
+      { label: 'Age', value: '3 years' },
+    ]);
+  });
+
+  it('flags a paid-caregiver request for a child under 6, since the young-child check never ran', () => {
+    const out = addLegacyDob('gapp-website', [{ label: 'Seeking paid caregiver', value: 'Yes' }], '2023-01-02', '2026-11-04', fmt, age);
+    expect(out[0].label).toBe(LEGACY_DOB_FLAG_LABEL);
+    const older = addLegacyDob('gapp-website', [{ label: 'Seeking paid caregiver', value: 'Yes' }], '2019-01-02', '2026-11-04', fmt, age);
+    expect(older.some((d) => d.label === LEGACY_DOB_FLAG_LABEL)).toBe(false);
+  });
+
+  it('adds no Age row on a Heart & Soul card', () => {
+    const out = addLegacyDob('hs-website', [], '2019-01-02', '2026-11-04', fmt, age);
+    expect(out).toEqual([{ label: 'Date of birth', value: '01/02/2019' }]);
+  });
 });
