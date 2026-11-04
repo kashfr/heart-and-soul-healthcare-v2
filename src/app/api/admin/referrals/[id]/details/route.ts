@@ -7,11 +7,12 @@ export const dynamic = 'force-dynamic';
 
 /**
  * PUT /api/admin/referrals/[id]/details
- *   { values: { [fieldKey]: string }, screened?: { [answer]: string } }
+ *   { values: { [fieldKey]: string }, screened?: { [answer]: string }, legacyDob?: 'YYYY-MM-DD' }
  * Correct a website referral's editable details (referralEditShared) and,
  * on referrals that kept their answers, the screened answers
  * (screenedAnswers.ts): those are re-screened first and refused (422, with
- * the website's message) exactly when the website would refuse them.
+ * the website's message) exactly when the website would refuse them. On an
+ * old referral with no date of birth, `legacyDob` fills it in once.
  */
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   let caller;
@@ -35,7 +36,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   const rawScreened = (body.screened && typeof body.screened === 'object' ? body.screened : {}) as Record<string, unknown>;
   const screened: Record<string, string> = {};
   for (const [k, v] of Object.entries(rawScreened)) if (typeof v === 'string') screened[k] = v.slice(0, 200);
-  const result = await updateWebsiteReferralDetails(id, values, caller, screened);
+  const legacyDob = typeof body.legacyDob === 'string' ? body.legacyDob.slice(0, 20) : '';
+  const result = await updateWebsiteReferralDetails(id, values, caller, screened, legacyDob);
   if (!result.ok) {
     return NextResponse.json({ error: result.error, fieldErrors: result.fieldErrors, refused: result.refused }, { status: result.status });
   }

@@ -78,3 +78,28 @@ it('explains why older referrals can’t change screened answers', () => {
   expect(screen.getByText(/came in before the website saved its answers/)).toBeInTheDocument();
   expect(screen.queryByLabelText('Seeking paid caregiver')).toBeNull();
 });
+
+it('lets staff add a missing date of birth on an old referral and sends it on save', async () => {
+  vi.mocked(authedFetch).mockResolvedValue(new Response(JSON.stringify({ ok: true, changed: 1 })));
+  const saved = vi.fn();
+  render(<EditReferralModal referral={referral} onClose={vi.fn()} onSaved={saved} />);
+  expect(screen.getByText(/you can add one below/)).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Date of birth'), { target: { value: '2019-05-14' } });
+  fireEvent.click(screen.getByRole('button', { name: /Save Changes/ }));
+  await waitFor(() => expect(saved).toHaveBeenCalledOnce());
+  expect(JSON.parse(vi.mocked(authedFetch).mock.calls[0][1]!.body as string).legacyDob).toBe('2019-05-14');
+});
+
+it('blocks a future date of birth', () => {
+  render(<EditReferralModal referral={referral} onClose={vi.fn()} onSaved={vi.fn()} />);
+  fireEvent.change(screen.getByLabelText('Date of birth'), { target: { value: '2999-01-01' } });
+  fireEvent.click(screen.getByRole('button', { name: /Save Changes/ }));
+  expect(screen.getByText('The date of birth can’t be in the future.')).toBeInTheDocument();
+  expect(authedFetch).not.toHaveBeenCalled();
+});
+
+it('keeps a date of birth that is already on an old referral locked', () => {
+  const withDob = { ...referral, details: [...referral.details, { label: 'Date of birth', value: '05/14/2019' }] } as typeof referral;
+  render(<EditReferralModal referral={withDob} onClose={vi.fn()} onSaved={vi.fn()} />);
+  expect(screen.queryByLabelText('Date of birth')).toBeNull();
+});

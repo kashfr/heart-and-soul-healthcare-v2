@@ -1,7 +1,7 @@
 'use client';
 
 import { backdropDismiss } from '@/lib/backdropDismiss';
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { btn, btnPrimary } from '@/components/buttons';
 import { Pencil, X } from 'lucide-react';
 import { authedFetch } from '@/lib/authedFetch';
@@ -9,7 +9,7 @@ import { withSelectChevron } from '@/lib/selectChevron';
 import { GA_COUNTIES } from '@/lib/georgia';
 import { applyFieldErrors, escortToField, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
 import {
-  LOCKED_ANSWERS, currentEditValues, editFieldsFor, formatEditValue, validateEdits,
+  LOCKED_ANSWERS, canAddLegacyDob, currentEditValues, editFieldsFor, formatEditValue, validateEdits, validateLegacyDob,
   type EditableSource,
 } from '@/lib/referralEditShared';
 import {
@@ -30,6 +30,11 @@ const SCREENED_CHOICES: Partial<Record<ScreenedKey, { code: string; label: strin
   careNeeds: CARE_NEED_OPTIONS,
 };
 const REFUSAL_ID = 'edit-referral-refusal';
+const LEGACY_DOB_KEY = 'legacyDob';
+
+function agencyToday(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
 
 /**
  * Edit Details for a referral from one of the websites: contact details,
@@ -63,8 +68,16 @@ export default function EditReferralModal({
   const liveRefusal = screenedChanged && nextAnswers ? refusalFor(referral.source, nextAnswers) : null;
   const [serverRefusal, setServerRefusal] = useState<string | null>(null);
   const refusalText = liveRefusal?.reason ?? serverRefusal;
+  // Old referrals that never asked for a date of birth can have it added once.
+  const dobFillable = useMemo(() => canAddLegacyDob({ details: referral.details, intakeAnswers: referral.intakeAnswers }), [referral.details, referral.intakeAnswers]);
+  const [legacyDob, setLegacyDob] = useState('');
 
-  const order = [...specs.map((s) => s.key), ...visible.map((k) => `screened:${k}`)];
+  // The date of birth sits right after the Medicaid ID, where the card shows it.
+  const dobAfter = specs.find((sp) => sp.label === 'Medicaid ID')?.key ?? specs[specs.length - 1]?.key;
+  const order = [
+    ...specs.flatMap((sp) => (dobFillable && sp.key === dobAfter ? [sp.key, LEGACY_DOB_KEY] : [sp.key])),
+    ...visible.map((k) => `screened:${k}`),
+  ];
   const idFor = (key: string) => `edit-referral-${order.indexOf(key)}`;
   const setScreenedValue = (k: ScreenedKey, v: string) => {
     setScreened((prev) => (prev ? { ...prev, [k]: v } : prev));
@@ -85,7 +98,9 @@ export default function EditReferralModal({
     const screenedErrors = screenedChanged && nextAnswers
       ? Object.fromEntries(Object.entries(screenedValidation(referral.source, nextAnswers)).map(([k, v]) => [`screened:${k}`, String(v)]))
       : {};
-    if (!applyFieldErrors({ ...validateEdits(specs, values, before), ...screenedErrors }, order, setErrors, idFor)) return;
+    const dobError = dobFillable ? validateLegacyDob(legacyDob, agencyToday()) : null;
+    const dobErrors = dobError ? { [LEGACY_DOB_KEY]: dobError } : {};
+    if (!applyFieldErrors({ ...validateEdits(specs, values, before), ...dobErrors, ...screenedErrors }, order, setErrors, idFor)) return;
     if (liveRefusal) {
       // The website would refuse these answers; so does this form. Take them
       // to the explanation instead of saving.
@@ -97,7 +112,7 @@ export default function EditReferralModal({
       : {};
     setBusy(true);
     try {
-      const res = await authedFetch(`/api/admin/referrals/${referral.id}/details`, { method: 'PUT', body: JSON.stringify({ values, screened: changedScreened }) });
+      const res = await authedFetch(`/api/admin/referrals/${referral.id}/details`, { method: 'PUT', body: JSON.stringify({ values, screened: changedScreened, ...(dobFillable && legacyDob ? { legacyDob } : {}) }) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (data.refused) {
@@ -141,7 +156,9 @@ export default function EditReferralModal({
             <p style={lockNote}>
               {answers
                 ? 'Answers the GAPP screening reads are under Screened Answers below. A change there is checked against the website’s rules as you make it, and an answer the website would refuse can’t be saved. Diagnosis, equipment, behavior, and current services can’t be changed.'
-                : `Their answers about ${LOCKED_ANSWERS} can’t be changed here: this referral came in before the website saved its answers, so the screening can’t be re-run. If they change, have the family submit the form again.`}
+                : dobFillable
+                  ? `This referral has no date of birth, so you can add one below. It can’t be changed after you save. Their answers about ${LOCKED_ANSWERS.replace('date of birth, ', '')} can’t be changed here: this referral came in before the website saved its answers, so the screening can’t be re-run. If they change, have the family submit the form again.`
+                  : `Their answers about ${LOCKED_ANSWERS} can’t be changed here: this referral came in before the website saved its answers, so the screening can’t be re-run. If they change, have the family submit the form again.`}
             </p>
             <div style={grid}>
               {specs.map((s) => {
@@ -149,7 +166,8 @@ export default function EditReferralModal({
                 const style = { ...inp, ...(errors[s.key] ? FIELD_ERROR_STYLE : {}) };
                 const wide = s.kind === 'textarea' || s.row === 'Address';
                 return (
-                  <label key={s.key} id={id} style={{ ...field, ...(wide ? { gridColumn: '1 / -1' } : {}) }}>
+                  <Fragment key={s.key}>
+                  <label id={id} style={{ ...field, ...(wide ? { gridColumn: '1 / -1' } : {}) }}>
                     <span style={label}>{s.label}{s.required ? ' *' : ''}</span>
                     {s.kind === 'textarea' ? (
                       <textarea value={values[s.key] ?? ''} rows={4} maxLength={5000} onChange={(e) => set(s.key, e.target.value)} style={{ ...style, resize: 'vertical' }} />
@@ -171,6 +189,23 @@ export default function EditReferralModal({
                     )}
                     <FieldError message={errors[s.key]} />
                   </label>
+                  {dobFillable && s.key === dobAfter && (
+                    <label id={idFor(LEGACY_DOB_KEY)} style={field}>
+                      <span style={label}>Date of birth</span>
+                      <input
+                        type="date"
+                        value={legacyDob}
+                        max={agencyToday()}
+                        onChange={(e) => {
+                          setLegacyDob(e.target.value);
+                          if (errors[LEGACY_DOB_KEY]) setErrors((prev) => ({ ...prev, [LEGACY_DOB_KEY]: '' }));
+                        }}
+                        style={{ ...inp, ...(errors[LEGACY_DOB_KEY] ? FIELD_ERROR_STYLE : {}) }}
+                      />
+                      <FieldError message={errors[LEGACY_DOB_KEY]} />
+                    </label>
+                  )}
+                  </Fragment>
                 );
               })}
             </div>

@@ -9,7 +9,11 @@ import {
   changedPhoneIntakeFields, formatPhone, phoneReferralDetails, programLabel, toPhoneIntake,
   type PhoneIntake, type PhoneReferralInput,
 } from './phoneReferralShared';
-import { applyEdits, currentEditValues, describeEdits, editFieldsFor, isEditableSource, validateEdits } from './referralEditShared';
+import {
+  addLegacyDob, applyEdits, canAddLegacyDob, currentEditValues, describeEdits, editFieldsFor, isEditableSource, validateEdits, validateLegacyDob,
+} from './referralEditShared';
+import { formatDateUS } from './dateFormat';
+import { ageLabel } from './websiteIntake';
 import {
   SCREENED_ORDER, buildFor, mergeScreenedRows, readScreened, refusalFor, screenedChanges, screenedValidation,
   serviceAfterEdit, writeScreened, type ScreenedAnswers,
@@ -811,7 +815,9 @@ export async function updateWebsiteReferralDetails(
   values: Record<string, string>,
   caller: AuthedCaller,
   /** Screened answers to change (see screenedAnswers.ts); re-screened first. */
-  screened: Partial<ScreenedAnswers> = {}
+  screened: Partial<ScreenedAnswers> = {},
+  /** A missing date of birth on an old referral (YYYY-MM-DD); see canAddLegacyDob. */
+  legacyDob = ''
 ): Promise<DetailsEditResult> {
   const ref = adminDb().collection(COLLECTION).doc(id);
   const snap = await ref.get();
@@ -872,8 +878,22 @@ export async function updateWebsiteReferralDetails(
     }
   }
 
+  // A missing date of birth on an old referral: filled in once, never changed.
+  const dobChanges: { label: string; from: string; to: string }[] = [];
+  const dob = legacyDob.trim();
+  if (dob) {
+    if (!canAddLegacyDob({ details: current.details, intakeAnswers: prev.intakeAnswers })) {
+      return { ok: false, status: 409, error: 'This referral already has a date of birth, or kept the family’s answers. Change it under Screened Answers if the form shows them.' };
+    }
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    const dobError = validateLegacyDob(dob, today);
+    if (dobError) return { ok: false, status: 400, error: dobError, fieldErrors: { legacyDob: dobError } };
+    current.details = addLegacyDob(prev.source, current.details, dob, today, formatDateUS, ageLabel);
+    dobChanges.push({ label: 'Date of birth', from: '', to: formatDateUS(dob) });
+  }
+
   const { top, details, changes: detailChanges } = applyEdits(current, specs, allowed);
-  const changes = [...(screenedResult?.changes ?? []), ...detailChanges];
+  const changes = [...(screenedResult?.changes ?? []), ...dobChanges, ...detailChanges];
   if (changes.length === 0) return { ok: true, changed: 0 };
   await ref.update({
     ...(top.clientName !== undefined ? { clientName: clamp(top.clientName, MAX.name) } : {}),
