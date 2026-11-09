@@ -4,6 +4,7 @@ import { createReferral, type ReferralInput } from '@/lib/referrals';
 import { sendReferralNotification } from '@/lib/emails/referralNotification';
 import { sendReferralConfirmation } from '@/lib/emails/referralConfirmation';
 import { buildGappReferral, gappRefusal, type GappAnswers } from '@/lib/websiteIntake';
+import { screenMixedPaidCaregiver } from '@/lib/diagnosisCatalog';
 
 // Public intake for referrals submitted from external sites (the GAPP website).
 // Authenticated with a shared secret (not a user session), since the caller is
@@ -114,6 +115,8 @@ export async function POST(req: Request) {
         submitterName: r.submitterName,
         childName: input.clientName,
         seekingPaidCaregiver: r.seekingPaidCaregiver === 'yes',
+        // Same mixed-diagnosis screen that writes the staff review flag.
+        mixedDiagnosis: screenMixedPaidCaregiver({ ...r, freeText: r.diagnosis }).asks,
         // GAPP site has its own callback number, distinct from Heart & Soul's.
         phone: '(470) 635-5774',
       }),
