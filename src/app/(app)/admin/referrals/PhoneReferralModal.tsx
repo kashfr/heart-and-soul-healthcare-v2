@@ -222,6 +222,11 @@ export default function PhoneReferralModal({
                   <span style={label}>Physician phone</span>
                   <input type="tel" value={f.physicianPhone} maxLength={40} onChange={(e) => set('physicianPhone', formatUSPhoneExt(e.target.value))} style={inp} />
                 </label>
+                <label style={field} id={fieldId('physicianFax')}>
+                  <span style={label}>Physician fax</span>
+                  <input type="tel" value={f.physicianFax} maxLength={40} onChange={(e) => set('physicianFax', formatUSPhone(e.target.value))} style={{ ...inp, ...errStyle('physicianFax') }} />
+                  <FieldError message={errors.physicianFax} />
+                </label>
               </div>
             </section>
 

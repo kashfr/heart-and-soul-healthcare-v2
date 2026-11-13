@@ -55,6 +55,8 @@ export interface PhoneReferralInput {
   expectedDischarge: string;
   physicianName: string;
   physicianPhone: string;
+  /** The office fax, where the plan-of-treatment request is sent. */
+  physicianFax: string;
   callNotes: string;
   /** Staff uid to hand it to, or ''. */
   assigneeUid: string;
@@ -68,7 +70,8 @@ export type PhoneReferralField =
   | 'dob'
   | 'county'
   | 'zip'
-  | 'expectedDischarge';
+  | 'expectedDischarge'
+  | 'physicianFax';
 
 /** Display order, so the escort lands on the topmost problem. */
 export const PHONE_REFERRAL_FIELD_ORDER: readonly PhoneReferralField[] = [
@@ -80,6 +83,7 @@ export const PHONE_REFERRAL_FIELD_ORDER: readonly PhoneReferralField[] = [
   'county',
   'zip',
   'expectedDischarge',
+  'physicianFax',
 ];
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -90,7 +94,7 @@ export function emptyPhoneReferral(): PhoneReferralInput {
     callerName: '', callerRelationship: '', callerPhone: '', callerEmail: '',
     clientName: '', dob: '', program: '', county: '', street: '', city: '', zip: '',
     medicaidId: '', diagnosis: '', service: '', hospitalStatus: '', hospitalName: '',
-    expectedDischarge: '', physicianName: '', physicianPhone: '', callNotes: '', assigneeUid: '',
+    expectedDischarge: '', physicianName: '', physicianPhone: '', physicianFax: '', callNotes: '', assigneeUid: '',
   };
 }
 
@@ -122,6 +126,7 @@ export function validatePhoneReferral(r: PhoneReferralInput, today: string): Par
   if (r.county && !GA_COUNTIES.includes(r.county)) e.county = 'Choose a county from the list.';
   if (r.zip && !/^\d{5}$/.test(r.zip.trim())) e.zip = 'Enter a 5-digit ZIP code.';
   if (r.expectedDischarge && !ISO_DATE_RE.test(r.expectedDischarge)) e.expectedDischarge = 'Enter a valid date.';
+  if (String(r.physicianFax || '').trim() && localDigits(r.physicianFax).length !== 10) e.physicianFax = 'Enter a 10-digit fax number, or leave it blank.';
   return e;
 }
 
@@ -151,7 +156,7 @@ export function programLabel(id: string): string {
 /**
  * The detail rows, labelled like the website intake so "Create Client Record"
  * reads them (Date of birth, Address, Member's Medicaid ID, Diagnosis,
- * Child's physician, Physician phone) and the board's fit badge reads the
+ * Child's physician, Physician phone, Physician fax) and the board's fit badge reads the
  * care need. Blank rows are dropped by createReferral.
  */
 export function phoneReferralDetails(r: PhoneReferralInput, today: string, takenBy: string): { label: string; value: string }[] {
@@ -178,6 +183,7 @@ export function phoneReferralDetails(r: PhoneReferralInput, today: string, taken
     { label: 'Expected discharge', value: inHospital && r.expectedDischarge ? formatDateUS(r.expectedDischarge) : '' },
     { label: "Child's physician", value: t(r.physicianName) },
     { label: 'Physician phone', value: t(r.physicianPhone) ? formatUSPhoneExt(r.physicianPhone) : '' },
+    { label: 'Physician fax', value: t(r.physicianFax) ? formatUSPhone(r.physicianFax) : '' },
     { label: 'Call notes', value: t(r.callNotes) },
   ];
 }
@@ -205,6 +211,7 @@ export const PHONE_INTAKE_LABELS: Record<keyof PhoneIntake, string> = {
   expectedDischarge: 'expected discharge',
   physicianName: 'physician',
   physicianPhone: 'physician phone',
+  physicianFax: 'physician fax',
   callNotes: 'call notes',
 };
 
