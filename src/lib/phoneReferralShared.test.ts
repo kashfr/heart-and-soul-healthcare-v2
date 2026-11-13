@@ -29,6 +29,10 @@ describe('validatePhoneReferral', () => {
     expect(validatePhoneReferral(base({ callerPhone: '1 (404) 555-1212' }), TODAY)).toEqual({});
     expect(validatePhoneReferral(base({ callerPhone: '40455512129' }), TODAY).callerPhone).toBe('Enter a 10-digit phone number.');
   });
+  it('takes a physician fax only when it is a full number', () => {
+    expect(validatePhoneReferral(base({ physicianFax: '(770) 427-0788' }), TODAY)).toEqual({});
+    expect(validatePhoneReferral(base({ physicianFax: '770-427' }), TODAY).physicianFax).toBe('Enter a 10-digit fax number, or leave it blank.');
+  });
 });
 
 describe('phoneReferralDetails', () => {
@@ -47,6 +51,7 @@ describe('phoneReferralDetails', () => {
     expectedDischarge: '2026-10-30',
     physicianName: 'Dr. Ada Lin',
     physicianPhone: '7705551234',
+    physicianFax: '7705559876',
     callNotes: 'Call back after 3 PM.',
   });
 
@@ -61,6 +66,7 @@ describe('phoneReferralDetails', () => {
     expect(row(rows, 'Hospital')).toBe('CHOA Egleston');
     expect(row(rows, 'Expected discharge')).toBe('10/30/2026');
     expect(row(rows, 'Physician phone')).toBe('(770) 555-1234');
+    expect(row(rows, 'Physician fax')).toBe('(770) 555-9876');
     expect(row(rows, 'Call notes')).toBe('Call back after 3 PM.');
   });
 
@@ -74,7 +80,7 @@ describe('phoneReferralDetails', () => {
       zip: '30046',
       diagnosis: 'Trach and vent dependent',
       program: 'gapp',
-      clinical: { physicianName: 'Dr. Ada Lin', physicianPhone: '7705551234', medicaidId: '' },
+      clinical: { physicianName: 'Dr. Ada Lin', physicianPhone: '7705551234', physicianFax: '7705559876', medicaidId: '' },
     });
   });
 

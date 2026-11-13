@@ -58,6 +58,9 @@ it('formats phone numbers as they are typed', () => {
   const doc = screen.getByLabelText('Physician phone') as HTMLInputElement;
   fireEvent.change(doc, { target: { value: '7705551234145' } });
   expect(doc.value).toBe('(770) 555-1234 ext. 145');
+  const fax = screen.getByLabelText('Physician fax') as HTMLInputElement;
+  fireEvent.change(fax, { target: { value: '7704270788' } });
+  expect(fax.value).toBe('(770) 427-0788');
 });
 
 it('edits a saved phone referral in place', async () => {
