@@ -3,8 +3,14 @@
 # Usage: bash .claude/scripts/generate-blog-images.sh <path-to-mdx>
 #
 # Generates images for all PLACEHOLDER entries in a blog MDX file using
-# OpenAI's gpt-image-2.6-sunburst model (override with OPENAI_IMAGE_MODEL). Saves to public/images/blog/ and rewrites the
-# MDX to remove PLACEHOLDER- prefixes.
+# OpenAI's newest gpt-image model, then saves to public/images/blog/ and rewrites
+# the MDX to remove PLACEHOLDER- prefixes.
+#
+# Model selection (each run): asks the OpenAI API which models exist and picks
+# the highest gpt-image version, preferring the "sunburst" (quality) tier over
+# the plain and "flare" (speed) tiers. Dated snapshots and -mini are skipped.
+# If the lookup fails, it falls back to FALLBACK_MODEL below and says so.
+# OPENAI_IMAGE_MODEL pins a specific model and skips the lookup.
 #
 # Required env var: OPENAI_API_KEY
 
@@ -14,9 +20,39 @@ MDX_FILE="${1:?Usage: $0 <path-to-mdx-file>}"
 PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 PUBLIC_DIR="$PROJECT_DIR/public/images/blog"
 QUALITY="${OPENAI_IMAGE_QUALITY:-medium}"
-MODEL="${OPENAI_IMAGE_MODEL:-gpt-image-2.6-sunburst}"
+FALLBACK_MODEL="gpt-image-2.6-sunburst"
 
 [ -z "${OPENAI_API_KEY:-}" ] && { echo "❌  OPENAI_API_KEY not set"; exit 1; }
+
+# ── latest_image_model ────────────────────────────────────────────────────────
+# Prints the newest gpt-image model id the API lists, or nothing on failure.
+# Ranks by [major, minor, tier] where tier is sunburst 3 > plain/unknown 2 >
+# flare 1. Ids like gpt-image-2-2026-04-21 (snapshots) and -mini don't match.
+latest_image_model() {
+  curl -sf --max-time 20 https://api.openai.com/v1/models \
+    -H "Authorization: Bearer $OPENAI_API_KEY" 2>/dev/null | jq -r '
+      [ .data[].id as $id
+        | ($id | capture("^gpt-image-(?<maj>[0-9]+)(?:\\.(?<min>[0-9]+))?(?:-(?<tier>[a-z]+))?$")?)
+        | select(.tier != "mini")
+        | { id: $id,
+            rank: [ (.maj | tonumber),
+                    ((.min // "0") | tonumber),
+                    ({"sunburst": 3, "flare": 1}[.tier // ""] // 2) ] } ]
+      | sort_by(.rank) | last | .id // empty' 2>/dev/null || true
+}
+
+if [ -n "${OPENAI_IMAGE_MODEL:-}" ]; then
+  MODEL="$OPENAI_IMAGE_MODEL"
+  MODEL_SOURCE="pinned by OPENAI_IMAGE_MODEL"
+else
+  MODEL="$(latest_image_model)"
+  if [ -n "$MODEL" ]; then
+    MODEL_SOURCE="latest available, auto-detected"
+  else
+    MODEL="$FALLBACK_MODEL"
+    MODEL_SOURCE="FALLBACK: model lookup failed, could not confirm this is the latest"
+  fi
+fi
 [ ! -f "$MDX_FILE" ] && { echo "❌  File not found: $MDX_FILE"; exit 1; }
 
 mkdir -p "$PUBLIC_DIR"
@@ -66,7 +102,7 @@ generate_image() {
 
 echo ""
 echo "🖼   Generating images for: $(basename "$MDX_FILE")"
-echo "    Model: $MODEL  |  Quality: $QUALITY"
+echo "    Model: $MODEL ($MODEL_SOURCE)  |  Quality: $QUALITY"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # ── House rule: every post carries a hero + at least MIN_INLINE inline images ──
