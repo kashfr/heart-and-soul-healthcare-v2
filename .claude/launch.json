@@ -17,9 +17,9 @@
       "name": "GAPP Dev Server",
       "runtimeExecutable": "/usr/local/bin/node",
       "runtimeArgs": [
-        "/Users/kfreeman/Projects/georgiapediatricprogram/node_modules/.bin/next",
+        "/Users/ksfreeman/Projects/georgiapediatricprogram/node_modules/.bin/next",
         "dev",
-        "/Users/kfreeman/Projects/georgiapediatricprogram",
+        "/Users/ksfreeman/Projects/georgiapediatricprogram",
         "-p",
         "3003"
       ],
