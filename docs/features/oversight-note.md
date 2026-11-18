@@ -56,3 +56,22 @@ RN oversight uses “Start time” and “End time” in the form, validation,
 submission details, and generated PDF. These labels describe the work period
 without implying arrival at or departure from a home. Stored `ov_timeIn` and
 `ov_timeOut` keys, time validation, and billing calculations are unchanged.
+
+## Choice section (form rev 4, 11/18/2026)
+
+- Origin: the QEPR 18119 90-day follow-up left the Choice items unresolved
+  (how individuals are given healthcare information, afforded healthcare
+  choices, and how they communicate them). The one required box, with a
+  scheduling example, could be completed without recording a healthcare
+  choice.
+- Section 7 now mirrors the intake packet's My Healthcare Choices grid:
+  `ov_choicesInfo` (information and options explained), `ov_choicesMade`
+  (what was chosen or declined, the existing key), `ov_choicesCommunicated`
+  (how the choice was communicated). All three are required on rev 4 notes.
+- An amendment keeps the note's stored `q1_formRev`, so a rev 3 or earlier
+  visit shows the two new boxes as optional. The PDF and admin view print
+  `ov_choicesMade` as "Chose or Declined" on rev 4 and keep "Choices
+  Offered, Made, or Declined" on older notes, where one box held both.
+- The shift note's healthcare-information box stays optional by the
+  owner's decision (required every shift would invite filler); its label
+  now names medication alternatives, diet and lifestyle, and procedures.

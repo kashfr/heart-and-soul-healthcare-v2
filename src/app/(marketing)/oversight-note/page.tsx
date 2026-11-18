@@ -187,7 +187,9 @@ const OVERSIGHT_FIELD_MESSAGES: Record<string, string> = {
   ov_logsReviewed: 'Choose whether tracking logs were reviewed.',
   ov_hrst: 'Choose the HRST status.',
   ov_educationResponse: "Describe the individual's response to the education provided.",
+  ov_choicesInfo: 'Describe the healthcare information and options explained to the individual this visit.',
   ov_choicesMade: 'Describe the choices the individual made or declined this visit.',
+  ov_choicesCommunicated: 'Describe how the individual communicated the choice.',
   ov_goalProgress: 'Describe progress on the HCP / plan of care goals.',
   ov_quarterly: 'Choose whether the quarterly review was completed this visit.',
   ov_quarterlySummary: 'Write the quarterly data summary; it is required for a quarterly review.',
@@ -791,6 +793,8 @@ function OversightNotePageInner() {
   const storedRev = String(watch('q1_formRev') || '');
   const isRev3 = !isEditMode || Number(storedRev || OVERSIGHT_FORM_REV) >= 3;
   const vitalsRequired = isRev3;
+  // Rev 4 (11/2026): the Choice section's two new boxes bind new notes only.
+  const isRev4 = !isEditMode || Number(storedRev || OVERSIGHT_FORM_REV) >= 4;
   const locationChoice = String(watch('ov_locationChoice') || '');
   // A note filed before rev 3 may hold a bare "No"; keep it on screen when
   // amending so the stored answer is visible and can be changed.
@@ -1352,12 +1356,28 @@ function OversightNotePageInner() {
           <div className={styles.section}>
             <span className={styles.sectionLabel}>7. CHOICE AND PERSON-CENTERED CARE</span>
             <Area
+              id="ov_choicesInfo"
+              error={fe('ov_choicesInfo')}
+              label="Healthcare information and options explained to the individual (medications and alternatives, diet and lifestyle, procedures, how services are provided):"
+              register={register}
+              required={isRev4}
+              placeholder='e.g. "reviewed dizziness from the blood pressure medication; explained asking the doctor about a different medication, plus diet and exercise options"'
+            />
+            <Area
               id="ov_choicesMade"
               error={fe('ov_choicesMade')}
-              label="Choices offered, and choices the individual made or declined this visit:"
+              label="What the individual chose or declined this visit:"
               register={register}
               required
-              placeholder='Declining is a choice. e.g. "offered visit before or after lunch; chose after lunch"'
+              placeholder='Declining is a choice. e.g. "chose to keep the medication and add a daily walk; declined a diet change"'
+            />
+            <Area
+              id="ov_choicesCommunicated"
+              error={fe('ov_choicesCommunicated')}
+              label="How the individual communicated the choice:"
+              register={register}
+              required={isRev4}
+              placeholder='e.g. "said so in his own words", "nodded yes and pushed the menu away", "guardian confirmed by phone"'
             />
             <Area
               id="ov_preferencesHonored"

@@ -249,14 +249,14 @@ export default function FormPageSix({ formRef, register, watch, setValue, contro
           <div className={styles.row}>
             <div className={styles.f} style={{ flex: '1 1 100%' }}>
               <label className={styles.label} htmlFor="q42_choicesInfoProvided">
-                Healthcare information or options explained to support a meaningful choice:
+                Healthcare information or options explained to support a meaningful choice (medication alternatives, diet and lifestyle, procedures):
               </label>
               <textarea
                 className={styles.textarea}
                 id="q42_choicesInfoProvided"
                 {...register('q42_choicesInfoProvided')}
                 rows={2}
-                placeholder='e.g. "explained diet and exercise options that can help blood pressure alongside the medication"...'
+                placeholder='e.g. "explained diet and exercise options that can help blood pressure alongside the medication; she chose to try a daily walk"...'
               />
             </div>
           </div>

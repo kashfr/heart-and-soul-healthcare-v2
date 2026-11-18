@@ -36,9 +36,11 @@ const has = (d: Record<string, string>, k: string): boolean => (d[k] ?? '').trim
 const vitalOr = (key: string) => (d: Record<string, string>) => has(d, key) || has(d, 'q16_vitalsNotObtainedReason');
 /** Rev 3 (10/2026) added the vitals block; earlier notes are amended without it. */
 const rev3 = (d: Record<string, string>) => Number(d.q1_formRev || '0') >= 3;
+/** Rev 4 (11/2026) split the Choice box in three; earlier notes are amended without the new two. */
+const rev4 = (d: Record<string, string>) => Number(d.q1_formRev || '0') >= 4;
 
 /** The form revision a new oversight note is saved as. */
-export const OVERSIGHT_FORM_REV = '3';
+export const OVERSIGHT_FORM_REV = '4';
 
 /**
  * Where the visit took place (DBHDD 02-808 A.9.b.iii and COMP 2903.1.3 ask
@@ -173,8 +175,13 @@ const OVERSIGHT_RULES: OvRule[] = [
   // 6. Education
   { key: 'ov_educationResponse', label: "Individual's response to education" },
 
-  // 7. Choice & person-centered care
+  // 7. Choice & person-centered care. Rev 4 (11/2026) mirrors the intake
+  // profile's My Healthcare Choices grid and the three QEPR Choice
+  // indicators: information and options given, the choice, and how the
+  // individual communicated it.
+  { key: 'ov_choicesInfo', label: 'Healthcare information and options explained to the individual', applies: rev4 },
   { key: 'ov_choicesMade', label: 'Choices the individual made or declined' },
+  { key: 'ov_choicesCommunicated', label: 'How the individual communicated the choice', applies: rev4 },
 
   // 8. Goals
   { key: 'ov_goalProgress', label: 'Progress on HCP / plan of care goals' },
