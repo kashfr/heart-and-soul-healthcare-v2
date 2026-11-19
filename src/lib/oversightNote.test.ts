@@ -13,7 +13,7 @@ import {
 function completeNote(): Record<string, string> {
   return {
     noteType: OVERSIGHT_NOTE_TYPE,
-    q1_formRev: '3',
+    q1_formRev: '4',
     q2_program: 'now-comp',
     q2_serviceLevel: 'rn-oversight',
     patientId: 'abc123',
@@ -50,7 +50,9 @@ function completeNote(): Record<string, string> {
     ov_logsReviewed: 'N/A (no logs in place)',
     ov_hrst: 'Current',
     ov_educationResponse: 'Restated that he can call the office with concerns.',
-    ov_choicesMade: 'Chose to meet in the kitchen; declined a morning visit next month.',
+    ov_choicesInfo: 'Reviewed dizziness from lisinopril; explained asking Dr. Patel about alternatives, plus diet and exercise.',
+    ov_choicesMade: 'Chose to keep the medication and add a daily walk; declined a diet change.',
+    ov_choicesCommunicated: 'Said so in his own words.',
     ov_goalProgress: 'Blood pressure goal on track; log reviewed.',
     ov_quarterly: 'Not due this visit',
     ov_actions: 'Requested renewal of lisinopril order from Dr. Patel.',
@@ -209,5 +211,22 @@ describe('isOversightNote', () => {
     expect(isOversightNote({ q3_clientName: 'A shift note' })).toBe(false);
     expect(isOversightNote(null)).toBe(false);
     expect(isOversightNote(undefined)).toBe(false);
+  });
+});
+
+describe('Choice section (rev 4)', () => {
+  it('requires the information and how-communicated boxes on a rev 4 note', () => {
+    const d = completeNote();
+    delete d.ov_choicesInfo;
+    delete d.ov_choicesCommunicated;
+    expect(getOversightIncomplete(d).map((i) => i.key)).toEqual(['ov_choicesInfo', 'ov_choicesCommunicated']);
+  });
+
+  it('does not ask an older note for the two new boxes when it is amended', () => {
+    const d = completeNote();
+    d.q1_formRev = '3';
+    delete d.ov_choicesInfo;
+    delete d.ov_choicesCommunicated;
+    expect(getOversightIncomplete(d)).toEqual([]);
   });
 });

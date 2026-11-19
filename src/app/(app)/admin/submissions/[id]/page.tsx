@@ -705,8 +705,16 @@ export default function SubmissionDetailPage({ params }: PageProps) {
               {hasValue(data.ov_educationResponse) && <TextBlock fieldKey="ov_educationResponse" label="Individual's Response / Understanding" value={data.ov_educationResponse} />}
             </ConditionalSection>
 
-            <ConditionalSection title="Choice and Person-Centered Care" keys={['ov_choicesMade', 'ov_preferencesHonored', 'ov_goalsSupport']} data={data}>
-              {hasValue(data.ov_choicesMade) && <TextBlock fieldKey="ov_choicesMade" label="Choices Offered, Made, or Declined" value={data.ov_choicesMade} />}
+            <ConditionalSection title="Choice and Person-Centered Care" keys={['ov_choicesInfo', 'ov_choicesMade', 'ov_choicesCommunicated', 'ov_preferencesHonored', 'ov_goalsSupport']} data={data}>
+              {hasValue(data.ov_choicesInfo) && <TextBlock fieldKey="ov_choicesInfo" label="Healthcare Information and Options Explained" value={data.ov_choicesInfo} />}
+              {hasValue(data.ov_choicesMade) && (
+                <TextBlock
+                  fieldKey="ov_choicesMade"
+                  label={Number(data.q1_formRev || 0) >= 4 ? 'Chose or Declined' : 'Choices Offered, Made, or Declined'}
+                  value={data.ov_choicesMade}
+                />
+              )}
+              {hasValue(data.ov_choicesCommunicated) && <TextBlock fieldKey="ov_choicesCommunicated" label="How the Choice Was Communicated" value={data.ov_choicesCommunicated} />}
               {hasValue(data.ov_preferencesHonored) && <TextBlock fieldKey="ov_preferencesHonored" label="Preferences Honored / Strengths" value={data.ov_preferencesHonored} />}
               {hasValue(data.ov_goalsSupport) && <TextBlock fieldKey="ov_goalsSupport" label="Support Toward Goals, Hopes, and Dreams" value={data.ov_goalsSupport} />}
             </ConditionalSection>
