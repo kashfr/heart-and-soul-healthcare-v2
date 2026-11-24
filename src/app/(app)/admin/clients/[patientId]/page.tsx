@@ -45,6 +45,7 @@ import SeizureLogSection from './SeizureLogSection';
 import CarePlanSection from './CarePlanSection';
 import HoursSection from './HoursSection';
 import DayProgramSection from './DayProgramSection';
+import GroupHomeSection from './GroupHomeSection';
 import PhysiciansSection from './PhysiciansSection';
 import GuardianSection from './GuardianSection';
 import SupportCoordinatorSection from './SupportCoordinatorSection';
@@ -762,6 +763,15 @@ function ClientDashboardInner() {
                   there. */}
               <DayProgramSection
                 key={`dp-${patientId}`}
+                patientId={patientId}
+                canEdit={realStaff}
+                actorName={profile?.displayName || user?.email || ''}
+                onToast={showToast}
+              />
+              {/* Group home: where the client lives, the residential provider,
+                  and who to call there to schedule visits. */}
+              <GroupHomeSection
+                key={`gh-${patientId}`}
                 patientId={patientId}
                 canEdit={realStaff}
                 actorName={profile?.displayName || user?.email || ''}
