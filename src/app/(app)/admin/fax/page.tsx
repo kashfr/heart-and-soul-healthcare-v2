@@ -25,6 +25,7 @@ import {
   type FaxSendField,
   type OutboundFax,
 } from '@/lib/faxShared';
+import { confirmAsync } from '@/lib/confirmDialog';
 
 // Fax Center: send a PDF to a fax number through SRFax (with a cover sheet)
 // and watch it go out. Stage 1 of physician paperwork by fax; PPOT requests
@@ -144,7 +145,7 @@ export default function FaxCenterPage() {
   // Archive hides a sent fax from the outbox; it is never deleted (it is the
   // record of what went to which number). "Show archived" brings it back.
   const setArchived = async (f: OutboundFax, archived: boolean) => {
-    if (archived && !confirm(`Archive the fax to ${f.recipientName}? It leaves this list but stays on record; turn on "Show archived" to see it again.`)) return;
+    if (archived && !await confirmAsync(`Archive the fax to ${f.recipientName}? It leaves this list but stays on record; turn on "Show archived" to see it again.`)) return;
     setBusyId(f.id);
     try {
       const res = await authedFetch(`/api/fax/${f.id}/archive`, { method: 'POST', body: JSON.stringify({ archived }) });
@@ -160,7 +161,7 @@ export default function FaxCenterPage() {
 
   // "Not needed this cycle" for a recertification reminder.
   const dismissRecert = async (c: PpotSubjectRow) => {
-    if (!confirm(`Dismiss the recertification reminder for ${c.name}? It won't come back for this authorization (ending ${formatDateUS(c.authEnd)}); the next one reminds as usual.`)) return;
+    if (!await confirmAsync(`Dismiss the recertification reminder for ${c.name}? It won't come back for this authorization (ending ${formatDateUS(c.authEnd)}); the next one reminds as usual.`)) return;
     try {
       const res = await authedFetch(`/api/fax/ppot/recert/${c.id}`, { method: 'POST', body: JSON.stringify({ authEnd: c.authEnd }) });
       const data = await res.json().catch(() => ({}));
@@ -174,7 +175,7 @@ export default function FaxCenterPage() {
   const [preview, setPreview] = useState<OutboundFax | null>(null);
 
   const retry = async (f: OutboundFax) => {
-    if (!confirm(`Resend this fax to ${formatUSFaxNumber(f.toNumber)} (${f.recipientName})?`)) return;
+    if (!await confirmAsync(`Resend this fax to ${formatUSFaxNumber(f.toNumber)} (${f.recipientName})?`)) return;
     setBusyId(f.id);
     try {
       const res = await authedFetch(`/api/fax/${f.id}/retry`, { method: 'POST' });
@@ -491,7 +492,7 @@ function SendModal({ onClose, onSent, onDone }: { onClose: () => void; onSent: (
     setErr(null);
     const input = { recipientName, recipientOrg, toNumber, confirmNumber, regarding, note, includeCover };
     if (!applyFieldErrors(validateFaxSendInput(input, files.length > 0), SEND_FIELD_ORDER, setFieldErrors, sendFieldId)) return;
-    if (!confirm(`Send ${files.length} PDF attachment(s) to ${recipientName.trim()} at ${formatUSFaxNumber(to)} in this order?\n${files.map((f, i) => `${i + 1}. ${f.name}`).join('\n')}`)) return;
+    if (!await confirmAsync(`Send ${files.length} PDF attachment(s) to ${recipientName.trim()} at ${formatUSFaxNumber(to)} in this order?\n${files.map((f, i) => `${i + 1}. ${f.name}`).join('\n')}`)) return;
     setBusy(true);
     try {
       const attachments = await Promise.all(files.map(async (f) => ({ fileName: f.name, pdfBase64: await readAsBase64(f) })));

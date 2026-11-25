@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { AuthProvider } from "@/components/AuthProvider";
 import { ImpersonationProvider } from "@/components/ImpersonationProvider";
 import SiteAnalytics from "@/components/SiteAnalytics";
+import ConfirmHost from "@/components/ConfirmHost";
 import "./globals.css";
 
 const siteUrl = "https://www.heartandsoulhc.org";
@@ -90,6 +91,8 @@ export default function RootLayout({
         <ImpersonationProvider>
           <AuthProvider>{children}</AuthProvider>
         </ImpersonationProvider>
+        {/* On-page confirmations (confirmAsync), in place of browser pop-ups. */}
+        <ConfirmHost />
       </body>
     </html>
   );
