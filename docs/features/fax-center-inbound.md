@@ -53,6 +53,28 @@ creates the record also claims the referral, so it can only happen once.
 What the intake answers become is decided in `referralConvertShared.ts`
 (`planFromReferral`), which is where to add a new field mapping.
 
+## Requesting a PPOT: who is listed and what is filled in
+
+`listPpotSubjects()` lists open referrals that have no client record yet, and
+every client. A referral with `patientId` set is left out, so a person who
+became a client appears once, as the client; the referral card's
+`?ppot=referral:<id>` link opens that client (`fromReferralId`).
+
+The request modal chooses as little as it can for the sender:
+
+- **Request type** (`defaultPpotRequestType`): a referral is a new case; a
+  client is a recertification only when an authorization is on file. A client
+  with none yet starts with neither chosen.
+- **Physician**: nothing is filled in until the sender picks from the
+  "Physician on the record" dropdown (`ppotPhysicianOptions`): the client's
+  Physicians card, plus the clinical profile's attending physician when the
+  card does not list that doctor. The practice ("Office") comes from the card;
+  the clinical profile has no office field.
+- After sending, the fax number is saved back to the clinical profile only
+  when the request went to the attending physician (`samePhysician`), so a
+  request to a specialist never puts the specialist's fax under the
+  attending's name.
+
 ## PPOT follow-ups
 
 Waiting on Physicians includes Send Follow-up Fax for authorized Fax Center

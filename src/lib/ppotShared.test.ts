@@ -6,6 +6,9 @@ import {
   ppotCandidatesForInbound,
   validatePpotFiling,
   ppotSubjectFromReferral,
+  ppotPhysicianOptions,
+  defaultPpotRequestType,
+  samePhysician,
   recertStatus,
   validatePpotSendInput,
   ppotReminderNote,
@@ -164,5 +167,45 @@ describe('shouldAdvanceOrderDate', () => {
   });
   it('ignores a bad signed date', () => {
     expect(shouldAdvanceOrderDate('', 'soon')).toBe(false);
+  });
+});
+
+describe('ppotPhysicianOptions', () => {
+  it('lists the Physicians card with the practice, and folds the attending into the matching entry', () => {
+    const opts = ppotPhysicianOptions(
+      { name: 'Dana R. Sample, MD', fax: '(404) 555-0188' },
+      [
+        { name: 'Dr. Dana R. Sample', specialty: 'Primary Care', practice: 'Peachtree Pediatrics', fax: '' },
+        { name: 'Sam Reed, MD', specialty: 'Neurology', practice: 'Atlanta Neuro', fax: '(404) 555-0102' },
+      ],
+    );
+    expect(opts).toEqual([
+      { name: 'Dr. Dana R. Sample', specialty: 'Primary Care', office: 'Peachtree Pediatrics', fax: '4045550188' },
+      { name: 'Sam Reed, MD', specialty: 'Neurology', office: 'Atlanta Neuro', fax: '4045550102' },
+    ]);
+  });
+  it('puts an attending the card does not list first, and is empty with nothing on file', () => {
+    expect(ppotPhysicianOptions({ name: 'Dr. Patel', fax: '4045550101' }, [{ name: 'Sam Reed, MD', specialty: 'Neurology' }]).map((o) => o.name)).toEqual(['Dr. Patel', 'Sam Reed, MD']);
+    expect(ppotPhysicianOptions({ name: '', fax: '' }, [])).toEqual([]);
+  });
+  it('a referral offers its intake physician with the office', () => {
+    const s = ppotSubjectFromReferral({ id: 'r1', clientName: 'Jane', details: [{ label: "Child's physician", value: 'Dr. Patel' }, { label: 'Physician office', value: 'Peachtree Pediatrics' }, { label: 'Physician fax', value: '(404) 555-0101' }] });
+    expect(s.physicians).toEqual([{ name: 'Dr. Patel', office: 'Peachtree Pediatrics', fax: '4045550101', specialty: '' }]);
+  });
+});
+
+describe('samePhysician', () => {
+  it('ignores titles and punctuation, and never matches a blank', () => {
+    expect(samePhysician('Dana R. Sample, MD', 'Dr. Dana R Sample')).toBe(true);
+    expect(samePhysician('Dana Sample', 'Sam Reed')).toBe(false);
+    expect(samePhysician('', '')).toBe(false);
+  });
+});
+
+describe('defaultPpotRequestType', () => {
+  it('a referral is a new case; a client is a recertification only with an authorization on file', () => {
+    expect(defaultPpotRequestType({ kind: 'referral', authEnd: '' })).toBe('new');
+    expect(defaultPpotRequestType({ kind: 'client', authEnd: '2027-04-30' })).toBe('recert');
+    expect(defaultPpotRequestType({ kind: 'client', authEnd: '' })).toBe('');
   });
 });

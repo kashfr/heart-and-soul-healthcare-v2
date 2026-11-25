@@ -42,6 +42,78 @@ export interface PpotSubject {
   context: string;
   /** Clients only: latest authorization end (YYYY-MM-DD), '' if none. */
   authEnd: string;
+  /** Every physician on the record, for the request's dropdown. */
+  physicians: PpotPhysicianOption[];
+  /** Clients only: the referral this record was created from, '' if none. */
+  fromReferralId: string;
+}
+
+/** One physician the request can be addressed to. */
+export interface PpotPhysicianOption {
+  name: string;
+  /** The practice. '' when unknown. */
+  office: string;
+  /** 10 digits, or '' when none on file. */
+  fax: string;
+  /** "Primary Care", "Neurology", ... or '' when unknown. */
+  specialty: string;
+}
+
+/** "Dana R. Sample, MD" and "Dr. Dana Sample MD" name the same doctor. */
+function physicianKey(name: string): string {
+  return String(name || '')
+    .toLowerCase()
+    .replace(/\b(dr|md|do|np|pa|aprn|fnp)\b/g, '')
+    .replace(/[^a-z]/g, '');
+}
+
+/**
+ * The physicians a request can go to: the client's Physicians card (which
+ * carries the practice), plus the clinical profile's attending physician when
+ * the card doesn't already list that doctor. A card entry for the attending
+ * fills a fax the profile has and the card lacks.
+ */
+export function ppotPhysicianOptions(
+  attending: { name: string; fax: string; office?: string },
+  list: Array<{ name?: string; specialty?: string; practice?: string; fax?: string }>,
+): PpotPhysicianOption[] {
+  const out: PpotPhysicianOption[] = [];
+  const seen = new Set<string>();
+  for (const p of list) {
+    const name = String(p.name || '').trim();
+    const key = physicianKey(name);
+    if (!name || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ name, office: String(p.practice || '').trim(), fax: normalizeUSFaxNumber(String(p.fax || '')), specialty: String(p.specialty || '').trim() });
+  }
+  const aName = attending.name.trim();
+  if (aName) {
+    const aFax = normalizeUSFaxNumber(attending.fax);
+    const hit = out.find((o) => physicianKey(o.name) === physicianKey(aName));
+    if (hit) {
+      if (!hit.fax) hit.fax = aFax;
+      if (!hit.office) hit.office = String(attending.office || '').trim();
+    } else {
+      out.unshift({ name: aName, office: String(attending.office || '').trim(), fax: aFax, specialty: '' });
+    }
+  }
+  return out;
+}
+
+/** Whether a request addressed to `recipient` is going to the record's attending physician. */
+export function samePhysician(a: string, b: string): boolean {
+  return !!physicianKey(a) && physicianKey(a) === physicianKey(b);
+}
+
+/**
+ * The request type to start with. A referral is always a new case. A client
+ * is a recertification only once an authorization is on file; a client with
+ * none yet (just created from a referral) could be either, so nothing is
+ * chosen for the sender.
+ */
+export function defaultPpotRequestType(s: Pick<PpotSubject, 'kind' | 'authEnd'>): PpotRequestType | '' {
+  if (s.kind === 'referral') return 'new';
+  return s.authEnd ? 'recert' : '';
 }
 
 // Referral detail labels, per intake path. Our own form writes "Medicaid #";
@@ -67,17 +139,22 @@ function detail(details: ReferralDetail[], labels: string[]): string {
 }
 
 export function ppotSubjectFromReferral(r: { id: string; clientName: string; stage?: string; details: ReferralDetail[] }): PpotSubject {
+  const physicianName = detail(r.details, [PHYSICIAN_LABELS.name]);
+  const physicianOffice = detail(r.details, [PHYSICIAN_LABELS.office]);
+  const physicianFax = normalizeUSFaxNumber(detail(r.details, [PHYSICIAN_LABELS.fax]));
   return {
     kind: 'referral',
     id: r.id,
     name: r.clientName,
     dob: detail(r.details, [DOB_LABEL]),
     medicaidId: cleanMedicaidId(detail(r.details, MEDICAID_LABELS)),
-    physicianName: detail(r.details, [PHYSICIAN_LABELS.name]),
-    physicianOffice: detail(r.details, [PHYSICIAN_LABELS.office]),
-    physicianFax: normalizeUSFaxNumber(detail(r.details, [PHYSICIAN_LABELS.fax])),
+    physicianName,
+    physicianOffice,
+    physicianFax,
     context: r.stage || '',
     authEnd: '',
+    physicians: ppotPhysicianOptions({ name: physicianName, fax: physicianFax, office: physicianOffice }, []),
+    fromReferralId: '',
   };
 }
 
