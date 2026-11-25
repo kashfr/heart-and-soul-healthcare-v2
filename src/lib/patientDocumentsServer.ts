@@ -1,6 +1,7 @@
 import { clientAuditActor } from './clientAuditActor';
 import { DOC_CATEGORIES } from './docCategories';
 import { parseDocumentPeriod } from './documentPeriod';
+import { documentDateError } from './documentDate';
 import { noteDocDetails } from './noteDocLinks';
 import 'server-only';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -218,7 +219,7 @@ export async function cleanupReplacedFiles(documentId: string): Promise<{ ok: bo
 
 export type MoveDocumentResult =
   | { ok: true; documentId: string }
-  | { ok: false; reason: 'not-found' | 'no-target' | 'same-client' | 'auto-filed'; message: string };
+  | { ok: false; reason: 'not-found' | 'no-target' | 'same-client' | 'auto-filed' | 'bad-date'; message: string };
 
 /**
  * Move a document to another client (a file uploaded to the wrong chart).
@@ -235,6 +236,10 @@ export async function moveDocumentToPatient(
   caller: AuthedCaller,
   opts: { title?: string; docDate?: string; category?: string } = {},
 ): Promise<MoveDocumentResult> {
+  if (opts.docDate) {
+    const dateError = documentDateError(opts.docDate);
+    if (dateError) return { ok: false, reason: 'bad-date', message: dateError };
+  }
   const ref = adminDb().collection('patientDocuments').doc(documentId);
   const snap = await ref.get();
   if (!snap.exists) return { ok: false, reason: 'not-found', message: 'Document not found.' };
@@ -326,6 +331,10 @@ export async function updateDocumentDetailsServer(
   if (!title) return { ok: false, status: 400, error: 'Enter a title.' };
   if (!(DOC_CATEGORIES as readonly string[]).includes(patch.category)) return { ok: false, status: 400, error: 'Choose a category from the list.' };
   if (patch.docDate && !/^\d{4}-\d{2}-\d{2}$/.test(patch.docDate)) return { ok: false, status: 400, error: 'The date must be YYYY-MM-DD.' };
+  if (patch.docDate) {
+    const dateError = documentDateError(patch.docDate);
+    if (dateError) return { ok: false, status: 400, error: dateError };
+  }
   const period = parseDocumentPeriod(patch);
   if (!period.ok) return { ok: false, status: 400, error: period.error };
   const ref = adminDb().collection('patientDocuments').doc(id);

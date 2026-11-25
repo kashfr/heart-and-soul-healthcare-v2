@@ -82,3 +82,12 @@ it('shows how many files are queued instead of the browser\'s cleared-input text
   fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0]);
   expect(screen.getByText('1 file ready to upload')).toBeInTheDocument();
 });
+it('stops a document dated in the future (a mistyped year) before uploading', () => {
+  const upload = vi.fn();
+  render(<BulkDocumentUpload upload={upload} onClose={() => {}} />);
+  fireEvent.change(screen.getByLabelText(/Choose documents/), { target: { files: [new File(['pdf'], 'letter.pdf', { type: 'application/pdf' })] } });
+  fireEvent.change(screen.getByLabelText('Date for letter.pdf'), { target: { value: '11/20/2618' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Upload pending files' }));
+  expect(screen.getByRole('alert')).toHaveTextContent('letter.pdf: The date on the document cannot be in the future. Check the year.');
+  expect(upload).not.toHaveBeenCalled();
+});

@@ -24,7 +24,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   try {
     const result = await moveDocumentToPatient(id, toPatientId, caller, { title: body.title, docDate: body.docDate, category: body.category });
     if (!result.ok) {
-      const status = result.reason === 'not-found' || result.reason === 'no-target' ? 404 : 409;
+      const status = result.reason === 'not-found' || result.reason === 'no-target' ? 404 : result.reason === 'bad-date' ? 400 : 409;
       return NextResponse.json({ error: result.message, reason: result.reason }, { status });
     }
     return NextResponse.json(result);

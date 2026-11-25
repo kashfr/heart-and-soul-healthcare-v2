@@ -10,6 +10,7 @@ import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE, FIELD_ERROR_WRAP_STYLE
 import { withSelectChevron } from '@/lib/selectChevron';
 import DocumentPeriodFields from '@/components/DocumentPeriodFields';
 import { draftFromPeriod, formatDocumentPeriod, resolvePeriodDraft, type DocumentPeriodDraft } from '@/lib/documentPeriod';
+import { documentDateError } from '@/lib/documentDate';
 import {
   ALLOWED_DOC_TYPES,
   CORE_DOC_CATEGORIES,
@@ -492,7 +493,8 @@ function EditDocumentModal({
     const errs: Partial<Record<EditField, string>> = {};
     if (!title.trim()) errs.title = 'Enter a title.';
     if (!category) errs.category = 'Choose a document category.';
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(docDate)) errs.docDate = 'Enter the date on the document.';
+    const dateError = documentDateError(docDate);
+    if (dateError) errs.docDate = dateError;
     const covers = resolvePeriodDraft(period);
     if (!covers.ok) errs.period = covers.error;
     if (!applyFieldErrors(errs, EDIT_FIELD_ORDER, setFieldErrors, editFieldId)) return;
@@ -602,7 +604,8 @@ function MoveDocumentModal({
     if (saving || !d.id || blockWrite()) return;
     if (!toPatientId) { setError('Choose the client this document belongs to.'); return; }
     if (!title.trim()) { setError('Enter a title.'); return; }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(docDate)) { setError('Enter the date on the document.'); return; }
+    const dateError = documentDateError(docDate);
+    if (dateError) { setError(dateError); return; }
     if (!window.confirm(`Move "${title.trim()}" to ${target?.name || 'the selected client'}?\n\nIt disappears from this client's documents and appears on theirs. The original entry is recorded in the deletion audit.`)) return;
     setSaving(true);
     setError(null);

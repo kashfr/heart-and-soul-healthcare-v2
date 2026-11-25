@@ -1,6 +1,7 @@
 'use client';
 import { useState, type CSSProperties } from 'react';
 import { formatUSDateInput, parseUSDate } from '@/lib/usDateInput';
+import { documentDateError } from '@/lib/documentDate';
 import { DOC_CATEGORIES, type DocCategory } from '@/lib/docCategories';
 import { EMPTY_PERIOD_DRAFT, resolvePeriodDraft, type DocumentPeriodDraft } from '@/lib/documentPeriod';
 import { withSelectChevron } from '@/lib/selectChevron';
@@ -39,6 +40,8 @@ export default function BulkDocumentUpload({ upload, onClose, onComplete }: { up
     const pending = rows.filter((r) => r.status !== 'uploaded');
     if (!pending.length) return;
     if (pending.some((r) => !r.title.trim() || !parseUSDate(r.docDate))) { setError('Enter a title and valid document date for each file.'); return; }
+    const futureRow = pending.find((r) => documentDateError(parseUSDate(r.docDate)!));
+    if (futureRow) { setError(`${futureRow.file.name}: ${documentDateError(parseUSDate(futureRow.docDate)!)} Check the year.`); return; }
     const resolved = pending.map((r) => ({ row: r, period: resolvePeriodDraft(r.period) }));
     const badPeriod = resolved.find((r) => !r.period.ok);
     if (badPeriod && !badPeriod.period.ok) { setError(`${badPeriod.row.file.name}: ${badPeriod.period.error}`); return; }
