@@ -25,6 +25,7 @@ import { formatUSFaxNumber, inboundFaxSender, isVerbalOrderOpen, VERBAL_ORDER_CA
 import { canUseFax } from '@/lib/faxShared';
 import { formatDateUS, formatDateTimeUS } from '@/lib/dateFormat';
 import { escortToField, FieldError, FIELD_ERROR_WRAP_STYLE } from '@/lib/formEscort';
+import { confirmAsync } from '@/lib/confirmDialog';
 
 /**
  * /admin/verbal-orders
@@ -138,7 +139,7 @@ function VerbalOrdersInner() {
   };
 
   const dismissFax = async (f: UnmatchedInboundFax) => {
-    if (!window.confirm('Dismiss this fax as not a signed verbal order? It stays in the SRFax inbox; it just leaves this list.')) return;
+    if (!await confirmAsync('Dismiss this fax as not a signed verbal order? It stays in the SRFax inbox; it just leaves this list.')) return;
     const r = await ignoreInboundFax(f.id);
     if (r.ok) {
       showToast('Fax dismissed.');

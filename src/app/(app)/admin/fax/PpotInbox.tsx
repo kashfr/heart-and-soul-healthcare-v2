@@ -13,6 +13,7 @@ import { formatDateUS, formatDateTimeUS } from '@/lib/dateFormat';
 import { formatUSFaxNumber, inboundFaxSender } from '@/lib/verbalOrderShared';
 import { daysBetween, PPOT_REQUEST_LABEL, shouldAdvanceOrderDate, validatePpotFiling, type PpotOpenRequest, type PpotOrderLine, type PpotRequestType } from '@/lib/ppotShared';
 import { btn, btnDanger, btnPrimary, btnSm } from '@/components/buttons';
+import { confirmAsync } from '@/lib/confirmDialog';
 
 // The return half of PPOT requests: faxes that arrived on the portal line,
 // the requests still waiting on a physician, and the signed copies filed.
@@ -85,7 +86,7 @@ export default function PpotInbox({ refreshKey }: { refreshKey: number }) {
 
   // One helper for the three "clear it off the list" actions.
   const act = async (key: string, url: string, body: object, question: string) => {
-    if (!confirm(question)) return;
+    if (!await confirmAsync(question)) return;
     setBusy(key);
     try {
       const res = await authedFetch(url, { method: 'POST', body: JSON.stringify(body) });
@@ -404,7 +405,7 @@ function FileModal({
     const invalid = validatePpotFiling({ requestKey, signedDate }, today);
     if (invalid) return setErr(invalid);
     const req = openRequests.find((r) => r.key === requestKey);
-    if (!confirm(`File this fax as the signed Appendix T for ${req?.memberName || 'this member'}?`)) return;
+    if (!await confirmAsync(`File this fax as the signed Appendix T for ${req?.memberName || 'this member'}?`)) return;
     setBusy(true);
     setErr(null);
     try {

@@ -41,6 +41,7 @@ import {
   type RoiField,
   type RoiRecord,
 } from '@/lib/roiShared';
+import { confirmAsync } from '@/lib/confirmDialog';
 
 // Releases of Information (DBHDD Attachment A, IDD version 6/22/2023): the
 // office prepares the form here, downloads it and sends it to the guardian
@@ -140,8 +141,8 @@ export default function RoiSection({
     }
   };
 
-  const act = (r: RoiRecord, action: 'cancel' | 'hide' | 'unhide', question?: string) => {
-    if (question && !confirm(question)) return;
+  const act = async (r: RoiRecord, action: 'cancel' | 'hide' | 'unhide', question?: string) => {
+    if (question && !await confirmAsync(question)) return;
     void run(r.id, async () => {
       const res = await authedFetch(`/api/fax/roi/${r.id}`, { method: 'POST', body: JSON.stringify({ action }) });
       const data = await res.json().catch(() => ({}));
@@ -801,7 +802,7 @@ function FaxModal({ roi, onClose, onSent }: { roi: RoiRecord; onClose: () => voi
     setErr(null);
     const input = { recipientName, recipientOrg: '', toNumber, confirmNumber, regarding: '', note, includeCover: true };
     if (!applyFieldErrors(validateFaxSendInput(input, true), FAX_ORDER, setFieldErrors, faxId)) return;
-    if (!confirm(`Fax the signed release for ${roi.memberName} to ${recipientName.trim()} at ${formatUSFaxNumber(normalizeUSFaxNumber(toNumber))}?`)) return;
+    if (!await confirmAsync(`Fax the signed release for ${roi.memberName} to ${recipientName.trim()} at ${formatUSFaxNumber(normalizeUSFaxNumber(toNumber))}?`)) return;
     setBusy(true);
     try {
       const res = await authedFetch(`/api/fax/roi/${roi.id}/fax`, { method: 'POST', body: JSON.stringify({ recipientName, toNumber, confirmNumber, note, attachments: await encodeFaxAttachments(attachments) }) });

@@ -19,6 +19,7 @@ import {
   type PpotSendField,
   type PpotSubject,
 } from '@/lib/ppotShared';
+import { confirmAsync } from '@/lib/confirmDialog';
 
 // "Request a PPOT": pick the member (an open referral for a new case, a
 // client for a recertification), confirm the physician's fax, and send the
@@ -105,7 +106,7 @@ export default function PpotRequestModal({
       note,
     };
     if (!applyFieldErrors(validatePpotSendInput(input), FIELD_ORDER, setFieldErrors, fieldId)) return;
-    if (!confirm(`Fax the Appendix T request for ${subject!.name} to ${recipientName.trim()} at ${formatUSFaxNumber(normalizeUSFaxNumber(toNumber))}?`)) return;
+    if (!await confirmAsync(`Fax the Appendix T request for ${subject!.name} to ${recipientName.trim()} at ${formatUSFaxNumber(normalizeUSFaxNumber(toNumber))}?`)) return;
     setBusy(true);
     try {
       const res = await authedFetch('/api/fax/ppot', { method: 'POST', body: JSON.stringify({ ...input, attachments: await encodeFaxAttachments(attachments) }) });
