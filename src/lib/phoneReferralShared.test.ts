@@ -30,7 +30,7 @@ describe('validatePhoneReferral', () => {
     expect(validatePhoneReferral(base({ callerPhone: '40455512129' }), TODAY).callerPhone).toBe('Enter a 10-digit phone number.');
   });
   it('takes a physician fax only when it is a full number', () => {
-    expect(validatePhoneReferral(base({ physicianFax: '(770) 427-0788' }), TODAY)).toEqual({});
+    expect(validatePhoneReferral(base({ physicianFax: '(770) 555-0188' }), TODAY)).toEqual({});
     expect(validatePhoneReferral(base({ physicianFax: '770-427' }), TODAY).physicianFax).toBe('Enter a 10-digit fax number, or leave it blank.');
   });
 });
@@ -96,7 +96,7 @@ describe('phoneReferralDetails', () => {
 describe('helpers', () => {
   it('formats phones and ages', () => {
     expect(formatPhone('14045551212')).toBe('(404) 555-1212');
-    expect(formatPhone('470-783-4812')).toBe('(470) 783-4812');
+    expect(formatPhone('470-555-0148')).toBe('(470) 555-0148');
     expect(ageAt('2026-04-20', TODAY)).toBe('5 months');
     expect(ageAt('2027-01-01', TODAY)).toBe('');
   });

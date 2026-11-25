@@ -5,8 +5,8 @@ const full = {
   attends: 'yes' as const,
   programName: "Treasure's Box",
   address: '3893 Covington Hwy, Decatur, GA 30032',
-  contactName: 'Chequita Brown',
-  email: 'chequitabrown@seabreezeretreat.com',
+  contactName: 'Casey Example',
+  email: 'casey@example.org',
 };
 
 describe('validateDayProgram', () => {
@@ -28,7 +28,7 @@ describe('validateDayProgram', () => {
   });
 
   it('accepts a phone alone as the way to reach the contact', () => {
-    expect(validateDayProgram({ ...full, email: '', phone: '404-296-0238' })).toEqual({});
+    expect(validateDayProgram({ ...full, email: '', phone: '404-555-0138' })).toEqual({});
   });
 
   it('flags a malformed email or date', () => {

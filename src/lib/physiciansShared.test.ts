@@ -3,7 +3,7 @@ import { normalizePhysicians, validatePhysicians } from './physiciansShared';
 
 describe('validatePhysicians', () => {
   it('accepts a complete row', () => {
-    expect(validatePhysicians([{ id: 'a', name: 'Dr. Jennifer Gilligan', specialty: 'Endocrinology', fax: '404-367-3215' }])).toEqual({});
+    expect(validatePhysicians([{ id: 'a', name: 'Dr. Jamie Sample', specialty: 'Endocrinology', fax: '404-555-0115' }])).toEqual({});
   });
 
   it('requires name and specialty per row', () => {
@@ -20,11 +20,11 @@ describe('validatePhysicians', () => {
 describe('normalizePhysicians', () => {
   it('formats the fax and puts primary care first', () => {
     const out = normalizePhysicians([
-      { id: 'e', name: ' Dr. Gilligan ', specialty: 'Endocrinology', fax: '4043673215' },
+      { id: 'e', name: ' Dr. Sample ', specialty: 'Endocrinology', fax: '4045550115' },
       { id: 'p', name: 'Dr. Kaufman', specialty: 'Primary Care' },
     ]);
     expect(out[0].id).toBe('p');
-    expect(out[1].name).toBe('Dr. Gilligan');
-    expect(out[1].fax).toBe('(404) 367-3215');
+    expect(out[1].name).toBe('Dr. Sample');
+    expect(out[1].fax).toBe('(404) 555-0115');
   });
 });

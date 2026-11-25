@@ -51,19 +51,19 @@ describe('SupportCoordinatorSection', () => {
   });
 
   it('picks the agency from the Settings list and fills its address', async () => {
-    agencies.push({ id: 'ccs', name: 'Creative Consulting Services', address: '353 Resource Pkwy, Winder, GA 30680', phone: '', fax: '', afterHours: '(770) 849-7629', notes: '' });
+    agencies.push({ id: 'ccs', name: 'Creative Consulting Services', address: '353 Resource Pkwy, Winder, GA 30680', phone: '', fax: '', afterHours: '(770) 555-0179', notes: '' });
     render(<SupportCoordinatorSection patientId="p1" canEdit actorName="Kaheem Freeman" onToast={() => {}} />);
     fireEvent.click(await screen.findByRole('button', { name: /add/i }));
     fireEvent.change(document.querySelector('#sc-field-agency select')!, { target: { value: 'ccs' } });
-    fireEvent.change(document.querySelector('#sc-field-name input')!, { target: { value: 'Timothy Harbison' } });
-    fireEvent.change(document.querySelector('#sc-field-contact input')!, { target: { value: '6789439600' } });
+    fireEvent.change(document.querySelector('#sc-field-name input')!, { target: { value: 'Taylor Example' } });
+    fireEvent.change(document.querySelector('#sc-field-contact input')!, { target: { value: '6785550196' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(1));
     expect(saveMock.mock.calls[0][1]).toMatchObject({
       agency: 'Creative Consulting Services',
       address: '353 Resource Pkwy, Winder, GA 30680',
-      phone: '(678) 943-9600',
-      notes: 'After-hours line: (770) 849-7629.',
+      phone: '(678) 555-0196',
+      notes: 'After-hours line: (770) 555-0179.',
     });
   });
 });

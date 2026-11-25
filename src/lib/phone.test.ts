@@ -74,7 +74,7 @@ describe('isValidUSPhone', () => {
 
 describe('formatUSPhoneExt', () => {
   it('formats a plain number like formatUSPhone', () => {
-    expect(formatUSPhoneExt('4042960238')).toBe('(404) 296-0238');
+    expect(formatUSPhoneExt('4045550138')).toBe('(404) 555-0138');
     expect(formatUSPhoneExt('404')).toBe('(404');
   });
 

@@ -102,7 +102,7 @@ describe('range helpers', () => {
 
 const piper: HoursAuthorization = {
   patientId: 'p1',
-  paNumber: '126040902312',
+  paNumber: '126999000102',
   kind: 'skilled',
   covers: 'shift',
   rateBasis: 'week',
@@ -113,11 +113,11 @@ const piper: HoursAuthorization = {
   totalUnits: null,
 };
 
-// Kimberly Guffey's Therap lines (NOW/COMP): 4 h daily LPN, 6 h monthly RN,
+// A NOW/COMP client's Therap lines (NOW/COMP): 4 h daily LPN, 6 h monthly RN,
 // 04/03/2026 to 04/02/2027, 5,840 and 288 fifteen-minute units.
 const kimLpn: HoursAuthorization = {
   patientId: 'k1',
-  paNumber: '926021602410',
+  paNumber: '926999000103',
   kind: 'skilled',
   covers: 'shift',
   rateBasis: 'day',

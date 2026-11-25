@@ -4,14 +4,14 @@ import {
 } from './referralEditShared';
 
 const gapp = {
-  clientName: 'Jazz King',
-  referrerName: 'Ariel King',
-  clientPhone: '(828) 508-8228',
-  clientEmail: 'ariel@example.com',
+  clientName: 'Jane Doe',
+  referrerName: 'Pat Doe',
+  clientPhone: '(828) 555-0123',
+  clientEmail: 'pat@example.com',
   county: 'Gwinnett',
   details: [
     { label: '⚠ Young child', value: 'Cleared: skilled equipment' },
-    { label: 'Date of birth', value: '05/12/2025' },
+    { label: 'Date of birth', value: '06/15/2025' },
     { label: "Member's Medicaid ID", value: 'Will provide later' },
     { label: 'Seeking paid caregiver', value: 'No' },
   ],
@@ -37,23 +37,23 @@ describe('which fields are editable', () => {
 
 describe('applyEdits', () => {
   it('adds a Medicaid ID and leaves every other answer and flag untouched', () => {
-    const values = { ...currentEditValues(gapp, specs), "row:Member's Medicaid ID": '222120339644' };
+    const values = { ...currentEditValues(gapp, specs), "row:Member's Medicaid ID": '999888777666' };
     const out = applyEdits(gapp, specs, values);
-    expect(out.changes).toEqual([{ label: 'Medicaid ID', from: 'Will provide later', to: '222120339644' }]);
+    expect(out.changes).toEqual([{ label: 'Medicaid ID', from: 'Will provide later', to: '999888777666' }]);
     expect(out.details).toEqual([
-      gapp.details[0], gapp.details[1], { label: "Member's Medicaid ID", value: '222120339644' }, gapp.details[3],
+      gapp.details[0], gapp.details[1], { label: "Member's Medicaid ID", value: '999888777666' }, gapp.details[3],
     ]);
     expect(out.top).toEqual({});
   });
   it('adds a missing row at the end, removes a cleared one, and formats phones', () => {
-    const values = { ...currentEditValues(gapp, specs), 'row:Physician phone': '7702776725', "row:Member's Medicaid ID": '', 'top:clientPhone': '8285550000' };
+    const values = { ...currentEditValues(gapp, specs), 'row:Physician phone': '7705550125', "row:Member's Medicaid ID": '', 'top:clientPhone': '8285550000' };
     const out = applyEdits(gapp, specs, values);
-    expect(out.details.at(-1)).toEqual({ label: 'Physician phone', value: '(770) 277-6725' });
+    expect(out.details.at(-1)).toEqual({ label: 'Physician phone', value: '(770) 555-0125' });
     expect(out.details.find((d) => d.label === "Member's Medicaid ID")).toBeUndefined();
     expect(out.top.clientPhone).toBe('(828) 555-0000');
   });
   it('ignores keys it does not know and reformatting alone', () => {
-    const raw = { ...gapp, clientPhone: '8285088228' };
+    const raw = { ...gapp, clientPhone: '8285550123' };
     const out = applyEdits(raw, specs, { ...currentEditValues(raw, specs), 'row:Seeking paid caregiver': 'Yes' });
     expect(out.changes).toEqual([]);
     expect(out.details).toEqual(raw.details);
@@ -72,8 +72,8 @@ describe('validateEdits', () => {
 });
 
 it('describes old and new values for the timeline', () => {
-  expect(describeEdits([{ label: 'Medicaid ID', from: 'Will provide later', to: '222120339644' }, { label: 'Email', from: '', to: 'a@b.co' }]))
-    .toBe('Details edited: Medicaid ID "Will provide later" → "222120339644"; Email (blank) → "a@b.co".');
+  expect(describeEdits([{ label: 'Medicaid ID', from: 'Will provide later', to: '999888777666' }, { label: 'Email', from: '', to: 'a@b.co' }]))
+    .toBe('Details edited: Medicaid ID "Will provide later" → "999888777666"; Email (blank) → "a@b.co".');
 });
 
 describe('date of birth on an old referral', () => {

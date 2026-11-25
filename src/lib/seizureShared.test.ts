@@ -24,7 +24,7 @@ const complete = (i: number, over: Record<string, string> = {}) =>
 
 describe('seizureDurationSeconds', () => {
   it('a typed duration wins over the clock (drop seizures are shorter than a minute)', () => {
-    // Kimberly's real charting: onset 16:15, end 16:15, "9 seconds" in the description.
+    // A client's real charting: onset 16:15, end 16:15, "9 seconds" in the description.
     expect(seizureDurationSeconds({ startTime: '16:15', endTime: '16:15', durationSeconds: '9' })).toBe(9);
   });
   it('falls back to end minus start, crossing midnight', () => {

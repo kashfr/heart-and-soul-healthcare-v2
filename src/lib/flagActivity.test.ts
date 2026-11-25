@@ -20,7 +20,7 @@ function ctx(over: Partial<FlagActivityContext> = {}): FlagActivityContext {
     kind: 'correction',
     blocking: true,
     nurseName: 'Bianca Bryant',
-    clientName: 'Ann Torres',
+    clientName: 'Ann Example',
     dateOfService: '09/03/2026',
     ...over,
   };
@@ -67,7 +67,7 @@ describe('flag activity copy', () => {
     const advisory = flagActivityEmailCopy(ctx({ blocking: false }));
     expect(blocking.body).toMatch(/STILL IN PLACE/);
     expect(advisory.body).not.toMatch(/block/i);
-    expect(advisory.subject).toBe('Flagged Note Amended: Ann Torres (09/03/2026)');
+    expect(advisory.subject).toBe('Flagged Note Amended: Ann Example (09/03/2026)');
     expect(flagActivityBellText(ctx({ blocking: true }))).toMatch(/block on new notes stays on/);
     expect(flagActivityBellText(ctx({ blocking: false, kind: 'clarification' }))).toMatch(/flagged for clarification/);
   });
@@ -75,7 +75,7 @@ describe('flag activity copy', () => {
   it('keeps every text message free of PHI', () => {
     for (const c of [ctx(), ctx({ blocking: false }), ctx({ event: 'replied', replyText: 'The date was 9/2, fixed.' })]) {
       const sms = flagActivitySmsText(c);
-      expect(sms).not.toMatch(/Ann Torres|Bianca|09\/03|9\/2/);
+      expect(sms).not.toMatch(/Ann Example|Bianca|09\/03|9\/2/);
       expect(sms).toMatch(/heartandsoulhc\.org\/login/);
       expect(sms).toMatch(/Reply STOP to opt out/);
     }
@@ -84,10 +84,10 @@ describe('flag activity copy', () => {
   it('a reply carries the nurse\'s words to the bell and asks the reviewer to answer or resolve', () => {
     const c = ctx({ event: 'replied', kind: 'clarification', blocking: false, replyText: 'I re-checked: the visit was 09/02, corrected.' });
     expect(flagActivityBellText(c)).toBe(
-      'Bianca Bryant replied to the clarification on Ann Torres\'s note (09/03/2026): "I re-checked: the visit was 09/02, corrected."',
+      'Bianca Bryant replied to the clarification on Ann Example\'s note (09/03/2026): "I re-checked: the visit was 09/02, corrected."',
     );
     const copy = flagActivityEmailCopy(c);
-    expect(copy.subject).toBe('Reply on a Flagged Note: Ann Torres (09/03/2026)');
+    expect(copy.subject).toBe('Reply on a Flagged Note: Ann Example (09/03/2026)');
     expect(copy.body).toMatch(/mark the clarification resolved/);
     expect(copy.cta).toBe('Open the note');
   });

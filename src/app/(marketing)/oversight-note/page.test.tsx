@@ -20,7 +20,7 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/lib/patients', () => ({
   getPatients: vi.fn().mockResolvedValue([
     { id: 'p1', name: 'Neal Kelly', dob: '1985-06-07', program: 'now-comp', serviceLevel: 'rn-oversight' },
-    { id: 'p2', name: 'Ann Torres', dob: '1980-08-03', program: 'now-comp', serviceLevel: 'rn-lpn-daily' },
+    { id: 'p2', name: 'Ann Example', dob: '1981-07-04', program: 'now-comp', serviceLevel: 'rn-lpn-daily' },
     { id: 'p3', name: 'Tora Vinson', dob: '2015-01-01', program: 'gapp', serviceLevel: 'skilled-nursing-shifts' },
   ]),
   getPatientClinical: vi.fn().mockResolvedValue(null),
@@ -127,7 +127,7 @@ describe('OversightNotePage', () => {
     });
     // Every NOW/COMP client receives monthly RN oversight — a daily-LPN
     // staffing model must not exclude anyone from this list.
-    expect(screen.getByRole('option', { name: /Ann Torres/ })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Ann Example/ })).toBeInTheDocument();
     // Other programs stay hidden until the toggle is checked.
     expect(screen.queryByRole('option', { name: /Tora Vinson/ })).toBeNull();
   });
@@ -209,7 +209,7 @@ describe('OversightNotePage — edit mode', () => {
 
   it('refuses to edit a shift note opened on this route', async () => {
     mockSubmissions.getSubmission.mockResolvedValue({
-      q3_clientName: 'Ann Torres',
+      q3_clientName: 'Ann Example',
       q6_dateofService: '2026-08-14',
     });
     mockSearchParams.set('edit', 'shift-note');

@@ -12,7 +12,7 @@ beforeEach(() => {
 const referral = {
   id: 'r1', source: 'gapp-website', stage: 'assessment', status: 'contacted', order: 0,
   assigneeUid: null, assigneeName: null, statusUpdatedBy: null,
-  clientName: 'Jazz King', clientEmail: '', clientPhone: '(828) 508-8228', county: 'Gwinnett', program: 'GAPP', referrerName: 'Ariel King',
+  clientName: 'Jane Doe', clientEmail: '', clientPhone: '(828) 555-0123', county: 'Gwinnett', program: 'GAPP', referrerName: 'Pat Doe',
   details: [{ label: 'Seeking paid caregiver', value: 'No' }, { label: "Member's Medicaid ID", value: 'Will provide later' }],
 } as unknown as Referral & { source: 'gapp-website' };
 
@@ -24,13 +24,13 @@ it('adds a Medicaid ID and sends only the editable fields', async () => {
   expect(screen.queryByLabelText(/Seeking paid caregiver/)).toBeNull();
   const medicaid = screen.getByLabelText('Medicaid ID') as HTMLInputElement;
   expect(medicaid.value).toBe('Will provide later');
-  fireEvent.change(medicaid, { target: { value: '222120339644' } });
+  fireEvent.change(medicaid, { target: { value: '999888777666' } });
   fireEvent.click(screen.getByRole('button', { name: /Save Changes/ }));
   await waitFor(() => expect(saved).toHaveBeenCalledOnce());
   const [url, init] = vi.mocked(authedFetch).mock.calls[0];
   expect(url).toBe('/api/admin/referrals/r1/details');
   const values = JSON.parse(init!.body as string).values;
-  expect(values["row:Member's Medicaid ID"]).toBe('222120339644');
+  expect(values["row:Member's Medicaid ID"]).toBe('999888777666');
   expect(values).not.toHaveProperty('row:Seeking paid caregiver');
 });
 
@@ -48,7 +48,7 @@ it('formats phones as typed and blocks clearing a required field', () => {
 const withAnswers = {
   ...referral,
   intakeAnswers: {
-    relationship: 'parent', fullName: 'Jazz King', dob: '2015-03-01', diagnosis: 'Asthma', diagnoses: [], equipment: ['trach'],
+    relationship: 'parent', fullName: 'Jane Doe', dob: '2015-03-01', diagnosis: 'Asthma', diagnoses: [], equipment: ['trach'],
     careNeeds: 'nursing', seekingPaidCaregiver: 'no', wantsAgencyStaff: 'yes',
   },
 } as unknown as Referral & { source: 'gapp-website' };

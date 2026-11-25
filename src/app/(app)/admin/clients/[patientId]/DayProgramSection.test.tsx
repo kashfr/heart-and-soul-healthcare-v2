@@ -25,10 +25,10 @@ describe('DayProgramSection', () => {
       programName: "Treasure's Box",
       operator: 'Seabreeze Retreat, Inc.',
       address: '3893 Covington Hwy, Decatur, GA 30032',
-      contactName: 'Chequita Brown',
+      contactName: 'Casey Example',
       contactTitle: 'CLS Manager',
-      cell: '678-778-6120',
-      email: 'chequitabrown@seabreezeretreat.com',
+      cell: '678-555-0161',
+      email: 'casey@example.org',
     };
     render(<DayProgramSection patientId="p1" canEdit={false} actorName="" onToast={() => {}} />);
     expect(await screen.findByText("Treasure's Box")).toBeInTheDocument();
@@ -55,8 +55,8 @@ describe('DayProgramSection', () => {
     fireEvent.change(screen.getByPlaceholderText("e.g. Treasure's Box"), { target: { value: "Treasure's Box" } });
     fireEvent.change(screen.getByPlaceholderText('Street, city, state ZIP'), { target: { value: '3893 Covington Hwy, Decatur, GA 30032' } });
     const input = (field: string) => document.querySelector(`#dp-field-${field} input`) as HTMLInputElement;
-    fireEvent.change(input('contactName'), { target: { value: 'Chequita Brown' } });
-    fireEvent.change(input('email'), { target: { value: 'chequitabrown@seabreezeretreat.com' } });
+    fireEvent.change(input('contactName'), { target: { value: 'Casey Example' } });
+    fireEvent.change(input('email'), { target: { value: 'casey@example.org' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(1));

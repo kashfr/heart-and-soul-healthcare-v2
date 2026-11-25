@@ -70,7 +70,7 @@ async function cannotReadRoster(db) {
 }
 
 const authorizationLine = (patientId) => ({
-  patientId, paNumber: '126101100192', kind: 'skilled', covers: 'shift', rateBasis: 'week', rateHours: 16,
+  patientId, paNumber: '126999000101', kind: 'skilled', covers: 'shift', rateBasis: 'week', rateHours: 16,
   totalUnits: null, serviceCode: '', from: '2026-10-20', to: '2027-03-31', monthOverrides: { '2026-11': 69 }, note: '',
 });
 const documentMetadata = (uid, patientId, docId) => ({
