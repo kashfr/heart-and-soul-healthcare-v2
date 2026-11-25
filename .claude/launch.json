@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "Next.js Dev Server",
-      "runtimeExecutable": "/usr/local/bin/node",
+      "runtimeExecutable": "node",
       "runtimeArgs": [
         "node_modules/.bin/next",
         "dev",
@@ -15,7 +15,7 @@
     },
     {
       "name": "GAPP Dev Server",
-      "runtimeExecutable": "/usr/local/bin/node",
+      "runtimeExecutable": "node",
       "runtimeArgs": [
         "/Users/ksfreeman/Projects/georgiapediatricprogram/node_modules/.bin/next",
         "dev",

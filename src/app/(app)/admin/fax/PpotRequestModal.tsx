@@ -10,18 +10,21 @@ import { formatUSPhone } from '@/lib/phone';
 import { formatDateUS } from '@/lib/dateFormat';
 import { applyFieldErrors, FieldError, FIELD_ERROR_STYLE } from '@/lib/formEscort';
 import { formatUSFaxNumber, normalizeUSFaxNumber } from '@/lib/verbalOrderShared';
+import { withSelectChevron } from '@/lib/selectChevron';
 import type { OutboundFax } from '@/lib/faxShared';
 import {
   defaultPpotNote,
+  defaultPpotRequestType,
   PPOT_REQUEST_LABEL,
   validatePpotSendInput,
+  type PpotPhysicianOption,
   type PpotRequestType,
   type PpotSendField,
   type PpotSubject,
 } from '@/lib/ppotShared';
 
-// "Request a PPOT": pick the member (an open referral for a new case, a
-// client for a recertification), confirm the physician's fax, and send the
+// "Request a PPOT": pick the member (an open referral, or a client), pick the
+// physician from the member's record (or type one in), confirm the fax, and send the
 // BLANK Appendix T behind a cover sheet that identifies the member. The form
 // itself is never filled in: the GAPP manual (913.3) says providers cannot
 // complete the PPOT; the physician does.
@@ -33,6 +36,13 @@ export type PpotSubjectRow = PpotSubject & {
 
 const FIELD_ORDER: readonly PpotSendField[] = ['subject', 'requestType', 'medicaidId', 'recipientName', 'toNumber', 'confirmNumber', 'note'];
 const fieldId = (k: PpotSendField) => `ppot-${k}`;
+
+/** Typing a physician who is not on the record. */
+const OTHER = 'other';
+
+export function physicianOptionLabel(o: PpotPhysicianOption): string {
+  return [o.name, o.specialty, o.office, o.fax ? `Fax ${formatUSFaxNumber(o.fax)}` : 'No Fax on File'].filter(Boolean).join(' · ');
+}
 
 export function subjectLabel(s: PpotSubject): string {
   return s.kind === 'referral' ? 'Referral' : 'Client';
@@ -51,11 +61,15 @@ export default function PpotRequestModal({
 }) {
   const [subject, setSubject] = useState<PpotSubjectRow | null>(initial);
   const [q, setQ] = useState('');
-  const [requestType, setRequestType] = useState<PpotRequestType | ''>(initial ? (initial.kind === 'client' ? 'recert' : 'new') : '');
+  const [requestType, setRequestType] = useState<PpotRequestType | ''>(initial ? defaultPpotRequestType(initial) : '');
   const [medicaidId, setMedicaidId] = useState('');
-  const [recipientName, setRecipientName] = useState(initial?.physicianName || '');
-  const [recipientOrg, setRecipientOrg] = useState(initial?.physicianOffice || '');
-  const [toNumber, setToNumber] = useState(initial?.physicianFax ? formatUSFaxNumber(initial.physicianFax) : '');
+  // Which physician on the record the request is addressed to: an index into
+  // subject.physicians, OTHER, or '' until the sender chooses. Nothing is
+  // filled in for them: the record can list several doctors.
+  const [pick, setPick] = useState('');
+  const [recipientName, setRecipientName] = useState('');
+  const [recipientOrg, setRecipientOrg] = useState('');
+  const [toNumber, setToNumber] = useState('');
   const [confirmNumber, setConfirmNumber] = useState('');
   const [attachments, setAttachments] = useState<File[]>([]);
   const [note, setNote] = useState('');
@@ -79,13 +93,28 @@ export default function PpotRequestModal({
     setSubject(s);
     setQ('');
     clear('subject');
-    setRequestType(s.kind === 'client' ? 'recert' : 'new');
+    setRequestType(defaultPpotRequestType(s));
+    clear('requestType');
     setMedicaidId('');
-    setRecipientName(s.physicianName || '');
-    setRecipientOrg(s.physicianOffice || '');
-    setToNumber(s.physicianFax ? formatUSFaxNumber(s.physicianFax) : '');
+    setPick('');
+    setRecipientName('');
+    setRecipientOrg('');
+    setToNumber('');
     setConfirmNumber('');
   };
+
+  const options = subject?.physicians ?? [];
+  const picked = pick && pick !== OTHER ? options[Number(pick)] : undefined;
+  const choosePhysician = (v: string) => {
+    setPick(v);
+    const o = v && v !== OTHER ? options[Number(v)] : undefined;
+    setRecipientName(o?.name || '');
+    setRecipientOrg(o?.office || '');
+    setToNumber(o?.fax ? formatUSFaxNumber(o.fax) : '');
+    setConfirmNumber('');
+    setFieldErrors((prev) => ({ ...prev, recipientName: undefined, toNumber: undefined, confirmNumber: undefined }));
+  };
+  const faxFromRecord = !!picked?.fax && normalizeUSFaxNumber(toNumber) === picked.fax;
 
   const hasMedicaid = !!(subject?.medicaidId || medicaidId.trim());
 
@@ -204,6 +233,19 @@ export default function PpotRequestModal({
               <FieldError message={fieldErrors.requestType} />
             </div>
 
+            {options.length > 0 && (
+              <label style={fieldStyle}>
+                <span style={fieldLabelStyle}>Physician on the record</span>
+                <select value={pick} onChange={(e) => choosePhysician(e.target.value)} style={selectStyle} aria-label="Physician on the record">
+                  <option value="">Choose a Physician</option>
+                  {options.map((o, i) => (
+                    <option key={`${i}:${o.name}`} value={String(i)}>{physicianOptionLabel(o)}</option>
+                  ))}
+                  <option value={OTHER}>Someone Else (Type It In)</option>
+                </select>
+              </label>
+            )}
+
             <div style={twoColStyle}>
               <label style={fieldStyle} id={fieldId('recipientName')}>
                 <span style={fieldLabelStyle}>Physician</span>
@@ -217,7 +259,7 @@ export default function PpotRequestModal({
             </div>
             <div style={twoColStyle}>
               <label style={fieldStyle} id={fieldId('toNumber')}>
-                <span style={fieldLabelStyle}>Physician fax{subject?.physicianFax ? ' (from the record)' : ''}</span>
+                <span style={fieldLabelStyle}>Physician fax{faxFromRecord ? ' (from the record)' : ''}</span>
                 <input type="tel" inputMode="tel" autoComplete="off" value={toNumber} onChange={(e) => { setToNumber(formatUSPhone(e.target.value)); clear('toNumber'); clear('confirmNumber'); }} style={{ ...inp, ...(fieldErrors.toNumber ? FIELD_ERROR_STYLE : null) }} aria-invalid={!!fieldErrors.toNumber} placeholder="(404) 555-0101" />
                 <FieldError message={fieldErrors.toNumber} />
               </label>
@@ -267,6 +309,7 @@ const fieldStyle: React.CSSProperties = { display: 'grid', gap: 5 };
 const fieldLabelStyle: React.CSSProperties = { fontSize: 12, color: '#5c6b7a', fontWeight: 600 };
 const metaStyle: React.CSSProperties = { fontSize: 12.5, color: '#7f8c8d' };
 const inp: React.CSSProperties = { width: '100%', boxSizing: 'border-box', border: '1px solid #d1d5db', borderRadius: 8, padding: '8px 10px', fontSize: 14, fontFamily: 'inherit', color: '#111827' };
+const selectStyle = withSelectChevron(inp);
 const searchWrapStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, background: 'white', border: '1px solid #d1d5db', borderRadius: 8, padding: '8px 12px' };
 const searchInputStyle: React.CSSProperties = { border: 'none', outline: 'none', fontSize: 14, flex: 1, fontFamily: 'inherit', color: '#111827', minWidth: 0 };
 const resultsStyle: React.CSSProperties = { position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 4, background: 'white', border: '1px solid #d1d5db', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 2, maxHeight: 280, overflowY: 'auto' };

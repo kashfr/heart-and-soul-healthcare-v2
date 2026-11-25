@@ -26,7 +26,9 @@ import {
   defaultPpotNote,
   ppotCandidatesForInbound,
   latestAuthEnd,
+  ppotPhysicianOptions,
   ppotSubjectFromReferral,
+  samePhysician,
   PPOT_REQUEST_LABEL,
   ppotReminderNote,
   ppotRequestUrgency,
@@ -71,7 +73,10 @@ async function clientSubjects(ids?: string[]): Promise<PpotSubject[]> {
     ? (await db.getAll(...ids.map((id) => db.collection('patients').doc(id)))).filter((d) => d.exists)
     : (await db.collection('patients').get()).docs;
   if (patientDocs.length === 0) return [];
-  const clinical = await db.getAll(...patientDocs.map((d) => d.ref.collection('clinical').doc('profile')));
+  const [clinical, physicianDocs] = await Promise.all([
+    db.getAll(...patientDocs.map((d) => d.ref.collection('clinical').doc('profile'))),
+    db.getAll(...patientDocs.map((d) => d.ref.collection('clinical').doc('physicians'))),
+  ]);
   const authSnap = ids
     ? await db.collection('hoursAuthorizations').where('patientId', 'in', ids.slice(0, 30)).get()
     : await db.collection('hoursAuthorizations').get();
@@ -86,17 +91,25 @@ async function clientSubjects(ids?: string[]): Promise<PpotSubject[]> {
     const p = d.data() || {};
     const c = clinical[i]?.data() || {};
     const therap = Array.isArray(p.authorizations) ? (p.authorizations as Array<{ to?: string }>) : [];
+    const card = physicianDocs[i]?.data()?.list;
+    const physicianName = String(c.physicianName || '').trim();
+    const physicianFax = normalizeUSFaxNumber(String(c.physicianFax || ''));
+    // The Physicians card carries the practice; the profile does not.
+    const physicians = ppotPhysicianOptions({ name: physicianName, fax: physicianFax }, Array.isArray(card) ? card : []);
+    const attending = physicians.find((o) => samePhysician(o.name, physicianName));
     return {
       kind: 'client' as const,
       id: d.id,
       name: String(p.name || ''),
       dob: formatDateUS(String(p.dob || '')),
       medicaidId: cleanMedicaidId(String(c.medicaidId || '')),
-      physicianName: String(c.physicianName || ''),
-      physicianOffice: '',
-      physicianFax: normalizeUSFaxNumber(String(c.physicianFax || '')),
+      physicianName,
+      physicianOffice: attending?.office || '',
+      physicianFax,
       context: String(p.program || ''),
       authEnd: latestAuthEnd([...(authByPatient.get(d.id) || []), ...therap]),
+      physicians,
+      fromReferralId: String(p.referralId || ''),
     };
   });
 }
@@ -150,7 +163,9 @@ async function dismissedRecerts(): Promise<Set<string>> {
   return new Set(snap.docs.map((d) => d.id));
 }
 
-/** Everyone a PPOT can be requested for: open referrals and all clients. */
+/** Everyone a PPOT can be requested for: open referrals that have no client
+ *  record yet, and all clients. A referral that became a client is listed
+ *  once, as the client. */
 export async function listPpotSubjects(): Promise<{ subjects: PpotSubjectRow[]; recertLeadDays: number }> {
   const [settings, referrals, clients, last, dismissed] = await Promise.all([
     getServerSettings(),
@@ -163,7 +178,7 @@ export async function listPpotSubjects(): Promise<{ subjects: PpotSubjectRow[]; 
   const lead = settings.fax.recertLeadDays;
   const rows: PpotSubjectRow[] = [];
   for (const r of referrals) {
-    if (CLOSED_REFERRAL_STAGES.has(r.stage)) continue;
+    if (CLOSED_REFERRAL_STAGES.has(r.stage) || r.patientId) continue;
     const s = ppotSubjectFromReferral(r);
     rows.push({ ...s, lastRequest: last.get(requestKey('referral', r.id)) ?? null, recert: null });
   }
@@ -259,10 +274,19 @@ export async function sendPpotRequest(input: PpotSendInput, caller: AuthedCaller
   // Save what we learned back to the record so the next request fills itself.
   try {
     if (subject.kind === 'client') {
-      const patch: Record<string, unknown> = { ...clientAuditActor(caller), physicianFax: toNumber, updatedAt: FieldValue.serverTimestamp() };
-      if (!subject.physicianName) patch.physicianName = input.recipientName.trim();
+      // Only for the attending physician: a request sent to a specialist must
+      // not put the specialist's fax under the attending's name.
+      const patch: Record<string, unknown> = {};
+      if (!subject.physicianName) {
+        patch.physicianName = input.recipientName.trim();
+        patch.physicianFax = toNumber;
+      } else if (samePhysician(subject.physicianName, input.recipientName)) {
+        patch.physicianFax = toNumber;
+      }
       if (!subject.medicaidId && medicaidId) patch.medicaidId = medicaidId;
-      await db.collection('patients').doc(subject.id).collection('clinical').doc('profile').set(patch, { merge: true });
+      if (Object.keys(patch).length > 0) {
+        await db.collection('patients').doc(subject.id).collection('clinical').doc('profile').set({ ...clientAuditActor(caller), ...patch, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      }
     } else {
       await logReferralActivity(subject.id, {
         type: 'contact',

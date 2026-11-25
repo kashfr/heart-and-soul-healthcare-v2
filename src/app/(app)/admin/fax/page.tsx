@@ -104,7 +104,10 @@ export default function FaxCenterPage() {
     deepLinkDone.current = true;
     if (!want) return;
     const [kind, id] = want.split(':');
-    const hit = ppotSubjects.find((x) => x.kind === kind && x.id === id);
+    // A referral that has since become a client opens as the client.
+    const hit =
+      ppotSubjects.find((x) => x.kind === kind && x.id === id) ??
+      (kind === 'referral' ? ppotSubjects.find((x) => x.kind === 'client' && x.fromReferralId === id) : undefined);
     if (hit) setPpotOpen({ initial: hit });
     window.history.replaceState(null, '', window.location.pathname);
   }, [ppotSubjects]);
