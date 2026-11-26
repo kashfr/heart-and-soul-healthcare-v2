@@ -62,7 +62,7 @@ describe('reconcilePatient', () => {
   });
 
   it('stays quiet about MAR and care team for a client who has not started', () => {
-    // Joy Daughtrey's shape: classified, but the authorization begins later.
+    // One client's shape: classified, but the authorization begins later.
     const notStarted: ReconcileSubject = {
       program: 'now-comp',
       serviceLevel: 'rn-lpn-daily',

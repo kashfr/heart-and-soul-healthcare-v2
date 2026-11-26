@@ -25,7 +25,7 @@ admin.initializeApp({ credential: admin.credential.applicationDefault(), project
 const db = admin.firestore();
 const APPLY = process.argv.includes('--apply');
 
-/** 'LALANI, LAHIN' -> 'Lahin Lalani'. Folder names are LAST, FIRST. */
+/** 'DOE, JANE' -> 'Jane Doe'. Folder names are LAST, FIRST. */
 function folderToName(folder) {
   const [last, first] = folder.split(',').map((s) => s.trim());
   if (!first) return null;
@@ -84,7 +84,7 @@ function parseAuthorizations(file) {
   console.log(`project: ${PROJECT}   mode: ${APPLY ? 'APPLY' : 'DRY RUN'}\n`);
   const snap = await db.collection('patients').get();
   // Keyed case-insensitively: folder names are LAST, FIRST in caps, and
-  // title-casing them mangles internal capitals ("McCallister" -> "Mccallister").
+  // title-casing them mangles internal capitals ("McDonald" -> "Mcdonald").
   const byName = new Map(snap.docs.map((d) => [String(d.data().name).toLowerCase(), d]));
 
   const folders = fs

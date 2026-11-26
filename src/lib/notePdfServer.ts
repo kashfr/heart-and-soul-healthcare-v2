@@ -106,7 +106,7 @@ export async function renderNotePdf(data: ProgressNoteFormData, noteId?: string 
   return renderToBuffer(element);
 }
 
-/** 'Oversight_Note_Ann_Torres_09-07-2026.pdf' / 'Progress_Note_...'. */
+/** 'Oversight_Note_Jane_Doe_09-07-2026.pdf' / 'Progress_Note_...'. */
 export function notePdfFilename(data: { q3_clientName?: string; q6_dateofService?: string; noteType?: string }): string {
   const clientName = sanitize(data.q3_clientName || 'client');
   const dateStr = isoFromAnyDate(data.q6_dateofService);

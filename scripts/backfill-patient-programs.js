@@ -31,11 +31,11 @@ const GAPP = [
  *
  * Reconciled against the Therap service authorizations on 2026-08-12: an NL1
  * (Nursing Services - LPN) line with Frequency: Daily is the authoritative
- * marker. Guffey, Hall, Lalani and Torres all carry one. Lahin Lalani was
+ * marker. Every client below carries one. One of them was
  * initially classified oversight-only from conversation alone; his NL1 runs
  * 08/12/2026 to 02/11/2027 at 3 hours daily, effective today.
  *
- * Joy Daughtrey is on this list on Kaheem's word rather than an authorization,
+ * One client is on this list on Kaheem's word rather than an authorization,
  * because she has no authorization filed yet (new client, not yet started).
  */
 const DAILY_LPN = ['Kimberly Guffey', 'Ann Torres', 'Danielle Hall', 'Joy Daughtrey', 'Lahin Lalani'];

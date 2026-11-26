@@ -7,7 +7,7 @@ const NOW = new Date('2026-10-06T17:00:00Z');
 
 describe('callSheetFileName', () => {
   it('names one sheet after the client and the day it was received', () => {
-    expect(callSheetFileName([ref('Paisley Wiggins', '2026-10-06T15:02:00Z')], NOW)).toBe('Paisley Wiggins Call Sheet 10-06-2026');
+    expect(callSheetFileName([ref('Jane Doe', '2026-10-06T15:02:00Z')], NOW)).toBe('Jane Doe Call Sheet 10-06-2026');
   });
 
   it('uses the agency date, not UTC (a 10 PM Eastern referral stays on its own day)', () => {

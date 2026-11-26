@@ -19,7 +19,7 @@ export interface StaffListItem {
 }
 
 /** Case-insensitive substring match across the visible columns. A digits-only
-    fallback lets a query like "3478203" find "(347) 820-0388" despite the
+    fallback lets a query like "3475550" find "(347) 555-0188" despite the
     stored formatting. */
 export function staffMatchesQuery(s: StaffListItem, query: string): boolean {
   const q = query.trim().toLowerCase();

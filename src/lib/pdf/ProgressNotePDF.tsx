@@ -709,7 +709,7 @@ function AmendedVersions({ fieldKey }: { fieldKey?: string }) {
  * Multi-paragraph text, one <Text> per line. react-pdf under-measures blank
  * lines inside a single <Text> (each one leaves the box about a line short),
  * so a long answer with paragraph breaks spilled its last paragraph over the
- * next field (Ricky Y.'s 10/08/2026 oversight note: six blank lines in
+ * next field (a client's 10/08/2026 oversight note: six blank lines in
  * Actions, the last line printed on top of Communication). Each blank line
  * becomes a fixed-height spacer instead.
  */

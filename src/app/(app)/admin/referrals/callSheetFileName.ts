@@ -16,7 +16,7 @@ function safe(text: string): string {
 /**
  * The name Chrome offers when a call sheet is saved as a PDF. Chrome uses the
  * page title, which was the same site title for every referral, so each save
- * collided with the last. One referral: "Paisley Wiggins Call Sheet
+ * collided with the last. One referral: "Jane Doe Call Sheet
  * 10-06-2026" (the date it was received). Several: "Referral Call Sheets (3)
  * 10-06-2026" (the date printed).
  */

@@ -3,7 +3,7 @@ import { formatDateUS } from './dateFormat';
 // authorizations, and the flags the rest of the portal keys off.
 //
 // Why this exists: serviceLevel is hand-entered, and hand-entered fields rot.
-// Lahin Lalani sat classified as RN-oversight-only while carrying an NL1 line
+// One client sat classified as RN-oversight-only while carrying an NL1 line
 // at 3 hours daily, because the classification came from a conversation and
 // nobody compared it to the authorization. The data to catch that was already
 // in the record; nothing was looking at it.

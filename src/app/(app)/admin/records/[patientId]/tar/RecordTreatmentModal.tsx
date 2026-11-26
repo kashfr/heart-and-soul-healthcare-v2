@@ -203,7 +203,7 @@ export default function RecordTreatmentModal({
                   value={performerName}
                   onChange={(e) => { setPerformerName(e.target.value); clearErr('performerName'); }}
                   style={{ ...input, ...hi('performerName') }}
-                  placeholder="e.g., Paula Krone (mother)"
+                  placeholder="e.g., Jane Doe (mother)"
                 />
                 <FieldError message={errors.performerName} />
               </div>

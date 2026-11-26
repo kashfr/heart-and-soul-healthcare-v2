@@ -4,7 +4,7 @@
  * HCP and proxy-caregiver training for day-program staff, and to know where a
  * client is (and who is checking his blood sugar) during the day.
  *
- * Origin (09/2026): the only record of Ricky Yancey's day program was a
+ * Origin (09/2026): the only record of one client's day program was a
  * July 2025 ICST form naming a provider he had already left, and the office
  * address in the new provider's email signature was not the program site.
  * One structured record per client replaces digging through PDFs and email.

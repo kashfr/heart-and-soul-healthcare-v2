@@ -75,7 +75,7 @@ describe('reminder messages', () => {
     const m = servicePlanReminderEmail(items, 'Ashley');
     expect(m.subject).toBe('2 Service Plans Need Attention');
     expect(m.body).toContain("2 clients' service plans need attention: 1 overdue and 1 with no service plan on file.");
-    expect(m.body).not.toMatch(/Cataleya|Torres/);
+    expect(m.body).not.toMatch(/Cataleya|Ann Example/);
     expect(m.body).not.toMatch(/—|–/);
     expect(servicePlanReminderEmail([items[0]], '').subject).toBe('A Service Plan Needs Attention');
   });

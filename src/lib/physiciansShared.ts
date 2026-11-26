@@ -4,8 +4,8 @@
  * profile's single attending physician, which is where verbal orders and
  * PPOT requests are addressed; this list is the reference directory.
  *
- * Origin (09/2026): Ricky Yancey's endocrinologist had changed (Athens to
- * Piedmont Buckhead) with no fax number anywhere in his record, and his
+ * Origin (09/2026): one client's endocrinologist had changed (to a new
+ * practice) with no fax number anywhere in his record, and his
  * optometrist had been entered as his attending physician.
  *
  * Pure module (no Firestore) so validation is unit-testable.

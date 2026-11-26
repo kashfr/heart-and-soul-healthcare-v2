@@ -77,7 +77,7 @@ export interface Patient {
   /**
    * 'YYYY-MM-DD' official start of care: the date support coordination set us
    * up to begin, the one carried on the ISP and the authorizations. Kept even
-   * when scheduling delays the first visit (Lahin Lalani started 08/12/2026 on
+   * when scheduling delays the first visit (one client started 08/12/2026 on
    * paper while first contact was still pending) — from this date onward the
    * record is expected to be service-ready, so the daily-care checks measure
    * against it. Unset means no start date exists yet. Deliberately separate
