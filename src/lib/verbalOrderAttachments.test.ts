@@ -33,3 +33,9 @@ it('rejects an oversized packet without submitting or changing saved attachments
   expect(row.supportingStoragePath).toBe('original');
   expect(m.queue).not.toHaveBeenCalled();
 });
+it('names the organization beside the sender in the fax header, and the org alone on the automatic reminder', async () => {
+  await faxVerbalOrder('order1', { uid: 'staff', name: 'Test Nurse' });
+  expect(m.queue.mock.calls[0][0].senderName).toBe('Test Nurse');
+  await faxVerbalOrder('order1', { uid: '', name: 'Portal (reminder)' });
+  expect(m.queue.mock.calls[1][0].senderName).toBe('');
+});

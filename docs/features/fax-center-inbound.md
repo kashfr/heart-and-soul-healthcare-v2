@@ -243,3 +243,27 @@ Defaults may be applied to pending files. Sequential progress and per-file error
 keep confirmed successful uploads out of subsequent retries. Existing upload
 permissions, storage rules, and audit paths are unchanged. Replacement of an
 existing document remains a single-file action. No migration or rule change.
+
+## Outbound sender identity (every fax names the organization)
+
+Every fax the portal sends names Heart and Soul Healthcare beside the sender,
+through one helper in `src/lib/faxShared.ts`:
+
+- `faxSenderLine(name)` gives "<Name>, Heart and Soul Healthcare", or the
+  organization alone when no name is known (automatic PPOT and verbal-order
+  reminders). It never doubles the organization. The cover sheet's From line
+  uses it.
+- `faxHeaderLine(name)` is the SRFax header (`sFaxFromHeader`, printed across
+  the top of every page, so it also covers faxes sent without a cover sheet and
+  every verbal-order fax). If the full line passes SRFax's 50-character limit
+  it falls back to the organization alone, so a long name never cuts it off.
+- `srfaxQueueFax` takes a required `senderName` and always builds the header
+  itself; no caller can send a bare name or leave the header off.
+- A Resend keeps the original sender (`sentByName`), not whoever pressed it.
+
+Tests: `src/lib/faxSender.test.ts` (helper, wire header, cover From line),
+`src/lib/faxCenterSender.test.ts` (Fax Center, ROI, PPOT send + retry),
+`src/lib/verbalOrderAttachments.test.ts` (verbal orders and the reminder).
+
+Faxes sent outside the portal (the SRFax web site or email-to-fax) use the
+SRFax account's own header and cover settings, which the portal cannot change.
