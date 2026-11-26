@@ -8,7 +8,10 @@ import { parseDocumentPeriod } from './documentPeriod';
 export const DOC_CATEGORY_GROUPS = [
   {
     label: 'Care planning & orders',
-    categories: ['Plan of Care (485)', 'Service Plan', 'Initial Assessment', 'Nursing Assessment / 60-Day Summary', 'Physician Orders', 'Medication List'],
+    // Healthcare Plan: the RN's condition-specific plans (cardiovascular,
+    // endocrine, skin integrity...). The progress note reads this category by
+    // name to list the plans a nurse must review (healthcarePlanReview.ts).
+    categories: ['Plan of Care (485)', 'Service Plan', 'Healthcare Plan', 'Initial Assessment', 'Nursing Assessment / 60-Day Summary', 'Physician Orders', 'Medication List'],
   },
   {
     label: 'Visits & notes',

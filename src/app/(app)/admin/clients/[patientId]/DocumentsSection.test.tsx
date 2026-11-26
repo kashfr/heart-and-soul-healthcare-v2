@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 const fileNoteMock = vi.fn<(noteId: string) => Promise<void>>(async () => {});
 const refreshPlanMock = vi.fn<(id: string) => Promise<void>>(async () => {});
@@ -25,6 +25,8 @@ vi.mock('@/lib/patientDocuments', async () => {
   };
 });
 vi.mock('@/lib/patients', () => ({ getPatients: vi.fn(async () => []) }));
+// The review table calls the API through authedFetch, which loads Firebase.
+vi.mock('./HealthcarePlanReviewStatus', () => ({ default: ({ planKey }: { planKey: string }) => <div data-testid="hcp-review-status">{planKey}</div> }));
 
 import DocumentsSection from './DocumentsSection';
 import * as docsLib from '@/lib/patientDocuments';
@@ -226,6 +228,22 @@ describe('DocumentsSection, entries filed from a service plan', () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
     expect(onToast).toHaveBeenCalledWith(expect.stringMatching(/current layout/i));
     expect(fileNoteMock).not.toHaveBeenCalled();
+  });
+  describe('healthcare plan review status', () => {
+    const plan: PatientDocument = { ...base, id: 'doc-hcp', category: 'Healthcare Plan', title: 'Healthcare Plan - Skin Integrity Management', docDate: '2026-11-19' };
+
+    it('shows staff the review table when the client has healthcare plans', () => {
+      renderSection([uploaded, plan]);
+      expect(screen.getByTestId('hcp-review-status').textContent).toBe('doc-hcp:patients/p1/documents/d/x.pdf');
+    });
+
+    it('hides it from nurses, for archived plans, and when there are none', () => {
+      renderSection([uploaded, plan], { isStaff: false });
+      expect(screen.queryByTestId('hcp-review-status')).toBeNull();
+      cleanup();
+      renderSection([uploaded, { ...plan, archived: true }]);
+      expect(screen.queryByTestId('hcp-review-status')).toBeNull();
+    });
   });
 });
 

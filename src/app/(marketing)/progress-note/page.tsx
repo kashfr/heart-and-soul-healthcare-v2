@@ -33,6 +33,7 @@ import styles from './page.module.css';
 import FormPageOne from './components/FormPageOne';
 import FormPageTwo from './components/FormPageTwo';
 import FormPageThree from './components/FormPageThree';
+import { unreviewedPlansOnNote } from '@/lib/healthcarePlanReview';
 import FormPageFour from './components/FormPageFour';
 import FormPageFive from './components/FormPageFive';
 import {
@@ -1586,6 +1587,39 @@ function ProgressNotePageInner() {
         alert(
           `${unansweredTasks.length === 1 ? 'A care plan task still needs' : 'Some care plan tasks still need'} an answer:\n\n${taskList}${more}\n\n` +
           `We've taken you to the Care Plan Tasks section — answer each task (“N/A” is fine when it doesn't apply today).`
+        );
+        return;
+      }
+    }
+
+    // Healthcare plan review gate. When the client has healthcare plans on
+    // file, the nurse must hold a read receipt for the current version of
+    // each one (see HealthcarePlansPanel, which keeps the hcpReviewMeta
+    // snapshot current). New notes only. If the list could not be loaded the
+    // snapshot is empty and the note is not held up by it.
+    if (!isEditMode && activePages.includes(3)) {
+      const unreviewed = unreviewedPlansOnNote(getValues() as Record<string, unknown>);
+      if (unreviewed.length > 0) {
+        setCurrentPage(3);
+        const firstId = unreviewed[0].documentId;
+        setTimeout(() => {
+          const el = formRef.current?.querySelector(`#hcpPlan_${firstId}`) as HTMLElement | null;
+          if (!el) return;
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.style.border = '2px solid #c62828';
+          el.style.background = '#fff5f5';
+          const clear = () => {
+            el.style.border = '';
+            el.style.background = '';
+            el.removeEventListener('click', clear);
+          };
+          el.addEventListener('click', clear);
+        }, 150);
+        const planList = unreviewed.slice(0, 6).map((p) => `• ${p.title}`).join('\n');
+        const more = unreviewed.length > 6 ? `\n…and ${unreviewed.length - 6} more` : '';
+        alert(
+          `${unreviewed.length === 1 ? "One of this client's healthcare plans still needs" : "Some of this client's healthcare plans still need"} your review:\n\n${planList}${more}\n\n` +
+          `We've taken you to Healthcare Plans in the Safety Checklist. Open each plan, read it, then choose "I Have Read This Plan". You only do this once per plan.`
         );
         return;
       }

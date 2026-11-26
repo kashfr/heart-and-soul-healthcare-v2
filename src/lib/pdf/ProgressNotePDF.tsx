@@ -12,6 +12,7 @@ import { describeBaselines } from '@/lib/vitalsBaselines';
 import { readVitalsRechecks, recheckAbnormalVitals, recheckBloodPressure, recheckWhen, vitalsRecheckAllKeys, MAX_VITALS_RECHECKS, recheckAddedKey, type VitalsRecheck } from '@/lib/vitalsRecheck';
 import { formatDuration, readSeizureEntries, seizureDurationSeconds, sortSeizuresByStart } from '../seizureShared';
 import { parseCareTaskCharting } from '@/lib/careTaskCharting';
+import { hcpReviewLines } from '@/lib/healthcarePlanReview';
 import { SUPERVISORY_NOTE_TYPE } from '@/lib/supervisoryVisit';
 import { servicePlanStatusLabel } from '@/lib/servicePlanShared';
 import { followUpSummary, FOLLOW_UP_ACTION_KEY } from '@/lib/vitalsFollowUp';
@@ -1396,9 +1397,10 @@ export default function ProgressNotePDF({ data, vitalsOverride, branding, editHi
         )}
 
         {/* 7. Safety Checklist */}
-        {anyHasValue(data, ['q27_safetyChecklist', 'q27_safetyOther', 'q27_fallsInjuries', 'q27_allSystemsWNL', 'q27_safetyNotes']) && (
+        {anyHasValue(data, ['q27_safetyChecklist', 'hcpReviewMeta', 'q27_safetyOther', 'q27_fallsInjuries', 'q27_allSystemsWNL', 'q27_safetyNotes']) && (
           <Section title="Safety Checklist">
             {hasValue(data.q27_safetyChecklist) && <TextBlock fieldKey="q27_safetyChecklist" label="Checklist Items" value={data.q27_safetyChecklist} />}
+            {hcpReviewLines(data).length > 0 && <TextBlock label="Healthcare Plans Reviewed by This Nurse" value={hcpReviewLines(data).join('\n')} />}
             {hasValue(data.q27_safetyOther) && <TextBlock fieldKey="q27_safetyOther" label="Other" value={data.q27_safetyOther} />}
             {hasValue(data.q27_fallsInjuries) && <TextBlock fieldKey="q27_fallsInjuries" label="Falls / Injuries" value={data.q27_fallsInjuries} />}
             {hasValue(data.q27_allSystemsWNL) && <Field fieldKey="q27_allSystemsWNL" label="All Systems WNL" value={data.q27_allSystemsWNL} />}

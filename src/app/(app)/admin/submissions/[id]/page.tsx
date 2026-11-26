@@ -33,6 +33,7 @@ import { readShiftChange } from '@/lib/shiftChange';
 import { buildFieldAmendments, type FieldVersion } from '@/lib/revisionFormat';
 import { programLabel } from '@/lib/programs';
 import { SUPERVISORY_NOTE_TYPE } from '@/lib/supervisoryVisit';
+import { hcpReviewLines } from '@/lib/healthcarePlanReview';
 import styles from './page.module.css';
 
 // Field key -> its prior values (oldest-first) for inline "struck old -> current"
@@ -995,10 +996,16 @@ export default function SubmissionDetailPage({ params }: PageProps) {
         {/* 7. SAFETY CHECKLIST */}
         <ConditionalSection
           title="Safety Checklist"
-          keys={['q27_safetyChecklist', 'q27_safetyOther', 'q27_fallsInjuries', 'q27_allSystemsWNL', 'q27_safetyNotes']}
+          keys={['q27_safetyChecklist', 'hcpReviewMeta', 'q27_safetyOther', 'q27_fallsInjuries', 'q27_allSystemsWNL', 'q27_safetyNotes']}
           data={data}
         >
           {hasValue(data.q27_safetyChecklist) && <TextBlock fieldKey="q27_safetyChecklist" label="Checklist Items" value={data.q27_safetyChecklist} />}
+            {hcpReviewLines(data).length > 0 && (
+            <div style={textBlockStyle}>
+              <div style={textBlockLabelStyle}>Healthcare Plans Reviewed by This Nurse:</div>
+              {hcpReviewLines(data).map((line) => <div key={line}>{line}</div>)}
+            </div>
+          )}
           {hasValue(data.q27_safetyOther) && <TextBlock fieldKey="q27_safetyOther" label="Other" value={data.q27_safetyOther} />}
           {hasValue(data.q27_fallsInjuries) && <TextBlock fieldKey="q27_fallsInjuries" label="Falls/Injuries" value={data.q27_fallsInjuries} />}
           {hasValue(data.q27_allSystemsWNL) && <Field fieldKey="q27_allSystemsWNL" label="All Systems WNL" value={data.q27_allSystemsWNL} />}

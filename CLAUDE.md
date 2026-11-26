@@ -41,4 +41,6 @@ Read the matching note before changing one of these features.
   docs/features/phone-referrals.md
 - Editing referrals (Edit Details: phone referrals fully, website referrals
   only in fields the GAPP screening never reads): docs/features/referral-editing.md
+- Healthcare plan review (Healthcare Plan documents, read receipts, the
+  progress-note panel and submit gate): docs/features/healthcare-plan-review.md
 - Declared test account and test client: TEST-ACCOUNT.md
