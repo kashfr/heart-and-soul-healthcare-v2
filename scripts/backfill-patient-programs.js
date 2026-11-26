@@ -5,8 +5,12 @@
 // anyone not in the GAPP list, and RN oversight only is the default service
 // level, because the daily-LPN caseload is the short, explicitly-known list.
 //
-// Dry run (prints the plan, writes nothing):   node scripts/backfill-patient-programs.js
-// Apply:                                       node scripts/backfill-patient-programs.js --apply
+// The client names live OUTSIDE the repo (this repo is public). Pass a local
+// JSON file, kept out of git, shaped like:
+//   { "gapp": ["First Last", ...], "dailyLpn": ["First Last", ...] }
+//
+// Dry run (prints the plan, writes nothing):   node scripts/backfill-patient-programs.js --mapping ~/hs-program-mapping.json
+// Apply:                                       node scripts/backfill-patient-programs.js --mapping ~/hs-program-mapping.json --apply
 //
 // Safe to re-run: it skips any client already carrying the intended values, and
 // it hard-aborts if it sees a name it has no mapping for rather than guessing.
@@ -17,28 +21,31 @@ const PROJECT = 'heart-and-soul-hc';
 admin.initializeApp({ credential: admin.credential.applicationDefault(), projectId: PROJECT });
 const db = admin.firestore();
 
-/** Georgia Pediatric Program members. Everyone else on the roster is NOW/COMP. */
-const GAPP = [
-  'Yanira Fernando-Bautista',
-  'Tora Vinson',
-  'Cataleya Plaza',
-  'Sapphire Simmons',
-  'Piper Young',
-];
-
 /**
- * Clients staffed with daily LPN services on top of RN oversight.
- *
- * Reconciled against the Therap service authorizations on 2026-08-12: an NL1
- * (Nursing Services - LPN) line with Frequency: Daily is the authoritative
- * marker. Every client below carries one. One of them was
- * initially classified oversight-only from conversation alone; his NL1 runs
- * 08/12/2026 to 02/11/2027 at 3 hours daily, effective today.
- *
- * One client is on this list on Kaheem's word rather than an authorization,
- * because she has no authorization filed yet (new client, not yet started).
+ * The mapping, read from the --mapping file:
+ *   gapp      Georgia Pediatric Program members. Everyone else is NOW/COMP.
+ *   dailyLpn  Clients staffed with daily LPN services on top of RN oversight.
+ *             An NL1 (Nursing Services - LPN) line with Frequency: Daily on the
+ *             Therap authorization is the authoritative marker.
  */
-const DAILY_LPN = ['Kimberly Guffey', 'Ann Torres', 'Danielle Hall', 'Joy Daughtrey', 'Lahin Lalani'];
+function loadMapping() {
+  const at = process.argv.indexOf('--mapping');
+  const file = at > -1 ? process.argv[at + 1] : '';
+  if (!file) {
+    console.error('ABORT: pass --mapping <file.json> ({ "gapp": [...], "dailyLpn": [...] }). The names are not kept in the repo.');
+    process.exit(1);
+  }
+  const raw = JSON.parse(require('fs').readFileSync(require('path').resolve(file.replace(/^~(?=\/)/, require('os').homedir())), 'utf8'));
+  const list = (v, key) => {
+    if (!Array.isArray(v) || !v.every((n) => typeof n === 'string' && n.trim())) {
+      console.error(`ABORT: "${key}" in the mapping file must be an array of names.`);
+      process.exit(1);
+    }
+    return v.map((n) => n.trim());
+  };
+  return { gapp: list(raw.gapp, 'gapp'), dailyLpn: list(raw.dailyLpn, 'dailyLpn') };
+}
+const { gapp: GAPP, dailyLpn: DAILY_LPN } = loadMapping();
 
 /** Test logins are deliberately left unclassified so they never skew a filter. */
 const SKIP = ['ZZ Test Client'];
