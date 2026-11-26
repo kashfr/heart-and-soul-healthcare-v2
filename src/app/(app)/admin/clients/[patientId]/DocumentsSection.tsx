@@ -1,4 +1,6 @@
 'use client';
+import HealthcarePlanReviewStatus from './HealthcarePlanReviewStatus';
+import { HEALTHCARE_PLAN_CATEGORY } from '@/lib/healthcarePlanReview';
 import BulkDocumentUpload from '@/components/BulkDocumentUpload';
 import { useViewAsGuard } from '@/components/ImpersonationProvider';
 
@@ -121,6 +123,12 @@ export default function DocumentsSection({
     return [...ordered, ...legacy];
   }, [accessible]);
 
+  // Identifies the current set of healthcare plan files; '' when there are none.
+  const healthcarePlanKey = useMemo(
+    () => documents.filter((d) => d.category === HEALTHCARE_PLAN_CATEGORY && !d.archived).map((d) => `${d.id}:${d.storagePath}`).sort().join('|'),
+    [documents],
+  );
+
   const view = async (d: PatientDocument) => {
     // Open the tab SYNCHRONOUSLY inside the click gesture — after the awaited
     // fetch, browsers treat window.open as an unsolicited popup and silently
@@ -242,6 +250,7 @@ export default function DocumentsSection({
 
   return (
     <div>
+      {isStaff && healthcarePlanKey && <HealthcarePlanReviewStatus patientId={patientId} planKey={healthcarePlanKey} />}
       <div style={toolbarStyle}>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flex: 1 }}>
           {['All', ...chipCategories].map((c) => (

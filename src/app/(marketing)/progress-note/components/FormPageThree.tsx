@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { FormPageProps } from '../types';
 import styles from '../page.module.css';
 import DeselectableRadio, { radioState, radioSubscribe, radioGetSnapshot } from './DeselectableRadio';
 import FieldError from './FieldError';
 import { rangeValidator } from '../validators';
 import SeizureLogSection from './SeizureLogSection';
+import HealthcarePlansPanel from './HealthcarePlansPanel';
+import { CARE_PLAN_REVIEWED_VALUE, unreviewedPlansOnNote } from '@/lib/healthcarePlanReview';
 
 const getGlobalSnapshotStr = () => String(radioGetSnapshot());
 
@@ -34,6 +36,18 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
   useSyncExternalStore(radioSubscribe, getGlobalSnapshotStr, getGlobalSnapshotStr);
   const feedingTubePresent = radioState['q33_gtubePresent'] === 'Yes';
   const feedingGivenYes = radioState['q33_feedingGiven'] === 'Yes';
+
+  // Healthcare plan review (new notes only). While any of the client's plans
+  // is unreviewed by this nurse, "Care plan reviewed at start of shift"
+  // cannot be ticked; the submit gate in page.tsx is the enforcement layer.
+  const hcpPatientId = String(watch('patientId') || '');
+  const hcpPending = !isEditMode && unreviewedPlansOnNote({ hcpReviewMeta: watch('hcpReviewMeta') }).length > 0;
+  // The note collects every checked box, disabled or not, so a tick restored
+  // from a draft must not survive while a plan is still unreviewed.
+  const carePlanReviewedRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (hcpPending && carePlanReviewedRef.current) carePlanReviewedRef.current.checked = false;
+  }, [hcpPending]);
 
   // Tube-doc required-field cues. Red only while EMPTY — the highlight
   // clearing is the nurse's feedback that the field is satisfied. The submit
@@ -464,9 +478,11 @@ export default function FormPageThree({ formRef, register, watch, setValue, cont
         <span className={styles.sectionLabel}>SAFETY CHECKLIST</span>
         <p style={{ fontSize: '0.85rem', color: '#666', margin: '0 0 0.5rem 0' }}>(Select all that apply)</p>
 
+        {!isEditMode && <HealthcarePlansPanel patientId={hcpPatientId} setValue={setValue} />}
+
         <div className={styles.checkRow}>
-          <label>
-            <input type="checkbox" name="q27_safetyChecklist" value="Care plan reviewed at start of shift" />
+          <label title={hcpPending ? 'Review the healthcare plans above first' : undefined} style={hcpPending ? { opacity: 0.6 } : undefined}>
+            <input type="checkbox" name="q27_safetyChecklist" value={CARE_PLAN_REVIEWED_VALUE} disabled={hcpPending} ref={carePlanReviewedRef} />
             Care plan reviewed at start of shift
           </label>
           <label>
