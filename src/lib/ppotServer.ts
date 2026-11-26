@@ -476,7 +476,7 @@ async function refaxPpotRequest(req: FirebaseFirestore.DocumentData, caller?: Au
   const requestType: PpotRequestType = req.requestType === 'recert' ? 'recert' : 'new';
   const { pdf, fileName } = await appendixTForFax(subject.name, medicaidId);
   const toNumber = String(req.toNumber || '');
-  const sender: FaxSender = caller || { uid: String(req.byUid || ''), email: null, profile: { displayName: String(req.byName || 'Heart and Soul Healthcare') } };
+  const sender: FaxSender = caller || { uid: String(req.byUid || ''), email: null, profile: { displayName: String(req.byName || '') } };
   const result = await sendOutboundFax({
     input: {
       recipientName: String(req.recipientName || first.recipientName || 'Physician'),

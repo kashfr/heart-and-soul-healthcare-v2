@@ -160,7 +160,7 @@ async function buildFaxPdf(p: {
   return { bytes: Buffer.from(await out.save()), pages: totalPages };
 }
 
-async function queue(faxId: string, toNumber: string, fileName: string, pdf: Buffer) {
+async function queue(faxId: string, toNumber: string, fileName: string, pdf: Buffer, senderName: string) {
   const key = outboundFaxWebhookKey(faxId);
   const notifyUrl = key ? `${SHARE_SITE_URL}/api/fax/status?key=${encodeURIComponent(key)}&id=${encodeURIComponent(faxId)}` : undefined;
   return srfaxQueueFax({
@@ -169,7 +169,7 @@ async function queue(faxId: string, toNumber: string, fileName: string, pdf: Buf
     pdf,
     notifyUrl,
     accountCode: faxId.slice(0, 20),
-    fromHeader: 'Heart and Soul Healthcare',
+    senderName,
   });
 }
 
@@ -244,16 +244,18 @@ export async function sendOutboundFax(p: {
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
-  await attempt(ref.id, toNumber, p.fileName, built.bytes, { uid: p.caller.uid, name: senderName });
+  await attempt(ref.id, toNumber, p.fileName, built.bytes, senderName, { uid: p.caller.uid, name: senderName });
   const snap = await ref.get();
   const fax = serializeOutboundFax(snap.id, snap.data() || {});
   if (fax.sentStatus === 'Failed') return { ok: false, status: 502, fax, error: fax.error || 'The fax could not be queued.' };
   return { ok: true, fax };
 }
 
-async function attempt(faxId: string, toNumber: string, fileName: string, pdf: Buffer, actor: { uid: string; name: string }): Promise<void> {
+/** `senderName` is who the fax is from (the cover's From line), which on a
+ *  retry stays the original sender; `actor` is who pressed the button. */
+async function attempt(faxId: string, toNumber: string, fileName: string, pdf: Buffer, senderName: string, actor: { uid: string; name: string }): Promise<void> {
   const ref = adminDb().collection(COL).doc(faxId);
-  const result = await queue(faxId, toNumber, fileName, pdf);
+  const result = await queue(faxId, toNumber, fileName, pdf, senderName);
   if (result.ok && result.faxDetailsId) {
     await ref.update({
       faxDetailsId: result.faxDetailsId,
@@ -287,7 +289,7 @@ export async function retryOutboundFax(faxId: string, caller: AuthedCaller): Pro
   const d = snap.data() || {};
   if (d.sentStatus !== 'Failed') return { ok: false, status: 409, error: 'Only a failed fax can be resent.' };
   const [bytes] = await adminBucket().file(String(d.storagePath || '')).download();
-  await attempt(faxId, String(d.toNumber), String(d.fileName || 'document.pdf'), bytes, { uid: caller.uid, name: caller.profile.displayName || caller.email || '' });
+  await attempt(faxId, String(d.toNumber), String(d.fileName || 'document.pdf'), bytes, String(d.sentByName || ''), { uid: caller.uid, name: caller.profile.displayName || caller.email || '' });
   const after = serializeOutboundFax(faxId, (await ref.get()).data() || {});
   if (after.sentStatus === 'Failed') return { ok: false, status: 502, fax: after, error: after.error || 'The fax could not be queued.' };
   return { ok: true, fax: after };

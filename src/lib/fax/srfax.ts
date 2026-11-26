@@ -14,6 +14,8 @@ import 'server-only';
  * agency's SRFax number, used as caller ID), SRFAX_SENDER_EMAIL.
  */
 
+import { faxHeaderLine } from '../faxShared';
+
 const ENDPOINT = 'https://www.srfax.com/SRF_SecWebSvc.php';
 
 export interface SrfaxConfig {
@@ -79,7 +81,9 @@ export async function srfaxQueueFax(params: {
   pdf: Buffer;
   notifyUrl?: string;
   accountCode?: string; // our reference (max 20 chars)
-  fromHeader?: string;
+  /** The person sending; the header always reads "<Name>, Heart and Soul
+   *  Healthcare" (or the organization alone). Never send a bare name. */
+  senderName: string;
 }): Promise<QueueFaxResult> {
   const cfg = srfaxConfig();
   if (!cfg) return { configured: false, ok: false, error: 'Fax is not configured.' };
@@ -94,7 +98,7 @@ export async function srfaxQueueFax(params: {
       sFileContent_1: params.pdf.toString('base64'),
       ...(params.notifyUrl ? { sNotifyURL: params.notifyUrl } : {}),
       ...(params.accountCode ? { sAccountCode: params.accountCode.slice(0, 20) } : {}),
-      ...(params.fromHeader ? { sFaxFromHeader: params.fromHeader.slice(0, 50) } : {}),
+      sFaxFromHeader: faxHeaderLine(params.senderName),
     });
     if (r.Status !== 'Success') return { configured: true, ok: false, error: String(r.Result || 'Queue_Fax failed.') };
     return { configured: true, ok: true, faxDetailsId: String(r.Result) };

@@ -112,3 +112,36 @@ export function cleanFaxFileName(raw: string): string {
   const stem = base.replace(/\.pdf$/i, '').replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^[._]+/, '').slice(0, 60);
   return `${stem || 'document'}.pdf`;
 }
+
+// ---------------------------------------------------------------------------
+// Who a fax is from
+// ---------------------------------------------------------------------------
+
+/** The organization every outbound fax names. */
+export const FAX_ORG_NAME = 'Heart and Soul Healthcare';
+/** SRFax's limit for sFaxFromHeader (the line printed across the top of every page). */
+export const FAX_HEADER_MAX = 50;
+
+/**
+ * The one place a fax's sender is written: "<Name>, Heart and Soul Healthcare",
+ * or the organization alone when no name is known. A fax goes out on the
+ * agency's line, so the organization is never left off, whoever sends it.
+ * A name that already carries the organization is not doubled.
+ */
+export function faxSenderLine(name: string | null | undefined): string {
+  const n = String(name || '').replace(/\s+/g, ' ').trim().replace(/[,\s]+$/, '');
+  if (!n) return FAX_ORG_NAME;
+  if (n.toLowerCase().includes(FAX_ORG_NAME.toLowerCase())) return n;
+  return `${n}, ${FAX_ORG_NAME}`;
+}
+
+/**
+ * The SRFax header line (top of every page, cover or not). Uses the full
+ * sender line when it fits SRFax's limit; otherwise the organization alone,
+ * so a long name can never push the organization off the end.
+ */
+export function faxHeaderLine(name: string | null | undefined): string {
+  const line = faxSenderLine(name);
+  if (line.length <= FAX_HEADER_MAX && line.toLowerCase().includes(FAX_ORG_NAME.toLowerCase())) return line;
+  return FAX_ORG_NAME;
+}

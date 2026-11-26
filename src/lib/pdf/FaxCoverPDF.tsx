@@ -1,5 +1,6 @@
 import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/renderer';
 import { formatUSFaxNumber } from '@/lib/verbalOrderShared';
+import { faxSenderLine } from '@/lib/faxShared';
 import { BRAND_LOGO_DATA_URL, BRAND_LOGO_ASPECT } from './brandLogo';
 
 // Fax Center cover sheet: who it is for, who sent it, how many pages, the
@@ -127,7 +128,7 @@ export default function FaxCoverPDF(p: FaxCoverPdfProps) {
             <Cell label="Date" value={p.sentDate} last />
           </View>
           <View style={s.row}>
-            <Cell label="From" value={p.senderName ? `${p.senderName}, Heart and Soul Healthcare` : 'Heart and Soul Healthcare'} flex={2} />
+            <Cell label="From" value={faxSenderLine(p.senderName)} flex={2} />
             <Cell label="Pages (including cover)" value={String(p.totalPages)} last />
           </View>
           <View style={s.row}>

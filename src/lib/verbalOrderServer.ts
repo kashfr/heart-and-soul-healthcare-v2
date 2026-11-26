@@ -306,7 +306,8 @@ export async function faxVerbalOrder(orderId: string, actor: { uid: string; name
     pdf,
     notifyUrl,
     accountCode: orderId.slice(0, 20),
-    fromHeader: 'Heart and Soul Healthcare',
+    // The nightly reminder runs as the portal, not a person: org alone.
+    senderName: actor.uid ? actor.name : '',
   });
 
   if (result.ok && result.faxDetailsId) {
