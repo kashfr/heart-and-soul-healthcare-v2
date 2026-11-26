@@ -23,7 +23,7 @@ vi.mock('@/lib/patients', () => ({
   getPatients: vi.fn().mockResolvedValue([
     {
       id: 'p1',
-      name: 'Neal Kelly',
+      name: 'Nate Example',
       dob: '1985-06-07',
       program: 'now-comp',
       street: '12 Oak St',
@@ -32,7 +32,7 @@ vi.mock('@/lib/patients', () => ({
       zip: '30301',
       assignedNurseIds: ['n2'],
     },
-    { id: 'p2', name: 'Tora Vinson', dob: '2015-01-01', program: 'gapp' },
+    { id: 'p2', name: 'Nola Vance', dob: '2015-01-01', program: 'gapp' },
   ]),
 }));
 
@@ -103,7 +103,7 @@ beforeEach(() => {
 /** Fills every required field of a visit for client p1 on 09/28/2026 and signs. */
 async function fillCompleteVisit() {
     render(<SupervisoryVisitPage />);
-    await waitFor(() => expect(screen.getByRole('option', { name: 'Neal Kelly' })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Nate Example' })).toBeInTheDocument());
     fireEvent.change(screen.getByLabelText(/Client name/), { target: { value: 'p1' } });
     fireEvent.change(screen.getByLabelText(/^Date \*/), { target: { value: '2026-09-28' } });
     fireEvent.change(screen.getByLabelText(/^Time in/), { target: { value: '10:00' } });
@@ -180,9 +180,9 @@ describe('SupervisoryVisitPage', () => {
 
   it("fills the client's address and lists the client's assigned staff first", async () => {
     render(<SupervisoryVisitPage />);
-    await waitFor(() => expect(screen.getByRole('option', { name: 'Neal Kelly' })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Nate Example' })).toBeInTheDocument());
     // Every program is listed; supervisory visits are not NOW/COMP-only.
-    expect(screen.getByRole('option', { name: 'Tora Vinson' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Nola Vance' })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(/Client name/), { target: { value: 'p1' } });
     expect(screen.getByLabelText(/^Address/)).toHaveValue('12 Oak St, Atlanta, GA 30301');
     await waitFor(() => expect(screen.getByRole('group', { name: 'Assigned to this client' })).toBeInTheDocument());
@@ -221,7 +221,7 @@ describe('SupervisoryVisitPage', () => {
     expect(saved).toMatchObject({
       noteType: 'home-supervisory-visit',
       patientId: 'p1',
-      q3_clientName: 'Neal Kelly',
+      q3_clientName: 'Nate Example',
       sv_staffName: 'Ann Lee, CNA',
       sv_staffId: 'n2',
       q16_temperature: '98.4',
@@ -254,7 +254,7 @@ describe('SupervisoryVisitPage', () => {
 
   it("flags a vital outside its normal range for the client's age", async () => {
     render(<SupervisoryVisitPage />);
-    await waitFor(() => expect(screen.getByRole('option', { name: 'Neal Kelly' })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Nate Example' })).toBeInTheDocument());
     fireEvent.change(screen.getByLabelText(/Client name/), { target: { value: 'p1' } });
     fireEvent.change(document.getElementById('q18_pulse')!, { target: { value: '140' } });
     await waitFor(() => expect(screen.getByText(/Pulse is high for/)).toBeInTheDocument());

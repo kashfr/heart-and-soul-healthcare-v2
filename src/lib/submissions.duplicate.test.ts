@@ -9,8 +9,8 @@ describe('noteIsActiveDuplicate', () => {
   it('matches the same client by normalized name (missing hyphen / casing)', () => {
     expect(
       noteIsActiveDuplicate(
-        { q3_clientName: 'Yanira Fernando-Bautista' },
-        { normName: normalizeName('yanira fernando bautista') }
+        { q3_clientName: 'Marisa Delgado-Brockton' },
+        { normName: normalizeName('marisa delgado brockton') }
       )
     ).toBe(true);
   });
@@ -18,8 +18,8 @@ describe('noteIsActiveDuplicate', () => {
   it('does not match a different client', () => {
     expect(
       noteIsActiveDuplicate(
-        { q3_clientName: 'Tora Vinson' },
-        { normName: normalizeName('Yanira Fernando-Bautista') }
+        { q3_clientName: 'Nola Vance' },
+        { normName: normalizeName('Marisa Delgado-Brockton') }
       )
     ).toBe(false);
   });
@@ -28,15 +28,15 @@ describe('noteIsActiveDuplicate', () => {
     // Same patientId → duplicate even if the typed names differ.
     expect(
       noteIsActiveDuplicate(
-        { patientId: 'pat_1', q3_clientName: 'Y. Fernando' },
+        { patientId: 'pat_1', q3_clientName: 'M. Delgado' },
         { patientId: 'pat_1', normName: normalizeName('totally different') }
       )
     ).toBe(true);
     // Different patientId → not a duplicate even if names happen to match.
     expect(
       noteIsActiveDuplicate(
-        { patientId: 'pat_2', q3_clientName: 'Tora Vinson' },
-        { patientId: 'pat_1', normName: normalizeName('Tora Vinson') }
+        { patientId: 'pat_2', q3_clientName: 'Nola Vance' },
+        { patientId: 'pat_1', normName: normalizeName('Nola Vance') }
       )
     ).toBe(false);
   });
@@ -45,8 +45,8 @@ describe('noteIsActiveDuplicate', () => {
     // Target has no patientId (typed note) but stored note does → compare names.
     expect(
       noteIsActiveDuplicate(
-        { patientId: 'pat_1', q3_clientName: 'Tora Vinson' },
-        { normName: normalizeName('tora vinson') }
+        { patientId: 'pat_1', q3_clientName: 'Nola Vance' },
+        { normName: normalizeName('nola vance') }
       )
     ).toBe(true);
   });
@@ -54,19 +54,19 @@ describe('noteIsActiveDuplicate', () => {
   it('excludes admin-archived notes (status or archivedAt)', () => {
     expect(
       noteIsActiveDuplicate(
-        { q3_clientName: 'Tora Vinson', status: 'archived' },
-        { normName: normalizeName('Tora Vinson') }
+        { q3_clientName: 'Nola Vance', status: 'archived' },
+        { normName: normalizeName('Nola Vance') }
       )
     ).toBe(false);
     expect(
       noteIsActiveDuplicate(
-        { q3_clientName: 'Tora Vinson', archivedAt: { seconds: 1 } },
-        { normName: normalizeName('Tora Vinson') }
+        { q3_clientName: 'Nola Vance', archivedAt: { seconds: 1 } },
+        { normName: normalizeName('Nola Vance') }
       )
     ).toBe(false);
   });
 
   it('returns false when there is no identity signal', () => {
-    expect(noteIsActiveDuplicate({ q3_clientName: 'Tora Vinson' }, { normName: '' })).toBe(false);
+    expect(noteIsActiveDuplicate({ q3_clientName: 'Nola Vance' }, { normName: '' })).toBe(false);
   });
 });

@@ -72,14 +72,14 @@ describe('editing screened answers', () => {
   it('rebuilds the screened rows and keeps staff corrections to the rest', () => {
     const older = { ...gapp, dob: '2015-03-01', equipment: ['trach'] };
     const card = [
-      ...buildGappReferral(older).details.map((d) => (d.label === "Member's Medicaid ID" ? { ...d, value: '222120339644' } : d)),
+      ...buildGappReferral(older).details.map((d) => (d.label === "Member's Medicaid ID" ? { ...d, value: '999888777666' } : d)),
       { label: "Child's physician", value: 'Dr. Lin' },
     ];
     const next = writeScreened('gapp-website', older, { seekingPaidCaregiver: 'yes' });
     const merged = mergeScreenedRows(card, buildFor('gapp-website', next).details);
     const row = (l: string) => merged.find((d) => d.label === l)?.value;
     expect(row('Seeking paid caregiver')).toBe('Yes');
-    expect(row("Member's Medicaid ID")).toBe('222120339644');
+    expect(row("Member's Medicaid ID")).toBe('999888777666');
     expect(row("Child's physician")).toBe('Dr. Lin');
     expect(merged.filter((d) => d.label === "Child's physician")).toHaveLength(1);
   });
@@ -103,9 +103,9 @@ describe('editing screened answers', () => {
 describe('GAPP site physician (optional)', () => {
   it('lands on the card under the labels Create Client Record reads', async () => {
     const { planFromReferral } = await import('./referralConvertShared');
-    const built = buildGappReferral({ ...gapp, physicianName: 'Anna M. Lawson, MD', physicianOffice: 'Pediatric Associates', physicianPhone: '(770) 277-6725', physicianFax: '(770) 277-9169' });
+    const built = buildGappReferral({ ...gapp, physicianName: 'Dana R. Sample, MD', physicianOffice: 'Example Pediatrics', physicianPhone: '(770) 555-0125', physicianFax: '(770) 555-0126' });
     const plan = planFromReferral({ clientName: built.clientName, program: built.program, details: built.details });
-    expect(plan.clinical).toMatchObject({ physicianName: 'Anna M. Lawson, MD', physicianPhone: '7702776725', physicianFax: '7702779169' });
+    expect(plan.clinical).toMatchObject({ physicianName: 'Dana R. Sample, MD', physicianPhone: '7705550125', physicianFax: '7705550126' });
   });
   it('adds nothing when left blank', () => {
     expect(buildGappReferral(gapp).details.filter((d) => /physician/i.test(d.label) && d.value)).toEqual([]);

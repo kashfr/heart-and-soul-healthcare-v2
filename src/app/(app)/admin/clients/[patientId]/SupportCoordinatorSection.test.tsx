@@ -19,16 +19,16 @@ beforeEach(() => { agencies.length = 0; store.data = null; saveMock.mockClear();
 
 describe('SupportCoordinatorSection', () => {
   it('shows the coordinator read-only for a nurse', async () => {
-    store.data = { name: 'Jasmine Lawrence', title: 'Intensive Support Coordinator', agency: 'Benchmark Human Services', email: 'jlawrence@benchmarkhs.com' };
+    store.data = { name: 'Jessie Example', title: 'Intensive Support Coordinator', agency: 'Benchmark Human Services', email: 'jexample@example.com' };
     render(<SupportCoordinatorSection patientId="p1" canEdit={false} actorName="" onToast={() => {}} />);
-    expect(await screen.findByText('Jasmine Lawrence')).toBeInTheDocument();
+    expect(await screen.findByText('Jessie Example')).toBeInTheDocument();
     expect(screen.getByText('Benchmark Human Services')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /edit/i })).toBeNull();
   });
 
   it("shows the agency's DBHDD regions from Settings next to the agency", async () => {
     agencies.push({ id: 'compass', name: 'Compass Coordination, Inc.', address: '', phone: '', fax: '', afterHours: '', notes: '', regions: [1, 3] });
-    store.data = { name: 'Jasmine Lawrence', agency: 'Compass Coordination, Inc.', email: 'j@compassga.net' };
+    store.data = { name: 'Jessie Example', agency: 'Compass Coordination, Inc.', email: 'j@compassga.net' };
     render(<SupportCoordinatorSection patientId="p1" canEdit={false} actorName="" onToast={() => {}} />);
     expect(await screen.findByText('(Regions 1, 3)')).toBeInTheDocument();
   });
@@ -41,29 +41,29 @@ describe('SupportCoordinatorSection', () => {
     expect(await screen.findByText("Enter the coordinator's name.")).toBeInTheDocument();
     expect(saveMock).not.toHaveBeenCalled();
     const input = (f: string) => document.querySelector(`#sc-field-${f} input`) as HTMLInputElement;
-    fireEvent.change(input('name'), { target: { value: 'Jasmine Lawrence' } });
+    fireEvent.change(input('name'), { target: { value: 'Jessie Example' } });
     fireEvent.change(input('agency'), { target: { value: 'Benchmark Human Services' } });
-    fireEvent.change(input('email'), { target: { value: 'jlawrence@benchmarkhs.com' } });
+    fireEvent.change(input('email'), { target: { value: 'jexample@example.com' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText('Jasmine Lawrence')).toBeInTheDocument();
+    expect(await screen.findByText('Jessie Example')).toBeInTheDocument();
     expect(toast).toHaveBeenCalledWith('Support coordinator saved.');
   });
 
   it('picks the agency from the Settings list and fills its address', async () => {
-    agencies.push({ id: 'ccs', name: 'Creative Consulting Services', address: '353 Resource Pkwy, Winder, GA 30680', phone: '', fax: '', afterHours: '(770) 849-7629', notes: '' });
+    agencies.push({ id: 'ccs', name: 'Creative Consulting Services', address: '353 Resource Pkwy, Winder, GA 30680', phone: '', fax: '', afterHours: '(770) 555-0179', notes: '' });
     render(<SupportCoordinatorSection patientId="p1" canEdit actorName="Kaheem Freeman" onToast={() => {}} />);
     fireEvent.click(await screen.findByRole('button', { name: /add/i }));
     fireEvent.change(document.querySelector('#sc-field-agency select')!, { target: { value: 'ccs' } });
-    fireEvent.change(document.querySelector('#sc-field-name input')!, { target: { value: 'Timothy Harbison' } });
-    fireEvent.change(document.querySelector('#sc-field-contact input')!, { target: { value: '6789439600' } });
+    fireEvent.change(document.querySelector('#sc-field-name input')!, { target: { value: 'Taylor Example' } });
+    fireEvent.change(document.querySelector('#sc-field-contact input')!, { target: { value: '6785550196' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(1));
     expect(saveMock.mock.calls[0][1]).toMatchObject({
       agency: 'Creative Consulting Services',
       address: '353 Resource Pkwy, Winder, GA 30680',
-      phone: '(678) 943-9600',
-      notes: 'After-hours line: (770) 849-7629.',
+      phone: '(678) 555-0196',
+      notes: 'After-hours line: (770) 555-0179.',
     });
   });
 });

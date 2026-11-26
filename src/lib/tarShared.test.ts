@@ -60,11 +60,11 @@ describe('buildTarEntryFields', () => {
 
   it('keeps the performer name (trimmed) when family did the care', () => {
     const f = buildTarEntryFields(
-      input({ performedByType: 'family', performerName: '  Paula Krone  ' }),
+      input({ performedByType: 'family', performerName: '  Jane Doe  ' }),
       meta,
     );
     expect(f.performedByType).toBe('family');
-    expect(f.performerName).toBe('Paula Krone');
+    expect(f.performerName).toBe('Jane Doe');
   });
 
   it('keeps the reason only for a not-done entry, and drops the time', () => {

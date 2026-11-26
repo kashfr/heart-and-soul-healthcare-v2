@@ -21,10 +21,10 @@ beforeEach(() => {
 
 describe('PhysiciansSection', () => {
   it('lists doctors read-only for a nurse', async () => {
-    store.data = { list: [{ id: 'e', name: 'Dr. Jennifer Gilligan', specialty: 'Endocrinology', practice: 'Piedmont Physicians Endocrinology Buckhead', phone: '404-367-3210', fax: '(404) 367-3215' }] };
+    store.data = { list: [{ id: 'e', name: 'Dr. Jamie Sample', specialty: 'Endocrinology', practice: 'Example Endocrinology Midtown', phone: '404-555-0110', fax: '(404) 555-0115' }] };
     render(<PhysiciansSection patientId="p1" canEdit={false} actorName="" onToast={() => {}} />);
-    expect(await screen.findByText('Dr. Jennifer Gilligan')).toBeInTheDocument();
-    expect(screen.getByText('Fax (404) 367-3215')).toBeInTheDocument();
+    expect(await screen.findByText('Dr. Jamie Sample')).toBeInTheDocument();
+    expect(screen.getByText('Fax (404) 555-0115')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /edit/i })).toBeNull();
   });
 
@@ -37,16 +37,16 @@ describe('PhysiciansSection', () => {
     expect(saveMock).not.toHaveBeenCalled();
 
     const row = (field: string) => document.querySelector(`[id$="-${field}"] input, [id$="-${field}"] select`) as HTMLInputElement;
-    fireEvent.change(row('name'), { target: { value: 'Dr. Jennifer Gilligan' } });
+    fireEvent.change(row('name'), { target: { value: 'Dr. Jamie Sample' } });
     fireEvent.change(row('specialty'), { target: { value: 'Endocrinology' } });
-    fireEvent.change(row('fax'), { target: { value: '367-3215' } });
+    fireEvent.change(row('fax'), { target: { value: '555-0115' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(await screen.findByText('Enter a 10-digit fax number.')).toBeInTheDocument();
 
-    fireEvent.change(row('fax'), { target: { value: '4043673215' } });
+    fireEvent.change(row('fax'), { target: { value: '4045550115' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText('Fax (404) 367-3215')).toBeInTheDocument();
+    expect(await screen.findByText('Fax (404) 555-0115')).toBeInTheDocument();
     expect(toast).toHaveBeenCalledWith('Physicians saved.');
   });
 });

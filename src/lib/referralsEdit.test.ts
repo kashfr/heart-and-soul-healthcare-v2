@@ -32,9 +32,9 @@ beforeEach(() => {
 
 describe('updatePhoneReferral', () => {
   it('rewrites the card and logs which fields changed', async () => {
-    const r = await updatePhoneReferral('r1', input({ county: 'Fulton', callerPhone: '470-783-4812' }), '2026-10-17', caller);
+    const r = await updatePhoneReferral('r1', input({ county: 'Fulton', callerPhone: '470-555-0148' }), '2026-10-17', caller);
     expect(r).toEqual({ ok: true, changed: ['callback number', 'county'] });
-    expect(store.updates[0]).toMatchObject({ county: 'Fulton', clientPhone: '(470) 783-4812' });
+    expect(store.updates[0]).toMatchObject({ county: 'Fulton', clientPhone: '(470) 555-0148' });
     const details = store.updates[0].details as { label: string; value: string }[];
     expect(details.find((d) => d.label === 'Taken by phone')?.value).toBe('Call taken by Kaheem Freeman');
     expect(store.activity[0]).toMatchObject({ type: 'note', text: 'Phone referral edited: callback number, county.', byName: 'Vera Assistant' });
@@ -58,15 +58,15 @@ import { updateWebsiteReferralDetails } from './referrals';
 
 describe('updateWebsiteReferralDetails', () => {
   const website = () => ({
-    source: 'gapp-website', clientName: 'Jazz King', referrerName: 'Ariel King', clientPhone: '(828) 508-8228', clientEmail: '', county: 'Gwinnett',
+    source: 'gapp-website', clientName: 'Jane Doe', referrerName: 'Pat Doe', clientPhone: '(828) 555-0123', clientEmail: '', county: 'Gwinnett',
     details: [{ label: 'Seeking paid caregiver', value: 'No' }, { label: "Member's Medicaid ID", value: 'Will provide later' }],
   });
   it('saves an allowed field, ignores a locked one, and logs old and new', async () => {
     store.doc = website();
-    const r = await updateWebsiteReferralDetails('r1', { "row:Member's Medicaid ID": '222120339644', 'row:Seeking paid caregiver': 'Yes' }, caller);
+    const r = await updateWebsiteReferralDetails('r1', { "row:Member's Medicaid ID": '999888777666', 'row:Seeking paid caregiver': 'Yes' }, caller);
     expect(r).toEqual({ ok: true, changed: 1 });
-    expect(store.updates[0].details).toEqual([{ label: 'Seeking paid caregiver', value: 'No' }, { label: "Member's Medicaid ID", value: '222120339644' }]);
-    expect(store.activity[0].text).toBe('Details edited: Medicaid ID "Will provide later" → "222120339644".');
+    expect(store.updates[0].details).toEqual([{ label: 'Seeking paid caregiver', value: 'No' }, { label: "Member's Medicaid ID", value: '999888777666' }]);
+    expect(store.activity[0].text).toBe('Details edited: Medicaid ID "Will provide later" → "999888777666".');
   });
   it('rejects bad input and phone or converted referrals', async () => {
     store.doc = website();
@@ -88,7 +88,7 @@ describe('updateWebsiteReferralDetails: screened answers', () => {
   const doc = (answers: Record<string, unknown> | null) => ({
     source: 'gapp-website', clientName: 'Kid Example', referrerName: '', clientPhone: '(404) 555-1212', clientEmail: 'p@example.com', county: 'Fulton',
     service: 'nursing',
-    details: [{ label: 'Seeking paid caregiver', value: 'No' }, { label: "Member's Medicaid ID", value: '222120339644' }],
+    details: [{ label: 'Seeking paid caregiver', value: 'No' }, { label: "Member's Medicaid ID", value: '999888777666' }],
     ...(answers ? { intakeAnswers: answers } : {}),
   });
 
@@ -105,7 +105,7 @@ describe('updateWebsiteReferralDetails: screened answers', () => {
     expect(r).toEqual({ ok: true, changed: 1 });
     const u = store.updates[0] as { details: { label: string; value: string }[]; intakeAnswers: Record<string, unknown> };
     expect(u.details.find((d) => d.label === 'Seeking paid caregiver')?.value).toBe('Yes');
-    expect(u.details.find((d) => d.label === "Member's Medicaid ID")?.value).toBe('222120339644');
+    expect(u.details.find((d) => d.label === "Member's Medicaid ID")?.value).toBe('999888777666');
     expect(u.intakeAnswers.seekingPaidCaregiver).toBe('yes');
     expect(store.activity[0].text).toBe('Details edited: Seeking paid caregiver "No" → "Yes".');
   });
@@ -122,7 +122,7 @@ describe('updateWebsiteReferralDetails: screened answers', () => {
 
 describe('updateWebsiteReferralDetails: date of birth on an old referral', () => {
   const old = () => ({
-    source: 'gapp-website', clientName: 'Cannon Dix', referrerName: 'Torrace Dix', clientPhone: '(470) 624-1780', clientEmail: '', county: 'Clayton',
+    source: 'gapp-website', clientName: 'Sam Example', referrerName: 'Alex Example', clientPhone: '(470) 555-0145', clientEmail: '', county: 'Clayton',
     details: [{ label: 'Seeking paid caregiver', value: 'No' }, { label: 'Diagnosis', value: 'Open heart surgery' }],
   });
   it('adds a missing date of birth and logs it', async () => {

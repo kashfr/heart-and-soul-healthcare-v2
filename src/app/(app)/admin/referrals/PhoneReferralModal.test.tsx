@@ -53,14 +53,14 @@ it('Enter in a text box does not save', () => {
 it('formats phone numbers as they are typed', () => {
   render(<PhoneReferralModal staff={staff} onClose={vi.fn()} onCreated={vi.fn()} />);
   const phone = screen.getByLabelText(/Callback number/) as HTMLInputElement;
-  fireEvent.change(phone, { target: { value: '4707834812' } });
-  expect(phone.value).toBe('(470) 783-4812');
+  fireEvent.change(phone, { target: { value: '4705550148' } });
+  expect(phone.value).toBe('(470) 555-0148');
   const doc = screen.getByLabelText('Physician phone') as HTMLInputElement;
   fireEvent.change(doc, { target: { value: '7705551234145' } });
   expect(doc.value).toBe('(770) 555-1234 ext. 145');
   const fax = screen.getByLabelText('Physician fax') as HTMLInputElement;
-  fireEvent.change(fax, { target: { value: '7704270788' } });
-  expect(fax.value).toBe('(770) 427-0788');
+  fireEvent.change(fax, { target: { value: '7705550188' } });
+  expect(fax.value).toBe('(770) 555-0188');
 });
 
 it('edits a saved phone referral in place', async () => {

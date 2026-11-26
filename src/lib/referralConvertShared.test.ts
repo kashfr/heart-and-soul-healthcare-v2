@@ -3,9 +3,9 @@ import { convertBlocker, parseDobToIso, planFromReferral, programIdFromLabel, sp
 
 describe('parseDobToIso', () => {
   it('reads the printed and ISO forms', () => {
-    expect(parseDobToIso('08/03/1980')).toBe('1980-08-03');
-    expect(parseDobToIso('8/3/1980')).toBe('1980-08-03');
-    expect(parseDobToIso('1980-08-03')).toBe('1980-08-03');
+    expect(parseDobToIso('07/04/1981')).toBe('1981-07-04');
+    expect(parseDobToIso('7/4/1981')).toBe('1981-07-04');
+    expect(parseDobToIso('1981-07-04')).toBe('1981-07-04');
   });
   it('refuses nonsense', () => {
     expect(parseDobToIso('13/40/1980')).toBe('');
@@ -52,8 +52,8 @@ describe('planFromReferral', () => {
     { label: 'Diagnosis', value: 'Cerebral palsy; seizure disorder' },
   ];
   it('fills the client and clinical fields from the intake', () => {
-    const p = planFromReferral({ clientName: ' Seven Houston ', program: 'GAPP', details });
-    expect(p.name).toBe('Seven Houston');
+    const p = planFromReferral({ clientName: ' Sam Example ', program: 'GAPP', details });
+    expect(p.name).toBe('Sam Example');
     expect(p.dob).toBe('2019-03-14');
     expect(p.city).toBe('Decatur');
     expect(p.program).toBe('gapp');
@@ -61,7 +61,7 @@ describe('planFromReferral', () => {
     expect(p.missing).toEqual([]);
   });
   it('names what the intake left out', () => {
-    const p = planFromReferral({ clientName: 'Jazz King', program: '', details: [] });
+    const p = planFromReferral({ clientName: 'Jane Doe', program: '', details: [] });
     expect(p.dob).toBe('');
     expect(p.missing).toEqual(['date of birth', 'address', 'diagnosis', 'program', 'physician', 'Medicaid ID']);
   });

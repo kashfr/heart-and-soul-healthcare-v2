@@ -21,9 +21,9 @@ beforeEach(() => {
 
 describe('GuardianSection', () => {
   it('shows the guardian read-only for a nurse', async () => {
-    store.data = { decisionMaker: 'guardian', contacts: [{ id: 'g', role: 'Legal guardian', name: 'Jordan Welch', relationship: 'State (DHS representative)', phone: '(404) 683-2947' }] };
+    store.data = { decisionMaker: 'guardian', contacts: [{ id: 'g', role: 'Legal guardian', name: 'Jordan Example', relationship: 'State (DHS representative)', phone: '(404) 555-0147' }] };
     render(<GuardianSection patientId="p1" canEdit={false} actorName="" onToast={() => {}} />);
-    expect(await screen.findByText('Jordan Welch')).toBeInTheDocument();
+    expect(await screen.findByText('Jordan Example')).toBeInTheDocument();
     expect(screen.getByText('Has a legal guardian')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /edit/i })).toBeNull();
   });
@@ -51,11 +51,11 @@ describe('GuardianSection', () => {
     expect(await screen.findByText('Enter a name.')).toBeInTheDocument();
     expect(saveMock).not.toHaveBeenCalled();
 
-    fireEvent.change(document.querySelector('[id$="-name"] input')!, { target: { value: 'Jordan Welch' } });
-    fireEvent.change(document.querySelector('[id$="-reach"] input')!, { target: { value: '404-683-2947' } });
+    fireEvent.change(document.querySelector('[id$="-name"] input')!, { target: { value: 'Jordan Example' } });
+    fireEvent.change(document.querySelector('[id$="-reach"] input')!, { target: { value: '404-555-0147' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText('Jordan Welch')).toBeInTheDocument();
+    expect(await screen.findByText('Jordan Example')).toBeInTheDocument();
     expect(toast).toHaveBeenCalledWith('Guardian information saved.');
   });
 });

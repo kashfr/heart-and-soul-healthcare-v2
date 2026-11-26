@@ -17,7 +17,7 @@ function completeNote(): Record<string, string> {
     q2_program: 'now-comp',
     q2_serviceLevel: 'rn-oversight',
     patientId: 'abc123',
-    q3_clientName: 'Neal Kelly',
+    q3_clientName: 'Nate Example',
     q4_dateofBirth: '1985-06-07',
     q5_ageYears: '41',
     q6_dateofService: '2026-08-15',

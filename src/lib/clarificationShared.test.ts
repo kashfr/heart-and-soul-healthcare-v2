@@ -57,7 +57,7 @@ describe('clarificationTurn', () => {
 
   it('treats an RN reviewer (role nurse) who is not the author as a reviewer message', () => {
     const rnReviewerLast = flag({
-      thread: [msg(), msg({ by: 'rn-reviewer-uid', byName: 'Roneika', byRole: 'nurse', text: 'Please amend.' })],
+      thread: [msg(), msg({ by: 'rn-reviewer-uid', byName: 'Rae', byRole: 'nurse', text: 'Please amend.' })],
     });
     expect(clarificationTurn(rnReviewerLast, AUTHOR)).toBe('nurse');
   });

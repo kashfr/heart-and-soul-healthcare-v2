@@ -37,7 +37,7 @@ vi.mock('@/components/SettingsProvider', () => ({
 
 import ClientsRosterPage from './page';
 
-const kai = { id: 'kai', name: 'Kai Schamberger', dob: '2018-10-08', diagnosis: 'Autism', program: 'gapp', street: '', city: '', state: '', zip: '', mrn: '22' };
+const kai = { id: 'kai', name: 'Kai Example', dob: '2018-10-08', diagnosis: 'Autism', program: 'gapp', street: '', city: '', state: '', zip: '', mrn: '22' };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -51,10 +51,10 @@ beforeEach(() => {
 it('lists only her program with Add and Edit, and no Remove, for a GAPP-scoped grant with editing', async () => {
   state.grants = [{ uid: 'rose', scope: 'gapp', editInfo: true, uploadDocuments: true }];
   render(<ClientsRosterPage />);
-  expect(await screen.findByRole('button', { name: 'Edit Kai Schamberger' })).toBeInTheDocument();
+  expect(await screen.findByRole('button', { name: 'Edit Kai Example' })).toBeInTheDocument();
   expect(mockPatients.getPatientsForProgram).toHaveBeenCalledWith('gapp');
   expect(mockPatients.getPatients).not.toHaveBeenCalled();
-  expect(screen.queryByRole('button', { name: 'Remove Kai Schamberger' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Remove Kai Example' })).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: /Add Patient/i })).toBeInTheDocument();
   await waitFor(() => expect(hours.getAllHoursAuthorizations).toHaveBeenCalled());
 });
@@ -62,7 +62,7 @@ it('lists only her program with Add and Edit, and no Remove, for a GAPP-scoped g
 it('loads every client without edit controls for an all-clients, view-only grant', async () => {
   state.grants = [{ uid: 'rose', scope: 'all', editInfo: false, uploadDocuments: false }];
   render(<ClientsRosterPage />);
-  expect(await screen.findByText('Kai Schamberger')).toBeInTheDocument();
+  expect(await screen.findByText('Kai Example')).toBeInTheDocument();
   expect(mockPatients.getPatients).toHaveBeenCalled();
   expect(mockPatients.getPatientsForProgram).not.toHaveBeenCalled();
   expect(screen.queryByRole('button', { name: /Edit Kai|Remove Kai|Add Patient/i })).not.toBeInTheDocument();

@@ -11,9 +11,9 @@ describe('compareChronological (batch export order)', () => {
     // ids in that order, so exports came out newest first. Feed the same
     // newest-first order in and require oldest-first out.
     const input = [
-      note({ q6_dateofService: '2026-08-29', q3_clientName: 'Ann Torres' }),
-      note({ q6_dateofService: '2026-08-15', q3_clientName: 'Ann Torres' }),
-      note({ q6_dateofService: '2026-08-01', q3_clientName: 'Ann Torres' }),
+      note({ q6_dateofService: '2026-08-29', q3_clientName: 'Ann Example' }),
+      note({ q6_dateofService: '2026-08-15', q3_clientName: 'Ann Example' }),
+      note({ q6_dateofService: '2026-08-01', q3_clientName: 'Ann Example' }),
     ];
     const out = [...input].sort(compareChronological).map((n) => n.form.q6_dateofService);
     expect(out).toEqual(['2026-08-01', '2026-08-15', '2026-08-29']);
@@ -38,11 +38,11 @@ describe('compareChronological (batch export order)', () => {
   it('breaks same-day ties by shift start, then client name; undated notes sort last', () => {
     const input = [
       note({ q6_dateofService: '', q3_clientName: 'Zed' }),
-      note({ q6_dateofService: '2026-08-10', q7_shiftStart: '19:00', q3_clientName: 'Ann Torres' }),
-      note({ q6_dateofService: '2026-08-10', q7_shiftStart: '08:00', q3_clientName: 'Kimberly Guffey' }),
-      note({ q6_dateofService: '2026-08-10', q7_shiftStart: '08:00', q3_clientName: 'Ann Torres' }),
+      note({ q6_dateofService: '2026-08-10', q7_shiftStart: '19:00', q3_clientName: 'Ann Example' }),
+      note({ q6_dateofService: '2026-08-10', q7_shiftStart: '08:00', q3_clientName: 'Kim Example' }),
+      note({ q6_dateofService: '2026-08-10', q7_shiftStart: '08:00', q3_clientName: 'Ann Example' }),
     ];
     const out = [...input].sort(compareChronological).map((n) => `${n.form.q7_shiftStart}|${n.form.q3_clientName}`);
-    expect(out).toEqual(['08:00|Ann Torres', '08:00|Kimberly Guffey', '19:00|Ann Torres', '|Zed']);
+    expect(out).toEqual(['08:00|Ann Example', '08:00|Kim Example', '19:00|Ann Example', '|Zed']);
   });
 });

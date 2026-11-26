@@ -74,18 +74,18 @@ describe('wording', () => {
     expect(defaultRoiPurpose(undefined)).toBe('Coordination of care and services.');
   });
   it('introduces us as the skilled nursing provider and explains the direction, with no dashes', () => {
-    const paras = roiIntroParagraphs({ memberName: 'Ann Torres', program: 'now-comp', facilityName: 'Magnolia Manor', direction: 'to-us' });
+    const paras = roiIntroParagraphs({ memberName: 'Ann Example', program: 'now-comp', facilityName: 'Magnolia Manor', direction: 'to-us' });
     const text = paras.join(' ');
     expect(text).toMatch(/skilled nursing services under the NOW\/COMP program/);
-    expect(text).toMatch(/allows Magnolia Manor to share Ann Torres's health information with Heart and Soul Healthcare/);
+    expect(text).toMatch(/allows Magnolia Manor to share Ann Example's health information with Heart and Soul Healthcare/);
     expect(text).not.toMatch(/[–—]/);
     expect(roiIntroParagraphs({ memberName: 'A', program: '', facilityName: 'F', direction: 'both' }).join(' ')).toMatch(/with each other/);
-    expect(defaultRoiFaxNote({ memberName: 'Ann Torres', direction: 'to-us', information: 'Visit notes.' })).not.toMatch(/[–—]/);
+    expect(defaultRoiFaxNote({ memberName: 'Ann Example', direction: 'to-us', information: 'Visit notes.' })).not.toMatch(/[–—]/);
   });
 });
 
 describe('defaultRoiFaxNote', () => {
-  const base = { memberName: 'Ricky Yancey', information: 'Current medication list and orders; A1C and recent lab results.', returnFax: '4702351891' };
+  const base = { memberName: 'Rick Example', information: 'Current medication list and orders; A1C and recent lab results.', returnFax: '4702351891' };
 
   it('asks the facility to fax the listed records back when they share with us', () => {
     const note = defaultRoiFaxNote({ ...base, direction: 'to-us' });

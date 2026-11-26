@@ -3,13 +3,13 @@ import { computeAgeString, parseNoteDate } from './age';
 
 describe('parseNoteDate', () => {
   it('parses YYYY-MM-DD', () => {
-    expect(parseNoteDate('2022-02-18')?.getFullYear()).toBe(2022);
+    expect(parseNoteDate('2022-03-17')?.getFullYear()).toBe(2022);
   });
   it('tolerates MM/DD/YYYY', () => {
-    const d = parseNoteDate('02/18/2022');
+    const d = parseNoteDate('03/17/2022');
     expect(d?.getFullYear()).toBe(2022);
-    expect(d?.getMonth()).toBe(1); // February
-    expect(d?.getDate()).toBe(18);
+    expect(d?.getMonth()).toBe(2); // March
+    expect(d?.getDate()).toBe(17);
   });
   it('returns null for empty/garbage', () => {
     expect(parseNoteDate('')).toBeNull();
@@ -19,15 +19,15 @@ describe('parseNoteDate', () => {
 });
 
 describe('computeAgeString', () => {
-  it('returns whole years for ages >= 1 (the Yanira case)', () => {
-    expect(computeAgeString('2022-02-18', '2026-04-25')).toBe('4');
+  it('returns whole years for ages >= 1 (the Marisa case)', () => {
+    expect(computeAgeString('2022-03-17', '2026-04-25')).toBe('4');
   });
 
   it('does NOT round up before the birthday has passed', () => {
     // Day before the 4th birthday → still 3
-    expect(computeAgeString('2022-02-18', '2026-02-17')).toBe('3');
+    expect(computeAgeString('2022-03-17', '2026-03-16')).toBe('3');
     // On the birthday → 4
-    expect(computeAgeString('2022-02-18', '2026-02-18')).toBe('4');
+    expect(computeAgeString('2022-03-17', '2026-03-17')).toBe('4');
   });
 
   it('returns months for under a year', () => {

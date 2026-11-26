@@ -17,7 +17,7 @@ function ctx(over: Partial<ShiftChangeAlertContext> = {}): ShiftChangeAlertConte
   return {
     nurseName: 'Bianca Bryant',
     credential: 'RN',
-    clientName: 'Ann Torres',
+    clientName: 'Ann Example',
     dateOfService: '09/03/2026',
     report: readShiftChange({ [K.hospitalAdmission]: 'No', [K.erUrgentCare]: 'Yes', [K.medChange]: 'Yes', [K.details]: 'ER for fever; started amoxicillin.' }),
     ...over,
@@ -31,7 +31,7 @@ describe('readShiftChange', () => {
   });
 
   it('treats a note written before the section existed as unanswered, not as No', () => {
-    const r = readShiftChange({ q3_clientName: 'Ann Torres' });
+    const r = readShiftChange({ q3_clientName: 'Ann Example' });
     expect(r.any).toBe(false);
     expect(r.answered).toBe(false);
   });
@@ -55,7 +55,7 @@ describe('shift-change alert copy', () => {
 
   it('bell text names the client, the items, and asks for a MAR check on a med change', () => {
     expect(shiftChangeBellText(ctx())).toBe(
-      'Bianca Bryant (RN) reports since the last shift for Ann Torres (09/03/2026): Urgent care / ER visit · Medication started, changed, or stopped. Verify the MAR.',
+      'Bianca Bryant (RN) reports since the last shift for Ann Example (09/03/2026): Urgent care / ER visit · Medication started, changed, or stopped. Verify the MAR.',
     );
     const hospitalOnly = ctx({ report: readShiftChange({ [K.hospitalAdmission]: 'Yes', [K.erUrgentCare]: 'No', [K.medChange]: 'No' }) });
     expect(shiftChangeBellText(hospitalOnly)).not.toMatch(/Verify the MAR/);
@@ -64,7 +64,7 @@ describe('shift-change alert copy', () => {
   it('text message never carries PHI and names the MAR only for a med change', () => {
     for (const c of [ctx(), ctx({ report: readShiftChange({ [K.hospitalAdmission]: 'Yes' }) })]) {
       const sms = shiftChangeSmsText(c);
-      expect(sms).not.toMatch(/Ann Torres|Bianca|09\/03|amoxicillin/);
+      expect(sms).not.toMatch(/Ann Example|Bianca|09\/03|amoxicillin/);
       expect(sms).toMatch(/heartandsoulhc\.org\/login/);
       expect(sms).toMatch(/Reply STOP to opt out/);
     }
@@ -74,7 +74,7 @@ describe('shift-change alert copy', () => {
 
   it('email subject leads with the medication change when one is reported and lists all three answers', () => {
     const copy = shiftChangeEmailCopy(ctx());
-    expect(copy.subject).toBe('Med Change Reported: Ann Torres (09/03/2026)');
+    expect(copy.subject).toBe('Med Change Reported: Ann Example (09/03/2026)');
     expect(copy.answers).toEqual([
       'Hospital admission: No',
       'Urgent care / ER visit: Yes',
@@ -83,7 +83,7 @@ describe('shift-change alert copy', () => {
     expect(copy.intro).toMatch(/^Bianca Bryant, RN answered Yes to 2 /);
     expect(copy.body).toMatch(/verify the client's MAR/);
     const hosp = shiftChangeEmailCopy(ctx({ report: readShiftChange({ [K.hospitalAdmission]: 'Yes' }) }));
-    expect(hosp.subject).toBe('Hospital / ER Visit Reported: Ann Torres (09/03/2026)');
+    expect(hosp.subject).toBe('Hospital / ER Visit Reported: Ann Example (09/03/2026)');
     expect(hosp.intro).toMatch(/answered Yes to a "since your last shift" question on/);
   });
 

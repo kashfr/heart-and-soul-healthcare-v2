@@ -169,7 +169,7 @@ export default function PhysiciansSection({ patientId, canEdit, actorName, onToa
                 </div>
                 <div style={formGrid}>
                   <Field id={fieldId(p.id, 'name')} label="Name *" error={e.name}>
-                    <input style={inputFor(e.name)} value={p.name} onChange={(ev) => setField(p.id, 'name', ev.target.value)} placeholder="e.g. Dr. Jennifer Gilligan" />
+                    <input style={inputFor(e.name)} value={p.name} onChange={(ev) => setField(p.id, 'name', ev.target.value)} placeholder="e.g. Dr. Jane Smith" />
                   </Field>
                   <Field id={fieldId(p.id, 'specialty')} label="Specialty *" error={e.specialty}>
                     <select style={e.specialty ? { ...select, ...FIELD_ERROR_STYLE } : select} value={p.specialty} onChange={(ev) => setField(p.id, 'specialty', ev.target.value)}>

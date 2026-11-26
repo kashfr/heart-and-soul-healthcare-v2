@@ -18,7 +18,7 @@ function completeVisit(): Record<string, string> {
   return {
     noteType: SUPERVISORY_NOTE_TYPE,
     patientId: 'p1',
-    q3_clientName: 'Neal Kelly',
+    q3_clientName: 'Nate Example',
     q6_dateofService: '2026-09-28',
     sv_timeIn: '10:00',
     sv_timeOut: '10:45',

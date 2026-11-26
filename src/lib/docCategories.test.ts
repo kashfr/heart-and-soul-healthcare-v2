@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { isDocCategory, validateFileFaxToClient } from './docCategories';
 
-const ok = { patientId: 'QNCpGaEQdp0Us1gk5hL4', category: 'Specialist / Physician Visit', title: 'Piedmont Endocrinology visit note', docDate: '2026-08-21' };
+const ok = { patientId: 'QNCpGaEQdp0Us1gk5hL4', category: 'Specialist / Physician Visit', title: 'Endocrinology visit note', docDate: '2026-08-21' };
 
 describe('validateFileFaxToClient', () => {
   it('accepts a complete filing', () => {

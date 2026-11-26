@@ -64,22 +64,22 @@ describe('pickServicePlanReminderRecipients', () => {
 
 describe('reminder messages', () => {
   const items = [
-    { patientId: 'p1', clientName: 'Cataleya Plaza', stage: 'overdue' as const, dueISO: '2026-08-31' },
-    { patientId: 'p2', clientName: 'Ann Torres', stage: 'none' as const, dueISO: '' },
+    { patientId: 'p1', clientName: 'Cora Example', stage: 'overdue' as const, dueISO: '2026-08-31' },
+    { patientId: 'p2', clientName: 'Ann Example', stage: 'none' as const, dueISO: '' },
   ];
   it('the bell names the client', () => {
-    expect(servicePlanBellText(items[0])).toBe('Service plan for Cataleya Plaza: overdue since 08/31/2026. Review or revise it at the next visit.');
-    expect(servicePlanBellText(items[1])).toBe('Service plan needed for Ann Torres: no service plan on file.');
+    expect(servicePlanBellText(items[0])).toBe('Service plan for Cora Example: overdue since 08/31/2026. Review or revise it at the next visit.');
+    expect(servicePlanBellText(items[1])).toBe('Service plan needed for Ann Example: no service plan on file.');
   });
   it('the email never names a client, and has no em dashes', () => {
     const m = servicePlanReminderEmail(items, 'Ashley');
     expect(m.subject).toBe('2 Service Plans Need Attention');
     expect(m.body).toContain("2 clients' service plans need attention: 1 overdue and 1 with no service plan on file.");
-    expect(m.body).not.toMatch(/Cataleya|Torres/);
+    expect(m.body).not.toMatch(/Cora Example|Ann Example/);
     expect(m.body).not.toMatch(/—|–/);
     expect(servicePlanReminderEmail([items[0]], '').subject).toBe('A Service Plan Needs Attention');
   });
   it('folds a long list into one bell, sorted by name', () => {
-    expect(servicePlanDigestBellText(items)).toBe('Service plans need attention for 2 clients: Ann Torres (no service plan on file); Cataleya Plaza (overdue since 08/31/2026).');
+    expect(servicePlanDigestBellText(items)).toBe('Service plans need attention for 2 clients: Ann Example (no service plan on file); Cora Example (overdue since 08/31/2026).');
   });
 });

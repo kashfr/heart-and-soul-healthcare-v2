@@ -19,9 +19,9 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/lib/patients', () => ({
   getPatients: vi.fn().mockResolvedValue([
-    { id: 'p1', name: 'Neal Kelly', dob: '1985-06-07', program: 'now-comp', serviceLevel: 'rn-oversight' },
-    { id: 'p2', name: 'Ann Torres', dob: '1980-08-03', program: 'now-comp', serviceLevel: 'rn-lpn-daily' },
-    { id: 'p3', name: 'Tora Vinson', dob: '2015-01-01', program: 'gapp', serviceLevel: 'skilled-nursing-shifts' },
+    { id: 'p1', name: 'Nate Example', dob: '1985-06-07', program: 'now-comp', serviceLevel: 'rn-oversight' },
+    { id: 'p2', name: 'Ann Example', dob: '1981-07-04', program: 'now-comp', serviceLevel: 'rn-lpn-daily' },
+    { id: 'p3', name: 'Nola Vance', dob: '2015-01-01', program: 'gapp', serviceLevel: 'skilled-nursing-shifts' },
   ]),
   getPatientClinical: vi.fn().mockResolvedValue(null),
 }));
@@ -123,23 +123,23 @@ describe('OversightNotePage', () => {
   it('defaults the client list to every NOW/COMP client regardless of staffing model', async () => {
     render(<OversightNotePage />);
     await waitFor(() => {
-      expect(screen.getByRole('option', { name: /Neal Kelly/ })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: /Nate Example/ })).toBeInTheDocument();
     });
     // Every NOW/COMP client receives monthly RN oversight — a daily-LPN
     // staffing model must not exclude anyone from this list.
-    expect(screen.getByRole('option', { name: /Ann Torres/ })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Ann Example/ })).toBeInTheDocument();
     // Other programs stay hidden until the toggle is checked.
-    expect(screen.queryByRole('option', { name: /Tora Vinson/ })).toBeNull();
+    expect(screen.queryByRole('option', { name: /Nola Vance/ })).toBeNull();
   });
 
   it('the toggle reveals clients from other programs, labeled with the program', async () => {
     const user = (await import('@testing-library/user-event')).default.setup();
     render(<OversightNotePage />);
     await waitFor(() => {
-      expect(screen.getByRole('option', { name: /Neal Kelly/ })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: /Nate Example/ })).toBeInTheDocument();
     });
     await user.click(screen.getByRole('checkbox', { name: /Show all clients/i }));
-    expect(screen.getByRole('option', { name: /Tora Vinson\s+\(GAPP\)/ })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Nola Vance\s+\(GAPP\)/ })).toBeInTheDocument();
   });
 
   it('blocks nurses whose credential is not RN', () => {
@@ -169,7 +169,7 @@ describe('OversightNotePage — client details', () => {
     const user = (await import('@testing-library/user-event')).default.setup();
     render(<OversightNotePage />);
     await waitFor(() => {
-      expect(screen.getByRole('option', { name: /Neal Kelly/ })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: /Nate Example/ })).toBeInTheDocument();
     });
     // Select by role — "Individual" also labels an education-recipient checkbox.
     await user.selectOptions(document.getElementById('q3_clientName')!, 'p1');
@@ -182,7 +182,7 @@ describe('OversightNotePage — edit mode', () => {
   it('loads a stored oversight note and switches to Update', async () => {
     mockSubmissions.getSubmission.mockResolvedValue({
       noteType: 'rn-oversight-visit',
-      q3_clientName: 'Neal Kelly',
+      q3_clientName: 'Nate Example',
       q6_dateofService: '2026-08-14',
       ov_location: "Individual's home",
       ov_generalCondition: 'Stable since last visit.',
@@ -209,7 +209,7 @@ describe('OversightNotePage — edit mode', () => {
 
   it('refuses to edit a shift note opened on this route', async () => {
     mockSubmissions.getSubmission.mockResolvedValue({
-      q3_clientName: 'Ann Torres',
+      q3_clientName: 'Ann Example',
       q6_dateofService: '2026-08-14',
     });
     mockSearchParams.set('edit', 'shift-note');
@@ -224,7 +224,7 @@ describe('OversightNotePage — amend fidelity', () => {
   it('re-checks education topics whose values contain ", " and keeps the documenting RN', async () => {
     mockSubmissions.getSubmission.mockResolvedValue({
       noteType: 'rn-oversight-visit',
-      q3_clientName: 'Neal Kelly',
+      q3_clientName: 'Nate Example',
       q11_nurseName: 'Angela Walker', // a DIFFERENT RN documented this visit
       q6_dateofService: '2026-08-14',
       ov_generalCondition: 'Stable.',
@@ -300,7 +300,7 @@ describe('OversightNotePage — documented vs. billable time', () => {
   const pickClientAndDate = async () => {
     const user = (await import('@testing-library/user-event')).default.setup();
     render(<OversightNotePage />);
-    await waitFor(() => expect(screen.getByRole('option', { name: /Neal Kelly/ })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('option', { name: /Nate Example/ })).toBeInTheDocument());
     await user.selectOptions(document.getElementById('q3_clientName')!, 'p1');
     fireEvent.change(document.getElementById('q6_dateofService')!, { target: { value: '2026-09-28' } });
     return user;

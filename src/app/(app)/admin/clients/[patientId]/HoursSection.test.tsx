@@ -21,10 +21,10 @@ vi.mock('next/link', () => ({ default: ({ children }: { children: React.ReactNod
 import HoursSection from './HoursSection';
 
 const line = {
-  id: 'a1', patientId: 'kai', paNumber: '126101100192', kind: 'skilled', covers: 'shift', rateBasis: 'week', rateHours: 16,
+  id: 'a1', patientId: 'kai', paNumber: '126999000101', kind: 'skilled', covers: 'shift', rateBasis: 'week', rateHours: 16,
   from: '2026-10-20', to: '2027-03-31', monthOverrides: { '2026-11': 69 }, totalUnits: null, serviceCode: '', note: '',
 };
-const props = { patientId: 'kai', patientName: 'Kai Schamberger', program: 'gapp', notes: [], uid: 'rose', todayISO: '2026-10-28' };
+const props = { patientId: 'kai', patientName: 'Kai Example', program: 'gapp', notes: [], uid: 'rose', todayISO: '2026-10-28' };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -34,7 +34,7 @@ beforeEach(() => {
 
 it('lets an assistant add and edit lines with no dollars and no delete', async () => {
   render(<HoursSection {...props} canSeeDollars={false} canDelete={false} />);
-  expect((await screen.findAllByText(/PA 126101100192/)).length).toBeGreaterThan(0);
+  expect((await screen.findAllByText(/PA 126999000101/)).length).toBeGreaterThan(0);
   expect(screen.getByRole('button', { name: /Add Authorization/ })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
@@ -45,13 +45,13 @@ it('lets an assistant add and edit lines with no dollars and no delete', async (
 
 it('shows a View As preview with no Add, Edit, or Delete', async () => {
   render(<HoursSection {...props} canSeeDollars={false} canDelete={false} readOnly />);
-  expect((await screen.findAllByText(/PA 126101100192/)).length).toBeGreaterThan(0);
+  expect((await screen.findAllByText(/PA 126999000101/)).length).toBeGreaterThan(0);
   expect(screen.queryByRole('button', { name: /Add Authorization|^Edit$|^Delete$/ })).not.toBeInTheDocument();
 });
 
 it('keeps the owner view unchanged', async () => {
   render(<HoursSection {...props} />);
-  expect((await screen.findAllByText(/PA 126101100192/)).length).toBeGreaterThan(0);
+  expect((await screen.findAllByText(/PA 126999000101/)).length).toBeGreaterThan(0);
   expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /\$ Off/ })).toBeInTheDocument();
   expect(lib.getBillingRates).toHaveBeenCalled();

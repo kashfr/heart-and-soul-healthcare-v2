@@ -11,7 +11,7 @@ const TODAY = '2026-08-12';
 
 /** A fully-consistent daily-LPN client, used as the baseline to perturb. */
 const dailyLpn: ReconcileSubject = {
-  name: 'Lahin Lalani',
+  name: 'Leo Example',
   program: 'now-comp',
   serviceLevel: 'rn-lpn-daily',
   requiresMar: true,
@@ -31,7 +31,7 @@ describe('reconcilePatient', () => {
     expect(reconcilePatient(dailyLpn, TODAY)).toEqual([]);
   });
 
-  it('catches the Lahin case: daily LPN authorization, oversight-only classification', () => {
+  it('catches the Leo case: daily LPN authorization, oversight-only classification', () => {
     const f = reconcilePatient({ ...dailyLpn, serviceLevel: 'rn-oversight' }, TODAY);
     expect(f.map((x) => x.rule)).toContain('auth-says-daily-lpn');
     expect(f.find((x) => x.rule === 'auth-says-daily-lpn')!.severity).toBe('error');
@@ -62,7 +62,7 @@ describe('reconcilePatient', () => {
   });
 
   it('stays quiet about MAR and care team for a client who has not started', () => {
-    // Joy Daughtrey's shape: classified, but the authorization begins later.
+    // One client's shape: classified, but the authorization begins later.
     const notStarted: ReconcileSubject = {
       program: 'now-comp',
       serviceLevel: 'rn-lpn-daily',
@@ -78,7 +78,7 @@ describe('reconcilePatient', () => {
   });
 
   it('does not treat an active authorization as proof that service has started', () => {
-    // Danielle Hall's shape: authorized weeks ago, proactively, not yet serving.
+    // Another client's shape: authorized weeks ago, proactively, not yet serving.
     const authorizedNotServing: ReconcileSubject = {
       program: 'now-comp',
       serviceLevel: 'rn-lpn-daily',
@@ -102,7 +102,7 @@ describe('reconcilePatient', () => {
   });
 
   it('treats an authorization starting today as active', () => {
-    // Lahin's NL1 begins 08/12; on that date it counts.
+    // Leo's NL1 begins 08/12; on that date it counts.
     expect(reconcilePatient(dailyLpn, '2026-08-12')).toEqual([]);
     expect(rules(dailyLpn, '2026-08-11')).toContain('authorization-not-started');
   });

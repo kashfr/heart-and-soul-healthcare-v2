@@ -3,7 +3,7 @@
  * to about their care: legal guardian, parent of a minor, health care agent,
  * representative payee, conservator, responsible party.
  *
- * Origin (09/2026): Ricky Yancey's guardian (the State, through a DHS
+ * Origin (09/2026): One client's guardian (the State, through a DHS
  * representative) was only findable inside his ISP PDF, and a release of
  * information needed the guardian's signature within days.
  *

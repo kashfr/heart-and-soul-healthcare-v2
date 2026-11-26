@@ -12,7 +12,7 @@ const facility = { name: 'Magnolia Manor Health and Rehabilitation', address: '2
 describe('fillRoiForm', () => {
   it('fills one three-page copy for a one-way release', async () => {
     const out = await fillRoiForm(blank, {
-      memberName: 'Ann Torres',
+      memberName: 'Ann Example',
       dob: '03/14/1978',
       copies: roiCopies('to-us', facility, '4702351891'),
       information: DEFAULT_ROI_INFORMATION,

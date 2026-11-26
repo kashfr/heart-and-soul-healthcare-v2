@@ -8,9 +8,9 @@ import {
 
 function row(overrides: Partial<StaffListItem> = {}): StaffListItem {
   return {
-    displayName: 'Roneika Leslie',
-    email: 'roneikaleslie17@gmail.com',
-    phone: '(347) 820-0388',
+    displayName: 'Rae Example',
+    email: 'raeexample17@example.com',
+    phone: '(347) 555-0188',
     role: 'nurse',
     credential: 'RN',
     active: true,
@@ -30,20 +30,20 @@ describe('staffMatchesQuery', () => {
   });
 
   it('matches name case-insensitively on a partial string', () => {
-    expect(staffMatchesQuery(row(), 'roneika')).toBe(true);
-    expect(staffMatchesQuery(row(), 'LESLIE')).toBe(true);
+    expect(staffMatchesQuery(row(), 'rae')).toBe(true);
+    expect(staffMatchesQuery(row(), 'EXAMPLE')).toBe(true);
     expect(staffMatchesQuery(row(), 'nobody')).toBe(false);
   });
 
   it('matches email, role, and credential', () => {
-    expect(staffMatchesQuery(row(), 'roneikaleslie17@')).toBe(true);
+    expect(staffMatchesQuery(row(), 'raeexample17@')).toBe(true);
     expect(staffMatchesQuery(row(), 'nurse')).toBe(true);
     expect(staffMatchesQuery(row(), 'rn')).toBe(true);
   });
 
   it('matches phone by raw digits despite the stored (XXX) XXX-XXXX formatting', () => {
-    expect(staffMatchesQuery(row(), '3478200388')).toBe(true);
-    expect(staffMatchesQuery(row(), '347-820')).toBe(true);
+    expect(staffMatchesQuery(row(), '3475550188')).toBe(true);
+    expect(staffMatchesQuery(row(), '347-555')).toBe(true);
     expect(staffMatchesQuery(row(), '(347)')).toBe(true);
     expect(staffMatchesQuery(row(), '9999999')).toBe(false);
   });
@@ -58,19 +58,19 @@ describe('staffMatchesQuery', () => {
 describe('compareStaff', () => {
   const alice = row({ displayName: 'alice Adams' });
   const bianca = row({ displayName: 'Bianca Bryant' });
-  const zoe = row({ displayName: 'Zoe Young' });
+  const zoe = row({ displayName: 'Zoe Yarrow' });
 
   it('sorts by name ascending, case-insensitively', () => {
     expect(sorted([zoe, alice, bianca], 'name')).toEqual([
       'alice Adams',
       'Bianca Bryant',
-      'Zoe Young',
+      'Zoe Yarrow',
     ]);
   });
 
   it('reverses on descending', () => {
     expect(sorted([alice, zoe, bianca], 'name', 'desc')).toEqual([
-      'Zoe Young',
+      'Zoe Yarrow',
       'Bianca Bryant',
       'alice Adams',
     ]);
@@ -95,13 +95,13 @@ describe('compareStaff', () => {
   });
 
   it('breaks ties alphabetically by name instead of keeping input order', () => {
-    const rnZoe = row({ displayName: 'Zoe Young', credential: 'RN' });
+    const rnZoe = row({ displayName: 'Zoe Yarrow', credential: 'RN' });
     const rnAlice = row({ displayName: 'Alice Adams', credential: 'RN' });
     const lpn = row({ displayName: 'Mid Lpn', credential: 'LPN' });
     expect(sorted([rnZoe, lpn, rnAlice], 'credential')).toEqual([
       'Mid Lpn',
       'Alice Adams',
-      'Zoe Young',
+      'Zoe Yarrow',
     ]);
   });
 });

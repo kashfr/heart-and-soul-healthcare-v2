@@ -39,7 +39,7 @@ beforeEach(async () => {
   const d = await PDFDocument.create(); d.addPage();
   pdf = Buffer.from(await d.save());
   docs = {
-    'referrals/r1': { clientName: 'Bronx Spry' },
+    'referrals/r1': { clientName: 'Brook Example' },
     'ppotRequests/referral_r1': { subjectKind: 'referral', subjectId: 'r1', status: 'sent', recipientName: 'Dr. Ann Eggert' },
   };
 });
