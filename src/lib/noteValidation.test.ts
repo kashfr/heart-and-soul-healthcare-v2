@@ -9,7 +9,7 @@ import { SHIFT_CHANGE_KEYS } from './shiftChange';
 // A fully-complete RN note as a flat map. Helpers below clone + mutate it.
 function completeRN(): Record<string, string> {
   return {
-    q3_clientName: 'Sapphire Simmons',
+    q3_clientName: 'Sabrina Stone',
     // Age >= 3 so blood pressure is routinely required (see age-gate tests below).
     q4_dateofBirth: '2016-05-26',
     q10_primaryDiagnosis: 'CP, Quadriplegic',
@@ -19,7 +19,7 @@ function completeRN(): Record<string, string> {
     q200_postal: '30331',
     q6_dateofService: '2026-05-26',
     q7_shiftStart: '07:26',
-    q11_nurseName: 'Olayemi Akande',
+    q11_nurseName: 'Olivia Example',
     q12_credential: 'RN',
     q16_temperature: '97.5',
     q16_temperatureRoute: 'Oral',

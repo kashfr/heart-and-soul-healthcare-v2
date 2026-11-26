@@ -58,19 +58,19 @@ describe('staffMatchesQuery', () => {
 describe('compareStaff', () => {
   const alice = row({ displayName: 'alice Adams' });
   const bianca = row({ displayName: 'Bianca Bryant' });
-  const zoe = row({ displayName: 'Zoe Young' });
+  const zoe = row({ displayName: 'Zoe Yarrow' });
 
   it('sorts by name ascending, case-insensitively', () => {
     expect(sorted([zoe, alice, bianca], 'name')).toEqual([
       'alice Adams',
       'Bianca Bryant',
-      'Zoe Young',
+      'Zoe Yarrow',
     ]);
   });
 
   it('reverses on descending', () => {
     expect(sorted([alice, zoe, bianca], 'name', 'desc')).toEqual([
-      'Zoe Young',
+      'Zoe Yarrow',
       'Bianca Bryant',
       'alice Adams',
     ]);
@@ -95,13 +95,13 @@ describe('compareStaff', () => {
   });
 
   it('breaks ties alphabetically by name instead of keeping input order', () => {
-    const rnZoe = row({ displayName: 'Zoe Young', credential: 'RN' });
+    const rnZoe = row({ displayName: 'Zoe Yarrow', credential: 'RN' });
     const rnAlice = row({ displayName: 'Alice Adams', credential: 'RN' });
     const lpn = row({ displayName: 'Mid Lpn', credential: 'LPN' });
     expect(sorted([rnZoe, lpn, rnAlice], 'credential')).toEqual([
       'Mid Lpn',
       'Alice Adams',
-      'Zoe Young',
+      'Zoe Yarrow',
     ]);
   });
 });

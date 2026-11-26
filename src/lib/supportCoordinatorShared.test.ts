@@ -3,7 +3,7 @@ import { normalizeCoordinator, validateCoordinator } from './supportCoordinatorS
 
 describe('validateCoordinator', () => {
   it('accepts name, agency, and one way to reach them', () => {
-    expect(validateCoordinator({ name: 'Jasmine Lawrence', agency: 'Benchmark Human Services', email: 'jlawrence@benchmarkhs.com' })).toEqual({});
+    expect(validateCoordinator({ name: 'Jessie Example', agency: 'Benchmark Human Services', email: 'jexample@example.com' })).toEqual({});
   });
 
   it('requires name, agency, and a contact', () => {
@@ -17,8 +17,8 @@ describe('validateCoordinator', () => {
 
 describe('normalizeCoordinator', () => {
   it('trims every field and fills blanks', () => {
-    const out = normalizeCoordinator({ name: ' Jasmine Lawrence ' });
-    expect(out.name).toBe('Jasmine Lawrence');
+    const out = normalizeCoordinator({ name: ' Jessie Example ' });
+    expect(out.name).toBe('Jessie Example');
     expect(out.agency).toBe('');
   });
 });

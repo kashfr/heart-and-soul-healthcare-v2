@@ -8,7 +8,7 @@ import { normalizeName } from './levenshtein';
  * Firebase-free so it's unit-testable. Excludes admin-archived notes (status
  * 'archived' or an `archivedAt` timestamp). Matches on the roster link when
  * BOTH notes have a `patientId`; otherwise compares normalized names so
- * "Fernando-Bautista" and "Fernando Bautista" are the same person.
+ * "Delgado-Brockton" and "Delgado Brockton" are the same person.
  */
 export function noteIsActiveDuplicate(
   note: { status?: unknown; archivedAt?: unknown; patientId?: unknown; q3_clientName?: unknown; noteType?: unknown },

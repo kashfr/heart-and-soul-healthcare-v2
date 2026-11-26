@@ -85,7 +85,7 @@ describe('wording', () => {
 });
 
 describe('defaultRoiFaxNote', () => {
-  const base = { memberName: 'Ricky Yancey', information: 'Current medication list and orders; A1C and recent lab results.', returnFax: '4702351891' };
+  const base = { memberName: 'Rick Example', information: 'Current medication list and orders; A1C and recent lab results.', returnFax: '4702351891' };
 
   it('asks the facility to fax the listed records back when they share with us', () => {
     const note = defaultRoiFaxNote({ ...base, direction: 'to-us' });

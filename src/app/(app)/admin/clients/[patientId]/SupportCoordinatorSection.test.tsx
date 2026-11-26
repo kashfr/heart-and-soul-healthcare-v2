@@ -19,16 +19,16 @@ beforeEach(() => { agencies.length = 0; store.data = null; saveMock.mockClear();
 
 describe('SupportCoordinatorSection', () => {
   it('shows the coordinator read-only for a nurse', async () => {
-    store.data = { name: 'Jasmine Lawrence', title: 'Intensive Support Coordinator', agency: 'Benchmark Human Services', email: 'jlawrence@benchmarkhs.com' };
+    store.data = { name: 'Jessie Example', title: 'Intensive Support Coordinator', agency: 'Benchmark Human Services', email: 'jexample@example.com' };
     render(<SupportCoordinatorSection patientId="p1" canEdit={false} actorName="" onToast={() => {}} />);
-    expect(await screen.findByText('Jasmine Lawrence')).toBeInTheDocument();
+    expect(await screen.findByText('Jessie Example')).toBeInTheDocument();
     expect(screen.getByText('Benchmark Human Services')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /edit/i })).toBeNull();
   });
 
   it("shows the agency's DBHDD regions from Settings next to the agency", async () => {
     agencies.push({ id: 'compass', name: 'Compass Coordination, Inc.', address: '', phone: '', fax: '', afterHours: '', notes: '', regions: [1, 3] });
-    store.data = { name: 'Jasmine Lawrence', agency: 'Compass Coordination, Inc.', email: 'j@compassga.net' };
+    store.data = { name: 'Jessie Example', agency: 'Compass Coordination, Inc.', email: 'j@compassga.net' };
     render(<SupportCoordinatorSection patientId="p1" canEdit={false} actorName="" onToast={() => {}} />);
     expect(await screen.findByText('(Regions 1, 3)')).toBeInTheDocument();
   });
@@ -41,12 +41,12 @@ describe('SupportCoordinatorSection', () => {
     expect(await screen.findByText("Enter the coordinator's name.")).toBeInTheDocument();
     expect(saveMock).not.toHaveBeenCalled();
     const input = (f: string) => document.querySelector(`#sc-field-${f} input`) as HTMLInputElement;
-    fireEvent.change(input('name'), { target: { value: 'Jasmine Lawrence' } });
+    fireEvent.change(input('name'), { target: { value: 'Jessie Example' } });
     fireEvent.change(input('agency'), { target: { value: 'Benchmark Human Services' } });
-    fireEvent.change(input('email'), { target: { value: 'jlawrence@benchmarkhs.com' } });
+    fireEvent.change(input('email'), { target: { value: 'jexample@example.com' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText('Jasmine Lawrence')).toBeInTheDocument();
+    expect(await screen.findByText('Jessie Example')).toBeInTheDocument();
     expect(toast).toHaveBeenCalledWith('Support coordinator saved.');
   });
 

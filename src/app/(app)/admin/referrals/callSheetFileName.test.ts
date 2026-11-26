@@ -11,7 +11,7 @@ describe('callSheetFileName', () => {
   });
 
   it('uses the agency date, not UTC (a 10 PM Eastern referral stays on its own day)', () => {
-    expect(callSheetFileName([ref('Kasai Williams', '2026-09-30T02:05:00Z')], NOW)).toBe('Kasai Williams Call Sheet 09-29-2026');
+    expect(callSheetFileName([ref('Kasey Example', '2026-09-30T02:05:00Z')], NOW)).toBe('Kasey Example Call Sheet 09-29-2026');
   });
 
   it('strips characters a file name cannot hold', () => {

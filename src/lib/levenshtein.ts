@@ -80,11 +80,11 @@ export interface MatchCandidate {
  *
  * Four signals, any of which marks a patient as a candidate:
  *   - Exact DOB match (very strong in a roster of ~dozens)
- *   - Levenshtein name distance ≤ 5 (handles typos like "Yanra" for
- *     "Yanira" and short truncations)
+ *   - Levenshtein name distance ≤ 5 (handles typos like "Marsa" for
+ *     "Marisa" and short truncations)
  *   - Exact normalized name (catches missing-hyphen / casing variants)
  *   - First "word" of the typed name matches the first word of a roster
- *     name (handles "Yanira Fernando b" → "Yanira Fernando-Bautista"
+ *     name (handles "Marisa Delgado b" → "Marisa Delgado-Brockton"
  *     where Levenshtein is high but the first name is unmistakable).
  *     Crucially, the first-word path does NOT require a close DOB —
  *     nurses often type the patient name before the DOB on Page 1, and
@@ -169,12 +169,12 @@ function nameTokens(s: string): string[] {
  *
  * Three positive signals (any one is enough):
  *   - Prefix: typed is the start of a roster word, and typed is at
- *     least 30% of the roster word's length. Catches "fern" → "fernando"
- *     and "yan" → "yanira".
+ *     least 30% of the roster word's length. Catches "fern" → "delgado"
+ *     and "yan" → "marisa".
  *   - Small absolute distance (≤ 2): catches single-character typos
  *     in short words.
  *   - Proportional tolerance (typed.length ≥ 4 and dist ≤ length/3):
- *     catches "yanra" → "yanira" (dist 1, 5 chars allowed up to 1).
+ *     catches "marsa" → "marisa" (dist 1, 5 chars allowed up to 1).
  */
 function bestWordMatch(
   typedWord: string,
@@ -211,7 +211,7 @@ function bestWordMatch(
  * name, then for every typed word find the best-matching roster word.
  * A patient is a candidate when at least 50% of typed words have a
  * good match. This catches multi-typo + truncation combos like
- * "yanra fern" → "Yanira Fernando-Bautista" that whole-string
+ * "marsa delg" → "Marisa Delgado-Brockton" that whole-string
  * Levenshtein misses because the overall distance is enormous even
  * though the words match individually.
  *

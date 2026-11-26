@@ -85,7 +85,7 @@ it('copies the signed release into the client record when conversion happened af
 
 it('edits a release signed elsewhere: adds the fax, re-dates it, and notes it on the referral', async () => {
   rows.set('roi9', {
-    formType: 'ga-hipaa', referralId: 'ref1', patientId: '', memberName: 'Bronx Spry', direction: 'to-us', duration: 'transactions', status: 'signed',
+    formType: 'ga-hipaa', referralId: 'ref1', patientId: '', memberName: 'Brook Example', direction: 'to-us', duration: 'transactions', status: 'signed',
     facility: { name: 'Peachtree Pediatrics', address: '12 Eastbrook Bend', phone: '7704873330', fax: '' },
     information: 'As listed on the signed authorization.', purpose: 'As listed on the signed authorization.',
     signed: { documentId: 'd1', signedDate: '2026-10-07', expiresOn: '2028-10-07', byName: 'Test VA' }, faxes: [],
@@ -114,7 +114,7 @@ it('keeps a signed DBHDD release’s name as signed, and refuses a cancelled one
 
 it('brings the filed copy’s title and date along, but leaves a title renamed by hand', async () => {
   const release = {
-    formType: 'ga-hipaa', referralId: 'ref1', patientId: '', memberName: 'Bronx Spry', direction: 'to-us', duration: 'transactions', status: 'signed',
+    formType: 'ga-hipaa', referralId: 'ref1', patientId: '', memberName: 'Brook Example', direction: 'to-us', duration: 'transactions', status: 'signed',
     facility: { name: 'Peachtree Peds', address: '', phone: '', fax: '' }, information: 'i', purpose: 'p',
     signed: { documentId: 'doc1', signedDate: '2026-10-07', expiresOn: '2028-10-07', byName: '' }, faxes: [],
   };

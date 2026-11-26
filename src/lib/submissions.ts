@@ -370,8 +370,8 @@ export interface DuplicateMatch {
  * Look for an already-submitted note for the same nurse + date of service +
  * patient. "Same patient" prefers the strong roster key (`patientId`); when a
  * note isn't roster-linked it falls back to a NORMALIZED typed-name match
- * (case/spacing/punctuation-insensitive) so "Fernando-Bautista" and
- * "Fernando Bautista" are treated as the same person.
+ * (case/spacing/punctuation-insensitive) so "Delgado-Brockton" and
+ * "Delgado Brockton" are treated as the same person.
  *
  * Used both to catch a duplicate early (when the nurse leaves Page 1) and as
  * the final submit-time guard. Pass `excludeId` so the note being written now

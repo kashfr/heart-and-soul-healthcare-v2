@@ -34,7 +34,7 @@ describe('releases signed elsewhere', () => {
   });
 
   it('names the Georgia HIPAA form in the fax introduction letter', () => {
-    const paras = roiIntroParagraphs({ memberName: 'Bronx Spry', program: 'gapp', facilityName: 'Peachtree Pediatrics', direction: 'to-us', formType: 'ga-hipaa', isReferral: true });
+    const paras = roiIntroParagraphs({ memberName: 'Brook Example', program: 'gapp', facilityName: 'Peachtree Pediatrics', direction: 'to-us', formType: 'ga-hipaa', isReferral: true });
     expect(paras[1]).toContain('Georgia HIPAA Compliant Authorization for the Release of Patient Information');
   });
 });

@@ -15,7 +15,7 @@ function copy(over: Partial<ProviderListEmailSettings> = {}): ProviderListEmailS
 }
 
 describe('buildProviderListEmail', () => {
-  const content = buildProviderListEmail({ familyName: 'Monique Ivory', childName: 'Tru Phillips' });
+  const content = buildProviderListEmail({ familyName: 'Monica Example', childName: 'Theo Example' });
 
   it('links to the hosted provider list (production origin)', () => {
     expect(content.html).toContain(PROVIDER_LIST_URL);
@@ -23,13 +23,13 @@ describe('buildProviderListEmail', () => {
   });
 
   it('greets by first name and names the child', () => {
-    expect(content.html).toContain('Hi Monique,');
-    expect(content.html).toContain('Tru Phillips');
+    expect(content.html).toContain('Hi Monica,');
+    expect(content.html).toContain('Theo Example');
   });
 
   it('keeps the subject PHI-free', () => {
     expect(content.subject).not.toContain('Tru');
-    expect(content.subject).not.toContain('Monique');
+    expect(content.subject).not.toContain('Monica');
   });
 
   it('contains NO em or en dashes anywhere (user writing-style rule)', () => {

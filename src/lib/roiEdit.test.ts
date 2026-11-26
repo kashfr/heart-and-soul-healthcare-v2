@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { describeRoiEdit, roiEditableFields, validateRoiEdit, type RoiRecord } from './roiShared';
 
 const roi = (over: Partial<RoiRecord> = {}): RoiRecord => ({
-  id: 'x', formType: 'ga-hipaa', patientId: '', referralId: 'r1', memberName: 'Bronx Spry', direction: 'to-us',
+  id: 'x', formType: 'ga-hipaa', patientId: '', referralId: 'r1', memberName: 'Brook Example', direction: 'to-us',
   facility: { name: 'Peachtree Pediatrics - Dr. Ann Eggert', address: '12 Eastbrook Bend', phone: '7704873330', fax: '' },
   information: 'As listed on the signed authorization.', purpose: 'As listed on the signed authorization.', duration: 'transactions',
   status: 'signed', createdAt: null, createdByName: '', signed: { documentId: 'd', signedDate: '2026-10-18', expiresOn: '2028-10-18', byName: '' },

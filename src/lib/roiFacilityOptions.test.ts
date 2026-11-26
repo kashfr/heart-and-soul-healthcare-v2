@@ -9,14 +9,14 @@ describe('roiFacilityOptions', () => {
         { id: 'd', name: 'Franklin Dentistry', specialty: 'Dentistry', practice: 'Franklin Dentistry' },
       ] },
       { attends: 'yes', programName: "Treasure's Box", operator: 'Seabreeze Retreat, Inc.', address: '3893 Covington Hwy', cell: '678-555-0161', fax: '404-555-0117' },
-      { name: 'Jasmine Lawrence', agency: 'Benchmark Human Services', cell: '478-443-4308' },
+      { name: 'Jessie Example', agency: 'Benchmark Human Services', cell: '478-555-0108' },
     );
     expect(opts.map((o) => o.group)).toEqual(['Physicians', 'Physicians', 'Day program', 'Support coordination']);
     expect(opts[0]).toMatchObject({ name: 'Example Endocrinology Midtown (Dr. Jamie Sample)', fax: '(404) 555-0115', phone: '404-555-0110' });
     expect(opts[1].name).toBe('Franklin Dentistry');
     expect(opts[1].label).toContain('no fax on file');
     expect(opts[2]).toMatchObject({ name: "Seabreeze Retreat, Inc. (Treasure's Box)", phone: '678-555-0161' });
-    expect(opts[3].name).toBe('Benchmark Human Services (Jasmine Lawrence)');
+    expect(opts[3].name).toBe('Benchmark Human Services (Jessie Example)');
   });
 
   it('skips a day program the client does not attend and empty records', () => {

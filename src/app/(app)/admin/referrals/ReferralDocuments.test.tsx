@@ -9,7 +9,7 @@ vi.mock('@/lib/supportCoordinator', () => ({ getSupportCoordinator: vi.fn() }));
 
 const doc = (over: Record<string, unknown>) => ({ referralId: 'r1', category: 'Consent / Release (ROI)', title: 'T', fileName: 'f.pdf', size: 1, docDate: '2026-10-18', uploadedAt: null, uploadedByName: 'K', patientDocumentId: '', revision: 'a'.repeat(64), ...over });
 const roi = {
-  id: 'roi1', formType: 'ga-hipaa', patientId: '', referralId: 'r1', memberName: 'Bronx Spry', direction: 'to-us',
+  id: 'roi1', formType: 'ga-hipaa', patientId: '', referralId: 'r1', memberName: 'Brook Example', direction: 'to-us',
   facility: { name: 'Peachtree Pediatrics', address: '', phone: '7704873330', fax: '' }, information: 'i', purpose: 'p', duration: 'transactions',
   status: 'signed', createdAt: null, createdByName: '', signed: { documentId: 'doc1', signedDate: '2026-10-18', expiresOn: '2028-10-18', byName: '' }, faxes: [], hidden: false,
 };

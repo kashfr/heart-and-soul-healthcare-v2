@@ -28,7 +28,7 @@ describe('referral confirmation email', () => {
   });
 
   it('greets by first name', () => {
-    const html = buildReferralConfirmationHtml({ phone: PHONE, submitterName: 'Destinee Johnson' });
-    expect(html).toContain('Hi Destinee,');
+    const html = buildReferralConfirmationHtml({ phone: PHONE, submitterName: 'Dana Example' });
+    expect(html).toContain('Hi Dana,');
   });
 });
