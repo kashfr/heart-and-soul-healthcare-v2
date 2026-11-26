@@ -1,7 +1,8 @@
 'use client';
 import { useState, type CSSProperties } from 'react';
 import { formatUSDateInput, parseUSDate } from '@/lib/usDateInput';
-import { documentDateError } from '@/lib/documentDate';
+import { documentDateError, todayEasternISO } from '@/lib/documentDate';
+import { formatDateUS } from '@/lib/dateFormat';
 import { DOC_CATEGORIES, type DocCategory } from '@/lib/docCategories';
 import { EMPTY_PERIOD_DRAFT, resolvePeriodDraft, type DocumentPeriodDraft } from '@/lib/documentPeriod';
 import { withSelectChevron } from '@/lib/selectChevron';
@@ -30,7 +31,7 @@ export default function BulkDocumentUpload({ upload, onClose, onComplete }: { up
     setError('');
     setRows((current) => {
       const last = current[current.length - 1];
-      const seed = last ? { category: last.category, docDate: last.docDate, period: last.period } : { category: 'Other' as DocCategory, docDate: new Date().toLocaleDateString('en-US'), period: EMPTY_PERIOD_DRAFT };
+      const seed = last ? { category: last.category, docDate: last.docDate, period: last.period } : { category: 'Other' as DocCategory, docDate: formatDateUS(todayEasternISO()), period: EMPTY_PERIOD_DRAFT };
       return [...current, ...files.map((file): Row => ({ id: crypto.randomUUID(), file, title: file.name.replace(/\.[^.]+$/, ''), ...seed, status: 'ready' }))];
     });
   };
